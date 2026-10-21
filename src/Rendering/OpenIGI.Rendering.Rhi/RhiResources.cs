@@ -22,6 +22,22 @@ public interface IRhiBuffer : IRhiResource
 
     /// <summary>Gets what it may be used for.</summary>
     RhiBufferUsage Usage { get; }
+
+    /// <summary>Gets what a shader reaches this buffer by without a binding, or nought where it cannot.</summary>
+    /// <remarks>
+    /// <para>
+    /// For data a shader looks up indirectly -- a traced hit's material record names the mesh it struck,
+    /// and the shader then reads that mesh's vertices -- where no bind group could name every buffer in the
+    /// world. On Vulkan it is the buffer's device address; on Direct3D 12 it is the index of a raw view of
+    /// it in the shader-visible descriptor heap. Either way a shader reads it through one accessor,
+    /// <c>Common/HitRecords.slang</c>, and nothing above the backend interprets it.
+    /// </para>
+    /// <para>
+    /// Only a buffer created with <see cref="RhiBufferUsage.RayTracingInput"/> has one, on a device that
+    /// offers acceleration structures.
+    /// </para>
+    /// </remarks>
+    ulong ShaderHandle => 0;
 }
 
 /// <summary>An image, of one or more mip levels and one or more layers.</summary>

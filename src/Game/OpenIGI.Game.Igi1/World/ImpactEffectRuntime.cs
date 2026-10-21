@@ -59,10 +59,15 @@ public sealed class ImpactEffectRuntime
     /// <summary>How many bodies may hold blood systems at once.</summary>
     public const int BloodBodyCapacity = 32;
 
-    private readonly IgiRandom _random;
+    private IgiRandom _random;
+
+    // The particle emitter's own stream, dword_A7A4C0: the droplets' cone and speed, which the level stream never sees.
+    // Particle2DDynCubeObjTask's registration (0x4FCF50) resets it once for the whole run and mixes in 0x12332D53.
+    private readonly IgiRandom _emitterRandom = EmitterStream();
     private readonly Dictionary<object, BloodSystems> _blood = [];
     private readonly List<object> _idleBodies = [];
     private readonly List<ImpactFragment> _fragments = [];
+    private readonly List<PendingChips> _pendingChips = [];
     private int _mistFrameCount = 1;
 
     /// <summary>Initializes a new instance of the <see cref="ImpactEffectRuntime"/> class.</summary>
@@ -77,6 +82,22 @@ public sealed class ImpactEffectRuntime
             frameCount: 1,
             ticksPerFrame: 0,
             capacity: PuffCapacity);
+    }
+
+    private static IgiRandom EmitterStream()
+    {
+        IgiRandom stream = new();
+        stream.Seed(0xC8FB1A07u, 0x39EA7756u, 0x7FF13CCDu);
+        stream.Mix(0x12332D53u);
+        return stream;
+    }
+
+    /// <summary>Draws from the level's one stream from now on, as every retail effect does.</summary>
+    /// <param name="random">The level stream.</param>
+    public void UseRandom(IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        _random = random;
     }
 
     /// <summary>Gets the dust the world's impacts have kicked up.</summary>
@@ -108,6 +129,7 @@ public sealed class ImpactEffectRuntime
     {
         Puffs.Clear();
         _fragments.Clear();
+        _pendingChips.Clear();
         _blood.Clear();
     }
 
@@ -172,6 +194,127 @@ public sealed class ImpactEffectRuntime
             GunShotImpactEffects.PuffFadeTicks);
     }
 
+    /// <summary>Runs one recorded impact's <c>GunShotEffect</c> in the original's order (<c>0x438440</c>).</summary>
+    /// <param name="position">The contact point, in world units.</param>
+    /// <param name="normal">The struck face's normal.</param>
+    /// <param name="vector">The record's vector, which the chips are thrown along.</param>
+    /// <param name="effect">The block the struck material names for the side the round crossed.</param>
+    /// <param name="struckHuman">Whether the struck object is a human, which throws neither.</param>
+    /// <param name="visible">Whether to emit anything; the draws are made either way.</param>
+    /// <remarks>
+    /// <para>
+    /// The chips are counted and their container's tumble drawn here (<c>0x43848C</c>, <c>0x481250</c>), but the
+    /// <c>Explosion0</c> that throws them is a task of its own, appended to the level's dynamic container: it
+    /// detonates later the same tick, after every gun's march (<see cref="DetonatePendingChips"/>).
+    /// </para>
+    /// <para>
+    /// The dust is a raw coin and then four draws, all here (<c>0x438576</c> to <c>0x438766</c>).
+    /// </para>
+    /// </remarks>
+    public void RunGunShotEffect(
+        Vector3d position,
+        Vector3f normal,
+        Vector3f vector,
+        in GunShotEffect effect,
+        bool struckHuman,
+        bool visible)
+    {
+        if (effect.LeavesMark && !struckHuman)
+        {
+            int count = GunShotImpactEffects.FragmentCount(
+                (int)_random.NextBounded(GunShotImpactEffects.FragmentCountRange));
+            Vector3f tumble = new(
+                _random.NextSingle() * GunShotImpactEffects.FragmentTumbleRadians,
+                _random.NextSingle() * GunShotImpactEffects.FragmentTumbleRadians,
+                _random.NextSingle() * GunShotImpactEffects.FragmentTumbleRadians);
+            _pendingChips.Add(new PendingChips(
+                position, vector, effect.Model, count, tumble, visible && effect.Model.Length > 0));
+        }
+
+        if (!effect.SpawnsParticles || struckHuman || (_random.NextRaw() & 1) == 0)
+        {
+            return;
+        }
+
+        Vector3f lift = normal.ReciprocalNormalizedOr(new Vector3f(0f, 0f, 1f)) * GunShotImpactEffects.PuffLiftInUnits;
+        Vector3d first = new(position.X + lift.X, position.Y + lift.Y, position.Z + lift.Z);
+        Vector3d second = new(first.X, first.Y, first.Z + GunShotImpactEffects.PuffSecondRiseInUnits);
+        float rise = GunShotImpactEffects.PuffRiseSpeed(_random.NextSingle());
+        float alpha = (_random.NextSingle() * GunShotImpactEffects.PuffAlphaRange)
+            + GunShotImpactEffects.PuffAlphaMinimum;
+        float firstSpin = GunShotImpactEffects.Spin(_random.NextSingle());
+        float secondSpin = GunShotImpactEffects.Spin(_random.NextSingle());
+        if (!visible)
+        {
+            return;
+        }
+
+        Puffs.Emit(
+            first,
+            new Vector3f(0f, 0f, rise),
+            alpha,
+            firstSpin,
+            angle: 0f,
+            growth: 1f,
+            GunShotImpactEffects.PuffHoldTicks,
+            GunShotImpactEffects.PuffFadeTicks);
+        Puffs.Emit(
+            second,
+            new Vector3f(0f, 0f, rise * GunShotImpactEffects.PuffSecondSpeedScale),
+            alpha,
+            secondSpin,
+            angle: 0f,
+            growth: 1f,
+            GunShotImpactEffects.PuffHoldTicks,
+            GunShotImpactEffects.PuffFadeTicks);
+    }
+
+    /// <summary>Detonates every chip container placed since the last call, in the order they were placed.</summary>
+    /// <remarks>
+    /// <c>Explosion0</c>'s first tick (<c>0x480F40</c> to <c>0x47F200</c>): each chip draws its speed, its roll,
+    /// its spread, one draw nothing reads, and then its own placement turn (<c>0x47F0D0</c>).
+    /// </remarks>
+    public void DetonatePendingChips()
+    {
+        foreach (PendingChips chips in _pendingChips)
+        {
+            for (int i = 0; i < chips.Count; i++)
+            {
+                Vector3f velocity = GunShotImpactEffects.FragmentLaunch(chips.Direction, _random);
+                _ = _random.NextDouble();
+
+                // 0x47F0D5: three draws, handed to the Euler builder last first.
+                float first = _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians;
+                float second = _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians;
+                float third = _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians;
+                if (!chips.Visible)
+                {
+                    continue;
+                }
+
+                if (_fragments.Count >= FragmentCapacity)
+                {
+                    _fragments.RemoveAt(0);
+                }
+
+                Matrix3f orientation = Matrix3f.FromEngineEulerAngles(third, second, first);
+                _fragments.Add(new ImpactFragment
+                {
+                    Position = chips.Position,
+                    PreviousPosition = chips.Position,
+                    Velocity = velocity,
+                    Orientation = orientation,
+                    PreviousOrientation = orientation,
+                    AngularVelocity = chips.Tumble,
+                    LifeTicks = GunShotImpactEffects.FragmentLifeTicks,
+                    Model = chips.Model,
+                });
+            }
+        }
+
+        _pendingChips.Clear();
+    }
+
     /// <summary>Runs one wound's blood, as <c>0x463AD0</c> does.</summary>
     /// <param name="owner">Whatever identifies the body — its systems are kept against this.</param>
     /// <param name="position">Where the round entered, in world units.</param>
@@ -201,7 +344,7 @@ public sealed class ImpactEffectRuntime
         BloodReport report = StampBackstop(position, line, walls, marks, materials);
 
         BloodSystems systems = SystemsFor(owner);
-        BloodEffects.Spray(systems.Mist, systems.Droplets, position, line, _random);
+        BloodEffects.Spray(systems.Mist, systems.Droplets, position, line, _random, _emitterRandom);
         return report with { Sprayed = true };
     }
 
@@ -389,12 +532,18 @@ public sealed class ImpactEffectRuntime
         BulletMarks? marks,
         GameMaterialRegistry? materials)
     {
+        // 0x4640B0 asks the struck object's type for its decal handler first: the terrain is no object, so a droplet
+        // landing on open ground does nothing at all.
         if (marks is null
+            || contact.Hit.OnTerrain
             || !BloodEffects.MarksSurface(contact.From, contact.To, contact.Hit))
         {
             return;
         }
 
+        // 0x4640B0 draws the size and the texture before the struck object's decal handler decides on its material.
+        float radius = BloodEffects.DropletMarkRadius(_random.NextSingle());
+        string texture = BloodEffects.DropletTextures[(int)_random.NextBounded(2)];
         if (materials is null
             || !materials.TryGet(contact.Hit.Material, out GameMaterial? material)
             || material is null
@@ -403,8 +552,6 @@ public sealed class ImpactEffectRuntime
             return;
         }
 
-        float radius = BloodEffects.DropletMarkRadius(_random.NextSingle());
-        string texture = BloodEffects.DropletTextures[(int)_random.NextBounded(2)];
         marks.AddMark(Lift(contact.Hit), contact.Hit.Normal, texture, radius);
     }
 
@@ -416,3 +563,12 @@ public sealed class ImpactEffectRuntime
         hit.Position.Z + (hit.Normal.Z * OpenIGI.Game.Weapons.GunShotBallistics.PenetrationStepOffUnits));
 
 }
+
+/// <summary>An <c>Explosion0</c> placed by an impact, waiting for its first tick.</summary>
+internal readonly record struct PendingChips(
+    Vector3d Position,
+    Vector3f Direction,
+    string Model,
+    int Count,
+    Vector3f Tumble,
+    bool Visible);

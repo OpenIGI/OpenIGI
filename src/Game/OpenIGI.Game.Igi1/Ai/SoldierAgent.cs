@@ -23,6 +23,15 @@ public sealed class SoldierAgent(SoldierView view, Vector3d position)
     /// <summary>The eye orientation from the last frame that drew this soldier, or none yet.</summary>
     public Matrix3f? EyeOrientation { get; set; }
 
+    /// <summary>Gets or sets the eye's offset from the origin (Human+32) in the same palette as <see cref="EyeOrientation"/>, or none yet.</summary>
+    public Vector3d? EyeOffset { get; set; }
+
+    /// <summary>Gets or sets the held gun's offset from the origin in the palette as last built: where the gun (gun+32) hangs.</summary>
+    public Vector3d GunOffset { get; set; }
+
+    /// <summary>Gets or sets the origin (Human+32) as the last tick left it, before this tick's clips moved the root.</summary>
+    public Vector3d OriginBeforeTick { get; set; }
+
     /// <summary>Gets where the level placed it.</summary>
     public Vector3d Position { get; } = position;
 

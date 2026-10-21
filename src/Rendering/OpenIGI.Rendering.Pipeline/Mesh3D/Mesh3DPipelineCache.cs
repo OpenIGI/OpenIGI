@@ -284,6 +284,11 @@ public sealed class Mesh3DPipelineCache : IDisposable
         BlendMode.SourcePlusAttenuatedDestination => new RhiBlendState(
             new RhiBlendComponent(RhiBlendFactor.One, RhiBlendFactor.SourceAlpha, RhiBlendOperation.Add),
             new RhiBlendComponent(RhiBlendFactor.One, RhiBlendFactor.SourceAlpha, RhiBlendOperation.Add)),
+
+        // ZERO, SRCCOLOR: dst*src. The alpha is left alone, as the doubled one leaves it.
+        BlendMode.Modulate => new RhiBlendState(
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.Source, RhiBlendOperation.Add),
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.One, RhiBlendOperation.Add)),
         _ => throw new ArgumentOutOfRangeException(nameof(blend), blend, "There is no world pipeline for that blend mode."),
     };
 

@@ -338,6 +338,62 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Equal(feet.Z + Igi1HumanAi.HumanOriginStandingInUnits + 2048.0, aim.Value.Z, precision: 3);
     }
 
+    /// <summary>
+    /// A guard firing at a target above or below it has pitched its view onto the aim point by the time the
+    /// trigger is down — the round's direction, not the body's.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The human's fire message (<c>0x462E50</c>) carries its view's position and orientation
+    /// (<c>HumanView+224</c>, <c>+248</c>, copied by <c>0x465800</c>/<c>0x465880</c>), and <c>Gun_Fire</c>
+    /// (<c>0x478BA0</c>) casts along the message's orientation. So a round leaves along the view's pitch,
+    /// which the AI steers onto its aim point the same way it steers its heading.
+    /// </para>
+    /// <para>
+    /// The BODY does not pitch, in retail or here: <c>0x4610C0</c> zeroes the body's pitch on the ground and
+    /// turns only its heading, and the upper-body clip's orientation source (<c>Human+1616</c>, bound by
+    /// <c>0x489ED0</c>) is a constant copied in when the clip starts.
+    /// </para>
+    /// </remarks>
+    /// <param name="rise">How far above the guard's feet the target's feet stand, in metres.</param>
+    [RequiresGameDataTheory]
+    [InlineData(6.0)]
+    [InlineData(-4.0)]
+    public void AGuardFiresAlongItsViewPitchedOntoATargetAboveOrBelow(double rise)
+    {
+        Igi1HumanAi soldier = Soldier(out Vector3d position);
+
+        Vector3d feet = new(position.X, position.Y + (12 * Metre), position.Z + (rise * Metre));
+        Vector3d eye = new(feet.X, feet.Y, feet.Z + (1.62 * Metre));
+
+        Vector3d? aim = null;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, eye, rootMotionThisTick: 0.0, enemyFeet: feet);
+            Spend(soldier);
+            if (soldier.Combat.PullTrigger && soldier.Combat.TurnTo is { } point)
+            {
+                aim = point;
+                break;
+            }
+        }
+
+        Assert.NotNull(aim);
+
+        Vector3d from = soldier.EyePosition();
+        double run = Math.Sqrt(Math.Pow(aim.Value.X - from.X, 2) + Math.Pow(aim.Value.Y - from.Y, 2));
+        double wanted = Math.Atan2(aim.Value.Z - from.Z, run);
+
+        // The round's forward: the view's +Y, as SoldierRenderer.SpreadRound takes it.
+        Vector3d forward = soldier.ViewOrientation.Transposed().Transform(new Vector3d(0.0, 1.0, 0.0));
+        double flown = Math.Atan2(forward.Z, Math.Sqrt((forward.X * forward.X) + (forward.Y * forward.Y)));
+
+        Assert.Equal(Math.Sign(rise), Math.Sign(flown));
+        Assert.True(
+            Math.Abs(flown - wanted) <= AiGuardCombat.AimToleranceRadians + 1e-4,
+            $"round pitched {flown * 180 / Math.PI:F2} deg, aim point at {wanted * 180 / Math.PI:F2} deg");
+    }
+
     /// <summary>A crouching target halves the raise — 1024 units, 0.25 m.</summary>
     [RequiresGameDataFact]
     public void ACrouchingTargetIsAimedAtAQuarterMetre()
@@ -555,7 +611,9 @@ public sealed class AiSoldierCombatWiringTests
         GraphFile graph = Graph();
         Vector3d start = graph.Nodes[0].Position;
         Vector3d emplacement = graph.Nodes[1].Position;
-        AiStationaryGun gun = new(500, emplacement, Matrix3f.Identity);
+
+        // The stand's position is its pivot, over the floor the gunner stands on: mission 8's M2HBs stand 1.3 m up.
+        AiStationaryGun gun = new(500, new Vector3d(emplacement.X, emplacement.Y, emplacement.Z + 5345.0), Matrix3f.Identity);
         AiActivationClaims claims = new();
         Igi1HumanAi soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
         {
@@ -604,10 +662,24 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Same(gun, soldier.MountedGun);
 
         // The object dispatch seats the body in the use-object state (36) and consumes the mount's slot 24.
+        // State 36's entry (0x45C8B0) moves the body in X and Y only and keeps its own height.
+        double heightBeforeMount = soldier.Position.Z;
         soldier.TickCombatState(animationDone: false);
         Assert.Equal(HumanSoldierStates.UseObjectState, soldier.CombatState);
-        Assert.Equal(gun.MountPosition, soldier.Position);
+        Assert.Equal(gun.MountPosition.X, soldier.Position.X);
+        Assert.Equal(gun.MountPosition.Y, soldier.Position.Y);
+        Assert.Equal(heightBeforeMount, soldier.Position.Z);
+        Assert.True(gun.MountPosition.Z - soldier.Position.Z > 4096.0, "the gunner was lifted to the gun's pivot");
         Assert.True(gun.IsOccupied);
+
+        // Attached to the gun (0x463310, 0x4610C0), the body swings round the stand with the traverse.
+        gun.Steer(0f, 0.5f);
+        gun.TickOccupied();
+        soldier.RideMountedGun();
+        Assert.Equal(gun.MountPosition.X, soldier.Position.X, 6);
+        Assert.Equal(gun.MountPosition.Y, soldier.Position.Y, 6);
+        Assert.Equal(heightBeforeMount, soldier.Position.Z);
+        Assert.Equal(gun.MountFacing, soldier.Facing, 5);
 
         // The walk to the gun has finished; the fight it was installed over is what runs now.
         Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));

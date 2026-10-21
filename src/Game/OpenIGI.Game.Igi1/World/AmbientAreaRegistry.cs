@@ -11,7 +11,10 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="HalfExtentsMetres">Half the box's size along each local axis, in metres.</param>
 /// <param name="MinDelaySeconds">The shortest gap before the bed may start again.</param>
 /// <param name="RandomWaitSeconds">How much random gap is added on top.</param>
-/// <param name="Sounds">The sound definitions it may play, one drawn per start.</param>
+/// <param name="Sounds">
+/// The sound definitions it may play, one drawn per start: the <c>SoundDef</c> string split at spaces, semicolons and
+/// commas (<c>0x44C740</c>) -- mission 4's dogs are "dog_01 dog_02 dog_03".
+/// </param>
 public sealed record PlacedAmbientArea(
     GameTask Task,
     Vector3d Position,
@@ -46,6 +49,8 @@ public sealed record PlacedAmbientArea(
 
     /// <summary>Gets whether the task that made the area has deleted it: it goes quiet, then leaves the level.</summary>
     public bool IsRetired { get; internal set; }
+    /// <summary>Gets whether the area holds a sound instance -- <c>+440</c>, which only a silent fade releases.</summary>
+    public bool HasVoice { get; internal set; }
 }
 
 /// <summary>
@@ -76,6 +81,9 @@ public sealed class AmbientAreaRegistry
     public const string TaskTypeName = "AmbientArea";
 
     private readonly List<PlacedAmbientArea> _areas = [];
+
+    // The areas the level walk updates, where the tree places them; the rest are Tick's.
+    private readonly HashSet<PlacedAmbientArea> _walked = [];
     private readonly IgiRandom _random;
 
     /// <summary>Initializes a new instance of the <see cref="AmbientAreaRegistry"/> class.</summary>
@@ -118,46 +126,99 @@ public sealed class AmbientAreaRegistry
         area.IsRetired = true;
     }
 
-    /// <summary>Advances every area one tick against where the listener is.</summary>
-    /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
-    public void Tick(Vector3d listenerInUnits)
+    /// <summary>Puts every area's update into the level's walk, where the tree places it.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="listener">
+    /// Where the ear is, in engine units: the camera as its last update left it, which the player's update sets late in
+    /// the walk -- so an area reads last tick's. <see langword="null"/> before the camera has been placed at all.
+    /// </param>
+    /// <param name="canStart">Whether a sound definition of that name exists, so that starting it gives an instance.</param>
+    public void AttachTo(LevelUpdateWalker walker, Func<Vector3d?> listener, Func<string, bool> canStart)
     {
-        _areas.RemoveAll(static area => area.IsRetired && !area.IsSounding);
+        ArgumentNullException.ThrowIfNull(walker);
+        ArgumentNullException.ThrowIfNull(listener);
+        ArgumentNullException.ThrowIfNull(canStart);
         foreach (PlacedAmbientArea area in _areas)
         {
-            area.PendingSound = string.Empty;
-            area.WantsStop = false;
-            if (area.IsRetired)
+            _walked.Add(area);
+            walker.Bind(area.Task, task =>
             {
-                area.WantsStop = true;
+                Step(area, listener(), canStart);
+                walker.RunChildren(task);
+            });
+        }
+    }
+
+    /// <summary>
+    /// Advances every area the walk does not one tick against where the listener is: the areas a task made as it updated, and
+    /// every area of a level no walk reaches.
+    /// </summary>
+    /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
+    /// <param name="canStart">Whether a sound definition exists; every name does when omitted.</param>
+    public void Tick(Vector3d? listenerInUnits, Func<string, bool>? canStart = null)
+    {
+        _areas.RemoveAll(area => area.IsRetired && !area.IsSounding && !_walked.Contains(area));
+        foreach (PlacedAmbientArea area in _areas)
+        {
+            if (_walked.Contains(area))
+            {
                 continue;
             }
 
-
-            bool inside = Contains(area, listenerInUnits);
-            area.Inside = inside;
-
-            // The fade is a ramp, not a switch: 0.05 a tick each way, clamped.
-            area.Fade = Math.Clamp(area.Fade + (inside ? FadeStepPerTick : -FadeStepPerTick), 0.0, 1.0);
-
-            if (area.Fade == 0.0)
-            {
-                // Silent: rearm the gap and drop whatever was playing. The gap is drawn fresh every
-                // time the bed goes quiet, which is what stops several areas falling into step.
-                area.Countdown = (int)((_random.NextDouble() * area.RandomWaitSeconds) + area.MinDelaySeconds) * 30;
-                area.WantsStop = area.IsSounding;
-            }
-            else if (!area.IsSounding && inside && area.Countdown == 0 && area.Sounds.Count > 0)
-            {
-                area.PendingSound = area.Sounds[(int)(_random.NextDouble() * area.Sounds.Count) % area.Sounds.Count];
-            }
-
-            if (area.Countdown > 0)
-            {
-                area.Countdown--;
-            }
+            Step(area, listenerInUnits, canStart ?? (static _ => true));
         }
     }
+
+    // 0x44C370, one area's update. Every draw is on the level's global stream, in this order, so the count and the
+    // place of each is the original's:
+    //   * the fade steps 0.05 toward inside or out, clamped to [0, 1];
+    //   * silent (fade 0): the gap is drawn afresh, (int)((rand * wait + min) * 30), and the instance let go;
+    //   * an instance held: it follows the listener while inside, at the fade's gain -- and it is held until a silent
+    //     fade lets it go: on the probe no area re-armed in 5400 ticks of mission 4 once its sound had started;
+    //   * none held and inside: a variant is drawn EVERY tick, (int)(rand * count), and started once the gap is out;
+    //   * the gap counts down.
+    private void Step(PlacedAmbientArea area, Vector3d? listener, Func<string, bool> canStart)
+    {
+        area.PendingSound = string.Empty;
+        area.WantsStop = false;
+
+        // Deleted by the task that made it: its voice stops, and it plays nothing more.
+        if (area.IsRetired)
+        {
+            area.WantsStop = area.HasVoice || area.IsSounding;
+            area.HasVoice = false;
+            return;
+        }
+
+        bool inside = listener is { } ear && Contains(area, ear);
+        area.Inside = inside;
+        area.Fade = Math.Clamp(area.Fade + (inside ? FadeStepPerTick : -FadeStepPerTick), 0.0, 1.0);
+
+        if (area.Fade == 0.0)
+        {
+            area.Countdown = DrawGap(area);
+            area.WantsStop = area.HasVoice;
+            area.HasVoice = false;
+        }
+        else if (!area.HasVoice && inside)
+        {
+            int variant = (int)(_random.NextDouble() * area.Sounds.Count);
+            if (area.Countdown == 0 && variant < area.Sounds.Count && canStart(area.Sounds[variant]))
+            {
+                area.PendingSound = area.Sounds[variant];
+                area.HasVoice = true;
+            }
+        }
+
+        if (area.Countdown > 0)
+        {
+            area.Countdown--;
+        }
+    }
+
+    // The gap 0x44C740 and the silent branch draw: the seconds, scaled to ticks, truncated as one 64-bit conversion.
+    private int DrawGap(PlacedAmbientArea area) =>
+        (int)(((_random.NextDouble() * area.RandomWaitSeconds) + area.MinDelaySeconds) * 30.0);
 
     /// <summary>Whether a point is inside an area's box.</summary>
     /// <param name="area">The area.</param>
@@ -200,14 +261,18 @@ public sealed class AmbientAreaRegistry
                 ? name
                 : string.Empty;
 
-            registry._areas.Add(new PlacedAmbientArea(
+            PlacedAmbientArea area = new(
                 declared,
                 ReadPosition(declared),
                 ReadOrientation(declared),
                 ReadSize(declared),
                 ReadReal(declared, "Min Delay"),
                 ReadReal(declared, "Random wait"),
-                sound.Length > 0 ? [sound] : []));
+                sound.Split([' ', ';', ','], StringSplitOptions.RemoveEmptyEntries));
+            registry._areas.Add(area);
+
+            // 0x44C740, the area's init at load, in tree order: the first gap is drawn now.
+            area.Countdown = registry.DrawGap(area);
         }
 
         foreach (GameTask child in task.Children)

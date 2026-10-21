@@ -54,7 +54,9 @@ public sealed class AiChaseTests
 
         for (int tick = 61; tick <= 600; tick++)
         {
-            soldier.Tick(tick, gone, rootMotionThisTick: 178.0);
+            // Root motion only while a gait clip plays, as the renderer feeds it: a standing clip has none, so a soldier
+            // watching for its target (LookForTarget only turns) stays on its node.
+            soldier.Tick(tick, gone, rootMotionThisTick: soldier.IsMovingInCombat ? 178.0 : 0.0);
             if (soldier.Combat.PullTrigger && clip > 0)
             {
                 clip--;

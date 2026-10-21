@@ -15,6 +15,10 @@ namespace OpenIGI.Host;
 /// </param>
 /// <param name="Pose">Where the player stood or the free camera hung, or null for the mission's own start.</param>
 /// <param name="Frame">The last picture the switched-from renderer presented, or null where none was read.</param>
+/// <param name="Target">
+/// The API to build next, where <c>r_renderer</c> named one; null for the next in the switch key's order.
+/// </param>
+/// <param name="ShellTab">The menu section to open on when there is no mission to resume, or null for the landing page.</param>
 /// <remarks>
 /// A renderer is not swapped under a running game: every texture, mesh and pipeline the game holds was
 /// made by the one it has, and the host keeps them for the life of a level. So the game is ended, the
@@ -32,7 +36,9 @@ public sealed record RendererSwitch(
     MissionConditions Conditions,
     float TimeHours,
     RendererSwitchPose? Pose,
-    RendererSwitchFrame? Frame = null);
+    RendererSwitchFrame? Frame = null,
+    RendererBackend? Target = null,
+    string? ShellTab = null);
 
 /// <summary>A picture held across a switch of renderer.</summary>
 /// <param name="Width">Its width in pixels.</param>

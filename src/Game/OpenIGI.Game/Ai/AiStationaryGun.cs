@@ -130,12 +130,25 @@ public sealed class AiStationaryGun
     /// <summary>How much of a kick is left after a tick (<c>0x474190</c>).</summary>
     public const float KickDecay = 0.89999998f;
 
-    /// <summary>The point at which state 36 places the gunner, 0.7 m behind the local -Y barrel.</summary>
-    public Vector3d MountPosition =>
-        Position + Orientation.Transposed().Transform(new Vector3d(0.0, 2867.2, 0.0));
+    /// <summary>Gets or sets the stand model's magic vertex 0, in its own frame: where state 36 measures the seat from.</summary>
+    /// <remarks><c>0x444B30</c> asks <c>0x414E20</c> for vertex 0, which is the origin for a stand with none.</remarks>
+    public Vector3f SeatVertex { get; set; }
 
-    /// <summary>The heading state 36 takes from the gun orientation and turns by π.</summary>
-    public float MountFacing => MathF.Atan2(Orientation.M21, Orientation.M11) + MathF.PI;
+    /// <summary>
+    /// The point at which state 36 places the gunner, 0.7 m behind the local -Y barrel -- in X and Y only: its Z is the
+    /// gun's pivot, and the body keeps its own height (<c>0x45C8B0</c>).
+    /// </summary>
+    /// <remarks>
+    /// <c>0x444B30</c> hands the entry the stand's position plus its magic vertex 0, and its frame as it stands now --
+    /// <c>+112</c>, turned by the traverse -- and the entry steps 2867.2 along that frame's local Y. Probe, mission 8:
+    /// soldier 403 sat straight behind gun 778 the first time and 45 degrees round the second, the gun left turned.
+    /// </remarks>
+    public Vector3d MountPosition =>
+        Position + ToWorld(TurnedOrientation, SeatVertex)
+        + TurnedOrientation.Transposed().Transform(new Vector3d(0.0, 2867.2, 0.0));
+
+    /// <summary>The heading state 36 takes from the gun's turned frame (<c>0x4B3C50</c>) and turns by π.</summary>
+    public float MountFacing => MathF.Atan2(TurnedOrientation.M21, TurnedOrientation.M11) + MathF.PI;
 
     /// <summary>Binds the task's authored <c>WEAPON_ID_*</c> after the weapon table is available.</summary>
     public void BindWeapon(WeaponType? weapon) => Weapon = weapon;
@@ -204,6 +217,22 @@ public sealed class AiStationaryGun
         ClampAim();
         DisplayPitch += AimPitch - pitchBefore;
         DisplayYaw += AimYaw - yawBefore;
+    }
+
+    /// <summary>Turns the barrel onto a point, as far as the authored limits let it.</summary>
+    /// <param name="target">The point, in world units.</param>
+    /// <remarks>
+    /// An AI gunner steers the gun with its own turn inputs, which <c>0x474190</c> adds to <c>+504</c>/<c>+508</c>
+    /// exactly as it does a player's look; the gunner then sees and fires along the gun (<c>0x475310</c> hands it the
+    /// gun's <c>+368</c>/<c>+392</c>). The port's gunner aims at its tracked point outright, so the gun takes the angles
+    /// that point stands at from the stand: the cone's own alpha and gamma (<see cref="Contains"/>).
+    /// </remarks>
+    public void AimAt(Vector3d target)
+    {
+        Vector3d local = -Orientation.Transform(target - GunPosition);
+        float yaw = (float)SignedAngleFromPositiveY(local.Y, local.X, negateWhenSecondNegative: false);
+        float pitch = -(float)Math.Atan2(local.Z, Math.Sqrt((local.X * local.X) + (local.Y * local.Y)));
+        Steer(pitch - AimPitch, yaw - AimYaw);
     }
 
     /// <summary>Runs the gun's own tick for an occupant: the kick shown, then decayed.</summary>

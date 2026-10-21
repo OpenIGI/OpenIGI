@@ -6,15 +6,32 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>One placed <c>Elevator</c> task and its authored spline floors.</summary>
+/// <param name="Task">The <c>Elevator</c> task.</param>
+/// <param name="State">Where the car is and where it is going.</param>
+/// <param name="AuthoredOrientation">The task's own <c>Orientation</c> (<c>+288</c>).</param>
+/// <param name="Model">The car's model.</param>
+/// <param name="StartSound">The sound it starts with.</param>
+/// <param name="StopSound">The sound it stops with.</param>
+/// <param name="MoveSound">The sound it travels with.</param>
+/// <param name="SplineFrame">
+/// The frame its spline turns that orientation by, or <see langword="null"/> for a car that keeps it -- every
+/// <c>Linear</c> or <c>Force orientation</c> car.
+/// </param>
 public sealed record PlacedElevator(
     GameTask Task,
     ElevatorState State,
-    Matrix3f Orientation,
+    Matrix3f AuthoredOrientation,
     string Model,
     string StartSound,
     string StopSound,
-    string MoveSound)
+    string MoveSound,
+    ElevatorSplineFrame? SplineFrame = null)
 {
+    /// <summary>Gets the orientation the car is drawn and collides with: <c>0x43D960</c>'s authored times frame.</summary>
+    public Matrix3f Orientation => SplineFrame is { } frame
+        ? AuthoredOrientation * frame.At(State.FloorPosition)
+        : AuthoredOrientation;
+
     /// <summary>Gets or sets whether the travelling sound is active.</summary>
     public bool IsSounding { get; set; }
     /// <summary>Gets the current platform position in renderer metres.</summary>
@@ -42,6 +59,7 @@ public sealed class ElevatorRegistry
     private readonly List<ElevatorCommand> _commands = [];
     private Action<PlacedElevator, ElevatorSoundEvent>? _sounds;
     private Func<Vector3d>? _playerPositionProvider;
+    private readonly HashSet<PlacedElevator> _collisionPlaced = new(ReferenceEqualityComparer.Instance);
 
     public ElevatorRegistry()
     {
@@ -108,13 +126,16 @@ public sealed class ElevatorRegistry
     /// </remarks>
     public void Tick()
     {
-        // The retail elevator start path is evaluated against the live human's ground-hit owner. A
-        // caller that wires a player provider must therefore be inside the specific cab being started;
-        // keeping the null-provider fallback preserves the registry's data-only test contract.
-        Vector3d? playerPosition = _playerPositionProvider?.Invoke();
+        // NOBODY HAS TO BE ABOARD. 0x43D280 reads "Can start" (true when the level leaves it empty) and, when
+        // it holds, moves the car (0x43D6E0) -- there is no occupancy test anywhere in the Elevator's tick.
+        // Every lift the levels build gates itself in its own script instead: "Can start" wants its doors
+        // closed, and only a switch asks for a floor. A car told to move by nothing but its script -- mission
+        // 12's cutscene gondola ("Floor up" is the constant 1), mission 11's (CutScene_114.isRun), mission
+        // 14's hacked cage -- used to stand still here until the player climbed in, which in a cutscene is
+        // never.
         foreach (ElevatorCommand command in _commands)
         {
-            TickCommand(command, playerPosition);
+            TickCommand(command);
         }
     }
 
@@ -124,10 +145,10 @@ public sealed class ElevatorRegistry
     {
         ArgumentNullException.ThrowIfNull(elevator);
         ElevatorCommand command = _commands.First(c => ReferenceEquals(c.Elevator, elevator));
-        TickCommand(command, _playerPositionProvider?.Invoke());
+        TickCommand(command);
     }
 
-    private void TickCommand(ElevatorCommand command, Vector3d? playerPosition)
+    private void TickCommand(ElevatorCommand command)
     {
         bool wasMoving = command.Elevator.State.HasMovementRequest;
         // The update (0x43D280) writes isWantedFloor[0..9] then, if there is no up/down pulse,
@@ -142,12 +163,10 @@ public sealed class ElevatorRegistry
             }
         }
 
+        // Nobody has to be aboard: "Can start" alone gates the move (see Tick).
         bool enabled = command.CanStart();
-        bool playerInside = !playerPosition.HasValue
-            || (IsPlayerInsideElevator(playerPosition.Value, out PlacedElevator? containing)
-                && ReferenceEquals(containing, command.Elevator));
         command.Elevator.State.Tick(
-            enabled && (playerInside || command.HasExteriorRequest),
+            enabled,
             command.FloorUp(),
             command.FloorDown(),
             wantedFloor,
@@ -240,11 +259,16 @@ public sealed class ElevatorRegistry
     /// <param name="solids">The collision index.</param>
     /// <param name="elevator">The lift.</param>
     /// <returns>How many entries were moved.</returns>
-    public static int ApplyCollision(ObjectCollisionIndex solids, PlacedElevator elevator)
+    /// <remarks>
+    /// The first pass places every car's solid at the orientation it is drawn with, which a car its spline turns does not
+    /// share with its authored one -- mission 12's gondola stood a quarter turn out until it first moved, and the soldier
+    /// standing in it found no floor to be parented to.
+    /// </remarks>
+    public int ApplyCollision(ObjectCollisionIndex solids, PlacedElevator elevator)
     {
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(elevator);
-        if (!elevator.State.TransformChangedThisTick)
+        if (!elevator.State.TransformChangedThisTick && !_collisionPlaced.Add(elevator))
         {
             return 0;
         }
@@ -485,7 +509,8 @@ public sealed class ElevatorRegistry
                     ReadString(declared, "Model"),
                     ReadString(declared, "Start sound"),
                     ReadString(declared, "Stop sound"),
-                    ReadString(declared, "Move sound"));
+                    ReadString(declared, "Move sound"),
+                    ElevatorSplineFrame.For(declared, spline));
                 registry._elevators.Add(elevator);
                 List<string> wantedExpressions = Enumerable.Range(0, 10)
                     .Select(i => ReadString(declared, $"Wanted floor {i}"))

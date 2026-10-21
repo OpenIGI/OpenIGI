@@ -3,7 +3,7 @@
 //
 // WebGPU cannot filter a depth image at all, and cannot filter a 32-bit float one without a feature
 // many adapters lack; it binds either only as an unfilterable texture. So on WGSL the read is four
-// plain loads weighted as a bilinear sampler weights them. On SPIR-V it stays the sampler's own, and
+// plain loads weighted as a bilinear sampler weights them. On SPIR-V and DXIL it stays the sampler's own, and
 // the two are not interchangeable: the hardware's weights carry less precision than these, which at a
 // silhouette -- where the four depths are metres apart -- moves the answer. Measured: loading on SPIR-V
 // as well moved mission 1's occlusion by up to 129 levels along edges.
@@ -19,6 +19,8 @@ float DepthBilinear(Texture2D<float4> depth, SamplerState linear, float2 uv)
     {
     case spirv:
         return depth.SampleLevel(linear, uv, 0.0).r;
+    case hlsl:
+        return depth.SampleLevel(linear, uv, 0.0).r;
     default:
         return DepthBilinearLoaded(depth, uv);
     }
@@ -31,6 +33,8 @@ float DepthBilinear(DepthTexture2D depth, SamplerState linear, float2 uv)
     __target_switch
     {
     case spirv:
+        return depth.SampleLevel(linear, uv, 0.0);
+    case hlsl:
         return depth.SampleLevel(linear, uv, 0.0);
     default:
         return DepthBilinearLoaded(depth, uv);
@@ -45,6 +49,8 @@ float DepthComputeSample(DepthTexture2D depth, SamplerState linear, float2 uv)
     __target_switch
     {
     case spirv:
+        return depth.Sample(linear, uv);
+    case hlsl:
         return depth.Sample(linear, uv);
     default:
         return DepthBilinearLoaded(depth, uv);

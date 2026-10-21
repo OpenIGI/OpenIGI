@@ -105,6 +105,7 @@ public sealed class TracedReflectionTests
 
     /// <summary>A marched hit is resolved with its own accuracy allowed for; a traced one is not.</summary>
     /// <remarks>
+    /// <para>
     /// The two shared resolves -- the lit frame and the surface cache -- each ask whether a hit is ON the
     /// surface being described, and both were written for a ray-triangle intersection, which is. A hit
     /// found by marching a distance field is good only to a fraction of the voxel that found it, which on
@@ -114,23 +115,30 @@ public sealed class TracedReflectionTests
     ///
     /// So the widening is asserted here, and so is its absence on the traced path: a wider tolerance there
     /// would start letting a floor resolve as the ceiling above it.
+    /// </para>
+    /// <para>
+    /// Neither resolve reads the LIT FRAME any more. Whether a reflected place is on screen depends on where
+    /// the camera looks, so a pane that read the frame where it could and the cards where it could not
+    /// changed colour, gained and lost whole regions as the mouse moved (debug view 22 flickering green).
+    /// </para>
     /// </remarks>
     [Fact]
     public void The_marched_resolve_widens_its_tolerance_by_the_voxel_and_the_traced_one_does_not()
     {
         string glazing = ShaderRepository.ReadSource(Glazing);
 
-        // The software half takes the voxel as slack, in both resolves.
-        Assert.Contains("LitAtHitWithin(hit, voxel, radiance)", glazing, StringComparison.Ordinal);
+        // The software half takes the voxel as slack.
         Assert.Contains("kCardSkin + (voxel * 2.0)", glazing, StringComparison.Ordinal);
 
-        // The traced half resolves through the plain forms, which is the same thing as taking no slack:
-        // the cards at exactly the skin, which is the right bias for an exact triangle hit.
-        Assert.Contains("LitAtHit(hitRelative, radiance)", glazing, StringComparison.Ordinal);
+        // The traced half takes no slack: the cards at exactly the skin, the right bias for an exact hit.
         Assert.Contains(
             "SampleCardsWithin(hitRelative + p.cacheOrigin.xyz, hitNormal, kCardSkin, cardRadiance)",
             glazing,
             StringComparison.Ordinal);
+
+        // And neither depends on where the camera is looking.
+        Assert.DoesNotContain("LitAtHit(", glazing, StringComparison.Ordinal);
+        Assert.DoesNotContain("LitAtHitWithin(", glazing, StringComparison.Ordinal);
     }
 
     /// <summary>The glazing declares the hit shading before the trace that calls it.</summary>

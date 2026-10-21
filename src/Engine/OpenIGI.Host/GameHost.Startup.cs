@@ -97,6 +97,10 @@ public sealed partial class GameHost
         _device.VSyncEnabled = RenderCVars.VSync.Value;
         WhenChanged(RenderCVars.VSync, () => _device.VSyncEnabled = RenderCVars.VSync.Value);
 
+        // The window's mode and size as saved, and the API: r_renderer was read by the composition root
+        // before there was a device, and from here a change to it rebuilds the game over the one it names.
+        ApplyDisplaySettings();
+
         WhenChanged(RenderCVars.WeatherEnabled, ApplyWeatherSettings);
         WhenChanged(RenderCVars.WeatherStyle, ApplyWeatherSettings);
         WhenChanged(RenderCVars.WeatherSpeed, ApplyWeatherSettings);
@@ -439,8 +443,8 @@ public sealed partial class GameHost
         state.LastEntryMilliseconds = 0;
         state.LastComputerMilliseconds = 0;
 
-        // The menu is held to the display's rate rather than rendering as fast as it can, where the
-        // platform leaves the rate to the loop. See IFramePacer.
+        // The menu is held to the display's rate, and the game to r_frame_limit, rather than rendering as
+        // fast as they can, where the platform leaves the rate to the loop. See IFramePacer.
         state.MenuPacer = _platform.CreateFramePacer();
         state.LastPassRendered = false;
     }
@@ -704,7 +708,8 @@ public sealed partial class GameHost
                 resetInputBindings: profile =>
                 {
                     TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
-                });
+                },
+                displayResolutions: DisplayResolutions);
 
             state.ShellHostForEntryCam = state.ShellHost;
 

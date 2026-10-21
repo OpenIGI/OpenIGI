@@ -385,8 +385,13 @@ public sealed partial class GameHost
         }
         else
         {
+            // The vehicle table is what binds each car's wreck: a CAR record's last value names the model
+            // 0x42E5A0 puts in the car's place when it blows up (601_08_1 for the APC, 614_08_1 for the T80).
+            // Without it every placement went unbound, and the renderer drops a destroyed placement that has
+            // nothing to swap in -- so a LAW'd tank simply vanished where retail leaves its wreck.
             WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _mission.MagicObjects, _logger, Services: _title.Services));
+                new WorldBuildRequest(
+                    loaded, levelRoot, _resources, _mission.MagicObjects, _logger, _mission.VehiclePhysics, _title.Services));
             scene = built.Scene;
             _scene = scene;
             _mission.Ground = built.Ground;
@@ -830,7 +835,6 @@ public sealed partial class GameHost
         _titleHud?.Dispose();
         _titleHud = null;
         _playerMode = false;
-        _hosted.Blasts.ClearPending();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -1769,7 +1773,6 @@ public sealed partial class GameHost
         // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
         // material table, where the round arrived rather than where it was fired.
         _hosted.Sounds.PlayPlayerImpacts();
-        _hosted.Sounds.PlayWeaponDrops();
 
         // The same impacts, seen: sparks and dust composed from the struck material.
         // Ticked before spawning so a new burst draws its birth frame unmoved.

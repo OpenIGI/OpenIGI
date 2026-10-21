@@ -148,6 +148,15 @@ public interface ISoldierBodies : IDisposable
     /// </remarks>
     void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection);
 
+    /// <summary>Draws the soldiers' rounds' tracers over the lit scene: one pass in eleven, and every pass through a wall.</summary>
+    /// <param name="camera">The eye the scene is drawn from.</param>
+    /// <param name="projection">The world's view-to-clip transform.</param>
+    /// <param name="renderHeight">The height of the image they are rasterised into, which sizes them.</param>
+    /// <param name="retailLine">Whether to draw the original's thin unfogged line rather than the remaster's glowing streak.</param>
+    void DrawGunShotTracers(in Camera3D camera, in Matrix4f projection, int renderHeight, bool retailLine)
+    {
+    }
+
     /// <summary>Where the third-person body's hand is this frame, for the weapon it is holding.</summary>
     /// <returns>
     /// The hand bone's world placement in engine units, or <see langword="null"/> when no body is being

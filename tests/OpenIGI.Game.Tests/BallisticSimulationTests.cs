@@ -330,7 +330,7 @@ public sealed class BallisticSimulationTests
             hit = default;
             return false;
         };
-        HumanShot humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, out HumanHit hit) =>
+        HumanShot humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, double _, bool _, out HumanHit hit) =>
         {
             double humanY = 22f * UnitsPerMetre;
             if (origin.Y <= humanY && end.Y >= humanY)
@@ -364,7 +364,7 @@ public sealed class BallisticSimulationTests
         WorldRayCast walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
             TryWall(origin, end, 25f * UnitsPerMetre, out hit);
 
-        HumanShot humans = (Vector3d origin, Vector3d end, float damage, WeaponCategory category, out HumanHit hit) =>
+        HumanShot humans = (Vector3d origin, Vector3d end, float damage, WeaponCategory category, double _, bool _, out HumanHit hit) =>
         {
             // Standing at 22 m, three in front of the wall, zone 4 -- the head.
             double humanY = 22f * UnitsPerMetre;
@@ -387,6 +387,53 @@ public sealed class BallisticSimulationTests
         Assert.True(impact.StruckHuman);
         Assert.False(impact.StruckWall);
         Assert.Equal(4, impact.Human.Zone);
+    }
+
+    /// <summary>
+    /// Issue #179: a human behind the wall takes nothing. The human callback damages as it is called, so
+    /// the wall's distance has to reach it with the round -- deciding the nearer afterwards is too late.
+    /// </summary>
+    [Fact]
+    public void AHumanBehindTheWallIsNeverOfferedTheDamage()
+    {
+        BallisticSimulation simulation = Spawn(rangeMetres: 300f);
+
+        WorldRayCast walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            TryWall(origin, end, 25f * UnitsPerMetre, out hit);
+
+        int damaged = 0;
+        double offeredStop = double.NaN;
+        HumanShot humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, double stop, bool _, out HumanHit hit) =>
+        {
+            // Standing at 28 m, three behind the wall. Damage the way SoldierRenderer.TryShoot does:
+            // only a body short of the stop is struck.
+            double humanY = 28f * UnitsPerMetre;
+            if (origin.Y <= humanY && end.Y >= humanY && humanY - origin.Y < stop)
+            {
+                damaged++;
+                hit = new HumanHit(new Vector3d(origin.X, humanY, origin.Z), humanY - origin.Y, Zone: 4, 0f, 0f);
+                return true;
+            }
+
+            if (origin.Y <= humanY && end.Y >= humanY)
+            {
+                offeredStop = stop + origin.Y;
+            }
+
+            hit = default;
+            return false;
+        };
+
+        for (int tick = 0; tick < 3 && simulation.Impacts.Count == 0; tick++)
+        {
+            simulation.Tick(walls, humans, gravityScale: 0f, dragScale: 0f);
+        }
+
+        BallisticImpact impact = Assert.Single(simulation.Impacts);
+        Assert.True(impact.StruckWall);
+        Assert.False(impact.StruckHuman);
+        Assert.Equal(0, damaged);
+        Assert.Equal(25f * UnitsPerMetre, offeredStop, 1.0);
     }
 
     /// <summary>A shotgun spawns one round per pellet, and a sixty-fifth is dropped like retail's sixteenth.</summary>
@@ -416,7 +463,7 @@ public sealed class BallisticSimulationTests
 
         WorldRayCast walls = (Vector3d origin, Vector3d to, out WorldRayHit hit) =>
             throw new InvalidOperationException("A visual round must never cast.");
-        HumanShot humans = (Vector3d origin, Vector3d to, float damage, WeaponCategory category, out HumanHit hit) =>
+        HumanShot humans = (Vector3d origin, Vector3d to, float damage, WeaponCategory category, double _, bool _, out HumanHit hit) =>
             throw new InvalidOperationException("A visual round must never damage.");
 
         BallisticRound round = simulation.Rounds[0];

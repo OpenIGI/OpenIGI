@@ -154,10 +154,12 @@ public sealed class HumanSoldierBodyRetailTests
         soldier.TickDeadBody(default, deathClipEnded: false);
         Assert.Equal(10, soldier.Position.X);
 
-        // 0x45C700 hands over to 0x45C740 on the clip's end, which adds no more velocity.
+        // 0x45C700 still slides the tick the clip ends; 0x45C740, from the tick after, adds no more velocity.
+        // Probed on mission 4: guard 410's corpse moved on the tick its clip reached its end, and then stopped.
         soldier.TickDeadBody(default, deathClipEnded: true);
+        Assert.Equal(20, soldier.Position.X);
         soldier.TickDeadBody(default, deathClipEnded: false);
-        Assert.Equal(10, soldier.Position.X);
+        Assert.Equal(20, soldier.Position.X);
     }
 
     private static Signal Grounded(Signal bits) => Signal.OnGround | bits;

@@ -257,6 +257,17 @@ public static class HumanSoldierStates
     /// <summary>Playing the clip the AI named in slot 23 (<c>0x45C750</c>).</summary>
     public const int ScriptedAnimationState = 35;
 
+    /// <summary>Whether a state's clip is the body's alone: every state but standing, the gaits, the patrol's kneel and its
+    /// way down and up, the play-animation state and the emplacement.</summary>
+    /// <param name="state">The state.</param>
+    /// <returns><see langword="true"/> for the combat, roll, prone, flinch and death states.</returns>
+    /// <remarks>
+    /// A body in one of these plays its state's clip whatever its AI is doing: a soldier whose fight ends mid-burst runs
+    /// the fire clip out before the patrol it went back to can walk it anywhere.
+    /// </remarks>
+    public static bool IsBodyOwned(int state) => state is not (StandState or WalkState or ForwardState or FastForwardState
+        or CrouchDownState or StandUpState or KneelingState or ScriptedAnimationState or UseObjectState or UseObjectOnceState);
+
     /// <summary>Using an object of type 6 — the mounted pose, animation 31 (<c>0x45C8B0</c>).</summary>
     public const int UseObjectState = 36;
 

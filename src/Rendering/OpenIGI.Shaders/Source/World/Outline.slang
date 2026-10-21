@@ -25,10 +25,10 @@ OPENIGI_PUSH_CONSTANT(OutlinePush, push);
 
 struct VertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(5)]] float3 previousPosition;
-    [[vk::location(6)]] float3 previousNormal;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
+    [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
 };
 
 /// The vertex stage: push the vertex out along its normal in screen space, then pin the depth.

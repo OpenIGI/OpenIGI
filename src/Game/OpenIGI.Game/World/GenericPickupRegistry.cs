@@ -28,13 +28,23 @@ public sealed class GenericPickup
 
     /// <summary>Gets whether the item has been consumed by the player.</summary>
     public bool IsCollected { get; internal set; }
+
+    /// <summary>
+    /// Gets the horizontal reach, in engine units: the model's bounding radius times its largest scale factor
+    /// (<c>0x4D0950</c> by <c>+152..+160</c>, which are 1 for a placed item), but never under
+    /// <see cref="PickupReach.Radius"/>.
+    /// </summary>
+    public double ReachRadius { get; internal set; } = PickupReach.Radius;
 }
 
 /// <summary>Runs the original game's automatic, proximity-based generic item pickups.</summary>
 /// <remarks>
-/// Retail's <c>GenericPickup::Update</c> at <c>0x46C630</c> uses the player's feet, accepts a planar
-/// distance below 2867.2 units and a vertical separation below 4096 units, then publishes the task's
-/// <c>isPickedUp</c> variable. Its following cleanup removes the item from the spatial world but leaves
+/// Retail's <c>GenericPickup</c> proximity handler at <c>0x46C630</c> answers the message the player sends every
+/// tick (<c>0x410F70</c>) with the Human's ORIGIN (<c>+32</c>, 3877.2 units above the feet standing), accepts a
+/// planar distance below the item's reach (<see cref="GenericPickup.ReachRadius"/>) and a vertical separation
+/// below 4096 units, then publishes the task's <c>isPickedUp</c> variable. Tested from the feet, an item resting on
+/// a crate about a metre up sat more than 4096 units above them and only came into reach mid-jump (Mission 2's
+/// explosives room). Its following cleanup removes the item from the spatial world but leaves
 /// the task and its exported variable available to mission expressions. This registry preserves that
 /// lifetime split: the task remains in the tree while the renderer and collision index ignore the
 /// consumed item.
@@ -52,25 +62,43 @@ public sealed class GenericPickupRegistry
     public IReadOnlyList<GenericPickup> Items => _items;
 
     /// <summary>Builds the pickup list and exports each task's live <c>isPickedUp</c> variable.</summary>
-    public static GenericPickupRegistry Build(GameTask root, ScriptVarRegistry variables)
+    /// <param name="root">The level root.</param>
+    /// <param name="variables">The script variables the pickups export into.</param>
+    /// <param name="placements">The level's placements, whose models size each item's reach; none keeps 2867.2.</param>
+    public static GenericPickupRegistry Build(
+        GameTask root,
+        ScriptVarRegistry variables,
+        IEnumerable<WorldPlacement>? placements = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
         GenericPickupRegistry registry = new();
         registry.Collect(root, variables);
+        foreach (WorldPlacement placement in placements ?? [])
+        {
+            if (placement.Owner is { } owner
+                && registry._byTask.TryGetValue(owner, out GenericPickup? pickup)
+                && placement.Model is { NativeMarkerBound: > 0f } model
+                && float.IsFinite(model.NativeMarkerBound))
+            {
+                pickup.ReachRadius = Math.Max(pickup.ReachRadius, model.NativeMarkerBound);
+            }
+        }
+
         return registry;
     }
 
-    /// <summary>Consumes every pickup whose retail feet-range test succeeds this tick.</summary>
-    public IReadOnlyList<GenericPickup> CollectAt(Vector3d position)
+    /// <summary>Consumes every pickup within the retail reach of the Human's origin this tick.</summary>
+    /// <param name="origin">The Human's origin (<c>+32</c>), not its feet.</param>
+    public IReadOnlyList<GenericPickup> CollectAt(Vector3d origin)
     {
         List<GenericPickup>? collected = null;
         foreach (GenericPickup pickup in _items)
         {
             if (pickup.IsCollected
                 || !ConditionalContainerGate.IsTaskActive(pickup.Task)
-                || !PickupReach.IsWithinRange(position, pickup.Position))
+                || !PickupReach.IsWithinRange(origin, pickup.Position, pickup.ReachRadius))
             {
                 continue;
             }

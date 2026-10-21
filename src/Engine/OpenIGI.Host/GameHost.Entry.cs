@@ -175,11 +175,14 @@ public sealed partial class GameHost
     /// <summary>Marks the start of a named stage of bringing a mission up.</summary>
     private void BeginStage() => _stageStartedAt = Stopwatch.GetTimestamp();
 
+    // OPENIGI_STAGE_TIMES=1: every load stage's time, whatever is being watched -- where a headless capture's load goes.
+    private static readonly bool LogStageTimes = Environment.GetEnvironmentVariable("OPENIGI_STAGE_TIMES") == "1";
+
     /// <summary>Reports how long the stage since <see cref="BeginStage"/> took, and starts the next.</summary>
     /// <param name="what">The stage that just finished.</param>
     private void EndStage(string what)
     {
-        if (_watchingFramePasses)
+        if (_watchingFramePasses || LogStageTimes)
         {
             double milliseconds =
                 (Stopwatch.GetTimestamp() - _stageStartedAt) * 1000.0 / Stopwatch.Frequency;

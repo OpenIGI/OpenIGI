@@ -101,7 +101,7 @@ public sealed class PlayerCameraStationaryGunTests
             muzzleUnits.Z + (barrel.Z * 4.0 * PlayerCamera.UnitsPerMetre) - (HumanHitTest.BodyHeightInUnits * 0.5));
         HumanHealth target = new(HumanHitZoneTable.Soldier);
         Vector3d? firstOrigin = null;
-        camera.Humans = (Vector3d origin, Vector3d end, float damageFactor, WeaponCategory _, out HumanHit hit) =>
+        camera.Humans = (Vector3d origin, Vector3d end, float damageFactor, WeaponCategory _, double _, bool _, out HumanHit hit) =>
         {
             firstOrigin ??= origin;
             if (target.IsDead)

@@ -10,7 +10,10 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <param name="TaskId">The owning task's id (<c>HumanSoldier_406</c> → 406); the player has no task here.</param>
 /// <param name="Team">The human's team, as the mission script's criteria names it (0 or 1).</param>
-/// <param name="Position">The current world position in engine units.</param>
+/// <param name="Position">
+/// The point an area tests, in engine units: the human's origin (<c>Human+32</c>), about 0.95 m over its feet
+/// standing -- what retail's criteria callbacks pass the box test, not where the feet are.
+/// </param>
 /// <param name="IsDead">Whether the human has died; a dead human is not an area occupant and reports <c>isDead</c>.</param>
 public readonly record struct HumanOccupant(int TaskId, int Team, Vector3d Position, bool IsDead);
 

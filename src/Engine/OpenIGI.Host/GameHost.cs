@@ -434,6 +434,25 @@ public sealed partial class GameHost : IDisposable
     private ITacticalComputerPresenter? TacticalComputer =>
         RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
+    // The map gate of the level last asked about; rebuilt when another level comes up.
+    private MapComputerGate? _mapGate;
+
+    /// <summary>Whether the level lets the player read the map computer's map right now (<see cref="MapComputerGate"/>).</summary>
+    private bool MapComputerAvailable()
+    {
+        if (_session.LevelRoot is not { } root)
+        {
+            return true;
+        }
+
+        if (_mapGate is null || !ReferenceEquals(_mapGate.LevelRoot, root))
+        {
+            _mapGate = new MapComputerGate(root, _loop.Variables);
+        }
+
+        return _mapGate.MapAvailable;
+    }
+
     private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
 

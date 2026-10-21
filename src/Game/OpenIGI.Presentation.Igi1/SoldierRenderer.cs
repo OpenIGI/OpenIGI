@@ -23,6 +23,7 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Physics;
+using OpenIGI.Game.Igi1.Weapons;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -173,20 +174,26 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             member.Weapon = weapon;
             group.AddDrawn(member);
             Count++;
-
-            // The dead guard the clone replaces is deleted with it (0x487EE0 -> 0x4015F0): it is drawn no more.
-            if (group.Soldiers.Find(candidate => ReferenceEquals(candidate.Agent, dead)) is { } corpse)
-            {
-                group.Soldiers.Remove(corpse);
-                if (corpse.Mesh.IsValid)
-                {
-                    _device.DestroyMesh(corpse.Mesh);
-                }
-
-                Count--;
-            }
-
             return true;
+        };
+
+        // A generated guard's body leaves the world before its replacement comes (0x44F410's unregister): it is drawn no more.
+        _sim.BodyRemoved = agent =>
+        {
+            foreach (Group group in _groups)
+            {
+                if (group.Soldiers.Find(candidate => ReferenceEquals(candidate.Agent, agent)) is { } corpse)
+                {
+                    group.Soldiers.Remove(corpse);
+                    if (corpse.Mesh.IsValid)
+                    {
+                        _device.DestroyMesh(corpse.Mesh);
+                    }
+
+                    Count--;
+                    return;
+                }
+            }
         };
         _sim.BodyFell = fall =>
         {
@@ -208,13 +215,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             if (fall.DroppedWeapon)
             {
                 member.Weapon = null;
-            }
-        };
-        _sim.MountSettled = (view, brain) =>
-        {
-            if (FindMember(view) is { } member)
-            {
-                UpdateMountedWeapon(member, brain);
             }
         };
     }
@@ -323,6 +323,12 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             }
         }
     }
+
+    /// <summary>Where the player's body model is drawn, in engine units: retail's <c>Human+32</c>, for scenario runs.</summary>
+    internal Vector3d PlayerBodyDrawnOriginForTesting => _playerBody.DrawnOriginForTesting;
+
+    /// <summary>The player body clip's current root sample height (<c>Human+1308</c>), for scenario runs.</summary>
+    internal double PlayerBodyRootSampleZForTesting => _sim.PlayerBodyView?.RootSample.Z ?? 0.0;
 
     internal bool IsInViewForTesting(SoldierView view) => FindMember(view)?.Agent.InView ?? false;
 
@@ -722,26 +728,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         _vehicleGuns = _vehicleWeaponVisuals.Count > 0 ? guns : null;
     }
 
-    /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
-    private void UpdateMountedWeapon(Member member, Igi1HumanAi brain)
-    {
-        if (brain.MountedGun is { } mounted
-            && mounted.Weapon is not null
-            && _stationaryWeaponVisuals.TryGetValue(mounted, out HeldWeapon? visual)
-            && visual is not null)
-        {
-            member.Weapon = visual;
-            member.RenderedMountedGun = mounted;
-            return;
-        }
-
-        if (member.RenderedMountedGun is not null)
-        {
-            member.Weapon = member.CarriedWeapon;
-            member.RenderedMountedGun = null;
-        }
-    }
-
     /// <summary>The body a soldier's held weapon becomes once its hand is dead.</summary>
     /// <remarks>
     /// Measured from the weapon's own drawn geometry, so a pistol gets a pistol's capsule and a rifle a
@@ -1033,7 +1019,14 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             // SoldierSimulation.Stand() does. A level often authors a soldier a little below its floor; the query only
             // pulls UP onto a floor within the half-metre probe, so a soldier already on its floor
             // does not move.
-            double groundedZ = _sim.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+            //
+            // NOT a soldier its graph stands: 0x462390 takes an AI's height from the graph and casts no ray
+            // at all, which the brain has already applied. Mission 12's castle guard sits on a crate edge in
+            // clip 4 with his graph node on the floor; the snap found the crate half a metre up and drew him
+            // floating over it, where the original draws him at node plus root height.
+            double groundedZ = brain.HasGraph && brain.StoodOnGraph && !brain.GraphInParentFrame
+                ? soldier.Position.Z
+                : _sim.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
             return (new Vector3d(
                 soldier.Position.X / WorldScene.UnitsPerMetre,
                 soldier.Position.Y / WorldScene.UnitsPerMetre,
@@ -1225,9 +1218,9 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     {
         foreach ((AiStationaryGun gun, HeldWeapon? visual) in _stationaryWeaponVisuals)
         {
-            bool playerUsing = gun.IsOccupied && _sim.Interactions?.Items.Any(item =>
-                ReferenceEquals(item.StationaryGun, gun) && item.IsPlayerUsingStationaryGun) == true;
-            if (!ShouldDrawStaticStationaryGun(gun, playerUsing) || visual is null)
+            // 0x474190 poses the gun on its stand every tick, whoever is on it (0x474420): an AI gunner holds his own
+            // weapon, which 0x4600C0 keeps on his hand, and works the stand's.
+            if (visual is null)
             {
                 continue;
             }
@@ -1327,8 +1320,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         _playerBody.StartInteractionAnimation(animation, loops);
 
     /// <inheritdoc/>
-    public void AdvancePlayerLadderAnimation(float facing, out Vector3d rootDelta, out bool rungBoundary, out bool ended) =>
-        _playerBody.AdvanceLadderAnimation(facing, out rootDelta, out rungBoundary, out ended);
+    public void AdvancePlayerLadderAnimation(float facing, out Vector3d rootDelta, out float? rungEventTime, out bool ended) =>
+        _playerBody.AdvanceLadderAnimation(facing, out rootDelta, out rungEventTime, out ended);
 
     /// <inheritdoc/>
     public void PlacePlayerBodyClimbing(Vector3d taskPosition, float facing) =>
@@ -1503,11 +1496,32 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         float damageFactor,
         WeaponCategory category,
         out HumanHit hit) =>
+        TryShoot(origin, rayEnd, damageFactor, category, double.PositiveInfinity, alreadyHeard: false, out hit);
+
+    /// <summary>Offers the player's round to the soldiers short of the surface that stops it.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="rayEnd">Where it stops.</param>
+    /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
+    /// <param name="category">The firing weapon's category.</param>
+    /// <param name="stopDistance">The distance to the surface the round's trace met first; see <see cref="HumanShot"/>.</param>
+    /// <param name="alreadyHeard">Whether this round's near miss was already offered; see <see cref="HumanShot"/>.</param>
+    /// <param name="hit">The nearest crossing of a soldier's skin; an exit is reported without damage.</param>
+    /// <returns><see langword="false"/> when the round meets nobody short of the stop.</returns>
+    public bool TryShoot(
+        Vector3d origin,
+        Vector3d rayEnd,
+        float damageFactor,
+        WeaponCategory category,
+        double stopDistance,
+        bool alreadyHeard,
+        out HumanHit hit) =>
         LevelBodies.Shoot(
             [this],
             origin,
             rayEnd,
             _sim.PlayerTask,
+            stopDistance,
+            alreadyHeard,
             struck => new Igi1WeaponHit(struck, origin, rayEnd, damageFactor, category, Shooter: null, FromPlayer: true).ToShared(),
             out hit);
 
@@ -1531,6 +1545,9 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
             }
         }
     }
+
+    /// <inheritdoc/>
+    public void RoundCast(Vector3d origin, Vector3d target, GameTask? shooter) => _sim.RefreshEyesAlongPlayerRound(origin, target);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -1663,6 +1680,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         _disposed = true;
         _sim.Retire();
         Release();
+        _gunShotTracers?.Dispose();
+        _gunShotTracers = null;
 
         _textureCache?.Clear();
     }
@@ -1706,12 +1725,50 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         Count = 0;
     }
 
-    /// <summary>Gets whether the holder model remains the visible gun for this ownership state.</summary>
-    internal static bool ShouldDrawStaticStationaryGun(AiStationaryGun gun, bool playerUsing)
+    /// <summary>Where a soldier's gun muzzle is drawn this frame, in world units.</summary>
+    /// <param name="shooter">The round's shooter, as the march records it.</param>
+    /// <returns>
+    /// The held weapon's gun-flame part on the hand that holds it -- where the muzzle flash is drawn -- or the hand
+    /// itself for a model without one; <see langword="null"/> for anything that is not a soldier with a drawn gun.
+    /// </returns>
+    public Vector3d? MuzzleOf(object? shooter)
     {
-        ArgumentNullException.ThrowIfNull(gun);
-        return !gun.IsOccupied || playerUsing;
+        if (shooter is SoldierView gunner && _sim.Brains.TryGetValue(gunner, out Igi1HumanAi? brain) && brain.MountedGun is { } gun)
+        {
+            return gun.MuzzlePosition;
+        }
+
+        if (shooter is not SoldierView view || FindMember(view) is not { HasWeaponFrameState: true } member)
+        {
+            return null;
+        }
+
+        Vector3d hand = member.DrawnWeaponOrigin;
+        Vector3f offset = member.Weapon?.Presentation?.MuzzleMetres is { } muzzle
+            ? member.DrawnWeaponRotation.Transposed().Transform(muzzle)
+            : default;
+        return new Vector3d(hand.X + offset.X, hand.Y + offset.Y, hand.Z + offset.Z) * WorldScene.UnitsPerMetre;
     }
+
+    /// <summary>Gets every soldier gun's live tracers, in the order the guns were made, for the tracer draw.</summary>
+    public IEnumerable<GunShotTracer> GunShotTracers => _sim.GunShotTracers;
+
+    /// <inheritdoc/>
+    public void DrawGunShotTracers(in Camera3D camera, in Matrix4f projection, int renderHeight, bool retailLine)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _gunShotTracers ??= new GunShotTracerRenderer(_device);
+        _gunShotTracers.Draw(
+            GunShotTracers,
+            camera,
+            projection,
+            renderHeight,
+            retailLine ? TracerStyle.Retail : TracerStyle.Remastered,
+            MuzzleOf);
+    }
+
+    // The rounds' tracers, made on the first frame that draws any.
+    private GunShotTracerRenderer? _gunShotTracers;
 
     /// <inheritdoc/>
     public void Tick(
@@ -1889,9 +1946,6 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
         /// <summary>The carried weapon restored after a temporary stationary-gun mount ends.</summary>
         public HeldWeapon? CarriedWeapon { get; set; }
-
-        /// <summary>The stationary gun whose model currently replaces the carried weapon.</summary>
-        public AiStationaryGun? RenderedMountedGun { get; set; }
 
         /// <summary>The persistent buffer this soldier's pose is skinned into, allocated once.</summary>
         public Vertex3D[]? SkinScratch { get; set; }

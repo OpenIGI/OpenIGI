@@ -51,7 +51,7 @@ public sealed class ShaderLibraryBuilder
     /// <exception cref="ShaderBuildException">A module failed to compile, or the manifest is unreadable.</exception>
     public IReadOnlyList<ArtifactResult> Build(bool checkOnly)
     {
-        ShaderManifest manifest = ReadManifest();
+        ShaderManifest manifest = ReadManifest(_projectDirectory);
         RequireThePinnedCompiler(manifest, checkOnly);
         List<ArtifactResult> results = [];
 
@@ -141,6 +141,17 @@ public sealed class ShaderLibraryBuilder
 
         ShaderReflection reflection = ReflectionReader.Read(module.Id, variant.Name, spirv.ReflectionJson);
 
+        // Each specialisation constant's declared value, which only the SPIR-V carries.
+        IReadOnlyDictionary<int, uint> defaults = SpirvSpecDefaults.Read(spirv.Code);
+        reflection = reflection with
+        {
+            SpecializationConstants =
+            [
+                .. reflection.SpecializationConstants.Select(constant =>
+                    constant with { Default = defaults.TryGetValue(constant.Id, out uint value) ? value : 0 }),
+            ],
+        };
+
         yield return Write($"{module.Id}.{variant.Name}.spv", spirv.Code, checkOnly);
 
         // A variant that traces rays has no WGSL form, because WGSL has no ray tracing.
@@ -183,6 +194,46 @@ public sealed class ShaderLibraryBuilder
         else
         {
             reflection = InheritShapes(reflection, shapes);
+        }
+
+        // DXIL one entry point at a time: a Direct3D 12 pipeline takes a blob per stage, and slangc writes a
+        // library of every entry point otherwise. Each compile lays out the whole module, and they must all
+        // agree, or one root signature could not serve the stages it joins.
+        if (variant.Compiles(ShaderTarget.Dxil))
+        {
+            HlslPlacements? placements = null;
+            foreach (ShaderEntryPoint entryPoint in reflection.EntryPoints)
+            {
+                SlangOutput dxil = _compiler.Compile(
+                    sourcePath, SlangTarget.Dxil, variant.Defines, withReflection: true, scratch, entryPoint);
+                if (dxil.ReflectionJson is null)
+                {
+                    throw new ShaderBuildException($"{module.Id}: slangc produced no DXIL reflection for '{variant.Name}'.");
+                }
+
+                HlslPlacements placed = HlslPlacements.Read(module.Id, dxil.ReflectionJson);
+                if (placements is null)
+                {
+                    placements = placed;
+                }
+                else
+                {
+                    HlslPlacements.RequireSame(module.Id, placements, placed);
+                }
+
+                yield return Write($"{module.Id}.{variant.Name}.{ShaderCatalog.StageName(entryPoint.Stage)}.dxil", dxil.Code, checkOnly);
+            }
+
+            if (placements is not null)
+            {
+                reflection = placements.Merge(reflection);
+                reflection = ConstantLayouts.Reconcile(
+                    module.Id,
+                    variant.Name,
+                    reflection,
+                    ConstantLayouts.Read(spirv.ReflectionJson),
+                    placements.Constants);
+            }
         }
 
         byte[] reflectionBytes = Encoding.UTF8.GetBytes(
@@ -370,9 +421,12 @@ public sealed class ShaderLibraryBuilder
     /// <remarks>Null while the pin still holds, which is every run that did not move it.</remarks>
     public string? Pin { get; private set; }
 
-    private ShaderManifest ReadManifest()
+    /// <summary>Reads the manifest a shader project carries.</summary>
+    /// <param name="projectDirectory">The <c>src/Rendering/OpenIGI.Shaders</c> directory.</param>
+    /// <returns>The manifest.</returns>
+    public static ShaderManifest ReadManifest(string projectDirectory)
     {
-        string path = Path.Combine(_projectDirectory, ShaderManifest.FileName);
+        string path = Path.Combine(projectDirectory, ShaderManifest.FileName);
         if (!File.Exists(path))
         {
             throw new ShaderBuildException($"No {ShaderManifest.FileName} at {path}.");

@@ -101,7 +101,7 @@ bool CandidateIsSolid<let F : int>(inout RayQuery<F> query)
     }
 
     uint record = uint(query.CandidateInstanceID()) + uint(query.CandidateGeometryIndex());
-    ConstBufferPointer<uint> records = HitWordsAt(p.records.x, p.records.y);
+    HitWords records = HitWordsAt(p.records.x, p.records.y);
     uint at = record * kHitRecordWords;
 
     int layer = int(records[at + kHitMaskLayerWord]);
@@ -111,9 +111,9 @@ bool CandidateIsSolid<let F : int>(inout RayQuery<F> query)
         return true;
     }
 
-    ConstBufferPointer<float> vertices = HitFloatsAt(
+    HitFloats vertices = HitFloatsAt(
         records[at + kHitVertexAddressWord], records[at + kHitVertexAddressWord + 1u]);
-    ConstBufferPointer<uint> indices = HitWordsAt(
+    HitWords indices = HitWordsAt(
         records[at + kHitIndexAddressWord], records[at + kHitIndexAddressWord + 1u]);
 
     uint first = records[at + kHitFirstIndexWord] + (uint(query.CandidatePrimitiveIndex()) * 3u);

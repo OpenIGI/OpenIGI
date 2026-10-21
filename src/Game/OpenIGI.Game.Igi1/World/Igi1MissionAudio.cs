@@ -27,6 +27,12 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
 
     private AudioVoiceHandle _binocularZoomVoice;
 
+    /// <summary>The voice ladder state 40 started — retail's <c>Human+3508</c>.</summary>
+    private AudioVoiceHandle _ladderSlideVoice;
+
+    /// <summary>Whether the current slide has already started its sound.</summary>
+    private bool _ladderSliding;
+
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
     private readonly Dictionary<GameTask, AudioVoiceHandle> _taskLoops = [];
@@ -162,6 +168,74 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
         _binocularZoomVoice = host.SoundOutput.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
     }
 
+    /// <summary>Plays the rung sound of a ladder state's event 8 at the climbing human.</summary>
+    /// <param name="sound">The definition name the climb took from its cycle.</param>
+    /// <param name="feet">Where the climber is, in world units.</param>
+    /// <remarks>
+    /// <c>0x40D6B0</c> starts it under the sound root and then moves the voice to <c>Human+32</c>
+    /// (<c>0x4E6C30</c>) -- a positional one-shot, with neither the pitch spread nor the crouch scale a
+    /// footstep gets.
+    /// </remarks>
+    public void PlayLadderStepSound(string sound, Vector3d feet) =>
+        host.SoundOutput?.PlayDefinition(sound, feet, priority: 40);
+
+    /// <summary>Starts, carries and stops the slide-down sound of ladder state 40.</summary>
+    /// <param name="player">The player, or <see langword="null"/> when there is none.</param>
+    /// <remarks>
+    /// <para>
+    /// The entry <c>0x40DBA0</c> starts <c>wire_slide_1</c> as a child of the human itself and keeps the
+    /// voice at <c>Human+3508</c>; the per-tick <c>0x40DBF0</c> stops it on the ground signal, in the
+    /// same block that detaches from the ladder. Being the human's child, the voice falls with it, so
+    /// here its position is moved every tick.
+    /// </para>
+    /// <para>
+    /// It is started once per slide, not whenever nothing is playing: should the definition be a
+    /// one-shot that runs out before the ground, the original stays silent rather than starting it
+    /// again.
+    /// </para>
+    /// </remarks>
+    public void TickLadderSlideSound(PlayerCamera? player)
+    {
+        if (host.SoundOutput is not { } sounds)
+        {
+            return;
+        }
+
+        if (player is not { LadderPhase: LadderTraversalPhase.SlidingDown } sliding)
+        {
+            StopLadderSlideSound();
+            return;
+        }
+
+        if (!_ladderSliding)
+        {
+            _ladderSliding = true;
+            _ladderSlideVoice = sounds.PlayDefinition(HumanLadderClimb.SlideSoundName, sliding.LadderFeet, priority: 60);
+        }
+        else if (_ladderSlideVoice.IsValidHandle && sounds.IsPlaying(_ladderSlideVoice))
+        {
+            sounds.SetDefinitionVoicePosition(HumanLadderClimb.SlideSoundName, _ladderSlideVoice, sliding.LadderFeet, priority: 60);
+        }
+    }
+
+    /// <summary>Stops the ladder slide's voice, at the ground or at a lifecycle boundary.</summary>
+    public void StopLadderSlideSound()
+    {
+        if (_ladderSlideVoice.IsValidHandle)
+        {
+            host.SoundOutput?.Stop(_ladderSlideVoice);
+            _ladderSlideVoice = AudioVoiceHandle.None;
+        }
+
+        _ladderSliding = false;
+    }
+
+    /// <summary>Whether a sound definition of this name exists and plays (an ambient area draws only for one that does).</summary>
+    /// <param name="name">The definition's name.</param>
+    /// <returns><see langword="true"/> when the loaded definitions resolve it to a playable sound.</returns>
+    public bool IsPlayableSound(string name) =>
+        host.SoundOutput?.Definitions?.TryResolve(name, out SoundDefinition? found) == true && found is { IsPlayable: true };
+
     /// <summary>Stops the looping binocular cue when player ticking is suspended.</summary>
     /// <remarks>
     /// Death-camera and mission teardown deliberately stop ticking the player. Those paths therefore
@@ -273,8 +347,8 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
                 }
                 else
                 {
-                    // A one-shot bed that has run out. Letting go of it here is what allows the gap to
-                    // rearm and the area to speak again.
+                    // A one-shot bed that has run out: the speakers let it go. The area keeps its instance until a
+                    // silent fade releases it (AmbientAreaRegistry), as the original's did on the probe.
                     _ambientVoices.Remove(area);
                     area.IsSounding = false;
                 }
@@ -746,8 +820,44 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
     /// <summary>The alarm speakers' sirens and the security cameras' beeps and motors, following their own state.</summary>
     public void SoundAlarms()
     {
+        // The radios after the destructibles: a Radio's update (0x43AF90) runs the ExplodeObject update first, so one
+        // that blew up this tick is already off.
+        mission.Interactions?.TickRadios(_radioSounds ??= new RadioSoundPlayer(host));
         TickAlarmSpeakers();
         TickSecurityCameraSounds();
+    }
+
+    /// <summary>Plays a transmission's sound as it goes up, at the listener.</summary>
+    /// <param name="sound">The message's sound definition (<c>message</c>, <c>fail</c>).</param>
+    public void PlayTransmissionSound(string sound) => host.SoundOutput?.PlayDefinition(sound, priority: 180);
+
+    private RadioSoundPlayer? _radioSounds;
+
+    // A radio's voices: 0x43AF90 resolves the authored name (sub_4E6B00) and plays it at the task (sub_4E6C30). A name with
+    // no definition starts nothing, and the radio carries on regardless.
+    private sealed class RadioSoundPlayer(IMissionSoundHost host) : IRadioSoundPlayer
+    {
+        public object? Play(string sound, Vector3d positionUnits)
+        {
+            if (host.SoundOutput is not { } sounds || sound.Length == 0)
+            {
+                return null;
+            }
+
+            AudioVoiceHandle voice = sounds.PlayDefinition(sound, positionUnits);
+            return voice.IsValidHandle ? voice : null;
+        }
+
+        public bool IsPlaying(object voice) =>
+            voice is AudioVoiceHandle handle && host.SoundOutput?.IsPlaying(handle) == true;
+
+        public void Silence(object voice)
+        {
+            if (voice is AudioVoiceHandle handle)
+            {
+                host.SoundOutput?.Stop(handle);
+            }
+        }
     }
 
     /// <summary>Makes the player's weapon voice afresh on the device just opened, and drops the soldiers'.</summary>
@@ -761,6 +871,7 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
     public void ResetForMission()
     {
         StopBinocularTransitionSound();
+        StopLadderSlideSound();
         StopGrenadeCook();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)

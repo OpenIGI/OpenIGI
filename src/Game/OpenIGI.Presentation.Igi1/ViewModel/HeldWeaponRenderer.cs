@@ -157,6 +157,23 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
     /// <summary>Gets whether a model is loaded and ready to draw.</summary>
     public bool IsReady => _parts.Count > 0;
 
+    /// <inheritdoc/>
+    public Vector3f? MuzzleMetres
+    {
+        get
+        {
+            foreach (Part part in _parts)
+            {
+                if (part.IsGunFlame)
+                {
+                    return part.PositionMetres;
+                }
+            }
+
+            return null;
+        }
+    }
+
     /// <summary>Builds collision vertices in the same attachment-local frame this renderer draws.</summary>
     /// <remarks>
     /// A multipart weapon's raw model vertices are not enough: child nodes apply both a local position

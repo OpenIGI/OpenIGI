@@ -124,6 +124,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         mission.Player.ResetOptics();
         mission.Player.StopWeaponsForDeath();
         audio.StopBinocularTransitionSound();
+        audio.StopLadderSlideSound();
 
         // The player receives no further simulation ticks after death, so the weapon sound player
         // cannot observe a quiet tick and retire an automatic loop on its own.

@@ -92,24 +92,35 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     }
 
     /// <summary>Plays the clatter of every dropped gun that landed this tick.</summary>
+    /// <param name="impact">The landing.</param>
     /// <remarks>
     /// <c>GunPickup</c>'s tick (<c>0x46CEA0</c>) plays <c>weapondrop_01</c> or <c>weapondrop_02</c>, a coin
-    /// toss between them, at every bounce. The realistic drop reports a landing once per contact, so a gun
-    /// that tumbles and bounces twice clatters twice.
+    /// toss between them, at every bounce -- drawn there, in the pickup's tick, whether or not anything can be
+    /// heard. The realistic drop reports a landing once per contact, so a gun that tumbles and bounces twice
+    /// clatters twice.
     /// </remarks>
-    public void PlayWeaponDrops()
+    public void PlayWeaponDrop(GunPickupImpact impact)
     {
-        if (host.SoundOutput is not { } sounds || mission.GunPickups is not { } pickups)
+        string sound = mission.SoundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
+        host.SoundOutput?.PlayDefinition(sound, impact.Position, priority: 50);
+    }
+
+    /// <summary>Plays a sound a marched round's contact asks for: its impact, its ricochet.</summary>
+    /// <param name="definition">The sound definition.</param>
+    /// <param name="position">Where, in world units.</param>
+    /// <remarks>The pitch a sound definition plays at is the sound layer's own; the original draws nothing for it from the level stream.</remarks>
+    public void PlayMarchedRoundSound(string definition, Vector3d position)
+    {
+        if (definition.Length == 0 || !GameplayCVars.BallisticsImpactSounds.Value)
         {
             return;
         }
 
-        foreach (GunPickupImpact impact in pickups.Impacts)
-        {
-            string sound = mission.SoundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
-            sounds.PlayDefinition(sound, impact.Position, priority: 50);
-        }
+        host.SoundOutput?.PlayDefinition(definition, position, pitch: FootstepSounds.Pitch(_impactPitchRandom), priority: 45);
     }
+
+    // The pitch a marched round's sound plays at; the original's sound layer draws nothing from the level stream.
+    private readonly IgiRandom _impactPitchRandom = new(0x2F1Du);
 
     /// <summary>Plays one player or AI bullet contact through the retail sound definitions.</summary>
     /// <param name="position">Where it struck, in world units.</param>

@@ -204,6 +204,7 @@ public sealed class DestructibleObjectRegistry
     private const string ExplodeObjectType = "ExplodeObject";
     private const string GeneratorType = "Generator";
     private const string TerminalType = "Terminal";
+    private const string RadioType = "Radio";
     private const string SecurityCameraControlType = "SCameraControl";
     private const string AlarmControlType = "AlarmControl";
     private const string ExplodeMagicType = "TASKTYPE_EXPLODEMAGICOBJ";
@@ -588,11 +589,15 @@ public sealed class DestructibleObjectRegistry
             return;
         }
 
-        item.ExplosionDamageAccumulated += Math.Max(0f, damage);
+        // 0x481E60 / 0x481EA0: fld the dose, fadd +488, fst +488, fcomp +492 -- under the original's chop
+        // rounding (sub_498460 ORs 0x0C00 into the control word). The stored sum truncates, and the test
+        // reads the register: five Glock rounds of 0.2 leave 0.99999994, so the radio takes a sixth.
+        X87 sum = (X87)Math.Max(0f, damage) + item.ExplosionDamageAccumulated;
+        item.ExplosionDamageAccumulated = sum.F;
         float threshold = item.ExplosionDamageThreshold > 0f
             ? item.ExplosionDamageThreshold
             : ExplosionDamageDefaults.DamageThreshold;
-        if (item.ExplosionDamageAccumulated >= threshold)
+        if (sum.Value >= threshold)
         {
             item.Countdown = explosion ? item.ExplosionDelayTicks : 0;
         }
@@ -1027,15 +1032,17 @@ public sealed class DestructibleObjectRegistry
         return false;
     }
 
-    // The ExplodeObject family, traced in IGI.exe through each type's parent: Generator (0x43B6E0) and
-    // Terminal (0x443680) call the ExplodeObject base (word_54097C), and SCameraControl (0x440C20) and
-    // AlarmControl (0x440710) are registered under Terminal (word_53C680). Siren, Radio and MineField
-    // declare the same parameters but their bases are not traced, so they keep the older rule.
+    // The ExplodeObject family, traced in IGI.exe through each type's parent: Generator (0x43B6E0),
+    // Terminal (0x443680) and Radio (0x43AD80, through sub_481340) call the ExplodeObject base
+    // (word_54097C), and SCameraControl (0x440C20) and AlarmControl (0x440710) are registered under
+    // Terminal (word_53C680). Siren and MineField declare the same parameters but their bases are not
+    // traced, so they keep the older rule.
     private static readonly HashSet<string> ExplodeObjectFamily = new(StringComparer.Ordinal)
     {
         ExplodeObjectType,
         GeneratorType,
         TerminalType,
+        RadioType,
         SecurityCameraControlType,
         AlarmControlType,
     };

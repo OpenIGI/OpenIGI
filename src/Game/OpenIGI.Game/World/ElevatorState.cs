@@ -53,7 +53,7 @@ public sealed class ElevatorState
         Vector3d startPosition,
         IReadOnlyList<ElevatorFloor> floors,
         double maxSpeedUnitsPerSecond,
-        double speedInertiaUnitsPerSecondSquared,
+        double speedInertiaUnitsPerSecondPerTick,
         int? startFloorTaskId = null)
     {
         ArgumentNullException.ThrowIfNull(floors);
@@ -64,7 +64,7 @@ public sealed class ElevatorState
 
         _floors = floors;
         _maxSpeed = Math.Max(0.0, maxSpeedUnitsPerSecond);
-        _inertia = Math.Max(0.0, speedInertiaUnitsPerSecondSquared);
+        _inertia = Math.Max(0.0, speedInertiaUnitsPerSecondPerTick);
         StartPosition = startPosition;
         Position = startPosition;
         PreviousPosition = startPosition;
@@ -257,7 +257,13 @@ public sealed class ElevatorState
         }
         else
         {
-            _speed = Math.Min(_maxSpeed, _speed + (_inertia * TickSeconds));
+            // 0x43D6E0 adds Speed inertia (+408) to the speed (+400) every tick until it reaches Max speed
+            // (+404) -- both in metres a second, so the authored 0.99 gets mission 12's gondola to its 1.5 m/s on
+            // its second tick. Read as an acceleration in metres a second squared, it had taken a second and a
+            // half, and the gondola trailed the original's by over a metre up the whole first shot.
+            _speed = _speed < _maxSpeed
+                ? Math.Min(_maxSpeed, _speed + _inertia)
+                : Math.Max(_maxSpeed, _speed - _inertia);
         }
 
         AdvanceToward(targetIndex, _speed * TickSeconds);

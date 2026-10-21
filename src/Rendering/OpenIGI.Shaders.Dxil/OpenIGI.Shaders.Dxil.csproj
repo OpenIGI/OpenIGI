@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The shader library's DXIL forms, apart from the rest of it. They are compiled by
+       tools/OpenIGI.Tools.ShaderBuild into ../OpenIGI.Shaders/Generated beside the SPIR-V and the WGSL,
+       but embedded here, in an assembly only the Direct3D 12 backend references: OpenIGI.Shaders is
+       downloaded by every browser that opens the game, and a blob per stage of every variant is megabytes
+       no browser can use. The reflection that describes them stays in OpenIGI.Shaders, shared. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\OpenIGI.Shaders\Generated\**\*.dxil" LogicalName="OpenIGI.Shaders.Generated.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

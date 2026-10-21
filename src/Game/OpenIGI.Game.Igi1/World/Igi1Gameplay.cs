@@ -24,7 +24,7 @@ public sealed class Igi1Gameplay : IHostedMission
         Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
         Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
         World.PlayerEvents = new Igi1PlayerEvents(World, Harm, Blasts, Sounds);
-        Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, host);
+        Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, Impacts, host);
         Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
     }
 
@@ -74,7 +74,6 @@ public sealed class Igi1Gameplay : IHostedMission
     IMissionImpacts IHostedMission.Impacts => Impacts;
 
     /// <inheritdoc/>
-    IMissionBlasts IHostedMission.Blasts => Blasts;
 
     /// <inheritdoc/>
     IPlayerBringUp IHostedMission.NewPlayerSetup() => NewPlayerSetup();
@@ -84,5 +83,5 @@ public sealed class Igi1Gameplay : IHostedMission
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>
-    public Igi1PlayerSetup NewPlayerSetup() => new(World, Harm, Audio, _host);
+    public Igi1PlayerSetup NewPlayerSetup() => new(World, Harm, Audio, Sounds, _host);
 }

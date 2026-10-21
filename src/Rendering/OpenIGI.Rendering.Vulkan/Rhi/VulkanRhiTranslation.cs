@@ -168,6 +168,11 @@ public static class VulkanRhiTranslation
                 | BufferUsageFlags.StorageBufferBit;
         }
 
+        if (usage.HasFlag(RhiBufferUsage.AccelerationStructureScratch))
+        {
+            mapped |= BufferUsageFlags.ShaderDeviceAddressBit | BufferUsageFlags.StorageBufferBit;
+        }
+
         return mapped;
     }
 

@@ -61,6 +61,61 @@ public static class SettingsFile
         return true;
     }
 
+    /// <summary>Reads the value a settings file gives one variable, without executing anything.</summary>
+    /// <param name="path">The file to read.</param>
+    /// <param name="name">The variable.</param>
+    /// <returns>The last value the file assigns it, or <see langword="null"/> where it assigns none or cannot be read.</returns>
+    /// <remarks>
+    /// For what has to be known before there is a console to load the file into: the graphics API, which the
+    /// device the console's own font is uploaded to is built over.
+    /// </remarks>
+    public static string? ReadAssignment(string path, string name)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return LastAssignment(File.ReadAllLines(path), name);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Finds the value the last of some console lines to assign a variable gives it.</summary>
+    /// <param name="lines">The lines, each one or more statements, as a settings file or the command line holds them.</param>
+    /// <param name="name">The variable.</param>
+    /// <returns>The value, or <see langword="null"/> where none assigns it.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static string? LastAssignment(IEnumerable<string> lines, string name)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        ArgumentNullException.ThrowIfNull(name);
+
+        string? value = null;
+        foreach (string line in lines)
+        {
+            foreach (string statement in CommandTokenizer.SplitStatements(line))
+            {
+                IReadOnlyList<string> tokens = CommandTokenizer.Tokenize(statement);
+                if (tokens.Count >= 2 && tokens[0].Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = tokens[1];
+                }
+            }
+        }
+
+        return value;
+    }
+
     /// <summary>Whether a saved statement assigns a setting this build no longer has.</summary>
     /// <remarks>
     /// A file written by an earlier build can name a variable since removed. Assigned, it reported an

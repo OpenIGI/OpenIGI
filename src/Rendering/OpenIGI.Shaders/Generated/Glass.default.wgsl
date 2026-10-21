@@ -17,18 +17,6 @@ struct GlassPush_std140_0
 
 @binding(1) @group(0) var uDiffuseSampler_0 : sampler;
 
-@binding(2) @group(0) var uLightmap_0 : texture_2d<f32>;
-
-@binding(3) @group(0) var uLightmapSampler_0 : sampler;
-
-struct GlassParams_std140_0
-{
-    @align(16) fog_0 : vec4<f32>,
-};
-
-@binding(1) @group(1) var<uniform> p_0 : GlassParams_std140_0;
-@id(66) override cSamplerDecodes_0 : i32 = i32(0);
-
 @id(64) override cClipYDown_0 : i32 = i32(1);
 
 fn OpenIgiClipY_0( y_0 : f32) -> f32
@@ -53,6 +41,7 @@ struct GlassVaryings_0
     @location(2) color_0 : vec4<f32>,
     @location(3) worldNormal_0 : vec3<f32>,
     @location(4) viewDepth_0 : f32,
+    @location(5) fromEye_0 : vec3<f32>,
 };
 
 struct GlassVertexInput_0
@@ -79,6 +68,7 @@ fn GlassTransform_0( input_0 : GlassVertexInput_0) -> GlassVaryings_0
     output_0.position_0 = clip_0;
     output_0.viewDepth_0 = clip_0.w;
     output_0.worldNormal_0 = push_0.normal0_0.xyz * vec3<f32>(input_0.normal_0.x) + push_0.normal1_0.xyz * vec3<f32>(input_0.normal_0.y) + push_0.normal2_0.xyz * vec3<f32>(input_0.normal_0.z);
+    output_0.fromEye_0 = push_0.normal0_0.xyz * vec3<f32>(input_0.position_1.x) + push_0.normal1_0.xyz * vec3<f32>(input_0.position_1.y) + push_0.normal2_0.xyz * vec3<f32>(input_0.position_1.z) + vec3<f32>(push_0.normal0_0.w, push_0.normal1_0.w, push_0.normal2_0.w);
     return output_0;
 }
 
@@ -100,23 +90,10 @@ fn vertexMain( _S3 : vertexInput_0) -> GlassVaryings_0
     return GlassTransform_0(_S4);
 }
 
-fn DecodeSrgb_0( c_0 : vec3<f32>) -> vec3<f32>
+fn GlassPaneReflectance_0( cosine_0 : f32) -> f32
 {
-    return mix(pow(max((c_0 + vec3<f32>(0.05499999970197678f)) / vec3<f32>(1.0549999475479126f), vec3<f32>(0.0f, 0.0f, 0.0f)), vec3<f32>(2.40000009536743164f, 2.40000009536743164f, 2.40000009536743164f)), c_0 / vec3<f32>(12.92000007629394531f), step(c_0, vec3<f32>(0.04044999927282333f, 0.04044999927282333f, 0.04044999927282333f)));
-}
-
-fn SampledLinear_0( sampled_0 : vec3<f32>) -> vec3<f32>
-{
-    var _S5 : vec3<f32>;
-    if(cSamplerDecodes_0 != i32(0))
-    {
-        _S5 = sampled_0;
-    }
-    else
-    {
-        _S5 = DecodeSrgb_0(sampled_0);
-    }
-    return _S5;
+    var face_0 : f32 = 0.03999999910593033f + 0.95999997854232788f * pow(1.0f - saturate(cosine_0), 5.0f);
+    return 2.0f * face_0 / (1.0f + face_0);
 }
 
 struct pixelOutput_0
@@ -131,19 +108,24 @@ struct pixelInput_0
     @location(2) color_1 : vec4<f32>,
     @location(3) worldNormal_1 : vec3<f32>,
     @location(4) viewDepth_1 : f32,
+    @location(5) fromEye_1 : vec3<f32>,
 };
 
 @fragment
-fn fragmentMain( _S6 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) -> pixelOutput_0
+fn fragmentMain( _S5 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) -> pixelOutput_0
 {
-    var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S6.diffuseUv_3)));
-    var alpha_0 : f32 = diffuse_0.w * _S6.color_1.w;
+    var alpha_0 : f32 = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S5.diffuseUv_3))).w * _S5.color_1.w;
     if(alpha_0 >= 0.5f)
     {
         discard;
     }
-    var _S7 : vec3<f32> = vec3<f32>(alpha_0);
-    var _S8 : pixelOutput_0 = pixelOutput_0( vec4<f32>(mix(p_0.fog_0.xyz * _S7, SampledLinear_0(diffuse_0.xyz) * DecodeSrgb_0(_S6.color_1.xyz) * SampledLinear_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S6.lightmapUv_3))).xyz) * _S7, vec3<f32>(exp(- p_0.fog_0.w * max(_S6.viewDepth_1, 0.0f)))), alpha_0) );
-    return _S8;
+    if(alpha_0 < 0.01999999955296516f)
+    {
+        discard;
+    }
+    var cosine_1 : f32 = abs(dot(normalize(_S5.worldNormal_1), normalize(_S5.fromEye_1)));
+    var sinRefracted_0 : f32 = sqrt(saturate(1.0f - cosine_1 * cosine_1)) / 1.5f;
+    var _S6 : pixelOutput_0 = pixelOutput_0( vec4<f32>(0.0f, 0.0f, 0.0f, 1.0f - (1.0f - GlassPaneReflectance_0(cosine_1)) * exp(-0.01999999955296516f / max(sqrt(saturate(1.0f - sinRefracted_0 * sinRefracted_0)), 0.05000000074505806f))) );
+    return _S6;
 }
 

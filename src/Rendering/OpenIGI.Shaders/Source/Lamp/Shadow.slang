@@ -30,6 +30,7 @@
 #endif
 
 #include "../Common/ViewDepth.slang"
+#include "../Common/LampIrradiance.slang"
 #if !OPENIGI_LAMP_FIELD
 #include "../Common/HitRecords.slang"
 #include "../Common/CutoutHit.slang"
@@ -252,8 +253,20 @@ float CoarseLampVisibility(int lamp, float3 cameraRelative, float3 normal)
     return lit / max(weightSum, 1e-4);
 }
 
+// What LampMapVisibility answers for a lamp that has no fine map: its coarse cube is asked instead.
+static const float kNoLampMap = -1.0;
+
+// What it answers for a point outside the lamp's map: the field is asked, never the coarse cube. A batten's
+// map looks straight down through ninety degrees, so everything more than forty-five degrees off its axis --
+// the far side of the wall the office's lights hang behind, seen from outside -- falls outside it; the coarse
+// cube's sixty-four texels a face, with the half metre of offset and bias a texel that size needs at seven
+// metres, could not hold a wall a third of a metre thick, and the office's light came through onto the plinth,
+// the column and the soffit outside the security building.
+static const float kOutsideLampMap = -2.0;
+
+
 // How much of a lamp reaches a camera-relative point by the lamp's own shadow map, filtered over a texel
-// either way; or -1 where the lamp has no map or the point is outside it, for the field to answer instead.
+// either way; or kNoLampMap where the lamp has none, or kOutsideLampMap where the point is outside it.
 // The bias is taken in metres along the lamp's view -- a few centimetres and a hundredth of the distance --
 // and only then turned into the map's depth, which a perspective map spends unevenly.
 // A map's projection depth terms: ndc depth = x + y / view depth.
@@ -301,7 +314,7 @@ float LampMapVisibility(int lamp, float3 cameraRelative, float3 receiverNormal, 
     int entry = f.mapSlot[lamp >> 2][lamp & 3];
     if (entry < 0)
     {
-        return -1.0;
+        return kNoLampMap;
     }
 
     int slot = entry & 0xFF;
@@ -334,7 +347,7 @@ float LampMapVisibility(int lamp, float3 cameraRelative, float3 receiverNormal, 
 
         if (!found)
         {
-            return -1.0;
+            return kOutsideLampMap;
         }
 
         // Inside the near plane is inside the lamp's own housing, which is not drawn: nothing there to cast.
@@ -371,7 +384,7 @@ float LampMapVisibility(int lamp, float3 cameraRelative, float3 receiverNormal, 
         {
             float lateralScale = max(length(float3(m[0][0], m[0][1], m[0][2])), 1e-3);
             float3 fromLamp = float3(clip.xy / lateralScale, clip.w - mapNear);
-            return dot(fromLamp, fromLamp) < (1.5 * 1.5) ? 1.0 : -1.0;
+            return dot(fromLamp, fromLamp) < (1.5 * 1.5) ? 1.0 : kOutsideLampMap;
         }
     }
 
@@ -783,6 +796,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     float3 viewPos = ViewPositionAt(uv, depth, p.unproject);
     float3 normal = normalize((uNormal.SampleLevel(uNormalSampler, uv, 0.0).xyz * 2.0) - 1.0);
 
+
     // Absolute world, which is the space the acceleration structure is built in. Everything else
     // here is camera-relative; leaving the ray that way puts it forty-two kilometres from the level,
     // where it misses everything and the pass silently reports no shadows at all.
@@ -828,36 +842,53 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     float weightSum = 0.0;
     for (int i = 0; i < lampCount; i++)
     {
+        // The lighting pass's own diffuse term for this lamp, from the same function: a tube integrated along
+        // its length, a point softened inside its fitting, the reach window and the cone. Weighed any other way,
+        // a lamp the shading lights a surface with can count as reaching it not at all, and its light goes
+        // through whatever stands in the way.
         float4 positionRadius = p.lampPositionRadius[i];
-        float3 offset = positionRadius.xyz - viewPos;
-        float distanceSquared = dot(offset, offset);
-        float reachSquared = positionRadius.w * positionRadius.w;
-        if (distanceSquared >= reachSquared)
+        float3 toLightView = positionRadius.xyz - viewPos;
+        float distanceSq = dot(toLightView, toLightView);
+        float window = LampReachWindow(distanceSq, positionRadius.w);
+        if (window <= 0.0)
         {
             continue;
         }
 
-        float3 toLamp = normalize(mul(p.viewToWorld, float4(offset, 0.0)).xyz);
-        float nDotL = dot(normal, toLamp);
-        if (nDotL <= 0.0)
+        float3 toCentre = mul(p.viewToWorld, float4(toLightView, 0.0)).xyz;
+        float3 centreDir = toCentre * rsqrt(max(distanceSq, 1e-8));
+        float4 facing = p.lampDirection[i];
+        if (LampFaces(facing))
         {
-            continue;
+            window *= LampCone(mul(p.viewToWorld, float4(facing.xyz, 0.0)).xyz, centreDir);
+            if (window <= 0.0)
+            {
+                continue;
+            }
         }
 
-        // Inverse square, softened at the source and windowed to reach exactly zero at the lamp's reach.
-        float falloff = saturate(1.0 - ((distanceSquared / reachSquared) * (distanceSquared / reachSquared)));
-        float atten = (falloff * falloff) / (distanceSquared + 1.0);
+        float source = LampSource(p.lampDirection[i]);
+        float4 rect = p.lampRect[i];
+        float3 halfAxis = mul(p.viewToWorld, float4(rect.xyz, 0.0)).xyz;
 
-        float3 facing = p.lampDirection[i].xyz;
-        if (dot(facing, facing) > 0.25)
+        // What the lamp brings here, its highlight counted alongside its diffuse light: twice the point
+        // irradiance -- a point lamp's highlight comes from where its diffuse light does -- and for a tube twice
+        // a bound on it (LampTubeBound), which is nought exactly where the shading's tube light is. A bound on
+        // the highlight rather than its value, since the trace does not know how glossy the surface is, and one
+        // that errs towards tracing a lamp the eye could not have told apart.
+        float lit;
+        if (dot(halfAxis, halfAxis) > 1e-4)
         {
-            float3 axis = normalize(mul(p.viewToWorld, float4(facing, 0.0)).xyz);
-            atten *= max(dot(axis, -toLamp), 0.0);
+            lit = LampTubeBound(normal, toCentre, halfAxis, clamp(rect.w, 0.02, source));
+        }
+        else
+        {
+            lit = LampPointIrradiance(normal, centreDir, distanceSq, source);
         }
 
         float4 colourIntensity = p.lampColourIntensity[i];
         float brightness = dot(colourIntensity.rgb * colourIntensity.a, float3(0.2126, 0.7152, 0.0722));
-        float weight = atten * nDotL * brightness;
+        float weight = 2.0 * window * lit * brightness;
         if (weight <= 1e-6)
         {
             continue;
@@ -1003,8 +1034,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             normal,
             onRect ? (length(rect.xyz) + rect.w) : (2.0 * source));
         // Past the fine maps' budget, the lamp's coarse cube: the field cannot hold a wall at a distance its
-        // voxels are a metre or two, and a far lamp lit straight through the building it stood behind.
-        if (mapped < 0.0)
+        // voxels are a metre or two, and a far lamp lit straight through the building it stood behind. Only
+        // for a lamp with no map of its own, though: a point outside a mapped lamp's view goes to the field,
+        // as the map's own edge rule intends (see kOutsideLampMap).
+        if (mapped == kNoLampMap)
         {
             mapped = CoarseLampVisibility(lamp, origin - p.cameraFrame.xyz, normal);
         }

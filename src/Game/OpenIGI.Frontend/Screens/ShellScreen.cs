@@ -75,7 +75,7 @@ public abstract class ShellScreen : Screen
     }
 
     /// <summary>Gets how blurred the level behind the page is, in design units; zero leaves it sharp.</summary>
-    public virtual float BackdropBlur => 6f;
+    public virtual float BackdropBlur => 4f;
 
     /// <summary>Gets the scale the level behind the page is drawn at, for a page that animates it.</summary>
     public virtual float BackdropScale => 1f;
@@ -135,7 +135,7 @@ public abstract class ShellScreen : Screen
 
         if (nav.Back && Tab != ShellTab.Home)
         {
-            Context.Stack.Reset(CreateScreen(ShellTab.Home, Context));
+            Leave(ShellTab.Home);
             return false;
         }
 
@@ -168,7 +168,24 @@ public abstract class ShellScreen : Screen
             return;
         }
 
-        Context.Stack.Reset(CreateScreen(tab, Context));
+        Leave(tab);
+    }
+
+    /// <summary>Lets the page hold the player on it before they leave for another section.</summary>
+    /// <param name="leave">Leaves, as asked; the page calls it later if it holds the player now.</param>
+    /// <returns>
+    /// <see langword="true"/> when the page has taken the departure over -- to ask about changes it has not
+    /// applied -- and <paramref name="leave"/> has not run; <see langword="false"/> to leave straight away.
+    /// </returns>
+    protected virtual bool HoldDeparture(Action leave) => false;
+
+    private void Leave(ShellTab tab)
+    {
+        void Go() => Context.Stack.Reset(CreateScreen(tab, Context));
+        if (!HoldDeparture(Go))
+        {
+            Go();
+        }
     }
 
     private void StepTab(int direction)

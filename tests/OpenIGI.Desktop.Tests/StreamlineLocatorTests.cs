@@ -1,5 +1,5 @@
 using OpenIGI.Host.Configuration;
-using OpenIGI.Rendering.Vulkan;
+using OpenIGI.Rendering.Streamline;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

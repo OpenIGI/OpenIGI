@@ -23,8 +23,10 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="mission">The mission's world, which keeps the tables and the player's health.</param>
 /// <param name="harm">What a fall and a powered fence do to the player.</param>
 /// <param name="audio">The pickups' cues.</param>
+/// <param name="sounds">The clatter of a dropped gun landing.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, IPlayerSetupHost host) : IPlayerBringUp
+public sealed class Igi1PlayerSetup(
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
@@ -310,6 +312,7 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
 
             mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable, host.Game.Variables);
             GunPickupRegistry gunPickups = mission.GunPickups;
+            gunPickups.Landed = sounds.PlayWeaponDrop;
             candidate.UseGunPickups(gunPickups);
             candidate.GunPickedUp += pickup =>
             {
@@ -630,11 +633,13 @@ public sealed class Igi1PlayerSetup(MissionWorld mission, Igi1PlayerHarm harm, I
         ArgumentNullException.ThrowIfNull(deflected);
 
         // The round goes to the level's bodies -- this game's soldiers, and any a mod brings -- as the shot's trace meets them.
-        candidate.Humans = (Vector3d origin, Vector3d end, float damageFactor, WeaponCategory category, out HumanHit hit) =>
+        candidate.Humans = (Vector3d origin, Vector3d end, float damageFactor, WeaponCategory category, double stopDistance, bool alreadyHeard, out HumanHit hit) =>
             mission.Bodies.Shoot(
                 origin,
                 end,
                 mission.PlayerTask,
+                stopDistance,
+                alreadyHeard,
                 struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true).ToShared(),
                 out hit);
         candidate.HumanProbes = guards.Simulation.Probe();

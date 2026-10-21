@@ -1,4 +1,6 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -145,5 +147,48 @@ public sealed class GunShotBallisticsTests
         Assert.True(
             spas.BulletsPerRound * 3 > GunShotBallistics.MaximumLiveShots,
             "three shotgun rounds in flight already exceed the pool");
+    }
+
+    [Fact]
+    public void ASnipersRoundGoesThroughTheRailingItFiresFrom()
+    {
+        // Mission 1's water tower: the railing is Fence (resistance 0, ricochet limit 30 degrees) and the
+        // Dragunov carries power 3. Arriving square on, no glance is possible, and a margin of 3 bites through.
+        GameMaterial fence = new() { Index = 18, Name = "Fence", BulletResistance = 0f, RicochetAngleDegrees = 30f };
+        float squareOn = GunShotBallistics.IncidenceRadians(new Vector3d(0, 1, 0), new Vector3f(0f, -1f, 0f));
+
+        Assert.Equal(
+            GunShotImpact.Penetrated,
+            GunShotBallistics.ResolveEntry(3f, fence, namedObject: true, squareOn, alreadyDeflected: false, () => 0.5f));
+    }
+
+    [Fact]
+    public void ASurfaceStopsARoundItOutweighsOrThatNamesNoObject()
+    {
+        GameMaterial concrete = new() { Index = 11, Name = "Concrete", BulletResistance = 5f, RicochetAngleDegrees = 25f };
+        GameMaterial fence = new() { Index = 18, Name = "Fence", BulletResistance = 0f, RicochetAngleDegrees = 30f };
+
+        Assert.Equal(
+            GunShotImpact.Stopped,
+            GunShotBallistics.ResolveEntry(3f, concrete, namedObject: true, 0f, alreadyDeflected: false, () => 0.5f));
+
+        // The bare level shell: no object named, so nothing gets through whatever the margin.
+        Assert.Equal(
+            GunShotImpact.Stopped,
+            GunShotBallistics.ResolveEntry(3f, fence, namedObject: false, 0f, alreadyDeflected: false, () => 0.5f));
+    }
+
+    [Fact]
+    public void AGrazingRoundGlancesOnceAndOnlyOnce()
+    {
+        GameMaterial fence = new() { Index = 18, Name = "Fence", BulletResistance = 0f, RicochetAngleDegrees = 30f };
+        float grazing = 89f * GunFiring.DegreesToRadians;
+
+        Assert.Equal(
+            GunShotImpact.Deflected,
+            GunShotBallistics.ResolveEntry(3f, fence, namedObject: true, grazing, alreadyDeflected: false, () => 0f));
+        Assert.Equal(
+            GunShotImpact.Penetrated,
+            GunShotBallistics.ResolveEntry(3f, fence, namedObject: true, grazing, alreadyDeflected: true, () => 0f));
     }
 }

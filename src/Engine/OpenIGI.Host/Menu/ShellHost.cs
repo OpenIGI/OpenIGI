@@ -29,6 +29,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="missionSaves">The running mission's own save games, or <see langword="null"/>.</param>
 /// <param name="inputBindingLabel">The active title's visible control labels.</param>
 /// <param name="resetInputBindings">Restores the active title's control defaults.</param>
+/// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -44,7 +45,8 @@ public sealed class ShellHost(
     Func<string, string>? settingUnavailable = null,
     Func<OpenIGI.Game.Player.ITitleSaveGames?>? missionSaves = null,
     Func<string, string?>? inputBindingLabel = null,
-    Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null) : IShellHost
+    Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null,
+    Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null) : IShellHost
 {
     /// <inheritdoc/>
     public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => missionSaves?.Invoke();
@@ -94,6 +96,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public string SettingUnavailable(string variable) => settingUnavailable?.Invoke(variable) ?? string.Empty;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>

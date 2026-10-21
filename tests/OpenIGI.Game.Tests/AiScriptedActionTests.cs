@@ -126,6 +126,8 @@ public sealed class AiScriptedActionTests
             new AiCombatParameters(new HumanAiConfigItemTask()),
             () => new AiCombatWeaponState(30, 30, 3, WeaponCategory.Gun));
 
+        // A soldier's first tick is its creation and nothing else (0x44F410's first pass).
+        soldier.Tick(0, new Vector3d(position.X, position.Y - 100_000, position.Z), 0.0);
         soldier.ApplyActions([
             new AiProducedAction("AIAction_FallFlat", [1, 0], GunshotMissPosition, [1f, 0f]),
             new AiProducedAction("AIAction_SetCombat", [Pushable], GunshotMissPosition),
@@ -268,8 +270,10 @@ public sealed class AiScriptedActionTests
             () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
         soldier.SetScript(new AiScriptHost(RetailAiNatives()), guard);
 
-        // The first tick dispatches the archetype's creation, which declares the events it hears; the fight
-        // is then what guard.qsc's COMBAT branch installs -- pushable, at COMBAT's position.
+        // The first tick dispatches the archetype's creation, which declares the events it hears, and nothing
+        // else; the second posts and runs IDLE. The fight is then what guard.qsc's COMBAT branch installs --
+        // pushable, at COMBAT's position.
+        soldier.Tick(0, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
         soldier.Tick(1, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
         soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [Pushable], CombatPosition)]);
 
@@ -444,6 +448,27 @@ public sealed class AiScriptedActionTests
         Vector3d alreadySafe = new(source.Position.X + 1.0, source.Position.Y, source.Position.Z);
         Assert.Null(AiRunPanicking.FindDestination(
             graph, alreadySafe, source.Position, distanceMetres: 0.0));
+    }
+
+    [RequiresGameDataFact]
+    public void ASoldiersFirstTickIsItsCreationAndIdleWaitsForTheNext()
+    {
+        // 0x44F410's first pass (+15636 still clear) dispatches CREATE and goes straight to the pump and the
+        // action runner. Probed on mission 4: every AI dispatched CREATE on its first tick and was offered IDLE --
+        // and with it its patrol -- one tick later.
+        string guardPath = Path.Combine(GameData.RequireRoot(), "common", "ai", "guard.qvm");
+        Igi1HumanAi soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.SetScript(new AiScriptHost(RetailAiNatives()), QvmProgram.Read(File.ReadAllBytes(guardPath)));
+        List<AiEvent> dispatched = [];
+        soldier.Dispatched = (type, _) => dispatched.Add(type);
+
+        soldier.Tick(0, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
+        Assert.Equal([AiEvent.Create], dispatched);
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Idle));
+
+        dispatched.Clear();
+        soldier.Tick(1, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
+        Assert.Equal([AiEvent.Idle], dispatched);
     }
 
     private static NativeRegistry RetailAiNatives()

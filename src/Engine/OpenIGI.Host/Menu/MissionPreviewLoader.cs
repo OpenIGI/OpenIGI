@@ -323,8 +323,11 @@ public sealed class MissionPreviewLoader(
 
         // The title's own walk, not the first game's. A promoted backdrop IS the mission, scene and
         // all, so these two cannot be allowed to differ.
+        // With the vehicle table, as the played mission's walk has it: a promoted backdrop keeps this scene,
+        // and without the table its cars have no wreck to become.
+        context.TitleServices.TryGet(out VehiclePhysicsRegistry? vehiclePhysics);
         WorldBuildResult built = context.WorldBuilder.Build(
-            new WorldBuildRequest(loaded, levelRoot, resources, magic, logger));
+            new WorldBuildRequest(loaded, levelRoot, resources, magic, logger, vehiclePhysics));
         WorldScene scene = built.Scene;
         ObjectCollisionIndex solids = built.Solids ?? ObjectCollisionIndex.Build([]);
 

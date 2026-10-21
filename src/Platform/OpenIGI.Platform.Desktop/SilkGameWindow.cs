@@ -146,7 +146,7 @@ public sealed class SilkGameWindow : IGameWindow
     {
         // Created once, with no client-API context at all; Silk then exposes a VkSurface the device
         // builds its swapchain against. There is no version fallback ladder because the device, not the
-        // window, negotiates the API version.
+        // window, negotiates the API version. Direct3D 12 presents through the same window by its handle.
         WindowOptions attempt = options with { API = GraphicsAPI.DefaultVulkan };
         IWindow window = Window.Create(attempt);
 
@@ -162,6 +162,14 @@ public sealed class SilkGameWindow : IGameWindow
             // thing that is actually missing. Restated as the platform failure it is, so the caller's
             // existing PlatformException path reports it like any other.
             window.Dispose();
+
+            // Windows has another way to draw: the same window with no client API at all, which
+            // Direct3D 12 presents to by its handle. The game then has no Vulkan to fall back to.
+            if (OperatingSystem.IsWindows())
+            {
+                return CreateWithoutVulkan(options);
+            }
+
             throw new PlatformException(NoVulkanLoaderMessage, ex);
         }
 
@@ -173,6 +181,14 @@ public sealed class SilkGameWindow : IGameWindow
                 + "A driver supporting Vulkan 1.2 or newer is required.");
         }
 
+        WindowIcon.Apply(window);
+        return window;
+    }
+
+    private static IWindow CreateWithoutVulkan(WindowOptions options)
+    {
+        IWindow window = Window.Create(options with { API = GraphicsAPI.None });
+        window.Initialize();
         WindowIcon.Apply(window);
         return window;
     }

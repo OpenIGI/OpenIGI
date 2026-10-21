@@ -91,6 +91,9 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     private UiFont? _display;
 
     private Page _page = Page.Map;
+
+    /// <inheritdoc/>
+    public bool MapAvailable { get; set; } = true;
     private Vector3d _centreUnits;
     private bool _hasCentre;
     private float _zoom = DefaultZoom;
@@ -170,7 +173,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         _hasCentre = true;
         _zoom = DefaultZoom;
         _zoomTarget = DefaultZoom;
-        _page = Page.Map;
+        _page = MapAvailable ? Page.Map : Page.Objectives;
         _dragging = false;
     }
 
@@ -190,13 +193,18 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         _mouseX = input.Mouse.X;
         _mouseY = input.Mouse.Y;
 
+        if (!MapAvailable && _page == Page.Map)
+        {
+            _page = Page.Objectives;
+        }
+
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         Chrome chrome = Measure(context, _page != Page.Map);
 
         _hoverPage = -1;
         for (int i = 0; i < PageNames.Length; i++)
         {
-            if (Contains(chrome.PageRow(i), _mouseX, _mouseY))
+            if (IsSelectable((Page)i) && Contains(chrome.PageRow(i), _mouseX, _mouseY))
             {
                 _hoverPage = i;
             }
@@ -209,7 +217,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         for (int i = 0; i < PageKeys.Length; i++)
         {
-            if (input.Keyboard.WasPressed(PageKeys[i]))
+            if (input.Keyboard.WasPressed(PageKeys[i]) && IsSelectable((Page)i))
             {
                 _page = (Page)i;
             }
@@ -217,7 +225,11 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         if (input.Keyboard.WasPressed(KeyCode.Tab))
         {
-            _page = (Page)(((int)_page + 1) % PageNames.Length);
+            do
+            {
+                _page = (Page)(((int)_page + 1) % PageNames.Length);
+            }
+            while (!IsSelectable(_page));
         }
 
         // Back to the player, which is the one navigation action a map that can be panned across a whole
@@ -769,7 +781,14 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 painter.FillRect(row, UiPalette.White(0.06f));
             }
 
+            // A page the level has not given the player stays listed, greyed, the way the original leaves
+            // its MAP link out rather than renumbering what is left.
             Bgra32 colour = selected ? UiPalette.AccentLight : hovered ? Text : TextMuted;
+            if (!IsSelectable((Page)i))
+            {
+                colour = TextMuted.WithAlpha(70);
+            }
+
             float indexSize = context.Px(11f);
             float nameSize = context.Px(16f);
             float textX = row.X + context.Px(20f);
@@ -1298,6 +1317,8 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     private static Bgra32 Panel => UiPalette.GlassDense;
     private static Bgra32 PanelSolid => UiPalette.GlassMenu;
     private static Bgra32 Border => UiPalette.Hairline;
+
+    private bool IsSelectable(Page page) => page != Page.Map || MapAvailable;
 
     private enum Page
     {

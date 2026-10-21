@@ -23,7 +23,7 @@ namespace OpenIGI.Rendering.Rhi.Tests;
 public sealed class BackendCompletenessTests(ITestOutputHelper output)
 {
     [Fact]
-    public void Neither_backend_leaves_a_member_of_the_interface_throwing()
+    public void No_backend_leaves_a_member_of_the_interface_throwing()
     {
         List<string> unimplemented = [];
 
@@ -47,7 +47,7 @@ public sealed class BackendCompletenessTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Both_backends_implement_the_whole_device()
+    public void Every_backend_implements_the_whole_device()
     {
         // The other direction: a type claiming the interface has to have a body for every member of it,
         // which the compiler already insists on -- this asserts the set is the one being walked above,
@@ -70,6 +70,7 @@ public sealed class BackendCompletenessTests(ITestOutputHelper output)
         {
             typeof(OpenIGI.Rendering.WebGpu.WebGpuRhiDevice).Assembly,
             typeof(OpenIGI.Rendering.Vulkan.Rhi.VulkanRhiTranslation).Assembly,
+            typeof(OpenIGI.Rendering.D3D12.Rhi.D3D12Rhi).Assembly,
         })
         {
             foreach (Type type in assembly.GetTypes())
@@ -81,7 +82,7 @@ public sealed class BackendCompletenessTests(ITestOutputHelper output)
             }
         }
 
-        Assert.Equal(2, found.Count);
+        Assert.Equal(3, found.Count);
         return found;
     }
 

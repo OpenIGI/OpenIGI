@@ -75,7 +75,8 @@ public static class ShaderBindingLayout
                 binding.StorageAccess == ShaderStorageAccess.ReadOnly
                     ? RhiBindingType.ReadOnlyStorageBuffer
                     : RhiBindingType.StorageBuffer,
-                stages),
+                stages,
+                ElementStride: binding.Hlsl?.Stride ?? 0),
 
             ShaderBindingKind.AccelerationStructure => new RhiBindGroupLayoutEntry(
                 binding.Binding,

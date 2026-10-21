@@ -170,7 +170,9 @@ jobs:
               row "macOS (Apple silicon)" osx-arm64 .tar.gz
             fi
             echo
-            echo "Windows and Linux builds are a single executable (on Linux, \`chmod +x\` it first). macOS builds are an app in a tarball; the first time, open it with right-click → Open."
+            echo "Windows and Linux builds are a single executable (on Linux, \`chmod +x\` it first). macOS builds are an app in a tarball."
+            echo "On macOS and Linux, the launcher installs with one command: \`curl -fsSL https://openigi.com/install.sh | bash\`."
+            echo "The macOS builds are not notarized, so macOS reports an app downloaded with a browser as \"damaged\"; clear that with \`xattr -dr com.apple.quarantine \"/Applications/OpenIGI Launcher.app\"\` (or the app's path)."
             echo "OpenIGI needs your own copy of Project I.G.I.; it ships none of the game's data. Verify a download with \`sha256sum -c SHA256SUMS\`."
           } > "$RUNNER_TEMP/notes/release.md"
           cp "$RUNNER_TEMP/notes/notes.md" artifacts/release/CHANGELOG.md

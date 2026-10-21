@@ -138,8 +138,8 @@ public interface IWorldPresenter : IDisposable
     GenericPickupRegistry? GenericPickups { get; set; }
 
     /// <summary>
-    /// Gets or sets the level's direct interactions: GenericTBA destruction and the stationary-gun
-    /// stands that turn with their gun. Null when the level has none.
+    /// Gets or sets the level's direct interactions: the charges a plant has moved and the
+    /// stationary-gun stands that turn with their gun. Null when the level has none.
     /// </summary>
     WorldInteractionRegistry? Interactions { get; set; }
 

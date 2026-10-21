@@ -141,15 +141,23 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
                 }
             }
         }
-        if(terrain_0 > 1.5f)
+        if(terrain_0 > 2.5f)
         {
-            facing_0 = 1.0f - morph_0;
+            fogDensity_0 = 1.0f;
         }
         else
         {
-            facing_0 = morph_0;
+            if(terrain_0 > 1.5f)
+            {
+                facing_0 = 1.0f - morph_0;
+            }
+            else
+            {
+                facing_0 = morph_0;
+            }
+            fogDensity_0 = fogDensity_0 * facing_0;
         }
-        output_0.fade_0 = fogDensity_0 * facing_0;
+        output_0.fade_0 = fogDensity_0;
         localPosition_1 = _S5;
         diffuseUv_2 = diffuseUv_3;
     }

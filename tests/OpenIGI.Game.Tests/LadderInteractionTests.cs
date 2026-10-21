@@ -31,6 +31,35 @@ public sealed class LadderInteractionTests
     }
 
     [Fact]
+    public void RungSoundsFollowTheRetailTwelveStepCycleAcrossLadders()
+    {
+        // 0x538C18: 0,1,2,3,1,2,1,2,3,2,1,0, each played as walk_ladder_(n + 1). Nothing resets the cursor
+        // on a mount, so the second ladder carries on where the first one stopped.
+        string[] expected =
+        [
+            "walk_ladder_1", "walk_ladder_2", "walk_ladder_3", "walk_ladder_4",
+            "walk_ladder_2", "walk_ladder_3", "walk_ladder_2", "walk_ladder_3",
+            "walk_ladder_4", "walk_ladder_3", "walk_ladder_2", "walk_ladder_1",
+            "walk_ladder_1",
+        ];
+
+        HumanLadderClimb climb = new();
+        climb.Mount(Ladder(), atTop: false);
+        string[] heard = new string[expected.Length];
+        for (int rung = 0; rung < heard.Length; rung++)
+        {
+            if (rung == 6)
+            {
+                climb.Mount(Ladder(), atTop: true);
+            }
+
+            heard[rung] = climb.NextStepSound();
+        }
+
+        Assert.Equal(expected, heard);
+    }
+
+    [Fact]
     public void PositionInterpolatesAlongTheSegment()
     {
         LadderClimbLine line = new(Foot, Head);

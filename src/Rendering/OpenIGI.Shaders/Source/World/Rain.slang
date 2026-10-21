@@ -55,23 +55,23 @@ struct RainParams
 
 struct RainVertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
 
     // Declared because the vertex format the storm uploads has them; a drop is rebuilt every frame.
-    [[vk::location(5)]] float3 previousPosition;
-    [[vk::location(6)]] float3 previousNormal;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
+    [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
 };
 
 struct RainVaryings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 diffuseUv;
-    [[vk::location(1)]] float4 color;
-    [[vk::location(2)]] float viewDepth;
+    [[vk::location(0)]] float2 diffuseUv : TEXCOORD0;
+    [[vk::location(1)]] float4 color : TEXCOORD1;
+    [[vk::location(2)]] float viewDepth : TEXCOORD2;
 };
 
 /// The vertex stage: the world pipeline's transform, character for character (see Glass.slang's).

@@ -115,7 +115,7 @@ public sealed partial class GraphicsDevice
             _viewModelLensX,
             _viewModelLensY,
             marchesField ? _distanceFieldBinding : DistanceFieldBinding.None,
-            traces ? TracedWorld!.HitRecordAddress : 0UL,
+            traces ? TracedWorld!.HitRecordHandle : 0UL,
             RawLighting));
 
         reflect.Bind("uLit", scene.View(SceneTargetId.Lit), _reflectSampler!);

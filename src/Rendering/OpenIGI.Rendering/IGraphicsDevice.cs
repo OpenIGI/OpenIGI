@@ -317,6 +317,16 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha);
 
+    /// <summary>
+    /// Sets the terrain's level-of-detail slide for a pass that covers the chunk once and takes no share of
+    /// the material cross-fade: the seam morph applies, the weights do not.
+    /// </summary>
+    /// <param name="scale">As <see cref="SetDetailFade(float, float, float, bool)"/>.</param>
+    /// <param name="offset">As <see cref="SetDetailFade(float, float, float, bool)"/>.</param>
+    /// <param name="slope">As <see cref="SetDetailFade(float, float, float, bool)"/>.</param>
+    /// <remarks>Project I.G.I.'s terrain lightmap pass, which multiplies the whole chunk after its material passes.</remarks>
+    void SetDetailFadeUnweighted(float scale, float offset, float slope) => SetDetailFade(scale, offset, slope, fadeAlpha: false);
+
     /// <summary>Stops the terrain fade; subsequent <see cref="DrawMesh"/> calls draw unmodified.</summary>
     void ClearDetailFade();
 
@@ -1831,6 +1841,29 @@ public interface IGraphicsDevice : IDisposable
         TextureHandle lightmap,
         BlendMode blend);
 
+    /// <summary>Draws camera-facing tracer strips through the tracer shader.</summary>
+    /// <param name="mesh">The strips: u along each one (0 tail, 1 head), v across it, the vertex colour the tracer's
+    /// colour at the display encoding and its alpha the brightness at that end.</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw.</param>
+    /// <param name="modelView">The strips' transform into view space.</param>
+    /// <param name="style">Which look: the original's line or the remaster's streak.</param>
+    /// <param name="radiance">The remastered streak's radiance at full brightness; the retail line ignores it.</param>
+    /// <remarks>
+    /// Tested against the scene's depth and never writing it, never fogged, and always adding its coverage to the
+    /// target's alpha, which is the marker the temporal resolve reads to keep a one-tick effect out of its history.
+    /// A device without the shader draws the strips as an ordinary blended mesh.
+    /// </remarks>
+    void DrawTracers(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, TracerStyle style, float radiance) =>
+        DrawMesh(
+            mesh,
+            indexOffset,
+            indexCount,
+            modelView,
+            TextureHandle.None,
+            TextureHandle.None,
+            style == TracerStyle.Retail ? BlendMode.AlphaBlend : BlendMode.Additive);
+
     /// <summary>Puts part of a mesh into the traced world without drawing it.</summary>
     /// <param name="mesh">The mesh to admit.</param>
     /// <param name="indexOffset">The first index of the run.</param>
@@ -1859,13 +1892,21 @@ public interface IGraphicsDevice : IDisposable
     /// camera never sees. Every other ray -- the GI's, the shadows' -- passes through it, or an invisible
     /// occluder stands wherever the camera does and darkens whatever the player faces.
     /// </param>
+    /// <param name="material">
+    /// What the run is made of, as it would be drawn -- whether it glows, and whether it occludes. Nothing
+    /// is drawn here, so there is no current material to take it from: reading the device's own left this
+    /// run with whatever the last DRAW set, which recorded a culled monitor with a ceiling lamp's glow and
+    /// could leave a culled wall out of the traced world because the last thing drawn was the sky.
+    /// <see langword="null"/> is an ordinary opaque surface.
+    /// </param>
     void SubmitTracedMesh(
         MeshHandle mesh,
         int indexOffset,
         int indexCount,
         in Matrix4f modelView,
         TextureHandle diffuse,
-        bool firstPersonOnly = false)
+        bool firstPersonOnly = false,
+        SurfaceMaterial? material = null)
     {
     }
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -44,7 +44,9 @@
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Streamline\OpenIGI.Rendering.Streamline.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.D3D12\OpenIGI.Rendering.D3D12.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
     <ProjectReference Include="..\..\src\UI\OpenIGI.UI\OpenIGI.UI.csproj" />
@@ -63,6 +65,17 @@
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false"
                       GlobalPropertiesToRemove="PublishTrimmed;TrimMode;PublishReadyToRun;PublishSingleFile;IncludeNativeLibrariesForSelfExtract;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
+
+  <!-- Direct3D 12's runtime (D3D12/, from OpenIGI.Rendering.D3D12) is for Windows alone: a Linux or macOS package
+       carried 5 MB it can never load. Decided here, by the package's runtime identifier, because a referenced
+       library is built without one, and the release runner builds every platform's package on one machine. -->
+  <Target Name="DropD3D12RuntimeOffWindows" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(RuntimeIdentifier)' != '' and !$(RuntimeIdentifier.StartsWith('win'))">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').StartsWith('D3D12/'))" />
+    </ItemGroup>
+  </Target>
 
   <!-- GLFW decides whether Vulkan exists by dlopen'ing a file called exactly "libvulkan.1.dylib": one
        leaf name, hard coded, and the only one it will try. Silk asks it that question before it will
@@ -96,6 +109,24 @@
     </ItemGroup>
     <Copy SourceFiles="@(MoltenVkPublishedLoader)" DestinationFiles="$(PublishDir)libvulkan.1.dylib"
           SkipUnchangedFiles="true" Condition="'@(MoltenVkPublishedLoader)' != ''" />
+  </Target>
+
+  <!-- Frame generation on an RTX 30 or 20, for a developer who has cloned dlssg_for_sm86 into
+       third-party/ (git-ignored, and never shipped: it carries NVIDIA's runtime). It is a proxy
+       version.dll that has to sit beside the executable, where Windows looks for it first, so it is
+       copied into every local build rather than dropped there by hand and lost to the next clean.
+       Direct3D 12 only: on Vulkan Streamline still reports frame generation unsupported on these GPUs
+       and the game declines it. Its INI is copied only where there is none, so a tuned one survives a
+       rebuild. -p:CopyDlssgSm86=false leaves both out. -->
+  <PropertyGroup>
+    <DlssgSm86Directory>$(MSBuildThisFileDirectory)..\..\third-party\dlssg_for_sm86\</DlssgSm86Directory>
+  </PropertyGroup>
+
+  <Target Name="CopyDlssgSm86Proxy" AfterTargets="Build"
+          Condition="'$(CopyDlssgSm86)' != 'false' and $([MSBuild]::IsOSPlatform('Windows')) and Exists('$(DlssgSm86Directory)version.dll')">
+    <Copy SourceFiles="$(DlssgSm86Directory)version.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(DlssgSm86Directory)dlssg_sm86.ini" DestinationFolder="$(OutDir)"
+          Condition="!Exists('$(OutDir)dlssg_sm86.ini')" />
   </Target>
 
 </Project>

@@ -12,8 +12,11 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <remarks>
 /// <para>
 /// A node is divided into a grid of <b>rows = cols = trunc(radius × 0.5)</b> cells (the radius is the
-/// node's authored figure in metres), each cell <b>two metres</b> (8192 units) square and holding up to
-/// <see cref="CellCapacity"/> claims. A node whose record says <c>occupants ≥ rows × cols</c> is full and
+/// node's authored figure in metres), each cell <b>two metres</b> (8192 units) square. A claim does not count
+/// one in its own cell: it stamps a five-by-five kernel round it (<c>sub_452B80</c> over the table at
+/// <c>0x53CA98</c>) -- 100 on the cell, 50 on the ring, 25 on the rim -- and a cell is taken once it reaches
+/// <see cref="CellCapacity"/>, so one claim takes every cell within two of it. A node whose record says
+/// <c>occupants ≥ rows × cols</c> is full and
 /// the acceptance test (<c>0x48B260</c>) rejects it outright — which means a node with a radius under
 /// four metres holds exactly <b>one</b> soldier: its first claimant takes the centre cell through the
 /// no-record arm, and the zero-capacity record then turns everyone else away.
@@ -31,8 +34,21 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// </remarks>
 public sealed class AiNodeOccupancy
 {
-    /// <summary>How many claims one grid cell holds — <c>0x48B780</c>'s literal 25.</summary>
+    /// <summary>The weight at which a grid cell is taken — <c>0x48B780</c>'s literal 25.</summary>
     public const int CellCapacity = 25;
+
+    // The cell array's row stride: 0x48B780 and 0x452B80 index a record's cells as col + 20 * row.
+    private const int CellStride = 20;
+
+    // 0x53CA98: (row step, column step, weight), as 0x452B80 walks it.
+    private static readonly (int Row, int Col, int Weight)[] Kernel =
+    [
+        (-2, -2, 25), (-1, -2, 25), (0, -2, 25), (1, -2, 25), (2, -2, 25),
+        (-2, -1, 25), (-1, -1, 50), (0, -1, 50), (1, -1, 50), (2, -1, 25),
+        (-2, 0, 25), (-1, 0, 50), (0, 0, 100), (1, 0, 50), (2, 0, 25),
+        (-2, 1, 25), (-1, 1, 50), (0, 1, 50), (1, 1, 50), (2, 1, 25),
+        (-2, 2, 25), (-1, 2, 25), (0, 2, 25), (1, 2, 25), (2, 2, 25),
+    ];
 
     /// <summary>The grid cell pitch — two metres, <c>0x48B780</c>'s literal 8192.</summary>
     public const double CellSizeInUnits = 8192.0;
@@ -165,7 +181,7 @@ public sealed class AiNodeOccupancy
         _pattern = (_pattern + 1) % 4;
         foreach ((int row, int col) in ScanOrder(_pattern, record.Rows, record.Cols))
         {
-            if (record.Cells[(record.Cols * row) + col] >= CellCapacity)
+            if (record.Cells[(CellStride * row) + col] >= CellCapacity)
             {
                 continue;
             }
@@ -185,7 +201,16 @@ public sealed class AiNodeOccupancy
     /// occupants), which is what lets a small node — whose zero-capacity grid would otherwise reject
     /// everyone for ever — be claimed again through the no-record arm.
     /// </remarks>
-    public void Release(object claimant)
+    public void Release(object claimant) => Release(claimant, rowForColumn: false);
+
+    /// <summary>
+    /// Releases a dead soldier's claim as its HumanAI does once the death clip has run (<c>0x44F410</c>): it hands
+    /// <c>sub_452C10</c> the claimed row for both coordinates, so the kernel comes off cell (row, row).
+    /// </summary>
+    /// <param name="claimant">The dead soldier.</param>
+    public void ReleaseDead(object claimant) => Release(claimant, rowForColumn: true);
+
+    private void Release(object claimant, bool rowForColumn)
     {
         ArgumentNullException.ThrowIfNull(claimant);
         if (!_claims.Remove(claimant, out Claim? claim))
@@ -193,13 +218,10 @@ public sealed class AiNodeOccupancy
             return;
         }
 
-        int index = (claim.Record.Cols * claim.Row) + claim.Col;
-        if (index < claim.Record.Cells.Length)
-        {
-            claim.Record.Cells[index]--;
-        }
-
-        if (--claim.Record.Occupants <= 0)
+        // sub_452C10: the occupant count comes down first, then the kernel.
+        --claim.Record.Occupants;
+        Stamp(claim.Record, claim.Row, rowForColumn ? claim.Row : claim.Col, -1);
+        if (claim.Record.Occupants <= 0)
         {
             _records.Remove(claim.Record.Key);
         }
@@ -273,16 +295,16 @@ public sealed class AiNodeOccupancy
 
     private Record CreateRecord(GraphFile graph, GraphNode node)
     {
-        // sub_452C60: rows = cols = trunc(radius * 0.5) — the radius is metres, so one grid cell per
-        // two metres of radius, and a small node gets a zero-capacity grid whose record still counts
-        // its single centre-cell occupant.
-        int side = Math.Max(0, (int)(node.Radius * 0.5f));
+        // sub_452C60: rows = cols = trunc(node+40 * 0.5), and node+40 is the cached radius + radius -- so one cell per
+        // metre of radius, and a node under a metre gets a zero-capacity grid whose record still counts its single
+        // centre-cell occupant. Reading the radius itself halved the grid, and put every claimed cell a step off.
+        int side = Math.Max(0, (int)((node.Radius + node.Radius) * 0.5f));
         Record record = new()
         {
             Key = (graph, node.Id),
             Rows = side,
             Cols = side,
-            Cells = new int[Math.Max(1, side * side)],
+            Cells = new int[Math.Max(1, (side * CellStride) + side)],
         };
         _records[(graph, node.Id)] = record;
         return record;
@@ -291,13 +313,22 @@ public sealed class AiNodeOccupancy
     private void Take(object claimant, Record record, int row, int col)
     {
         Release(claimant);
-        int index = record.Cols * row + col;
-        if (index < record.Cells.Length)
-        {
-            record.Cells[index]++;
-        }
-
         record.Occupants++;
+        Stamp(record, row, col, 1);
         _claims[claimant] = new Claim(record, row, col);
+    }
+
+    // sub_452B80: the kernel round (row, col), added or taken away, wherever it falls inside the grid.
+    private static void Stamp(Record record, int row, int col, int sign)
+    {
+        foreach ((int dr, int dc, int weight) in Kernel)
+        {
+            int r = row + dr;
+            int c = col + dc;
+            if (r >= 0 && r < record.Rows && c >= 0 && c < record.Cols)
+            {
+                record.Cells[(CellStride * r) + c] += sign * weight;
+            }
+        }
     }
 }

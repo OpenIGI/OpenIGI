@@ -54,8 +54,9 @@ public sealed partial class GameHost
     private void BeginFramePass(FrameLoopState state)
     {
         // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
-        // small upload between frames into a hitch. Only after a pass that presented, or the pacing
-        // would throttle the simulation's ticks as well; never under a capture, whose clock is its own.
+        // small upload between frames into a hitch; the game is held to the player's cap where Reflex
+        // is not holding it. Only after a pass that presented, or the pacing would throttle the
+        // simulation's ticks as well; never under a capture, whose clock is its own.
         // A level held behind the loading screen while its field bakes is paced harder still: the
         // withheld frames exist to advance the temporal passes, which thirty a second does as well as
         // a hundred, and every core the render thread is not spinning on is one the bake gets.
@@ -65,9 +66,9 @@ public sealed partial class GameHost
             {
                 state.MenuPacer.Pace(30);
             }
-            else if (_menuFlow.MenuMode && !RenderCVars.VSync.Value)
+            else if (FrameRateCap(_menuFlow.MenuMode) is > 0 and int cap)
             {
-                state.MenuPacer.Pace(_window.RefreshRate > 0 ? _window.RefreshRate : 60);
+                state.MenuPacer.Pace(cap);
             }
             else
             {
@@ -471,6 +472,9 @@ public sealed partial class GameHost
             bool toggleComputer = HostedPlayer.WasActionPressed(_window.Input, PlayerAction.MapComputer) || automaticOpen;
             bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
 
+            // The computer always opens; whether its map is there to read is the level's to say.
+            bool mapAvailable = MapComputerAvailable();
+
             if (TacticalComputer is { } tacticalComputer)
             {
                 // Real elapsed time, on its own clock. The transition is presentation: it must take
@@ -490,6 +494,11 @@ public sealed partial class GameHost
                     (float)_window.Width / Math.Max(1, _window.Height),
                     HumanView.DefaultTanX);
 
+                // Without the device there is no map to climb to: the pages come up over the player's own view.
+                tacticalComputer.MapAvailable = mapAvailable;
+                CameraPose vantage = mapAvailable ? tacticalComputer.Vantage() : eye;
+                float vantageFieldOfView = mapAvailable ? tacticalComputer.FieldOfView : gameplayFieldOfView;
+
                 if (!_computerOpen && toggleComputer)
                 {
                     _computerOpen = true;
@@ -498,8 +507,8 @@ public sealed partial class GameHost
                     _computerFlight.BeginOpen(
                         eye,
                         gameplayFieldOfView,
-                        tacticalComputer.Vantage(),
-                        tacticalComputer.FieldOfView);
+                        vantage,
+                        vantageFieldOfView);
 
                     // The interface draws its own pointer, so the platform's would be a second,
                     // unrelated cursor over it.
@@ -509,8 +518,8 @@ public sealed partial class GameHost
                 else if (_computerOpen && (toggleComputer || closeComputer) && _computerFlight.CanClose)
                 {
                     _computerFlight.BeginClose(
-                        tacticalComputer.Vantage(),
-                        tacticalComputer.FieldOfView,
+                        vantage,
+                        vantageFieldOfView,
                         eye,
                         gameplayFieldOfView);
                 }
@@ -520,8 +529,8 @@ public sealed partial class GameHost
                     _computerFlight.Update(
                         computerElapsed,
                         eye,
-                        tacticalComputer.Vantage(),
-                        tacticalComputer.FieldOfView);
+                        vantage,
+                        vantageFieldOfView);
 
                     // Only once the display has settled. A drag or a page change that landed during
                     // the climb would move a map the player cannot read yet.
@@ -549,6 +558,7 @@ public sealed partial class GameHost
             }
             else if (_mapComputer is { IsReady: true } retailComputer)
             {
+                retailComputer.MapAvailable = mapAvailable;
                 if (toggleComputer || closeComputer)
                 {
                     _computerOpen = toggleComputer ? !_computerOpen : false;

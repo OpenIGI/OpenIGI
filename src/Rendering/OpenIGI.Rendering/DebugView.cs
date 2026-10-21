@@ -151,14 +151,15 @@ public enum DebugView
     /// show a person standing at it and one that never can.
     /// </para>
     /// <para>
-    /// Green is the LIT FRAME: full detail, this frame's shadows, and the only route by which anything
-    /// that moves — a soldier, the weapon, the player's own body — can appear in glass at all. Blue is a
-    /// surface-cache CARD: static geometry only. Red is a ray that struck something solid neither could
-    /// put a colour to, which is a body the camera cannot see. Grey is the SKY on a clean miss.
+    /// Blue is a surface-cache CARD: static geometry, lit by the cache's own lighting. Yellow is the hit's
+    /// own MATERIAL -- a body, or something the cache is too coarse to hold -- under the light the cards
+    /// around it receive. White is a LIGHT: a lamp showing its own glow. Red is a ray that struck something
+    /// solid nobody could name a material for, shaded as a neutral surface. Grey is the SKY on a clean miss.
     /// </para>
     /// <para>
-    /// Mostly blue means the frame route is being rejected and everything is falling through to the
-    /// cards, which is a bug in the resolve rather than in the trace.
+    /// Green, the LIT FRAME, should never appear. The frame is no longer a route: whether a reflected place
+    /// is on screen depends on where the camera looks, so reading it made a pane change colour, gain and
+    /// lose whole regions as the mouse moved. Green here means that route has come back.
     /// </para>
     /// </remarks>
     GlassRoute = 22,

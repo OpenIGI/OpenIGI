@@ -44,7 +44,7 @@ public sealed partial class GraphicsDevice
     /// <param name="complete">Whether the surface cache was whole enough to bind this frame.</param>
     private void ReportReflectionTrace(bool complete) => ReportOnChange(
         "Traced reflections",
-        _device.RayTracing is null ? "off: this adapter cannot trace"
+        TracedWorld is null ? "off: this adapter cannot trace"
         : !RenderCVars.HardwareRayTracing.Value ? "off: r_rt is 0"
         : !RenderCVars.TracedReflections.Value ? "off: r_rt_reflections is 0"
         : !_surfaceCacheBinding.IsPresent ? "off: no lit surface cache (SetSurfaceCache handed over nothing)"

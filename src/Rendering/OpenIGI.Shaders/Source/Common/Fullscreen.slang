@@ -19,7 +19,7 @@
 struct FullscreenVaryings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 uv;
+    [[vk::location(0)]] float2 uv : TEXCOORD0;
 };
 
 /// Builds the triangle's corner for one vertex index.

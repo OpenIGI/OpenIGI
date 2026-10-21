@@ -35,19 +35,19 @@ OPENIGI_PUSH_CONSTANT(ShadowPush, push);
 
 struct VertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
-    [[vk::location(5)]] float3 previousPosition;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
 };
 
 struct Varyings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 diffuseUv;
-    [[vk::location(1)]] float alpha;
+    [[vk::location(0)]] float2 diffuseUv : TEXCOORD0;
+    [[vk::location(1)]] float alpha : TEXCOORD1;
 };
 
 /// The vertex stage: the caster where the frame actually drew it, morph and pose included.

@@ -11,8 +11,9 @@ namespace OpenIGI.Host.Audio;
 /// <para>
 /// <b>The engine set.</b> A car instantiates the set its physics record names (<c>+610</c>) as a child of itself
 /// (<c>0x42E320</c> through <c>0x4E6B00</c>) while its "Play sound" holds; a helicopter instantiates
-/// <c>helicopter_1</c> (<c>0x4316D0</c>). Each sound of the set asks the vehicle for three parameters every tick
-/// (<c>0x42F850</c>): the throttle, whether the engine is driving, and the speed. A <c>DefineGraph</c> loops with
+/// <c>helicopter_1</c> (<c>0x4316D0</c>) and a plane <c>su27</c> (<c>0x433690</c>). Each sound of the set asks the
+/// vehicle for its parameters every tick (<c>0x42F850</c>, <c>0x432BB0</c>, <c>0x434A30</c>): the throttle, whether
+/// the engine is driving, and -- a car only -- the speed. A <c>DefineGraph</c> loops with
 /// its gain and pitch read off two eleven-point curves of its parameter (<c>0x4EAEB0</c>, <c>0x4E7030</c>); a
 /// <c>DefineTriggerOnce</c> plays once each time its parameter turns true (<c>0x4EA040</c>). The T80's
 /// <c>t80_sounds</c> is defined by no retail script, so a tank's hull is silent.

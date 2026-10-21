@@ -556,10 +556,11 @@ public sealed partial class GraphicsDevice
     /// reverse — which it refuses outright.</item>
     /// </list>
     /// <para>
-    /// The kind is only checked where the device runs WGSL, because only there does it matter. What a slot
+    /// The kind is only checked where the device validates it
+    /// (<see cref="RhiFeatures.StrictTextureSampleTypes"/>), because only there does it matter. What a slot
     /// declares is read off the WGSL a module compiles to; a variant with no WGSL form -- the ray-query
     /// ones -- used to report every texture as a colour slot, and now takes its siblings' shapes, but one
-    /// it alone declares still does. Vulkan reads a depth image through either kind correctly, and
+    /// it alone declares still does. Vulkan and Direct3D 12 read a depth image through either kind, and
     /// checking there once swapped the scene's own depth out of the traced screen gather for a stand-in:
     /// with tracing on, the RHI's screen GI found no sky and no real surfaces, and shifted colour as the
     /// camera moved.
@@ -578,7 +579,7 @@ public sealed partial class GraphicsDevice
 
         IRhiTextureView view = SampledAt(kernel, binding).View;
         bool depthSlot = binding.SampleType == ShaderSampleType.Depth;
-        bool wrongKind = _device.ShaderTarget == ShaderTarget.Wgsl && depthSlot != view.Format.IsDepth();
+        bool wrongKind = _device.Features.StrictTextureSampleTypes && depthSlot != view.Format.IsDepth();
 
         return written.Contains(view.Texture) || wrongKind
             ? StandInFor(binding)
@@ -838,12 +839,15 @@ public sealed partial class GraphicsDevice
             Pass = new ComputePass(device, module, label, variant);
             Reflection = Pass.Program.Reflection;
 
+            // Laid out as the device's form of the module reads it: HLSL packs a constant buffer tighter than
+            // SPIR-V does after an array or around a two-component vector, so Direct3D 12 has offsets of its own.
+            ShaderTarget target = device.ShaderTarget;
             ShaderUniformBlock? globals = Reflection.Globals;
-            _values = new byte[globals?.Size ?? 0];
+            _values = new byte[globals?.SizeFor(target) ?? 0];
 
             foreach (ShaderUniformField field in globals?.Fields ?? [])
             {
-                _fields[field.Name] = field;
+                _fields[field.Name] = field with { Offset = field.OffsetFor(target) };
             }
 
             // A sampled texture the parameter block also names is read through a unit: sharing the name

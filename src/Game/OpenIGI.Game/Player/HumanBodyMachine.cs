@@ -63,6 +63,13 @@ public abstract class HumanBodyMachine
     /// <summary>Gets the state the machine is in — <c>Human+764</c>.</summary>
     public int State { get; private set; }
 
+    /// <summary>Gets the crouch byte, <c>Human+829</c>, as the state entries leave it.</summary>
+    /// <remarks>
+    /// It lowers the view (0x465820 puts it 0.35 m over the origin rather than 0.7 m), so a round leaves lower, and
+    /// halves the raise of the point a node search takes the human at (0x451380).
+    /// </remarks>
+    public bool CrouchByte { get; protected set; }
+
     /// <summary>Gets the state it was in before <see cref="State"/>.</summary>
     public int PreviousState { get; private set; }
 

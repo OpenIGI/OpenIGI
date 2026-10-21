@@ -83,7 +83,7 @@ public sealed partial class GraphicsDevice
             _fogSettings.BaseHeight - _cameraPosition.Z,
             _flashlight,
             SunTraced: tracedSun,
-            HitRecords: tracedSun ? TracedWorld!.HitRecordAddress : 0UL,
+            HitRecords: tracedSun ? TracedWorld!.HitRecordHandle : 0UL,
             Field: field,
             Seconds: (float)(_frameCounter % 1_000_000UL) / 60f,
             BackScatter: RenderCVars.FogBackScatter.Value,

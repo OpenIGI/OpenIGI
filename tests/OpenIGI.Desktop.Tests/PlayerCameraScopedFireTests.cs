@@ -41,7 +41,7 @@ public sealed class PlayerCameraScopedFireTests
             int callbackCount = 0;
             Vector3d callbackOrigin = default;
             Vector3d callbackEnd = default;
-            camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, out HumanHit hit) =>
+            camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, double _, bool _, out HumanHit hit) =>
             {
                 callbackCount++;
                 callbackOrigin = origin;

@@ -41,6 +41,11 @@ static float3 gShadeAlbedo = float3(0.0, 0.0, 0.0);
 // layer, because the card is wrong for a body either way.
 static bool gHitDynamic = false;
 
+// How strongly the shaded hit glows, as a multiple of its albedo; nought for a surface that does not. A
+// lamp is ordinary solid geometry in the traced world, so a reflected ray stops on the tube -- and lit as a
+// surface it came out as dark as the fitting round it.
+static float gHitEmissive = 0.0;
+
 // The last hit's geometric normal, turned to face the ray that found it, or nought where no record could
 // say. The surface cache is sampled BY NORMAL -- the card that photographed a surface is the one that
 // looked the way it faces -- so this is what the caller hands the cards. Written before the albedo layer
@@ -69,14 +74,16 @@ bool ShadeHit<let F : int>(inout RayQuery<F> query, float3 rayW, out float3 radi
     // necessarily the hit and after a completed traversal is often nothing at all.
     uint record = uint(query.CommittedInstanceID()) + uint(query.CommittedGeometryIndex());
 
-    ConstBufferPointer<uint> records = HitWordsAt(kRecords.x, kRecords.y);
+    HitWords records = HitWordsAt(kRecords.x, kRecords.y);
     uint at = record * kHitRecordWords;
 
-    gHitDynamic = records[at + kHitDynamicWord] != 0u;
+    uint flags = records[at + kHitDynamicWord];
+    gHitDynamic = (flags & kHitDynamicBit) != 0u;
+    gHitEmissive = float((flags >> kHitEmissiveShift) & 0xFFu) / kHitEmissiveSteps;
 
-    ConstBufferPointer<float> vertices = HitFloatsAt(
+    HitFloats vertices = HitFloatsAt(
         records[at + kHitVertexAddressWord], records[at + kHitVertexAddressWord + 1u]);
-    ConstBufferPointer<uint> indices = HitWordsAt(
+    HitWords indices = HitWordsAt(
         records[at + kHitIndexAddressWord], records[at + kHitIndexAddressWord + 1u]);
 
     // The primitive index counts from the geometry's own first index, which is what the build was given

@@ -43,6 +43,9 @@ public sealed class SoldierRendererHitscanTests
 
     private const double PresentationOffsetMetres = 8.0;
 
+    // The global rows a soldier hull names: NormalMetal, Flesh, BloodyFlesh, Runway (material/material.qvm).
+    private static readonly int[] BodyMaterials = [6, 8, 9, 12];
+
     [RequiresGameDataFact]
     public void MissionThreeDisembarkRootTrackConsumesOnlyItsAuthoredDisplacement()
     {
@@ -117,6 +120,41 @@ public sealed class SoldierRendererHitscanTests
         Assert.InRange(hit.Zone, 0, HumanHitZoneTable.Soldier.Count - 1);
     }
 
+    /// <summary>
+    /// A round that goes through a body is cast again from just inside it, so the mesh cast must say which
+    /// way it crosses the skin: in from outside, out from inside -- <c>0x47B750</c>'s <c>+76</c> and
+    /// <c>+80</c> slots. The face's own material comes with it, for the round's power to be tested against.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void TheMeshCastTellsAWayInFromAWayOut()
+    {
+        using Scenario scenario = CreateScenario();
+        MeshHitRay ray = FindAnyMeshHitRay(scenario.Renderer);
+        BonePose pose = ray.View.Pose();
+
+        Assert.False(ray.MeshHit.IsExit);
+        Assert.Contains(ray.MeshHit.Material, BodyMaterials);
+
+        IReadOnlyList<HumanBodyCrossing> crossings = HumanHitTest.CastMeshCrossings(
+            ray.Origin, ray.End + ((ray.End - ray.Origin) * 0.5), ray.Feet, ray.Facing, ray.Mesh, pose, ray.View.RootSample.Z);
+        HumanBodyCrossing last = crossings[^1];
+        Assert.False(last.Entering);
+
+        Vector3d heading = (ray.End - ray.Origin) / (ray.End - ray.Origin).Length;
+        Vector3d inside = last.Hit.Position - (heading * GunShotBallistics.PenetrationStepOffUnits);
+        Assert.True(HumanHitTest.TryCastMesh(
+            inside,
+            inside + (heading * Metre),
+            ray.Feet,
+            ray.Facing,
+            ray.Mesh,
+            pose,
+            ray.View.RootSample.Z,
+            out HumanHit way));
+        Assert.True(way.IsExit);
+        Assert.Equal(GunShotBallistics.PenetrationStepOffUnits, way.Distance, 1.0);
+    }
+
     [RequiresGameDataFact]
     public void LethalDragunovHitKeepsTheLevelFourCorpseDrawable()
     {
@@ -148,7 +186,10 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(ray.View.IsDead);
         Assert.Contains(
             scenario.Renderer.Simulation.Occupants(),
-            occupant => occupant.IsDead && occupant.Position == ray.View.Position);
+            // An area counts a human at its origin (Human+32), straight above where it stands.
+            occupant => occupant.IsDead
+                && occupant.Position.X == ray.View.Position.X
+                && occupant.Position.Y == ray.View.Position.Y);
 
         for (int tick = 0; tick < 180; tick++)
         {
@@ -250,7 +291,7 @@ public sealed class SoldierRendererHitscanTests
     [InlineData(429)]
     [InlineData(430)]
     [InlineData(431)]
-    public void PostRescueGeneratedGuardIsReplacedArmedOnceItsDeathPlaysOut(int taskId)
+    public void PostRescueGeneratedGuardIsReplacedArmedOnceItsBodyHasGone(int taskId)
     {
         using RagdollScope ragdoll = new(enabled: false);
         using Scenario scenario = CreateScenario(prepareContainers: true);
@@ -295,29 +336,54 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(firstLife.IsDead);
         MeshHandle corpseMesh = Get<MeshHandle>(firstMember, "Mesh");
 
-        // Audio state and alert replies are keyed by runtime identity, not the authored task ID.
-        // A retained corpse must not advance its replacement's sound loop on the same tick.
+        // Retail GuardGenerator replaces its guard only once he is dead AND out of the world, and deletes the
+        // body as it clones (0x487EE0). His own HumanAI takes him out (0x44F410): it waits for the death clip
+        // (Human+828), counts AI+15680 = 300 down past nought, and unregisters him because his parent is a
+        // GuardGenerator. So with the clip ending on tick E: body gone on E+302, replacement on E+303.
         List<int> soundEmitters = [];
         scenario.Renderer.Simulation.SetWeaponSound((id, _, _, _) => soundEmitters.Add(id));
+        int soldiersAlive = scenario.Renderer.Count;
+        int clipEnded = -1;
+        int bodyGone = -1;
+        SoldierView? replacement = null;
+        int replacedAt = -1;
+        for (int tick = 0; tick < 2000 && replacement is null; tick++)
+        {
+            soundEmitters.Clear();
+            scenario.Renderer.Tick(enemyAlive: false);
+            if (clipEnded < 0 && firstLife.ClipEndedThisTick)
+            {
+                clipEnded = tick;
+            }
 
-        // Retail GuardGenerator clones a fresh subtree, not the dead view reset in place. It waits until the dead guard's death
-        // has played out and its HumanAI has taken it out of the world (0x44F410), then deletes it (0x4015F0) and clones the
-        // next (0x488000): the corpse leaves the level as the replacement arrives.
-        int ticksToRespawn = TicksUntilReplaced(scenario.Renderer, taskId, firstLife, soundEmitters);
-        Assert.InRange(ticksToRespawn, 2, 300);
-        SoldierView[] lives = RendererSoldiers(scenario.Renderer)
-            .Where(view => view.Soldier.Id == taskId)
-            .ToArray();
-        SoldierView replacement = Assert.Single(lives);
-        Assert.False(replacement.IsDead);
-        Assert.NotSame(firstLife, replacement);
+            if (bodyGone < 0 && scenario.Renderer.Count < soldiersAlive)
+            {
+                bodyGone = tick;
+            }
+
+            replacement = RendererSoldiers(scenario.Renderer)
+                .FirstOrDefault(view => view.Soldier.Id == taskId && !view.IsDead);
+            if (replacement is not null)
+            {
+                replacedAt = tick;
+            }
+        }
+
+        Assert.True(clipEnded >= 0, "the death clip never ended");
+        Assert.Equal(clipEnded + SoldierSimulation.GeneratedBodyLingerTicks + 2, bodyGone);
+        Assert.NotNull(replacement);
+        Assert.Equal(clipEnded + SoldierSimulation.GeneratedBodyLingerTicks + 3, replacedAt);
+        AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
+
+        // One live instance under the authored id, the old one gone: its brain and its body.
+        Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == taskId);
+        Assert.Equal(soldiersAlive, scenario.Renderer.Count);
 
         object replacementMember = MemberFor(scenario.Renderer, replacement);
         Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(replacementMember, "WeaponType").ScriptId);
         object? replacementWeaponValue = replacementMember.GetType().GetProperty("Weapon")!.GetValue(replacementMember);
         Assert.NotNull(replacementWeaponValue);
-        object replacementWeapon = replacementWeaponValue;
-        MeshHandle replacementWeaponMesh = Get<MeshHandle>(replacementWeapon, "Mesh");
+        MeshHandle replacementWeaponMesh = Get<MeshHandle>(replacementWeaponValue, "Mesh");
 
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         Assert.True(Get<bool>(replacementMember, "HasHandState"));
@@ -336,8 +402,7 @@ public sealed class SoldierRendererHitscanTests
             scenario.Device.MeshDraws,
             draw => draw.Mesh == replacementWeaponMesh && draw.ModelView == replacementWeaponTransform);
 
-        // Shoot the generated life too. This is the user-visible failure mode: the replacement used
-        // to be the original view reset in place, so its first hit made the body appear to evaporate.
+        // The replacement is a real life of its own: shot, it dies where it stands, and the cap still counts.
         for (int shot = 0; shot < maxHitsToKill && !replacement.IsDead; shot++)
         {
             MeshHitRay replacementRay = FindAnyMeshHitRay(
@@ -351,44 +416,6 @@ public sealed class SoldierRendererHitscanTests
                 out _));
         }
         Assert.True(replacement.IsDead);
-        MeshHandle replacementCorpseMesh = Get<MeshHandle>(replacementMember, "Mesh");
-
-        soundEmitters.Clear();
-        Assert.InRange(TicksUntilReplaced(scenario.Renderer, taskId, replacement, soundEmitters), 2, 300);
-        SoldierView nextLive = Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == taskId);
-        Assert.False(nextLive.IsDead);
-        object nextMember = MemberFor(scenario.Renderer, nextLive);
-        Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(nextMember, "WeaponType").ScriptId);
-        Assert.NotNull(nextMember.GetType().GetProperty("Weapon")!.GetValue(nextMember));
-
-        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
-        scenario.Device.MeshDraws.Clear();
-        scenario.Renderer.Draw(
-            new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)),
-            Matrix4f.Identity);
-        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
-        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == replacementCorpseMesh);
-    }
-
-    // Ticks until the generator has replaced a dead life, checking each tick that no two lives share a runtime identity.
-    private static int TicksUntilReplaced(SoldierRenderer renderer, int taskId, SoldierView dead, List<int> soundEmitters)
-    {
-        for (int tick = 1; tick <= 300; tick++)
-        {
-            soundEmitters.Clear();
-            renderer.Tick(enemyAlive: false);
-
-            // No two lives advance one weapon sound, nor share an identity the alerts are answered by.
-            Assert.Equal(soundEmitters.Count, soundEmitters.Distinct().Count());
-            Dictionary<SoldierView, Igi1HumanAi> brains = RendererBrains(renderer);
-            Assert.Equal(brains.Count, brains.Values.Select(brain => brain.RuntimeId).Distinct().Count());
-            if (!RendererSoldiers(renderer).Any(view => ReferenceEquals(view, dead)))
-            {
-                return tick;
-            }
-        }
-
-        return -1;
     }
 
     [RequiresGameDataFact]
@@ -442,6 +469,8 @@ public sealed class SoldierRendererHitscanTests
             }
         }
 
+        // The squad's first tick is its creation (0x44F410's first pass); IDLE, and with it the patrol, is the next.
+        scenario.Renderer.Tick(enemyAlive: false);
         scenario.Renderer.Tick(enemyAlive: false);
         Assert.Equal(725, brains[harrison].Route?.Path.Id);
         Assert.Equal(726, brains[escortOne].Route?.Path.Id);
@@ -808,26 +837,24 @@ public sealed class SoldierRendererHitscanTests
     }
 
     /// <summary>
-    /// A headshot is decided by where the round STRUCK: 0x489C60 promotes a front hit to zone 15 only
-    /// when the hit record's point is within 15 cm of bone 4. Measuring the ray's closest approach
-    /// instead made a round that struck a forearm raised in front of the face (every aiming guard) a
-    /// headshot, because its line ran on through the head -- guards died to the second arm hit.
+    /// Zone 15 is decided by where the round STRUCK, about the ORIGIN: 0x489C60 promotes a front hit only when the hit
+    /// record's point is within 15 cm of the point its bone-4 lookup returns -- and that lookup (0x414F40 -> 0x4D0930)
+    /// writes zeros, so the point is Human+32 itself. A round to the head is never promoted.
     /// </summary>
     [RequiresGameDataFact]
-    public void AHeadshotIsScoredWhereTheRoundStruckNotWhereItsLineRan()
+    public void ZoneFifteenIsScoredAboutTheOriginNotTheHead()
     {
         using Scenario scenario = CreateScenario();
-        int heads = 0;
+        int promoted = 0;
         foreach ((SoldierView soldier, MefCollisionMesh mesh) in MeshBackedSoldiers(scenario.Renderer))
         {
             Vector3d feet = FeetOnGround(scenario.Renderer, soldier);
             Matrix3f orientation = soldier.Orientation;
             Vector3f facing = new(orientation.M12, orientation.M22, orientation.M32);
             BonePose pose = soldier.Pose();
-            Vector3f bone = pose.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d head = new(feet.X + bone.X, feet.Y + bone.Y, feet.Z + soldier.RootSample.Z + bone.Z);
+            Vector3d origin = new(feet.X, feet.Y, feet.Z + soldier.RootSample.Z);
 
-            for (double height = 1.1; height <= 1.9; height += 0.05)
+            for (double height = 0.6; height <= 1.9; height += 0.05)
             {
                 for (double across = -0.4; across <= 0.4; across += 0.05)
                 {
@@ -835,27 +862,28 @@ public sealed class SoldierRendererHitscanTests
                         feet.X + (facing.Y * across * Metre),
                         feet.Y - (facing.X * across * Metre),
                         feet.Z + (height * Metre));
-                    Vector3d origin = new(
+                    Vector3d from = new(
                         aim.X + (facing.X * 12.0 * Metre), aim.Y + (facing.Y * 12.0 * Metre), aim.Z);
                     Vector3d end = new(
                         aim.X - (facing.X * 2.0 * Metre), aim.Y - (facing.Y * 2.0 * Metre), aim.Z);
                     if (!HumanHitTest.TryCastMesh(
-                            origin, end, feet, facing, mesh, pose, soldier.RootSample.Z, out HumanHit hit)
+                            from, end, feet, facing, mesh, pose, soldier.RootSample.Z, out HumanHit hit)
                         || hit.Zone != HumanDamage.ProximityZone)
                     {
                         continue;
                     }
 
-                    heads++;
+                    promoted++;
                     Assert.True(
-                        (hit.Position - head).Length < HumanDamage.HeadProximityUnits,
-                        $"{soldier.Soldier.Name}: a head hit struck bone {hit.Bone} "
-                            + $"{(hit.Position - head).Length / Metre:0.00} m from the head");
+                        (hit.Position - origin).Length < HumanDamage.HeadProximityUnits,
+                        $"{soldier.Soldier.Name}: a zone-15 hit struck bone {hit.Bone} "
+                            + $"{(hit.Position - origin).Length / Metre:0.00} m from the origin");
+                    Assert.True(height < 1.4, $"{soldier.Soldier.Name}: a round at {height:0.00} m was promoted");
                 }
             }
         }
 
-        Assert.True(heads > 0, "no ray reached any soldier's head, so the rule was never exercised");
+        Assert.True(promoted > 0, "no ray reached any soldier's origin, so the rule was never exercised");
     }
 
     [RequiresGameDataFact]

@@ -28,4 +28,12 @@ public enum BlendMode
     /// its own colour is laid on top undimmed: a sea of alpha 0.13 is a dark, nearly opaque surface, not a faint one.
     /// </remarks>
     SourcePlusAttenuatedDestination,
+
+    /// <summary>Plain modulation: <c>dst * src</c>, the frame multiplied by what is drawn.</summary>
+    /// <remarks>
+    /// Project I.G.I.'s terrain lightmap pass: <c>sub_5144E0</c> mode 2 sets <c>SRCBLEND = ZERO</c> and
+    /// <c>DESTBLEND = SRCCOLOR</c> over a <c>SELECTARG1(TEXTURE)</c> stage, so the page's colour multiplies
+    /// the ground the material passes left, once -- white leaves it as it was.
+    /// </remarks>
+    Modulate,
 }

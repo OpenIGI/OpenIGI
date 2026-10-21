@@ -76,25 +76,25 @@ static const float FresnelScale = 0.9796327948570251;
 
 struct WaterVertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
 
     // x: how shallow the water is here (v2.x, the vertex's delta): one at the ground, nought an absorption
     // length or more above it.
-    [[vk::location(2)]] float2 shallowness;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
-    [[vk::location(5)]] float3 previousPosition;
-    [[vk::location(6)]] float3 previousNormal;
+    [[vk::location(2)]] float2 shallowness : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
+    [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
 };
 
 struct WaterVaryings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float4 colour0;
-    [[vk::location(1)]] float3 colour1;
-    [[vk::location(2)]] float3 reflection;
-    [[vk::location(3)]] float fog;
+    [[vk::location(0)]] float4 colour0 : TEXCOORD0;
+    [[vk::location(1)]] float3 colour1 : TEXCOORD1;
+    [[vk::location(2)]] float3 reflection : TEXCOORD2;
+    [[vk::location(3)]] float fog : TEXCOORD3;
 };
 
 /// The vertex stage: WaterRender_azVertexShader[2], instruction for instruction.

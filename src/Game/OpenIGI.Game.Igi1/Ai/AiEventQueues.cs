@@ -223,8 +223,12 @@ public sealed class AiEventQueues
         }
 
         _queues[(int)record.Type].Add(record);
+        Queued?.Invoke(record);
         return true;
     }
+
+    /// <summary>Diagnostics: told of every record <see cref="Post"/> accepts, as retail's <c>0x450520</c> is reached.</summary>
+    public Action<AiEventRecord>? Queued { get; set; }
 
     /// <summary>Runs one tick of the pump: dispatch at most one type, then drain everything.</summary>
     /// <param name="priorityCap">

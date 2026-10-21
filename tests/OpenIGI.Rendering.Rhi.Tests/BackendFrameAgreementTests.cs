@@ -3,15 +3,13 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Rendering.Vulkan.Rhi;
-using OpenIGI.Rendering.WebGpu;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace OpenIGI.Rendering.Rhi.Tests;
 
 /// <summary>
-/// The same frame, drawn by the same renderer, on both backends — and the same picture.
+/// The same frame, drawn by the same renderer, on every backend — and the same picture.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,29 +21,19 @@ namespace OpenIGI.Rendering.Rhi.Tests;
 /// Nothing in the frame is chosen to be easy. A clear, a world mesh through the forward pipeline with
 /// its push block and its specialisation constants, and a sprite over it through the 2D path — which
 /// between them exercise the clip-space convention, the push emulation, the derived layouts and the
-/// texture bindings, every one of which the two backends reach differently.
+/// texture bindings, every one of which each backend reaches differently.
 /// </para>
 /// </remarks>
 public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 64;
 
-    [BothBackendsFact]
-    public void Both_backends_draw_the_same_frame()
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_draws_the_same_frame_as_the_reference(string backend)
     {
-        byte[]? vulkan = TryDrawOnVulkan(out string? vulkanReason);
-        byte[]? webgpu = TryDrawOnWebGpu(out string? webgpuReason);
-
-        if (vulkan is null || webgpu is null)
-        {
-            // A machine without both backends never gets here ([BothBackendsFact] skips it), so a backend
-            // that probed fine and then could not draw this frame is a real failure.
-            Assert.Fail(
-                "Both backends are needed to compare them, and one was missing: "
-                + (vulkan is null ? vulkanReason : webgpuReason));
-
-            return;
-        }
+        byte[] vulkan = Draw(RhiBackends.Reference);
+        byte[] other = Draw(backend);
 
         int differing = 0;
         int worst = 0;
@@ -56,7 +44,7 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
             {
                 for (int channel = 0; channel < 3; channel++)
                 {
-                    int difference = Math.Abs(At(vulkan, x, y, channel) - At(webgpu, x, y, channel));
+                    int difference = Math.Abs(At(vulkan, x, y, channel) - At(other, x, y, channel));
 
                     if (difference > 0)
                     {
@@ -69,11 +57,11 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
 
         output.WriteLine($"{differing} channel(s) differ, worst by {worst}");
         output.WriteLine($"vulkan centre {Describe(vulkan, Size / 2, Size / 2)}");
-        output.WriteLine($"webgpu centre {Describe(webgpu, Size / 2, Size / 2)}");
+        output.WriteLine($"{backend} centre {Describe(other, Size / 2, Size / 2)}");
 
         // One is the tolerance a different rasteriser's edge rules earn, and no more: the two run the
         // same shader over the same geometry, so anything larger is a difference of meaning.
-        Assert.True(worst <= 1, $"The two backends disagree by {worst}, over {differing} channel(s).");
+        Assert.True(worst <= RhiBackends.ColourTolerance(backend), $"{backend} disagrees with {RhiBackends.Reference} by {worst}, over {differing} channel(s).");
     }
 
     /// <summary>Draws the frame everything else here compares.</summary>
@@ -117,47 +105,16 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryDrawOnVulkan(out string? reason)
+    private static byte[] Draw(string backend)
     {
-        try
+        using RhiBackendHost host = RhiBackends.Open(backend, Size);
+
+        using (GraphicsDevice device = new(host.Device, new DisplayMode(Size, Size, 32, 60)))
         {
-            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
-
-            using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
-            {
-                DrawFrame(device);
-            }
-
-            reason = null;
-            return Read(vulkan.Device, vulkan.OffscreenTarget(0));
+            DrawFrame(device);
         }
-        catch (Exception error)
-        {
-            reason = $"No Vulkan device here: {error.Message}";
-            return null;
-        }
-    }
 
-    private static byte[]? TryDrawOnWebGpu(out string? reason)
-    {
-        try
-        {
-            using WebGpuRhiDevice rhi = WebGpuRhiDevice.Create();
-            rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
-
-            using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
-            {
-                DrawFrame(device);
-            }
-
-            reason = null;
-            return Read(rhi, rhi.OffscreenTarget(0));
-        }
-        catch (Exception error)
-        {
-            reason = $"No WebGPU device here: {error.Message}";
-            return null;
-        }
+        return Read(host.Device, host.Target);
     }
 
     /// <summary>Brings one frame back to the host, un-padded.</summary>

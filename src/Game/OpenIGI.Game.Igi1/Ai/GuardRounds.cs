@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -24,6 +25,7 @@ public sealed class GuardRounds
     private readonly Igi1PlayerHarm _harm;
     private readonly Igi1Blasts _blasts;
     private readonly Igi1HumanSounds _sounds;
+    private readonly Igi1ImpactEffects _impacts;
     private readonly IGuardRoundHost _host;
     private readonly IOpenIgiLogger _logger;
 
@@ -34,6 +36,7 @@ public sealed class GuardRounds
     /// <param name="harm">What a hit does to the player.</param>
     /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
     /// <param name="sounds">The sound of the hits.</param>
+    /// <param name="impacts">The material's own effects where a marched round lands.</param>
     /// <param name="host">The burst of the hits.</param>
     /// <param name="logger">Told about every hit on the player.</param>
     public GuardRounds(
@@ -43,9 +46,11 @@ public sealed class GuardRounds
         Igi1PlayerHarm harm,
         Igi1Blasts blasts,
         Igi1HumanSounds sounds,
+        Igi1ImpactEffects impacts,
         IGuardRoundHost host,
         IOpenIgiLogger logger)
     {
+        _impacts = impacts ?? throw new ArgumentNullException(nameof(impacts));
         _mission = mission ?? throw new ArgumentNullException(nameof(mission));
         _harm = harm ?? throw new ArgumentNullException(nameof(harm));
         _blasts = blasts ?? throw new ArgumentNullException(nameof(blasts));
@@ -61,6 +66,17 @@ public sealed class GuardRounds
 
     /// <summary>Gets how many of them struck the player.</summary>
     public int HitsOnPlayer { get; private set; }
+
+    /// <summary>Hands the soldiers the world their guns' <c>GunShot</c> tasks march through.</summary>
+    /// <remarks>
+    /// The soldiers' rounds as the original marches them: each gun's <c>GunShot</c> task casts its rounds after the level's
+    /// walk, through the world, the soldiers and the player, drawing from the level's one stream.
+    /// </remarks>
+    public void AttachGunShotWorld()
+    {
+        _impacts.Runtime.UseRandom(_mission.SoundRandom);
+        _soldiers.SetGunShotWorld(new MarchedWorld(this), new GunShotSoundWindows(), _impacts.Runtime.DetonatePendingChips);
+    }
 
     /// <summary>Resolves one round; a <see cref="SoldierSimulation.SoldierRound"/>.</summary>
     /// <param name="from">Where it leaves, in world units.</param>
@@ -87,6 +103,17 @@ public sealed class GuardRounds
             from.X + ((at.X - from.X) * 4.0),
             from.Y + ((at.Y - from.Y) * 4.0),
             from.Z + ((at.Z - from.Z) * 4.0));
+
+        // A soldier's round is already in its gun's GunShot task, to be marched after the walk; all that is left here is
+        // the streak it draws.
+        if (shooter is not null && _soldiers.MarchesRounds)
+        {
+            Vector3d streakTo = _trace(new WorldTraceRequest(from, to, WorldTraceMask.World), out WorldTraceHit surface)
+                ? surface.Position
+                : to;
+            SpawnStreak(player, from, streakTo, weapon);
+            return;
+        }
 
         Vector3d feet = player.Body.Position;
 
@@ -126,16 +153,64 @@ public sealed class GuardRounds
             }
         }
 
-        // Where the world stops this ray, over its whole length -- one cast serves cover,
+        // Where the world stops this ray, over its whole length -- one walk serves cover,
         // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
         // the same mark a player's round does. In retail a miss is visible: the round lands
         // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
         // are why the guards seemed to hit with every bullet.
         // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
         // owner through), so its own hull never stops the round.
-        bool worldBlocked = _trace(
-            new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _mission.VehicleRoundOwner),
-            out WorldTraceHit blocker);
+        //
+        // It is a WALK, not one cast: 0x47B750 marches every round, the player's or a guard's,
+        // through each surface its power beats (GunShotBallistics.ResolveEntry). Stopping at the
+        // first surface had the mission-1 water-tower sniper empty its rifle into its own
+        // railing -- Fence, resistance 0, against the Dragunov's power 3. The probe saw all 18 of
+        // retail's rounds strike that railing 4.3 m out and carry on, 15 of them to hit; the
+        // port's 37 all stopped there. A glance ends the walk here: the reflected leg is not
+        // followed. Distances are along the whole round, from the muzzle.
+        List<WorldTraceHit> passed = [];
+        bool worldBlocked = false;
+        bool worldDeflected = false;
+        WorldTraceHit blocker = default;
+        {
+            Vector3d line = to - from;
+            double length = line.Length;
+            Vector3d direction = length > 0.0 ? line / length : default;
+            Vector3d origin = from;
+            double travelled = 0.0;
+            for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && travelled < length; pass++)
+            {
+                if (!_trace(
+                    new WorldTraceRequest(origin, to, WorldTraceMask.World, IgnoredOwner: _mission.VehicleRoundOwner),
+                    out WorldTraceHit surface))
+                {
+                    break;
+                }
+
+                surface = surface with { Distance = travelled + surface.Distance };
+                GunShotImpact outcome = _mission.Materials is { } faces && faces.TryGet(surface.Material, out GameMaterial face)
+                    ? GunShotBallistics.ResolveEntry(
+                        weapon.PenetrationPower,
+                        face,
+                        namedObject: surface.Owner is not null,
+                        GunShotBallistics.IncidenceRadians(direction, surface.Normal),
+                        alreadyDeflected: false,
+                        () => (float)random.NextDouble())
+                    : GunShotImpact.Stopped;
+                if (outcome != GunShotImpact.Penetrated)
+                {
+                    worldBlocked = true;
+                    worldDeflected = outcome == GunShotImpact.Deflected;
+                    blocker = surface;
+                    break;
+                }
+
+                passed.Add(surface);
+                travelled = surface.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                origin = from + (direction * travelled);
+            }
+        }
+
         WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
 
         // A round that meets no hostile body falls through to the soldiers behind the
@@ -144,8 +219,16 @@ public sealed class GuardRounds
         // ray, nearest first, and the first one it meets (per its own probability roll)
         // takes it. True when a soldier consumed the round; false when it flew past them all.
         bool SoldiersTakeTheRound()
-            => _soldiers.TryShootAiRound(
-                    from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
+        {
+            if (!_soldiers.TryShootAiRound(
+                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out HumanHit taken))
+            {
+                return false;
+            }
+
+            MarkPassed(taken.Distance);
+            return true;
+        }
 
         // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
         void OfferNearMiss(Vector3d stop)
@@ -160,62 +243,66 @@ public sealed class GuardRounds
         // resolving, dying where the world stops it. Whether the round connects is decided
         // below exactly as ever -- from inside the head, a streak that reaches the eye and
         // a round that hits look the same.
-        if (GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value)
-        {
-            Vector3d streakEnd = worldBlocked ? worldHit.Position : to;
-            Vector3d line = streakEnd - from;
-            double lineLength = line.Length;
-            if (lineLength > 1e-6)
-            {
-                AmmoType? streakAmmo = _mission.AmmoTypes is { } table
-                    && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
-                    ? found
-                    : null;
-                player.Ballistics.SpawnVisual(
-                    from,
-                    new Vector3f(
-                        (float)(line.X / lineLength),
-                        (float)(line.Y / lineLength),
-                        (float)(line.Z / lineLength)),
-                    streakEnd,
-                    weapon,
-                    streakAmmo);
-            }
-        }
+        SpawnStreak(player, from, worldBlocked ? worldHit.Position : to, weapon);
 
         void MarkTheImpact()
         {
+            MarkPassed(double.MaxValue);
             if (!worldBlocked)
             {
                 return;
             }
 
+            MarkSurface(blocker);
+            if (worldDeflected)
+            {
+                _sounds.PlayRicochet(blocker.Position);
+            }
+        }
+
+        // The surfaces the round went through before the distance it ended at, marked once each.
+        void MarkPassed(double upTo)
+        {
+            foreach (WorldTraceHit surface in passed)
+            {
+                if (surface.Distance < upTo)
+                {
+                    MarkSurface(surface);
+                }
+            }
+
+            passed.RemoveAll(surface => surface.Distance < upTo);
+        }
+
+        void MarkSurface(in WorldTraceHit surface)
+        {
+            WorldRayHit face = surface.RayHit;
             if (_mission.Materials is { } table)
             {
                 player.Marks.TryAdd(
-                    worldHit,
-                    BulletMarks.SurfaceOf(blocker),
+                    face,
+                    BulletMarks.SurfaceOf(surface),
                     table,
                     probe: player.MarkProbe,
-                    placement: blocker.Placement);
+                    placement: surface.Placement);
             }
 
             _sounds.PlayBulletImpact(
-                worldHit.Position,
+                face.Position,
                 struckHuman: false,
-                surfaceMaterial: worldHit.Material);
+                surfaceMaterial: face.Material);
 
             // A guard's stray round pops a speaker exactly as the player's does -- the
             // retail damage message never asked who fired.
             _blasts.ApplyRoundContact(
-                worldHit.Position,
-                blocker.Owner,
-                blocker.Placement,
+                face.Position,
+                surface.Owner,
+                surface.Placement,
                 weapon.DamageFactor);
 
             // A guard's round kicks the same burst a player's does -- misses landing
             // around you are half of what sells incoming fire.
-            _host.SpawnImpactBurst(worldHit);
+            _host.SpawnImpactBurst(face);
         }
 
         if (!met)
@@ -268,6 +355,7 @@ public sealed class GuardRounds
 
         // The round stops at the player: the soldiers it passed on the way still hear it go by.
         OfferNearMiss(hit.Position);
+        MarkPassed(hit.Distance);
 
         // The roll connected with the player's body. A friendly's round that meets the
         // player is consumed there with no damage -- retail's cast collides with a same-team
@@ -351,35 +439,214 @@ public sealed class GuardRounds
 
         // The round's WeaponHit to the player (HumanPlayer's handler, 0x412440: the damage, the grunt, the shake, the
         // flash and the shove). Returns whether it killed the player.
-        bool StrikePlayer(HumanHit struck)
-        {
-            HitsOnPlayer++;
-            Igi1WeaponHit round = new(struck, from, to, weapon.DamageFactor, weapon.Category, shooter, FromPlayer: false);
-            if (_mission.PlayerTask is { } task)
-            {
-                task.WeaponHit(round.ToShared());
-            }
-            else
-            {
-                // A level that declares no HumanPlayer still has the player the opening camera stood.
-                _mission.PlayerEvents?.TakeRound(round);
-            }
+        bool StrikePlayer(HumanHit struck) => StrikePlayerWith(struck, from, to, weapon, weapon.DamageFactor, shooter);
+    }
 
+    // The round's WeaponHit to the player (HumanPlayer's handler, 0x412440: the damage, the grunt, the shake, the flash and
+    // the shove). Returns whether it killed the player.
+    private bool StrikePlayerWith(HumanHit struck, Vector3d from, Vector3d to, WeaponType weapon, float damageFactor, SoldierView? shooter)
+    {
+        HumanHealth health = _mission.PlayerHealth;
+        HitsOnPlayer++;
+        Igi1WeaponHit round = new(struck, from, to, damageFactor, weapon.Category, shooter, FromPlayer: false);
+        if (_mission.PlayerTask is { } task)
+        {
+            task.WeaponHit(round.ToShared());
+        }
+        else
+        {
+            // A level that declares no HumanPlayer still has the player the opening camera stood.
+            _mission.PlayerEvents?.TakeRound(round);
+        }
+
+        _logger.Information(
+            "Weapon",
+            $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
+                + $"({HitsOnPlayer} of {Fired} round(s); "
+                + $"{health.RemainingFraction:P0} left).");
+
+        if (health.IsDead)
+        {
             _logger.Information(
                 "Weapon",
-                $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
-                    + $"({HitsOnPlayer} of {Fired} round(s); "
-                    + $"{health.RemainingFraction:P0} left).");
+                $"The player is DEAD after {HitsOnPlayer} hit(s) from {Fired} round(s), "
+                    + $"struck in zone {struck.Zone}; the death camera has pulled back.");
+        }
 
-            if (health.IsDead)
+        return health.IsDead;
+    }
+
+    /// <summary>What a contact on a soldier's body carries to the strike.</summary>
+    private sealed record SoldierContact(SoldierView View, HumanHit Hit);
+
+    /// <summary>What a contact on the player's body carries to the strike.</summary>
+    private sealed record PlayerContact(HumanHit Hit);
+
+    /// <summary>The world a soldier's marched round is cast through: placed objects and terrain, the soldiers, the player.</summary>
+    private sealed class MarchedWorld(GuardRounds rounds) : IGunShotWorld
+    {
+        public bool Cast(GunShotRound round, Vector3d start, Vector3d limit, out GunShotContact contact)
+        {
+            contact = default;
+            bool found = false;
+            double best = double.PositiveInfinity;
+            MissionWorld mission = rounds._mission;
+            SoldierView? shooter = round.Shooter as SoldierView;
+            int side = shooter?.Soldier.Team ?? 1;
+
+            if (rounds._trace(
+                    new WorldTraceRequest(
+                        start, limit, WorldTraceMask.World, IgnoredOwner: mission.VehicleRoundOwner, RetailArithmetic: true),
+                    out WorldTraceHit surface))
             {
-                _logger.Information(
-                    "Weapon",
-                    $"The player is DEAD after {HitsOnPlayer} hit(s) from {Fired} round(s), "
-                        + $"struck in zone {struck.Zone}; the death camera has pulled back.");
+                GameMaterial? row = mission.Materials is { } rows && rows.TryGet(surface.Material, out GameMaterial face)
+                    ? face
+                    : null;
+                contact = new GunShotContact(
+                    surface.Position,
+                    surface.Normal,
+                    surface.Distance,
+                    surface.IsExit ? null : row,
+                    surface.IsExit ? row : null,
+                    HasObject: surface.Owner is not null,
+                    StruckHuman: false,
+                    surface);
+                best = surface.Distance;
+                found = true;
             }
 
-            return health.IsDead;
+            if (rounds._soldiers.TryCastRoundAtSoldiers(start, limit, shooter, side, out SoldierView? struck, out HumanHit body)
+                && struck is not null
+                && body.Distance < best)
+            {
+                contact = BodyContact(body, new SoldierContact(struck, body));
+                best = body.Distance;
+                found = true;
+            }
+
+            // The player is visible to a round only from another side, and only through the evaluate's two rolls of the
+            // shooter's probability: the visit's gate and the narrow contact's (0x45F53D, 0x4D76DA).
+            if (mission.Player is { } player
+                && !mission.PlayerHealth.IsDead
+                && side != rounds._soldiers.PlayerTeam
+                && rounds._soldiers.TryCastPlayerBody(start, limit, player.Body.Position, player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> crossings)
+                && crossings.Count > 0
+                && crossings[0].Hit.Distance < best
+                && mission.SoundRandom.NextDouble() <= round.Probability
+                && mission.SoundRandom.NextDouble() <= round.Probability)
+            {
+                HumanBodyCrossing first = crossings[0];
+                HumanHit hit = first.Hit with { Material = first.Material, IsExit = !first.Entering };
+                contact = BodyContact(hit, new PlayerContact(hit));
+                found = true;
+            }
+
+            return found;
         }
+
+        public void Strike(GunShotRound round, in GunShotContact contact, Vector3f travel)
+        {
+            Vector3d end = new(round.Origin.X + travel.X, round.Origin.Y + travel.Y, round.Origin.Z + travel.Z);
+            switch (contact.Payload)
+            {
+                case SoldierContact soldier:
+                    rounds._soldiers.StrikeWithRound(
+                        soldier.View, soldier.Hit, round.Origin, end, round.Weapon, round.DamageFactor, round.Shooter as SoldierView);
+                    break;
+                case PlayerContact player:
+                    rounds.StrikePlayerWith(player.Hit, round.Origin, end, round.Weapon, round.DamageFactor, round.Shooter as SoldierView);
+                    break;
+                case WorldTraceHit surface:
+                    rounds._blasts.ApplyRoundContact(surface.Position, surface.Owner, surface.Placement, round.DamageFactor);
+                    break;
+            }
+        }
+
+        public void PlaySound(string definition, Vector3d position) => rounds._sounds.PlayMarchedRoundSound(definition, position);
+
+        public AmmoType? AmmunitionOf(WeaponType weapon) =>
+            rounds._mission.AmmoTypes is { } table && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found) ? found : null;
+
+        public void Effect(GunShotRound round, in GunShotRecord record)
+        {
+            if (record.Contact.Payload is not WorldTraceHit surface)
+            {
+                rounds._impacts.RunGunShotEffect(
+                    record.Contact.Position, record.Contact.Normal, record.Vector, record.Effect, struckHuman: true);
+                return;
+            }
+
+            if (rounds._mission.Player is { } player && rounds._mission.Materials is { } table)
+            {
+                player.Marks.TryAdd(
+                    surface.RayHit,
+                    BulletMarks.SurfaceOf(surface),
+                    table,
+                    record.IsEntry,
+                    record.ExitCrossing,
+                    probe: player.MarkProbe,
+                    placement: surface.Placement);
+            }
+
+            rounds._impacts.RunGunShotEffect(surface.Position, surface.Normal, record.Vector, record.Effect, struckHuman: false);
+
+            // The remaster's own burst beside it, from its own stream.
+            if (!record.ExitCrossing)
+            {
+                rounds._host.SpawnImpactBurst(surface.RayHit);
+            }
+        }
+
+        private GunShotContact BodyContact(in HumanHit hit, object payload)
+        {
+            GameMaterial? row = null;
+            if (rounds._mission.Materials is { } rows)
+            {
+                if (hit.Material >= 0 && rows.TryGet(hit.Material, out GameMaterial skin))
+                {
+                    row = skin;
+                }
+                else if (rows.TryGetByName(BulletImpactSounds.FleshMaterialName, out GameMaterial flesh))
+                {
+                    row = flesh;
+                }
+            }
+
+            return new GunShotContact(
+                hit.Position,
+                hit.Normal,
+                hit.Distance,
+                hit.IsExit ? null : row,
+                hit.IsExit ? row : null,
+                HasObject: true,
+                StruckHuman: true,
+                payload);
+        }
+    }
+
+    // The streak a soldier's round draws, to where the world stops it: visual only.
+    private void SpawnStreak(PlayerCamera player, Vector3d from, Vector3d end, WeaponType weapon)
+    {
+        if (!GameplayCVars.Ballistics.Value || !GameplayCVars.BallisticsAiTracers.Value)
+        {
+            return;
+        }
+
+        Vector3d line = end - from;
+        double length = line.Length;
+        if (length <= 1e-6)
+        {
+            return;
+        }
+
+        AmmoType? ammo = _mission.AmmoTypes is { } table && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
+            ? found
+            : null;
+        player.Ballistics.SpawnVisual(
+            from,
+            new Vector3f((float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length)),
+            end,
+            weapon,
+            ammo);
     }
 }

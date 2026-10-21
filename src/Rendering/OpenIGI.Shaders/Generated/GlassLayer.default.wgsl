@@ -43,6 +43,7 @@ struct GlassVaryings_0
     @location(2) color_0 : vec4<f32>,
     @location(3) worldNormal_0 : vec3<f32>,
     @location(4) viewDepth_0 : f32,
+    @location(5) fromEye_0 : vec3<f32>,
 };
 
 struct GlassVertexInput_0
@@ -69,6 +70,7 @@ fn GlassTransform_0( input_0 : GlassVertexInput_0) -> GlassVaryings_0
     output_0.position_0 = clip_0;
     output_0.viewDepth_0 = clip_0.w;
     output_0.worldNormal_0 = push_0.normal0_0.xyz * vec3<f32>(input_0.normal_0.x) + push_0.normal1_0.xyz * vec3<f32>(input_0.normal_0.y) + push_0.normal2_0.xyz * vec3<f32>(input_0.normal_0.z);
+    output_0.fromEye_0 = push_0.normal0_0.xyz * vec3<f32>(input_0.position_1.x) + push_0.normal1_0.xyz * vec3<f32>(input_0.position_1.y) + push_0.normal2_0.xyz * vec3<f32>(input_0.position_1.z) + vec3<f32>(push_0.normal0_0.w, push_0.normal1_0.w, push_0.normal2_0.w);
     return output_0;
 }
 
@@ -102,21 +104,32 @@ struct pixelInput_0
     @location(2) color_1 : vec4<f32>,
     @location(3) worldNormal_1 : vec3<f32>,
     @location(4) viewDepth_1 : f32,
+    @location(5) fromEye_1 : vec3<f32>,
 };
 
 @fragment
 fn fragmentMain( _S5 : pixelInput_0, @builtin(position) position_3 : vec4<f32>) -> pixelOutput_0
 {
-    if(((textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S5.diffuseUv_3))).w * _S5.color_1.w) >= 0.5f)
+    var alpha_0 : f32 = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S5.diffuseUv_3))).w * _S5.color_1.w;
+    var _S6 : bool;
+    if(alpha_0 >= 0.5f)
+    {
+        _S6 = true;
+    }
+    else
+    {
+        _S6 = alpha_0 < 0.01999999955296516f;
+    }
+    if(_S6)
     {
         discard;
     }
-    var _S6 : vec3<i32> = vec3<i32>(vec2<i32>(position_3.xy), i32(0));
-    if((position_3.z) < (textureLoad((uSceneDepth_0), ((_S6)).xy, ((_S6)).z)))
+    var _S7 : vec3<i32> = vec3<i32>(vec2<i32>(position_3.xy), i32(0));
+    if((position_3.z) < (textureLoad((uSceneDepth_0), ((_S7)).xy, ((_S7)).z)))
     {
         discard;
     }
-    var _S7 : pixelOutput_0 = pixelOutput_0( vec4<f32>(normalize(_S5.worldNormal_1), max(_S5.viewDepth_1, 0.00009999999747379f)) );
-    return _S7;
+    var _S8 : pixelOutput_0 = pixelOutput_0( vec4<f32>(normalize(_S5.worldNormal_1), max(_S5.viewDepth_1, 0.00009999999747379f)) );
+    return _S8;
 }
 

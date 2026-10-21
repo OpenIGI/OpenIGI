@@ -184,11 +184,9 @@ public static class BloodEffects
     /// <para>
     /// <see cref="WorldRayHit.Normal"/> has already been turned to oppose the ray so that a decal sits
     /// proud of the surface, which is the opposite vector on an entry. The raw normal is recovered from
-    /// <see cref="WorldRayHit.IsExit"/>, which is the sign the flip was taken from. Note that the rich
-    /// trace's <see cref="WorldTraceHit.RayHit"/> does not carry that flag, so a droplet traced through
-    /// it always reads as an entry and always marks — which is the answer for every droplet that
-    /// reaches a surface from the outside, and is what the shipped <c>hole_blood3</c>/<c>4</c> textures
-    /// are for.
+    /// <see cref="WorldRayHit.IsExit"/>, which is the sign the flip was taken from, and which the rich
+    /// trace's <see cref="WorldTraceHit.RayHit"/> carries too. Every droplet that reaches a surface from
+    /// the outside is an entry and marks — what the shipped <c>hole_blood3</c>/<c>4</c> textures are for.
     /// </para>
     /// </remarks>
     public static bool MarksSurface(Vector3d from, Vector3d to, in WorldRayHit hit)
@@ -276,10 +274,27 @@ public static class BloodEffects
         Vector3d position,
         Vector3f direction,
         IgiRandom random)
+        => Spray(mist, droplets, position, direction, random, random);
+
+    /// <summary>Throws one wound's mist and droplets, the emitter drawing from its own stream as <c>0x4FE210</c> does.</summary>
+    /// <param name="mist">The body's mist system.</param>
+    /// <param name="droplets">The body's droplet system.</param>
+    /// <param name="position">Where the round entered.</param>
+    /// <param name="direction">The round's travel direction.</param>
+    /// <param name="random">The level stream: the two counts and each droplet's spin.</param>
+    /// <param name="emitter">The particle emitter's own stream (<c>dword_A7A4C0</c>): each droplet's direction and speed.</param>
+    public static void Spray(
+        RetailParticleSystem mist,
+        RetailParticleSystem droplets,
+        Vector3d position,
+        Vector3f direction,
+        IgiRandom random,
+        IgiRandom emitter)
     {
         ArgumentNullException.ThrowIfNull(mist);
         ArgumentNullException.ThrowIfNull(droplets);
         ArgumentNullException.ThrowIfNull(random);
+        ArgumentNullException.ThrowIfNull(emitter);
 
         mist.Emit(
             position,
@@ -306,7 +321,7 @@ public static class BloodEffects
                 growth: 1f,
                 holdTicks: DropletHoldTicks,
                 fadeTicks: DropletFadeTicks,
-                random);
+                emitter);
         }
 
         int back = BackDropletCount((int)random.NextBounded(BackDropletRange));
@@ -324,7 +339,7 @@ public static class BloodEffects
                 growth: 1f,
                 holdTicks: DropletHoldTicks,
                 fadeTicks: DropletFadeTicks,
-                random);
+                emitter);
         }
     }
 }

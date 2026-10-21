@@ -90,6 +90,15 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
         marks.AddMark(at, n, "burn1.tex", halfWidthInUnits, surface, placement);
     }
 
+    /// <summary>Runs one marched round's <c>GunShotEffect</c> where it met something, if the player wants impact effects drawn.</summary>
+    /// <param name="position">Where it met, in world units.</param>
+    /// <param name="normal">The surface's normal there.</param>
+    /// <param name="vector">The round's travel.</param>
+    /// <param name="effect">The material's effect block.</param>
+    /// <param name="struckHuman">Whether it met a body.</param>
+    public void RunGunShotEffect(Vector3d position, Vector3f normal, Vector3f vector, in GunShotEffect effect, bool struckHuman) =>
+        Runtime.RunGunShotEffect(position, normal, vector, effect, struckHuman, host.ImpactEffectsWanted);
+
     /// <summary>Runs the struck material's own <c>GunShotEffect</c> for whatever the player's rounds landed on this tick.</summary>
     public void SpawnPlayerImpacts()
     {
@@ -113,7 +122,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
         }
 
         Runtime.BloodEnabled = host.ImpactEffectsWanted && host.BloodWanted;
-        Runtime.Tick(Walls, mission.Player?.Marks, mission.Materials);
+        Runtime.Tick(mission.DropletWalls ?? Walls, mission.Player?.Marks, mission.Materials);
     }
 
 

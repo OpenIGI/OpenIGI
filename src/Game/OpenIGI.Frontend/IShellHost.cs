@@ -96,4 +96,8 @@ public interface IShellHost
     /// row stays visible and is greyed out, so the player learns the option exists and what it needs.
     /// </remarks>
     string SettingUnavailable(string variable) => string.Empty;
+
+    /// <summary>Lists the resolutions the display the game is on offers, largest first.</summary>
+    /// <returns>The sizes; empty where the host cannot say, and the settings page then offers only the desktop's.</returns>
+    IReadOnlyList<(int Width, int Height)> DisplayResolutions() => [];
 }

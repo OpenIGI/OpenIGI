@@ -70,6 +70,38 @@ public sealed class IgiRandom
     /// I.G.I. 2 opens its own streams with them too.
     /// </remarks>
     public static IgiRandom Seeded() => new(unchecked((uint)-923067897), 971667286u, 2146516173u);
+    /// <summary>Sets the three words, as <c>0x4B4720</c> does.</summary>
+    /// <param name="a">The accumulator.</param>
+    /// <param name="b">The second word.</param>
+    /// <param name="c">The third word.</param>
+    public void Seed(uint a, uint b, uint c)
+    {
+        _a = a;
+        _b = b;
+        _c = c;
+    }
+
+    /// <summary>Mixes a seed into the words, as <c>0x4B47E0</c> does: <c>a ^= s, b += s &lt;&lt; 15, c -= s &lt;&lt; 9</c>.</summary>
+    /// <param name="seed">The seed.</param>
+    public void Mix(uint seed)
+    {
+        _a ^= seed;
+        _b += seed << 15;
+        _c -= seed << 9;
+    }
+
+    /// <summary>Seeds the global stream the way a level's start does.</summary>
+    /// <remarks>
+    /// LevelFlow's handler (<c>0x488ED0</c>) calls <c>0x416D90</c>, which resets the stream at
+    /// <c>dword_57BABC + 44</c> to C8FB1A07 / 39EA7756 / 7FF13CCD (<c>0x4B4720</c>) and mixes in 0x19111911
+    /// (<c>0x4B47E0</c>), leaving D1EA0316 / C672F756 / 5DBF1ACD -- read live on the probe, the same every run.
+    /// Every level-load and per-tick draw then comes from this one stream in walk order.
+    /// </remarks>
+    public void SeedForLevel()
+    {
+        Seed(0xC8FB1A07u, 0x39EA7756u, 0x7FF13CCDu);
+        Mix(0x19111911u);
+    }
 
     /// <summary>Draws the next raw word — <c>0x4B4740</c> itself, the whole accumulator.</summary>
     /// <returns>The accumulator after the step.</returns>
@@ -79,8 +111,16 @@ public sealed class IgiRandom
         _c ^= _a >> 7;
         _b ^= _c;
         _a += _b;
+        Drew?.Invoke(_a);
         return _a;
     }
+
+    /// <summary>Gets or sets a diagnostic observer told of every step, with the accumulator after it.</summary>
+    /// <remarks>
+    /// For the draw-order diff against the probe's <c>[rng]</c> log: which caller drew, on which tick. Nothing in
+    /// the game sets it.
+    /// </remarks>
+    public Action<uint>? Drew { get; set; }
 
     /// <summary>Draws the next value.</summary>
     /// <returns>A value in <c>[0, 1)</c>, quantised to <see cref="Scale"/>.</returns>
@@ -110,6 +150,7 @@ public sealed class IgiRandom
         _c ^= _a >> 7;
         _b ^= _c;
         _a += _b;
+        Drew?.Invoke(_a);
         return _a % exclusiveBound;
     }
 }

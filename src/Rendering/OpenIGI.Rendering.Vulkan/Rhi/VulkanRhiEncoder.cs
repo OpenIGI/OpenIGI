@@ -366,6 +366,21 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     /// <inheritdoc/>
     public void Dispose() => _disposed = true;
 
+    /// <inheritdoc/>
+    public void BuildAccelerationStructures(
+        ReadOnlySpan<RhiBottomLevelBuild> bottomLevel,
+        RhiTopLevelBuild? topLevel,
+        RhiTimestampWrites? timestamps = null)
+    {
+        ThrowIfFinished();
+        VulkanRhiAccelerationStructures structures = _device.VulkanAccelerationStructures
+            ?? throw new NotSupportedException("This device builds no acceleration structures.");
+
+        VulkanRhiTimestamps.Begin(_vk, _command, timestamps);
+        structures.RecordBuilds(_command, bottomLevel, topLevel);
+        VulkanRhiTimestamps.End(_vk, _command, timestamps);
+    }
+
     /// <summary>A full barrier around work recorded into this command buffer by something outside the RHI.</summary>
     /// <remarks>
     /// Streamline records its evaluations straight into <see cref="Command"/>. Before, so it sees what the

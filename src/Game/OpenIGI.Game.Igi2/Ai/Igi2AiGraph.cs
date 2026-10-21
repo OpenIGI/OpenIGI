@@ -297,7 +297,10 @@ public sealed partial class Igi2AiGraph
         Igi2AiGraph graph = new(placed.MaxNodes) { Parent = parent };
         foreach (GraphNode node in placed.Nodes)
         {
-            graph.Add(node.Id, node.Position, node.Gamma, node.Radius, node.MaterialId, 0f, 0, node.CriteriaName, criteria);
+            // A graph under a parent holds its nodes in the parent's frame; one the level placed through its parent's is
+            // taken back into it.
+            Vector3d position = parent is not null ? placed.ToParentFrame(node.Position) : node.Position;
+            graph.Add(node.Id, position, node.Gamma, node.Radius, node.MaterialId, 0f, 0, node.CriteriaName, criteria);
         }
 
         foreach (GraphLink link in placed.Links)

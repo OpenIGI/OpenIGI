@@ -120,7 +120,7 @@ internal sealed class TerrainShadowCaster : IDisposable
         }
 
         TerrainChunkLayer layer = geometry.Layers[0];
-        int vertexCount = geometry.Vertices.Length / geometry.Layers.Length;
+        int vertexCount = geometry.VerticesPerPass;
         if (vertexCount == 0 || layer.IndexCount < 3)
         {
             return;

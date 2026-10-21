@@ -12,15 +12,11 @@ using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
 
-/// <summary>Authored explosion data carried by a GenericTBA interaction.</summary>
-public sealed record GenericTbaExplosionParameters(
-    bool Explodable, string DestroyedModelName, float DamageScale, float ExplosionRadiusMetres,
-    float ExplosionFalloffMetres, float ExplosionDamageScale, float ExplosionDelaySeconds,
-    int FragmentCount, int FireballCount, string ExplosionExpression, string ExplosionSound)
-{
-    public float ExplosionRadiusUnits => ExplosionDamage.ToUnits(ExplosionRadiusMetres);
-    public float ExplosionFalloffUnits => ExplosionDamage.ToUnits(ExplosionFalloffMetres);
-}
+/// <summary>Where state 36's entry (<c>0x40D180</c>) stands the body, and where it puts the charge.</summary>
+/// <param name="Position">The body origin before the ground snap, in world units.</param>
+/// <param name="Facing">The body's gamma.</param>
+/// <param name="Contact">The traced point the charge model is moved to, in world units.</param>
+public readonly record struct ChargePlantPose(Vector3d Position, float Facing, Vector3d Contact);
 
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
 public sealed class WorldInteraction
@@ -54,8 +50,6 @@ public sealed class WorldInteraction
     private readonly PlacedDoor? _placedDoor;
     private readonly Vector3d _authoredMarker;
     private readonly Vector3d _markerLocal;
-    private bool _explosionConsumed;
-    private bool _explosionPending;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -74,7 +68,8 @@ public sealed class WorldInteraction
         bool hasLocalBounds,
         Vector3d markerPoint,
         Vector3d markerLocal,
-        GenericTbaExplosionParameters? explosion = null)
+        int placedTaskId = -1,
+        int activateAnimation = -1)
     {
         Task = task;
         Type = type;
@@ -97,7 +92,8 @@ public sealed class WorldInteraction
         LocalBoundsMinimum = localBoundsMinimum;
         LocalBoundsMaximum = localBoundsMaximum;
         HasLocalBounds = hasLocalBounds;
-        Explosion = explosion;
+        PlacedTaskId = placedTaskId;
+        ActivateAnimation = activateAnimation;
     }
 
     public DeclaredTask Task { get; }
@@ -158,8 +154,21 @@ public sealed class WorldInteraction
 
     /// <summary>Gets a value indicating whether a GenericTBA runs ExplodeObject's update, and its children with it: its <c>Explodable</c> flag (<c>+568</c>).</summary>
     public bool IsExplodable { get; init; }
-    public bool ExplosionTriggeredThisTick { get; private set; }
-    public GenericTbaExplosionParameters? Explosion { get; }
+
+    /// <summary>
+    /// The clip states 35 and 36 play on entry (<c>Activate Anim</c>, the Int16 at <c>+586</c> read by <c>0x4485D0</c>,
+    /// started looping with no blend), or -1. Every retail charge names 245.
+    /// </summary>
+    public int ActivateAnimation { get; }
+
+    /// <summary>A PlaceExplosiveTBA's <c>Task ID to place</c> (<c>+684</c>, -1 by default), the charge model it moves.</summary>
+    public int PlacedTaskId { get; }
+
+    /// <summary>Where the last plant put the placed task, in world units, or <see langword="null"/> before one.</summary>
+    public Vector3d? PlacedPosition { get; private set; }
+
+    /// <summary>The placed task's orientation from the last plant.</summary>
+    public Matrix3f PlacedOrientation { get; private set; } = Matrix3f.Identity;
 
     /// <summary>Gets a value indicating whether the task is in the world: every conditional container above it is active.</summary>
     public bool IsInWorld => ConditionalContainerGate.IsTaskActive(Task);
@@ -333,26 +342,10 @@ public sealed class WorldInteraction
             InteractionActivateType.StationaryGun => StationaryGunPose(from),
             InteractionActivateType.Generic =>
                 Pose(new Vector3d(0.0, 3481.6, 0.0), Facing + MathF.PI),
-            InteractionActivateType.PlaceExplosive => PlaceExplosivePose(from),
+            InteractionActivateType.PlaceExplosive => UntracedPlantPose(from),
             InteractionActivateType.Fence => FenceMountPose(from),
             _ => (from, Facing),
         };
-    }
-
-    /// <summary>Gets the landing root on the far side of the fence mount returned by <see cref="BodyPose"/>.</summary>
-    public Vector3d FenceExitPoint(Vector3d from)
-    {
-        if (Type != InteractionActivateType.Fence)
-        {
-            return from;
-        }
-
-        Vector3d local = Orientation.Transform(from - Anchor);
-        local = new Vector3d(
-            ClampFenceX(local.X),
-            local.Y >= 0.0 ? -2457.6 : 2457.6,
-            3891.2);
-        return Anchor + Orientation.Transposed().Transform(local);
     }
 
     private (Vector3d Position, float Facing) FenceMountPose(Vector3d from)
@@ -367,20 +360,59 @@ public sealed class WorldInteraction
         return (position, positiveSide ? Facing + MathF.PI : Facing);
     }
 
-    private (Vector3d Position, float Facing) PlaceExplosivePose(Vector3d from)
+    /// <summary>State 36's entry (<c>0x40D180</c>): the body pose and the point the charge goes, from the eye.</summary>
+    /// <param name="eye">The human's view position (<c>HumanView+224</c>), in world units.</param>
+    /// <param name="trace">The world cast <c>0x4CC2A0</c> makes, or <see langword="null"/> to cast nothing.</param>
+    /// <returns>The pose before the ground snap.</returns>
+    /// <remarks>
+    /// The entry casts from the eye to the target (the task plus its model's magic vertex 1, <see cref="Anchor"/>).
+    /// On a hit the charge goes to the contact and the body faces the struck surface's normal; on a miss the
+    /// "contact" is the eye and the direction is eye-to-target. Either way gamma is <c>atan2(d.y, d.x) + π/2</c>
+    /// (<c>0x4B2D00</c>) and the body stands 2048 units back from the contact along the normalised eye-to-target
+    /// line (<c>0x4B3100</c>). Measured in Mission 6 with the probe: planting tank 1601 from the south-west put
+    /// the body at contact − 2048·d̂ and gamma at −0.981745, the facet normal's, not eye-to-target's −0.927.
+    /// </remarks>
+    public ChargePlantPose PlantPose(Vector3d eye, WorldTraceCast? trace)
     {
-        Vector3d towardTarget = (Anchor - from).Normalized();
-        if (towardTarget.LengthSquared == 0.0)
+        Vector3d target = Anchor;
+        Vector3d contact = eye;
+        Vector3d along = target - eye;
+        Vector3d direction = along;
+        if (trace is not null
+            && trace(new WorldTraceRequest(eye, target, WorldTraceMask.World), out WorldTraceHit hit))
         {
-            return (from, Facing);
+            contact = hit.Position;
+            direction = new Vector3d(hit.Normal.X, hit.Normal.Y, hit.Normal.Z);
         }
 
-        // State 36 raycasts this line and backs the body root 2048 units off the contact. Anchor is the
-        // unobstructed result; collision remains the caller's concern, but the authored stand-off and
-        // target-facing gamma are preserved here.
-        Vector3d position = Anchor - (towardTarget * 2048.0);
-        float facing = (float)Math.Atan2(towardTarget.X, towardTarget.Y);
-        return (position, facing);
+        float facing = direction.X == 0.0
+            ? MathF.PI / 2f
+            : (float)Math.Atan2(direction.Y, direction.X) + (MathF.PI / 2f);
+        Vector3d back = along.LengthSquared > 0.0 ? along.Normalized() * 2048.0 : default;
+        return new ChargePlantPose(contact - back, facing, contact);
+    }
+
+    private (Vector3d Position, float Facing) UntracedPlantPose(Vector3d eye)
+    {
+        ChargePlantPose plant = PlantPose(eye, trace: null);
+        return (plant.Position, plant.Facing);
+    }
+
+    /// <summary>
+    /// Moves the placed task to a plant's contact, as state 36's entry writes the EditRigidObj's position and
+    /// orientation parameters (<c>+240</c>, <c>+264</c>) with <c>0x4B38E0(π/2, 0, gamma)</c>. The object reads
+    /// them when it is next activated (<c>0x4F2B90</c>), which in Mission 6 is the ConditionalContainer that
+    /// shows the charge once <c>isFinished</c> rises.
+    /// </summary>
+    public void PlaceTask(Vector3d contact, float facing)
+    {
+        if (PlacedTaskId < 0)
+        {
+            return;
+        }
+
+        PlacedPosition = contact;
+        PlacedOrientation = WorldScene.ToOrientation(new Vector3f(MathF.PI / 2f, 0f, facing));
     }
 
     private (Vector3d Position, float Facing) Pose(Vector3d localOffset, float facing) =>
@@ -568,38 +600,15 @@ public sealed class WorldInteraction
                 Door?.Toggle();
                 break;
             default:
+                // A GenericTBA or PlaceExplosiveTBA finishing (0x443EA0) sets isFinished and isFinishedThisTick
+                // and stamps the tick, nothing else. Its explosion parameters belong to the ExplodeObject it
+                // derives from, whose update the task runs only while Explodable (+568) is set (0x4480B0); every
+                // retail charge -- Mission 2's three, Mission 6's two, Mission 8's -- has it FALSE. What blows up
+                // is the level's own ExplodeObjects, on their own expressions: Mission 6's tanks 600 ticks after
+                // the second charge (LevelTimer_1604), Mission 2's at its outro cutscene.
                 IsCompleted = true;
-                if (Type == InteractionActivateType.Generic && Explosion is not null)
-                {
-                    ExplosionTriggeredThisTick = true;
-                    _explosionPending = true;
-                }
                 break;
         }
-    }
-
-    /// <summary>Applies the delayed destruction edge once its authored blast is presented.</summary>
-    public void MarkExplosionPresented(ObjectCollisionIndex? collision = null)
-    {
-        if (Type == InteractionActivateType.Generic && Explosion is not null && IsCompleted)
-        {
-            IsDestroyed = true;
-            collision?.SetPassable(Task, passable: true);
-        }
-    }
-
-    internal bool TryConsumeExplosion(out GenericTbaExplosionParameters parameters)
-    {
-        if (!_explosionPending || _explosionConsumed || Explosion is null)
-        {
-            parameters = null!;
-            return false;
-        }
-
-        _explosionConsumed = true;
-        _explosionPending = false;
-        parameters = Explosion;
-        return true;
     }
 
     /// <summary>The task's update, where its pulses clear on their stamps and its expressions are read.</summary>
@@ -675,8 +684,6 @@ public sealed class WorldInteraction
                 InUse.CommitTick();
                 break;
         }
-
-        ExplosionTriggeredThisTick = false;
     }
 
     // 0x43FC30: a powered fence makes its own AmbientArea, buzzing elfence_loop in a box two metres up its middle, the
@@ -818,15 +825,23 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
     private int _updates;
     private Dictionary<GameTask, WorldInteraction>? _byTask;
     private bool _inWalk;
+    private readonly List<RadioRuntime> _radios = [];
+
+    // The renderer asks after every placement each frame; only Mission 6 has anything to answer.
+    private bool _hasPlacedTasks;
 
     public IReadOnlyList<WorldInteraction> Items => _items;
+
+    /// <summary>Gets the level's <c>Radio</c> tasks.</summary>
+    public IReadOnlyList<RadioRuntime> Radios => _radios;
 
     public static WorldInteractionRegistry Build(
         GameTask root,
         LoadedMission mission,
         DoorRegistry doors,
         ScriptVarRegistry variables,
-        ElevatorRegistry? elevators = null)
+        ElevatorRegistry? elevators = null,
+        IgiRandom? random = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(mission);
@@ -837,6 +852,7 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
         LevelExpressionRuntime expressions = new(variables);
         WorldInteractionRegistry registry = new();
         CollectGenerators(root, registry, variables, expressions);
+        CollectRadios(root, registry, variables, expressions, random ?? new IgiRandom());
         Collect(root, registry, models, doors, variables, expressions, elevators);
         return registry;
     }
@@ -850,6 +866,20 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
             {
                 generator.Settle();
             }
+        }
+    }
+
+    /// <summary>Runs every radio's own update, <c>0x43AF90</c>.</summary>
+    /// <param name="sounds">Where their sounds go, or <see langword="null"/> when nothing can play.</param>
+    /// <remarks>
+    /// After the destructibles have ticked: a Radio's update calls the ExplodeObject update first, so an
+    /// explosion and the radio going quiet share a tick.
+    /// </remarks>
+    public void TickRadios(IRadioSoundPlayer? sounds)
+    {
+        foreach (RadioRuntime radio in _radios)
+        {
+            radio.Tick(sounds);
         }
     }
 
@@ -1045,16 +1075,29 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
     public bool WeaponHit(GameTask? task) =>
         task is not null && TryGet(task, out WorldInteraction? item) && item!.WeaponHit();
 
-    /// <summary>Consumes each authored GenericTBA explosion edge at most once.</summary>
-    public IEnumerable<(WorldInteraction Interaction, GenericTbaExplosionParameters Parameters)> ConsumeExplosions()
+    /// <summary>Where a plant moved the task a PlaceExplosiveTBA places, if one has.</summary>
+    /// <param name="task">The placed task (a charge model's EditRigidObj).</param>
+    /// <param name="position">Its position, in world units.</param>
+    /// <param name="orientation">Its orientation.</param>
+    /// <returns>Whether a plant has moved this task.</returns>
+    public bool TryGetPlacedPose(GameTask? task, out Vector3d position, out Matrix3f orientation)
     {
-        foreach (WorldInteraction item in _items)
+        if (task is not null && _hasPlacedTasks)
         {
-            if (item.TryConsumeExplosion(out GenericTbaExplosionParameters parameters))
+            foreach (WorldInteraction item in _items)
             {
-                yield return (item, parameters);
+                if (item.PlacedTaskId == task.Id && item.PlacedPosition is { } placed)
+                {
+                    position = placed;
+                    orientation = item.PlacedOrientation;
+                    return true;
+                }
             }
         }
+
+        position = default;
+        orientation = Matrix3f.Identity;
+        return false;
     }
 
     /// <summary>Finds a powered electric fence touched by a player movement segment.</summary>
@@ -1195,6 +1238,15 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
                 stationaryGun.MountVertex = mount;
             }
 
+            // State 36's seat (0x444B30) is measured from vertex 0, the origin for a stand with none.
+            if (stationaryGun is not null
+                && models.TryGetValue(modelName, out MefModel? seatModel)
+                && seatModel.MagicVertexCount >= 1
+                && seatModel.TryGetMagicVertex(0, out Vector3f seat))
+            {
+                stationaryGun.SeatVertex = seat;
+            }
+
             (Vector3d localBoundsMinimum, Vector3d localBoundsMaximum, bool hasLocalBounds) =
                 type == InteractionActivateType.Fence
                     && models.TryGetValue(modelName, out MefModel? fenceModel)
@@ -1212,7 +1264,12 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
                 ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
                 markerPoint, markerLocal,
-                type == InteractionActivateType.Generic ? ExplosionOf(declared) : null)
+                type == InteractionActivateType.PlaceExplosive ? ReadInt(declared, "Task ID to place", -1) : -1,
+                // An Int16 parameter, which the task holds as a short: read as an int it answered -1 for every
+                // charge, no clip started, and the body kept the pose it walked up in.
+                type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive
+                    ? ReadInt(declared, "Activate Anim", -1)
+                    : -1)
             {
                 IsDestructable = type == InteractionActivateType.Switch && ReadBool(declared, "Destructable"),
                 IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && ReadBool(declared, "Explodable"),
@@ -1269,6 +1326,7 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
                 type == InteractionActivateType.Fence ? ByteSlot(expressions, electricExpression, declared) : null);
             item.Clock = () => registry.Now;
             registry._items.Add(item);
+            registry._hasPlacedTasks |= item.PlacedTaskId >= 0;
             BindVariables(item, variables);
         }
 
@@ -1323,6 +1381,31 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
         foreach (GameTask child in task.Children)
         {
             CollectGenerators(child, registry, variables, expressions);
+        }
+    }
+
+    private static void CollectRadios(
+        GameTask task,
+        WorldInteractionRegistry registry,
+        ScriptVarRegistry variables,
+        LevelExpressionRuntime expressions,
+        IgiRandom random)
+    {
+        if (ConditionalContainerGate.IsDormant(task))
+        {
+            return;
+        }
+
+        if (task is DeclaredTask declared && string.Equals(task.Type.Name, "Radio", StringComparison.Ordinal))
+        {
+            RadioRuntime radio = RadioRuntime.Create(declared, expressions, variables, random);
+            registry._radios.Add(radio);
+            variables.BindBool(declared, "isOn", () => radio.IsOn, value => radio.IsOn = value);
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            CollectRadios(child, registry, variables, expressions, random);
         }
     }
 
@@ -1671,27 +1754,6 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
 
     private static string ReadString(DeclaredTask task, string name, string fallback) =>
         task.TryGetValue(name, out object? value) && value is string text && text.Length > 0 ? text : fallback;
-
-    private static GenericTbaExplosionParameters? ExplosionOf(DeclaredTask task)
-    {
-        string destroyedModel = ReadString(task, "Destroyed model", string.Empty);
-        float damageScale = ReadReal(task, "Damage scale", 1f);
-        float radius = ReadReal(task, "Explosion radius", 0f);
-        float falloff = ReadReal(task, "Explosion falloff radius", 0f);
-        float explosionDamageScale = ReadReal(task, "Explosion damage scale", 1f);
-        float delay = ReadReal(task, "Explosion delay", 0f);
-        int fragments = ReadInt(task, "Explosion fragments", 0);
-        int fireballs = ReadInt(task, "Explosion fireballs", 0);
-        string expression = ReadString(task, "Explosion expression", string.Empty);
-        string sound = ReadString(task, "Explosion sound", string.Empty);
-        bool explodable = ReadBool(task, "Explodable");
-        bool hasExplosionContent = explodable || destroyedModel.Length > 0 || fragments > 0 || fireballs > 0
-            || expression.Length > 0 || sound.Length > 0 || radius > 0f || falloff > 0f || delay > 0f;
-        return hasExplosionContent
-            ? new(explodable, destroyedModel, damageScale, radius, falloff, explosionDamageScale, delay,
-                fragments, fireballs, expression, sound)
-            : null;
-    }
 
     private static int ReadInt(DeclaredTask task, string name, int fallback) =>
         task.TryGetValue(name, out object? value) ? value switch

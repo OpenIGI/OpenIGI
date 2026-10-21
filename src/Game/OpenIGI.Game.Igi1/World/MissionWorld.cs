@@ -20,6 +20,12 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the level's authored ambience boxes.</summary>
     public AmbientAreaRegistry? Ambience { get; set; }
 
+    /// <summary>
+    /// Gets or sets where the ear is for the next tick's ambient areas, in engine units: the camera as the last tick left it,
+    /// or <see langword="null"/> before any camera was placed.
+    /// </summary>
+    public Vector3d? AmbienceListener { get; set; }
+
     /// <summary>Gets or sets the damage factor an electric fence deals the player each tick it is touched.</summary>
     public float ElectricFenceDose { get; set; } = ElectricFenceContact.DefaultDamageFactor;
 

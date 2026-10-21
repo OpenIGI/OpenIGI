@@ -23,16 +23,16 @@
 
 struct Sprite2DVertexInput
 {
-    [[vk::location(0)]] float2 position;
-    [[vk::location(1)]] float2 texCoord;
-    [[vk::location(2)]] float4 colorBgra;
+    [[vk::location(0)]] float2 position : TEXCOORD0;
+    [[vk::location(1)]] float2 texCoord : TEXCOORD1;
+    [[vk::location(2)]] float4 colorBgra : TEXCOORD2;
 };
 
 struct Sprite2DVaryings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 texCoord;
-    [[vk::location(1)]] float4 color;
+    [[vk::location(0)]] float2 texCoord : TEXCOORD0;
+    [[vk::location(1)]] float4 color : TEXCOORD1;
 };
 
 /// Pixels to clip space, colour unswizzled, texture coordinate passed through.

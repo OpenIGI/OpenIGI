@@ -359,6 +359,54 @@ public sealed class BoneObject
         return BonePose.Evaluate(_set.Skeleton, _locals, rootPosition, rootRotation);
     }
 
+    /// <summary>Poses the skeleton as it will stand after one more tick, without advancing anything.</summary>
+    /// <param name="rootRotation">The orientation applied above the root.</param>
+    /// <returns>The posed skeleton, every clip's clock and every cross-fade one tick on.</returns>
+    /// <remarks>
+    /// The engine's clip node samples its root track and then moves its clock (<c>0x4D4B60</c>), so between ticks
+    /// the clock is already a tick past the root the body stands on. Whatever re-poses the skeleton from the clock
+    /// in that gap -- a cast rebuilding a human's palette (<c>0x45F240</c>) -- sees this pose.
+    /// </remarks>
+    public BonePose PoseAhead(Matrix3f? rootRotation = null)
+    {
+        List<(BoneClip Clip, float Time)> clocks = [];
+        float[] elapsed = (float[])_blendElapsed.Clone();
+        void Advance(BoneClip? clip)
+        {
+            if (clip is null || clocks.Exists(saved => ReferenceEquals(saved.Clip, clip)))
+            {
+                return;
+            }
+
+            clocks.Add((clip, clip.Time));
+            clip.SetTime(clip.TimeAfterTick());
+        }
+
+        for (int bone = 0; bone < _own.Length; bone++)
+        {
+            Advance(_own[bone]);
+            Advance(_blendFrom[bone]);
+            if (_blendDuration[bone] > 0f)
+            {
+                _blendElapsed[bone] = Math.Min(_blendElapsed[bone] + 1f, _blendDuration[bone]);
+            }
+        }
+
+        try
+        {
+            return Pose(rootRotation);
+        }
+        finally
+        {
+            foreach ((BoneClip clip, float time) in clocks)
+            {
+                clip.SetTime(time);
+            }
+
+            Array.Copy(elapsed, _blendElapsed, elapsed.Length);
+        }
+    }
+
     // Walks the bones in index order resolving each node's source, which is the original's recursion
     // written flat: it hands a child either its parent's resolved source or the one the parent was
     // itself handed, and the propagate flag picks between them. Valid in one pass for the same reason

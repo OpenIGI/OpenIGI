@@ -23,6 +23,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="blasts">What a guard's round does to a speaker or a destructible.</param>
 /// <param name="sounds">The soldiers' cries and the sound of a guard's round landing.</param>
 /// <param name="audio">Where the doors, lifts and soldiers send their sounds.</param>
+/// <param name="impacts">The material's own effects where a soldier's marched round lands.</param>
 /// <param name="host">What plays and shows them.</param>
 public sealed class Igi1MissionSetup(
     MissionWorld mission,
@@ -30,6 +31,7 @@ public sealed class Igi1MissionSetup(
     Igi1Blasts blasts,
     Igi1HumanSounds sounds,
     Igi1MissionAudio audio,
+    Igi1ImpactEffects impacts,
     IMissionSetupHost host) : IMissionSetup
 {
     /// <inheritdoc/>
@@ -184,6 +186,10 @@ public sealed class Igi1MissionSetup(
         mission.Objectives = objectives;
         made(objectives);
 
+        // A transmission sounds as it goes up: 0x486650 plays the message's Sound ("message", "fail") at the listener,
+        // like the pickup cue.
+        objectives.MessageSound = audio.PlayTransmissionSound;
+
         // The areas and edit variables update inside the level's one walk, where the tree places them.
         objectives.AttachTo(
             mission.Cutscenes.Walker,
@@ -193,31 +199,25 @@ public sealed class Igi1MissionSetup(
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
-        // later. Instead take the exact path Escape takes in retail. The objective flow observes the
-        // break key, closes the intro container, and the cutscene tick applies that transition before
-        // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
-        if (!host.PlayCutscenes && mission.Cutscenes.IsPlaying)
+        // later. Instead take the exact path Escape takes in retail: the break key is down when the level's
+        // first tick walks, and that walk -- tick 0, not a walk of its own before it -- is where the objective
+        // flow reads it and closes the intro. A pre-walk here had set the skip variable a tick early: mission 4's
+        // LevelTimer_760 (Run "CutScene_1000.isFinished || EditVariable_4000.nValue") counted from tick 0 where
+        // retail's, which reads the variable before the walk sets it, counts from tick 1 -- and the squad that
+        // timer releases, and everything it met, ran a tick ahead. The intro still runs through the ticks that
+        // close it, as retail's does (two on mission 4); what it would show and sound in them is held back
+        // (MissionState.CutsceneFrameShown) until it stops.
+        // OPENIGI_BREAK_CUTSCENE=1 takes the same edge, for a lockstep run that should skip without a key.
+        if (mission.Cutscenes.IsPlaying
+            && (!host.PlayCutscenes
+                || string.Equals(
+                    Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
+                    "1",
+                    StringComparison.Ordinal)))
         {
             mission.Cutscenes.RequestBreak();
-            objectives.TickLevelState();
-            mission.Cutscenes.Tick();
-            mission.Cutscenes.FinishExpressionTick();
             host.StopCutsceneSounds();
-        }
-
-        // Same native edge as Escape (LevelFlow_GetBreakCutSceneKey). Used by the
-        // agent playtest so lockstep/-frames can skip the intro without a HITL key.
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
-                "1",
-                StringComparison.Ordinal)
-            && mission.Cutscenes.IsPlaying)
-        {
-            mission.Cutscenes.RequestBreak();
-            objectives.TickLevelState();
-            mission.Cutscenes.Tick();
-            mission.Cutscenes.FinishExpressionTick();
-            host.StopCutsceneSounds();
+            mission.IntroSkipPending = true;
         }
 
         return objectives;
@@ -266,11 +266,13 @@ public sealed class Igi1MissionSetup(
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="solids">The collision index over the placed objects.</param>
+    /// <param name="placements">The level's placements, whose models size each pickup's reach.</param>
     /// <remarks>
     /// Interactions are level systems, not AI systems: they are built even when a mission has no usable navigation graph,
     /// and the same door objects serve the player, the AI's door hops and the collision.
     /// </remarks>
-    public void BuildInteractions(LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids)
+    public void BuildInteractions(
+        LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, IReadOnlyList<WorldPlacement>? placements = null)
     {
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -280,15 +282,26 @@ public sealed class Igi1MissionSetup(
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         mission.Doors = DoorRegistry.Build(levelRoot);
         mission.Elevators = ElevatorRegistry.Build(levelRoot, host.Game.Variables);
-        mission.Interactions = WorldInteractionRegistry.Build(levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators);
+        mission.Interactions = WorldInteractionRegistry.Build(
+            levelRoot, loaded, mission.Doors, host.Game.Variables, mission.Elevators, random: mission.SoundRandom);
         mission.Interactions.Clock = () => mission.Objectives?.LevelTick;
         mission.Interactions.Sounds = audio.PlayInteractionSound;
-        mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, host.Game.Variables);
+        mission.GenericPickups = GenericPickupRegistry.Build(levelRoot, host.Game.Variables, placements);
 
         solids.GenericPickups = mission.GenericPickups;
 
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
+        // Each area draws its first gap at load (0x44C740) and updates where the tree places it, against the camera
+        // as the player's update last left it -- nowhere on the first tick, so every area starts silent and draws.
         mission.Ambience = AmbientAreaRegistry.Build(levelRoot, mission.SoundRandom);
+        mission.AmbienceListener = null;
+        if (mission.Cutscenes is { } walked)
+        {
+            mission.Ambience.AttachTo(
+                walked.Walker,
+                () => mission.AmbienceListener,
+                audio.IsPlayableSound);
+        }
         if (mission.Ambience.Areas.Count > 0)
         {
             host.Logger.Information("Audio", $"{mission.Ambience.Areas.Count} ambient area(s).");
@@ -306,6 +319,7 @@ public sealed class Igi1MissionSetup(
         // The level's own soldiers, where the title has them to draw (a title without IGI1's has none).
         if (mission.Soldiers is { } soldiers)
         {
+            soldiers.UseRandom(mission.SoundRandom);
             soldiers.Cutscenes = mission.Cutscenes;
             mission.Cutscenes?.SetTargetPoseResolver(soldiers.CutscenePose);
 
@@ -464,8 +478,11 @@ public sealed class Igi1MissionSetup(
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
         // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
-        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, sounds, host, host.Logger);
+        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, sounds, impacts, host, host.Logger);
         soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
+
+        // The soldiers' guns march their rounds through the same world the soldiers see.
+        mission.GuardRounds.AttachGunShotWorld();
     }
 
     /// <summary>Sets the level's vehicles going: their collision, wheels, rigid bodies and what of them can be destroyed.</summary>
@@ -526,6 +543,10 @@ public sealed class Igi1MissionSetup(
                 name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
         }
 
+        // The level's one global stream, seeded as LevelFlow's start seeds it (0x416D90), before the first draw:
+        // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
+        mission.SoundRandom.SeedForLevel();
+
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
         mission.Destructibles = DestructibleObjectRegistry.Build(
@@ -542,8 +563,9 @@ public sealed class Igi1MissionSetup(
     /// <param name="loaded">The mission, whose directory holds them.</param>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="gamePath">The install's root.</param>
+    /// <param name="placements">The level's placements, which place a graph on a train where its car stands.</param>
     /// <returns>The graphs by their task's id, in world space; empty when the level ships none.</returns>
-    public Dictionary<int, GraphFile> ReadNavGraphs(LoadedMission loaded, LevelTask levelRoot, string gamePath)
+    public Dictionary<int, GraphFile> ReadNavGraphs(LoadedMission loaded, LevelTask levelRoot, string gamePath, IReadOnlyList<WorldPlacement>? placements = null)
     {
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -556,7 +578,7 @@ public sealed class Igi1MissionSetup(
         Dictionary<int, GraphFile> graphs;
         try
         {
-            graphs = NavGraphs.Read(graphDirectory, levelRoot, host.Logger);
+            graphs = NavGraphs.Read(graphDirectory, levelRoot, host.Logger, placements);
         }
         catch (IOException ex)
         {

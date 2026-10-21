@@ -66,6 +66,14 @@ public sealed class MissionObjectiveRuntime
     private int _tick;
     private bool _released;
 
+    /// <summary>Plays a message's <c>Sound</c> as it goes up, through the engine's direct-play path.</summary>
+    /// <remarks>
+    /// <c>0x486650</c>, having found the message a slot, calls <c>0x4E7200(Sound, 1, {1, 1, 0})</c> when the field
+    /// (<c>+436</c>) is not empty: no position, unit gain and pitch. Every level authors <c>message</c> on its
+    /// radio transmissions and <c>fail</c> on its mission-failed line.
+    /// </remarks>
+    public Action<string>? MessageSound { get; set; }
+
     /// <summary>Builds the runtime from the authored level task tree.</summary>
     /// <param name="levelRoot">The loaded level's task tree.</param>
     /// <param name="variables">The mission's script variables.</param>
@@ -154,7 +162,10 @@ public sealed class MissionObjectiveRuntime
                     String(declared, "Text"),
                     Bool(declared, "Is send once"),
                     Bool(declared, "Cutscene message"),
-                    Real(declared, "Duration", 2f));
+                    Real(declared, "Duration", 2f))
+                {
+                    Sound = String(declared, "Sound"),
+                };
                 _statusMessages.Add(message);
 
                 // 0x485770 exports these five fields. In particular, retail LevelFlow expressions
@@ -557,6 +568,10 @@ public sealed class MissionObjectiveRuntime
             if (TryTakeMessageSlot(message))
             {
                 message.BeginDisplay(_resolveText(message.TextResource));
+                if (message.Sound.Length > 0)
+                {
+                    MessageSound?.Invoke(message.Sound);
+                }
             }
 
             if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
@@ -1155,6 +1170,7 @@ public sealed class MissionObjectiveRuntime
         public bool SendOnce { get; } = sendOnce;
         public bool Cutscene { get; } = cutscene;
         public float Duration { get; } = duration;
+        public string Sound { get; init; } = string.Empty;
         public bool IsSent { get; set; }
         public int SentTick { get; set; } = -100000;
         public bool IsFinishedDisplay { get; set; }

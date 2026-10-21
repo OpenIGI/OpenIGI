@@ -51,7 +51,8 @@ public static class Igi1MissionSystems
             .InsertBefore(MissionSystemNames.InteractionsView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Interactions, b =>
             {
                 game.Audio.ForgetAmbience();
-                game.Setup.BuildInteractions(b.Loaded, b.LevelRoot, b.Solids ?? throw Missing(MissionSystemNames.Scene));
+                game.Setup.BuildInteractions(
+                    b.Loaded, b.LevelRoot, b.Solids ?? throw Missing(MissionSystemNames.Scene), b.Scene?.Placements);
                 game.Impacts.ConnectSoldiers();
             }))
             .InsertBefore(MissionSystemNames.CamerasView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Cameras, b =>
@@ -68,7 +69,7 @@ public static class Igi1MissionSystems
             }))
             .InsertBefore(MissionSystemNames.LightBakes, new LevelSystem<MissionLevelBuild>(MissionSystemNames.NavGraphs, b =>
             {
-                b.Graphs = game.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, host.GamePath);
+                b.Graphs = game.Setup.ReadNavGraphs(b.Loaded, b.LevelRoot, host.GamePath, b.Scene?.Placements);
                 host.EndStage("reading the nav graphs");
             }))
             .InsertBefore(MissionSystemNames.AlarmsView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.NavigationAi, b =>

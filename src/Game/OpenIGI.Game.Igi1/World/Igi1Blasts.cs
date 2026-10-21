@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="impacts">The scorch a rocket or a launcher round burns.</param>
 /// <param name="host">What shows and plays them.</param>
 public sealed class Igi1Blasts(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host) : IMissionBlasts
+    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
 {
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;
@@ -33,14 +33,10 @@ public sealed class Igi1Blasts(
     // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
     private const int ExplosionShakeTicks = 90;
 
-    private readonly List<PendingGenericTbaExplosion> _pending = [];
 
     // Where each task stands in the order the level made them, for the explosion list.
     private readonly Dictionary<GameTask, long> _joinOrder = [];
     private LevelTask? _orderedRoot;
-
-    /// <summary>Forgets the authored explosions waiting on their delay, as a new mission starts.</summary>
-    public void ClearPending() => _pending.Clear();
 
     /// <summary>Applies and shows whatever grenades went off this tick.</summary>
     /// <remarks>
@@ -421,58 +417,6 @@ public sealed class Igi1Blasts(
         }
     }
 
-    /// <summary>Consumes and presents authored GenericTBA explosions once per completed interaction.</summary>
-    public void ResolveGenericTbaExplosions()
-    {
-        if (mission.Interactions is { } interactions)
-        {
-            foreach ((WorldInteraction interaction, GenericTbaExplosionParameters parameters) in interactions.ConsumeExplosions())
-            {
-                int delayTicks = Math.Max(0, (int)MathF.Round(
-                    Math.Max(0f, parameters.ExplosionDelaySeconds) * GameClock.DefaultTickRate));
-                _pending.Add(
-                    new PendingGenericTbaExplosion(interaction, interaction.Anchor, parameters, delayTicks));
-            }
-        }
-
-        for (int i = _pending.Count - 1; i >= 0; i--)
-        {
-            PendingGenericTbaExplosion pending = _pending[i];
-            if (pending.RemainingTicks > 0)
-            {
-                pending.RemainingTicks--;
-                continue;
-            }
-
-            pending.Interaction.MarkExplosionPresented(mission.Solids);
-            PresentGenericTbaExplosion(pending.Position, pending.Parameters);
-            _pending.RemoveAt(i);
-        }
-    }
-
-    private void PresentGenericTbaExplosion(Vector3d position, GenericTbaExplosionParameters parameters)
-    {
-        string sound = parameters.ExplosionSound.Length > 0 ? parameters.ExplosionSound : "explo_02_m";
-        host.PlayDefinition(sound, position, 90);
-        // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
-        // at presentation time as the other world blasts, including after an authored delay.
-        mission.Soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
-        host.Explosion(position, parameters.ExplosionRadiusUnits, parameters.FireballCount, parameters.FragmentCount);
-
-        if (parameters.ExplosionExpression.Length > 0)
-        {
-            _ = new LevelExpressionRuntime(host.Game.Variables).Execute(parameters.ExplosionExpression);
-        }
-
-        float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
-        Explode(
-            position,
-            parameters.ExplosionRadiusUnits,
-            parameters.ExplosionFalloffUnits,
-            damageFactor,
-            WeaponCategory.Grenade);
-    }
-
     /// <summary>Hands one round's contact to the exact object it struck, the way retail does.</summary>
     /// <param name="impactUnits">Where the round landed, in world units.</param>
     /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
@@ -655,15 +599,6 @@ public sealed class Igi1Blasts(
         host.Logger.Information(
             "World",
             $"{item.TypeName} at {item.PositionUnits} exploded: radius={radius}, falloff={falloff}, damage={damageFactor}.");
-    }
-
-    private sealed class PendingGenericTbaExplosion(
-        WorldInteraction interaction, Vector3d position, GenericTbaExplosionParameters parameters, int remainingTicks)
-    {
-        public WorldInteraction Interaction { get; } = interaction;
-        public Vector3d Position { get; } = position;
-        public GenericTbaExplosionParameters Parameters { get; } = parameters;
-        public int RemainingTicks { get; set; } = remainingTicks;
     }
 
     /// <summary>Steps the destructibles a tick: their fuses, the blasts that went off, the cars that left the world, and the generators they settle.</summary>

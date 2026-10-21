@@ -1,5 +1,6 @@
 {
   "slangVersion": "2026.13.1-1-g84792eb15",
+  "dxcVersion": "1.9.2609",
   "modules": [
     {
       "id": "Sprite2D",
@@ -127,7 +128,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         }
       ]
@@ -189,7 +191,8 @@
             "OPENIGI_MAX_LAMPS": "160"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -228,7 +231,8 @@
         {
           "name": "default",
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         }
       ]
@@ -259,7 +263,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -280,7 +285,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -306,7 +312,8 @@
             "OPENIGI_MAX_LAMPS": "160"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -334,7 +341,8 @@
         {
           "name": "default",
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         }
       ]
@@ -361,7 +369,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -382,7 +391,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -392,7 +402,8 @@
             "OPENIGI_GATHER_PIXEL": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -413,7 +424,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -434,7 +446,8 @@
             "OPENIGI_RAY_QUERY": "1"
           },
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -464,7 +477,8 @@
         {
           "name": "default",
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         }
       ]
@@ -476,7 +490,8 @@
         {
           "name": "default",
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         }
       ]
@@ -488,7 +503,8 @@
         {
           "name": "default",
           "targets": [
-            "Spirv"
+            "Spirv",
+            "Dxil"
           ]
         },
         {
@@ -506,6 +522,10 @@
     {
       "id": "Water",
       "source": "World/Water.slang"
+    },
+    {
+      "id": "Tracer",
+      "source": "World/Tracer.slang"
     }
   ]
 }

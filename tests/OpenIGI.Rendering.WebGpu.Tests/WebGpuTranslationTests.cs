@@ -100,11 +100,12 @@ public sealed class WebGpuTranslationTests
         // it was created and an error from the driver naming neither.
         foreach (RhiBufferUsage usage in Enum.GetValues<RhiBufferUsage>())
         {
-            // RayTracingInput is the one use with nothing on this side to map to, and it is deliberate:
-            // a mesh states it without knowing whether it will ever be traced, and a backend that
-            // builds no acceleration structures has nothing to place differently. Dropping it is the
-            // right answer, so it is named here rather than caught by the rule below.
-            if (usage is RhiBufferUsage.None or RhiBufferUsage.RayTracingInput)
+            // RayTracingInput and AccelerationStructureScratch are the uses with nothing on this side to
+            // map to, and it is deliberate: a mesh states the first without knowing whether it will ever
+            // be traced, and nothing asks for the second on a device that builds no acceleration
+            // structures. Dropping them is the right answer, so they are named here rather than caught by
+            // the rule below.
+            if (usage is RhiBufferUsage.None or RhiBufferUsage.RayTracingInput or RhiBufferUsage.AccelerationStructureScratch)
             {
                 continue;
             }

@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Pipeline.Targets;
+using OpenIGI.Rendering.Pipeline.RayTracing;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Temporal;
 
@@ -30,8 +31,12 @@ public sealed partial class GraphicsDevice
     private bool _sunTraced;
     private bool _worldReleasePending;
 
-    /// <summary>Gets the backend's traced world, or null where it does not trace.</summary>
-    private IRhiRayTracing? TracedWorld => _device.RayTracing;
+    // The traced world: the device's own where it offers acceleration structures, or a test's stand-in.
+    private readonly ITracedWorld? _tracedWorld;
+    private readonly RayTracing.TracedWorld? _ownedTracedWorld;
+
+    /// <summary>Gets the traced world, or null where the device does not trace.</summary>
+    private ITracedWorld? TracedWorld => _tracedWorld;
 
     /// <inheritdoc/>
     public bool WorldTraceReady => TracedWorld is not { IsWorldReady: false };
@@ -99,10 +104,12 @@ public sealed partial class GraphicsDevice
         int indexCount,
         in Matrix4f modelView,
         TextureHandle diffuse,
-        bool firstPersonOnly = false)
+        bool firstPersonOnly = false,
+        SurfaceMaterial? material = null)
     {
         ThrowIfDisposed();
-        ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount, firstPersonOnly);
+        ObserveForTracing(
+            mesh, modelView, diffuse, indexOffset, indexCount, material ?? SurfaceMaterial.Default, firstPersonOnly);
     }
 
     /// <summary>Whether this frame's sun is traced: the settings ask for it and the world can answer.</summary>
@@ -122,6 +129,7 @@ public sealed partial class GraphicsDevice
     /// <param name="diffuse">Its colour texture, whose alpha decides how the run occludes.</param>
     /// <param name="indexOffset">Where in the index buffer this draw started.</param>
     /// <param name="indexCount">How many indices it covered.</param>
+    /// <param name="material">What the run is made of: whether it glows, and whether it occludes.</param>
     /// <param name="firstPerson">Whether this is an opaque, depth-writing draw of the first-person rig.</param>
     /// <remarks>
     /// The sky stays out: it is drawn as geometry, but it is light rather than a lit surface, and built into
@@ -134,13 +142,14 @@ public sealed partial class GraphicsDevice
         TextureHandle diffuse,
         int indexOffset,
         int indexCount,
+        in SurfaceMaterial material,
         bool firstPerson = false)
     {
         if (TracedWorld is not { } world
             || _tracePaused
             || !_capturing
             || (CurrentPass is not ScenePass.Geometry && !firstPerson)
-            || (_material.Emissive > 0f && !_material.CastsOcclusion))
+            || (material.Emissive > 0f && !material.CastsOcclusion))
         {
             return;
         }
@@ -149,8 +158,9 @@ public sealed partial class GraphicsDevice
             mesh.Id,
             Traced(Resolve(mesh)),
             TracedWorldTransform.From(modelView, _viewToWorld, _cameraPosition),
-            new RhiTracedSurface(indexOffset, indexCount, diffuse.Id),
-            firstPerson ? RhiRayMask.ViewModel : RhiRayMask.All);
+            // A lamp's glow goes with it, so a reflection that stops on the tube can show it lit.
+            new TracedSurface(indexOffset, indexCount, diffuse.Id, Math.Max(material.Emissive, 0f)),
+            firstPerson ? RayMask.ViewModel : RayMask.All);
     }
 
     /// <summary>Updates the traced world from this frame's G-buffer draws, once, before anything this frame traces.</summary>
@@ -249,7 +259,7 @@ public sealed partial class GraphicsDevice
                 new TracedSunShadowFrame(
                     structure,
                     world.CutoutMasks,
-                    world.HitRecordAddress,
+                    world.HitRecordHandle,
                     _cameraPosition,
                     _lighting.WorldSunDirection(_viewToWorld),
                     RenderCVars.SunAngle.Value,
@@ -277,7 +287,7 @@ public sealed partial class GraphicsDevice
     private void BindSunShadow() =>
         _shading?.BindSunShadow(_sunTraced ? _tracedSun?.Mask : null);
 
-    private static RhiTracedMesh Traced(RhiMesh mesh) => new(
+    private static TracedMeshBuffers Traced(RhiMesh mesh) => new(
         mesh.VertexBuffer,
         mesh.IndexBuffer,
         mesh.VertexCapacity,

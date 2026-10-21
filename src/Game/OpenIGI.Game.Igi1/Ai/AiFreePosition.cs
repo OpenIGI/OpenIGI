@@ -33,6 +33,9 @@ public static class AiFreePosition
     /// </remarks>
     public const int NodeLimit = 1024;
 
+    /// <summary>Diagnostics: told of every node the search tests -- the claimant, the node, the direction flag, the verdict.</summary>
+    public static Action<object?, int, bool, string>? Tested { get; set; }
+
     /// <summary>Looks for somewhere to stand.</summary>
     /// <param name="graph">The level's navigation graph.</param>
     /// <param name="myNodeId">The soldier's own node — <c>HumanAI+15916</c>.</param>
@@ -154,7 +157,9 @@ public static class AiFreePosition
             return false;
         }
 
-        return toMe + toTarget <= direct;
+        // 0x48B2E6 adds the two costs on the x87 stack: rounded to a float, a candidate a hair off the route (m4's node 15:
+        // 9976.2615 + 481807 against 491783.25) would round onto it and pass.
+        return (double)toMe + toTarget <= direct;
     }
 
     private static bool Accept(
@@ -173,8 +178,15 @@ public static class AiFreePosition
             return false;
         }
 
+        if (towardTarget && Tested is { } told && graph.RouteTable is { } table)
+        {
+            told(claimant, candidateId, towardTarget, FormattableString.Invariant(
+                $"costs me={myNodeId} target={targetNodeId} c2t={table[candidateId, targetNodeId].Cost:0.000} c2me={table[candidateId, myNodeId].Cost:0.000} me2t={table[myNodeId, targetNodeId].Cost:0.000}"));
+        }
+
         if (towardTarget && !ShortensTheRoute(graph, candidateId, myNodeId, targetNodeId))
         {
+            Tested?.Invoke(claimant, candidateId, towardTarget, "route");
             return false;
         }
 
@@ -183,6 +195,7 @@ public static class AiFreePosition
         // would otherwise count the soldier's own claim as "full" and push it off its node.
         if (occupancy is not null && claimant is not null && occupancy.IsClaimedBy(graph, candidateId, claimant))
         {
+            Tested?.Invoke(claimant, candidateId, towardTarget, "own");
             return true;
         }
 
@@ -191,11 +204,13 @@ public static class AiFreePosition
         // the sub-slot, and the claimed position is the walk target retail keeps at HumanAI+16048.
         if (occupancy is not null && claimant is not null && occupancy.IsFull(graph, candidateId))
         {
+            Tested?.Invoke(claimant, candidateId, towardTarget, "full");
             return false;
         }
 
         if (!(canShootFrom?.Invoke(candidateId) ?? true))
         {
+            Tested?.Invoke(claimant, candidateId, towardTarget, "noshoot");
             return false;
         }
 
@@ -209,6 +224,7 @@ public static class AiFreePosition
             claimedPosition?.Invoke(position);
         }
 
+        Tested?.Invoke(claimant, candidateId, towardTarget, "ok");
         return true;
     }
 }

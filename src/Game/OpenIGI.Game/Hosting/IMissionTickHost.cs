@@ -16,6 +16,9 @@ public interface IMissionTickHost
     /// <summary>Gets a value indicating whether the player walks the level, rather than the free camera flying it.</summary>
     bool PlayerMode { get; }
 
+    /// <summary>Stops every sound the cutscenes started, as a skipped intro closes.</summary>
+    void StopCutsceneSounds();
+
     /// <summary>Gets where the free camera is, in metres, or <see langword="null"/> when there is none.</summary>
     Vector3d? FreeCameraPosition { get; }
 

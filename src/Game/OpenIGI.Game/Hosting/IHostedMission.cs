@@ -42,9 +42,6 @@ public interface IHostedMission : IMissionGameplay
     /// <summary>Gets the mission's own impact effects.</summary>
     IMissionImpacts Impacts { get; }
 
-    /// <summary>Gets the blasts the mission has yet to detonate.</summary>
-    IMissionBlasts Blasts { get; }
-
     /// <summary>Starts bringing up a level's player.</summary>
     /// <returns>The bring-up, whose rig is made by <see cref="IPlayerBringUp.Begin"/>.</returns>
     IPlayerBringUp NewPlayerSetup();
@@ -110,7 +107,9 @@ public interface IMissionSetup
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="solids">The collision index over the placed objects.</param>
-    void BuildInteractions(LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids);
+    /// <param name="placements">The level's placements, whose models size each pickup's reach.</param>
+    void BuildInteractions(
+        LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, IReadOnlyList<WorldPlacement>? placements = null);
 
     /// <summary>Builds the security cameras and the trace the soldiers' sight and rounds share.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -124,8 +123,9 @@ public interface IMissionSetup
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="gamePath">Where the game is installed.</param>
+    /// <param name="placements">The level's placements, which place a graph on a train where its car stands.</param>
     /// <returns>The graphs, by their task's id.</returns>
-    Dictionary<int, GraphFile> ReadNavGraphs(LoadedMission loaded, LevelTask levelRoot, string gamePath);
+    Dictionary<int, GraphFile> ReadNavGraphs(LoadedMission loaded, LevelTask levelRoot, string gamePath, IReadOnlyList<WorldPlacement>? placements = null);
 
     /// <summary>Animates the soldiers' brains, and builds the alarm speakers and the guards' rounds.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -231,9 +231,6 @@ public interface IMissionCries
     /// <summary>Plays what the player's rounds struck this tick.</summary>
     void PlayPlayerImpacts();
 
-    /// <summary>Plays the clatter of every dropped gun that landed this tick.</summary>
-    void PlayWeaponDrops();
-
     /// <summary>Plays the whizz a round makes coming off a surface.</summary>
     /// <param name="position">Where it glanced off, in world units.</param>
     void PlayRicochet(Vector3d position);
@@ -260,11 +257,4 @@ public interface IMissionImpacts
     /// <param name="eye">The camera the frame is drawn from, which the commands aim with.</param>
     /// <param name="logger">Where the commands report.</param>
     void Register(ConsoleSystem console, Func<Camera3D> eye, IOpenIgiLogger logger);
-}
-
-/// <summary>The blasts the mission has yet to detonate.</summary>
-public interface IMissionBlasts
-{
-    /// <summary>Drops every blast still waiting, as a mission starts.</summary>
-    void ClearPending();
 }

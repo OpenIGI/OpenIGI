@@ -31,11 +31,15 @@ public sealed partial class GameHost
     private ShelterMapTransform _giRoofTransform = ShelterMapTransform.None;
 
     /// <summary>Starts sampling the terrain over the level's built-up area, off the frame loop.</summary>
-    /// <remarks>Over the roof raster's rectangle and a margin: where the buildings are is where the bounce off the ground matters.</remarks>
+    /// <remarks>
+    /// Over the roof raster's rectangle and a margin: where the buildings are is where the bounce off the ground
+    /// matters. Not on a single-threaded host (the browser): there the scheduler runs work inline, and a million
+    /// descents in one frame held the page frozen on the loading card, for a lighting it never draws.
+    /// </remarks>
     private void StartTerrainRaster()
     {
         ReleaseTerrainRaster();
-        if (_mission.Terrain is not { } terrain || _shelterField.IsEmpty)
+        if (_mission.Terrain is not { } terrain || _shelterField.IsEmpty || !_work.IsConcurrent)
         {
             return;
         }

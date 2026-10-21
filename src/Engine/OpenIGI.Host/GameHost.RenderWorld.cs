@@ -128,7 +128,7 @@ public sealed partial class GameHost
         // has no other way to know the lens the frame was actually drawn with.
         _inspectorTangent = horizontalTangent;
         _inspectorAspect = aspectRatio;
-        if (_mission.Cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
+        if (_mission.CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
         {
             // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
             // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
@@ -147,15 +147,19 @@ public sealed partial class GameHost
         {
             if (TacticalComputer is { } tacticalView)
             {
-                MapSceneView steady = tacticalView.SceneView(
-                    mapBody, _window.Width, _window.Height);
-                mapScene = _computerFlight.IsFlying
-                    ? steady with
-                    {
-                        Camera = _computerFlight.Camera,
-                        FieldOfView = _computerFlight.FieldOfView,
-                    }
-                    : steady;
+                // No device, no overhead view: the world stays the player's own behind the pages.
+                if (tacticalView.MapAvailable)
+                {
+                    MapSceneView steady = tacticalView.SceneView(
+                        mapBody, _window.Width, _window.Height);
+                    mapScene = _computerFlight.IsFlying
+                        ? steady with
+                        {
+                            Camera = _computerFlight.Camera,
+                            FieldOfView = _computerFlight.FieldOfView,
+                        }
+                        : steady;
+                }
             }
             else if (_mapComputer is { IsReady: true, ShowsMap: true } computerView)
             {
@@ -426,7 +430,7 @@ public sealed partial class GameHost
         {
             eye = _entry.Camera;
         }
-        else if (_mission.Cutscenes?.Frame is { } cutsceneView)
+        else if (_mission.CutsceneFrameShown is { } cutsceneView)
         {
             eye = cutsceneView.Camera;
         }
@@ -1221,7 +1225,13 @@ public sealed partial class GameHost
             // -viewdist still wins when it is given, so an existing diagnostic command line keeps
             // meaning what it did; otherwise the setting decides.
             _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
-            GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
+
+            // The original's own picture -- drawn straight to the back buffer, with no G-buffer to
+            // keep the passes apart -- draws the ground as the original does, chunk by chunk with
+            // its lightmap multiplied over it. Decided by the frame rather than by the preset's
+            // name: a vanilla player who changes one setting reads as Custom, and used to lose the
+            // ground's light with it.
+            captured,
             RenderCVars.TerrainOcclusion.Value,
 
             // The ground casts into the cascades through the same caster the traced sun reads,
@@ -1556,6 +1566,20 @@ public sealed partial class GameHost
             }
         }
 
+        // The rounds' tracers (one pass in eleven, and every pass through a wall): the original's thin
+        // unfogged line under the vanilla preset, the remaster's glowing streak under every other. With the
+        // remaster's ballistic AI streaks on, those stand for the same rounds. Sized against the image they
+        // are rasterised into.
+        if (_soldiers is { } tracerSoldiers
+            && !(GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value))
+        {
+            tracerSoldiers.DrawGunShotTracers(
+                eye,
+                projection,
+                captured ? resolution.RenderHeight : _window.Height,
+                GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla);
+        }
+
         // The soldiers' muzzle flames, for the same reason: drawn from the soldier pass they
         // landed in the G-buffer and shaded as scenery -- the one-frame black square at a
         // firing guard's muzzle. Light draws over the lit scene.
@@ -1800,7 +1824,7 @@ public sealed partial class GameHost
 
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
 
-        if (_mission.Cutscenes?.Frame is { } cinematicFraming)
+        if (_mission.CutsceneFrameShown is { } cinematicFraming)
         {
             CutsceneFramingRenderer.Draw(
                 _device, state.Batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);
@@ -1823,7 +1847,9 @@ public sealed partial class GameHost
                 sight.ViewModelTanX,
                 FarPlane);
 
-            if (_mapComputerDevice is { IsReady: true } deviceModel)
+            // 0x46BB10 gives the computer task the mapcomputer model only while the level grants the
+            // device; without it the pages are drawn with nothing held.
+            if (_mapComputerDevice is { IsReady: true } deviceModel && _mapComputer is { MapAvailable: true })
             {
                 Viewport deviceViewport = _mapComputer!.DeviceViewport(_window.Width, _window.Height);
                 float horizontalHalfTangent = sight.ViewModelTanX;

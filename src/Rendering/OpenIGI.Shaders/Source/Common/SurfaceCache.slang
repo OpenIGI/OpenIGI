@@ -247,7 +247,18 @@ bool LookupCardHit(float3 world, float3 rayDirection, out float2 found, out floa
 // surface is the one that looked the way it faces.
 bool SampleCardsWithin(float3 world, float3 normalW, float bias, out float3 radiance)
 {
+    float3 albedo;
+    return SampleCardsAndAlbedoWithin(world, normalW, bias, radiance, albedo);
+}
+
+// The same, and the albedo the cards photographed there under the same weights. Radiance over albedo is
+// the light arriving at that spot -- which is what a surface standing there that the cache never baked,
+// a monitor on a desk, needs to be lit by the same lamps and bounce as the desk.
+bool SampleCardsAndAlbedoWithin(
+    float3 world, float3 normalW, float bias, out float3 radiance, out float3 albedo)
+{
     radiance = float3(0.0, 0.0, 0.0);
+    albedo = float3(0.0, 0.0, 0.0);
 
     if (uLookupBuckets <= 0)
     {
@@ -347,13 +358,16 @@ bool SampleCardsWithin(float3 world, float3 normalW, float bias, out float3 radi
 
             float4 taps = float4(0.0, 0.0, 0.0, 0.0);
             float3 tapLight[4];
+            float3 tapAlbedo[4];
             for (int tap = 0; tap < 4; tap++)
             {
                 float2 step = float2(float(tap & 1), float(tap >> 1));
 
                 // Sampled exactly at the texel's centre, which every filter answers with that texel alone.
                 float2 centre = (lowCorner + step + 0.5) / albedoSize;
-                float written = uAlbedo.SampleLevel(uAlbedoSampler, centre, 0.0).a >= 0.5 ? 1.0 : 0.0;
+                float4 photographed = uAlbedo.SampleLevel(uAlbedoSampler, centre, 0.0);
+                float written = photographed.a >= 0.5 ? 1.0 : 0.0;
+                tapAlbedo[tap] = photographed.rgb;
                 float captured = uDepth.SampleLevel(uDepthSampler, centre, 0.0).r;
 
                 // Full trust while the recorded depth agrees with the point's own to within the tolerance,
@@ -380,6 +394,8 @@ bool SampleCardsWithin(float3 world, float3 normalW, float bias, out float3 radi
             float3 lighting = ((tapLight[0] * taps.x) + (tapLight[1] * taps.y)
                 + (tapLight[2] * taps.z) + (tapLight[3] * taps.w)) / coverage;
             radiance += max(lighting, float3(0.0, 0.0, 0.0)) * cardWeight;
+            albedo += (((tapAlbedo[0] * taps.x) + (tapAlbedo[1] * taps.y)
+                + (tapAlbedo[2] * taps.z) + (tapAlbedo[3] * taps.w)) / coverage) * cardWeight;
             weightSum += cardWeight;
         }
     }
@@ -391,6 +407,7 @@ bool SampleCardsWithin(float3 world, float3 normalW, float bias, out float3 radi
     }
 
     radiance /= weightSum;
+    albedo /= weightSum;
     return true;
 }
 

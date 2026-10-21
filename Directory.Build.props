@@ -34,12 +34,13 @@
   <!--
     The shared libraries are trimmed and compiled ahead of time in the browser build, so the trim and AOT
     analysers run on every one of them and, with warnings as errors, keep them that way. Not on the source
-    generator (netstandard2.0, never shipped), the desktop-only Vulkan backend a browser never loads, or the mod
-    loader, which loads assemblies at run time and so is for JIT builds alone.
+    generator (netstandard2.0, never shipped), the desktop-only Vulkan and Direct3D 12 backends a browser never
+    loads, or the mod loader, which loads assemblies at run time and so is for JIT builds alone.
   -->
   <PropertyGroup Condition="$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').StartsWith('src'))
                             and '$(MSBuildProjectName)' != 'OpenIGI.Generators'
                             and '$(MSBuildProjectName)' != 'OpenIGI.Rendering.Vulkan'
+                            and '$(MSBuildProjectName)' != 'OpenIGI.Rendering.D3D12'
                             and '$(MSBuildProjectName)' != 'OpenIGI.Modding.Loader'">
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

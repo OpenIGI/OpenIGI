@@ -90,31 +90,31 @@ OPENIGI_PUSH_CONSTANT(MeshPush, push);
 
 struct VertexInput
 {
-    [[vk::location(0)]] float3 position;
-    [[vk::location(1)]] float3 normal;
-    [[vk::location(2)]] float2 diffuseUv;
-    [[vk::location(3)]] float2 lightmapUv;
-    [[vk::location(4)]] float4 colorBgra;
+    [[vk::location(0)]] float3 position : TEXCOORD0;
+    [[vk::location(1)]] float3 normal : TEXCOORD1;
+    [[vk::location(2)]] float2 diffuseUv : TEXCOORD2;
+    [[vk::location(3)]] float2 lightmapUv : TEXCOORD3;
+    [[vk::location(4)]] float4 colorBgra : TEXCOORD4;
 
     // The mesh's PREVIOUS pose. The first-person rig is skinned on the processor like a body,
     // and this is the pose it was last given; everything else reports its own buffer here, so
     // its delta is zero to the bit.
-    [[vk::location(5)]] float3 previousPosition;
-    [[vk::location(6)]] float3 previousNormal;
+    [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
+    [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
 };
 
 struct Varyings
 {
     float4 position : SV_Position;
-    [[vk::location(0)]] float2 diffuseUv;
-    [[vk::location(1)]] float2 lightmapUv;
-    [[vk::location(2)]] float4 color;
-    [[vk::location(3)]] float3 normal;
-    [[vk::location(4)]] float fade;
+    [[vk::location(0)]] float2 diffuseUv : TEXCOORD0;
+    [[vk::location(1)]] float2 lightmapUv : TEXCOORD1;
+    [[vk::location(2)]] float4 color : TEXCOORD2;
+    [[vk::location(3)]] float3 normal : TEXCOORD3;
+    [[vk::location(4)]] float fade : TEXCOORD4;
 
     // How much of this vertex's surface the air leaves, one at the eye and falling with depth.
-    [[vk::location(5)]] float fog;
-    [[vk::location(6)]] float3 reflection;
+    [[vk::location(5)]] float fog : TEXCOORD5;
+    [[vk::location(6)]] float3 reflection : TEXCOORD6;
 };
 
 /// The vertex stage: model space to Vulkan clip space, colour unswizzled from BGRA.
@@ -169,7 +169,11 @@ Varyings vertexMain(VertexInput input)
         // sum to one across every pass and both scales.
         float selector = input.colorBgra.a * 3.0;
         float material = selector < 0.5 ? 0.0 : (selector < 1.5 ? morph : (selector < 2.5 ? 1.0 - morph : 1.0));
-        output.fade = material * (terrain > 1.5 ? 1.0 - morph : morph);
+
+        // Three is a pass that covers the chunk once and has no share in the cross-fade -- Project
+        // I.G.I.'s terrain lightmap, multiplied over everything the material passes added: the
+        // morph slides it with the ground and nothing scales it.
+        output.fade = terrain > 2.5 ? 1.0 : material * (terrain > 1.5 ? 1.0 - morph : morph);
     }
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));

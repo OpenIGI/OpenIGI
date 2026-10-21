@@ -44,6 +44,10 @@ internal sealed class VulkanRhiBuffer : IRhiBuffer
     public RhiBufferUsage Usage { get; }
 
     /// <inheritdoc/>
+    /// <remarks>The buffer's device address, for a buffer created as ray-tracing input; nought otherwise.</remarks>
+    public ulong ShaderHandle { get; init; }
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)

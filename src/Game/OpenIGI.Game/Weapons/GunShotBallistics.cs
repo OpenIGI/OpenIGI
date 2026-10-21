@@ -1,3 +1,6 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
+
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>What a shot did when it met a surface.</summary>
@@ -62,14 +65,14 @@ public static class GunShotBallistics
     /// <remarks>Spelled <c>0.60000002</c>.</remarks>
     public const float EqualPenetrationChance = 0.60000002f;
 
-    /// <summary>How many rounds go by between visible tracers.</summary>
+    /// <summary>What a gun's tracer counter is set to: the passes that go undrawn before the next one draws.</summary>
     /// <remarks>
-    /// Ten. A round that deflects or penetrates draws one regardless of the counter, so the visible
-    /// rate is a little above one in ten in a firefight.
+    /// Ten (<c>0x47B560</c>, <c>0x47C1F6</c>), counted per gun and per pass of the march, so a plain burst draws
+    /// one pass in eleven. A deflected round, or a pass a surface's bite let through, draws regardless.
     /// </remarks>
     public const int TracerInterval = 10;
 
-    /// <summary>How many ticks a drawn tracer lives.</summary>
+    /// <summary>How many ticks a tracer is filed with; drawing it once spends it, so this is only reached undrawn.</summary>
     public const int TracerLifetimeTicks = 30;
 
     /// <summary>Turns a weapon's effective range into the distance a round may travel.</summary>
@@ -153,6 +156,68 @@ public static class GunShotBallistics
     /// from then on, so a round cannot ricochet twice however many grazing surfaces it meets.
     /// </remarks>
     public static bool CanDeflect(bool hasAlreadyDeflected) => !hasAlreadyDeflected;
+
+    /// <summary>What a round does at a surface it enters: first the graze, then the bite.</summary>
+    /// <param name="penetrationPower">The weapon's <see cref="WeaponType.PenetrationPower"/>.</param>
+    /// <param name="material">The struck face's game material.</param>
+    /// <param name="namedObject">Whether the trace named the object it struck.</param>
+    /// <param name="incidenceRadians">The arrival angle off the normal, as <see cref="IncidenceRadians"/> gives it.</param>
+    /// <param name="alreadyDeflected">Whether this round has glanced before.</param>
+    /// <param name="uniformSample">Draws a uniform sample on 0–1, called only where the original draws one.</param>
+    /// <returns>Whether the round stops, goes through, or glances off.</returns>
+    /// <remarks>
+    /// <para>
+    /// One rule for every round, because <c>0x47B750</c> is one routine for every round: the player's, a
+    /// guard's and a mounted gun's alike. A glance is tried while the round may still deflect, against
+    /// the surface's own ricochet limit; failing that, the round goes through only when the trace named an
+    /// object and <see cref="Penetrates"/> lets it.
+    /// </para>
+    /// <para>
+    /// A guard firing from behind a fence is the case that needs it. The water tower's railing on mission 1
+    /// is <c>Fence</c> (resistance 0) and a sniper's Dragunov carries power 3, so the probe watched every one
+    /// of the tower guard's rounds strike that railing 4.3 m out and carry on to the player.
+    /// </para>
+    /// </remarks>
+    public static GunShotImpact ResolveEntry(
+        float penetrationPower,
+        GameMaterial material,
+        bool namedObject,
+        float incidenceRadians,
+        bool alreadyDeflected,
+        Func<float> uniformSample)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        ArgumentNullException.ThrowIfNull(uniformSample);
+
+        if (CanDeflect(alreadyDeflected)
+            && uniformSample() < DeflectionChance(material.RicochetAngleDegrees, incidenceRadians))
+        {
+            return GunShotImpact.Deflected;
+        }
+
+        return namedObject && Penetrates(penetrationPower, material.BulletResistance, uniformSample())
+            ? GunShotImpact.Penetrated
+            : GunShotImpact.Stopped;
+    }
+
+    /// <summary>The angle a round arrives at, measured off the surface normal.</summary>
+    /// <param name="direction">The round's travel.</param>
+    /// <param name="normal">The face's normal, turned to face the ray.</param>
+    /// <returns>Zero arriving square on, near a right angle arriving along the surface (<c>0x4B2B30</c>).</returns>
+    public static float IncidenceRadians(Vector3d direction, Vector3f normal)
+    {
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return 0f;
+        }
+
+        double dot = ((-direction.X / length) * normal.X)
+            + ((-direction.Y / length) * normal.Y)
+            + ((-direction.Z / length) * normal.Z);
+        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
+    }
 
     /// <summary>How much range is left after travelling a distance.</summary>
     /// <param name="remainingRange">The range before the step.</param>

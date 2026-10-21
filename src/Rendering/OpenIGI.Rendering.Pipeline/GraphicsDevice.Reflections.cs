@@ -3,6 +3,7 @@ using OpenIGI.Rendering.Pipeline.Compute;
 using OpenIGI.Rendering.Pipeline.Passes;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Sky;
+using OpenIGI.Rendering.Pipeline.RayTracing;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 
@@ -153,7 +154,7 @@ public sealed partial class GraphicsDevice
 
         if (traces)
         {
-            IRhiRayTracing world = TracedWorld!;
+            ITracedWorld world = TracedWorld!;
             reflect.Bind("uScene", world.TraceableScene);
             reflect.Bind("uCutoutMasks", world.CutoutMasks, _reflectSampler!);
             reflect.Bind("uTracedAlbedo", world.TracedAlbedo, _tracedAlbedoSampler ??= _device.CreateSampler(
@@ -172,7 +173,7 @@ public sealed partial class GraphicsDevice
             isolate && route <= 0f,
             route,
             traces,
-            traces ? TracedWorld!.HitRecordAddress : 0UL);
+            traces ? TracedWorld!.HitRecordHandle : 0UL);
 
         reflect.Bind("uLit", scene.View(SceneTargetId.Lit), _reflectSampler!);
         reflect.Bind("uSceneDepth", scene.View(SceneTargetId.Depth), _reflectSampler!);

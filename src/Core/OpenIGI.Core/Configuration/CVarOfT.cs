@@ -148,6 +148,19 @@ public abstract class CVar<T> : ICVar
         && EqualityComparer<T>.Default.Equals(Coerce(parsed), _value);
 
     /// <inheritdoc/>
+    public bool TryNormalizeText(string text, out string normalized)
+    {
+        if (!TryParse(text ?? string.Empty, out T parsed))
+        {
+            normalized = string.Empty;
+            return false;
+        }
+
+        normalized = Format(Coerce(parsed));
+        return true;
+    }
+
+    /// <inheritdoc/>
     public void Reset() => Assign(DefaultValue);
 
     /// <summary>Returns the variable's name and current value, as the console prints it.</summary>

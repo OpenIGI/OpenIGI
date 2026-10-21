@@ -10,15 +10,33 @@ public enum ShaderTarget
 
     /// <summary>WGSL, for WebGPU.</summary>
     Wgsl,
+
+    /// <summary>DXIL, for Direct3D 12.</summary>
+    Dxil,
+}
+
+/// <summary>What each compiled form does differently, where a host has to know.</summary>
+public static class ShaderTargetForms
+{
+    /// <summary>Whether a target's form reads a read-back image from a copy taken before the dispatch.</summary>
+    /// <param name="target">The target.</param>
+    /// <returns><see langword="true"/> for WGSL alone.</returns>
+    /// <remarks>
+    /// WGSL cannot read and write an <c>rgba16float</c> storage image in one dispatch, so its form writes
+    /// the image and reads a <c>History</c> copy the host takes first (<c>Source/Common/ImageHistory.slang</c>,
+    /// keyed on <c>OPENIGI_TARGET_WGSL</c>). SPIR-V and DXIL read the image itself: Direct3D 12 guarantees
+    /// typed UAV loads of <c>R16G16B16A16_FLOAT</c>.
+    /// </remarks>
+    public static bool ReadsImageHistories(this ShaderTarget target) => target == ShaderTarget.Wgsl;
 }
 
 /// <summary>One variant of a module, as the manifest declares it.</summary>
 /// <param name="Name">The variant's name; part of its generated file names.</param>
 /// <param name="Defines">Preprocessor defines handed to <c>slangc</c> for this variant.</param>
 /// <param name="Targets">
-/// The forms to compile, or empty for both. A variant that traces rays lists SPIR-V alone: WGSL has
-/// no ray tracing, so there is nothing for that target to be compiled to, and the backend that reads
-/// it stands the feature down the way MoltenVK does.
+/// The forms to compile, or empty for all three. A variant that traces rays lists SPIR-V and DXIL:
+/// WGSL has no ray tracing, so there is nothing for that target to be compiled to, and the backend
+/// that reads it stands the feature down the way MoltenVK does.
 /// </param>
 public sealed record ShaderVariantEntry(
     string Name,
@@ -29,9 +47,9 @@ public sealed record ShaderVariantEntry(
     public IReadOnlyDictionary<string, string> Defines { get; init; } =
         Defines ?? new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>Gets the targets to compile, substituting both when none are declared.</summary>
+    /// <summary>Gets the targets to compile, substituting all three when none are declared.</summary>
     public IReadOnlyList<ShaderTarget> Targets { get; init; } =
-        Targets is { Count: > 0 } ? Targets : [ShaderTarget.Spirv, ShaderTarget.Wgsl];
+        Targets is { Count: > 0 } ? Targets : [ShaderTarget.Spirv, ShaderTarget.Wgsl, ShaderTarget.Dxil];
 
     /// <summary>Whether this variant is compiled for a target.</summary>
     /// <param name="target">The target asked about.</param>
@@ -79,12 +97,17 @@ public sealed record ShaderModuleEntry(
 /// </summary>
 /// <param name="SlangVersion">The <c>slangc -v</c> string the committed output was produced with.</param>
 /// <param name="Modules">The modules the library carries.</param>
+/// <param name="DxcVersion">
+/// The DXC release the committed DXIL was produced with, as its <c>dxc --version</c> begins (<c>1.9.2609</c>).
+/// Pinned apart from slangc because slangc hands DXIL to whatever DXC it is pointed at, and the Vulkan SDK's
+/// own build of the same minor version emits different bytes.
+/// </param>
 /// <remarks>
 /// One list, read by both sides, so a module cannot be compiled but unreachable or named but never
 /// compiled. It is embedded in the assembly rather than read from disk because the catalogue has to
 /// work from a published single file and, later, from a browser.
 /// </remarks>
-public sealed record ShaderManifest(string SlangVersion, IReadOnlyList<ShaderModuleEntry> Modules)
+public sealed record ShaderManifest(string SlangVersion, IReadOnlyList<ShaderModuleEntry> Modules, string DxcVersion = "")
 {
     /// <summary>The manifest's file name, at the project root and embedded into the assembly.</summary>
     public const string FileName = "ShaderModules.json";

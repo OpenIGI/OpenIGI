@@ -181,6 +181,8 @@ public sealed class GraphFile
         }
 
         InParentFrame = true;
+        ParentPosition = parentPosition;
+        ParentMatrix = parentMatrix[..9].ToArray();
         foreach (GraphNode node in Nodes)
         {
             double x = X87.Add(graphPosition.X, node.Position.X);
@@ -200,6 +202,30 @@ public sealed class GraphFile
     /// <summary>Gets whether the graph lives in a placed model's frame (the AIGraph's <c>+100</c>).</summary>
     /// <remarks>A human grounded on such a graph is parented to that model (<c>0x462390</c> calls <c>0x463310</c>).</remarks>
     public bool InParentFrame { get; private set; }
+
+    /// <summary>Gets the parent object's position the nodes were placed through, when <see cref="InParentFrame"/>.</summary>
+    public Vector3d ParentPosition { get; private set; }
+
+    /// <summary>Gets the parent object's 3x3 the nodes were turned by, row-major, when <see cref="InParentFrame"/>.</summary>
+    public IReadOnlyList<float> ParentMatrix { get; private set; } = [];
+
+    /// <summary>Takes a placed node's world position back into its parent object's frame: the node plus the graph position.</summary>
+    /// <param name="world">A position the graph placed in the world.</param>
+    /// <returns>Where it is in the parent's frame; the position itself for a graph not in one.</returns>
+    public Vector3d ToParentFrame(Vector3d world)
+    {
+        if (!InParentFrame)
+        {
+            return world;
+        }
+
+        IReadOnlyList<float> m = ParentMatrix;
+        Vector3d d = world - ParentPosition;
+        return new Vector3d(
+            (m[0] * d.X) + (m[3] * d.Y) + (m[6] * d.Z),
+            (m[1] * d.X) + (m[4] * d.Y) + (m[7] * d.Z),
+            (m[2] * d.X) + (m[5] * d.Y) + (m[8] * d.Z));
+    }
 
     /// <summary>Gets how many bytes the walk consumed.</summary>
     public int BytesConsumed { get; }

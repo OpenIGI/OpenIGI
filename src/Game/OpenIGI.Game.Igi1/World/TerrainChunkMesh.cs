@@ -68,6 +68,10 @@ public static class TerrainChunkMesh
     /// Recycles the vertex and index arrays the geometry keeps, for a caller that evicts chunks as fast as
     /// it builds them. Omit it and each build allocates its own.
     /// </param>
+    /// <param name="light">
+    /// The terrain lightmap page enclosing the chunk, if any: the chunk then carries one more pass,
+    /// <see cref="TerrainChunkGeometry.Light"/>, textured with it.
+    /// </param>
     /// <returns>The geometry, or <see langword="null"/> when the block draws nothing.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="surface"/> is <see langword="null"/>.</exception>
     public static TerrainChunkGeometry? Build(
@@ -76,7 +80,8 @@ public static class TerrainChunkMesh
         TerrainSurface surface,
         float scale = 1f,
         TerrainHeightBinding heights = default,
-        TerrainGeometryPool? pool = null)
+        TerrainGeometryPool? pool = null,
+        TerrainLightBinding light = default)
     {
         ArgumentNullException.ThrowIfNull(surface);
 
@@ -144,8 +149,10 @@ public static class TerrainChunkMesh
         // unconditionally.
         // Every element of both is written by the loops below -- one layer's worth per pass per detail,
         // covering the whole length -- so a recycled array needs no clearing first.
-        int vertexTotal = passes.Length * 2 * vertexCount;
-        int indexTotal = passes.Length * 2 * triangleCount;
+        int materialLayers = passes.Length * 2;
+        int lightLayers = light.IsBound ? 1 : 0;
+        int vertexTotal = (materialLayers + lightLayers) * vertexCount;
+        int indexTotal = (materialLayers + lightLayers) * triangleCount;
         Vertex3D[] vertices = pool is null ? new Vertex3D[vertexTotal] : pool.RentVertices(vertexTotal);
         ushort[] indices = pool is null ? new ushort[indexTotal] : pool.RentIndices(indexTotal);
 
@@ -230,7 +237,45 @@ public static class TerrainChunkMesh
             }
         }
 
-        return new TerrainChunkGeometry(vertices, indices, layers);
+        TerrainChunkLightLayer? lightLayer = null;
+        if (light.IsBound)
+        {
+            // The light pass, after every material layer: the whole chunk once more, at the position the
+            // material layers have and textured by where each vertex stands on the page (sub_510010,
+            // 0x510200) -- planar in X and Y, whatever way the ground faces. The seam morph slides the
+            // coordinate with the vertex, as the original's draw does (0x514071). Its weight selector is
+            // one: the pass covers the chunk exactly once and no cross-fade applies to it.
+            int vertexBase = materialLayers * vertexCount;
+            int indexBase = materialLayers * triangleCount;
+            for (int i = 0; i < vertexCount; i++)
+            {
+                Vector3d offset = offsets[i];
+                Vector3d morph = morphs[i];
+                (double u, double v) = light.Project(chunk.Position.X + offset.X, chunk.Position.Y + offset.Y);
+                (double mu, double mv) = light.Project(
+                    chunk.Position.X + offset.X + morph.X,
+                    chunk.Position.Y + offset.Y + morph.Y);
+
+                vertices[vertexBase + i] = new Vertex3D(
+                    new Vector3f((float)(offset.X * scale), (float)(offset.Y * scale), (float)(offset.Z * scale)),
+                    new Vector3f((float)(morph.X * scale), (float)(morph.Y * scale), (float)(morph.Z * scale)),
+                    (float)u,
+                    (float)v,
+                    (float)(mu - u),
+                    (float)(mv - v),
+                    new Bgra32(255, 255, 255, 255));
+            }
+
+            for (int i = 0; i < triangleCount; i++)
+            {
+                indices[indexBase + i] = (ushort)(triangles[i] + vertexBase);
+            }
+
+            FillSurfaceNormals(vertices, triangles, vertexBase);
+            lightLayer = new TerrainChunkLightLayer(light.Page, indexBase, triangleCount);
+        }
+
+        return new TerrainChunkGeometry(vertices, indices, layers, lightLayer);
         }
         finally
         {

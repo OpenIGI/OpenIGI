@@ -94,7 +94,9 @@ public sealed class PlayerCamera : IHostedPlayer
     private HeldGun? _mountedGun;
     private int _interactionTick;
     private bool _interactionUseArmed;
-    private Vector3d _fenceExitPosition;
+    private Vector3d _fenceRootDelta;
+    private Vector3d _fenceAppliedDelta;
+    private bool _fenceClipEnded;
     private int _electricFenceCooldown;
     private float _interactionFacing;
     private Vector3d _wireDirection;
@@ -1071,23 +1073,37 @@ public sealed class PlayerCamera : IHostedPlayer
     /// </remarks>
     public float InteractionFacing => _interactionFacing;
 
-    /// <summary>Consumes this tick's authored horizontal root motion for a self-driving interaction.</summary>
+    /// <summary>Consumes this tick's authored root motion for a self-driving interaction.</summary>
+    /// <param name="rootDelta">The clip's world-space root step this tick.</param>
+    /// <param name="clipEnded">Whether a non-looping clip reached its end this tick.</param>
     /// <remarks>
-    /// Fence animation 171 carries Jones across the obstacle in its root track. As with ordinary grounded
-    /// locomotion, X/Y move the human task while the current root Z is presentation height; applying Z here
-    /// as well would lift the task and then add the same vault height again when the body is drawn.
+    /// <para>
+    /// Fence animation 171 carries Jones across the obstacle in its root track, and the mover (<c>0x4614B0</c>)
+    /// applies all three components of the step to the Human's origin -- the height included, which is how the
+    /// origin rises over the fence. The body is drawn at that origin with the root's own height taken out
+    /// (<see cref="Ai.ISoldierPresenter.StartPlayerInteractionAnimation"/>), as on a ladder. Keeping the task at its
+    /// mount height and drawing the root height on top instead put the whole vault 0.96 m too high: the mount
+    /// is already the origin, 3891.2 above the fence's base, and the clip's first root sample is 3938.6.
+    /// </para>
+    /// <para>
+    /// The step moved is the clip's PREVIOUS one. A clip node samples its root and takes the difference
+    /// (<c>0x4D4840</c>) before it advances its clock (<c>0x4D4B60</c>), so the origin stands still on the
+    /// update that mounts, and the frame on which the clip ends is never moved at all. Measured on mission 1's
+    /// fence, retail's origin is the port's of one update before, tick for tick, and its fall starts with the
+    /// second-to-last step, not the last.
+    /// </para>
     /// </remarks>
-    public void ApplyInteractionRootMotion(Vector3d rootDelta)
+    public void ApplyInteractionRootMotion(Vector3d rootDelta, bool clipEnded = false)
     {
         if (_activeInteraction?.Type != InteractionActivateType.Fence)
         {
             return;
         }
 
-        _body.Position = new Vector3d(
-            _body.Position.X + rootDelta.X,
-            _body.Position.Y + rootDelta.Y,
-            _body.Position.Z);
+        _body.Position += _fenceRootDelta;
+        _fenceAppliedDelta = _fenceRootDelta;
+        _fenceRootDelta = rootDelta;
+        _fenceClipEnded |= clipEnded;
     }
 
     /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
@@ -1120,7 +1136,7 @@ public sealed class PlayerCamera : IHostedPlayer
             ? HumanLocomotionStates.For(43).AnimationId
             : HumanLocomotionStates.For(42).AnimationId,
         InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
-            ActiveAnimationParameter(_activeInteraction.Task),
+            _activeInteraction.ActivateAnimation,
         _ => -1,
     };
 
@@ -1337,8 +1353,16 @@ public sealed class PlayerCamera : IHostedPlayer
 
         if (_activeInteraction is not null)
         {
+            InteractionActivateType type = _activeInteraction.Type;
             TickInteraction(input, terrain);
-            return;
+
+            // A finished fence vault enters state 29 inside HumanPlayer_Update's state machine (0x4109A0), and
+            // the same update's mover then makes the fall's first move. Every other interaction stays put
+            // for the tick it ends on, as before.
+            if (_activeInteraction is not null || type != InteractionActivateType.Fence)
+            {
+                return;
+            }
         }
 
         // Which ladder, if any, is in reach — for the action icon and for mounting.
@@ -1411,9 +1435,11 @@ public sealed class PlayerCamera : IHostedPlayer
         // through can be traced to the exact model and task blocking it. Only while trying to move.
         LogWallBlockIfAny(forward, strafe);
 
+        // Every pickup family answers the message 0x410F70 sends each tick with the Human's origin (+32), not the
+        // feet: from the feet, an item on a crate a metre up was only in reach mid-jump.
         if (_weapons is not null && _gunPickups is not null)
         {
-            foreach (GunPickup pickup in _gunPickups.CollectAt(_body.Position, _weapons))
+            foreach (GunPickup pickup in _gunPickups.CollectAt(_body.Origin, _weapons))
             {
                 GunPickedUp?.Invoke(pickup);
             }
@@ -1421,7 +1447,7 @@ public sealed class PlayerCamera : IHostedPlayer
 
         if (_genericPickups is { } genericPickups)
         {
-            foreach (GenericPickup pickup in genericPickups.CollectAt(_body.Position))
+            foreach (GenericPickup pickup in genericPickups.CollectAt(_body.Origin))
             {
                 GenericPickedUp?.Invoke(pickup);
             }
@@ -1541,13 +1567,22 @@ public sealed class PlayerCamera : IHostedPlayer
                 _interactionUseArmed = false;
                 double standingHeight = _body.Position.Z;
                 (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
+                if (interaction.Type == InteractionActivateType.PlaceExplosive)
+                {
+                    // State 36 places from the eye, not the feet: it casts to the target, backs the body off the
+                    // contact and moves the charge model there, all on entry.
+                    ChargePlantPose plant = interaction.PlantPose(_body.Eye, PlantTrace());
+                    interaction.PlaceTask(plant.Contact, plant.Facing);
+                    (position, facing) = (plant.Position, plant.Facing);
+                }
+
                 _body.Position = position;
                 SnapBodyForInteraction(_body, interaction.Type, terrain, standingHeight);
                 _interactionFacing = facing;
                 _body.Yaw = -facing;
-                _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
-                    ? interaction.FenceExitPoint(position)
-                    : position;
+                _fenceRootDelta = default;
+                _fenceAppliedDelta = default;
+                _fenceClipEnded = false;
                 if (interaction.Type != InteractionActivateType.StationaryGun)
                 {
                     interaction.BeginUse();
@@ -1721,16 +1756,18 @@ public sealed class PlayerCamera : IHostedPlayer
 
     private void TickFence(WorldInteraction fence, IGroundHeightField? terrain)
     {
-        // State 41 plants the task root at the authored fence mount and lets animation 171 carry the
-        // visible body over it. Its own duration accessor returns six seconds (0x440270), not the
-        // one-second parabolic placeholder this replaces.
-        if (_interactionTick < fence.DurationTicks)
+        // State 41 plants the task root at the authored fence mount and lets animation 171 carry it over.
+        // It leaves on the clip's end bit (0x40DD00); the six-second duration accessor (0x440270), the clip's
+        // own length, only bounds a climb whose clip never reports. At the end the origin is wherever the clip
+        // left it -- 0.94 m up, on the far side -- and state 29 drops it from there with the last step moved as
+        // its velocity, rather than snapping to a landing point.
+        if (!_fenceClipEnded && _interactionTick < fence.DurationTicks)
         {
             AiNoise?.Invoke(AiEvent.Fence);
         }
         else
         {
-            _body.Position = _fenceExitPosition;
+            _body.BeginFallFromVault(_body.Position, _fenceAppliedDelta);
             EndInteraction(completed: false, terrain);
         }
     }
@@ -1866,12 +1903,8 @@ public sealed class PlayerCamera : IHostedPlayer
             // release/end look like an instant teleport to ground instead of a drop from the cable.
             body.EndLadderTraversal(terrain, placeOnGround: false);
         }
-        else if (type == InteractionActivateType.Fence)
-        {
-            // The authored traversal ends above its far-side landing point; settle that endpoint onto
-            // the nearest terrain or placed-model surface before ordinary locomotion resumes.
-            body.PlaceOnGround(terrain);
-        }
+        // A fence ends in the fall it has already been handed (PlayerBody.BeginFallFromVault), so it, too, is left
+        // where it is.
         // Retail self-driving interaction states leave the root exactly where their initializer put it.
         // Re-running spawn placement here searches up to half a kilometre downward and can move the
         // player onto an unrelated surface beneath the building when Use is released.
@@ -1934,9 +1967,6 @@ public sealed class PlayerCamera : IHostedPlayer
 
     /// <summary>How far up a ladder a climber takes hold — chest height, in world units.</summary>
     private const double LadderGrabHeightUnits = 1.25 * WorldScene.UnitsPerMetre;
-
-    private static int ActiveAnimationParameter(DeclaredTask task) =>
-        task.TryGetValue("Activate Anim", out object? raw) && raw is int animation ? animation : -1;
 
     private int _upperBodyAnimation = -1;
     private bool _upperBodyLoops;
@@ -2295,6 +2325,15 @@ public sealed class PlayerCamera : IHostedPlayer
         }
     }
 
+    // The world cast state 36 plants along (0x4CC2A0): objects and the ground, nearest first.
+    private WorldTraceCast? PlantTrace() => (_walls, TerrainTrace) switch
+    {
+        ({ } walls, { } ground) => WorldTrace.Nearest(walls.Tracer(), ground),
+        ({ } walls, null) => walls.Tracer(),
+        (null, { } ground) => ground,
+        _ => null,
+    };
+
     private WorldRayCast ViewModelWalls()
     {
         WorldTraceCast trace = (_walls, TerrainTrace) switch
@@ -2469,12 +2508,36 @@ public sealed class PlayerCamera : IHostedPlayer
         _body.Position = _climb.Position;
     }
 
+    /// <summary>Moves the body by the frame animation 168 runs on entering state 37.</summary>
+    /// <param name="rootDelta">That frame's root motion, rotated into the facing frame, in world units.</param>
+    public void MoveLadderEntryFrame(Vector3d rootDelta)
+    {
+        _climb.MoveEntryFrame(rootDelta);
+        _body.Position = _climb.Position;
+    }
+
     /// <summary>Commits the rung whose clip has just completed, returning the climb to a boundary.</summary>
     public void CompleteLadderStep()
     {
         _climb.CompleteStep();
         _body.Position = _climb.Position;
+    }
+
+    /// <summary>Takes a crossing of rung event 8 unless it repeats the event time the climb last took.</summary>
+    /// <param name="time">The crossed event's authored time.</param>
+    /// <returns><see langword="true"/> when the crossing counts; see <see cref="HumanLadderClimb.AcceptRungEvent"/>.</returns>
+    public bool AcceptLadderRungEvent(float time) => _climb.AcceptRungEvent(time);
+
+    /// <summary>Marks a crossing of rung event 8 in states 37, 38 or 39: the AI hears it and a rung sounds.</summary>
+    /// <returns>The rung sound's definition name, to be played at <see cref="LadderFeet"/>.</returns>
+    /// <remarks>
+    /// The three states run the same block (<c>0x40D6B0</c>, <c>0x40D920</c>, <c>0x40DA80</c>), so the
+    /// top transitions in animation 170 make both the noise and the sound too, not only a climbed rung.
+    /// </remarks>
+    public string TakeLadderStep()
+    {
         AiNoise?.Invoke(AiEvent.Ladder);
+        return _climb.NextStepSound();
     }
 
     /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>
@@ -2868,7 +2931,8 @@ public sealed class PlayerCamera : IHostedPlayer
             Humans,
             GameplayCVars.BallisticsGravity.Value,
             GameplayCVars.BallisticsDrag.Value,
-            _walls?.Tracer());
+            _walls?.Tracer(),
+            BallisticEntryOf);
 
         foreach (BallisticImpact impact in _ballistics.Impacts)
         {
@@ -2907,6 +2971,23 @@ public sealed class PlayerCamera : IHostedPlayer
                 Direction: impact.Direction));
         }
     }
+
+    // A flying round meets a surface or a body under the hit-scan march's own rule: the material row against
+    // the weapon's power, and only an object the trace named can be passed. A glance stops a flying round.
+    private GunShotImpact BallisticEntryOf(
+        BallisticRound round,
+        in WorldRayHit surface,
+        bool namedObject,
+        Vector3d direction) =>
+        _materials is { } rows && rows.TryGet(surface.Material, out GameMaterial row)
+            ? GunShotBallistics.ResolveEntry(
+                round.Weapon.PenetrationPower,
+                row,
+                namedObject,
+                GunShotBallistics.IncidenceRadians(direction, surface.Normal),
+                alreadyDeflected: false,
+                _random.NextSingle)
+            : GunShotImpact.Stopped;
 
     /// <summary>Resolves one round the way <c>0x47B750</c> does — as a march, not a single cast.</summary>
     /// <remarks>
@@ -2968,19 +3049,28 @@ public sealed class PlayerCamera : IHostedPlayer
                     && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
                 WorldRayHit hit = struckWall ? richHit.RayHit : default;
 
-                // Both, then the nearer. A guard in front of a wall takes the round and the wall stays
-                // clean; one behind it does not, and the wall is marked.
+                // The wall first, then the guards short of it. A guard in front of a wall takes the round
+                // and the wall stays clean; one behind it is never offered the damage, and the wall is
+                // marked. The callback damages as it is called, so the stop has to go in with the round.
                 HumanHit human = default;
                 bool struckHuman = Humans is { } humans
-                    && humans(origin, end, damageFactor, category, out human)
+                    && humans(
+                        origin,
+                        end,
+                        damageFactor,
+                        category,
+                        struckWall ? hit.Distance : double.PositiveInfinity,
+                        alreadyHeard: pass > 0,
+                        out human)
                     && (!struckWall || human.Distance < hit.Distance);
+
+                if (struckHuman && ResolveBody(human, travel))
+                {
+                    continue;
+                }
 
                 if (struckHuman)
                 {
-                    HumanHits++;
-                    LastHumanZone = human.Zone;
-                    _impacts.Add(
-                        new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
                     return;
                 }
 
@@ -3036,35 +3126,34 @@ public sealed class PlayerCamera : IHostedPlayer
                     return;
                 }
 
-                // The graze first. The collision index has already turned the normal to face the ray, so
-                // the angle between the reversed travel and that normal is the incidence 0x4B2B30 returns:
-                // near zero arriving square on, near a right angle arriving along the surface.
-                if (GunShotBallistics.CanDeflect(deflected))
+                // The graze first, then the bite. The collision index has already turned the normal to face
+                // the ray, so the angle between the reversed travel and that normal is the incidence 0x4B2B30
+                // returns. The original will not let a round through a surface whose trace named no object,
+                // whatever the margin, so a hit on the bare level shell always stops it.
+                GunShotImpact outcome = GunShotBallistics.ResolveEntry(
+                    penetrationPower,
+                    struck,
+                    namedObject: richHit.Owner is not null,
+                    GunShotBallistics.IncidenceRadians(direction, hit.Normal),
+                    deflected,
+                    _random.NextSingle);
+                if (outcome == GunShotImpact.Deflected)
                 {
-                    float incidence = IncidenceRadians(direction, hit.Normal);
-                    if (_random.NextSingle()
-                        < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
-                    {
-                        // 0x47BD7B sounds the whizz directly here rather than through the material's
-                        // window, so a round that glances always gets one.
-                        deflected = true;
-                        Deflected?.Invoke(hit.Position);
+                    // 0x47BD7B sounds the whizz directly here rather than through the material's
+                    // window, so a round that glances always gets one.
+                    deflected = true;
+                    Deflected?.Invoke(hit.Position);
 
-                        // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
-                        // on metal and concrete is the dent rather than the hole. The latch is set here,
-                        // before the impact is recorded at 0x47BDED; CommitMarks reads it.
-                        Record(hit, richHit, exitCrossing: false);
-                        direction = Reflect(direction, hit.Normal);
-                        origin = StepOff(hit.Position, direction);
-                        continue;
-                    }
+                    // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
+                    // on metal and concrete is the dent rather than the hole. The latch is set here,
+                    // before the impact is recorded at 0x47BDED; CommitMarks reads it.
+                    Record(hit, richHit, exitCrossing: false);
+                    direction = Reflect(direction, hit.Normal);
+                    origin = StepOff(hit.Position, direction);
+                    continue;
                 }
 
-                // Then the bite. The original will not let a round through a surface whose trace named no
-                // object, whatever the margin, so a hit on the bare level shell always stops it.
-                if (richHit.Owner is null
-                    || !GunShotBallistics.Penetrates(
-                        penetrationPower, struck.BulletResistance, _random.NextSingle()))
+                if (outcome == GunShotImpact.Stopped)
                 {
                     Record(hit, richHit, exitCrossing: false);
                     return;
@@ -3073,6 +3162,66 @@ public sealed class PlayerCamera : IHostedPlayer
                 Record(hit, richHit, exitCrossing: false);
                 origin = StepOff(hit.Position, direction);
             }
+        }
+
+        // A body is a surface like any other to 0x47B750: the trace's nearest contact, run through the same
+        // branches as a wall. An entry face takes the hit -- the damage the Humans callback has already
+        // applied -- and then the same graze and bite as a wall, against the face's own material: Flesh and
+        // BloodyFlesh resist 1, so a power-2 or power-3 round goes on through and a power-1 round three times
+        // in five. An exit face is the round leaving the body: no handler, and the latch that stops the round
+        // on the next thing it enters, after that thing has taken the hit. Probed on the guards' rounds
+        // through the player (pairs of hits from one round); the player's rounds take the same march.
+        // Returns whether the march carries on.
+        bool ResolveBody(in HumanHit human, Vector3f travel)
+        {
+            remaining = GunShotBallistics.ConsumeRange(remaining, (float)human.Distance);
+
+            if (human.IsExit)
+            {
+                leftASurface = true;
+                if (remaining <= 0f)
+                {
+                    return false;
+                }
+
+                origin = StepOff(human.Position, direction);
+                return true;
+            }
+
+            HumanHits++;
+            LastHumanZone = human.Zone;
+            _impacts.Add(new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
+
+            if (leftASurface
+                || remaining <= 0f
+                || human.Material < 0
+                || _materials is not { } rows
+                || !rows.TryGet(human.Material, out GameMaterial skin))
+            {
+                return false;
+            }
+
+            GunShotImpact outcome = GunShotBallistics.ResolveEntry(
+                penetrationPower,
+                skin,
+                namedObject: true,
+                GunShotBallistics.IncidenceRadians(direction, human.Normal),
+                deflected,
+                _random.NextSingle);
+            if (outcome == GunShotImpact.Stopped)
+            {
+                return false;
+            }
+
+            if (outcome == GunShotImpact.Deflected)
+            {
+                deflected = true;
+                Deflected?.Invoke(human.Position);
+                direction = Reflect(direction, human.Normal);
+            }
+
+            origin = StepOff(human.Position, direction);
+            return true;
         }
 
         // One recorded impact. The surface decides what it looks like, out of the material its own face
@@ -3172,9 +3321,13 @@ public sealed class PlayerCamera : IHostedPlayer
             bool struckWall = _walls is not null
                 && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out contact);
 
-            // A body behind the wall is out of reach: the blade stops where the wall is.
+            // A body behind the wall is out of reach: the blade stops where the wall is. The stab is no
+            // GunShot round, so nobody hears a near miss (0x4606F0 walks only the round list).
             Vector3d reach = struckWall ? contact.Position : end;
-            if (Humans is { } humans && humans(origin, reach, damageFactor, category, out HumanHit human))
+            if (Humans is { } humans
+                && humans(
+                    origin, reach, damageFactor, category, double.PositiveInfinity, alreadyHeard: true, out HumanHit human)
+                && !human.IsExit)
             {
                 HumanHits++;
                 LastHumanZone = human.Zone;
@@ -3219,20 +3372,8 @@ public sealed class PlayerCamera : IHostedPlayer
     public Action<Vector3d>? Deflected { get; set; }
 
     /// <summary>The angle a round arrives at, measured off the surface normal.</summary>
-    internal static float IncidenceRadians(Vector3d direction, Vector3f normal)
-    {
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return 0f;
-        }
-
-        double dot = ((-direction.X / length) * normal.X)
-            + ((-direction.Y / length) * normal.Y)
-            + ((-direction.Z / length) * normal.Z);
-        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
-    }
+    internal static float IncidenceRadians(Vector3d direction, Vector3f normal) =>
+        GunShotBallistics.IncidenceRadians(direction, normal);
 
     /// <summary>Mirrors a direction about a surface normal, as the deflection at <c>0x47BC8E</c> does.</summary>
     internal static Vector3d Reflect(Vector3d direction, Vector3f normal)

@@ -25,6 +25,14 @@ namespace OpenIGI.Game.Player;
 /// frame slot 4, so it reports the fact here.
 /// </param>
 /// <param name="Running">Bit <c>0x40000</c>: the run byte at <c>Human+3328</c>.</param>
+/// <param name="TenseRun">
+/// Frame slot 26 on its own: the AI's combat movements (RePosition, Follow, LookForTarget) hold it on every tick
+/// they run, whether or not the walker wrote forward. Held without forward, the tense run stands the body up.
+/// </param>
+/// <param name="Forward">
+/// Frame slot 4 on its own: the patrol walker's forward, which takes a standing body into its gait (state 3 with the
+/// run byte, the walk; 2 without it) and keeps it there -- no tense run, which is a combat movement's.
+/// </param>
 /// <param name="HitZone">
 /// The zone the hit that raised <paramref name="Flinch"/> struck — <c>Human+744</c>, which names the flinch
 /// clip. <c>-1</c> when nothing was hit.
@@ -37,7 +45,9 @@ public readonly record struct HumanBodyInput(
     bool Dead = false,
     bool MovingForward = false,
     bool Running = false,
-    int HitZone = -1)
+    int HitZone = -1,
+    bool TenseRun = false,
+    bool Forward = false)
 {
     // Frame slots 2..9, packed as bits 0x20..0x1000 by every class's signal handler.
     private const int FirstActionSlot = 2;

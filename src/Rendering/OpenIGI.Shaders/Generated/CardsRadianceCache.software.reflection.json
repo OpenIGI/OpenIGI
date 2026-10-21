@@ -22,7 +22,12 @@
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
       "storageAccess": "ReadWrite",
-      "wgslStorageAccess": "WriteOnly"
+      "wgslStorageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uCacheGreen",
@@ -33,7 +38,12 @@
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
       "storageAccess": "ReadWrite",
-      "wgslStorageAccess": "WriteOnly"
+      "wgslStorageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 3,
+        "space": 0
+      }
     },
     {
       "name": "uCacheBlue",
@@ -44,7 +54,12 @@
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
       "storageAccess": "ReadWrite",
-      "wgslStorageAccess": "WriteOnly"
+      "wgslStorageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 4,
+        "space": 0
+      }
     },
     {
       "name": "uCacheDistance",
@@ -55,7 +70,12 @@
       "storageFormat": "Rgba16Float",
       "wgslStorageFormat": "Rgba16Float",
       "storageAccess": "ReadWrite",
-      "wgslStorageAccess": "WriteOnly"
+      "wgslStorageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 5,
+        "space": 0
+      }
     },
     {
       "name": "uPages",
@@ -65,7 +85,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadOnly"
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0,
+        "stride": 16
+      }
     },
     {
       "name": "uCells",
@@ -75,7 +101,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadWrite"
+      "storageAccess": "ReadWrite",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0,
+        "stride": 8
+      }
     },
     {
       "name": "uCellPages",
@@ -85,7 +117,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadWrite"
+      "storageAccess": "ReadWrite",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 1,
+        "space": 0,
+        "stride": 4
+      }
     },
     {
       "name": "uAlbedo",
@@ -95,7 +133,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 5,
+        "space": 0
+      }
     },
     {
       "name": "uDepth",
@@ -105,7 +148,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 6,
+        "space": 0
+      }
     },
     {
       "name": "uClipmaps",
@@ -115,7 +163,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 7,
+        "space": 0
+      }
     },
     {
       "name": "uFinal",
@@ -125,7 +178,12 @@
       "dimensions": 2,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 8,
+        "space": 0
+      }
     },
     {
       "name": "uCacheRedHistory",
@@ -135,7 +193,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uCacheGreenHistory",
@@ -145,7 +208,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uCacheBlueHistory",
@@ -155,7 +223,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0
+      }
     },
     {
       "name": "uCacheDistanceHistory",
@@ -165,7 +238,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 4,
+        "space": 0
+      }
     },
     {
       "name": "Globals",
@@ -175,7 +253,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uAlbedoSampler",
@@ -185,7 +268,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uDepthSampler",
@@ -195,7 +283,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
     },
     {
       "name": "uClipmapsSampler",
@@ -205,7 +298,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
     },
     {
       "name": "uFinalSampler",
@@ -215,7 +313,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 3,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,
@@ -229,178 +332,214 @@
       {
         "name": "uClipmapOrigin[0]",
         "offset": 0,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 0
       },
       {
         "name": "uClipmapOrigin[1]",
         "offset": 16,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 16
       },
       {
         "name": "uClipmapOrigin[2]",
         "offset": 32,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 32
       },
       {
         "name": "uClipmapOrigin[3]",
         "offset": 48,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 48
       },
       {
         "name": "uSkySh[0]",
         "offset": 64,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 64
       },
       {
         "name": "uSkySh[1]",
         "offset": 80,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 80
       },
       {
         "name": "uSkySh[2]",
         "offset": 96,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 96
       },
       {
         "name": "uSkySh[3]",
         "offset": 112,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 112
       },
       {
         "name": "uSkySh[4]",
         "offset": 128,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 128
       },
       {
         "name": "uSkySh[5]",
         "offset": 144,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 144
       },
       {
         "name": "uSkySh[6]",
         "offset": 160,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 160
       },
       {
         "name": "uAtlasSize",
         "offset": 176,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 176
       },
       {
         "name": "uLookupMin",
         "offset": 192,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 192
       },
       {
         "name": "uSkyColour",
         "offset": 208,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 208
       },
       {
         "name": "uCacheOrigin",
         "offset": 224,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 224
       },
       {
         "name": "uCacheCount",
         "offset": 240,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 240
       },
       {
         "name": "uTraceOrigin",
         "offset": 256,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 256
       },
       {
         "name": "uClipmapRange[0]",
         "offset": 272,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 272
       },
       {
         "name": "uClipmapRange[1]",
         "offset": 288,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 288
       },
       {
         "name": "uClipmapRange[2]",
         "offset": 304,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 304
       },
       {
         "name": "uClipmapRange[3]",
         "offset": 320,
-        "size": 16
+        "size": 16,
+        "hlslOffset": 320
       },
       {
         "name": "uShadowLevels",
         "offset": 336,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 324
       },
       {
         "name": "uShadowResolution",
         "offset": 340,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 328
       },
       {
         "name": "uLookupBuckets",
         "offset": 344,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 332
       },
       {
         "name": "uLookupCell",
         "offset": 348,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 336
       },
       {
         "name": "uSkyShValid",
         "offset": 352,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 340
       },
       {
         "name": "uBounceScale",
         "offset": 356,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 344
       },
       {
         "name": "uCacheSpacing",
         "offset": 360,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 348
       },
       {
         "name": "uSlabBegin",
         "offset": 364,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 352
       },
       {
         "name": "uSlabEnd",
         "offset": 368,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 356
       },
       {
         "name": "uAlpha",
         "offset": 372,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 360
       },
       {
         "name": "uRayCount",
         "offset": 376,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 364
       },
       {
         "name": "uSweep",
         "offset": 380,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 368
       },
       {
         "name": "uCacheScale",
         "offset": 384,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 372
       },
       {
         "name": "uSkyReject",
         "offset": 388,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 376
       }
-    ]
+    ],
+    "hlslSize": 384
   }
 }

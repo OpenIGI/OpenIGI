@@ -50,6 +50,15 @@ public class MissionState : IInspectableMission
     /// <summary>Gets or sets the cutscene runtime, which also walks the level each tick.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether an intro skipped at load (no cinematics, or <c>OPENIGI_BREAK_CUTSCENE</c>) is still playing
+    /// through the ticks whose walk reads the break and closes it; until it has stopped, nothing of it is drawn or heard.
+    /// </summary>
+    public bool IntroSkipPending { get; set; }
+
+    /// <summary>Gets the cutscene frame to present: none while a skipped intro is still closing.</summary>
+    public CutsceneFrame? CutsceneFrameShown => IntroSkipPending ? null : Cutscenes?.Frame;
+
     /// <summary>Gets or sets the objective runtime.</summary>
     public MissionObjectiveRuntime? Objectives { get; set; }
 
@@ -142,6 +151,9 @@ public class MissionState : IInspectableMission
     /// <summary>Gets what blood and debris are traced against (<see cref="LevelCollision.EffectWalls"/>).</summary>
     public WorldRayCast? EffectWalls => Collision.EffectWalls;
 
+    /// <summary>Gets what blood droplets fall onto (<see cref="LevelCollision.DropletWalls"/>).</summary>
+    public WorldRayCast? DropletWalls => Collision.DropletWalls;
+
     /// <summary>Gets the missiles the vehicles have fired.</summary>
     public MissileSimulation VehicleMissiles { get; } = new();
 
@@ -181,6 +193,7 @@ public class MissionState : IInspectableMission
         Objectives?.Release();
         Objectives = null;
         Cutscenes = null;
+        IntroSkipPending = false;
         SoldiersInWalk = false;
         PlayerInWalk = false;
         ElevatorsInWalk = false;

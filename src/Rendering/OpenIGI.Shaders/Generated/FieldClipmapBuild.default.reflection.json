@@ -21,7 +21,12 @@
       "dimensions": 3,
       "storageFormat": "R8Unorm",
       "wgslStorageFormat": "Rgba32Float",
-      "storageAccess": "WriteOnly"
+      "storageAccess": "WriteOnly",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uInstances",
@@ -31,7 +36,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadOnly"
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0,
+        "stride": 16
+      }
     },
     {
       "name": "uCellOffsets",
@@ -41,7 +52,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadOnly"
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0,
+        "stride": 4
+      }
     },
     {
       "name": "uCellIndices",
@@ -51,7 +68,13 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "ReadOnly"
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0,
+        "stride": 4
+      }
     },
     {
       "name": "uAtlas",
@@ -61,7 +84,12 @@
       "dimensions": 3,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "g",
@@ -71,7 +99,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
     },
     {
       "name": "uAtlasSampler",
@@ -81,7 +114,12 @@
       "dimensions": 0,
       "storageFormat": "None",
       "wgslStorageFormat": "None",
-      "storageAccess": "None"
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
     }
   ],
   "pushBlock": null,
@@ -95,43 +133,52 @@
       {
         "name": "uResolution",
         "offset": 0,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 0
       },
       {
         "name": "uLevel",
         "offset": 4,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 4
       },
       {
         "name": "uCellsPerAxis",
         "offset": 8,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 8
       },
       {
         "name": "uVoxelSize",
         "offset": 12,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 12
       },
       {
         "name": "uCellSize",
         "offset": 16,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 16
       },
       {
         "name": "uRange",
         "offset": 20,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 20
       },
       {
         "name": "uOrigin",
         "offset": 32,
-        "size": 12
+        "size": 12,
+        "hlslOffset": 32
       },
       {
         "name": "uAtlas",
         "offset": 44,
-        "size": 4
+        "size": 4,
+        "hlslOffset": 44
       }
-    ]
+    ],
+    "hlslSize": 48
   }
 }

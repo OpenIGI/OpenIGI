@@ -62,6 +62,19 @@ public sealed class LevelCollision : ICollisionWorld
             ? terrain is { } ground2 ? WorldTrace.Nearest(traced.Tracer(), TerrainRayTrace.Caster(ground2)) : traced.Tracer()
             : null;
         EffectWalls = Trace is { } effectTrace ? EffectCast(effectTrace, terrainMaterialRow) : null;
+        DropletWalls = Trace is { } dropletTrace
+            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            {
+                if (!dropletTrace(new WorldTraceRequest(origin, end, WorldTraceMask.Terrain), out WorldTraceHit rich))
+                {
+                    hit = default;
+                    return false;
+                }
+
+                hit = rich.RayHit with { OnTerrain = true };
+                return true;
+            }
+            : null;
         Walls = _cast is { } walls
             ? (Vector3d from, Vector3d to, out Vector3d hit) =>
             {
@@ -91,6 +104,13 @@ public sealed class LevelCollision : ICollisionWorld
     /// terrain row is substituted, the same row the footsteps and the player's material lookup read.
     /// </remarks>
     public WorldRayCast? EffectWalls { get; }
+
+    /// <summary>Gets what blood droplets fall onto: the terrain alone.</summary>
+    /// <remarks>
+    /// The droplets' batch cast (<c>0x4FD660</c>) carries the particle class's own message, which no placed object answers:
+    /// they meet the terrain alone, and pass through walls and crates.
+    /// </remarks>
+    public WorldRayCast? DropletWalls { get; }
 
     /// <summary>Gets whether a camera between two points is blocked, and where: made once, as a camera asks it every frame.</summary>
     public DeathCameraVantage.Blocked? Walls { get; }
@@ -199,7 +219,7 @@ public sealed class LevelCollision : ICollisionWorld
                 return false;
             }
 
-            hit = rich.RayHit;
+            hit = rich.RayHit with { OnTerrain = rich.Kind == WorldTraceHitKind.Terrain };
             if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && terrainRow is int ground)
             {
                 hit = hit with { Material = ground };
