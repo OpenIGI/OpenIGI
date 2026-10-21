@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Reflection;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -57,15 +55,8 @@ public sealed class RetailPlaneCutsceneTests
         };
 
         // Force every AnimTask to run so the plane programmes publish deterministically.
-        FieldInfo animField = typeof(CutsceneRuntime).GetField("_animations", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var animations = (IList)animField.GetValue(runtime)!;
-        foreach (object state in animations)
-        {
-            Type t = state.GetType();
-            t.GetField("<Run>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, "");
-            t.GetField("<InitialRun>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, true);
-            t.GetProperty("IsRun")?.SetValue(state, true);
-        }
+        runtime.RunEveryAnimationForTesting();
+        IReadOnlyList<CutsceneRuntime.AnimationState> animations = runtime.AnimationsForTesting;
 
         // Map task ids to type names so the plane-targeted AnimTasks are identifiable.
         Dictionary<int, string> typeNames = new();
@@ -77,8 +68,7 @@ public sealed class RetailPlaneCutsceneTests
             }
         }
 
-        FieldInfo transformsField = typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var transforms = (IDictionary)transformsField.GetValue(runtime)!;
+        IReadOnlyDictionary<int, CutsceneRuntime.TransformState> transforms = runtime.TransformsForTesting;
 
         // Pass 1: right after construction (before any Tick), every plane must sit exactly at its
         // authored pose with zeroed motion and control. Retail's tick-zero reset restores the body
@@ -87,47 +77,42 @@ public sealed class RetailPlaneCutsceneTests
         // dispatches.
         int planesChecked = 0;
         HashSet<int> seenPlanes = new();
-        foreach (object state in animations)
+        foreach (CutsceneRuntime.AnimationState state in animations)
         {
-            Type t = state.GetType();
-            int target = (int)(t.GetProperty("TargetId")!.GetValue(state)!);
+            int target = state.TargetId;
             if (!typeNames.TryGetValue(target, out string? ownerType) || !ownerType.Contains("Plane"))
             {
                 continue;
             }
 
-            if (!seenPlanes.Add(target) || transforms[target] is not { } transform)
+            if (!seenPlanes.Add(target) || !transforms.TryGetValue(target, out CutsceneRuntime.TransformState? transform))
             {
                 continue;
             }
 
-            Type st = transform.GetType();
-            Vector3d authoredPosition = (Vector3d)st.GetProperty("Position")!.GetValue(transform)!;
-            Matrix3f authoredOrientation = (Matrix3f)st.GetProperty("Orientation")!.GetValue(transform)!;
+            Vector3d authoredPosition = transform.Position;
+            Matrix3f authoredOrientation = transform.Orientation;
             AssertPlanePose(transform, authoredPosition, authoredOrientation);
         }
 
         // Pass 2: per-plane single-apply reference on a held, known control packet.
-        foreach (object state in animations)
+        foreach (CutsceneRuntime.AnimationState state in animations)
         {
-            Type t = state.GetType();
-            int target = (int)(t.GetProperty("TargetId")!.GetValue(state)!);
+            int target = state.TargetId;
             if (!typeNames.TryGetValue(target, out string? ownerType) || !ownerType.Contains("Plane"))
             {
                 continue;
             }
 
-            if (!seenPlanes.Contains(target) || transforms[target] is not { } transform)
+            if (!seenPlanes.Contains(target) || !transforms.TryGetValue(target, out CutsceneRuntime.TransformState? transform))
             {
                 continue;
             }
 
-            Type st = transform.GetType();
-
             // Exhaust the authored programme so its entries stop overwriting the channel block on
             // every forward seek (SeekTo replays entries while the counter is in range). Then the
             // test owns the channels and can assert the plane handler's smoothing exactly.
-            AnimDataProgram program = (AnimDataProgram)t.GetProperty("Program")!.GetValue(state)!;
+            AnimDataProgram program = state.Program;
             int budget = program.TotalTicks() + 256;
             int tick;
             for (tick = 1; !program.HasFinished && tick <= budget; tick++)
@@ -150,7 +135,7 @@ public sealed class RetailPlaneCutsceneTests
             // moment before the first held tick (the authored programme's final values are not zero).
             // The 0.995 multiplier is the speed-zero term in 0x433B50; this focused test proves one
             // receiver application per packet, not the still-untraced body/heading integration.
-            Vector3f expectedControl = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
+            Vector3f expectedControl = transform.Control;
             Vector3f packet = new(0.5f, -0.3f, 0.2f);
             for (int held = 0; held < 6; held++)
             {
@@ -162,7 +147,7 @@ public sealed class RetailPlaneCutsceneTests
                     ((0.9f * expectedControl.Y) + (0.1f * packet.Y)) * 0.995f,
                     ((0.9f * expectedControl.Z) + (0.1f * packet.Z)) * 0.995f);
 
-                Vector3f actualControl = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
+                Vector3f actualControl = transform.Control;
                 Assert.Equal(expectedControl.X, actualControl.X, 5);
                 Assert.Equal(expectedControl.Y, actualControl.Y, 5);
                 Assert.Equal(expectedControl.Z, actualControl.Z, 5);
@@ -174,13 +159,12 @@ public sealed class RetailPlaneCutsceneTests
         Assert.True(planesChecked >= 2, $"mission 3 must drive at least two planes, checked {planesChecked}");
     }
 
-    private static void AssertPlanePose(object transform, Vector3d authoredPosition, Matrix3f authoredOrientation)
+    private static void AssertPlanePose(CutsceneRuntime.TransformState transform, Vector3d authoredPosition, Matrix3f authoredOrientation)
     {
-        Type st = transform.GetType();
-        Vector3d position = (Vector3d)st.GetProperty("Position")!.GetValue(transform)!;
-        Matrix3f orientation = (Matrix3f)st.GetProperty("Orientation")!.GetValue(transform)!;
-        Vector3f control = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
-        float heading = (float)st.GetProperty("Heading")!.GetValue(transform)!;
+        Vector3d position = transform.Position;
+        Matrix3f orientation = transform.Orientation;
+        Vector3f control = transform.Control;
+        float heading = transform.Heading;
 
         Assert.Equal(authoredPosition.X, position.X, 5);
         Assert.Equal(authoredPosition.Y, position.Y, 5);

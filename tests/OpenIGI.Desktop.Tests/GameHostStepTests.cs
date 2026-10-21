@@ -122,9 +122,7 @@ public sealed class GameHostStepTests : IDisposable
 
         host.Start();
         Assert.True(host.Step());
-        var scene = (OpenIGI.Game.World.WorldScene)typeof(GameHost)
-            .GetField("_scene", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .GetValue(host)!;
+        OpenIGI.Game.World.WorldScene scene = host.SceneForTesting!;
         host.Stop();
 
         OpenIGI.Game.World.WorldPlacement[] apcs = [.. scene.Placements.Where(placement =>
@@ -151,9 +149,7 @@ public sealed class GameHostStepTests : IDisposable
 
         host.Start();
         Assert.True(host.Step());
-        System.Reflection.MethodInfo available = typeof(GameHost)
-            .GetMethod("MapComputerAvailable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        Assert.Equal(expected, (bool)available.Invoke(host, null)!);
+        Assert.Equal(expected, host.MapComputerAvailableForTesting());
         host.Stop();
     }
 

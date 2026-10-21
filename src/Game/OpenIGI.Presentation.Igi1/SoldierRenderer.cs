@@ -332,6 +332,14 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
     internal bool IsInViewForTesting(SoldierView view) => FindMember(view)?.Agent.InView ?? false;
 
+    /// <summary>Gets the groups the renderer draws, each with its soldiers, for the suites that inspect them.</summary>
+    internal IReadOnlyList<Group> GroupsForTesting => _groups;
+
+    /// <summary>Where one soldier's body is placed for the current tick, as the tick capture places it.</summary>
+    /// <param name="member">The soldier.</param>
+    /// <returns>The placement, in metres, and the orientation.</returns>
+    internal (Vector3d Where, Matrix3f Orientation) TickPlacementOfForTesting(Member member) => TickPlacementOf(member);
+
     internal string DescribeViewForTesting(SoldierView view)
     {
         foreach (Group group in _groups)

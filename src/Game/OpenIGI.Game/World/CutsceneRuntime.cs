@@ -4744,6 +4744,32 @@ public sealed class CutsceneRuntime
         return value < target ? Math.Min(value + step, target) : Math.Max(value - step, target);
     }
 
+    /// <summary>Gets the AnimTasks' states, in their order, for the suites that read them.</summary>
+    internal IReadOnlyList<AnimationState> AnimationsForTesting => _animations;
+
+    /// <summary>Gets each driven object's transform state, by task id, for the suites that read them.</summary>
+    internal IReadOnlyDictionary<int, TransformState> TransformsForTesting => _transforms;
+
+    /// <summary>Gets each driven object's transform state, by task, for the suites that read them.</summary>
+    internal IReadOnlyDictionary<GameTask, TransformState> TaskTransformsForTesting => _taskTransforms;
+
+    /// <summary>Gets what each attached task rides, by task, for the suites that read them.</summary>
+    internal IReadOnlyDictionary<GameTask, AttachmentState> AttachmentsForTesting => _attachments;
+
+    /// <summary>Gets the CarAI tasks' states, for the suites that read them.</summary>
+    internal IReadOnlyList<CarAiState> CarAisForTesting => _carAis;
+
+    /// <summary>Makes every AnimTask run from the next tick on: an empty run expression, initial run set and running.</summary>
+    internal void RunEveryAnimationForTesting()
+    {
+        foreach (AnimationState animation in _animations)
+        {
+            animation.Run = string.Empty;
+            animation.InitialRun = true;
+            animation.IsRun = true;
+        }
+    }
+
     private sealed class SceneState(CutSceneTask task, List<EditCameraShot> shots)
     {
         public CutSceneTask Task { get; } = task;
@@ -4776,7 +4802,7 @@ public sealed class CutsceneRuntime
         public int Tick { get; set; }
     }
 
-    private sealed record AnimationState(
+    internal sealed record AnimationState(
         DeclaredTask Task,
         int TargetId,
         int Order,
@@ -4784,6 +4810,12 @@ public sealed class CutsceneRuntime
         bool InitialRun,
         AnimDataProgram Program)
     {
+        /// <summary>Gets or sets the run expression; settable so a suite can make every AnimTask run.</summary>
+        public string Run { get; set; } = Run;
+
+        /// <summary>Gets or sets the initial run byte; settable so a suite can make every AnimTask run.</summary>
+        public bool InitialRun { get; set; } = InitialRun;
+
         /// <summary>Running-tick counter exported as <c>AnimTask+&lt;id&gt;.nTick</c> (retail AnimTask state var).</summary>
         public int Tick { get; set; }
 
@@ -4806,7 +4838,7 @@ public sealed class CutsceneRuntime
         public bool HasPlayed { get; set; }
     }
 
-    private sealed class CarAiState(
+    internal sealed class CarAiState(
         DeclaredTask task,
         DeclaredTask car,
         TransformState transform,
@@ -4886,7 +4918,7 @@ public sealed class CutsceneRuntime
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);
-    private sealed class AttachmentState(
+    internal sealed class AttachmentState(
         GameTask parentTask,
         TransformState parent,
         int parentRevisionAtCapture,
@@ -4906,7 +4938,7 @@ public sealed class CutsceneRuntime
             parentOriginOrientation.Transform(position - parentOriginPosition);
     }
 
-    private sealed class TransformState(Vector3d position, Matrix3f orientation)
+    internal sealed class TransformState(Vector3d position, Matrix3f orientation)
     {
         public Vector3d Position { get; set; } = position;
         public Vector3d PreviousPosition { get; set; } = position;

@@ -60,6 +60,10 @@ public sealed class ObjectCollisionIndex
     private readonly Dictionary<GameTask, (Vector3d Min, Vector3d Max)> _sightOpenings = new(
         ReferenceEqualityComparer.Instance);
 
+    /// <summary>An index with no placed objects, so a suite exercises only what it adds itself.</summary>
+    /// <returns>The empty index.</returns>
+    internal static ObjectCollisionIndex EmptyForTesting() => new([], []);
+
     private ObjectCollisionIndex(Entry[] entries, Entry[] playerEntries)
     {
         _entries = entries;

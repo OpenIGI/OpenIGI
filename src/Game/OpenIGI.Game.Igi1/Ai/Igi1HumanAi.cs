@@ -1381,6 +1381,14 @@ public sealed class Igi1HumanAi
     /// <remarks><see cref="AiDetectionCandidate.PlayerId"/> for the player; a soldier's task id otherwise.</remarks>
     public int TargetId => _targetId;
 
+    /// <summary>Puts the soldier into combat and points its fight at one human, for the suites that stage a fight.</summary>
+    /// <param name="targetId">The id of the human the fight is about.</param>
+    internal void EnterCombatForTesting(int targetId)
+    {
+        EnterCombat();
+        _targetId = targetId;
+    }
+
     /// <summary>Gets whether the human the soldier is concerned with is the player.</summary>
     public bool TargetIsPlayer => TargetHuman is { } target ? target.Candidate.IsPlayer : _targetId == AiDetectionCandidate.PlayerId;
 

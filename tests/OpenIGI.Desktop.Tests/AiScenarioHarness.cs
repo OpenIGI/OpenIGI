@@ -1,6 +1,5 @@
 using OpenIGI.Game.Physics;
 using System.Globalization;
-using System.Reflection;
 using System.Text;
 using OpenIGI.Audio;
 using OpenIGI.Composition;
@@ -87,16 +86,13 @@ public sealed class AiScenarioHarness : IDisposable
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(t => int.Parse(t, CultureInfo.InvariantCulture))];
 
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
@@ -268,7 +264,7 @@ public sealed class AiScenarioHarness : IDisposable
 
             if (setVar is { } write && engine == write.Tick)
             {
-                var loop = (OpenIGI.Engine.Flow.GameLoop)typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)!;
+                OpenIGI.Engine.Flow.GameLoop loop = host.Loop();
                 bool wrote = loop.Variables.TryWrite(write.Name, OpenIGI.Scripting.Runtime.QvmValue.FromInt32(write.Value));
                 log.AppendLine(CultureInfo.InvariantCulture, $"t{engine} setvar {write.Name}={write.Value} {(wrote ? "written" : "NOT FOUND")}");
                 setVar = null;
@@ -416,18 +412,14 @@ public sealed class AiScenarioHarness : IDisposable
         host.Start();
         InputState scripted = new();
         host.ScriptedViewInput = scripted;
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo roundsField = typeof(GameHost).GetField("_guardRounds", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo hitsField = typeof(GameHost).GetField("_guardHits", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
@@ -552,7 +544,7 @@ public sealed class AiScenarioHarness : IDisposable
 
         log.AppendLine(
             CultureInfo.InvariantCulture,
-            $"player shots={shots} guard rounds={roundsField.GetValue(host)} hits on player={hitsField.GetValue(host)}");
+            $"player shots={shots} guard rounds={host.GuardRoundsFired()} hits on player={host.GuardHitsOnPlayer()}");
         foreach ((SoldierView view, Igi1HumanAi brain) in pairs)
         {
             if (IsEnemy(view) && Vector3d.Distance(view.Position, spawn) <= 80.0 * Metre)
@@ -610,19 +602,14 @@ public sealed class AiScenarioHarness : IDisposable
         host.Start();
         InputState scripted = new();
         host.ScriptedViewInput = scripted;
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo roundsField = typeof(GameHost).GetField("_guardRounds", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo hitsField = typeof(GameHost).GetField("_guardHits", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
@@ -648,7 +635,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            int engine = (int)tickField.GetValue(soldiers)!;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -678,19 +665,19 @@ public sealed class AiScenarioHarness : IDisposable
                 log.AppendLine(CultureInfo.InvariantCulture, $"t{since} player fired");
             }
 
-            int rounds = (int)roundsField.GetValue(host)!;
+            int rounds = host.GuardRoundsFired();
             if (rounds != lastRounds || since % 60 == 0)
             {
                 lastRounds = rounds;
                 log.AppendLine(
                     CultureInfo.InvariantCulture,
-                    $"t{since} rounds={rounds} hits={hitsField.GetValue(host)} target {targetId} dmg={soldiers.Simulation.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
+                    $"t{since} rounds={rounds} hits={host.GuardHitsOnPlayer()} target {targetId} dmg={soldiers.Simulation.DamageForTesting(target.Key):0.00} {target.Value.DescribeTick()}");
             }
         }
 
         log.AppendLine(
             CultureInfo.InvariantCulture,
-            $"guard rounds={roundsField.GetValue(host)} hits on player={hitsField.GetValue(host)}");
+            $"guard rounds={host.GuardRoundsFired()} hits on player={host.GuardHitsOnPlayer()}");
         host.Stop();
         File.WriteAllText(output, log.ToString());
     }
@@ -737,17 +724,14 @@ public sealed class AiScenarioHarness : IDisposable
         host.Start();
         InputState scripted = new();
         host.ScriptedViewInput = scripted;
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
@@ -772,7 +756,7 @@ public sealed class AiScenarioHarness : IDisposable
                 break;
             }
 
-            int engine = (int)tickField.GetValue(soldiers)!;
+            int engine = soldiers.Simulation.TickCount;
             if (engine == last)
             {
                 continue;
@@ -880,29 +864,25 @@ public sealed class AiScenarioHarness : IDisposable
         host.Start();
         InputState scripted = new();
         host.ScriptedViewInput = scripted;
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo loopField = typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
-        OpenIGI.Engine.Flow.GameLoop loop = (OpenIGI.Engine.Flow.GameLoop)loopField.GetValue(host)!;
+        OpenIGI.Engine.Flow.GameLoop loop = host.Loop();
         DestructibleObjectRegistry destructibles = MissionOf(host).Destructibles!;
         DestructibleObject? generator = destructibles.Objects.FirstOrDefault(item => item.Owner.Id == generatorId);
         log.AppendLine(CultureInfo.InvariantCulture, $"[generator] registered={generator is not null} keepsModel={generator?.KeepsModelWhenDestroyed}");
         if (generator is not null && EnvInt("OPENIGI_GEN_SCENARIO_NEARBY", 0) is > 0 and int nearby)
         {
-            FieldInfo sceneField = typeof(GameHost).GetField("_scene", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            WorldScene scene = (WorldScene)sceneField.GetValue(host)!;
+            WorldScene scene = host.Scene()!;
             foreach (WorldPlacement placement in scene.Placements)
             {
                 Vector3d at = placement.Position * WorldScene.UnitsPerMetre;
@@ -1014,8 +994,7 @@ public sealed class AiScenarioHarness : IDisposable
                     {
                         // The probe sends the Human GunPickup's own message; the port's equivalent is a
                         // pickup lying at the player's feet, which his next tick collects.
-                        FieldInfo weaponsField = typeof(GameHost).GetField("_weaponTypes", BindingFlags.NonPublic | BindingFlags.Instance)!;
-                        OpenIGI.Game.Weapons.WeaponTypeRegistry roster = (OpenIGI.Game.Weapons.WeaponTypeRegistry)weaponsField.GetValue(host)!;
+                        OpenIGI.Game.Weapons.WeaponTypeRegistry roster = MissionOf(host).WeaponTypes!;
                         GunPickupRegistry pickups = MissionOf(host).GunPickups!;
                         OpenIGI.Game.Weapons.WeaponType given = roster.Weapons.Single(weapon => weapon.WeaponId == (int)args[0]);
                         pickups.Spawn(player.Body.Position, Matrix3f.Identity, given);
@@ -1114,17 +1093,13 @@ public sealed class AiScenarioHarness : IDisposable
             "-mission", mission.ToString(CultureInfo.InvariantCulture), "-lockstep", "-frames", "1000000");
         host.Start();
         host.ScriptedViewInput = new InputState();
-        BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
-        FieldInfo cutscenesField = typeof(GameHost).GetField("_cutscenes", hidden)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
-        FieldInfo elevatorsField = typeof(GameHost).GetField("_elevators", hidden)!;
 
         CutsceneRuntime? runtime = null;
         for (int i = 0; i < 20_000 && runtime?.Frame is null; i++)
         {
             Assert.True(host.Step());
-            runtime = cutscenesField.GetValue(host) as CutsceneRuntime;
-            if (elevatorsField.GetValue(host) is ElevatorRegistry early)
+            runtime = MissionOf(host).Cutscenes;
+            if (MissionOf(host).Elevators is ElevatorRegistry early)
             {
                 foreach (PlacedElevator lift in early.Elevators.Where(static lift => lift.State.TransformChangedThisTick))
                 {
@@ -1158,7 +1133,7 @@ public sealed class AiScenarioHarness : IDisposable
             log.AppendLine(CultureInfo.InvariantCulture,
                 $"[scene] id={frame.Scene.Id} tick={sceneTick} shot={frame.ShotIndex} cam=({at.X:0.000},{at.Y:0.000},{at.Z:0.000}) fov={frame.FieldOfView:0.000000000} m=[{m.M11:0.000000} {m.M12:0.000000} {m.M13:0.000000}; {m.M21:0.000000} {m.M22:0.000000} {m.M23:0.000000}; {m.M31:0.000000} {m.M32:0.000000} {m.M33:0.000000}]");
 
-            if (elevatorsField.GetValue(host) is ElevatorRegistry elevators)
+            if (MissionOf(host).Elevators is ElevatorRegistry elevators)
             {
                 foreach (PlacedElevator elevator in elevators.Elevators)
                 {
@@ -1169,16 +1144,16 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
-            if (soldiersField.GetValue(host) is SoldierRenderer soldiers)
+            if (host.Soldiers() is SoldierRenderer soldiers)
             {
-                foreach (object group in (System.Collections.IEnumerable)typeof(SoldierRenderer).GetField("_groups", hidden)!.GetValue(soldiers)!)
+                foreach (SoldierRenderer.Group group in soldiers.GroupsForTesting)
                 {
-                    foreach (object member in (System.Collections.IEnumerable)group.GetType().GetProperty("Soldiers")!.GetValue(group)!)
+                    foreach (SoldierRenderer.Member member in group.Soldiers)
                     {
-                        SoldierView view = (SoldierView)member.GetType().GetProperty("View")!.GetValue(member)!;
-                        Vector3d where = (Vector3d)member.GetType().GetProperty("TickWhere")!.GetValue(member)! * Metre;
-                        Matrix3f o = (Matrix3f)member.GetType().GetProperty("TickOrientation")!.GetValue(member)!;
-                        bool staged = member.GetType().GetProperty("IsCutsceneActor")!.GetValue(member) is true;
+                        SoldierView view = member.Agent.View;
+                        Vector3d where = member.TickWhere * Metre;
+                        Matrix3f o = member.TickOrientation;
+                        bool staged = member.Agent.IsCutsceneActor;
                         string attached = runtime.TryGetAttachedDrawTransform(view.Soldier, out Vector3d riding, out _)
                             ? FormattableString.Invariant($" riding=({riding.X * Metre:0},{riding.Y * Metre:0},{riding.Z * Metre:0})")
                             : string.Empty;
@@ -1232,19 +1207,15 @@ public sealed class AiScenarioHarness : IDisposable
         }
 
         GameHost host = Host(device, new HeadlessGameWindow(), [.. captureArgs]);
-        BindingFlags hidden = BindingFlags.NonPublic | BindingFlags.Instance;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", hidden)!;
-        FieldInfo brainsField = typeof(SoldierRenderer).GetField("_brains", hidden)!;
 
         // OPENIGI_PATROL_CAPTURE_RNG=1: every draw from the level's global stream, for the diff against the
         // probe's [rng]: the level counter during the tick (-1 at load) and the first caller outside the generator.
         if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_RNG") == "1"
-            && typeof(GameHost).GetField("_soundRandom", hidden)?.GetValue(host) is OpenIGI.Core.Numerics.IgiRandom stream)
+            && MissionOf(host).SoundRandom is OpenIGI.Core.Numerics.IgiRandom stream)
         {
-            FieldInfo counterField = typeof(SoldierRenderer).GetField("_tick", hidden)!;
             stream.Drew = _ =>
             {
-                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
                 string site = "?";
                 foreach (System.Diagnostics.StackFrame frame in new System.Diagnostics.StackTrace(1, false).GetFrames())
                 {
@@ -1264,14 +1235,14 @@ public sealed class AiScenarioHarness : IDisposable
             // The probe's [free]: every node a claiming free-position search tests, and its verdict.
             OpenIGI.Game.Igi1.Ai.AiFreePosition.Tested = (claimant, node, toward, verdict) =>
             {
-                if (claimant is not Igi1HumanAi who || soldiersField.GetValue(host) is not SoldierRenderer r)
+                if (claimant is not Igi1HumanAi who || host.Soldiers() is not SoldierRenderer r)
                 {
                     return;
                 }
 
-                int counter = (int)counterField.GetValue(r)! - 1;
+                int counter = r.Simulation.TickCount - 1;
                 int id = -1;
-                foreach ((SoldierView v, Igi1HumanAi b) in (Dictionary<SoldierView, Igi1HumanAi>)brainsField.GetValue(r)!)
+                foreach ((SoldierView v, Igi1HumanAi b) in r.Simulation.Brains)
                 {
                     if (ReferenceEquals(b, who))
                     {
@@ -1285,35 +1256,35 @@ public sealed class AiScenarioHarness : IDisposable
             // Which casts rebuilt whose palette, for the eye-matrix comparison.
             SoldierSimulation.PaletteRebuildTraced = (id, why, from, to) =>
             {
-                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
                 log.AppendLine(FormattableString.Invariant($"[rebuild] lt={counter} id={id} by={why} who={SoldierSimulation.TickingSoldierId} from=({from.X:0},{from.Y:0},{from.Z:0}) to=({to.X:0},{to.Y:0},{to.Z:0})"));
             };
 
             // The probe's [drop]: where a dying soldier's gun starts falling.
             SoldierSimulation.WeaponDropTraced = (id, at, feet, root) =>
             {
-                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
                 log.AppendLine(FormattableString.Invariant($"[drop] lt={counter} id={id} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}) feet=({feet.X:0.0},{feet.Y:0.0},{feet.Z:0.0}) root={root:0.0}"));
             };
 
             // The probe's [dmg]: every round a soldier takes.
             SoldierSimulation.DamageTraced = (id, zone, bone, factor, accum, max) =>
             {
-                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
                 log.AppendLine(FormattableString.Invariant($"[dmg] lt={counter} id={id} zone={zone} bone={bone} factor={factor:0.000} accum={accum:0.000} max={max:0.000}"));
             };
 
             // The probe's [fire]: each round's base forward and the gun's rounds this pull.
             SoldierSimulation.RoundSpreadTraced = (who, pull, forward) =>
             {
-                if (soldiersField.GetValue(host) is not SoldierRenderer r)
+                if (host.Soldiers() is not SoldierRenderer r)
                 {
                     return;
                 }
 
-                int counter = (int)counterField.GetValue(r)! - 1;
+                int counter = r.Simulation.TickCount - 1;
                 int id = -1;
-                foreach ((SoldierView v, Igi1HumanAi b) in (Dictionary<SoldierView, Igi1HumanAi>)brainsField.GetValue(r)!)
+                foreach ((SoldierView v, Igi1HumanAi b) in r.Simulation.Brains)
                 {
                     if (ReferenceEquals(b, who))
                     {
@@ -1327,7 +1298,7 @@ public sealed class AiScenarioHarness : IDisposable
             // The probe's [march]: every pass of a soldier's round, its segment and what the cast met.
             OpenIGI.Game.Igi1.Weapons.GunShotTask.PassCast = (round, from, to, remaining, contact) =>
             {
-                int counter = soldiersField.GetValue(host) is SoldierRenderer r ? (int)counterField.GetValue(r)! - 1 : -1;
+                int counter = host.Soldiers() is SoldierRenderer r ? r.Simulation.TickCount - 1 : -1;
                 int shooter = round.Shooter is SoldierView v ? v.Soldier.Id : -1;
                 string what = contact is not { } c
                     ? "hit=0"
@@ -1343,18 +1314,14 @@ public sealed class AiScenarioHarness : IDisposable
         // (0x47C4C0), with the task's live count before it.
         if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_TRACER") == "1")
         {
-            FieldInfo gunShotsField = typeof(SoldierSimulation).GetField("_gunShots", hidden)!;
             OpenIGI.Game.Igi1.Weapons.GunShotTask.TracerFiled = (task, tracer) =>
             {
                 int counter = -1;
                 int owner = -1;
-                if (soldiersField.GetValue(host) is SoldierRenderer r)
+                if (host.Soldiers() is SoldierRenderer r)
                 {
                     counter = r.Simulation.TickCount - 1;
-                    if (gunShotsField.GetValue(r.Simulation) is Dictionary<SoldierView, OpenIGI.Game.Igi1.Weapons.GunShotTask> tasks)
-                    {
-                        owner = tasks.FirstOrDefault(pair => ReferenceEquals(pair.Value, task)).Key?.Soldier.Id ?? -1;
-                    }
+                    owner = r.Simulation.GunShotsForTesting.FirstOrDefault(pair => ReferenceEquals(pair.Value, task)).Key?.Soldier.Id ?? -1;
                 }
 
                 log.AppendLine(FormattableString.Invariant(
@@ -1377,21 +1344,18 @@ public sealed class AiScenarioHarness : IDisposable
         string[] watchedVariables = (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_TASKS") ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries);
         Dictionary<string, string> watchedValues = [];
-        FieldInfo loopField = typeof(GameHost).GetField("_loop", hidden)!;
-        FieldInfo renderTickField = typeof(SoldierRenderer).GetField("_tick", hidden)!;
         for (int step = 0; step < ticks * 4; step++)
         {
             Assert.True(host.Step());
-            if (soldiersField.GetValue(host) is not SoldierRenderer soldiers)
+            if (host.Soldiers() is not SoldierRenderer soldiers)
             {
                 continue;
             }
 
-            if (watchedVariables.Length > 0
-                && loopField.GetValue(host) is { } loop
-                && loop.GetType().GetProperty("Variables")?.GetValue(loop) is OpenIGI.Engine.Tasks.ScriptVarRegistry variables)
+            if (watchedVariables.Length > 0)
             {
-                int ran = (int)renderTickField.GetValue(soldiers)!;
+                OpenIGI.Engine.Tasks.ScriptVarRegistry variables = host.Loop().Variables;
+                int ran = soldiers.Simulation.TickCount;
                 foreach (string name in watchedVariables)
                 {
                     string value = variables.TryRead(name, out OpenIGI.Scripting.Runtime.QvmValue read)
@@ -1405,7 +1369,7 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
-            Dictionary<SoldierView, Igi1HumanAi> brains = (Dictionary<SoldierView, Igi1HumanAi>)brainsField.GetValue(soldiers)!;
+            Dictionary<SoldierView, Igi1HumanAi> brains = soldiers.Simulation.Brains;
             if (!treeDumped)
             {
                 // Each soldier's ancestry, root last: what holds it in the level tree.
@@ -1449,7 +1413,7 @@ public sealed class AiScenarioHarness : IDisposable
                     // Labelled with the level's counter during the tick, as the probe labels them: a post from a
                     // soldier earlier in the walk reaches one whose own LastTick is still last tick's.
                     SoldierRenderer renderer = soldiers;
-                    int Counter() => (int)renderTickField.GetValue(renderer)! - 1;
+                    int Counter() => renderer.Simulation.TickCount - 1;
                     brain.Events.Queued = record => log.AppendLine(CultureInfo.InvariantCulture,
                         $"[pwq] tick={Counter()} id={id} type={(int)record.Type} filter=0x{(int)record.Filter:X} radius={record.Radius:0} source={record.Source} subject={record.Subject} pos=({record.Position.X:0},{record.Position.Y:0},{record.Position.Z:0})");
                     brain.Dispatched = (type, priority) => log.AppendLine(CultureInfo.InvariantCulture,
@@ -1465,7 +1429,7 @@ public sealed class AiScenarioHarness : IDisposable
                 if (brain.Activity == AiSoldierActivity.Dead)
                 {
                     // A corpse's origin each tick (retail keeps logging its dead): the level counter, feet + root.
-                    int deadTick = (int)renderTickField.GetValue(soldiers)! - 1;
+                    int deadTick = soldiers.Simulation.TickCount - 1;
                     log.AppendLine(CultureInfo.InvariantCulture,
                         $"[pwdead] lt={deadTick} id={view.Soldier.Id} pos=({brain.Position.X:0.0},{brain.Position.Y:0.0},{brain.Position.Z + view.RootSample.Z:0.0}) clip={view.CurrentAnimation} facing={brain.Facing:0.00000} fall=({brain.DeathFallVelocity.X:0.00},{brain.DeathFallVelocity.Y:0.00})");
                 }
@@ -1610,23 +1574,19 @@ public sealed class AiScenarioHarness : IDisposable
         GameHost host = Host(device, new HeadlessGameWindow(), hostArguments);
         host.Start();
         host.ScriptedViewInput = new InputState();
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo loopField = typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo healthField = typeof(GameHost).GetField("_playerHealth", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
         Assert.NotNull(soldiers);
-        OpenIGI.Engine.Flow.GameLoop loop = (OpenIGI.Engine.Flow.GameLoop)loopField.GetValue(host)!;
+        OpenIGI.Engine.Flow.GameLoop loop = host.Loop();
         CutsceneRuntime runtime = MissionOf(host).Cutscenes!;
         OpenIGI.Engine.Tasks.GameTask vehicle = loop.Tasks.FromId(vehicleId)!;
         Assert.NotNull(vehicle);
@@ -1650,8 +1610,7 @@ public sealed class AiScenarioHarness : IDisposable
         List<OpenIGI.Engine.Tasks.DeclaredTask> vehicles = [.. Walk(loop.Tasks.Root)
             .OfType<OpenIGI.Engine.Tasks.DeclaredTask>()
             .Where(static task => task.Type.Name is "Car" or "Heli" or "Plane")];
-        HumanHealth health = (HumanHealth)healthField.GetValue(host)!;
-        FieldInfo deadField = typeof(GameHost).GetField("_playerDead", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        HumanHealth health = MissionOf(host).PlayerHealth;
         bool[] triggers = new bool[guns.Count];
         bool god = false;
         int last = -1;
@@ -1709,9 +1668,7 @@ public sealed class AiScenarioHarness : IDisposable
             // it owns on that tick and every 30 after.
             if (EnvInt("OPENIGI_VEH_SCENARIO_DESTROY", 0) != 0)
             {
-                DestructibleObjectRegistry? registry = typeof(GameHost)
-                    .GetField("_destructibles", BindingFlags.NonPublic | BindingFlags.Instance)!
-                    .GetValue(host) as DestructibleObjectRegistry;
+                DestructibleObjectRegistry? registry = MissionOf(host).Destructibles;
                 DestructibleObject? target = registry?.Objects.FirstOrDefault(
                     item => ReferenceEquals(item.Owner, vehicle) && item.Kind == DestructibleObjectKind.Vehicle);
                 string state = target is null ? "none" : $"dying={target.IsDying} destroyed={target.IsDestroyed}";
@@ -1719,8 +1676,7 @@ public sealed class AiScenarioHarness : IDisposable
                 {
                     destroyState = state;
                     log.AppendLine(CultureInfo.InvariantCulture, $"[vehicle] tick={tick} id={vehicleId} {state}");
-                    if (typeof(GameHost).GetField("_world", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)
-                        is OpenIGI.Presentation.Rendering.WorldRenderer world)
+                    if (host.World() is OpenIGI.Presentation.Rendering.WorldRenderer world)
                     {
                         foreach (string line in world.DescribeFrameForTesting(vehicle))
                         {
@@ -1730,8 +1686,7 @@ public sealed class AiScenarioHarness : IDisposable
 
                     // What a ray straight down through the vehicle's origin meets: its hull, its wreck, or the ground.
                     if (target is not null
-                        && typeof(GameHost).GetField("_worldSolids", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)
-                            is ObjectCollisionIndex solids)
+                        && MissionOf(host).Solids is ObjectCollisionIndex solids)
                     {
                         Vector3d above = target.PositionUnits + new Vector3d(0.0, 0.0, 5.0 * Metre);
                         Vector3d below = target.PositionUnits - new Vector3d(0.0, 0.0, 3.0 * Metre);
@@ -1758,34 +1713,28 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
-            if (EnvInt("OPENIGI_VEH_SCENARIO_HELI", -1) is int heliId and >= 0
-                && typeof(CutsceneRuntime).GetField("_animations", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable animations)
+            if (EnvInt("OPENIGI_VEH_SCENARIO_HELI", -1) is int heliId and >= 0)
             {
-                foreach (object animation in animations)
+                foreach (CutsceneRuntime.AnimationState animation in runtime.AnimationsForTesting)
                 {
-                    Type type = animation.GetType();
-                    if (type.GetProperty("TargetId")?.GetValue(animation) is not int targetId || targetId != heliId
-                        || type.GetProperty("RanThisTick")?.GetValue(animation) is not true)
+                    if (animation.TargetId != heliId || !animation.RanThisTick)
                     {
                         continue;
                     }
 
-                    object program = type.GetProperty("Program")!.GetValue(animation)!;
-                    float[] channels = (float[])program.GetType().GetField("_channels", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(program)!;
-                    int programTick = (int)program.GetType().GetProperty("Tick")!.GetValue(program)!;
+                    OpenIGI.Engine.Tasks.AnimDataProgram program = animation.Program;
+                    float[] channels = program.Channels.ToArray();
+                    int programTick = program.Tick;
                     OpenIGI.Engine.Tasks.GameTask heli = loop.Tasks.FromId(heliId)!;
                     Vector3d at = runtime.TryGetDrawTransform(heli, out Vector3d metres, out _) ? metres * Metre : default;
                     string extra = string.Empty;
-                    if (typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary transforms
-                        && transforms[heliId] is { } state)
+                    if (runtime.TransformsForTesting.TryGetValue(heliId, out CutsceneRuntime.TransformState? state))
                     {
-                        Type st = state.GetType();
-                        object? S(string name) => st.GetProperty(name)?.GetValue(state);
-                        Matrix3f m = (Matrix3f)S("Orientation")!;
-                        Vector3d v = (Vector3d)S("Velocity")!;
-                        Vector3f l = (Vector3f)S("AngularMomentum")!;
-                        Vector3f c = (Vector3f)S("Control")!;
-                        extra = string.Create(CultureInfo.InvariantCulture, $" vel=({v.X:0.0},{v.Y:0.0},{v.Z:0.0}) angular=({l.X:G4},{l.Y:G4},{l.Z:G4}) control=({c.X:0.####},{c.Y:0.####},{c.Z:0.####}) thrust={S("Thrust")} ground={S("GroundContact")} m=[{m.M11:0.####} {m.M12:0.####} {m.M13:0.####}; {m.M21:0.####} {m.M22:0.####} {m.M23:0.####}; {m.M31:0.####} {m.M32:0.####} {m.M33:0.####}]");
+                        Matrix3f m = state.Orientation;
+                        Vector3d v = state.Velocity;
+                        Vector3f l = state.AngularMomentum;
+                        Vector3f c = state.Control;
+                        extra = string.Create(CultureInfo.InvariantCulture, $" vel=({v.X:0.0},{v.Y:0.0},{v.Z:0.0}) angular=({l.X:G4},{l.Y:G4},{l.Z:G4}) control=({c.X:0.####},{c.Y:0.####},{c.Z:0.####}) thrust={state.Thrust} ground={state.GroundContact} m=[{m.M11:0.####} {m.M12:0.####} {m.M13:0.####}; {m.M21:0.####} {m.M22:0.####} {m.M23:0.####}; {m.M31:0.####} {m.M32:0.####} {m.M33:0.####}]");
                     }
 
                     log.AppendLine(CultureInfo.InvariantCulture, $"[heli] tick={tick} programTick={programTick} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}){extra} channels=({string.Join(",", channels.Select(c => c.ToString("0.#####", CultureInfo.InvariantCulture)))})");
@@ -1795,21 +1744,19 @@ public sealed class AiScenarioHarness : IDisposable
             // OPENIGI_VEH_SCENARIO_BODY=<id>: that car's retail rigid body every tick, bit-exact, for lining the
             // port's drive up against a probe carstep capture.
             if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
-                && typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary bodyStates
-                && bodyStates.Contains(bodyId)
-                && bodyStates[bodyId] is { } bodyState)
+                && runtime.TransformsForTesting.TryGetValue(bodyId, out CutsceneRuntime.TransformState? bodyState))
             {
-                if (bodyState.GetType().GetProperty("RetailBody")?.GetValue(bodyState) is RetailCarBody body)
+                if (bodyState.RetailBody is RetailCarBody body)
                 {
                     string scene = Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_SCENEVAR") is { Length: > 0 } sceneVar
                         && loop.Variables.TryRead(sceneVar, out OpenIGI.Scripting.Runtime.QvmValue sceneTick) ? $" scene={sceneTick}" : string.Empty;
                     log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick}{scene} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
                 }
-                else if (bodyState.GetType().GetProperty("RetailPlane")?.GetValue(bodyState) is RetailPlaneBody plane
-                    && bodyState.GetType().GetProperty("PhysicsTicks")?.GetValue(bodyState) is int planeSteps
-                    && planeSteps != lastPlaneSteps)
+                else if (bodyState.RetailPlane is RetailPlaneBody plane
+                    && bodyState.PhysicsTicks != lastPlaneSteps)
                 {
                     // The probe's planeflight format: each force as pushed, then the state after the step.
+                    int planeSteps = bodyState.PhysicsTicks;
                     lastPlaneSteps = planeSteps;
                     foreach (PointForce f in plane.PushedForces)
                     {
@@ -1819,7 +1766,7 @@ public sealed class AiScenarioHarness : IDisposable
                     float[] pm = plane.M;
                     log.AppendLine(CultureInfo.InvariantCulture, $"[pf] tick={tick} step={planeSteps} pos=({plane.Position[0]:R},{plane.Position[1]:R},{plane.Position[2]:R}) m=[{pm[0]:G9} {pm[1]:G9} {pm[2]:G9} {pm[3]:G9} {pm[4]:G9} {pm[5]:G9} {pm[6]:G9} {pm[7]:G9} {pm[8]:G9}] vel=({plane.Velocity[0]:G9},{plane.Velocity[1]:G9},{plane.Velocity[2]:G9}) mom=({plane.Momentum[0]:G9},{plane.Momentum[1]:G9},{plane.Momentum[2]:G9}) speed={plane.Speed:G9} thrust={plane.Thrust:G9}/{plane.ThrustTarget:G9} ctl=({plane.Controls[0]:G9},{plane.Controls[1]:G9},{plane.Controls[2]:G9})");
                 }
-                else if (bodyState.GetType().GetProperty("RetailHeli")?.GetValue(bodyState) is RetailHeliBody heli)
+                else if (bodyState.RetailHeli is RetailHeliBody heli)
                 {
                     log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({heli.Position[0]:R},{heli.Position[1]:R},{heli.Position[2]:R}) thr={heli.Collective:R}/{heli.CollectiveTarget:R} steer={heli.Controls[0]:R}/{heli.Targets[0]:R} hb=False speed={heli.Speed:R}");
                 }
@@ -1848,39 +1795,32 @@ public sealed class AiScenarioHarness : IDisposable
             {
                 soldiers.Simulation.Snapshot(soldierSnapshots);
                 List<Vector3d> drawn = [];
-                foreach (object group in (System.Collections.IEnumerable)typeof(SoldierRenderer).GetField("_groups", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!)
+                foreach (SoldierRenderer.Group group in soldiers.GroupsForTesting)
                 {
-                    foreach (object member in (System.Collections.IEnumerable)group.GetType().GetProperty("Soldiers")!.GetValue(group)!)
+                    foreach (SoldierRenderer.Member member in group.Soldiers)
                     {
-                        drawn.Add((Vector3d)member.GetType().GetProperty("TickWhere")!.GetValue(member)! * Metre);
-                        object agent = member.GetType().GetProperty("Agent")!.GetValue(member)!;
-                        if (agent.GetType().GetProperty("IsCutsceneActor")!.GetValue(agent) is true)
+                        drawn.Add(member.TickWhere * Metre);
+                        SoldierAgent agent = member.Agent;
+                        if (agent.IsCutsceneActor)
                         {
-                            SoldierView view = (SoldierView)agent.GetType().GetProperty("View")!.GetValue(agent)!;
-                            System.Collections.IDictionary brains = soldiers.Simulation.Brains;
-                            Igi1HumanAi? brain = brains.Contains(view) ? (Igi1HumanAi?)brains[view] : null;
-                            object? P(string name) => member.GetType().GetProperty(name)?.GetValue(member);
+                            SoldierView view = agent.View;
+                            Igi1HumanAi? brain = soldiers.Simulation.Brains.GetValueOrDefault(view);
 
                             // The port's half of the probe's [human] parent/local: what the actor rides, its offset
                             // in the parent's frame, and where that parent is now.
-                            if (typeof(CutsceneRuntime).GetField("_attachments", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime)
-                                    is System.Collections.IDictionary attachments
-                                && attachments.Contains(view.Soldier)
-                                && attachments[view.Soldier] is { } attachment)
+                            if (runtime.AttachmentsForTesting.TryGetValue(view.Soldier, out CutsceneRuntime.AttachmentState? attachment))
                             {
-                                Type kind = attachment.GetType();
-                                object parentTask = kind.GetProperty("ParentTask")!.GetValue(attachment)!;
-                                object parentState = kind.GetProperty("Parent")!.GetValue(attachment)!;
-                                Vector3d relative = (Vector3d)kind.GetProperty("RelativePosition")!.GetValue(attachment)!;
-                                Vector3d parentAt = (Vector3d)parentState.GetType().GetProperty("Position")!.GetValue(parentState)!;
-                                log.AppendLine(CultureInfo.InvariantCulture, $"[attach] tick={tick} id={view.Soldier.Id} parent={((OpenIGI.Engine.Tasks.GameTask)parentTask).Id} {((OpenIGI.Engine.Tasks.GameTask)parentTask).Type.Name} local=({relative.X:0.0},{relative.Y:0.0},{relative.Z:0.0}) parentAt=({parentAt.X:0},{parentAt.Y:0},{parentAt.Z:0})");
+                                OpenIGI.Engine.Tasks.GameTask parentTask = attachment.ParentTask;
+                                Vector3d relative = attachment.RelativePosition;
+                                Vector3d parentAt = attachment.Parent.Position;
+                                log.AppendLine(CultureInfo.InvariantCulture, $"[attach] tick={tick} id={view.Soldier.Id} parent={parentTask.Id} {parentTask.Type.Name} local=({relative.X:0.0},{relative.Y:0.0},{relative.Z:0.0}) parentAt=({parentAt.X:0},{parentAt.Y:0},{parentAt.Z:0})");
                                 if (runtime.TryGetAttachedDrawTransform(view.Soldier, out _, out Matrix3f face))
                                 {
                                     log.AppendLine(CultureInfo.InvariantCulture, $"[attachface] tick={tick} id={view.Soldier.Id} face=[{face.M11:0.00000} {face.M12:0.00000} {face.M13:0.00000}; {face.M21:0.00000} {face.M22:0.00000} {face.M23:0.00000}; {face.M31:0.00000} {face.M32:0.00000} {face.M33:0.00000}]");
                                 }
                             }
 
-                            log.AppendLine(CultureInfo.InvariantCulture, $"[actor] tick={tick} view=({view.Position.X:0.0},{view.Position.Y:0.0},{view.Position.Z:0.0}) brain=({brain?.Position.X:0.0},{brain?.Position.Y:0.0},{brain?.Position.Z:0.0}) act={brain?.Activity} req={brain?.RequestedAnimation} route={brain?.Route?.Current?.Kind} root={P("HasCutsceneRootMotion")} move={P("HasCutsceneGameplayMovement")} sample=({view.RootSample.X:0.0},{view.RootSample.Y:0.0},{view.RootSample.Z:0.0}) anim={view.CurrentAnimation}");
+                            log.AppendLine(CultureInfo.InvariantCulture, $"[actor] tick={tick} view=({view.Position.X:0.0},{view.Position.Y:0.0},{view.Position.Z:0.0}) brain=({brain?.Position.X:0.0},{brain?.Position.Y:0.0},{brain?.Position.Z:0.0}) act={brain?.Activity} req={brain?.RequestedAnimation} route={brain?.Route?.Current?.Kind} root={agent.HasCutsceneRootMotion} move={agent.HasCutsceneGameplayMovement} sample=({view.RootSample.X:0.0},{view.RootSample.Y:0.0},{view.RootSample.Z:0.0}) anim={view.CurrentAnimation}");
                         }
                     }
                 }
@@ -1903,18 +1843,14 @@ public sealed class AiScenarioHarness : IDisposable
 
             if (tick % posEvery == 0)
             {
-                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={deadField.GetValue(host)} shove=({player.Body.HitShove.X:0.00},{player.Body.HitShove.Y:0.00})");
-                if (typeof(CutsceneRuntime).GetField("_carAis", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable carAis)
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={MissionOf(host).IsPlayerDead} shove=({player.Body.HitShove.X:0.00},{player.Body.HitShove.Y:0.00})");
+                foreach (CutsceneRuntime.CarAiState state in runtime.CarAisForTesting)
                 {
-                    foreach (object state in carAis)
-                    {
-                        Type type = state.GetType();
-                        object? Prop(string name) => type.GetProperty(name)?.GetValue(state);
-                        object? route = Prop("Route");
-                        OpenIGI.Engine.Tasks.GameTask? task = Prop("Task") as OpenIGI.Engine.Tasks.GameTask;
-                        OpenIGI.Engine.Tasks.GameTask? car = Prop("Car") as OpenIGI.Engine.Tasks.GameTask;
-                        log.AppendLine(CultureInfo.InvariantCulture, $"[carai] tick={tick} task={task?.Id} car={car?.Id} active={(task is null ? "?" : ConditionalContainerGate.IsTaskActive(task).ToString())} route={(route is null ? "null" : route.GetType().GetProperty("HasStopped")?.GetValue(route))} stopped={Prop("Stopped")} node={(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Id}@{(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Position.X:0},{(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Position.Y:0} car={((Prop("Transform") is { } tr) ? tr.GetType().GetProperty("Position")?.GetValue(tr) : null)} cmd={Prop("CommandSpeedKmh")} throttle={Prop("Throttle")} brake={Prop("Brake")} steer={Prop("Steering")}");
-                    }
+                    AiPatrolRoute? route = state.Route;
+                    OpenIGI.Engine.Tasks.GameTask task = state.Task;
+                    OpenIGI.Engine.Tasks.GameTask car = state.Car;
+                    OpenIGI.Formats.Ai.GraphNode? node = state.TargetNode;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[carai] tick={tick} task={task.Id} car={car.Id} active={ConditionalContainerGate.IsTaskActive(task)} route={(route is null ? "null" : route.HasStopped)} stopped={state.Stopped} node={node?.Id}@{node?.Position.X:0},{node?.Position.Y:0} car={state.Transform.Position} cmd={state.CommandSpeedKmh} throttle={state.Throttle} brake={state.Brake} steer={state.Steering}");
                 }
 
                 foreach (string name in (Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_VARS") ?? string.Empty)
@@ -1975,17 +1911,15 @@ public sealed class AiScenarioHarness : IDisposable
                     case "complete":
                         // complete <task id>: finish that interaction as its completion 0x443EA0 does -- isFinished
                         // is a byte retail's setvar can write, but the port binds it read-only off the interaction.
-                        if (typeof(GameHost).GetField("_interactions", BindingFlags.NonPublic | BindingFlags.Instance)!
-                            .GetValue(host) is WorldInteractionRegistry interactions
+                        if (MissionOf(host).Interactions is WorldInteractionRegistry interactions
                             && interactions.Items.FirstOrDefault(item => item.Task.Id == (int)args[0]) is { } finished)
                         {
-                            typeof(WorldInteraction).GetProperty(nameof(WorldInteraction.IsCompleted))!
-                                .SetValue(finished, true);
+                            finished.CompleteForTesting();
                             log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} complete {(int)args[0]}");
                         }
                         else
                         {
-                            object? registry = typeof(GameHost).GetField("_interactions", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host);
+                            WorldInteractionRegistry? registry = MissionOf(host).Interactions;
                             string ids = registry is WorldInteractionRegistry all
                                 ? string.Join(",", all.Items.Select(item => $"{item.Task.Type.Name}#{item.Task.Id}"))
                                 : "no registry";
@@ -2198,15 +2132,13 @@ public sealed class AiScenarioHarness : IDisposable
     {
         GameHost host = Host(device, "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
         host.Start();
-        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
         PlayerCamera? player = null;
         SoldierRenderer? soldiers = null;
         for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
         {
             Assert.True(host.Step());
-            player = playerField.GetValue(host) as PlayerCamera;
-            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+            player = host.Player();
+            soldiers = host.Soldiers();
         }
 
         Assert.NotNull(player);
@@ -2320,6 +2252,5 @@ public sealed class AiScenarioHarness : IDisposable
     }
 
     // The played mission's registries, which the host keeps together.
-    private static MissionWorld MissionOf(GameHost host) =>
-        (MissionWorld)typeof(GameHost).GetField("_mission", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(host)!;
+    private static MissionWorld MissionOf(GameHost host) => host.Mission();
 }

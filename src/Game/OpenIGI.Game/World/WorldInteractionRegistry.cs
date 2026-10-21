@@ -121,6 +121,9 @@ public sealed class WorldInteraction
     /// <summary>Whether an authored electric fence is currently powered.</summary>
     public bool IsElectrified { get; private set; }
     public bool IsCompleted { get; private set; }
+
+    /// <summary>Marks the interaction completed, as its completion does, for the scenario runs that script one.</summary>
+    internal void CompleteForTesting() => IsCompleted = true;
     public bool CompletedThisTick { get; private set; }
     public bool IsSearched { get; internal set; }
     public bool IsPicked { get; private set; }

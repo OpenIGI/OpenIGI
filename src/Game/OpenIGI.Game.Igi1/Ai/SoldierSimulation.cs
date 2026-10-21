@@ -1751,6 +1751,9 @@ public sealed class SoldierSimulation : IHumanEvents
 
     internal IReadOnlyList<KeyValuePair<SoldierView, Igi1HumanAi>> BrainPairsForTesting => [.. Brains];
 
+    /// <summary>Gets each soldier's gun-shot task, by the soldier that fires it, for the scenario runs that trace tracers.</summary>
+    internal IReadOnlyDictionary<SoldierView, GunShotTask> GunShotsForTesting => _gunShots;
+
     /// <summary>Marks every soldier drawn close up, as a frame looking at all of them would.</summary>
     internal void ObserveAllForTesting()
     {
