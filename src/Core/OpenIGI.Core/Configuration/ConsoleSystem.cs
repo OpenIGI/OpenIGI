@@ -32,6 +32,7 @@ public sealed class ConsoleSystem
     {
         Variables = variables ?? CVarRegistry.Default;
         Commands = commands ?? new CommandRegistry();
+        Variables.Added += AdoptKeptSetting;
     }
 
     /// <summary>Occurs for every line written to the console.</summary>
@@ -76,7 +77,8 @@ public sealed class ConsoleSystem
     /// <summary>Gets the values a settings file gave mods' variables that nothing has declared this run, keyed by name.</summary>
     /// <remarks>
     /// A mod switched off declares none of its variables, so its lines would otherwise be dropped as retired settings and lost
-    /// at the next save; they are kept as they were read and written back, until the mod is on again and declares them.
+    /// at the next save; they are kept as they were read and written back, until the mod is on again and declares them. A
+    /// variable declared after the settings were read -- a mod's, as its game starts -- takes its kept value then.
     /// </remarks>
     public IReadOnlyDictionary<string, string> KeptSettings => _kept;
 
@@ -88,6 +90,15 @@ public sealed class ConsoleSystem
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(value);
         _kept[name] = value;
+    }
+
+    // A mod's variable declared after the settings were read takes the value they kept for it.
+    private void AdoptKeptSetting(object? sender, CVarAddedEventArgs e)
+    {
+        if (_kept.Remove(e.Variable.Name, out string? value))
+        {
+            e.Variable.TrySetText(value, out _);
+        }
     }
 
     /// <summary>Adds a sink that receives every line the console writes.</summary>

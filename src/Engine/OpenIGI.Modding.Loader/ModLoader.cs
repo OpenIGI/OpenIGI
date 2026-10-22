@@ -12,7 +12,8 @@ namespace OpenIGI.Modding.Loader;
 /// profile, every subdirectory of a folder holding a <c>mod.json</c>, in the order of the directories' names, so the order is
 /// the same on every machine. A mod that names an assembly is loaded into its own <see cref="AssemblyLoadContext"/>, which
 /// takes the port's own assemblies from the game rather than from the mod, so the mod's <see cref="IOpenIgiMod"/> is the
-/// game's; its other dependencies are its own.
+/// game's; its other dependencies are its own. The mod is the one public class of its assembly that implements
+/// <see cref="IOpenIgiMod"/>, made through its public parameterless constructor.
 /// </para>
 /// <para>
 /// A mod that cannot be read or loaded, was written for another API, reads a game that is not installed, needs a mod that
@@ -115,15 +116,7 @@ public static class ModLoader
         }
 
         Assembly assembly = Loaded(manifest.Id, assemblyPath);
-        if (assembly.GetCustomAttribute<OpenIgiModAttribute>() is not { ModType: { } modType })
-        {
-            throw new ModLoadException($"'{assemblyName}' names no mod; mark its mod's partial class [OpenIgiMod], or the assembly [assembly: OpenIgiMod(typeof(...))]");
-        }
-
-        if (!typeof(IOpenIgiMod).IsAssignableFrom(modType))
-        {
-            throw new ModLoadException($"{modType.FullName} is not an {nameof(IOpenIgiMod)}");
-        }
+        Type modType = ModTypeOf(assembly, assemblyName);
 
         try
         {
@@ -133,6 +126,26 @@ public static class ModLoader
         {
             throw new ModLoadException($"{modType.FullName} could not be made: {ex.InnerException?.Message ?? ex.Message}", ex);
         }
+    }
+
+    // The mod's entry: the one public class of its assembly that is an IOpenIgiMod and can be made.
+    private static Type ModTypeOf(Assembly assembly, string assemblyName)
+    {
+        Type[] mods =
+        [
+            .. assembly.GetExportedTypes().Where(static type =>
+                type is { IsClass: true, IsAbstract: false, ContainsGenericParameters: false }
+                && typeof(IOpenIgiMod).IsAssignableFrom(type)),
+        ];
+        return mods switch
+        {
+            [] => throw new ModLoadException($"'{assemblyName}' has no public class that implements {nameof(IOpenIgiMod)}"),
+            [Type one] when one.GetConstructor(Type.EmptyTypes) is null =>
+                throw new ModLoadException($"{one.FullName} has no public parameterless constructor to be made with"),
+            [Type one] => one,
+            _ => throw new ModLoadException(
+                $"'{assemblyName}' has more than one {nameof(IOpenIgiMod)}: {string.Join(", ", mods.Select(static t => t.FullName))}"),
+        };
     }
 
     // One mod's manifest and code, or nothing when it cannot be played; expectedId is the id a profile listed it under.

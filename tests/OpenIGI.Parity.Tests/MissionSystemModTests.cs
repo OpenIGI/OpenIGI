@@ -8,7 +8,6 @@ using OpenIGI.Engine.Configuration;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Hosting;
-using OpenIGI.Game.Level;
 using OpenIGI.Host;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
@@ -75,14 +74,12 @@ public sealed class MissionSystemModTests
         public bool SawGraphs { get; private set; }
 
         public void Configure(IModBuilder builder) =>
-            builder.EditLevelSystems<MissionLevelBuild>(systems => systems.InsertAfter(
-                MissionSystemNames.Cameras,
-                new LevelSystem<MissionLevelBuild>("Probe.AfterCameras", build =>
-                {
-                    Runs++;
-                    SawScene = build.Scene is not null && build.Solids is not null;
-                    SawGraphs = build.Graphs is not null;
-                })));
+            builder.LevelSystems<MissionLevelBuild>().InsertAfter(MissionSystemNames.Cameras, "Probe.AfterCameras", build =>
+            {
+                Runs++;
+                SawScene = build.Scene is not null && build.Solids is not null;
+                SawGraphs = build.Graphs is not null;
+            });
     }
 
     private sealed class SilentAudio : IAudioDeviceFactory

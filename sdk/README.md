@@ -46,7 +46,7 @@ The project is the mod's properties and nothing else:
 `OpenIGI.Modding.Sdk` is a project SDK. It brings:
 
 - the modding API, and both games' gameplay and presentation assemblies to build against;
-- the source generator that writes the mod's `Configure` from its attributes;
+- the source generator that writes how a mod's task types read their `[ScriptParam]` parameters;
 - the `mod.json`, written from the properties above (`ModConflicts`, `ModHomepage` and `ModMinGameVersion` too);
 - the build that writes `bin/Release/net10.0/mod/`, the folder as players install it.
 
@@ -77,64 +77,64 @@ beside it, is found by the game's own mission scan.
 
 ## Code
 
+A mod's code is one class: the public class of its assembly that implements `IOpenIgiMod`. The loader makes it, and calls
+its `Configure` once for each game the manifest names, before that game starts. `Configure` is the mod's whole wiring,
+read top to bottom, as a minimal-API app's `Program.cs` is:
+
 ```csharp
+using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Modding;
+using OpenIGI.Modding.Presentation;
 
-[OpenIgiMod]
-public sealed partial class Mod
+public sealed class Mod : IOpenIgiMod
 {
-    [ScriptConstant("MyMod_Answer")]
-    public const int Answer = 42;                                    // a constant the level scripts read
+    public void Configure(IModBuilder builder)
+    {
+        BoolCVar loud = builder.Settings.Bool("loud", false, "Says so whenever a guard goes down.");
+        builder.Scripts.Constant("MyMod_Answer", 42);
 
-    [AddsLevelSystem<MissionLevelBuild>(After = MissionSystemNames.Player)]
-    private void Arrive(MissionLevelBuild build) { }                 // a step of each mission's bring-up
+        builder.LevelSystems<MissionLevelBuild>()
+            .InsertAfter(MissionSystemNames.Player, "MyMod.Arrive", build => { /* the player stands here */ });
 
-    [OnGameEvent]
-    private void GuardDown(in HumanKilled killed) { }                // told as each guard dies
-
-    [OnModLoaded(Title = "igi1")]
-    private void Loaded(IModContext context) { }                     // the session's services, files, events and log
-
-    partial void OnConfigure(IModBuilder builder) { }                // anything the attributes do not say
+        builder.Events.On<HumanKilled>(killed => { if (loud.Value) { /* ... */ } });
+        builder.Tasks.Replace<MySoldier>("HumanSoldier");               // the level's soldiers made of the mod's class
+        builder.OnStarted(session => session.Logger.Information("Mods", "on"));
+        builder.Presenters(p => p.ForHud(request => new MyOverlay()));   // from OpenIGI.Modding.Presentation
+    }
 }
-
-[ReplacesTask("HumanSoldier", Title = "igi1")]                       // the level's soldiers are made of this class
-public sealed class MySoldier : GameTask { }
 ```
 
-The class is `partial`; the generator writes its `Configure` and names it to the loader. A member's `Title` limits it to
-one game. What the generator cannot write is an error at build time (`OIGI101`-`OIGI109`): a class that is not partial,
-a method of the wrong shape, a level system placed twice or not at all, a task class that cannot be made.
-
-The builder's own members, for `OnConfigure` or a hand-written `IOpenIgiMod`:
+`builder.Title` says which game is being configured, for a mod that is for both and does something different in each.
 
 | Member | What it does |
 |---|---|
-| `AddModule` | a content module: task types, natives and services, registered after the game's |
-| `AddTask`, `ReplaceTask` | a task type of the mod's own, or the game's made of a mod's class |
-| `AddConstant` | an integer the scripts read by name |
+| `Settings` | `Bool`, `Int`, `Float`: settings of the mod's own, saved as `mod_<id>_<name>` and listed on the settings screen's **Mods** page |
+| `Scripts` | `Constant`: an integer the level scripts read by name |
+| `Tasks` | `Add<T>`: a task type of the mod's own; `Replace<T>`: the game's type made of the mod's class, with an adapter when it reads other parameters |
+| `Events` | `On<TEvent>`: told of one kind of game event |
+| `LevelSystems<TBuild>()` | `InsertBefore`, `InsertAfter`, `Replace`, `Remove`, `Add`: the steps that bring each level up, placed by the game's names for them (`MissionSystemNames`, `Igi2LevelSystems`) |
+| `ReadConfig` | a JSON file of the mod's: the player's copy beside the mod, else the one it embeds |
 | `MountTitleData` | another game's installed data as a device of its own, `IGI2:path` |
-| `EditLevelSystems` | insert, replace or remove a step of each level's bring-up |
-| `Listen` | a listener of one kind of game event |
-| `OnLoaded` | runs once a session has loaded its tables, with an `IModContext` |
+| `AddModule` | a content module, for what the groups do not reach: natives, services, tables |
+| `OnStarted` | runs once a session has loaded its tables, with its services, files, events and log (`IModContext`) |
+| `Presenters` | (`OpenIGI.Modding.Presentation`) what the mod draws: `ForTask`, `ForLevel`, and `ForHud` for an `IHudOverlay` over the player's view |
 
-`ModConfig.Read` reads a settings file the player may keep beside the mod, else the copy the mod embeds.
-
-**Events** (`OpenIGI.Game.Events`), raised by both games once a tick, after the level has run, and only for what is
-listened to: `LevelLoaded`, `LevelTicked`, `MissionEnded`, `ObjectiveChanged`, `PlayerDamaged`, `PlayerKilled`,
-`HumanKilled`, `AlarmChanged`. Nothing in the simulation reads what a listener does, so a mod that listens plays as one
+**Events** (`OpenIGI.Game.Events`), raised by both games once a tick, after the level has run, and only for what a mod is
+told of: `LevelLoaded`, `LevelTicked`, `MissionEnded`, `ObjectiveChanged`, `PlayerDamaged`, `PlayerKilled`,
+`HumanKilled`, `AlarmChanged`. Nothing in the simulation reads what a handler does, so a mod that listens plays as one
 that does not.
 
-**Settings.** A `[CVarContainer]` class of the mod's registers its variables as the mod loads. Name them `mod_<id>_...`:
-the settings screen lists them on its **Mods** page, and a switched-off mod's values are kept in `settings.cfg` until it
-is on again.
+**Settings.** A switched-off mod's values are kept in `settings.cfg` and taken up again when it is on and declares them.
 
-**Drawing.** A class that also implements `IOpenIgiPresentationMod` (`OpenIGI.Modding.Presentation`) adds to the game's
-presenters: `ForTask` draws a task type, `ForLevel` draws over the level, and `ForHud` lays an `IHudOverlay` over the
-player's view after the game's HUD, drawn with the menus' painter and face. `HudOverlayFrame.ToScreen` places a point of
-the world on the screen.
+**Tasks.** A mod's task class is a `partial` `GameTask` whose properties marked `[ScriptParam]` read the parameters the
+level writes for it, in the order it writes them, as the game's own task types do: a source generator writes that reading,
+so the game needs no reflection to load a level.
+
+**Drawing.** `HudOverlayFrame.ToScreen` places a point of the world on the screen; an overlay draws with the menus' painter
+and face.
 
 ## Shaders
 

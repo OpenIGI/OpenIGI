@@ -13,7 +13,7 @@
     {
       "modifiers": [
         { "condition": "(kind == 'data')", "exclude": [ "MyMod.cs" ] },
-        { "condition": "(kind != 'shader')", "exclude": [ "Settings.cs", "shaders/**" ] }
+        { "condition": "(kind != 'shader')", "exclude": [ "shaders/**" ] }
       ]
     }
   ],

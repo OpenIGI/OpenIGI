@@ -25,6 +25,9 @@ public sealed class CVarRegistry
     /// <remarks>Saves every subscriber from having to attach to each variable individually.</remarks>
     public event EventHandler<CVarChangedEventArgs>? AnyChanged;
 
+    /// <summary>Occurs after a variable is registered: one a mod declares as a game starts, after the settings were read.</summary>
+    public event EventHandler<CVarAddedEventArgs>? Added;
+
     /// <summary>Gets the registry the static declarations across the game register into.</summary>
     /// <remarks>
     /// Tests construct their own <see cref="CVarRegistry"/> rather than mutating this one, so a test
@@ -55,6 +58,7 @@ public sealed class CVarRegistry
 
         _ordered.Add(variable);
         variable.Changed += OnVariableChanged;
+        Added?.Invoke(this, new CVarAddedEventArgs(variable));
         return variable;
     }
 

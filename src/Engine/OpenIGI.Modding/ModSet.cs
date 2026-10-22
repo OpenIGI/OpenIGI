@@ -1,3 +1,4 @@
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Content;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
@@ -21,6 +22,7 @@ public sealed class ModSet
     public const string ShadersDirectoryName = "shaders";
 
     private readonly List<InstalledMod> _mods;
+    private readonly Dictionary<(string Mod, string Title), IReadOnlyDictionary<string, object?>> _properties = [];
 
     /// <summary>Initializes a new instance of the <see cref="ModSet"/> class.</summary>
     /// <param name="mods">The mods, in the order they apply.</param>
@@ -50,6 +52,20 @@ public sealed class ModSet
 
     /// <summary>Gets the mods, in the order they apply.</summary>
     public IReadOnlyList<InstalledMod> Mods => _mods;
+
+    /// <summary>Gets what a mod's builder kept for a game as <see cref="Extend"/> configured the mod into it.</summary>
+    /// <param name="mod">The mod.</param>
+    /// <param name="title">The game.</param>
+    /// <returns>What it kept, by key; nothing before the game is extended, or for a mod with no code.</returns>
+    /// <remarks>For the assemblies that extend <see cref="IModBuilder"/>: the modding presentation library reads its presenters here.</remarks>
+    public IReadOnlyDictionary<string, object?> PropertiesOf(InstalledMod mod, GameTitle title)
+    {
+        ArgumentNullException.ThrowIfNull(mod);
+        ArgumentNullException.ThrowIfNull(title);
+        return _properties.TryGetValue((mod.Manifest.Id, title.Id), out IReadOnlyDictionary<string, object?>? kept)
+            ? kept
+            : new Dictionary<string, object?>();
+    }
 
     /// <summary>Gets the mods that apply to a game.</summary>
     /// <param name="title">The game.</param>
@@ -82,7 +98,13 @@ public sealed class ModSet
             }
 
             campaigns.AddRange(mod.Manifest.Campaigns.Select(static c => new TitleCampaign(c.Name, c.Missions)));
-            mod.Code?.Configure(new ModBuilder(mod, runtime.Title, added, edits));
+            if (mod.Code is { } code)
+            {
+                ModBuilder builder = new(mod, runtime.Title, added, edits, CVarRegistry.Default);
+                code.Configure(builder);
+                _properties[(mod.Manifest.Id, runtime.Title.Id)] = new Dictionary<string, object?>(builder.Properties, StringComparer.Ordinal);
+            }
+
             string data = Path.Combine(mod.Directory, DataDirectoryName);
             if (System.IO.Directory.Exists(data))
             {

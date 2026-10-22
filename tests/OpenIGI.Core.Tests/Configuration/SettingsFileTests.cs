@@ -63,8 +63,11 @@ public sealed class SettingsFileTests
             Assert.Contains("mod_nightfall_hard 1", written, StringComparison.Ordinal);
             Assert.DoesNotContain("r_long_gone", written, StringComparison.Ordinal);
 
-            // Once the mod is on again it declares the variable, and its own value is what is written.
+            // Once the mod is on again it declares the variable -- as its game starts, after the file was read -- and takes the
+            // kept value; from then on its own value is what is written.
             NumericCVar<int> hard = CVar.Int("mod_nightfall_hard", 0, 0, 1, CVarOptions.Archive, registry: variables);
+            Assert.Equal(1, hard.Value);
+            Assert.False(console.KeptSettings.ContainsKey("mod_nightfall_hard"));
             hard.Value = 0;
             Assert.DoesNotContain("mod_nightfall_hard", SettingsFile.Render(console), StringComparison.Ordinal);
         }
