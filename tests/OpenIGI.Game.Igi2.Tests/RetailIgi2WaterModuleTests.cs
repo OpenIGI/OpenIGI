@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -34,14 +35,14 @@ public sealed class RetailIgi2WaterModuleTests
     {
         (Igi2CollisionWorld world, _, Igi2WaterBody body) = Build();
         Vector3d centre = body.Position;
-        Igi2LineTrace trace = new(1);
+        WorldLineTrace trace = new(1);
         trace.Starts[0] = new Vector3d(centre.X + 100.0, centre.Y + 50.0, centre.Z + 2048.0);
         trace.Ends[0] = new Vector3d(centre.X + 300.0, centre.Y + 50.0, centre.Z - 2048.0);
         trace.Count = 1;
 
         world.TraceLines(trace, Igi2Water.Group);
 
-        Igi2Intersection hit = trace.Intersections[0];
+        WorldIntersection hit = trace.Intersections[0];
         Assert.True(hit.IsHit);
         Assert.Same(body, hit.HitObject);
         Assert.Equal(centre.Z, hit.Position.Z, 3);
@@ -180,6 +181,6 @@ public sealed class RetailIgi2WaterModuleTests
 
     private sealed class BlindSight : IIgi2SightQuery
     {
-        public bool LineOfSight(Igi2LineOfSight sight, uint groups) => true;
+        public bool LineOfSight(WorldLineOfSight sight, uint groups) => true;
     }
 }

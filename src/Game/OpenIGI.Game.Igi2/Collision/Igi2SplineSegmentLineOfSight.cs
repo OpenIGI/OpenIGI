@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
@@ -27,7 +28,7 @@ public static class Igi2SplineSegmentLineOfSight
     /// <summary>Meets one segment.</summary>
     /// <param name="segment">The segment.</param>
     /// <param name="sight">The line of sight.</param>
-    public static void Meet(Igi2SplineSegment segment, Igi2LineOfSight sight)
+    public static void Meet(Igi2SplineSegment segment, WorldLineOfSight sight)
     {
         ArgumentNullException.ThrowIfNull(segment);
         ArgumentNullException.ThrowIfNull(sight);
@@ -66,8 +67,8 @@ public static class Igi2SplineSegmentLineOfSight
             reached = length;
         }
 
-        Igi2LineTrace cast = new(1) { Includes = sight.Includes };
-        Igi2Intersection hit = cast.Intersections[0];
+        WorldLineTrace cast = new(1) { Includes = sight.Includes };
+        WorldIntersection hit = cast.Intersections[0];
         cast.Ends[0] = end;
         hit.IsHit = false;
         while (true)
@@ -93,7 +94,7 @@ public static class Igi2SplineSegmentLineOfSight
             {
                 sight.IsHit = true;
                 sight.T = (distance / length).F;
-                float transparency = sight.Materials[row]?.QMaterial.Transparency ?? 0f;
+                float transparency = sight.Materials.TransparencyOf(row);
                 sight.Transparency = ((Fpu)sight.Transparency * transparency).F;
                 sight.Material = row;
                 if (sight.Transparency == 0f)

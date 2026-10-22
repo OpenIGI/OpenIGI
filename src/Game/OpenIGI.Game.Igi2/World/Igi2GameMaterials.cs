@@ -3,7 +3,6 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Scripting;
-using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -116,7 +115,7 @@ public sealed class Igi2GameMaterial
 /// a <c>GunShotEffect</c> takes six; a type with no reader takes none.
 /// </para>
 /// </remarks>
-public sealed class Igi2GameMaterials
+public sealed class Igi2GameMaterials : OpenIGI.Game.Physics.IWorldMaterialTransparency
 {
     /// <summary>The material script.</summary>
     public const string Script = "LOCAL:material/material.qvm";
@@ -143,6 +142,9 @@ public sealed class Igi2GameMaterials
     /// <param name="row">The level material row.</param>
     /// <returns>The material, or <see langword="null"/> for a row outside the table or never defined.</returns>
     public Igi2GameMaterial? this[int row] => (uint)row < Rows ? _rows[row] : null;
+
+    /// <inheritdoc/>
+    public float TransparencyOf(int material) => this[material]?.QMaterial.Transparency ?? 0f;
 
     /// <summary>Registers the three natives the script calls and the effect type it names.</summary>
     /// <param name="natives">The script namespace.</param>

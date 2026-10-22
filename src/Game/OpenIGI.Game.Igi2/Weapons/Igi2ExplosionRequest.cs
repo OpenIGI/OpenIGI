@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -36,7 +36,7 @@ public sealed record Igi2ExplosionRequest(
     float BurnRange,
     int FragmentCount,
     int FireballCount,
-    Igi2Intersection? Ground,
+    WorldIntersection? Ground,
     string FragmentModel,
     string Sound,
     int AiEvent,

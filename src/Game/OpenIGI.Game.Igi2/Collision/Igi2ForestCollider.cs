@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
@@ -19,7 +20,7 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// each child only when its region, widened by a margin, still reaches the lines.
 /// </para>
 /// </remarks>
-public sealed class Igi2ForestCollider : IIgi2Collider
+public sealed class Igi2ForestCollider : IWorldCollider
 {
     /// <summary>The material a tree's line trace passes through, <c>iIgnoreMaterial = 32</c>: the foliage.</summary>
     public const int FoliageMaterial = 32;
@@ -28,7 +29,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
     private readonly Vector3f[] _scales;
     private readonly float[][] _orientations;
     private readonly Igi2RigidObject _tree;
-    private readonly Igi2LineTrace _scratch;
+    private readonly WorldLineTrace _scratch;
     private readonly float _treeRadius;
     private readonly float _marginX;
     private readonly float _marginY;
@@ -57,7 +58,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
         _marginY = marginY;
         _halfExtent = ((Fpu)areaSize * 2048.0).F;
         BoundingRadius = ((Fpu)areaSize * 4096.0).F;
-        _scratch = new Igi2LineTrace(32);
+        _scratch = new WorldLineTrace(32);
     }
 
     /// <summary>Gets the stand, as a hit on it reports.</summary>
@@ -142,7 +143,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
     /// position give or take its scaled radius. Every line is traced against such a tree, and the walk stops at the
     /// first tree that becomes the first line's hit, which is then reported as the stand's.
     /// </remarks>
-    public void NextZ(Igi2LineTrace trace)
+    public void NextZ(WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(trace);
         if (_index.Root == Igi2ForestBsp.NoNode)
@@ -167,7 +168,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
     /// a line it struck takes the copy, its local position moved from the tree's frame to the stand's. The walk stops
     /// once as many lines have been struck as there are lines.
     /// </remarks>
-    public void TraceLines(Igi2LineTrace trace)
+    public void TraceLines(WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(trace);
         if (_index.Root == Igi2ForestBsp.NoNode)
@@ -223,7 +224,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
     /// by a radius and a half (<c>Forest_IsLineOutOfNode</c>, <c>0x5A02F0</c>). Each tree is met as a solid model,
     /// foliage and all; one that crosses the sight nearer than anything before blocks it outright and ends the walk.
     /// </remarks>
-    public void LineOfSight(Igi2LineOfSight sight)
+    public void LineOfSight(WorldLineOfSight sight)
     {
         ArgumentNullException.ThrowIfNull(sight);
         if (_index.Root == Igi2ForestBsp.NoNode)
@@ -237,7 +238,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
         _ = Sight(sight, _index.Root, 0, root, vx, vy);
     }
 
-    private bool Sight(Igi2LineOfSight sight, int node, int level, Region region, float vx, float vy)
+    private bool Sight(WorldLineOfSight sight, int node, int level, Region region, float vx, float vy)
     {
         Igi2ForestBspNode n = _index.Nodes[node];
         Vector3f at = _index.Positions[n.Tree];
@@ -280,7 +281,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
     /// left, below, right and above in turn, each cut moving the start's other coordinate to where the line crosses that
     /// side, and it is in when a cut falls strictly within the side's span.
     /// </remarks>
-    private bool IsLineOut(Region region, Igi2LineOfSight sight)
+    private bool IsLineOut(Region region, WorldLineOfSight sight)
     {
         float x1 = ((Fpu)sight.Start.X - Position.X).F, y1 = ((Fpu)sight.Start.Y - Position.Y).F;
         float x2 = ((Fpu)sight.End.X - Position.X).F, y2 = ((Fpu)sight.End.Y - Position.Y).F;
@@ -347,7 +348,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
             | (float.IsNegative(((Fpu)maxY - py).F) ? 8 : 0);
     }
 
-    private bool Ground(Igi2LineTrace trace, int node, int level, Region region, float px, float py)
+    private bool Ground(WorldLineTrace trace, int node, int level, Region region, float px, float py)
     {
         Igi2ForestBspNode n = _index.Nodes[node];
         Vector3f at = _index.Positions[n.Tree];
@@ -366,7 +367,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
         {
             Place(n.Tree, at);
             _tree.NextZ(trace);
-            Igi2Intersection first = trace.Intersections[0];
+            WorldIntersection first = trace.Intersections[0];
             if (first.IsHit && ReferenceEquals(first.HitObject, _tree))
             {
                 first.HitObject = this;
@@ -380,7 +381,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
             && Ground(trace, farChild, level + 1, far, px, py);
     }
 
-    private bool Lines(Igi2LineTrace trace, int node, int level, Region region, float px, float py, Rectangle lines, ref int struck)
+    private bool Lines(WorldLineTrace trace, int node, int level, Region region, float px, float py, Rectangle lines, ref int struck)
     {
         Igi2ForestBspNode n = _index.Nodes[node];
         Vector3f at = _index.Positions[n.Tree];
@@ -402,7 +403,7 @@ public sealed class Igi2ForestCollider : IIgi2Collider
             _tree.NextZ(_scratch);
             for (int i = 0; i < trace.Count; i++)
             {
-                Igi2Intersection copy = _scratch.Intersections[i];
+                WorldIntersection copy = _scratch.Intersections[i];
                 if (!copy.IsHit || !ReferenceEquals(copy.HitObject, _tree))
                 {
                     continue;

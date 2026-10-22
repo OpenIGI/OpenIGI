@@ -1,16 +1,16 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi2.Collision;
+namespace OpenIGI.Game.Physics;
 
 /// <summary>What a line struck, <c>QIntersection_s</c>: the nearest surface so far, which every handler a trace reaches may replace.</summary>
 /// <remarks>
 /// A trace hands each object's handler the same record for each of its lines; a handler only writes it when its
 /// own hit is nearer than the one already there, so after the last object the record holds the nearest hit.
 /// </remarks>
-public sealed class Igi2Intersection
+public sealed class WorldIntersection
 {
     /// <summary>Gets or sets what was struck, <c>ptHitObj</c>.</summary>
-    public IIgi2Collider? HitObject { get; set; }
+    public IWorldCollider? HitObject { get; set; }
 
     /// <summary>Gets or sets where, in the world, <c>tPos</c>.</summary>
     public Vector3d Position { get; set; }
@@ -56,7 +56,7 @@ public sealed class Igi2Intersection
 
     /// <summary>Takes on every field of another record, as a structure copy does.</summary>
     /// <param name="other">The record to copy.</param>
-    public void CopyFrom(Igi2Intersection other)
+    public void CopyFrom(WorldIntersection other)
     {
         ArgumentNullException.ThrowIfNull(other);
         HitObject = other.HitObject;

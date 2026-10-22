@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Physics;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -32,7 +33,7 @@ public static class Igi2SplineSegmentTrace
     /// <summary>Traces every line of a batch against one segment, replacing each line's result where the segment is nearer.</summary>
     /// <param name="segment">The segment.</param>
     /// <param name="trace">The lines and their running results.</param>
-    public static void Trace(Igi2SplineSegment segment, Igi2LineTrace trace)
+    public static void Trace(Igi2SplineSegment segment, WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(segment);
         ArgumentNullException.ThrowIfNull(trace);
@@ -68,7 +69,7 @@ public static class Igi2SplineSegmentTrace
     /// An earlier hit is taken into the segment by its frame's transpose and its scale's inverse, both unit for a bent segment, and
     /// measured from the start z, x, y. A hit is the crossing put back at the segment's position, its normal the bent face's.
     /// </remarks>
-    private static bool BentLine(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, Vector3d e, Igi2Intersection hit)
+    private static bool BentLine(Igi2SplineSegment o, Igi2CollisionMesh mesh, WorldLineTrace trace, Vector3d s, Vector3d e, WorldIntersection hit)
     {
         Vector3d p = o.Position;
         float r = o.Radius;
@@ -117,7 +118,7 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>The bent segment's hit: the crossing at the segment's position, the bent face's normal, reversed when flipped.</summary>
-    private static void RecordBent(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, MeshRaySearch<Fpu> search, Igi2Intersection hit)
+    private static void RecordBent(Igi2SplineSegment o, Igi2CollisionMesh mesh, WorldLineTrace trace, MeshRaySearch<Fpu> search, WorldIntersection hit)
     {
         int[] faces = mesh.Arrays.Faces;
         float[] v = mesh.Arrays.Vertices;
@@ -153,7 +154,7 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>One line; <see langword="false"/> when its bounds miss the segment, which ends the call.</summary>
-    private static bool Line(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, Vector3d e, Igi2Intersection hit)
+    private static bool Line(Igi2SplineSegment o, Igi2CollisionMesh mesh, WorldLineTrace trace, Vector3d s, Vector3d e, WorldIntersection hit)
     {
         Vector3d p = o.Position;
         float r = o.Radius;
@@ -223,7 +224,7 @@ public static class Igi2SplineSegmentTrace
     }
 
     /// <summary>Writes the segment's hit into the line's result, if it is nearer than what was there before the segment.</summary>
-    private static void Record(Igi2SplineSegment o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, bool wasHit, MeshRaySearch<Fpu> search, Igi2Intersection hit)
+    private static void Record(Igi2SplineSegment o, Igi2CollisionMesh mesh, WorldLineTrace trace, Vector3d s, bool wasHit, MeshRaySearch<Fpu> search, WorldIntersection hit)
     {
         // The crossing back into the world: from the middle, stretched, and added to the position at 24 bits.
         IReadOnlyList<float> m = o.Orientation;

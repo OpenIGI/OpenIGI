@@ -1,3 +1,5 @@
+using OpenIGI.Game.Physics;
+
 namespace OpenIGI.Game.Igi2.Collision;
 
 /// <summary>Which solids take a mark where they are struck: the types that answer <c>CreateBulletHole</c>.</summary>
@@ -17,7 +19,7 @@ public static class Igi2BulletHoles
     /// <summary>Whether a struck solid takes a mark.</summary>
     /// <param name="struck">What was struck.</param>
     /// <returns><see langword="true"/> when it answers <c>CreateBulletHole</c>.</returns>
-    public static bool Takes(IIgi2Collider struck) => struck switch
+    public static bool Takes(IWorldCollider struck) => struck switch
     {
         Igi2RigidObject { Group: Igi2CollisionWorld.ForestGroup } => false,
         Igi2RigidObject { Owner: Igi2CollisionOwner owner } => !Unmarked.Contains(owner.TypeName),

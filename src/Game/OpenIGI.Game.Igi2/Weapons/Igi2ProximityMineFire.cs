@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -31,7 +32,7 @@ internal sealed class Igi2ProximityMineFire(bool remote) : IIgi2FireHandler
     /// <summary>The kinds of vehicle a mine is not laid on: <c>Vehicle</c> and the types derived from it.</summary>
     private static readonly HashSet<string> Vehicles = new(StringComparer.Ordinal) { "Vehicle", "Car", "Plane", "Train", "Heli", "Missile" };
 
-    private readonly Igi2LineTrace _trace = new(1);
+    private readonly WorldLineTrace _trace = new(1);
 
     /// <inheritdoc/>
     public bool HasRelease => false;
@@ -60,10 +61,10 @@ internal sealed class Igi2ProximityMineFire(bool remote) : IIgi2FireHandler
             _trace.Count = 1;
             _trace.Mesh = 0;
             _trace.TracePortals = false;
-            _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
+            _trace.IgnoreMaterial = WorldLineTrace.AirMaterial;
             _trace.Includes = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(request.Operator, null, 1f));
             world.Collision.TraceLines(_trace, uint.MaxValue);
-            Igi2Intersection hit = _trace.Intersections[0];
+            WorldIntersection hit = _trace.Intersections[0];
             if (hit.IsHit && !Refuses(hit.HitObject, world))
             {
                 Vector3f n = hit.Normal;
@@ -109,7 +110,7 @@ internal sealed class Igi2ProximityMineFire(bool remote) : IIgi2FireHandler
         string FireSound);
 
     // A human, glass, a door or a vehicle takes no mine.
-    private static bool Refuses(IIgi2Collider? struck, IIgi2GunShotWorld world) =>
+    private static bool Refuses(IWorldCollider? struck, IIgi2GunShotWorld world) =>
         struck is not null
         && (world.IsHuman(struck)
             || struck.Owner is Igi2CollisionOwner { GlassKey: not null }

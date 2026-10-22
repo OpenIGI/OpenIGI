@@ -1,22 +1,15 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi2.Collision;
-
-/// <summary>The light a trace reads where it strikes an unlit surface: the level's ambient and its sun.</summary>
-public interface IIgi2SceneLighting
-{
-    /// <summary>Gets the ambient colour the level's global light sets (the globals <c>igi2 0x7F9166C</c>–<c>0x7F91674</c>).</summary>
-    Vector3f Ambient { get; }
-
-    /// <summary>Gets the sun, <c>SkyDome_ptDirlight</c>, if the level has one.</summary>
-    /// <param name="direction">The direction the sun's light shines toward a surface it lights, <c>tDir</c>.</param>
-    /// <param name="colour">The colour of a lit face, <c>tFrontColor</c>.</param>
-    /// <returns>Whether there is a sun.</returns>
-    bool TryGetSun(out Vector3f direction, out Vector3f colour);
-}
+namespace OpenIGI.Game.Physics;
 
 /// <summary>A batch of lines traced together, <c>TraceLinesContext_s</c>: their ends, their results, and what may stop them.</summary>
-public sealed class Igi2LineTrace
+/// <remarks>
+/// The engine's own: both games build it the same way, stamped <c>0x41424344</c>, and send it to every object of the world's
+/// trees along the lines -- <c>World_TraceLines</c> (<c>0x4CC2A0</c>; <c>igi2 0x551640</c>) -- whose handlers keep the
+/// nearer of each line's results. Project I.G.I.'s human answers it with <c>0x45F500</c>, as I.G.I. 2's with
+/// <c>Human_TraceLinesHandler</c>.
+/// </remarks>
+public sealed class WorldLineTrace
 {
     private int _count;
 
@@ -24,18 +17,18 @@ public sealed class Igi2LineTrace
     /// <remarks><c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>) sets <c>iIgnoreMaterial</c> to zero.</remarks>
     public const int AirMaterial = 0;
 
-    /// <summary>Initializes a new instance of the <see cref="Igi2LineTrace"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="WorldLineTrace"/> class.</summary>
     /// <param name="lineCount">How many lines the batch traces.</param>
-    public Igi2LineTrace(int lineCount)
+    public WorldLineTrace(int lineCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(lineCount);
         Starts = new Vector3d[lineCount];
         Ends = new Vector3d[lineCount];
-        Intersections = new Igi2Intersection[lineCount];
+        Intersections = new WorldIntersection[lineCount];
         Count = lineCount;
         for (int i = 0; i < lineCount; i++)
         {
-            Intersections[i] = new Igi2Intersection();
+            Intersections[i] = new WorldIntersection();
         }
     }
 
@@ -59,7 +52,7 @@ public sealed class Igi2LineTrace
     public Vector3d[] Ends { get; }
 
     /// <summary>Gets each line's result, <c>ptIntersection</c>.</summary>
-    public Igi2Intersection[] Intersections { get; }
+    public WorldIntersection[] Intersections { get; }
 
     /// <summary>Gets or sets which of an object's collision meshes the lines meet, <c>iMesh</c>.</summary>
     public int Mesh { get; set; }
@@ -75,7 +68,7 @@ public sealed class Igi2LineTrace
     public Func<object, bool>? Includes { get; set; }
 
     /// <summary>Gets or sets the light an unlit hit reads, or <see langword="null"/> for none.</summary>
-    public IIgi2SceneLighting? Lighting { get; set; }
+    public IWorldSceneLighting? Lighting { get; set; }
 
     /// <summary>
     /// Gets or sets who an object-collision trace is run for, <c>CollisionEvaluateContext_s.ptQTask</c> of the

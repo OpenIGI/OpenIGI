@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -105,9 +106,9 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     private readonly Igi2SplineSegment[] _segments;
     private readonly Igi2ForestCollider[] _forests;
     private readonly List<Igi2BoneCollider> _bodies = [];
-    private readonly List<IIgi2LineCollider> _others = [];
+    private readonly List<IWorldLineCollider> _others = [];
     private readonly List<World.Igi2WaterBody> _waters = [];
-    private readonly IIgi2GroundCollider? _terrain;
+    private readonly IWorldGroundCollider? _terrain;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2CollisionWorld"/> class.</summary>
     /// <param name="objects">The placed solid models.</param>
@@ -116,7 +117,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// <param name="segments">The straight spline segments, or <see langword="null"/> for none.</param>
     public Igi2CollisionWorld(
         IEnumerable<Igi2RigidObject> objects,
-        IIgi2GroundCollider? terrain,
+        IWorldGroundCollider? terrain,
         IEnumerable<Igi2ForestCollider>? forests = null,
         IEnumerable<Igi2SplineSegment>? segments = null)
     {
@@ -161,14 +162,14 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
 
     /// <summary>Puts something in the world that answers lines and sight itself, after the world's own kinds.</summary>
     /// <param name="collider">It.</param>
-    public void AddCollider(IIgi2LineCollider collider)
+    public void AddCollider(IWorldLineCollider collider)
     {
         ArgumentNullException.ThrowIfNull(collider);
         _others.Add(collider);
     }
 
     /// <summary>Gets what answers lines and sight beside the world's own kinds.</summary>
-    public IReadOnlyList<IIgi2LineCollider> OtherColliders => _others;
+    public IReadOnlyList<IWorldLineCollider> OtherColliders => _others;
 
     /// <summary>Gets the bodies of water in the world: only line traces meet their surfaces.</summary>
     public IReadOnlyList<World.Igi2WaterBody> Waters => _waters;
@@ -182,7 +183,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     }
 
     /// <summary>Gets the ground, or <see langword="null"/> for a level with none.</summary>
-    public IIgi2GroundCollider? Terrain => _terrain;
+    public IWorldGroundCollider? Terrain => _terrain;
 
     /// <summary>Gets or sets the ground a body stands on, the level's height grid; <see langword="null"/> for none.</summary>
     public IGroundHeightField? Ground { get; set; }
@@ -197,11 +198,11 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// <returns><see langword="true"/> when the line met something before its end.</returns>
     public bool Cast(Vector3d origin, Vector3d target, out WorldRayHit hit)
     {
-        Igi2LineTrace trace = new(1);
+        WorldLineTrace trace = new(1);
         trace.Starts[0] = origin;
         trace.Ends[0] = target;
         TraceLines(trace, EveryTypeGroup | TerrainGroup);
-        Igi2Intersection met = trace.Intersections[0];
+        WorldIntersection met = trace.Intersections[0];
         if (!met.IsHit)
         {
             hit = default;
@@ -539,7 +540,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// Each end is the start's height plus its distance, added at the FPU's 24 bits (<c>fadd qword</c>, <c>igi2 0x551342</c>).
     /// <c>World_GetNextZNoMaterial</c> (<c>0x550BE0</c>), which physics probes the ground with, is the same query.
     /// </remarks>
-    public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
+    public void NextZ(WorldLineTrace trace, ReadOnlySpan<double> distances, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
         if (distances.Length != trace.Count)
@@ -577,7 +578,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// <c>igi2 0x5516CF</c>), which a stand of trees answers by its ground handler; the ground itself always takes the line
     /// trace. <c>World_TraceLines</c> (<c>0x551640</c>), which physics traces its contact points with, is this at mesh 0.
     /// </remarks>
-    public void TraceLines(Igi2LineTrace trace, uint groups)
+    public void TraceLines(WorldLineTrace trace, uint groups)
     {
         ArgumentNullException.ThrowIfNull(trace);
         bool alongZ = true;
@@ -618,7 +619,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// the same distance is kept.
     /// </para>
     /// </remarks>
-    public bool LineOfSight(Igi2LineOfSight sight, uint groups)
+    public bool LineOfSight(WorldLineOfSight sight, uint groups)
     {
         ArgumentNullException.ThrowIfNull(sight);
         uint objectGroups = groups & ~TerrainGroup;
@@ -656,7 +657,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
                 }
             }
 
-            foreach (IIgi2LineCollider other in _others)
+            foreach (IWorldLineCollider other in _others)
             {
                 if ((objectGroups & (other.Group | EveryTypeGroup)) != 0 && (sight.Includes is not { } passes || passes(other.Owner)))
                 {
@@ -667,7 +668,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
 
         if (sight.Transparency != 0f && (groups & TerrainGroup) != 0 && _terrain is not null)
         {
-            Igi2LineTrace ground = new(1);
+            WorldLineTrace ground = new(1);
             ground.Starts[0] = sight.Start;
             ground.Ends[0] = sight.End;
             TraceLines(ground, TerrainGroup);
@@ -690,14 +691,14 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
     /// The object half of a line trace, <c>World_TraceLinesSpecificMesh</c> (<c>igi2 0x5519C0</c>): every result is reset
     /// to the line's end, and every object whose bounds meet the lines' padded box is traced.
     /// </summary>
-    private void TraceObjects(Igi2LineTrace trace, uint groups, bool lines)
+    private void TraceObjects(WorldLineTrace trace, uint groups, bool lines)
     {
         Vector3d min = trace.Starts[0], max = trace.Starts[0];
         for (int i = 0; i < trace.Count; i++)
         {
             Grow(trace.Starts[i]);
             Grow(trace.Ends[i]);
-            Igi2Intersection hit = trace.Intersections[i];
+            WorldIntersection hit = trace.Intersections[i];
             hit.HitObject = null;
             hit.IsHit = false;
             hit.Position = trace.Ends[i];
@@ -796,7 +797,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
                 }
             }
 
-            foreach (IIgi2LineCollider other in _others)
+            foreach (IWorldLineCollider other in _others)
             {
                 if ((groups & (other.Group | EveryTypeGroup)) != 0 && (trace.Includes is not { } includes || includes(other.Owner)))
                 {

@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -7,7 +7,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 public sealed class Igi2NoExplosionEffects : IIgi2ExplosionEffects
 {
     /// <inheritdoc/>
-    public void BurnMark(Igi2Intersection ground, float radius)
+    public void BurnMark(WorldIntersection ground, float radius)
     {
     }
 

@@ -95,8 +95,8 @@ public sealed class Igi2PhysicsObject
     private static readonly float InertiaScale = BitConverter.Int32BitsToSingle(0x3F8147AE);
 
     private readonly Igi2PhysicsContactPoint[] _points = new Igi2PhysicsContactPoint[MaxContactPoints];
-    private readonly Igi2LineTrace _contactLines = new(MaxContactPoints);
-    private readonly Igi2LineTrace _groundLines = new(MaxContactPoints);
+    private readonly WorldLineTrace _contactLines = new(MaxContactPoints);
+    private readonly WorldLineTrace _groundLines = new(MaxContactPoints);
     private readonly Vector3f[] _arms = new Vector3f[MaxContactPoints];
     private readonly Vector3f[] _armVelocities = new Vector3f[MaxContactPoints];
     private readonly int[] _lineOwners = new int[MaxContactPoints];
@@ -395,7 +395,7 @@ public sealed class Igi2PhysicsObject
         bool letThrough = false;
         for (int j = 0; j < lines; j++)
         {
-            Igi2Intersection hit = _contactLines.Intersections[j];
+            WorldIntersection hit = _contactLines.Intersections[j];
             if (!hit.IsHit)
             {
                 continue;
@@ -625,7 +625,7 @@ public sealed class Igi2PhysicsObject
         Fpu deepest = 0.0;
         for (int j = 0; j < lines; j++)
         {
-            Igi2Intersection hit = _groundLines.Intersections[j];
+            WorldIntersection hit = _groundLines.Intersections[j];
             if (!hit.IsHit)
             {
                 continue;

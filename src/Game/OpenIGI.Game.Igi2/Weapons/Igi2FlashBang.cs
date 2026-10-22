@@ -3,6 +3,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -54,7 +55,7 @@ public sealed partial class Igi2ExplosionWorld
     public Igi2DetectionWorld? FlashSight { get; set; }
 
     /// <inheritdoc/>
-    public void FlashBang(Vector3d position, Igi2Intersection ground, int team)
+    public void FlashBang(Vector3d position, WorldIntersection ground, int team)
     {
         // flashbang.c FlashBang_New: every human receives the event, even outside the range or on the thrower's team.
         Igi2FlashBang flash = new(this, position);

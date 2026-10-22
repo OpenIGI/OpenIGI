@@ -1,10 +1,11 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
 /// <summary>The level's terrain as the collision sees it: the ground's tiles, its discard boxes and its materials.</summary>
-public sealed class Igi2TerrainCollider : IIgi2GroundCollider
+public sealed class Igi2TerrainCollider : IWorldGroundCollider
 {
     /// <summary>The number of level material slots, <c>World_t.aptQMaterial</c>; a terrain material outside them has none.</summary>
     public const int MaterialSlots = 0x40;
@@ -34,7 +35,7 @@ public sealed class Igi2TerrainCollider : IIgi2GroundCollider
     /// discard box has no ground. The hit reports the terrain material's level material, the triangle's normal in
     /// both frames, and the lightmap's light.
     /// </remarks>
-    public void NextZ(Igi2LineTrace trace)
+    public void NextZ(WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(trace);
 
@@ -59,7 +60,7 @@ public sealed class Igi2TerrainCollider : IIgi2GroundCollider
                 continue;
             }
 
-            Igi2Intersection hit = trace.Intersections[i];
+            WorldIntersection hit = trace.Intersections[i];
             if (Igi2DiscardBox.AnyContains(_surface.DiscardBoxes, relativeX, relativeY)
                 || (hit.IsHit && !(distance < hit.Distance)))
             {
@@ -85,7 +86,7 @@ public sealed class Igi2TerrainCollider : IIgi2GroundCollider
 
     /// <summary>Lines in any direction against the ground, <c>Terrain_TraceLinesHandler1</c> (<c>igi2 0x5730B0</c>).</summary>
     /// <param name="trace">The lines and their running results; a hit replaces a line's result only when nearer.</param>
-    public void TraceLines(Igi2LineTrace trace)
+    public void TraceLines(WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(trace);
         Igi2TerrainLineTrace.Trace(this, _surface, trace);

@@ -3,6 +3,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
@@ -50,11 +51,11 @@ public sealed class RetailIgi2PlayerShotTests
         (RetailIgi2Mission1 m, Igi2TitlePlayer player) = Player();
         Igi2HumanPlayer human = player.Human;
         Vector3d p = human.Position;
-        Igi2LineTrace trace = new(1) { Includes = static o => o is not IWeaponCollisionTarget t || t.EvaluateWeaponCollision(new WeaponCollisionQuery(null, null, 1f)) };
+        WorldLineTrace trace = new(1) { Includes = static o => o is not IWeaponCollisionTarget t || t.EvaluateWeaponCollision(new WeaponCollisionQuery(null, null, 1f)) };
         trace.Starts[0] = new Vector3d(p.X + 20480.0, p.Y, p.Z + 5120.0);
         trace.Ends[0] = new Vector3d(p.X - 20480.0, p.Y, p.Z + 5120.0);
         m.Collision!.TraceLines(trace, Igi2CollisionWorld.HumanGroup);
-        Igi2Intersection hit = trace.Intersections[0];
+        WorldIntersection hit = trace.Intersections[0];
         Assert.True(hit.IsHit);
         Assert.Same(human, hit.HitObject is Igi2BoneCollider collider ? collider.Owner : null);
 

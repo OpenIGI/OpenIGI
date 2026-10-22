@@ -1,10 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -57,7 +56,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
     private const double AirResistanceCoefficient = 0.00032699998700991273;
 
     private readonly Wing[] _wings = new Wing[VehicleTypeDefinition.MaxWings];
-    private readonly Igi2LineTrace _below = new(1);
+    private readonly WorldLineTrace _below = new(1);
     private readonly Igi2ExplosionWorld _explosions;
     private readonly Igi2PhysicsWorld _world;
     private readonly IgiRandom _stream;
@@ -180,7 +179,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         if (Body.ContactCount != 0)
         {
             Vector3d at = Body.Position;
-            Igi2Intersection ground = Below(at, -12288.0);
+            WorldIntersection ground = Below(at, -12288.0);
             bool ballistic = Type.Guidance == Ballistic;
             _explosions.New(
                 at,
@@ -212,13 +211,13 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         return true;
     }
 
-    private Igi2Intersection Below(Vector3d at, double distance)
+    private WorldIntersection Below(Vector3d at, double distance)
     {
         _below.Starts[0] = at;
         _below.Count = 1;
         _world.Query.NextZ(_below, [distance], uint.MaxValue);
-        Igi2Intersection hit = _below.Intersections[0];
-        return new Igi2Intersection
+        WorldIntersection hit = _below.Intersections[0];
+        return new WorldIntersection
         {
             HitObject = hit.HitObject,
             Position = hit.Position,

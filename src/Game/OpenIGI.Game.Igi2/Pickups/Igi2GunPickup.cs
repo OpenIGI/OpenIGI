@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Pickups;
 
@@ -113,7 +114,7 @@ public sealed class Igi2GunPickup
     public const float Friction = 0.0083333338f;
 
     private static readonly float SpeedLimitDown = -1228.8f;
-    private readonly Igi2LineTrace _fall = new(6) { Mesh = FallMesh, Includes = static owner => !Igi2ObjectCollision.PassesThrough(owner) };
+    private readonly WorldLineTrace _fall = new(6) { Mesh = FallMesh, Includes = static owner => !Igi2ObjectCollision.PassesThrough(owner) };
 
     /// <summary>Gets where it lies, <c>tPos</c> (<c>+0x158</c>).</summary>
     public Vector3d Position { get; private set; }
@@ -302,7 +303,7 @@ public sealed class Igi2GunPickup
         _fall.Evaluator = this;
         world.TraceLines(_fall, FallGroups);
 
-        Igi2Intersection below = _fall.Intersections[4], above = _fall.Intersections[5];
+        WorldIntersection below = _fall.Intersections[4], above = _fall.Intersections[5];
         bool anyHit = false;
         for (int i = 0; i < 6; i++)
         {
@@ -316,7 +317,7 @@ public sealed class Igi2GunPickup
             int hits = 0;
             for (int i = 0; i < 4; i++)
             {
-                Igi2Intersection hit = _fall.Intersections[i];
+                WorldIntersection hit = _fall.Intersections[i];
                 if (!hit.IsHit || hit.HitObject is Igi2TerrainCollider or World.Igi2WaterBody)
                 {
                     continue;
@@ -521,7 +522,7 @@ public sealed class Igi2GunPickup
             Fpu oy = ((Fpu)m[4] * along) + ((Fpu)m[3] * 0f) + ((Fpu)m[5] * 0f);
             Fpu oz = ((Fpu)m[7] * along) + ((Fpu)m[6] * 0f) + ((Fpu)m[8] * 0f);
             Vector3d point = new((ox + Position.X).Value, (oy + Position.Y).Value, (oz + Position.Z).Value);
-            if (sight.LineOfSight(new Igi2LineOfSight(eyes, point, materials), SightGroups))
+            if (sight.LineOfSight(new WorldLineOfSight(eyes, point, materials), SightGroups))
             {
                 return true;
             }

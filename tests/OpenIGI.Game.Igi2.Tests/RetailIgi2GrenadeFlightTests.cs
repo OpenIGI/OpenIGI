@@ -3,11 +3,10 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -146,7 +145,7 @@ public sealed class RetailIgi2GrenadeFlightTests
 
     private static double Ground(Igi2CollisionWorld world, Vector3d at)
     {
-        Igi2LineTrace probe = new(1);
+        WorldLineTrace probe = new(1);
         probe.Starts[0] = new Vector3d(at.X, at.Y, at.Z + 4096.0);
         world.NextZ(probe, [-65536.0], 0xFFFFFFFF);
         return probe.Intersections[0].IsHit ? probe.Intersections[0].Position.Z : double.NegativeInfinity;

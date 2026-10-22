@@ -34,7 +34,7 @@ public sealed partial class Igi2CarTask
     /// <summary>How far above its contact point a wheel touches the ground: 0.4 m.</summary>
     public const float ContactLift = 1638.4000244140625f;
 
-    private readonly Igi2LineTrace _suspension = new(CarTypeDefinition.MaxWheels);
+    private readonly WorldLineTrace _suspension = new(CarTypeDefinition.MaxWheels);
     private readonly int[] _suspensionWheels = new int[CarTypeDefinition.MaxWheels];
 
     /// <summary>
@@ -200,7 +200,7 @@ public sealed partial class Igi2CarTask
             int w = _suspensionWheels[i];
             CarWheelTypeDefinition wheel = type.Wheels[w];
             Igi2PhysicsContactPoint point = body.ContactPoints[wheel.ContactPoint];
-            Igi2Intersection hit = _suspension.Intersections[i];
+            WorldIntersection hit = _suspension.Intersections[i];
             float compression = 0f;
             bool contact = false;
             if (hit.IsHit)

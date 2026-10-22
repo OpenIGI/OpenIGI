@@ -11,7 +11,7 @@ internal static class Igi2CameraClearance
     // the player's own body, and the ground is below it.
     public static void AssertClear(Collision.Igi2CollisionWorld world, Igi2HumanPlayer human, Vector3d eye)
     {
-        Collision.Igi2LineTrace near = new(6);
+        OpenIGI.Game.Physics.WorldLineTrace near = new(6);
         Vector3d[] axes = [new(1, 0, 0), new(-1, 0, 0), new(0, 1, 0), new(0, -1, 0), new(0, 0, 1), new(0, 0, -1)];
         for (int i = 0; i < axes.Length; i++)
         {
@@ -22,11 +22,11 @@ internal static class Igi2CameraClearance
         world.TraceLines(near, uint.MaxValue);
         for (int i = 0; i < axes.Length; i++)
         {
-            Collision.Igi2Intersection hit = near.Intersections[i];
+            OpenIGI.Game.Physics.WorldIntersection hit = near.Intersections[i];
             Assert.False(hit.IsHit && !ReferenceEquals(hit.HitObject?.Owner, human), $"the camera at {eye} is against something along {axes[i]}.");
         }
 
-        Collision.Igi2LineTrace up = new(1);
+        OpenIGI.Game.Physics.WorldLineTrace up = new(1);
         up.Starts[0] = eye;
         up.Ends[0] = eye + new Vector3d(0, 0, 409600.0);
         world.TraceLines(up, Collision.Igi2CollisionWorld.TerrainGroup);

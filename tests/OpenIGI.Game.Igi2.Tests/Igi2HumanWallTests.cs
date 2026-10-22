@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -117,7 +118,7 @@ public sealed class Igi2HumanWallTests
     /// <summary>The nearest steep surface around a point at waist height, by casting horizontally in sixteen directions.</summary>
     private static (Vector3d Point, Vector3f Normal) NearestWall(Igi2CollisionWorld world, Vector3d feet)
     {
-        Igi2LineTrace trace = new(16) { Mesh = 1 };
+        WorldLineTrace trace = new(16) { Mesh = 1 };
         for (int i = 0; i < 16; i++)
         {
             double angle = i * Math.PI / 8.0;
@@ -127,8 +128,8 @@ public sealed class Igi2HumanWallTests
         }
 
         world.TraceLines(trace, Igi2RigidObject.RigidGroup);
-        Igi2Intersection? best = null;
-        foreach (Igi2Intersection hit in trace.Intersections)
+        WorldIntersection? best = null;
+        foreach (WorldIntersection hit in trace.Intersections)
         {
             if (hit.IsHit && Math.Abs(hit.Normal.Z) < 0.3f && (best is null || hit.Distance < best.Distance))
             {

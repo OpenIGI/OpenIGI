@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -22,10 +23,10 @@ public sealed class RetailIgi2TerrainColliderTests
         int struck = 0;
         foreach (Vector3d at in Samples(surface))
         {
-            Igi2LineTrace trace = Vertical(at, 4096.0, -4096.0);
+            WorldLineTrace trace = Vertical(at, 4096.0, -4096.0);
             collider.NextZ(trace);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             Assert.True(hit.IsHit);
             Assert.Same(collider, hit.HitObject);
             Assert.Equal("terrain", hit.HitObject?.Owner);
@@ -57,12 +58,12 @@ public sealed class RetailIgi2TerrainColliderTests
         Igi2TerrainCollider collider = new(surface, "terrain");
         Vector3d at = Samples(surface).First();
 
-        Igi2LineTrace above = Vertical(at, 8192.0, 4096.0);
+        WorldLineTrace above = Vertical(at, 8192.0, 4096.0);
         collider.NextZ(above);
         Assert.False(above.Intersections[0].IsHit);
 
-        Igi2LineTrace held = Vertical(at, 4096.0, -4096.0);
-        Igi2Intersection nearer = held.Intersections[0];
+        WorldLineTrace held = Vertical(at, 4096.0, -4096.0);
+        WorldIntersection nearer = held.Intersections[0];
         nearer.IsHit = true;
         nearer.Distance = 1.0;
         Igi2TerrainCollider crate = new(surface, "crate");
@@ -82,7 +83,7 @@ public sealed class RetailIgi2TerrainColliderTests
             surface.Origin.Y + ((box.MinY + (double)box.MaxY) * 0.5),
             0.0);
 
-        Igi2LineTrace trace = new(1);
+        WorldLineTrace trace = new(1);
         trace.Starts[0] = new Vector3d(middle.X, middle.Y, 4096.0 * 1000.0);
         trace.Ends[0] = new Vector3d(middle.X, middle.Y, -4096.0 * 1000.0);
         new Igi2TerrainCollider(surface, "terrain").NextZ(trace);
@@ -155,9 +156,9 @@ public sealed class RetailIgi2TerrainColliderTests
         }
     }
 
-    private static Igi2LineTrace Vertical(Vector3d at, double above, double below)
+    private static WorldLineTrace Vertical(Vector3d at, double above, double below)
     {
-        Igi2LineTrace trace = new(1);
+        WorldLineTrace trace = new(1);
         trace.Starts[0] = new Vector3d(at.X, at.Y, at.Z + above);
         trace.Ends[0] = new Vector3d(at.X, at.Y, at.Z + below);
         return trace;

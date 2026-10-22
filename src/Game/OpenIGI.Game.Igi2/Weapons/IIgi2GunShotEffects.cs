@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -27,14 +27,14 @@ public readonly record struct Igi2ImpactFragments(Vector3d Position, int Fragmen
 /// <param name="Intersection">Where it struck the water.</param>
 /// <param name="Penetration">What was left of the bullet's penetration.</param>
 /// <param name="Effect">The effect the water names.</param>
-public readonly record struct Igi2WaterSplash(Igi2Intersection Intersection, float Penetration, Igi2GunShotEffectParameters Effect);
+public readonly record struct Igi2WaterSplash(WorldIntersection Intersection, float Penetration, Igi2GunShotEffectParameters Effect);
 
 /// <summary>A hole a bullet leaves in what it struck, <c>BulletHole_eCreateBulletHoleTaskEvent</c>.</summary>
 /// <param name="Struck">What was struck.</param>
 /// <param name="Intersection">Where.</param>
 /// <param name="Texture">The hole: the penetrating one where the bullet went on and the effect names one, the other otherwise.</param>
 /// <param name="Size">The hole's size, the effect's <c>vBulletHoleSize</c>.</param>
-public readonly record struct Igi2BulletHoleMark(IIgi2Collider Struck, Igi2Intersection Intersection, string Texture, float Size);
+public readonly record struct Igi2BulletHoleMark(IWorldCollider Struck, WorldIntersection Intersection, string Texture, float Size);
 
 /// <summary>
 /// The two puffs of smoke a bullet raises off a surface half the time, as <c>GunShotEffect_CreateEffectHandler</c>

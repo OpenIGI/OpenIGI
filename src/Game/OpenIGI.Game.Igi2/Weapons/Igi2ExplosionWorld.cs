@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -26,7 +27,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     public const int ShakeTime = 90;
 
     private readonly List<IExplosionHitTarget> _targets = [];
-    private readonly Igi2LineTrace _blast = new(1);
+    private readonly WorldLineTrace _blast = new(1);
 
     /// <summary>Gets the run stream.</summary>
     public IgiRandom Random { get; } = random;
@@ -155,7 +156,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
         float burnRange,
         int fragmentCount,
         int fireballCount,
-        Igi2Intersection? ground,
+        WorldIntersection? ground,
         string fragmentModel,
         string sound,
         int aiEvent,
@@ -330,7 +331,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             _blast.Ends[0] = end;
             _blast.Count = 1;
             collision.TraceLines(_blast, BlastGroups);
-            Igi2Intersection crossed = _blast.Intersections[0];
+            WorldIntersection crossed = _blast.Intersections[0];
             if (!crossed.IsHit || (crossed.EnterMaterial ?? crossed.LeaveMaterial) is not int row)
             {
                 break;

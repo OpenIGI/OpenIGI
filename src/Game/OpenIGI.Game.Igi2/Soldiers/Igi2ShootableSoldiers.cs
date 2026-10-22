@@ -2,8 +2,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 
@@ -83,7 +83,7 @@ public sealed class Igi2ShootableSoldiers : IShootableBodies
     // One soldier as a shot meets it: its task, and its own bone collider.
     private sealed class Body(Igi2HumanSoldierTask task, Igi2HumanSoldier soldier) : IShootableBody
     {
-        private readonly Igi2LineTrace _trace = new(1);
+        private readonly WorldLineTrace _trace = new(1);
 
         public GameTask Task => task;
 
@@ -100,9 +100,9 @@ public sealed class Igi2ShootableSoldiers : IShootableBodies
             _trace.Starts[0] = origin;
             _trace.Ends[0] = target;
             _trace.Count = 1;
-            _trace.Intersections[0] = new Igi2Intersection();
+            _trace.Intersections[0] = new WorldIntersection();
             collider.TraceLines(_trace);
-            Igi2Intersection met = _trace.Intersections[0];
+            WorldIntersection met = _trace.Intersections[0];
             if (!met.IsHit)
             {
                 return false;

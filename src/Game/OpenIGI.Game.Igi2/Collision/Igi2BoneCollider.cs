@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -89,7 +90,7 @@ public interface IIgi2BonedBody
 /// The type links no ground-query handler, so vertical queries pass through it; only line traces meet it. A human's own line
 /// handler (<c>Human_TraceLinesHandler</c>, <c>0x4FF070</c>) hands single-player traces straight to this one.
 /// </remarks>
-public sealed class Igi2BoneCollider(IIgi2BonedBody body, object owner) : IIgi2Collider
+public sealed class Igi2BoneCollider(IIgi2BonedBody body, object owner) : IWorldCollider
 {
     /// <summary>Gets the object.</summary>
     public IIgi2BonedBody Body { get; } = body ?? throw new ArgumentNullException(nameof(body));
@@ -102,13 +103,13 @@ public sealed class Igi2BoneCollider(IIgi2BonedBody body, object owner) : IIgi2C
 
     /// <inheritdoc/>
     /// <remarks>Nothing: <c>BoneDynCubeObj_GenericOpen</c> (<c>igi2 0x567930</c>) links no handler for the ground query.</remarks>
-    public void NextZ(Igi2LineTrace trace)
+    public void NextZ(WorldLineTrace trace)
     {
     }
 
     /// <summary>Traces lines against the object, replacing each line's result where it is struck nearer.</summary>
     /// <param name="trace">The lines and their running results.</param>
-    public void TraceLines(Igi2LineTrace trace) => Igi2BoneTrace.Trace(this, trace);
+    public void TraceLines(WorldLineTrace trace) => Igi2BoneTrace.Trace(this, trace);
 }
 
 /// <summary>
@@ -134,7 +135,7 @@ public static class Igi2BoneTrace
     /// <summary>Traces every line of a batch against one boned object.</summary>
     /// <param name="collider">The object.</param>
     /// <param name="trace">The lines and their running results.</param>
-    public static void Trace(Igi2BoneCollider collider, Igi2LineTrace trace)
+    public static void Trace(Igi2BoneCollider collider, WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(collider);
         ArgumentNullException.ThrowIfNull(trace);
@@ -249,7 +250,7 @@ public static class Igi2BoneTrace
         return posed;
     }
 
-    private static void Line(Igi2BoneCollider collider, Igi2BoneMesh mesh, float[] v, Vector3d start, Vector3d end, Igi2Intersection hit)
+    private static void Line(Igi2BoneCollider collider, Igi2BoneMesh mesh, float[] v, Vector3d start, Vector3d end, WorldIntersection hit)
     {
         IIgi2BonedBody body = collider.Body;
         Vector3d p = body.Position;
@@ -299,7 +300,7 @@ public static class Igi2BoneTrace
         Record(collider, mesh, v, search, hit);
     }
 
-    private static void Record(Igi2BoneCollider collider, Igi2BoneMesh mesh, float[] v, MeshRaySearch<Fpu> search, Igi2Intersection hit)
+    private static void Record(Igi2BoneCollider collider, Igi2BoneMesh mesh, float[] v, MeshRaySearch<Fpu> search, WorldIntersection hit)
     {
         IIgi2BonedBody body = collider.Body;
         Matrix3f o = body.Orientation;

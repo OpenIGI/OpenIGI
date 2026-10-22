@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -96,7 +97,7 @@ public sealed class Igi2GunShotInstant
 /// <param name="Direction">The bullet's reflection off a front face; its own direction out of a back face.</param>
 /// <param name="Penetration">What was left of its penetration.</param>
 /// <param name="Continues">Whether it went on through the face.</param>
-public sealed record Igi2GunShotHitRecord(Igi2MaterialEffect Effect, Igi2Intersection Intersection, Vector3f Direction, float Penetration, bool Continues);
+public sealed record Igi2GunShotHitRecord(Igi2MaterialEffect Effect, WorldIntersection Intersection, Vector3f Direction, float Penetration, bool Continues);
 
 /// <summary>
 /// The shots a weapon fires as bullets, its <c>GunShot</c> task: fired this tick, traced this tick, gone by the next.
@@ -157,7 +158,7 @@ public sealed class Igi2GunShot
     };
 
     private readonly List<Igi2GunShotInstant> _instants = new(MaxInstants);
-    private readonly Igi2LineTrace _trace = new(1);
+    private readonly WorldLineTrace _trace = new(1);
     private readonly List<Igi2GunShotHitRecord> _hits = [];
 
     /// <summary>Gets or sets what the shot passes through as though it were not there, <c>ptGunShotIgnoreQTaskRef</c>.</summary>
@@ -257,7 +258,7 @@ public sealed class Igi2GunShot
         WeaponCollisionQuery query = new(shooter, Ignore, hitProbability);
         _trace.Mesh = 0;
         _trace.TracePortals = false;
-        _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
+        _trace.IgnoreMaterial = WorldLineTrace.AirMaterial;
         _trace.Includes = WeaponCollisionIncludes(query);
 
         bool rung = false;
@@ -407,7 +408,7 @@ public sealed class Igi2GunShot
         {
             _trace.Starts[0] = start;
             _trace.Ends[0] = end;
-            Igi2Intersection hit = _trace.Intersections[0];
+            WorldIntersection hit = _trace.Intersections[0];
             hit.EnterMaterial = null;
             hit.LeaveMaterial = null;
             world.Collision.TraceLines(_trace, groups);
@@ -449,7 +450,7 @@ public sealed class Igi2GunShot
     /// <returns>Whether the bullet stops here: no penetration left, or no room for the face's effect.</returns>
     private bool Enter(
         Igi2GunShotInstant bullet,
-        Igi2Intersection hit,
+        WorldIntersection hit,
         int row,
         Vector3d start,
         Vector3d end,
@@ -511,7 +512,7 @@ public sealed class Igi2GunShot
     /// more penetration than the material takes, paying it; otherwise it stops.
     /// </summary>
     /// <returns>Whether the bullet stops here.</returns>
-    private bool Leave(Igi2GunShotInstant bullet, Igi2Intersection hit, IIgi2GunShotWorld world)
+    private bool Leave(Igi2GunShotInstant bullet, WorldIntersection hit, IIgi2GunShotWorld world)
     {
         if (hit.LeaveMaterial is not { } row)
         {
@@ -578,9 +579,9 @@ public sealed class Igi2GunShot
         return new Vector3f((twiceX - a).F, (new Fpu(twiceY) - b).F, (new Fpu(twiceZ) - cs).F);
     }
 
-    private static Igi2Intersection Copy(Igi2Intersection hit)
+    private static WorldIntersection Copy(WorldIntersection hit)
     {
-        Igi2Intersection copy = new();
+        WorldIntersection copy = new();
         copy.CopyFrom(hit);
         return copy;
     }

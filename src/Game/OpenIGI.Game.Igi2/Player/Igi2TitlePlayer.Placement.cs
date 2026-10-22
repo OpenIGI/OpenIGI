@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -14,7 +14,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerPlacement
     {
         if (!CanPreviewLook) { return false; }
         // Remaster developer policy: PlayerCamera.Place/PlayerBody.PlaceOnGround search up to 500 metres below the camera.
-        Igi2LineTrace trace = new(1) { Mesh = 1 };
+        WorldLineTrace trace = new(1) { Mesh = 1 };
         trace.Starts[0] = new(cameraPosition.X, cameraPosition.Y,
             ((Fpu)cameraPosition.Z + HumanGroundQuery.ProbeOriginStandingInUnits).Value);
         CollisionWorld.NextZ(trace, [-PlayerBody.PlacementSearchUnits], uint.MaxValue);

@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Collision;
+namespace OpenIGI.Game.Physics;
 
 /// <summary>
 /// One line of sight, <c>LineOfSightContext_s</c> as <c>World_LineOfSight</c> (<c>igi2 0x551F60</c>) fills it: the line,
@@ -12,13 +11,13 @@ namespace OpenIGI.Game.Igi2.Collision;
 /// material) stops it outright; a face it enters from the front lets through the material's share of what is left. The
 /// nearest material it crossed is kept.
 /// </remarks>
-public sealed class Igi2LineOfSight
+public sealed class WorldLineOfSight
 {
-    /// <summary>Initializes a new instance of the <see cref="Igi2LineOfSight"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="WorldLineOfSight"/> class.</summary>
     /// <param name="start">Where it starts, <c>ptStart</c>.</param>
     /// <param name="end">Where it ends, <c>ptEnd</c>.</param>
     /// <param name="materials">The session's materials, whose transparency it passes.</param>
-    public Igi2LineOfSight(Vector3d start, Vector3d end, Igi2GameMaterials materials)
+    public WorldLineOfSight(Vector3d start, Vector3d end, IWorldMaterialTransparency materials)
     {
         ArgumentNullException.ThrowIfNull(materials);
         Start = start;
@@ -33,7 +32,7 @@ public sealed class Igi2LineOfSight
     public Vector3d End { get; }
 
     /// <summary>Gets the session's materials.</summary>
-    public Igi2GameMaterials Materials { get; }
+    public IWorldMaterialTransparency Materials { get; }
 
     /// <summary>Gets or sets which objects it may meet: its evaluate event, as each object type answers it; <see langword="null"/> meets all.</summary>
     public Func<object, bool>? Includes { get; set; }

@@ -3,6 +3,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Vehicles;
 
@@ -32,7 +33,7 @@ public sealed class Igi2DeathZone
     /// <summary>The speed a vehicle must move at for its kill box to do damage, units a tick.</summary>
     public const double KillSpeed = 50.0;
 
-    private readonly Igi2LineTrace _line = new(1);
+    private readonly WorldLineTrace _line = new(1);
 
     /// <summary>Initializes a new instance of the <see cref="Igi2DeathZone"/> class.</summary>
     /// <param name="attachment">Its attach point on the vehicle's model.</param>

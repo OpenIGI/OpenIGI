@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Pickups;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -184,7 +185,7 @@ public sealed class RetailIgi2GunPickupTests
     private static (Igi2HumanPlayer, Igi2PlayerWeapons, Igi2PlayerFakes.FakeSurroundings) StandingBy(Igi2GunPickup pickup, Igi2PickupList pickups)
     {
         Mission1Setup m = Mission1.Value;
-        Igi2LineTrace down = new(1);
+        WorldLineTrace down = new(1);
         down.Starts[0] = new Vector3d(pickup.Position.X, pickup.Position.Y, pickup.Position.Z + 64.0);
         m.World.NextZ(down, [-40960.0], Igi2CollisionWorld.TerrainGroup | Igi2CollisionWorld.EveryTypeGroup);
         double floor = down.Intersections[0].Position.Z;
@@ -216,7 +217,7 @@ public sealed class RetailIgi2GunPickupTests
 
     private sealed class BlindSight : IIgi2SightQuery
     {
-        public bool LineOfSight(Igi2LineOfSight sight, uint groups)
+        public bool LineOfSight(WorldLineOfSight sight, uint groups)
         {
             sight.IsHit = true;
             sight.Transparency = 0f;

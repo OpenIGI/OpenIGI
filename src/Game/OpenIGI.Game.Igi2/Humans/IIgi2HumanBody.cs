@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -200,7 +201,7 @@ public interface IIgi2HumanSurroundings
     /// <param name="ground">What the human stands on.</param>
     /// <param name="footing">The footing hit on it.</param>
     /// <returns>The push, or <see langword="null"/> when the ground does not push.</returns>
-    Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing);
+    Vector3f? PushOnConveyor(IWorldCollider ground, WorldIntersection footing);
 
     /// <summary>
     /// Gets every human registered in the world, <c>Human_ptQTaskList</c>, in registration order: the bodies a move is kept

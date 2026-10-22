@@ -1,7 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Igi2.Physics;
-using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -72,8 +70,8 @@ internal sealed class Igi2MovementCamera
         new(-0.8506510257720947f, -1.577070071756559e-11f, -0.5257310271263123f),
     ];
 
-    private readonly Igi2LineTrace _search = new(1);
-    private readonly Igi2LineTrace _probes = new(ProbeDirections.Length);
+    private readonly WorldLineTrace _search = new(1);
+    private readonly WorldLineTrace _probes = new(ProbeDirections.Length);
     private int _mode;
     private float _alpha;
     private float _gamma;
@@ -161,7 +159,7 @@ internal sealed class Igi2MovementCamera
                     ((double)direction.Y * length) + anchor.Y,
                     (double)((Fpu)direction.Z * length).F + anchor.Z);
                 world.TraceLines(_search, uint.MaxValue);
-                Igi2Intersection hit = _search.Intersections[0];
+                WorldIntersection hit = _search.Intersections[0];
                 if (!hit.IsHit || (hit.HitObject is World.Igi2WaterBody && pitch > 0f))
                 {
                     Settle(length, pitch, heading);
@@ -235,7 +233,7 @@ internal sealed class Igi2MovementCamera
         bool struck = false;
         for (int i = 0; i < ProbeDirections.Length; i++)
         {
-            Igi2Intersection hit = _probes.Intersections[i];
+            WorldIntersection hit = _probes.Intersections[i];
             if (!hit.IsHit)
             {
                 continue;

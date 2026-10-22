@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Audio;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -87,7 +87,7 @@ internal sealed class Igi2LevelImpactEffects(Igi2Sounds sounds, Ai.Runtime.Igi2A
 internal sealed class Igi2LevelExplosionEffects(Igi2Sounds sounds, Ai.Runtime.Igi2AiWorld? ai = null) : IIgi2ExplosionEffects
 {
     /// <inheritdoc/>
-    public void BurnMark(Igi2Intersection ground, float radius)
+    public void BurnMark(WorldIntersection ground, float radius)
     {
     }
 

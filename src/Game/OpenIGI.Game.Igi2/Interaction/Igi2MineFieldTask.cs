@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Physics;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
@@ -178,7 +179,7 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
             return at;
         }
 
-        Igi2LineTrace trace = new(1) { Includes = owner => !ReferenceEquals(owner, target) };
+        WorldLineTrace trace = new(1) { Includes = owner => !ReferenceEquals(owner, target) };
         foreach (double reach in (double[])[-1638400.0, 1638400.0])
         {
             trace.Starts[0] = at;

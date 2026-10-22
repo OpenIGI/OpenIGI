@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Ai;
-using OpenIGI.Game.Igi2.Interaction;
+using OpenIGI.Game.World;
 using Xunit;
 
 namespace OpenIGI.Game.Igi2.Tests;
@@ -32,7 +32,7 @@ public sealed class Igi2AiGraphParentTests
         Assert.Equal(node.LocalPosition, node.Position);
     }
 
-    private sealed class Parent : IIgi2AttachParent
+    private sealed class Parent : IAttachParent
     {
         public Vector3d AttachPosition { get; set; }
 

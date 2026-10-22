@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Ai;
 
@@ -66,7 +66,7 @@ public sealed partial class Igi2AiGraph
     /// Gets the graph as ground: what a soldier with a mind stands on (<c>human.c Human_GroundCollision</c> makes the graph the
     /// footing's struck object), which no line meets.
     /// </summary>
-    public IIgi2Collider Ground => _ground ??= new Igi2AiGraphGround(this);
+    public IWorldCollider Ground => _ground ??= new Igi2AiGraphGround(this);
 
     /// <summary>Gets or sets the graph's task id, <c>nGraphID</c>.</summary>
     public int Id { get; set; } = -1;
@@ -336,13 +336,13 @@ public sealed partial class Igi2AiGraph
 
 /// <summary>A graph as the ground a soldier stands on: it holds the graph and answers no line.</summary>
 /// <param name="graph">The graph.</param>
-internal sealed class Igi2AiGraphGround(Igi2AiGraph graph) : IIgi2Collider
+internal sealed class Igi2AiGraphGround(Igi2AiGraph graph) : IWorldCollider
 {
     /// <inheritdoc/>
     public object Owner => graph;
 
     /// <inheritdoc/>
-    public void NextZ(Igi2LineTrace trace)
+    public void NextZ(WorldLineTrace trace)
     {
     }
 }

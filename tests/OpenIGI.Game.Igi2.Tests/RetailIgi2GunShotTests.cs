@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -178,20 +179,20 @@ public sealed class RetailIgi2GunShotTests
     private static float Damage(float travelled, float range, float penetration) =>
         ((((Fpu)1.0f - ((new Fpu(travelled) / range) * 0.30000001f)) * 0.29f) * (new Fpu(penetration) / 5f)).F;
 
-    private sealed record Face(double Y, int? Enter, int? Leave, IIgi2Collider Struck);
+    private sealed record Face(double Y, int? Enter, int? Leave, IWorldCollider Struck);
 
     /// <summary>Faces across the line <c>x = z = 0</c>, each struck by a line that starts before it and reaches it.</summary>
     private sealed class ScriptedLine(params Face[] faces) : IIgi2CollisionQuery
     {
         public uint Groups { get; private set; }
 
-        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups) => throw new NotSupportedException();
+        public void NextZ(WorldLineTrace trace, ReadOnlySpan<double> distances, uint groups) => throw new NotSupportedException();
 
-        public void TraceLines(Igi2LineTrace trace, uint groups)
+        public void TraceLines(WorldLineTrace trace, uint groups)
         {
             Groups = groups;
             Vector3d start = trace.Starts[0], end = trace.Ends[0];
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             hit.IsHit = false;
             hit.Position = end;
             foreach (Face face in faces)
@@ -211,13 +212,13 @@ public sealed class RetailIgi2GunShotTests
         }
     }
 
-    private sealed class RecordingTarget : IIgi2Collider, IIgi2WeaponHitTarget
+    private sealed class RecordingTarget : IWorldCollider, IIgi2WeaponHitTarget
     {
         public List<Igi2WeaponHit> Hits { get; } = [];
 
         public object Owner => this;
 
-        public void NextZ(Igi2LineTrace trace) => throw new NotSupportedException();
+        public void NextZ(WorldLineTrace trace) => throw new NotSupportedException();
 
         public void WeaponHit(in Igi2WeaponHit hit) => Hits.Add(hit);
     }
@@ -228,11 +229,11 @@ public sealed class RetailIgi2GunShotTests
 
         public Igi2GameMaterials Materials => materials;
 
-        public bool IsWater(IIgi2Collider struck) => false;
+        public bool IsWater(IWorldCollider struck) => false;
 
-        public bool IsBoned(IIgi2Collider struck) => false;
+        public bool IsBoned(IWorldCollider struck) => false;
 
-        public bool IsHuman(IIgi2Collider struck) => false;
+        public bool IsHuman(IWorldCollider struck) => false;
     }
 
     private sealed class Recording : IIgi2GunShotEffects

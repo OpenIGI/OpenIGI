@@ -1,6 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -9,7 +8,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="Intersection">What the particle's line struck.</param>
 /// <param name="Start">Where the line started: the particle at its last collision check.</param>
 /// <param name="End">Where it ended: the particle now.</param>
-public readonly record struct Igi2ParticleCollision(Igi2Intersection Intersection, Vector3d Start, Vector3d End);
+public readonly record struct Igi2ParticleCollision(WorldIntersection Intersection, Vector3d Start, Vector3d End);
 
 /// <summary>
 /// The 2-D particle module, <c>Particle2DDynCubeObj</c>'s shared state: its own random stream, which aims the cones particles are
@@ -169,7 +168,7 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
 {
     private readonly Igi2Particles _module;
     private readonly Igi2Particle2D[] _slots;
-    private readonly Igi2LineTrace _trace;
+    private readonly WorldLineTrace _trace;
     private readonly int[] _lineParticle;
 
     internal Igi2Particle2DSystem(Igi2Particles module, int maxParticles)
@@ -183,7 +182,7 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
         }
 
         _lineParticle = new int[maxParticles];
-        _trace = new Igi2LineTrace(maxParticles) { Includes = static owner => owner is not Humans.Igi2Human };
+        _trace = new WorldLineTrace(maxParticles) { Includes = static owner => owner is not Humans.Igi2Human };
     }
 
     /// <summary>Gets the live particles, in slot order.</summary>
@@ -429,7 +428,7 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
                 _lineParticle[lines] = i;
                 _trace.Starts[lines] = p.LastCheckedPosition;
                 _trace.Ends[lines] = p.Position;
-                Igi2Intersection reset = _trace.Intersections[lines];
+                WorldIntersection reset = _trace.Intersections[lines];
                 reset.IsHit = false;
                 reset.HitObject = null;
                 lines++;
@@ -447,7 +446,7 @@ public sealed class Igi2Particle2DSystem : IIgi2DynamicTask
         _module.Collision.TraceLines(_trace, Igi2Particles.CollisionGroups);
         for (int k = 0; k < lines; k++)
         {
-            Igi2Intersection hit = _trace.Intersections[k];
+            WorldIntersection hit = _trace.Intersections[k];
             if (!hit.IsHit)
             {
                 continue;

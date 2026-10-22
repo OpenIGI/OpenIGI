@@ -1,6 +1,7 @@
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -15,9 +16,9 @@ internal sealed class Igi2LevelGunShotWorld(IIgi2CollisionQuery collision, Igi2G
 
     public Igi2GameMaterials Materials { get; } = materials;
 
-    public bool IsWater(IIgi2Collider struck) => struck is World.Igi2WaterBody;
+    public bool IsWater(IWorldCollider struck) => struck is World.Igi2WaterBody;
 
-    public bool IsBoned(IIgi2Collider struck) => struck is Igi2BoneCollider;
+    public bool IsBoned(IWorldCollider struck) => struck is Igi2BoneCollider;
 
-    public bool IsHuman(IIgi2Collider struck) => struck is Igi2BoneCollider { Owner: Humans.Igi2Human };
+    public bool IsHuman(IWorldCollider struck) => struck is Igi2BoneCollider { Owner: Humans.Igi2Human };
 }

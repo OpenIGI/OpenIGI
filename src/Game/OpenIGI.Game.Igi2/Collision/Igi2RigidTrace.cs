@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -28,7 +29,7 @@ public static class Igi2RigidTrace
     /// <summary>Traces every line of a batch against one model, replacing each line's result where this model is nearer.</summary>
     /// <param name="model">The model.</param>
     /// <param name="trace">The lines and their running results.</param>
-    public static void Trace(Igi2RigidObject model, Igi2LineTrace trace)
+    public static void Trace(Igi2RigidObject model, WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(trace);
@@ -50,7 +51,7 @@ public static class Igi2RigidTrace
         }
     }
 
-    private static void Line(Igi2RigidObject o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3d s, Vector3d e, Igi2Intersection hit)
+    private static void Line(Igi2RigidObject o, Igi2CollisionMesh mesh, WorldLineTrace trace, Vector3d s, Vector3d e, WorldIntersection hit)
     {
         float[] m = o.Orientation;
         Vector3d p = o.Position;
@@ -128,7 +129,7 @@ public static class Igi2RigidTrace
     }
 
     /// <summary>Writes this model's hit into the line's result, if it is nearer than what is there.</summary>
-    private static void Record(Igi2RigidObject o, Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3f start, MeshRaySearch<Fpu> search, Igi2Intersection hit)
+    private static void Record(Igi2RigidObject o, Igi2CollisionMesh mesh, WorldLineTrace trace, Vector3f start, MeshRaySearch<Fpu> search, WorldIntersection hit)
     {
         float[] m = o.Orientation;
         float sx = o.Scale.X, sy = o.Scale.Y, sz = o.Scale.Z;
@@ -199,7 +200,7 @@ public static class Igi2RigidTrace
     }
 
     /// <summary>One face against the line: the shared crossing, then this handler's portal, tie and ignored-material rules.</summary>
-    private readonly struct Faces(Igi2CollisionMesh mesh, Igi2LineTrace trace, Vector3f s, Vector3f d, float lineLength, MeshRaySearch<Fpu> search)
+    private readonly struct Faces(Igi2CollisionMesh mesh, WorldLineTrace trace, Vector3f s, Vector3f d, float lineLength, MeshRaySearch<Fpu> search)
         : IMeshFaceVisitor
     {
         public void Visit(int face)

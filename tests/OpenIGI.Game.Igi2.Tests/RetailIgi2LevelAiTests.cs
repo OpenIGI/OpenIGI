@@ -1,4 +1,3 @@
-using OpenIGI.Presentation;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
@@ -13,9 +12,10 @@ using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Igi2;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Presentation.Igi2;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -557,7 +557,7 @@ public sealed class RetailIgi2LevelAiTests
         Interaction.Igi2Glass pane = glass.Panes[0];
         List<Interaction.Igi2GlassShatter> shattered = [];
         pane.Shattered = shattered.Add;
-        Collision.Igi2Intersection at = new() { Position = pane.Solid.Position };
+        OpenIGI.Game.Physics.WorldIntersection at = new() { Position = pane.Solid.Position };
         Weapons.Igi2WeaponTypeTask weapon = new();
         pane.WeaponHit(new Weapons.Igi2WeaponHit(at, 0.5f, new Vector3f(1000f, 0f, 0f), null, weapon, null));
         Assert.False(pane.IsBroken);
