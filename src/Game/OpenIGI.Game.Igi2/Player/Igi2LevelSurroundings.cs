@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -112,7 +113,7 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     /// <c>Human_Move</c> (<c>igi2 0x501685</c>) asks whatever stands underfoot, and whatever does not answer pushes nothing: only a
     /// belt's own solid does (<see cref="Interaction.Igi2ConveyorBeltTask.Push"/>).
     /// </remarks>
-    public Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing)
+    public Vector3f? PushOnConveyor(IWorldCollider ground, WorldIntersection footing)
     {
         ArgumentNullException.ThrowIfNull(footing);
         if (ground is Igi2RigidObject { Owner: Igi2CollisionOwner { Depth: 0 } owner }

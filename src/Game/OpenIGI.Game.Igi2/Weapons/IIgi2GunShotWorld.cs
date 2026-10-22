@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -17,17 +18,17 @@ public interface IIgi2GunShotWorld
     /// <summary>Gets whether what was struck is water, a type derived from <c>Water</c>.</summary>
     /// <param name="struck">What was struck.</param>
     /// <returns>Whether it is water.</returns>
-    bool IsWater(IIgi2Collider struck);
+    bool IsWater(IWorldCollider struck);
 
     /// <summary>Gets whether what was struck is a boned object, a type derived from <c>BoneDynCubeObj</c>: a body.</summary>
     /// <param name="struck">What was struck.</param>
     /// <returns>Whether it is a boned object.</returns>
-    bool IsBoned(IIgi2Collider struck);
+    bool IsBoned(IWorldCollider struck);
 
     /// <summary>Gets whether what was struck is a human, a type derived from <c>Human</c>.</summary>
     /// <param name="struck">What was struck.</param>
     /// <returns>Whether it is a human.</returns>
-    bool IsHuman(IIgi2Collider struck);
+    bool IsHuman(IWorldCollider struck);
 
     /// <summary>
     /// Lets every human weigh a shot's bullets before they are traced, <c>Human_eEvaluateGunShotQTaskEvent</c> sent over
@@ -51,7 +52,7 @@ public interface IIgi2GunShotWorld
 /// <param name="WeaponType">The weapon that fired it.</param>
 /// <param name="AmmoType">The ammunition, or <see langword="null"/>.</param>
 public readonly record struct Igi2WeaponHit(
-    Igi2Intersection Intersection,
+    WorldIntersection Intersection,
     float Damage,
     Vector3f ShotVector,
     IIgi2WeaponOwner? Shooter,
@@ -72,7 +73,7 @@ public readonly record struct Igi2WeaponHit(
     /// no ammunition is counted toward accuracy. The damage is the other game's, as it sent it.
     /// </remarks>
     public static Igi2WeaponHit FromShared(in WeaponHit hit) => new(
-        new Igi2Intersection { Position = hit.Position, Normal = hit.Normal, Sector = hit.Bone, IsHit = true },
+        new WorldIntersection { Position = hit.Position, Normal = hit.Normal, Sector = hit.Bone, IsHit = true },
         hit.Damage,
         hit.ShotVector,
         hit.Shooter as IIgi2WeaponOwner,

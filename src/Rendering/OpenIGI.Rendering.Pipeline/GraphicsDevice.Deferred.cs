@@ -695,6 +695,7 @@ public sealed partial class GraphicsDevice
         _sky = null;
         _bloom?.Dispose();
         _sunShafts?.Dispose();
+        DisposeModPasses();
         _bloom = null;
         _shading?.Dispose();
         _shading = null;

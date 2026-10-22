@@ -4,8 +4,10 @@ using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Hud;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Host;
@@ -153,6 +155,29 @@ public sealed partial class GameHost
             _remasteredHud);
     }
 
+    /// <summary>Draws what the mods lay over the player's view, after the game's HUD and status and before a cut-scene's framing.</summary>
+    /// <param name="state">The frame loop's state, whose sprite batch they draw into.</param>
+    /// <param name="view">The frame's view, whose eye and projection place their markers.</param>
+    private void DrawModHudOverlays(FrameLoopState state, in FrameView view)
+    {
+        if (_hudOverlays.Count == 0 || !_playerMode || _computerOpen || _mission.Cutscenes?.IsPlaying == true
+            || _shellType?.Body is not { } font)
+        {
+            return;
+        }
+
+        _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+        state.Batch.Begin();
+        UiPainter painter = UiPainter.Create(state.Batch, new LayoutContext(_window.Width, _window.Height));
+        HudOverlayFrame frame = new(painter, font, _window.Width, _window.Height, view.Eye, view.Projection, _loop.Clock.TickCount);
+        foreach (IHudOverlay overlay in _hudOverlays)
+        {
+            overlay.Draw(frame);
+        }
+
+        state.Batch.End();
+    }
+
     /// <summary>Resolves the frame and draws everything 2D over it: the HUD, the messages, the computer, the damage wash and the flash.</summary>
     private void DrawScreenOverlays(
         FrameLoopState state, bool captured, in FrameView view, float? binocularRangeMetres, bool cameraIndoors)
@@ -185,6 +210,7 @@ public sealed partial class GameHost
         {
             _device.EndPass();
             _device.EndSceneCapture();
+            UpdateModPostPasses();
             _device.ResolveScene(postProcess);
             captured = false;
             EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
@@ -210,6 +236,7 @@ public sealed partial class GameHost
         _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
 
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
+        DrawModHudOverlays(state, view);
 
         if (_mission.CutsceneFrameShown is { } cinematicFraming)
         {

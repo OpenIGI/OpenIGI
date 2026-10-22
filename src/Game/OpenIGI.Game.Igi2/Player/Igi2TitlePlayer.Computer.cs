@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -95,7 +96,7 @@ public sealed partial class Igi2TitlePlayer
     }
 
     private readonly List<Igi2ComputerMapMark> _mapMarks = [];
-    private readonly Igi2LineTrace _markLine = new(1);
+    private readonly WorldLineTrace _markLine = new(1);
 
     /// <summary>Gets or sets the level's vehicles, which the map marks.</summary>
     internal IReadOnlyList<Vehicles.Igi2CarTask> MapVehicles { get; set; } = [];
@@ -190,7 +191,7 @@ public sealed partial class Igi2TitlePlayer
             _markLine.Starts[0] = map.Position;
             _markLine.Ends[0] = head;
             world.TraceLines(_markLine, 0xFFFFFFFFu);
-            Igi2Intersection hit = _markLine.Intersections[0];
+            WorldIntersection hit = _markLine.Intersections[0];
             if (hit.IsHit && !ReferenceEquals(hit.HitObject?.Owner, human))
             {
                 return;
@@ -332,7 +333,7 @@ public sealed partial class Igi2TitlePlayer
     // What the map asks of the level, from the player's collision world, the level's humans and its tasks.
     private sealed class Igi2ComputerMapWorld(Igi2TitlePlayer player) : IIgi2ComputerMapWorld
     {
-        private readonly Igi2LineTrace _line = new(1);
+        private readonly WorldLineTrace _line = new(1);
 
         public IEnumerable<(Vector3d Position, IIgi2CameraTarget? Followable)> Humans
         {
@@ -383,7 +384,7 @@ public sealed partial class Igi2TitlePlayer
             _line.Starts[0] = start;
             _line.Ends[0] = finish;
             world.TraceLines(_line, 0xFFFFFFFFu);
-            Igi2Intersection hit = _line.Intersections[0];
+            WorldIntersection hit = _line.Intersections[0];
             IIgi2CameraTarget? followable = hit.HitObject?.Owner switch
             {
                 Igi2Human { Team: 1 } human => new Target(() => human.Position),

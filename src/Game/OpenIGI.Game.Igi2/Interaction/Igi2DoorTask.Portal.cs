@@ -3,6 +3,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -177,13 +178,13 @@ public sealed partial class Igi2DoorTask
     // Door_TraceForPortals: a line through the stationary world that portal faces stop, other doors not answering it.
     private static (int Portal, Igi2RigidObject? Sector, Vector3d Hit) TraceForPortal(Igi2CollisionWorld world, Vector3d from, Vector3d to)
     {
-        Igi2LineTrace trace = new(1) { Mesh = 0, TracePortals = true };
+        WorldLineTrace trace = new(1) { Mesh = 0, TracePortals = true };
         trace.Starts[0] = from;
         trace.Ends[0] = to;
         trace.Includes = static owner => owner is Igi2CollisionOwner solidOwner && !string.Equals(solidOwner.TypeName, TypeName, StringComparison.Ordinal);
         world.TraceLines(trace, ~Igi2CollisionWorld.TerrainGroup);
 
-        Igi2Intersection hit = trace.Intersections[0];
+        WorldIntersection hit = trace.Intersections[0];
         if (!hit.IsHit || hit.Portal == NoPortal || hit.HitObject is not Igi2RigidObject solid)
         {
             return (NoPortal, null, default);

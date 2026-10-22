@@ -1,0 +1,10 @@
+{
+  "slangVersion": "2026.13.1-1-g84792eb15",
+  "dxcVersion": "1.9.2609",
+  "modules": [
+    {
+      "id": "Greyscale",
+      "source": "Greyscale.slang"
+    }
+  ]
+}

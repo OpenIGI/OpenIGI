@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Presentation.Hud;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation;
@@ -60,6 +61,7 @@ public sealed class PresenterRegistry
     private readonly Dictionary<(Type Request, Type Presenter), Delegate> _factories = [];
     private readonly Dictionary<Type, Func<GameTask, TaskPresenterRequest, ITaskPresenter?>> _taskFactories = [];
     private readonly List<Func<TaskPresenterRequest, ITaskPresenter?>> _levelFactories = [];
+    private readonly List<Func<TaskPresenterRequest, IHudOverlay?>> _hudFactories = [];
 
     /// <summary>Gets how many task types have a presenter of their own.</summary>
     public int TaskTypeCount => _taskFactories.Count;
@@ -129,6 +131,37 @@ public sealed class PresenterRegistry
         ArgumentNullException.ThrowIfNull(factory);
         _taskFactories[typeof(TTask)] = (task, request) => factory((TTask)task, request);
         return this;
+    }
+
+    /// <summary>Gets how many HUD overlays are registered.</summary>
+    public int HudOverlayCount => _hudFactories.Count;
+
+    /// <summary>Adds an overlay drawn over the player's view in every level, after those already added.</summary>
+    /// <param name="factory">Makes the overlay for a level, or answers <see langword="null"/> for a level it has nothing for.</param>
+    /// <returns>This registry.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    public PresenterRegistry ForHud(Func<TaskPresenterRequest, IHudOverlay?> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _hudFactories.Add(factory);
+        return this;
+    }
+
+    /// <summary>Makes the HUD overlays for a level, in the order they were added.</summary>
+    /// <param name="request">What they are made from.</param>
+    /// <returns>The overlays; one whose factory answered <see langword="null"/> is left out.</returns>
+    public IReadOnlyList<IHudOverlay> CreateHudOverlays(in TaskPresenterRequest request)
+    {
+        List<IHudOverlay> made = [];
+        foreach (Func<TaskPresenterRequest, IHudOverlay?> factory in _hudFactories)
+        {
+            if (factory(request) is { } overlay)
+            {
+                made.Add(overlay);
+            }
+        }
+
+        return made;
     }
 
     /// <summary>Registers what draws something of the level as a whole, made once for each level, drawn with the tasks' presenters.</summary>

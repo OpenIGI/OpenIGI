@@ -65,13 +65,13 @@ public sealed class MenuRenderer : IDisposable
 
         _strings = strings;
         _resources = new RetailUiResources(device, new RetailUiResourceOptions { MatchStem = true });
-        _resources.AddArchive(IresArchive.Read(fileSystem.ReadAllBytes(resourcePath)));
+        _resources.AddArchive(fileSystem.ReadArchive(resourcePath));
 
         foreach (string extra in extraArchives ?? [])
         {
             if (fileSystem.Exists(extra))
             {
-                _resources.AddArchive(IresArchive.Read(fileSystem.ReadAllBytes(extra)));
+                _resources.AddArchive(fileSystem.ReadArchive(extra));
             }
         }
     }

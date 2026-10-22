@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -23,7 +23,7 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>Gets what the human rides, <c>Human_s.ptAttachQTask</c>, or <see langword="null"/>.</summary>
-    public IIgi2AttachParent? AttachParent { get; private set; }
+    public IAttachParent? AttachParent { get; private set; }
 
     /// <summary>Gets where the human stands in the frame of what it rides, <c>Human_s.tAttachPos</c>.</summary>
     public Vector3d AttachPosition { get; private set; }
@@ -38,7 +38,7 @@ public abstract partial class Igi2Human
     /// <param name="parent">What it rides.</param>
     /// <param name="position">Where it stands, in the world.</param>
     /// <param name="orientation">How it is turned, in the world, row by row.</param>
-    public void AttachTo(IIgi2AttachParent parent, Vector3d position, IReadOnlyList<float> orientation)
+    public void AttachTo(IAttachParent parent, Vector3d position, IReadOnlyList<float> orientation)
     {
         ArgumentNullException.ThrowIfNull(parent);
         ArgumentNullException.ThrowIfNull(orientation);
@@ -113,7 +113,7 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>The orientation a riding human faces: the parent's frame times its own in that frame (<c>Human_UpdateBody</c>).</summary>
-    private float[] RiddenOrientation(IIgi2AttachParent parent)
+    private float[] RiddenOrientation(IAttachParent parent)
     {
         IReadOnlyList<float> a = parent.AttachOrientation;
         float[] l = _attachOrientation;

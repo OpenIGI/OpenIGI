@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -9,7 +10,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// <param name="Intersection">Where on it.</param>
 /// <param name="Texture">The stain's texture.</param>
 /// <param name="Radius">The stain's radius, in world units.</param>
-public readonly record struct Igi2BloodStain(IIgi2Collider Struck, Igi2Intersection Intersection, string Texture, float Radius);
+public readonly record struct Igi2BloodStain(IWorldCollider Struck, WorldIntersection Intersection, string Texture, float Radius);
 
 /// <summary>Blood: the spurt where a round enters flesh and the stains it leaves, <c>HumanDamage_CreateFleshEnterEffect</c>.</summary>
 public abstract partial class Igi2Human
@@ -29,7 +30,7 @@ public abstract partial class Igi2Human
     /// <summary>The stains a flying drop may leave, <c>hole_blood3.tex</c> (even draw) and <c>hole_blood4.tex</c> (odd draw).</summary>
     private static readonly string[] DropStains = ["hole_blood3.tex", "hole_blood4.tex"];
 
-    private readonly Igi2LineTrace _stainTrace = new(1) { Includes = static owner => owner is not Igi2Human };
+    private readonly WorldLineTrace _stainTrace = new(1) { Includes = static owner => owner is not Igi2Human };
 
     private Igi2Particle2DSystem? _bloodMist;
     private Igi2Particle2DSystem? _bloodDrops;
@@ -66,7 +67,7 @@ public abstract partial class Igi2Human
             (((Fpu)along.X * BloodStainReach) + position.X).Value,
             (((Fpu)along.Y * BloodStainReach) + position.Y).Value,
             (((Fpu)along.Z * BloodStainReach) + position.Z).Value);
-        Igi2Intersection beyond = _stainTrace.Intersections[0];
+        WorldIntersection beyond = _stainTrace.Intersections[0];
         beyond.IsHit = false;
         beyond.HitObject = null;
         Surroundings.Collision.TraceLines(_stainTrace, Igi2CollisionWorld.EveryTypeGroup);
@@ -129,7 +130,7 @@ public abstract partial class Igi2Human
     /// <param name="landing">Where the drop met the surface.</param>
     private void StainWhereDropLands(Igi2ParticleCollision landing)
     {
-        Igi2Intersection hit = landing.Intersection;
+        WorldIntersection hit = landing.Intersection;
         if (hit.HitObject is not { } struck || !Igi2BulletHoles.Takes(struck))
         {
             return;

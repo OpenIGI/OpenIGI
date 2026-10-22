@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Paths;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -24,7 +25,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// </remarks>
 public sealed partial class Igi2EditRigidObjTask
-    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2AttachParent, IIgi2PathRider, IIgi2CameraTarget
+    : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IAttachParent, IIgi2PathRider, IIgi2CameraTarget
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditRigidObj";

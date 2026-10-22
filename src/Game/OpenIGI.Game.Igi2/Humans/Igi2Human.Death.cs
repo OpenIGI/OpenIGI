@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -39,13 +40,13 @@ public abstract partial class Igi2Human
         "upper left arm", "lower left arm", "lower left fingers", "upper right arm", "lower right arm", "lower right fingers",
     ];
 
-    private readonly Igi2LineTrace _boneTrace = new(DeathTraceBones.Length + 3)
+    private readonly WorldLineTrace _boneTrace = new(DeathTraceBones.Length + 3)
     {
         Mesh = 1,
         Includes = static owner => !Igi2ObjectCollision.PassesThrough(owner),
     };
 
-    private readonly Igi2LineTrace _groundNormalTrace = new(1) { Mesh = 1 };
+    private readonly WorldLineTrace _groundNormalTrace = new(1) { Mesh = 1 };
 
     /// <summary>Gets or sets the ticks the dead body has spent near the ground, <c>nDeathStablizationTimer</c>.</summary>
     public int DeathStabilizationTimer { get; set; }
@@ -70,7 +71,7 @@ public abstract partial class Igi2Human
         Fpu oy = ((ahead * o.M22) + (side * o.M21)) + ((Fpu)o.M23 * 409.6000061035156f);
         Fpu oz = ((ahead * o.M32) + (side * o.M31)) + ((Fpu)o.M33 * 409.6000061035156f);
         _groundNormalTrace.Starts[0] = new Vector3d((ox + Position.X).Value, (oy + Position.Y).Value, (oz + Position.Z).Value);
-        Igi2Intersection hit = _groundNormalTrace.Intersections[0];
+        WorldIntersection hit = _groundNormalTrace.Intersections[0];
         hit.IsHit = false;
         hit.HitObject = null;
         Surroundings.Collision.NextZ(_groundNormalTrace, [-12288.0], 0x98000000);
@@ -202,7 +203,7 @@ public abstract partial class Igi2Human
         {
             Vector3d end = _boneTrace.Ends[i];
             _boneTrace.Ends[i] = new Vector3d(((Fpu)speed.X + end.X).Value, ((Fpu)speed.Y + end.Y).Value, ((Fpu)speed.Z + end.Z).Value);
-            Igi2Intersection reset = _boneTrace.Intersections[i];
+            WorldIntersection reset = _boneTrace.Intersections[i];
             reset.IsHit = false;
             reset.HitObject = null;
         }
@@ -213,7 +214,7 @@ public abstract partial class Igi2Human
         int pushes = 0;
         for (int i = 0; i < _boneTrace.Ends.Length; i++)
         {
-            Igi2Intersection hit = _boneTrace.Intersections[i];
+            WorldIntersection hit = _boneTrace.Intersections[i];
             if (!hit.IsHit || !(hit.Normal.Z > -0.5f))
             {
                 continue;

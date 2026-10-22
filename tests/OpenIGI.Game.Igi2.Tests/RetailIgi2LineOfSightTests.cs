@@ -4,6 +4,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -34,7 +35,7 @@ public sealed class RetailIgi2LineOfSightTests
         (Igi2Level level, Igi2CollisionWorld world, _, Igi2GameMaterials materials) = Mission1.Value;
         Assert.True(PlayerSpawn.TryFindGameplay(level.Root, out PlayerSpawnPoint spawn));
         Vector3d start = new(spawn.Position.X, spawn.Position.Y, spawn.Position.Z + 2000000.0);
-        Igi2LineOfSight sight = new(start, new Vector3d(start.X + 40960.0, start.Y, start.Z), materials);
+        WorldLineOfSight sight = new(start, new Vector3d(start.X + 40960.0, start.Y, start.Z), materials);
 
         Assert.True(world.LineOfSight(sight, uint.MaxValue));
         Assert.Equal(1f, sight.Transparency);
@@ -53,11 +54,11 @@ public sealed class RetailIgi2LineOfSightTests
         Vector3d over = new(spawn.Position.X, spawn.Position.Y, spawn.Position.Z + 8192.0);
         Vector3d under = new(spawn.Position.X, spawn.Position.Y, spawn.Position.Z - 81920.0);
 
-        Igi2LineOfSight ground = new(over, under, materials);
+        WorldLineOfSight ground = new(over, under, materials);
         Assert.False(world.LineOfSight(ground, Igi2CollisionWorld.TerrainGroup));
         Assert.Equal(0f, ground.Transparency);
 
-        Igi2LineOfSight objectsOnly = new(over, under, materials);
+        WorldLineOfSight objectsOnly = new(over, under, materials);
         _ = world.LineOfSight(objectsOnly, Igi2CollisionWorld.ForestGroup);
         Assert.NotEqual(0f, objectsOnly.Transparency);
     }
@@ -77,17 +78,17 @@ public sealed class RetailIgi2LineOfSightTests
             Vector3d p = solid.Position;
             double r = solid.BoundingRadius;
             Vector3d over = new(p.X, p.Y, p.Z + r), under = new(p.X, p.Y, p.Z - r);
-            Igi2LineTrace trace = new(1);
+            WorldLineTrace trace = new(1);
             trace.Starts[0] = over;
             trace.Ends[0] = under;
             world.TraceLines(trace, Igi2RigidObject.RigidGroup);
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             if (!hit.IsHit || (hit.EnterMaterial ?? hit.LeaveMaterial) is not { } row || materials[row]?.QMaterial.Transparency != 0f)
             {
                 continue;
             }
 
-            Igi2LineOfSight sight = new(over, under, materials);
+            WorldLineOfSight sight = new(over, under, materials);
             Assert.False(world.LineOfSight(sight, Igi2RigidObject.RigidGroup));
             Assert.Equal(0f, sight.Transparency);
             Assert.InRange(sight.T, 0f, 1f);
@@ -107,7 +108,7 @@ public sealed class RetailIgi2LineOfSightTests
         {
             double z = tree.Position.Z + 2048.0;
             Vector3d from = new(tree.Position.X - 4096.0, tree.Position.Y, z), to = new(tree.Position.X + 4096.0, tree.Position.Y, z);
-            Igi2LineTrace trace = new(1);
+            WorldLineTrace trace = new(1);
             trace.Starts[0] = from;
             trace.Ends[0] = to;
             world.TraceLines(trace, Igi2CollisionWorld.ForestGroup);
@@ -116,7 +117,7 @@ public sealed class RetailIgi2LineOfSightTests
                 continue;
             }
 
-            Igi2LineOfSight sight = new(from, to, materials);
+            WorldLineOfSight sight = new(from, to, materials);
             Assert.False(world.LineOfSight(sight, Igi2CollisionWorld.ForestGroup));
             Assert.Equal(0f, sight.Transparency);
             blocked++;
@@ -139,7 +140,7 @@ public sealed class RetailIgi2LineOfSightTests
             Vector3d p = solid.Position;
             double r = solid.BoundingRadius;
             Vector3d over = new(p.X, p.Y, p.Z + r), under = new(p.X, p.Y, p.Z - r);
-            Igi2LineOfSight direct = new(over, under, materials);
+            WorldLineOfSight direct = new(over, under, materials);
             Igi2RigidLineOfSight.Meet(solid, direct);
             if (!direct.IsHit)
             {

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -38,19 +39,19 @@ public abstract partial class Igi2Human
     /// <summary>The mesh level the footing meets, <c>iMesh</c> 1; the material probe meets level 0.</summary>
     private const int FootingMesh = 1;
 
-    private readonly Igi2LineTrace _footing = new(2) { Mesh = FootingMesh };
-    private readonly Igi2LineTrace _buried = new(1) { Mesh = FootingMesh };
-    private readonly Igi2LineTrace _material = new(1);
-    private readonly Igi2Intersection _graphFooting = new();
+    private readonly WorldLineTrace _footing = new(2) { Mesh = FootingMesh };
+    private readonly WorldLineTrace _buried = new(1) { Mesh = FootingMesh };
+    private readonly WorldLineTrace _material = new(1);
+    private readonly WorldIntersection _graphFooting = new();
 
     /// <summary>Gets or sets where the human stands, <c>tModelObj.tPos</c>, in world units.</summary>
     public Vector3d Position { get; set; }
 
     /// <summary>Gets what the human stands on, <c>Human_s.ptGroundQTaskRef</c>; <see langword="null"/> in the air.</summary>
-    public IIgi2Collider? GroundCollider { get; private set; }
+    public IWorldCollider? GroundCollider { get; private set; }
 
     /// <summary>Gets the last footing hit, <c>Human_s.tGroundIntersection</c>.</summary>
-    public Igi2Intersection GroundIntersection { get; } = new();
+    public WorldIntersection GroundIntersection { get; } = new();
 
     /// <summary>Gets how far the feet are above the ground found, <c>Human_s.vDistanceToGround</c>.</summary>
     /// <remarks><c>Human_CreateHandler</c> starts it at 2^30, as far as "nothing below" reaches.</remarks>
@@ -149,8 +150,8 @@ public abstract partial class Igi2Human
         _footing.Starts[1] = to;
         Surroundings.Collision.NextZ(_footing, [GroundReach, RoofReach], FootingGroups);
 
-        Igi2Intersection ground = _footing.Intersections[0];
-        Igi2Intersection roof = _footing.Intersections[1];
+        WorldIntersection ground = _footing.Intersections[0];
+        WorldIntersection roof = _footing.Intersections[1];
         if (roof.IsHit && roof.Normal.Z < 0f)
         {
             DistanceToRoof = roof.Distance;
@@ -186,7 +187,7 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>The body's mark goes where the ground was struck, or is lost with no ground (<c>Human_GroundCollision</c>'s end).</summary>
-    private void PlaceShadow(Igi2Intersection ground)
+    private void PlaceShadow(WorldIntersection ground)
     {
         if (ground.IsHit)
         {
@@ -209,7 +210,7 @@ public abstract partial class Igi2Human
     {
         GroundIntersection.Clear();
         DistanceToGround = 0.0;
-        Igi2Intersection ground = _graphFooting;
+        WorldIntersection ground = _graphFooting;
         ground.Clear();
         bool footed = brain.TryGetFooting(from, ground, out float light);
         if (footed)
@@ -232,14 +233,14 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>The material probe and the distance test: whether the human stands on what the footing struck.</summary>
-    private bool Stands(Igi2Intersection ground, ref Vector3d to, float tolerance)
+    private bool Stands(WorldIntersection ground, ref Vector3d to, float tolerance)
     {
         if (ground.HitObject is { } struck)
         {
             Vector3d start = new(ground.Position.X, ground.Position.Y, ((Fpu)ground.Position.Z + MaterialProbeAbove).Value);
             _material.Starts[0] = start;
             _material.Ends[0] = new Vector3d(start.X, start.Y, ((Fpu)start.Z - MaterialProbeDepth).Value);
-            Igi2Intersection probe = _material.Intersections[0];
+            WorldIntersection probe = _material.Intersections[0];
             probe.IsHit = false;
             probe.HitObject = null;
             struck.NextZ(_material);
@@ -256,7 +257,7 @@ public abstract partial class Igi2Human
     }
 
     /// <summary>Standing: normals up, the feet on the ground, hold of what is underfoot, and the slope of the step.</summary>
-    private void Settle(Igi2Intersection ground, Vector3d from, ref Vector3d to)
+    private void Settle(WorldIntersection ground, Vector3d from, ref Vector3d to)
     {
         if (ground.Normal.Z < 0f)
         {
@@ -311,7 +312,7 @@ public abstract partial class Igi2Human
     /// Only a change of ground does anything. The rigid flag is cleared, and set again with both platform flags when
     /// the new ground is a rigid object. Graph nodes count too, once soldiers stand on them.
     /// </remarks>
-    private void SetGround(IIgi2Collider ground)
+    private void SetGround(IWorldCollider ground)
     {
         if (ReferenceEquals(ground, GroundCollider))
         {

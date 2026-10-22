@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -9,7 +9,7 @@ public interface IIgi2ExplosionEffects
     /// <summary>The explosion burns a mark on what it struck (<c>BulletHole_eCreateBulletHoleTaskEvent</c>).</summary>
     /// <param name="ground">What it struck.</param>
     /// <param name="radius">The mark's size.</param>
-    void BurnMark(Igi2Intersection ground, float radius);
+    void BurnMark(WorldIntersection ground, float radius);
 
     /// <summary>The explosion sounds (<c>SoundSys_NewSoundFn</c> placed at the blast).</summary>
     /// <param name="sound">The sound.</param>

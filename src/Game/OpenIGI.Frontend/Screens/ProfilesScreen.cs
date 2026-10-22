@@ -46,6 +46,7 @@ public sealed class ProfilesScreen : ShellScreen
     private Label? _deletePrompt;
     private Button? _deleteProfile;
     private Control? _pendingFocus;
+    private int _confirmedSlot = -1;
 
     /// <summary>Initializes the screen.</summary>
     public ProfilesScreen(ShellContext context)
@@ -504,7 +505,8 @@ public sealed class ProfilesScreen : ShellScreen
             DateTimeOffset.Now,
             thumb,
             width,
-            height);
+            height,
+            Context.Host.PlayedMods);
         RefreshSlots();
     }
 
@@ -515,10 +517,23 @@ public sealed class ProfilesScreen : ShellScreen
             return;
         }
 
-        if (Context.Saves.Find(profile.Name, _selectedSlot) is { } save)
+        if (Context.Saves.Find(profile.Name, _selectedSlot) is not { } save)
         {
-            Context.Host.StartMission(save.MissionId, profile.Difficulty);
+            return;
         }
+
+        // A slot saved with mods that change play, some of them off now, starts only once the player has been told and
+        // chooses it again: its mission may be one of theirs.
+        IReadOnlyList<OpenIGI.Core.Content.ModReference> missing = OpenIGI.Core.Content.ModReference.Missing(save.Mods, Context.Host.PlayedMods);
+        if (missing.Count > 0 && _confirmedSlot != _selectedSlot)
+        {
+            _confirmedSlot = _selectedSlot;
+            SetDetailsMessage($"Saved with mods that are off: {string.Join(", ", missing)}. Load it again to play it anyway.");
+            return;
+        }
+
+        _confirmedSlot = -1;
+        Context.Host.StartMission(save.MissionId, profile.Difficulty);
     }
 
     private void DeleteSelectedSlot()

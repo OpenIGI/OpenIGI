@@ -186,6 +186,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the game-wide switches the level's scripts flip, or <see langword="null"/> for none.</summary>
     public Igi2FlowState? Flow { get; set; }
 
+    /// <summary>Gets or sets what tells the session's events what each tick changed, or <see langword="null"/> for none.</summary>
+    internal Igi2EventWatch? EventWatch { get; set; }
+
     /// <summary>Gets or sets the player's input task, or <see langword="null"/> when the level gives the player none.</summary>
     public Igi2HumanPlayerInputTask? Input { get; set; }
 
@@ -538,6 +541,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         ReadBinoculars();
         Sounds.Run();
         _ticks++;
+
+        // What the tick changed, told once it is over; nothing in it reads what a listener does.
+        if (Level is not null)
+        {
+            EventWatch?.Observe();
+        }
     }
 
     /// <summary>

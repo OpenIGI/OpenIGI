@@ -1,0 +1,11 @@
+<Project>
+
+  <!--
+    What follows a mod's project: whether it is a mod's tests, read before the .NET SDK's targets read what a test project
+    is; the .NET SDK's targets; then the mod's build (OpenIGI.Modding.targets).
+  -->
+  <Import Project="OpenIGI.Modding.Tests.props" />
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+  <Import Project="OpenIGI.Modding.targets" />
+
+</Project>

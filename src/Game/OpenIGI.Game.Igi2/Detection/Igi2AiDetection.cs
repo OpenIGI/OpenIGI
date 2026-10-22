@@ -1,8 +1,9 @@
-using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Detection;
 
@@ -212,7 +213,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
             return true;
         }
 
-        Igi2LineOfSight line = new(from, to, materials) { Includes = Through(passes, passes) };
+        WorldLineOfSight line = new(from, to, materials) { Includes = Through(passes, passes) };
         bool clear = sight.LineOfSight(line, groups);
         transparency = line.Transparency;
         return clear;
@@ -235,7 +236,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
         }
 
         Func<object, bool> includes = SightIncludes;
-        Igi2LineOfSight line = new(from, to, materials) { Includes = owner => !passes(owner) && includes(owner) };
+        WorldLineOfSight line = new(from, to, materials) { Includes = owner => !passes(owner) && includes(owner) };
         bool clear = sight.LineOfSight(line, groups);
         transparency = line.Transparency;
         return clear;
@@ -259,7 +260,7 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
             return true;
         }
 
-        Igi2LineOfSight line = new(from, to, materials) { Includes = Through(viewer, target) };
+        WorldLineOfSight line = new(from, to, materials) { Includes = Through(viewer, target) };
         if (sight.LineOfSight(line, SightGroups))
         {
             return true;

@@ -262,6 +262,12 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.TaskById = id => taskRoot?.Tree.FromId(id);
         player.Level = LevelRun(request, player);
         player.Saves = MissionSaves(request, player);
+        if (taskRoot is not null && request.Services.TryGet(out Engine.Events.GameEvents? events))
+        {
+            player.EventWatch = new Igi2EventWatch(player, taskRoot, events);
+            events.Raise(new Events.LevelLoaded(Core.Titles.GameTitle.Igi2, player.MissionId));
+        }
+
         return player;
     }
 
@@ -290,6 +296,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             player.Human)
         {
             Glass = player.Glass,
+            PlayedMods = request.Services.TryGet(out Engine.Titles.PlayedMods? played) ? played.Mods : [],
         };
         if (PlayerSpawn.FindGameplayTask(request.World.LevelRoot) is Igi2HumanPlayerTask task)
         {

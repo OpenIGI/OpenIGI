@@ -30,6 +30,9 @@ public sealed partial class GraphicsDevice
         // The shutter first, because everything after it is lens behaviour and a lens sees the smeared
         // picture: a bright moving highlight blooms along its own smear rather than from where it was.
         IRhiTextureView colour = RecordMotionBlur(scene, post) ?? ResolvedScene(scene);
+
+        // The mods' scene passes next, on the smeared picture, so the lens and the tone map see what they leave.
+        colour = RecordModPasses(scene, colour) ?? colour;
         IRhiTextureView? bloom = RecordBloom(scene, colour, post);
         float adapted = MeterExposure(scene, post);
 
@@ -52,10 +55,22 @@ public sealed partial class GraphicsDevice
         // Into the back buffer, or into the picture's own image when the interface is to be drawn apart from
         // it this frame (frame generation). See GraphicsDevice.Layer.
         IRhiTextureView resolveTarget = _frame.Target;
+        RhiTextureFormat resolveFormat = PresentFormat;
         if (BeginLayeredResolve() is { } layered)
         {
             resolveTarget = layered.Target;
+            resolveFormat = DisplayFormat;
             resolve = layered.Resolve;
+        }
+
+        // Into an image of the mods' own when they pass over the finished picture, which then goes where this was going.
+        IRhiTextureView pictureTarget = resolveTarget;
+        bool modDisplay = false;
+        if (BeginModDisplayResolve() is { } mods)
+        {
+            resolveTarget = mods.Target;
+            resolve = mods.Resolve;
+            modDisplay = true;
         }
 
         resolve.BindGrade(GradeSize(post) > 0f ? _colourLut?.View : null);
@@ -70,6 +85,11 @@ public sealed partial class GraphicsDevice
             pass.SetScissor(0, 0, CurrentMode.Width, CurrentMode.Height);
             resolve.Draw(pass, MemoryMarshal.AsBytes(push));
             pass.EndPass();
+        }
+
+        if (modDisplay)
+        {
+            RecordModDisplayPasses(scene, pictureTarget, resolveFormat);
         }
 
         // The resolve cleared the frame and then covered all of it, so a clear the caller asked for is

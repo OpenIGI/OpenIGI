@@ -43,6 +43,7 @@ public interface IGraphicsDevice :
     ILatencyDevice,
     IFrameGenerationDevice,
     IShadowDevice,
+    IPostPassDevice,
     IDisposable
 {
     /// <summary>Replaces an animated mesh's vertices; the ones replaced become its previous pose.</summary>

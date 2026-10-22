@@ -4,7 +4,10 @@ namespace OpenIGI.Game.Player;
 /// <param name="Slot">The slot's number.</param>
 /// <param name="IsUsed">Whether it holds a save of this mission.</param>
 /// <param name="Description">What it holds, as the title words it, or empty for an empty slot.</param>
-public readonly record struct TitleSaveSlot(int Slot, bool IsUsed, string Description);
+/// <param name="MissingMods">
+/// The mods that change play the save was made with and that are not being played now; <see langword="null"/> for none.
+/// </param>
+public readonly record struct TitleSaveSlot(int Slot, bool IsUsed, string Description, IReadOnlyList<OpenIGI.Core.Content.ModReference>? MissingMods = null);
 
 /// <summary>
 /// The save games a title keeps of a running mission: its slots, how many saves the mission still allows, and saving to or loading

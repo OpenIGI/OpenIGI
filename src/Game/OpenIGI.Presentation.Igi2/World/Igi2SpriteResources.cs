@@ -32,7 +32,7 @@ public sealed class Igi2SpriteResources : IDisposable
         foreach (string path in archives)
         {
             if (!files.Exists(path)) { continue; }
-            foreach (IresEntry entry in IresArchive.Read(files.ReadAllBytes(path)).Entries)
+            foreach (IresEntry entry in files.ReadArchive(path).Entries)
             {
                 _entries.TryAdd(Path.GetFileName(entry.Name.Replace('\\', '/')), entry);
                 _paths.TryAdd(entry.Name.Replace('\\', '/'), entry);

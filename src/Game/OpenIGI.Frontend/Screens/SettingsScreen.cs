@@ -128,8 +128,8 @@ public sealed class SettingsScreen : ShellScreen
         float usable = (context.SafeRect.Width / context.Scale) - (SideMargin * 2f);
         _columns = Math.Clamp((int)(usable / ColumnWidth), 1, MaxColumns);
 
-        // Five categories and no sixth: the console reaches every variable by name, which is what an
-        // advanced interface should be. A build locked to one preset has no Graphics category at all.
+        // Five categories, and a sixth only for the mods' own: the console reaches every variable by name, which is
+        // what an advanced interface should be. A build locked to one preset has no Graphics category at all.
         List<(string Title, Func<List<SettingsGroup>> Build)> categories =
         [
             ("Display", () => [SettingsGroup.Of("Display", DisplaySettingsTab.Build(_rows, theme))]),
@@ -141,6 +141,13 @@ public sealed class SettingsScreen : ShellScreen
         if (Context.Presets.LockedPreset is null)
         {
             categories.Insert(0, ("Graphics", () => GraphicsSettingsTab.Build(_rows, theme, draft)));
+        }
+
+        // The mods' own settings (mod_<id>_...), one group a mod, when a mod declares any.
+        List<string> modSettings = CvarGroupBuilder.NamesWithPrefix(Context.Cvars, SettingsFile.ModVariablePrefix);
+        if (modSettings.Count > 0)
+        {
+            categories.Add(("Mods", () => CvarGroupBuilder.CvarGroups(_rows, theme, modSettings, "Mods")));
         }
 
         string[] tabTitles = new string[categories.Count];

@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.TestSupport;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
@@ -71,7 +72,7 @@ public sealed class RetailIgi2ConveyorBeltTests
         player.Conveyors[belt.Id] = belt;
         player.Materials = materials;
         Igi2RigidObject solid = m.Collision!.SolidsOf(Igi2ConveyorBeltTask.TypeName, belt.Id)[0];
-        Igi2Intersection onBelt = new() { EnterMaterial = row };
+        WorldIntersection onBelt = new() { EnterMaterial = row };
         Assert.Equal(belt.Push(Igi2ConveyorBeltTask.MaterialName), player.Human.Surroundings.PushOnConveyor(solid, onBelt));
 
         Igi2RigidObject other = m.Collision!.Objects.First(o => o.Owner is Igi2CollisionOwner { TypeName: not Igi2ConveyorBeltTask.TypeName });
@@ -88,10 +89,10 @@ public sealed class RetailIgi2ConveyorBeltTests
             for (double y = -8192.0; y <= 8192.0; y += 512.0)
             {
                 Vector3d at = belt.Position + new Vector3d((f[0] * x) + (f[1] * y), (f[3] * x) + (f[4] * y), 16384.0);
-                Igi2LineTrace trace = new(1) { Mesh = 0 };
+                WorldLineTrace trace = new(1) { Mesh = 0 };
                 trace.Starts[0] = at;
                 world.NextZ(trace, [-32768.0], ~Igi2CollisionWorld.TerrainGroup);
-                Igi2Intersection hit = trace.Intersections[0];
+                WorldIntersection hit = trace.Intersections[0];
                 if (hit.IsHit && ReferenceEquals(hit.HitObject, solid) && hit.EnterMaterial is int row
                     && materials[row]?.Name == Igi2ConveyorBeltTask.MaterialName)
                 {

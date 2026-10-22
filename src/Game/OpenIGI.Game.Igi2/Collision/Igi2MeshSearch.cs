@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -20,7 +21,7 @@ internal static class Igi2MeshSearch
     /// <param name="normal">The face's unit normal in the world.</param>
     /// <param name="lighting">The level's light, or <see langword="null"/> for none.</param>
     /// <returns>The light, <c>vLight</c>.</returns>
-    public static float Light(bool lightmappedFace, Vector3f normal, IIgi2SceneLighting? lighting)
+    public static float Light(bool lightmappedFace, Vector3f normal, IWorldSceneLighting? lighting)
     {
         if (lightmappedFace)
         {

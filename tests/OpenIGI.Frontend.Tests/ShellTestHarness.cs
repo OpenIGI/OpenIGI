@@ -25,7 +25,11 @@ public abstract class ShellTestHarness
     /// <summary>The collection every shell test class joins.</summary>
     public const string CollectionName = "shell";
 
-    private protected static (Shell Shell, FakeHost Host) BuildShell(string savesDir, int activeMission = 2, IReadOnlyList<TitleInputBinding>? controls = null)
+    private protected static (Shell Shell, FakeHost Host) BuildShell(
+        string savesDir,
+        int activeMission = 2,
+        IReadOnlyList<TitleInputBinding>? controls = null,
+        IReadOnlyList<MissionInfo>? extraMissions = null)
     {
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont font = OpenIGI.UI.Text.UiFont.ForMeasurement(
@@ -38,6 +42,7 @@ public abstract class ShellTestHarness
             new(1, 1, "Mission One", "The first briefing.", "mission1.spr"),
             new(2, 2, "Mission Two", "The second briefing.", "mission2.spr"),
         };
+        missions.AddRange(extraMissions ?? []);
 
         GameConfig config = GameConfig.CreateDefault();
         if (config.Active is { } active)
@@ -109,6 +114,8 @@ internal sealed class FakeHost : IShellHost
     public string? InputBindingLabel(string action) => TitleInputBindings.Label(action, Controls);
 
     public void ResetInputBindings(PlayerProfile profile) => TitleInputBindings.Reset(profile, Controls);
+
+    public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves { get; set; }
 
     public int? Previewed { get; private set; }
 

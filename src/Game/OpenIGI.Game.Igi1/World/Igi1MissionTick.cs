@@ -86,6 +86,9 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         }
 
         EndTick();
+
+        // What the tick changed, told once it is over; nothing in it reads what a listener does.
+        mission.EventWatch?.Observe();
     }
 
     /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>

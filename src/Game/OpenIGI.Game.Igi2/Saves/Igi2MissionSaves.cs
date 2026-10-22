@@ -39,6 +39,12 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     /// <summary>Gets where the slots are kept.</summary>
     public Igi2SaveSlots SlotStore => _slots;
 
+    /// <summary>Gets the mods that change play this session is played with, which each save records beside itself.</summary>
+    /// <remarks>
+    /// Kept in a file of their own beside the slot, <c>.mods.json</c>, so the save stays the retail format a retail game reads.
+    /// </remarks>
+    public IReadOnlyList<Core.Content.ModReference> PlayedMods { get; init; } = [];
+
     /// <summary>Gets whose saves these are now.</summary>
     public Igi2SaveOwner Owner => _owner();
 
@@ -52,7 +58,14 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
             for (int slot = 0; slot < Igi2SaveSlots.AvailableSlots(whose.Difficulty); slot++)
             {
                 Igi2SaveInfo info = _slots.Check(whose, slot);
-                list.Add(new TitleSaveSlot(slot, info.IsValid, info.IsValid ? Igi2SaveSlots.MissionTime(info.Ticks) : string.Empty));
+                IReadOnlyList<Core.Content.ModReference> missing = info.IsValid
+                    ? Core.Content.ModReference.Missing(Core.Content.ModReference.ReadList(ModsFile(whose, slot)), PlayedMods)
+                    : [];
+                list.Add(new TitleSaveSlot(
+                    slot,
+                    info.IsValid,
+                    info.IsValid ? Igi2SaveSlots.MissionTime(info.Ticks) : string.Empty,
+                    missing.Count > 0 ? missing : null));
             }
 
             return list;
@@ -76,7 +89,7 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
         }
 
         _player.SavesUsed++;
-        return _slots.Save(whose, slot, _level.Root, _player.MissionTime, Glass);
+        return Recorded(whose, slot, _slots.Save(whose, slot, _level.Root, _player.MissionTime, Glass));
     }
 
     /// <summary>
@@ -85,7 +98,8 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     /// </summary>
     /// <param name="slot">The slot.</param>
     /// <returns><see langword="true"/> once written.</returns>
-    public bool Write(int slot) => slot >= 0 && slot < Igi2SaveSlots.MenuSlots && _slots.Save(_owner(), slot, _level.Root, _player.MissionTime, Glass);
+    public bool Write(int slot) =>
+        slot >= 0 && slot < Igi2SaveSlots.MenuSlots && Recorded(_owner(), slot, _slots.Save(_owner(), slot, _level.Root, _player.MissionTime, Glass));
 
     /// <summary>
     /// A slot as the computer's save screen names it (<c>ComputerSaveMenu_NewSaveSlot</c>): its mission time, <c>Mission Time: h:mm:ss</c>
@@ -151,4 +165,29 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     /// <returns><see langword="true"/> once written.</returns>
     public bool SaveCarryOver(GameTask task, int nextMission) =>
         !_player.IsDead && _slots.SaveCarryOver(_owner() with { Mission = nextMission }, task);
+
+    // The file beside a slot that names the mods it was saved with.
+    private string ModsFile(Igi2SaveOwner whose, int slot) => _slots.PathOf(Igi2SaveSlots.SlotFileName(whose, slot)) + ".mods.json";
+
+    // Records the mods a save was just written with, beside it.
+    private bool Recorded(Igi2SaveOwner whose, int slot, bool written)
+    {
+        if (written)
+        {
+            try
+            {
+                Core.Content.ModReference.WriteList(ModsFile(whose, slot), PlayedMods);
+            }
+            catch (IOException)
+            {
+                // The save itself is written; only the note of its mods is not, and the game plays on.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // As above.
+            }
+        }
+
+        return written;
+    }
 }

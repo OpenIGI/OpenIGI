@@ -101,6 +101,41 @@ public sealed class IresArchive
         return null;
     }
 
+    /// <summary>Gets a copy of the archive with some of its bodies replaced: a content layer's stand-ins for them.</summary>
+    /// <param name="replacement">Gives an entry's new bytes, or <see langword="null"/> to keep its own.</param>
+    /// <returns>This archive when nothing is replaced; otherwise the copy, its entries in the same order.</returns>
+    public IresArchive WithBodies(Func<IresEntry, ReadOnlyMemory<byte>?> replacement)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        List<IresEntry> entries = new(Entries.Count);
+        bool replaced = false;
+        foreach (IresEntry entry in Entries)
+        {
+            if (entry.Kind == IresEntryKind.Body && replacement(entry) is { } data)
+            {
+                entries.Add(new IresEntry(entry.Name, entry.Kind, data));
+                replaced = true;
+            }
+            else
+            {
+                entries.Add(entry);
+            }
+        }
+
+        if (!replaced)
+        {
+            return this;
+        }
+
+        Dictionary<string, IresEntry> byName = new(entries.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (IresEntry entry in entries)
+        {
+            _ = byName.TryAdd(entry.Name, entry);
+        }
+
+        return new IresArchive(Container, new ReadOnlyCollection<IresEntry>(entries), byName);
+    }
+
     /// <inheritdoc/>
     public override string ToString() => $"IRES archive, {Entries.Count} entries, {Container.Size} bytes";
 

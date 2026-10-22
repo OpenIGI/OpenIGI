@@ -30,7 +30,7 @@ namespace OpenIGI.Game.Igi2.Vehicles;
 /// whether that thrust is over a thousandth; its children run.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IIgi2AttachParent
+public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarget, IAttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = Igi2Train.TrainType;

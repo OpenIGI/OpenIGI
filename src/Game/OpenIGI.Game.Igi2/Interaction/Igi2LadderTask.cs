@@ -2,8 +2,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -30,7 +30,7 @@ public interface IIgi2LadderClimber
 /// A blocked line forgets the best target found so far.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2AttachParent
+public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IAttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Ladder";

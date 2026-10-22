@@ -8,6 +8,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Hud;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -347,18 +348,22 @@ public sealed partial class GameHost
     // The presenters the title registered for the level as a whole, then for particular task types, one for each such task.
     private readonly List<ITaskPresenter> _taskPresenters = [];
 
+    // What the mods draw over the player's view in this level.
+    private readonly List<IHudOverlay> _hudOverlays = [];
+
     /// <summary>Makes a presenter for every task of the level whose type has one registered.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     private void MakeTaskPresenters(LevelTask levelRoot)
     {
         ReleaseTaskPresenters();
         PresenterRegistry presenters = _presentation.Presenters;
-        if (presenters.TaskTypeCount == 0 && presenters.LevelPresenterCount == 0)
+        if (presenters.TaskTypeCount == 0 && presenters.LevelPresenterCount == 0 && presenters.HudOverlayCount == 0)
         {
             return;
         }
 
         TaskPresenterRequest request = new(_device, _resources, levelRoot, _logger);
+        _hudOverlays.AddRange(presenters.CreateHudOverlays(request));
         _taskPresenters.AddRange(presenters.CreateForLevel(request));
         foreach (GameTask task in levelRoot.Descendants())
         {
@@ -380,5 +385,12 @@ public sealed partial class GameHost
         }
 
         _taskPresenters.Clear();
+
+        foreach (IHudOverlay overlay in _hudOverlays)
+        {
+            overlay.Dispose();
+        }
+
+        _hudOverlays.Clear();
     }
 }

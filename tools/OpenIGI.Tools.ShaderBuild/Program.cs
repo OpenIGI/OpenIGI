@@ -1,11 +1,17 @@
-using OpenIGI.Tools;
 using OpenIGI.Shaders;
+using OpenIGI.Tools;
 using OpenIGI.Tools.ShaderBuild;
 
 // Compiles src/Rendering/OpenIGI.Shaders from Slang to SPIR-V, WGSL and DXIL.
 //
 //   dotnet run --project tools/OpenIGI.Tools.ShaderBuild            regenerate the committed output
 //   dotnet run --project tools/OpenIGI.Tools.ShaderBuild -- --check fail if the committed output is stale
+//   dotnet run --project tools/OpenIGI.Tools.ShaderBuild -- --project <mod>/shaders
+//                                                                    compile a mod's shaders the same way, beside them
+//
+// A mod's shader folder is laid out as the library is: a ShaderModules.json, its sources under Source/, its output
+// under Generated/. Its sources include the game's own library, so "Mod/PostPass.slang" -- the contract a mod's pass
+// is written against -- is found from either.
 //
 // The committed artefacts are what the game loads; this tool is what produces them, and --check is
 // what stops a shader source being edited without its compiled form following.
@@ -22,12 +28,20 @@ static int Run(ToolContext ctx)
 
     try
     {
-        string projectDirectory = ShaderProjectLocator.Locate();
+        string libraryDirectory = ShaderProjectLocator.Locate();
+        int projectArgument = ctx.Arguments.ToList().IndexOf("--project");
+        string projectDirectory = projectArgument >= 0 && projectArgument + 1 < ctx.Arguments.Count
+            ? Path.GetFullPath(ctx.Arguments[projectArgument + 1])
+            : libraryDirectory;
         string slangc = SlangLocator.Locate();
         ShaderManifest manifest = ShaderLibraryBuilder.ReadManifest(projectDirectory);
-        string repositoryRoot = Path.GetFullPath(Path.Combine(projectDirectory, "..", "..", ".."));
+        string repositoryRoot = Path.GetFullPath(Path.Combine(libraryDirectory, "..", "..", ".."));
         DxcInstall dxc = DxcLocator.Locate(repositoryRoot, manifest.DxcVersion);
-        SlangCompiler compiler = new(slangc, dxc.LibraryDirectory);
+        SlangCompiler compiler = new(slangc, dxc.LibraryDirectory)
+        {
+            IncludeDirectories = projectDirectory == libraryDirectory ? [] : [Path.Combine(libraryDirectory, "Source")],
+            PreserveParameters = projectDirectory != libraryDirectory,
+        };
 
         string version = compiler.Version();
         ctx.Info($"slangc   {slangc}");

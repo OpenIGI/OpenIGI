@@ -113,15 +113,15 @@ public sealed unsafe partial class WebGpuRhiDevice
 
         string name = descriptor.Label.Length > 0 ? descriptor.Label : descriptor.Module.ToString();
 
-        ShaderVariantEntry? entry = ShaderCatalog.Manifest.Module(descriptor.Module).Variant(variant);
-
-        if (entry is null)
+        // A module from outside the library -- a mod's -- carries its default variant alone, with or without its WGSL form.
+        if (!ShaderCatalog.TryGetExternal(descriptor.Module, out _)
+            && ShaderCatalog.Manifest.Module(descriptor.Module).Variant(variant) is null)
         {
             throw new InvalidOperationException(
                 $"The module {descriptor.Module} has no variant named '{variant.Name}'.");
         }
 
-        if (!entry.Compiles(ShaderTarget.Wgsl))
+        if (!ShaderCatalog.Compiles(descriptor.Module, variant, ShaderTarget.Wgsl))
         {
             throw new InvalidOperationException(
                 $"The module {descriptor.Module} has no WGSL form for the variant '{variant.Name}', so this "

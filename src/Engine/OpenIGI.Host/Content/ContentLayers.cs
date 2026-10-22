@@ -2,6 +2,7 @@ using System.Text.Json;
 using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Host.Configuration;
 
 namespace OpenIGI.Host.Content;
@@ -15,6 +16,7 @@ namespace OpenIGI.Host.Content;
 /// <item><description>every <c>-content</c> folder, in the order named (development);</description></item>
 /// <item><description>the folder in <c>OPENIGI_OVERRIDES</c>, if set and there is NO profile (the launcher's
 /// old hand-off, kept so scripts and shortcuts that set it still work);</description></item>
+/// <item><description>the data of the mods played, the last in their order first (<c>IGameTitleRuntime.ContentFolders</c>);</description></item>
 /// <item><description>the content profile's list for this title, which is the player's load order and
 /// holds the game folder's own <c>overrides</c> as one entry among the packs;</description></item>
 /// </list>
@@ -46,6 +48,7 @@ public static class ContentLayers
     /// <param name="developmentFolders">The <c>-content</c> folders, highest priority first.</param>
     /// <param name="legacyFolder">The <c>OPENIGI_OVERRIDES</c> folder, or <see langword="null"/>.</param>
     /// <param name="logger">Where to report a profile that could not be read.</param>
+    /// <param name="modFolders">The data of the mods played, highest priority first; none by default.</param>
     /// <returns>The layers, highest priority first.</returns>
     public static IReadOnlyList<OverrideLayer> Resolve(
         string titleId,
@@ -53,7 +56,8 @@ public static class ContentLayers
         string? profilePath,
         IReadOnlyList<string> developmentFolders,
         string? legacyFolder,
-        IOpenIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null,
+        IReadOnlyList<TitleContentFolder>? modFolders = null)
     {
         ArgumentNullException.ThrowIfNull(titleId);
         ArgumentNullException.ThrowIfNull(developmentFolders);
@@ -76,6 +80,11 @@ public static class ContentLayers
         if (!string.IsNullOrWhiteSpace(legacyFolder) && !profiled)
         {
             layers.Add(new OverrideLayer(Unique(layers, "legacy"), $"Legacy ({LegacyVariable})", legacyFolder));
+        }
+
+        foreach (TitleContentFolder folder in modFolders ?? [])
+        {
+            layers.Add(new OverrideLayer(Unique(layers, folder.Id), $"{folder.Name} (mod)", folder.Root));
         }
 
         IReadOnlyList<ContentLayerSpec> chosen = ReadProfile(titleId, profilePath, logger);
@@ -101,19 +110,22 @@ public static class ContentLayers
     /// <param name="dataRoot">The title's data root.</param>
     /// <param name="options">The parsed command line.</param>
     /// <param name="logger">Where to report a profile that could not be read.</param>
+    /// <param name="modFolders">The data of the mods played, highest priority first; none by default.</param>
     /// <returns>The layers, highest priority first.</returns>
     public static IReadOnlyList<OverrideLayer> Resolve(
         string titleId,
         string? dataRoot,
         HostOptions options,
-        IOpenIgiLogger? logger = null) =>
+        IOpenIgiLogger? logger = null,
+        IReadOnlyList<TitleContentFolder>? modFolders = null) =>
         Resolve(
             titleId,
             dataRoot,
             options.ContentProfilePath ?? NonEmpty(Environment.GetEnvironmentVariable(ContentProfile.EnvironmentVariable)),
             options.ContentDirectories,
             NonEmpty(Environment.GetEnvironmentVariable(LegacyVariable)),
-            logger);
+            logger,
+            modFolders);
 
     private static IReadOnlyList<ContentLayerSpec> ReadProfile(string titleId, string? profilePath, IOpenIgiLogger logger)
     {

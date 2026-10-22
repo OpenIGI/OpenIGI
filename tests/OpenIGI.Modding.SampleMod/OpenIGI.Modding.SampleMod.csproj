@@ -1,20 +1,26 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project>
 
-  <!-- A mod as a mod author builds one, loaded by the modding tests through the real loader. -->
+  <!--
+    A mod as a mod author builds one, loaded by the modding tests through the real loader. An author writes
+    <Project Sdk="OpenIGI.Modding.Sdk/x.y.z">; inside the game's own repository the SDK is imported from where it lives.
+  -->
+  <Import Project="..\..\sdk\OpenIGI.Modding.Sdk\Sdk\Sdk.props" />
+
   <PropertyGroup>
     <AssemblyName>SampleMod</AssemblyName>
     <RootNamespace>SampleMod</RootNamespace>
+    <ModId>sample</ModId>
+    <ModName>Sample</ModName>
+    <Version>1.0</Version>
+    <ModSummary>A mod as a mod author builds one, for the modding tests.</ModSummary>
+    <Authors>OpenIGI</Authors>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
-    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <!-- A pass over the scene, compiled from shaders/Source by the game's shader tool into shaders/Generated. -->
+    <ModPostPass Include="Greyscale" Toggle="mod_sample_greyscale" Parameters="mod_sample_greyscale_amount" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="mod.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <Import Project="..\..\sdk\OpenIGI.Modding.Sdk\build\OpenIGI.Modding.Sdk.targets" />
+  <Import Project="..\..\sdk\OpenIGI.Modding.Sdk\Sdk\Sdk.targets" />
 
 </Project>

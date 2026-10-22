@@ -1,0 +1,22 @@
+<Project>
+
+  <!-- What a mod's project is before its own properties: the .NET SDK, and the defaults a mod builds with. -->
+
+  <PropertyGroup>
+    <!-- The modding API this SDK builds for; the game's ModApi.Version, which a test holds this to. -->
+    <OpenIgiModApiVersion>1</OpenIgiModApiVersion>
+
+    <!-- A mod is a plugin: the packages it references itself are copied beside it. Set before the .NET SDK reads it. -->
+    <EnableDynamicLoading Condition="'$(EnableDynamicLoading)' == ''">true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <PropertyGroup>
+    <TargetFramework Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == ''">net10.0</TargetFramework>
+    <Nullable Condition="'$(Nullable)' == ''">enable</Nullable>
+    <ImplicitUsings Condition="'$(ImplicitUsings)' == ''">enable</ImplicitUsings>
+    <LangVersion Condition="'$(LangVersion)' == ''">preview</LangVersion>
+  </PropertyGroup>
+
+</Project>

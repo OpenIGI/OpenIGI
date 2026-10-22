@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
@@ -20,7 +20,7 @@ public sealed partial class Igi2HumanAi : IIgi2GraphFooting
     /// the stretch was turned back.
     /// </para>
     /// </remarks>
-    public bool TryGetFooting(Vector3d from, Igi2Intersection ground, out float light)
+    public bool TryGetFooting(Vector3d from, WorldIntersection ground, out float light)
     {
         light = 0f;
         if (Graph is not { } graph || graph.NodeAt(CurrentNode) is not { } node)

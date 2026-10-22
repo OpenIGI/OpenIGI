@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Resources;
+using OpenIGI.Formats.Ilff;
 
 namespace OpenIGI.Engine.Vfs;
 
@@ -64,6 +66,14 @@ public sealed class VirtualFileSystem
     /// <summary>Initializes a new instance of the <see cref="VirtualFileSystem"/> class.</summary>
     /// <param name="logger">The logger for mount and rebind diagnostics; defaults to a sink that discards them.</param>
     public VirtualFileSystem(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+
+    /// <summary>Gets or sets the files that stand in for the devices' own, or <see langword="null"/> for none.</summary>
+    /// <remarks>
+    /// Consulted before a device for every loose file read or looked for, so a content layer -- a pack, the game folder's
+    /// overrides, a mod's data -- reaches every reader alike. An archive (<c>.res</c>) is never stood in for whole: its
+    /// entries are, by <see cref="ReadArchive"/> and the resource registry.
+    /// </remarks>
+    public IFileOverlay? Overlay { get; set; }
 
     /// <summary>Finds a registered device by name.</summary>
     /// <param name="name">The device name, with or without its trailing colon.</param>
@@ -193,7 +203,8 @@ public sealed class VirtualFileSystem
     {
         foreach (string candidate in ResolveCandidates(name))
         {
-            if (RequireDevice(candidate, out string devicePath).Exists(devicePath))
+            IFileDevice device = RequireDevice(candidate, out string devicePath);
+            if (OverlaySupplies(candidate) || device.Exists(devicePath) || Overlay?.HasFile(OverridePath.For(candidate)) == true)
             {
                 resolved = candidate;
                 return true;
@@ -219,9 +230,23 @@ public sealed class VirtualFileSystem
     {
         foreach (string candidate in ResolveCandidates(name))
         {
-            if (RequireDevice(candidate, out string devicePath).TryOpenRead(devicePath, out Stream? opened))
+            IFileDevice device = RequireDevice(candidate, out string devicePath);
+            if (Overlay is { } overlay && !IsArchive(candidate) && overlay.TryRead(OverridePath.For(candidate), out ReadOnlyMemory<byte> replaced))
+            {
+                stream = new MemoryStream(replaced.ToArray(), writable: false);
+                return true;
+            }
+
+            if (device.TryOpenRead(devicePath, out Stream? opened))
             {
                 stream = opened!;
+                return true;
+            }
+
+            // A file only a layer has -- a new mission's script or pack -- is read whole.
+            if (Overlay is { } adding && adding.TryReadFile(OverridePath.For(candidate), out ReadOnlyMemory<byte> added))
+            {
+                stream = new MemoryStream(added.ToArray(), writable: false);
                 return true;
             }
         }
@@ -246,6 +271,31 @@ public sealed class VirtualFileSystem
         {
             return ReadToEnd(stream);
         }
+    }
+
+    /// <summary>Reads a resource archive, with each of its entries a content layer stands in for replaced.</summary>
+    /// <param name="name">The archive's name.</param>
+    /// <returns>The archive.</returns>
+    /// <exception cref="EngineFatalException">The archive does not exist, or a candidate names an unregistered device.</exception>
+    /// <remarks>
+    /// An entry stands in by the archive's directory and its own file name (<c>OverridePath.For(archive, entry)</c>), as the
+    /// resource registry looks them up, so one replacement reaches an archive however it is read.
+    /// </remarks>
+    public IresArchive ReadArchive(string name)
+    {
+        if (!TryResolve(name, out string? resolved))
+        {
+            throw new EngineFatalException($"Couldn't load file: {name}");
+        }
+
+        IresArchive archive = IresArchive.Read(ReadAllBytes(resolved));
+        if (Overlay is not { } overlay)
+        {
+            return archive;
+        }
+
+        return archive.WithBodies(entry =>
+            overlay.TryRead(OverridePath.For(resolved, entry.Name), out ReadOnlyMemory<byte> replaced) ? replaced : (ReadOnlyMemory<byte>?)null);
     }
 
     /// <summary>Reads a stream in full with as little copying as its kind allows.</summary>
@@ -281,10 +331,13 @@ public sealed class VirtualFileSystem
         foreach (string candidate in ResolveCandidates(name))
         {
             IFileDevice device = RequireDevice(candidate, out string devicePath);
+            int first = results.Count;
             foreach (string file in device.EnumerateFiles(devicePath, searchPattern))
             {
                 results.Add($"{device.Name}{ResourcePath.NamespaceSeparator}{file}");
             }
+
+            AddLayerEntries(results, first, device, Overlay?.EnumerateFiles(devicePath, searchPattern));
         }
 
         return results;
@@ -300,10 +353,13 @@ public sealed class VirtualFileSystem
         foreach (string candidate in ResolveCandidates(name))
         {
             IFileDevice device = RequireDevice(candidate, out string devicePath);
+            int first = results.Count;
             foreach (string child in device.EnumerateDirectories(devicePath))
             {
                 results.Add($"{device.Name}{ResourcePath.NamespaceSeparator}{child}");
             }
+
+            AddLayerEntries(results, first, device, Overlay?.EnumerateDirectories(devicePath));
         }
 
         return results;
@@ -331,6 +387,36 @@ public sealed class VirtualFileSystem
         devicePath = path[(deviceName.Length + 1)..];
         return device;
     }
+
+    // An archive is never stood in for whole: its entries are, one by one.
+    private static bool IsArchive(string candidate) => candidate.EndsWith(".res", StringComparison.OrdinalIgnoreCase);
+
+    // What only the layers have, after the device's own, each once: a mod's new folders and files.
+    private static void AddLayerEntries(List<string> results, int first, IFileDevice device, IEnumerable<string>? layered)
+    {
+        if (layered is null)
+        {
+            return;
+        }
+
+        HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
+        for (int i = first; i < results.Count; i++)
+        {
+            known.Add(results[i]);
+        }
+
+        foreach (string entry in layered)
+        {
+            string path = $"{device.Name}{ResourcePath.NamespaceSeparator}{entry}";
+            if (known.Add(path))
+            {
+                results.Add(path);
+            }
+        }
+    }
+
+    private bool OverlaySupplies(string candidate) =>
+        Overlay is { } overlay && !IsArchive(candidate) && overlay.Supplies(OverridePath.For(candidate));
 
     private sealed record AliasBinding(string Name, IReadOnlyList<string> Variants);
 }

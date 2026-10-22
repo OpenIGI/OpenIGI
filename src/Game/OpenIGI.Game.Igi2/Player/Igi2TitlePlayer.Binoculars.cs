@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -83,14 +84,14 @@ public sealed partial class Igi2TitlePlayer
         Matrix3f view = Human.View.Orientation;
         Vector3f forward = new(view.M12, view.M22, view.M32);
         bool binoculars = overlay == BinocularOverlayType;
-        Igi2LineTrace trace = new(1)
+        WorldLineTrace trace = new(1)
         {
             Includes = owner => !ReferenceEquals(owner, Human),
         };
         trace.Starts[0] = eye;
         trace.Ends[0] = new Vector3d(eye.X + (forward.X * BinocularReach), eye.Y + (forward.Y * BinocularReach), eye.Z + (forward.Z * BinocularReach));
         CollisionWorld.TraceLines(trace, binoculars ? BinocularRangeGroups : ScopeRangeGroups);
-        Igi2Intersection hit = trace.Intersections[0];
+        WorldIntersection hit = trace.Intersections[0];
         ZoomRange = hit.IsHit ? hit.Distance : null;
         if (overlay == LaserDesignatorOverlayType)
         {
@@ -134,7 +135,7 @@ public sealed partial class Igi2TitlePlayer
                 continue;
             }
 
-            Igi2LineOfSight sight = new(eye, body.CheapHeadBonePosition(), materials)
+            WorldLineOfSight sight = new(eye, body.CheapHeadBonePosition(), materials)
             {
                 Includes = owner => !ReferenceEquals(owner, Human) && !ReferenceEquals(owner, body),
             };

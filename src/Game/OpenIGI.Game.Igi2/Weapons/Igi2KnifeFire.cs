@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -38,7 +38,7 @@ public sealed class Igi2KnifeFire : IIgi2FireHandler
     /// <summary>What anything but a knife-kind weapon sounds in a human, one by a draw.</summary>
     private static readonly string[] PunchSounds = ["punched_01", "punched_02"];
 
-    private readonly Igi2LineTrace _trace = new(1);
+    private readonly WorldLineTrace _trace = new(1);
 
     /// <inheritdoc/>
     public bool HasRelease => false;
@@ -86,12 +86,12 @@ public sealed class Igi2KnifeFire : IIgi2FireHandler
             (new Fpu(from.Z) + (new Fpu(direction.Z) * Reach)).Value);
         _trace.Mesh = 0;
         _trace.TracePortals = false;
-        _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
+        _trace.IgnoreMaterial = WorldLineTrace.AirMaterial;
         WeaponCollisionQuery query = new(request.Operator, null, 1f);
         _trace.Includes = owner => owner is not IWeaponCollisionTarget target || target.EvaluateWeaponCollision(query);
         world.Collision.TraceLines(_trace, uint.MaxValue);
 
-        Igi2Intersection hit = _trace.Intersections[0];
+        WorldIntersection hit = _trace.Intersections[0];
         if (!hit.IsHit || hit.HitObject is not { } struck)
         {
             return false;

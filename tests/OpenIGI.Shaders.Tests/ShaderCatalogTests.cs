@@ -27,7 +27,8 @@ public sealed partial class ShaderCatalogTests
     [Fact]
     public void Manifest_and_enumeration_describe_the_same_modules()
     {
-        IEnumerable<ShaderModuleId> declared = Enum.GetValues<ShaderModuleId>();
+        // External names a mod's module, which the library never carries.
+        IEnumerable<ShaderModuleId> declared = Enum.GetValues<ShaderModuleId>().Where(static id => id != ShaderModuleId.External);
         IEnumerable<ShaderModuleId> listed = ShaderCatalog.Manifest.Modules.Select(module => module.Id);
 
         Assert.Equal(declared.Order().ToArray(), listed.Order().ToArray());
@@ -65,9 +66,12 @@ public sealed partial class ShaderCatalogTests
         List<string> unlisted = [];
         string common = Path.Combine(SourceDirectory, "Common");
 
+        // The contract a mod's pass includes: compiled with each mod's module, never alone.
+        string contracts = Path.Combine(SourceDirectory, "Mod");
+
         foreach (string path in Directory.EnumerateFiles(SourceDirectory, "*.slang", SearchOption.AllDirectories))
         {
-            if (path.StartsWith(common, StringComparison.OrdinalIgnoreCase))
+            if (path.StartsWith(common, StringComparison.OrdinalIgnoreCase) || path.StartsWith(contracts, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

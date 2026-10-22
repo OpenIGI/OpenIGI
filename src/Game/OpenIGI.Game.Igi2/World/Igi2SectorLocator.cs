@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -47,7 +48,7 @@ public sealed class Igi2SectorLocator
         Igi2Sector? found = null;
         double best = double.MaxValue;
         double start = lift ? point.Z + Lift : point.Z;
-        Igi2LineTrace trace = new(2) { Mesh = 0, TracePortals = true };
+        WorldLineTrace trace = new(2) { Mesh = 0, TracePortals = true };
         foreach ((Igi2Sector sector, Igi2RigidObject solid) in _sectors)
         {
             double reach = 2.0 * solid.BoundingRadius;
@@ -57,7 +58,7 @@ public sealed class Igi2SectorLocator
             trace.Ends[1] = new Vector3d(point.X, point.Y, point.Z + reach);
             trace.Includes = owner => ReferenceEquals(owner, solid.Owner);
             _world.TraceLines(trace, solid.Group);
-            Igi2Intersection down = trace.Intersections[0], up = trace.Intersections[1];
+            WorldIntersection down = trace.Intersections[0], up = trace.Intersections[1];
             if (down.IsHit && up.IsHit && ReferenceEquals(down.HitObject, solid) && ReferenceEquals(up.HitObject, solid))
             {
                 double distance = Math.Min(down.Distance, up.Distance);

@@ -271,6 +271,9 @@ public sealed partial class GameHost : IDisposable
 
     // The missions the retail menus list: the title's table once its scan has succeeded.
     private IMissionCatalogue<MissionDescriptor>? _menuMissions;
+
+    // The campaigns the running title's mods add beside its own, or null for none.
+    private SideCampaignMissionCatalogue? _sideCampaigns;
     private HostFlowHost _flowHost = null!;
     private GameMissionState _missionState = null!;
 

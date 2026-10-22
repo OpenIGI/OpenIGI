@@ -25,19 +25,6 @@ public interface IIgi2Mover
     IReadOnlyList<float> LastOrientation { get; }
 }
 
-/// <summary>
-/// A parent its children attach to, as a lift's are: <c>Attach_eAttachEvent</c> gives a child the parent's position and
-/// orientation to hold itself against (<c>Lift_AttachHandler</c>, <c>igi2 0x46EBB0</c>).
-/// </summary>
-public interface IIgi2AttachParent
-{
-    /// <summary>Gets where the parent stands, <c>AttachContext_t.ptParentPos</c>.</summary>
-    Vector3d AttachPosition { get; }
-
-    /// <summary>Gets which way the parent faces, <c>AttachContext_t.ptParentOrientation</c>, row by row.</summary>
-    IReadOnlyList<float> AttachOrientation { get; }
-}
-
 /// <summary>A child that follows its parent when the parent moves: its <c>Attach_eUpdateAttachmentEvent</c> handler.</summary>
 public interface IIgi2Attached
 {

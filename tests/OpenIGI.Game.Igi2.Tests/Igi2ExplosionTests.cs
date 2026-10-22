@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using Xunit;
 
 namespace OpenIGI.Game.Igi2.Tests;
@@ -98,7 +99,7 @@ public sealed class Igi2ExplosionTests
     }
 
     private static Igi2GrenadeExplosion Grenade(Vector3d at) =>
-        new(at, new Igi2Intersection(), 4f, 16384f, 40960f, null);
+        new(at, new WorldIntersection(), 4f, 16384f, 40960f, null);
 
     /// <summary>
     /// Whether the stream has drawn as many more times as the reference is stepped now: both then draw once more, which keeps
@@ -117,7 +118,7 @@ public sealed class Igi2ExplosionTests
     /// <summary>A world with nothing in it: every line is clear.</summary>
     private sealed class OpenGround : IIgi2CollisionQuery
     {
-        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
+        public void NextZ(WorldLineTrace trace, ReadOnlySpan<double> distances, uint groups)
         {
             for (int i = 0; i < trace.Count; i++)
             {
@@ -125,7 +126,7 @@ public sealed class Igi2ExplosionTests
             }
         }
 
-        public void TraceLines(Igi2LineTrace trace, uint groups)
+        public void TraceLines(WorldLineTrace trace, uint groups)
         {
             for (int i = 0; i < trace.Count; i++)
             {

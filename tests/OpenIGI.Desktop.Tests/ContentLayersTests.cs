@@ -15,6 +15,27 @@ public sealed class ContentLayersTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("openigi-content-profile").FullName;
 
+    /// <summary>The mods' data stacks over the player's packs and the game folder's overrides, under the -content folders.</summary>
+    [Fact]
+    public void ModsDataSitsOverThePacksAndUnderTheDevelopmentFolders()
+    {
+        string profile = WriteProfile(new Dictionary<string, IReadOnlyList<ContentLayerSpec>>
+        {
+            ["igi1"] = [new("hd", "HD Textures", ContentLayerKind.Pack, Path.Combine(_root, "hd"), true), ContentLayerSpec.Local()],
+        });
+
+        IReadOnlyList<OverrideLayer> layers = ContentLayers.Resolve(
+            "igi1",
+            Path.Combine(_root, "game1"),
+            profile,
+            [Path.Combine(_root, "work")],
+            null,
+            modFolders: [new("mod-later", "Later", Path.Combine(_root, "later", "data")), new("mod-earlier", "Earlier", Path.Combine(_root, "earlier", "data"))]);
+
+        Assert.Equal(["dev-work", "mod-later", "mod-earlier", "hd", ContentLayerSpec.LocalId], layers.Select(static layer => layer.Id));
+        Assert.Equal(Path.Combine(_root, "later", "data"), layers[1].Root);
+    }
+
     /// <summary>Each title takes its own list from the profile, so a title switch picks up the other game's.</summary>
     [Fact]
     public void EachTitleTakesItsOwnListFromTheProfile()

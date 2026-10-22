@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Animation;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -31,9 +31,9 @@ public abstract partial class Igi2Human
     /// <summary>The share of a landing's dip the held object takes on top of the eyes', <c>0.075</c> as a double.</summary>
     private const double ObjectImpactShare = 0.075;
 
-    private readonly Igi2LineTrace _eyeTrace = new(1) { Mesh = FootingMesh, Includes = static owner => !IsSweptThrough(owner) };
+    private readonly WorldLineTrace _eyeTrace = new(1) { Mesh = FootingMesh, Includes = static owner => !IsSweptThrough(owner) };
 
-    private readonly Igi2LineTrace _objectTrace = new(1) { Mesh = 0, Includes = static owner => !IsSweptThrough(owner) };
+    private readonly WorldLineTrace _objectTrace = new(1) { Mesh = 0, Includes = static owner => !IsSweptThrough(owner) };
 
     /// <summary>
     /// Places the view on the body: <c>HumanView_UpdateBody</c> (<c>igi2 0x4D6510</c>), for the view alone.
@@ -152,7 +152,7 @@ public abstract partial class Igi2Human
         _objectTrace.Ends[0] = new Vector3d((aheadX + eyes.X).Value, (aheadY + eyes.Y).Value, (aheadZ + eyes.Z).Value);
         _objectTrace.Evaluator = this;
         Surroundings.Collision.TraceLines(_objectTrace, AnyGroup);
-        Igi2Intersection hit = _objectTrace.Intersections[0];
+        WorldIntersection hit = _objectTrace.Intersections[0];
         view.RetractIdeal = hit.IsHit ? (-((Fpu)(double)ObjectReach - hit.Distance)).F : 0f;
 
         float step = view.RetractIdeal == 0f ? RetractRelease : RetractFollow;
@@ -241,7 +241,7 @@ public abstract partial class Igi2Human
         _eyeTrace.Ends[0] = leaned;
         _eyeTrace.Evaluator = this;
         Surroundings.Collision.TraceLines(_eyeTrace, AnyGroup);
-        Igi2Intersection hit = _eyeTrace.Intersections[0];
+        WorldIntersection hit = _eyeTrace.Intersections[0];
         if (!hit.IsHit)
         {
             return leaned;

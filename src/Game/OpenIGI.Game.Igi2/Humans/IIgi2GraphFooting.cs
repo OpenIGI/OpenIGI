@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -17,5 +17,5 @@ public interface IIgi2GraphFooting
     /// <param name="ground">The footing, cleared by the caller and filled when the brain has a graph.</param>
     /// <param name="light">How lit the footing is, the two nodes' light by how far along the stretch it lies.</param>
     /// <returns><see langword="false"/> when the brain has no graph (or no node to stand on), and the footing is left empty.</returns>
-    bool TryGetFooting(Vector3d from, Igi2Intersection ground, out float light);
+    bool TryGetFooting(Vector3d from, WorldIntersection ground, out float light);
 }

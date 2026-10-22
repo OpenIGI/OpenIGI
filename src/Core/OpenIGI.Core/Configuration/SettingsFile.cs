@@ -19,6 +19,10 @@ namespace OpenIGI.Core.Configuration;
 /// </remarks>
 public static class SettingsFile
 {
+    /// <summary>The prefix every mod's variable is named with: <c>mod_&lt;id&gt;_</c>.</summary>
+    /// <remarks>A line for one nothing declares is kept and written back (<see cref="ConsoleSystem.KeptSettings"/>).</remarks>
+    public const string ModVariablePrefix = "mod_";
+
     /// <summary>Loads settings by executing the file's contents.</summary>
     /// <param name="console">The console to execute against.</param>
     /// <param name="path">The file to read.</param>
@@ -131,9 +135,17 @@ public static class SettingsFile
         }
 
         string name = tokens[0];
-        return !console.Variables.TryGet(name, out _)
+        bool retired = !console.Variables.TryGet(name, out _)
             && !console.Commands.TryGet(name, out _)
             && !console.Aliases.ContainsKey(name);
+
+        // A switched-off mod's setting is not retired: it is kept for when the mod is on again.
+        if (retired && name.StartsWith(ModVariablePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            console.KeepSetting(name, tokens[1]);
+        }
+
+        return retired;
     }
 
     /// <summary>Writes the current settings.</summary>
@@ -203,7 +215,9 @@ public static class SettingsFile
         builder.AppendLine();
 
         List<ICVar> modified = [.. console.Variables.Modified(CVarOptions.Archive)];
-        if (modified.Count > 0)
+        List<KeyValuePair<string, string>> kept =
+            [.. Ordered(console.KeptSettings).Where(entry => !console.Variables.TryGet(entry.Key, out _))];
+        if (modified.Count > 0 || kept.Count > 0)
         {
             builder.AppendLine("// Variables");
             foreach (ICVar variable in modified)
@@ -211,6 +225,14 @@ public static class SettingsFile
                 builder.Append(variable.Name)
                     .Append(' ')
                     .AppendLine(CommandTokenizer.Quote(variable.ValueText));
+            }
+
+            // A switched-off mod's settings, as they were read.
+            foreach (KeyValuePair<string, string> setting in kept)
+            {
+                builder.Append(setting.Key)
+                    .Append(' ')
+                    .AppendLine(CommandTokenizer.Quote(setting.Value));
             }
 
             builder.AppendLine();

@@ -488,7 +488,7 @@ public sealed partial class GameHost
             // order is the startup scan's, which is a directory walk and therefore alphabetical, so it
             // listed level 10 between level 1 and level 2. The retail menu walks the chain (0x405660) and
             // so does this.
-            state.Saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "state.Saves"));
+            state.Saves = new SaveSlotStore(SavesDirectory());
 
             state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
@@ -709,7 +709,8 @@ public sealed partial class GameHost
                 {
                     TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
                 },
-                displayResolutions: DisplayResolutions);
+                displayResolutions: DisplayResolutions,
+                playedMods: () => _titleRuntime.Mods);
 
             state.ShellHostForEntryCam = state.ShellHost;
 
@@ -854,5 +855,32 @@ public sealed partial class GameHost
         // returning to its host. See the top of the loop.
         state.LastOutcome = FrameOutcome.Idle;
         state.TicksSinceStep = 0;
+    }
+
+    /// <summary>The folder the shell's save slots are kept in, under the player's own directory.</summary>
+    /// <returns>The folder.</returns>
+    /// <remarks>
+    /// <c>saves</c>, as it always was. For a while a build wrote them to <c>state.Saves</c> instead, a name a refactor left
+    /// behind; a player who saved then finds their slots moved back where they belong.
+    /// </remarks>
+    private string SavesDirectory()
+    {
+        string user = SettingsPaths.GetUserDirectory();
+        string saves = Path.Combine(user, "saves");
+        string misnamed = Path.Combine(user, "state.Saves");
+        if (!Directory.Exists(saves) && Directory.Exists(misnamed))
+        {
+            try
+            {
+                Directory.Move(misnamed, saves);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning("Saves", $"The save slots in '{misnamed}' could not be moved to '{saves}': {error.Message}");
+                return misnamed;
+            }
+        }
+
+        return saves;
     }
 }

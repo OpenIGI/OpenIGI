@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -24,7 +25,7 @@ public static class Igi2RigidLineOfSight
     /// <summary>Meets one model.</summary>
     /// <param name="model">The model.</param>
     /// <param name="sight">The line of sight.</param>
-    public static void Meet(Igi2RigidObject model, Igi2LineOfSight sight)
+    public static void Meet(Igi2RigidObject model, WorldLineOfSight sight)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(sight);
@@ -83,7 +84,7 @@ public static class Igi2RigidLineOfSight
     }
 
     /// <summary>One face against the line: the shared crossing on a face that is no portal, then what the face lets through.</summary>
-    private readonly struct Faces(Igi2CollisionMesh mesh, Igi2LineOfSight sight, Vector3f s, Vector3f d, MeshRaySearch<Fpu> search)
+    private readonly struct Faces(Igi2CollisionMesh mesh, WorldLineOfSight sight, Vector3f s, Vector3f d, MeshRaySearch<Fpu> search)
         : IMeshFaceVisitor
     {
         public void Visit(int face)
@@ -110,7 +111,7 @@ public static class Igi2RigidLineOfSight
                 return;
             }
 
-            float transparency = sight.Materials[row]?.QMaterial.Transparency ?? 0f;
+            float transparency = sight.Materials.TransparencyOf(row);
             if (crossing.Dot.Value < 0.0)
             {
                 sight.Transparency = ((Fpu)transparency * sight.Transparency).F;

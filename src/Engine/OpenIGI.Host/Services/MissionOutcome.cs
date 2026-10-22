@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Events;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
@@ -32,6 +34,9 @@ internal interface IMissionOutcomeHost
 
     /// <summary>Gets the title's missions, which say what follows a completed one.</summary>
     IMissionCatalogue<MissionDescriptor> Missions { get; }
+
+    /// <summary>Gets the session's events, which are told the mission is decided; null before a session is up.</summary>
+    GameEvents? Events { get; }
 
     /// <summary>Closes the map computer, if it is open, and tells the player it has gone.</summary>
     void CloseComputer();
@@ -91,6 +96,10 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             if (session.CountFailure() && state.Shell is not null)
             {
                 session.FailedMenu = true;
+                if (session.Mission is { } failedMission)
+                {
+                    host.Events?.Raise(new MissionEnded(failedMission.Id, Completed: false));
+                }
 
                 // Said out loud because the level decided this, not the player: a LevelFlow
                 // 'Failed' expression is authored out of message and area state, and when it
@@ -126,6 +135,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
             && session.Mission is { } completedMission)
         {
             session.ResultHandled = true;
+            host.Events?.Raise(new MissionEnded(completedMission.Id, Completed: true));
             // A successor the catalogue does not offer ends the campaign the way the last mission
             // does -- in a build cut to the opening missions, the last one offered is its finale.
             int nextMissionId = completedMission.NextMissionId;

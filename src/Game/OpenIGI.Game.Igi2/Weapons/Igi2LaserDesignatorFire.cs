@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -12,7 +13,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// </summary>
 internal sealed class Igi2LaserDesignatorFire : IIgi2FireHandler
 {
-    private readonly Igi2LineTrace _trace = new(1);
+    private readonly WorldLineTrace _trace = new(1);
 
     /// <inheritdoc/>
     public bool HasRelease => true;
@@ -41,12 +42,12 @@ internal sealed class Igi2LaserDesignatorFire : IIgi2FireHandler
             ((range * m[7]) + from.Z).Value);
         _trace.Mesh = 0;
         _trace.TracePortals = false;
-        _trace.IgnoreMaterial = Igi2LineTrace.AirMaterial;
+        _trace.IgnoreMaterial = WorldLineTrace.AirMaterial;
         WeaponCollisionQuery query = new(request.Operator, null, 1f);
         _trace.Includes = owner => owner is not IWeaponCollisionTarget target || target.EvaluateWeaponCollision(query);
         world.Collision.TraceLines(_trace, uint.MaxValue);
 
-        Igi2Intersection hit = _trace.Intersections[0];
+        WorldIntersection hit = _trace.Intersections[0];
         if (!hit.IsHit || hit.HitObject is not { } struck)
         {
             state.LoseLock();

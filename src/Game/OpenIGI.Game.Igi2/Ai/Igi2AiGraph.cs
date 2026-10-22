@@ -1,13 +1,12 @@
+using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Scripting;
-using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
-using System.Globalization;
 
 namespace OpenIGI.Game.Igi2.Ai;
 
@@ -19,7 +18,7 @@ public sealed partial class Igi2AiGraphNode
 
     private readonly List<Igi2AiGraphLink> _links = [];
 
-    private readonly IIgi2AttachParent? _parent;
+    private readonly IAttachParent? _parent;
 
     internal Igi2AiGraphNode(
         int id,
@@ -31,7 +30,7 @@ public sealed partial class Igi2AiGraphNode
         int terrain,
         string criteriaText,
         int criteria,
-        IIgi2AttachParent? parent = null)
+        IAttachParent? parent = null)
     {
         Id = id;
         LocalPosition = position;
@@ -159,7 +158,7 @@ public sealed partial class Igi2AiGraph
     private Igi2AiGraph(int maxNodes) => MaxNodes = maxNodes;
 
     /// <summary>Gets the object the graph hangs from, whose frame its nodes ride in, or <see langword="null"/>.</summary>
-    public IIgi2AttachParent? Parent { get; private init; }
+    public IAttachParent? Parent { get; private init; }
 
     /// <summary>Gets how many node slots the graph has, <c>nMaxNodes</c>.</summary>
     public int MaxNodes { get; private set; }
@@ -290,7 +289,7 @@ public sealed partial class Igi2AiGraph
     /// stands, which the placing game has already settled. The nodes carry no light or terrain flag: Project I.G.I.'s graphs
     /// author neither. Materials need no translation, the two games' game materials sharing their rows.
     /// </remarks>
-    public static Igi2AiGraph From(GraphFile placed, Func<string, int> criteria, IIgi2AttachParent? parent = null)
+    public static Igi2AiGraph From(GraphFile placed, Func<string, int> criteria, IAttachParent? parent = null)
     {
         ArgumentNullException.ThrowIfNull(placed);
         ArgumentNullException.ThrowIfNull(criteria);
@@ -360,7 +359,7 @@ public sealed partial class Igi2AiGraph
 /// The object it hangs from when that object answers the attach event (<c>Graph_CreateHandler</c>'s <c>Attach_eAttachEvent</c>; a
 /// model object does, a container does not), or <see langword="null"/>.
 /// </param>
-public sealed record Igi2AiGraphPlacement(int MaxNodes, bool IsRelative, Vector3d Position, IIgi2AttachParent? Parent = null)
+public sealed record Igi2AiGraphPlacement(int MaxNodes, bool IsRelative, Vector3d Position, IAttachParent? Parent = null)
 {
     /// <summary>Places a node read from the file, <c>Graph_NodePositionCallback</c> (<c>igi2 0x59AA50</c>).</summary>
     /// <param name="read">The position as read.</param>
@@ -459,7 +458,7 @@ public sealed partial class Igi2AiGraphTask : Igi2Task
     public bool IsUpdateCover { get; set; }
 
     /// <summary>Gets where its nodes are read into.</summary>
-    public Igi2AiGraphPlacement Placement => new(GraphData.Length > 1 ? (int)GraphData[1] : 0, IsRelative, GraphPosition, Parent as IIgi2AttachParent);
+    public Igi2AiGraphPlacement Placement => new(GraphData.Length > 1 ? (int)GraphData[1] : 0, IsRelative, GraphPosition, Parent as IAttachParent);
 
     /// <summary>The file a graph is read from, <c>Graph_ParseGraphHandler</c> (<c>igi2 0x599110</c>), by its task id.</summary>
     /// <param name="taskId">The graph's level id.</param>

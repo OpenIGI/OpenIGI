@@ -1,7 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline;
-using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -162,6 +162,30 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
         Assert.True(resolved[Centre + 1] > resolved[Centre + 2], "The resolved frame lost the green that was drawn.");
         Assert.True(differing < plain.Length / 20, $"{differing} channels moved: the resolve is not starting from the frame.");
+    }
+
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_runs_a_mods_pass_over_the_finished_picture(string backend)
+    {
+        // The sample mod's greyscale, over the picture as it is shown: the tone map draws into the mods' image, the pass
+        // drains it, and what it wrote is laid onto the frame -- every pixel grey, where the frame without it has the green
+        // triangle and the red quad.
+        PostPassModule[] greyscale = [new("sample.Greyscale", SampleGreyscale.Value, PostPassStage.Display)];
+        byte[] vulkan = DrawOn(RhiBackends.Reference, passes: greyscale);
+        byte[] other = DrawOn(backend, passes: greyscale);
+        byte[] plain = DrawOn(RhiBackends.Reference);
+
+        int worst = 0;
+        for (int i = 0; i < vulkan.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - other[i]));
+        }
+
+        output.WriteLine($"worst difference {worst}; centre {Describe(vulkan)}, without {Describe(plain)}");
+        Assert.True(worst <= RhiBackends.ColourTolerance(backend), $"{backend} disagrees with {RhiBackends.Reference} about the mod's pass by {worst}.");
+        Assert.True(Colourful(plain) > 0, "The frame without the pass has no colour to drain.");
+        Assert.Equal(0, Colourful(vulkan));
     }
 
     [AgreementTheory]
@@ -459,12 +483,22 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         bool temporal = false,
         float? bloom = null,
         bool shadows = false,
-        bool glass = false)
+        bool glass = false,
+        IReadOnlyList<PostPassModule>? passes = null)
     {
         using RhiBackendHost host = RhiBackends.Open(backend, Size);
 
         using (GraphicsDevice device = new(host.Device, new DisplayMode(Size, Size, 32, 60)))
         {
+            if (passes is not null)
+            {
+                device.SetPostPasses(passes);
+                foreach (PostPassModule pass in passes)
+                {
+                    device.SetPostPassValues(pass.Name, [1f]);
+                }
+            }
+
             DrawFrame(device, view, textured, temporal, bloom, shadows, glass);
         }
 
@@ -513,5 +547,37 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
     {
         int at = (((y * Size) + x) * 4);
         return $"b{pixels[at]} g{pixels[at + 1]} r{pixels[at + 2]}";
+    }
+
+    // The sample mod's compiled greyscale, registered once a process as the game registers a mod's module.
+    private static readonly Lazy<ShaderModuleId> SampleGreyscale = new(static () =>
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            string candidate = Path.Combine(directory.FullName, "tests", "OpenIGI.Modding.SampleMod", "shaders", "Generated");
+            if (Directory.Exists(candidate))
+            {
+                return ShaderCatalog.Register(ExternalShaderModule.Read(candidate, "Greyscale"));
+            }
+        }
+
+        throw new DirectoryNotFoundException("The sample mod's compiled shaders are not above the tests.");
+    });
+
+    // How many pixels have colour: channels further apart than a rounding.
+    private static int Colourful(byte[] pixels)
+    {
+        int coloured = 0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            int high = Math.Max(pixels[i], Math.Max(pixels[i + 1], pixels[i + 2]));
+            int low = Math.Min(pixels[i], Math.Min(pixels[i + 1], pixels[i + 2]));
+            if (high - low > 2)
+            {
+                coloured++;
+            }
+        }
+
+        return coloured;
     }
 }
