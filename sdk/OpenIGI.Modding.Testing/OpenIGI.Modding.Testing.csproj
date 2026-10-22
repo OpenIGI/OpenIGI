@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What a mod's tests are written with: a harness that configures a mod as the game does (ModHarness), a Project I.G.I.
+    mission loaded headless (MissionFixture), and the game's own test support a mod needs: the facts that ask for a
+    game's installation, and the recording graphics and audio devices. A mod's test project gets it from the SDK:
+    <Project Sdk="OpenIGI.Modding.Sdk/x.y.z"> with <ModTests>true</ModTests>.
+  -->
+  <PropertyGroup>
+    <PackageId>OpenIGI.Modding.Testing</PackageId>
+    <Description>Test OpenIGI mods: configure a mod as the game does, load a Project I.G.I. mission headless, and record what it draws.</Description>
+    <PackageTags>openigi;igi;mod;modding;testing</PackageTags>
+    <IsTestProject>false</IsTestProject>
+    <IsPackable>true</IsPackable>
+    <RootNamespace>OpenIGI.Modding.Testing</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Loader\OpenIGI.Modding.Loader.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+  </ItemGroup>
+
+  <!-- The game's own test support, as its tests use it: one source, in the OpenIGI.TestSupport namespace. -->
+  <ItemGroup>
+    <Compile Include="..\..\tests\OpenIGI.TestSupport\GameData.cs" Link="TestSupport\GameData.cs" />
+    <Compile Include="..\..\tests\OpenIGI.TestSupport\GameDataSource.cs" Link="TestSupport\GameDataSource.cs" />
+    <Compile Include="..\..\tests\OpenIGI.TestSupport\RequiresGameDataAttributes.cs" Link="TestSupport\RequiresGameDataAttributes.cs" />
+    <Compile Include="..\..\tests\OpenIGI.TestSupport\TestOutputLogger.cs" Link="TestSupport\TestOutputLogger.cs" />
+    <Compile Include="..\..\tests\OpenIGI.TestSupport\RecordingAudioDevice.cs" Link="TestSupport\RecordingAudioDevice.cs" />
+    <Compile Include="..\..\tests\OpenIGI.TestSupport\RecordingGraphicsDevice*.cs" Link="TestSupport\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Every project it builds on is a package of its own at the same version, as the SDK's are. -->
+  <Target Name="PackReferencedProjects" AfterTargets="Pack">
+    <MSBuild Projects="@(ProjectReference)"
+             Targets="Pack"
+             Properties="Configuration=$(Configuration);Version=$(Version);NoBuild=true;PackageOutputPath=$([System.IO.Path]::GetFullPath('$(PackageOutputPath)'))" />
+  </Target>
+
+</Project>

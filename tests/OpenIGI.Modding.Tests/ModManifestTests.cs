@@ -1,4 +1,5 @@
 using OpenIGI.Core.Content;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Titles;
 using Xunit;
 
@@ -56,6 +57,25 @@ public sealed class ModManifestTests
         Assert.Equal(">=2.0", manifest.Dependencies["library"]);
         Assert.Equal(["rival"], manifest.Conflicts);
         Assert.Equal("0.9.0", manifest.MinGameVersion);
+    }
+
+    [Fact]
+    public void A_pass_runs_over_the_lit_scene_unless_its_manifest_says_the_finished_picture()
+    {
+        ModManifest manifest = ModManifest.Parse("""
+            {
+              "id": "looks", "apiVersion": 1,
+              "postPasses": [
+                { "name": "Haze", "module": "Haze" },
+                { "name": "Lines", "module": "Lines", "stage": "display", "toggle": "mod_looks_lines" }
+              ]
+            }
+            """);
+
+        Assert.Equal(
+            [("Haze", PostPassStage.Scene), ("Lines", PostPassStage.Display)],
+            manifest.PostPasses.Select(static p => (p.Name, p.Stage)));
+        Assert.Equal("mod_looks_lines", manifest.PostPasses[1].Toggle);
     }
 
     [Theory]

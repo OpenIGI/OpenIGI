@@ -124,9 +124,11 @@ Settings are saved to `settings.cfg` beside the executable if one exists there, 
   launcher's Content page. The tools to build one from your own installation, such as an AI-upscaled texture pack,
   are `tools/texture-forge` and `tools/OpenIGI.Tools.ResExtract`.
 - **Mods.** A mod can ship files that stand in for the game's, whole new missions and campaigns, C# code, and shader
-  passes over the picture. Its code says what it changes with attributes (`[AddsLevelSystem]`, `[OnGameEvent]`,
-  `[ReplacesTask]` and the rest), and listens to the games' events, adds settings, HUD overlays and task types. A save
-  records the mods it was made with. Start one with the template:
+  passes over the picture, before the tone map or after it. Its code says what it changes with attributes
+  (`[AddsLevelSystem]`, `[OnGameEvent]`, `[ReplacesTask]` and the rest), and listens to the games' events, adds settings,
+  HUD overlays and task types. A save records the mods it was made with, and a mod's tests are built with the same SDK
+  against a harness that configures it as the game does. Start one with the template (`--kind code`, `data` or
+  `shader`):
 
   ```sh
   dotnet new install OpenIGI.Modding.Templates

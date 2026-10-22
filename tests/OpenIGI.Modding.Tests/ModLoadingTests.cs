@@ -363,6 +363,7 @@ public sealed class ModLoadingTests : IDisposable
         Assert.Equal("sample.Greyscale", pass.Name);
         Assert.Equal("mod_sample_greyscale", pass.Toggle);
         Assert.Equal(["mod_sample_greyscale_amount"], pass.Parameters);
+        Assert.Equal(Core.Graphics.PostPassStage.Scene, pass.Stage);
         Assert.True(OpenIGI.Shaders.ExternalShaderModule.Read(pass.ShadersDirectory, pass.Module).Compiles(OpenIGI.Shaders.ShaderTarget.Spirv));
     }
 

@@ -53,6 +53,14 @@
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <!-- A mod's tests: the modding test package too, from the checkout or at the SDK's version. -->
+  <ItemGroup Condition="'$(ModTests)' == 'true' and '$(OpenIgiFromSource)' == 'true'">
+    <ProjectReference Include="$(OpenIgiRoot)sdk\OpenIGI.Modding.Testing\OpenIGI.Modding.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ModTests)' == 'true' and '$(OpenIgiFromSource)' != 'true'">
+    <_OpenIgiPackage Include="OpenIGI.Modding.Testing" />
+  </ItemGroup>
+
   <!-- From a release: the game's packages at the SDK's version, and the generator the SDK carries. -->
   <ItemGroup Condition="'$(OpenIgiFromSource)' != 'true'">
     <_OpenIgiPackage Include="OpenIGI.Modding;OpenIGI.Modding.Presentation;OpenIGI.Game.Igi1;OpenIGI.Game.Igi2;OpenIGI.Presentation.Igi1;OpenIGI.Presentation.Igi2" />
@@ -176,10 +184,16 @@
             {
                 string module = pass.GetMetadata("Module");
                 string toggle = pass.GetMetadata("Toggle");
+                string stage = pass.GetMetadata("Stage");
                 var entry = "{ \"name\": " + Quote(pass.ItemSpec) + ", \"module\": " + Quote(string.IsNullOrEmpty(module) ? pass.ItemSpec : module);
                 if (!string.IsNullOrEmpty(toggle))
                 {
                     entry += ", \"toggle\": " + Quote(toggle);
+                }
+
+                if (!string.IsNullOrEmpty(stage))
+                {
+                    entry += ", \"stage\": " + Quote(stage.ToLowerInvariant());
                 }
 
                 entry += ", \"parameters\": " + List(pass.GetMetadata("Parameters")) + " }";
@@ -216,7 +230,7 @@
   </Target>
 
   <!-- The manifest from the project's properties, unless the project keeps a mod.json of its own. -->
-  <Target Name="WriteModManifest" BeforeTargets="PackMod" DependsOnTargets="ResolveModHasCode" Condition="!Exists('$(_ModHandWrittenManifest)')">
+  <Target Name="WriteModManifest" BeforeTargets="PackMod" DependsOnTargets="ResolveModHasCode" Condition="!Exists('$(_ModHandWrittenManifest)') and '$(ModTests)' != 'true'">
     <PropertyGroup>
       <_ModManifest>$(IntermediateOutputPath)mod.json</_ModManifest>
     </PropertyGroup>
@@ -241,10 +255,8 @@
         PostPasses="@(ModPostPass)" />
   </Target>
 
-  <Target Name="PackMod" AfterTargets="Build" DependsOnTargets="GetCopyToOutputDirectoryItems;ResolveModHasCode">
+  <Target Name="PackMod" AfterTargets="Build" DependsOnTargets="GetCopyToOutputDirectoryItems;ResolveModHasCode;ResolveModPackageDirectory" Condition="'$(ModTests)' != 'true'">
     <PropertyGroup>
-      <!-- Here rather than above: a project imports this before the SDK names its output folder. -->
-      <ModPackageDirectory Condition="'$(ModPackageDirectory)' == ''">$(OutDir)mod\</ModPackageDirectory>
       <_ModOwnPackages>;@(PackageReference->'%(Identity)'->ToLowerInvariant());</_ModOwnPackages>
       <_ModProjectDirectory>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)'))</_ModProjectDirectory>
     </PropertyGroup>
@@ -272,6 +284,33 @@
     <RemoveDir Directories="$(ModPackageDirectory)" />
     <Copy SourceFiles="@(_ModFile)" DestinationFiles="@(_ModFile->'$(ModPackageDirectory)%(TargetPath)')" />
     <Message Importance="normal" Text="$(MSBuildProjectName) -> $(ModPackageDirectory) (mod package)" />
+  </Target>
+
+  <!-- Here rather than above: a project imports this before the SDK names its output folder. -->
+  <Target Name="ResolveModPackageDirectory">
+    <PropertyGroup>
+      <ModPackageDirectory Condition="'$(ModPackageDirectory)' == ''">$(OutDir)mod\</ModPackageDirectory>
+    </PropertyGroup>
+  </Target>
+
+  <!-- A mod's package, for a test project that references the mod to install beside it. -->
+  <Target Name="GetModPackage" DependsOnTargets="ResolveModPackageDirectory" Returns="@(_ModPackage)" Condition="'$(ModTests)' != 'true'">
+    <ItemGroup>
+      <_ModPackage Include="$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(ModPackageDirectory)'))" ModId="$(ModId)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- A mod's tests: each mod they reference installed beside them under mods/<id>/, as the launcher installs it. -->
+  <Target Name="InstallReferencedMods" AfterTargets="Build" Condition="'$(ModTests)' == 'true'">
+    <MSBuild Projects="@(ProjectReference)" Targets="GetModPackage" SkipNonexistentTargets="true"
+             Properties="Configuration=$(Configuration)" Condition="'@(ProjectReference)' != ''">
+      <Output TaskParameter="TargetOutputs" ItemName="_ReferencedModPackage" />
+    </MSBuild>
+    <ItemGroup>
+      <_ReferencedModFile Include="%(_ReferencedModPackage.Identity)**" ModId="%(_ReferencedModPackage.ModId)" />
+    </ItemGroup>
+    <RemoveDir Directories="@(_ReferencedModPackage->'$(OutDir)mods\%(ModId)')" />
+    <Copy SourceFiles="@(_ReferencedModFile)" DestinationFiles="@(_ReferencedModFile->'$(OutDir)mods\%(ModId)\%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
 
 </Project>

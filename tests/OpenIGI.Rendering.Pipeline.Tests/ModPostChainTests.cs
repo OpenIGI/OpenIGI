@@ -7,7 +7,7 @@ using Xunit;
 
 namespace OpenIGI.Rendering.Pipeline.Tests;
 
-/// <summary>A mod's pass over the lit scene runs as one dispatch over the frame, and one that breaks the contract is refused.</summary>
+/// <summary>A mod's pass over the picture runs as one dispatch over the frame, and one that breaks the contract is refused.</summary>
 public sealed class ModPostChainTests
 {
     [Fact]
@@ -27,7 +27,8 @@ public sealed class ModPostChainTests
         {
             using (IRhiComputePassEncoder pass = encoder.BeginComputePass())
             {
-                result = chain.Record(pass, source.View, depth.View, 16, 16, (0.1f, 1000f), 0);
+                // The depth the scene's, at half the picture's size, as after the scene is upscaled.
+                result = chain.Record(pass, source.View, depth.View, 16, 16, (0.1f, 1000f), (8, 8), 0);
             }
 
             device.Submit([encoder.Finish()]);
@@ -37,6 +38,9 @@ public sealed class ModPostChainTests
         Assert.NotNull(result);
         Assert.NotSame(source.View, result);
         Assert.Equal(new RecordedRhiCommand.Dispatch(2, 2, 1), Assert.Single(device.CommandsOf<RecordedRhiCommand.Dispatch>()));
+
+        // Its block: the size, the time, the sixteen values and the depth's size and scale, which the contract names.
+        Assert.Contains(device.CommandsOf<RecordedRhiCommand.WriteBuffer>(), static write => write.SizeInBytes == 28 * sizeof(float));
     }
 
     [Fact]

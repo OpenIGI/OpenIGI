@@ -118,6 +118,6 @@ public sealed record ModManifest(
 }
 
 /// <summary>The manifest's JSON shape, generated so that reading one needs no reflection.</summary>
-[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true)]
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true, UseStringEnumConverter = true)]
 [JsonSerializable(typeof(ModManifest))]
 internal sealed partial class ModManifestJson : JsonSerializerContext;

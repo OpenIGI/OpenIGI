@@ -3,12 +3,17 @@ struct ModPostParams_std140_0
     @align(16) size_0 : vec4<f32>,
     @align(16) time_0 : vec4<f32>,
     @align(16) values_0 : array<vec4<f32>, i32(4)>,
+    @align(16) depth_0 : vec4<f32>,
 };
 
 @binding(4) @group(0) var<uniform> p_0 : ModPostParams_std140_0;
 @binding(0) @group(0) var uSource_0 : texture_2d<f32>;
 
 @binding(3) @group(0) var uTarget_0 : texture_storage_2d<rgba16float, write>;
+
+@binding(1) @group(0) var uSourceSampler_0 : sampler;
+
+@binding(2) @group(0) var uDepth_0 : texture_depth_2d;
 
 @compute
 @workgroup_size(8, 8, 1)

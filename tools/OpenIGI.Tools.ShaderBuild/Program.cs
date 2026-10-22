@@ -1,5 +1,5 @@
-using OpenIGI.Tools;
 using OpenIGI.Shaders;
+using OpenIGI.Tools;
 using OpenIGI.Tools.ShaderBuild;
 
 // Compiles src/Rendering/OpenIGI.Shaders from Slang to SPIR-V, WGSL and DXIL.
@@ -40,6 +40,7 @@ static int Run(ToolContext ctx)
         SlangCompiler compiler = new(slangc, dxc.LibraryDirectory)
         {
             IncludeDirectories = projectDirectory == libraryDirectory ? [] : [Path.Combine(libraryDirectory, "Source")],
+            PreserveParameters = projectDirectory != libraryDirectory,
         };
 
         string version = compiler.Version();

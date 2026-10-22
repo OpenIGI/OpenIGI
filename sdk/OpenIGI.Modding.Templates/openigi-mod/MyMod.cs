@@ -1,3 +1,17 @@
+#if (kind == 'shader')
+using OpenIGI.Modding;
+
+namespace MyMod;
+
+/// <summary>
+/// The mod: its pass is named in the project (ModPostPass) and its settings in Settings.cs, so it has nothing to configure
+/// here; code of its own goes in OnConfigure, or as the attributes the modding API offers.
+/// </summary>
+[OpenIgiMod]
+public sealed partial class Mod
+{
+}
+#else
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Modding;
@@ -30,3 +44,4 @@ public sealed partial class Mod
     {
     }
 }
+#endif

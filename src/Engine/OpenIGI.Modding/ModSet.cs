@@ -74,7 +74,7 @@ public sealed class ModSet
         foreach (InstalledMod mod in For(runtime.Title))
         {
             string shaders = Path.Combine(mod.Directory, ShadersDirectoryName);
-            passes.AddRange(mod.Manifest.PostPasses.Select(p => new TitlePostPass($"{mod.Manifest.Id}.{p.Name}", shaders, p.Module, p.Toggle, p.Parameters)));
+            passes.AddRange(mod.Manifest.PostPasses.Select(p => new TitlePostPass($"{mod.Manifest.Id}.{p.Name}", shaders, p.Module, p.Toggle, p.Parameters, p.Stage)));
 
             if (mod.Manifest.AffectsSimulation)
             {

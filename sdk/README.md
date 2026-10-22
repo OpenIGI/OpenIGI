@@ -8,7 +8,7 @@ A mod can be any mix of three things:
 
 - **Files** that stand in for the game's own: textures, sounds, models, scripts, whole new missions.
 - **Code**: new behaviour, written as a C# class whose members say what they change.
-- **Shaders**: passes over the picture before the tone map.
+- **Shaders**: passes over the picture, before the tone map or after it.
 
 ## Making a mod
 
@@ -16,6 +16,7 @@ A mod can be any mix of three things:
 dotnet new install OpenIGI.Modding.Templates
 dotnet new openigi-mod -n MyMod --modId my-mod --modAuthor "Your name"            # code, with data/ beside it
 dotnet new openigi-mod -n MyPack --modId my-pack --modAuthor "Your name" --kind data   # files alone
+dotnet new openigi-mod -n MyLook --modId my-look --modAuthor "Your name" --kind shader # a pass over the picture
 cd MyMod && dotnet build -c Release
 ```
 
@@ -137,8 +138,7 @@ the world on the screen.
 
 ## Shaders
 
-A pass over the lit scene, before the bloom and the tone map, is one compute shader written against
-`Shaders/Source/Mod/PostPass.slang` in OpenIGI's shader library:
+A pass is one compute shader written against `Shaders/Source/Mod/PostPass.slang` in OpenIGI's shader library:
 
 ```slang
 #include "Mod/PostPass.slang"
@@ -154,17 +154,36 @@ void main(uint3 id : SV_DispatchThreadID)
 }
 ```
 
+It runs at one of two stages:
+
+- **`scene`** (the default): over the lit scene, after the motion blur and before the bloom and the tone map. The colour
+  is linear, unexposed radiance at the scene's resolution, so the game's exposure and grade see what the pass leaves.
+- **`display`**: over the finished picture, after the tone map and the grade and before the interface is drawn over it.
+  The colour is display-encoded, nought to one, at the screen's resolution: what the player sees.
+
+At either stage `uDepth` is the scene's depth at the scene's own resolution; `p.depth.zw` scales a texel of the picture
+to the depth under it (one at the scene stage, less once the scene is upscaled to the screen).
+
 The mod's `shaders/` folder is laid out as the game's library is: a `ShaderModules.json` (pinning the same Slang and DXC
 as the game's), its sources under `Source/`, its compiled forms under `Generated/`. Compile it with the game's shader tool,
 from a checkout, and commit what it writes, as the game does:
 
 ```sh
-dotnet run --project ../igi-remastered/tools/OpenIGI.Tools.ShaderBuild -- --project shaders
+dotnet run -c Release --project ../igi-remastered/tools/OpenIGI.Tools.ShaderBuild -- --project shaders
 ```
 
-`<ModPostPass>` names the module, the setting that switches it on and the settings whose values it reads (`p.values`,
-sixteen of them). The passes run in the mods' order, on Vulkan, Direct3D 12 and WebGPU alike; a module that does not bind
-what the contract names is left out, with the reason in the log.
+The tool keeps every binding the contract names, read or not, so a pass that never reads the depth still binds it.
+
+`<ModPostPass>` names the module, its `Stage` (`scene` or `display`), the setting that switches it on (`Toggle`) and the
+settings whose values it reads (`Parameters`, `p.values`, sixteen of them):
+
+```xml
+<ModPostPass Include="Vignette" Stage="display" Toggle="mod_my_look_vignette" Parameters="mod_my_look_vignette_amount" />
+```
+
+The passes of each stage run in the mods' order, on Vulkan, Direct3D 12 and WebGPU alike; a module that does not bind
+what the contract names is left out, with the reason in the log. `--kind shader` makes a mod with one such pass, a
+display-stage vignette, and the settings that drive it.
 
 ## Saves
 
@@ -174,10 +193,36 @@ the save itself stays the format the original game reads.
 
 ## Testing
 
-`ModLoader.Load` loads a folder of mods as the game does, and `ModSet.Extend` configures them into a game's runtime, so a
-test can check what a mod registers and where its level systems land. A mod built beside a checkout can use the game's
-own test support (`tests/OpenIGI.TestSupport`): retail game data by `IGI_GAME_PATH` and `IGI2_GAME_PATH`, tests that
-skip without it, and recording graphics and audio devices.
+A mod's tests are a project built with the same SDK, marked `<ModTests>true</ModTests>`:
+
+```xml
+<Project Sdk="OpenIGI.Modding.Sdk/0.5.0">
+  <PropertyGroup>
+    <ModTests>true</ModTests>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MyMod\MyMod.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+</Project>
+```
+
+It references `OpenIGI.Modding.Testing`, and every mod it references is installed beside it under `mods/<id>/`, as the
+launcher installs one. The package holds:
+
+- **`ModHarness`**: a mod as the game configures it. `ModHarness.Of(new MyMod())` holds code the test made;
+  `ModHarness.Installed("my-mod")` loads the installed package through the game's loader. `Extend` is what a title does
+  with the mod as it starts; `Start` goes on to register the mod's modules and load their tables, and gives back a
+  `ModSession`: what they published, `LevelSystems<TBuild>(...)` (where the mod's level systems land among a host's), and
+  `Raise` (a game event, to the mod's listeners).
+- **`MissionFixture.Igi1(id)`**: a Project I.G.I. mission loaded headless from the installation, with its level, terrain,
+  placed models, graphs and player, for a mod's level systems to be tested on.
+- **The game's own test support** (`OpenIGI.TestSupport`): retail data by `IGI_GAME_PATH` and `IGI2_GAME_PATH`, facts
+  that skip without it (`[RequiresGameDataFact]`, `[RequiresTitleDataFact("igi2")]`), and recording graphics and audio
+  devices.
+
 [OpenIGI/igi2-soldiers](https://github.com/OpenIGI/igi2-soldiers) is a full example in a repository of its own: Project
 I.G.I.'s missions with I.G.I. 2's soldiers.
 

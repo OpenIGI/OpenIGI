@@ -5,16 +5,17 @@ using OpenIGI.Rendering.Rhi;
 
 namespace OpenIGI.Rendering.Pipeline.Deferred;
 
-/// <summary>The passes mods run over the lit scene before the tone map, one after another, each into the other's image.</summary>
+/// <summary>The passes mods run over the picture at one stage, one after another, each into the other's image.</summary>
 /// <remarks>
 /// Each pass is a <see cref="ComputePass"/> over a module that keeps the contract in <c>Shaders/Source/Mod/PostPass.slang</c>:
 /// it binds <c>uSource</c>, <c>uDepth</c>, <c>uTarget</c> and <c>p</c>, and nothing else. A module that does not is refused when
-/// it is set, with the reason in the log, and the rest run without it.
+/// it is set, with the reason in the log, and the rest run without it. The device keeps one chain for the passes over the lit
+/// scene and one for those over the finished picture; the depth is the scene's in both, at the scene's resolution.
 /// </remarks>
 internal sealed class ModPostChain : IDisposable
 {
     private const RhiTextureFormat Format = RhiTextureFormat.Rgba16Float;
-    private const int BlockFloats = 24;
+    private const int BlockFloats = 28;
     private const int ValueCount = 16;
     private const string LogCategory = "Rendering";
 
@@ -25,6 +26,7 @@ internal sealed class ModPostChain : IDisposable
     private readonly RetiredResources _retired;
     private readonly IOpenIgiLogger _logger;
     private readonly IRhiSampler _sampler;
+    private readonly string _label;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly List<Pass> _passes = [];
 
@@ -39,13 +41,15 @@ internal sealed class ModPostChain : IDisposable
     /// <param name="framesInFlight">How many frames the parameters are kept for at once.</param>
     /// <param name="retired">Where an image outgrown by a resize goes until the frames reading it are done.</param>
     /// <param name="logger">Where a refused pass is reported.</param>
-    public ModPostChain(IRhiDevice device, int framesInFlight, RetiredResources retired, IOpenIgiLogger logger)
+    /// <param name="label">What its images and passes are labelled.</param>
+    public ModPostChain(IRhiDevice device, int framesInFlight, RetiredResources retired, IOpenIgiLogger logger, string label = "mods")
     {
+        _label = label;
         _device = device;
         _framesInFlight = framesInFlight;
         _retired = retired;
         _logger = logger;
-        _sampler = device.CreateSampler(new RhiSamplerDescriptor(Label: "mods"));
+        _sampler = device.CreateSampler(new RhiSamplerDescriptor(Label: label));
     }
 
     /// <summary>Gets whether any pass is set.</summary>
@@ -97,13 +101,14 @@ internal sealed class ModPostChain : IDisposable
         }
     }
 
-    /// <summary>Runs every pass over the scene's colour.</summary>
+    /// <summary>Runs every pass over the picture.</summary>
     /// <param name="encoder">The compute pass they are recorded into.</param>
-    /// <param name="source">The scene's colour.</param>
+    /// <param name="source">The picture.</param>
     /// <param name="depth">The scene's depth.</param>
-    /// <param name="width">The colour's width.</param>
-    /// <param name="height">The colour's height.</param>
+    /// <param name="width">The picture's width.</param>
+    /// <param name="height">The picture's height.</param>
     /// <param name="depthRange">The near and far planes, in metres.</param>
+    /// <param name="depthSize">The depth's width and height, which differ from the picture's after the scene is upscaled.</param>
     /// <param name="frameInFlight">The frame slot the parameters are written to.</param>
     /// <returns>The colour the last pass wrote, or <see langword="null"/> when none ran.</returns>
     public IRhiTextureView? Record(
@@ -113,6 +118,7 @@ internal sealed class ModPostChain : IDisposable
         int width,
         int height,
         (float Near, float Far) depthRange,
+        (int Width, int Height) depthSize,
         int frameInFlight)
     {
         if (_passes.Count == 0)
@@ -137,6 +143,10 @@ internal sealed class ModPostChain : IDisposable
             block[6] = depthRange.Near;
             block[7] = depthRange.Far;
             pass.Values.CopyTo(block[8..]);
+            block[24] = depthSize.Width;
+            block[25] = depthSize.Height;
+            block[26] = depthSize.Width / (float)width;
+            block[27] = depthSize.Height / (float)height;
 
             pass.Stage.Bind("uSource", input, _sampler);
             pass.Stage.Bind("uDepth", depth);
@@ -188,8 +198,8 @@ internal sealed class ModPostChain : IDisposable
 
         _width = width;
         _height = height;
-        _a = Create("mods.a");
-        _b = Create("mods.b");
+        _a = Create($"{_label}.a");
+        _b = Create($"{_label}.b");
     }
 
     private IRhiTexture Create(string label) => _device.CreateTexture(new RhiTextureDescriptor(

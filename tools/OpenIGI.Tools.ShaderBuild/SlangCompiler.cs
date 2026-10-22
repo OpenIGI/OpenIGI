@@ -63,6 +63,14 @@ public sealed class SlangCompiler
     /// <remarks>A mod's shaders name the game's library here, for the contract they are written against.</remarks>
     public IReadOnlyList<string> IncludeDirectories { get; init; } = [];
 
+    /// <summary>Gets or sets whether every resource a module declares is kept, whether or not it reads it.</summary>
+    /// <remarks>
+    /// For a mod's shaders, written against a contract that binds every one of its names: a binding a pass never reads would
+    /// otherwise be dropped from the WGSL while the SPIR-V's reflection still lists it, and a WebGPU layout built from that
+    /// reflection takes it for a filtering float texture -- which the scene's depth, bound by the contract, is not.
+    /// </remarks>
+    public bool PreserveParameters { get; init; }
+
     /// <summary>Gets the compiler's version string, as <c>slangc -v</c> reports it.</summary>
     /// <returns>The version string.</returns>
     public string Version()
@@ -134,6 +142,11 @@ public sealed class SlangCompiler
             // this until the first single-stage module was migrated.
             "-fvk-use-entrypoint-name",
         ];
+
+        if (PreserveParameters)
+        {
+            arguments.Add("-preserve-params");
+        }
 
         foreach (string include in IncludeDirectories)
         {

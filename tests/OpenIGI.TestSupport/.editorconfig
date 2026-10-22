@@ -1,0 +1,3 @@
+# The game's test support: docs are not required of it, here or where the modding test package compiles it.
+[*.cs]
+dotnet_diagnostic.CS1591.severity = none

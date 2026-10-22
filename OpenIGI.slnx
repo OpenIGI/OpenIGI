@@ -9,6 +9,7 @@
   </Folder>
   <Folder Name="/sdk/">
     <Project Path="sdk/OpenIGI.Modding.Sdk/OpenIGI.Modding.Sdk.csproj" />
+    <Project Path="sdk/OpenIGI.Modding.Testing/OpenIGI.Modding.Testing.csproj" />
   </Folder>
   <Folder Name="/services/">
     <Project Path="services/OpenIGI.Services/OpenIGI.Services.csproj" />

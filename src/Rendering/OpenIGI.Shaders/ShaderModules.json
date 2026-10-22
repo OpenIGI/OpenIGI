@@ -526,6 +526,10 @@
     {
       "id": "Tracer",
       "source": "World/Tracer.slang"
+    },
+    {
+      "id": "ModDisplay",
+      "source": "Post/ModDisplay.slang"
     }
   ]
 }

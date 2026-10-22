@@ -55,7 +55,7 @@ public sealed partial class GameHost
         {
             if (pass.Toggle is null || SettingValue(pass.Toggle) != 0f)
             {
-                running.Add(new PostPassModule(pass.Name, module));
+                running.Add(new PostPassModule(pass.Name, module, pass.Stage));
             }
         }
 

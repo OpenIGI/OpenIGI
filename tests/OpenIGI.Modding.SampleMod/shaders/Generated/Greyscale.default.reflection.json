@@ -52,6 +52,7 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None",
+      "sampleType": "Depth",
       "hlsl": {
         "class": "ShaderResource",
         "register": 1,
