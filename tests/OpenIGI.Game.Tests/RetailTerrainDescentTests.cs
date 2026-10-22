@@ -1,17 +1,10 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Level;
-using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Time;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Player;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 using static OpenIGI.Game.Tests.RetailTerrainHarness;
 
 namespace OpenIGI.Game.Tests;

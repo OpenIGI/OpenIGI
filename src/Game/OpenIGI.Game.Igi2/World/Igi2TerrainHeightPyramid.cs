@@ -1,9 +1,3 @@
-using System.Numerics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.World;
-
 namespace OpenIGI.Game.Igi2.World;
 
 /// <summary>The lowest and highest height over every power-of-two block of a tile.</summary>

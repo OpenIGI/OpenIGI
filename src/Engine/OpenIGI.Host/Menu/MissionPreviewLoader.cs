@@ -1,5 +1,4 @@
-﻿using OpenIGI.Presentation.Cameras;
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
@@ -7,16 +6,12 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Textures;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
-using OpenIGI.Host;
-using OpenIGI.Presentation;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 

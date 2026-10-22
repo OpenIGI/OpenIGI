@@ -1,10 +1,3 @@
-using OpenIGI.Game.Ai;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Detection;
-using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Scripting.Qvm;
-
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
 /// <summary>One of a squad's two teams, <c>AISquadTeam_s</c>: up to eight minds, the first its leader.</summary>

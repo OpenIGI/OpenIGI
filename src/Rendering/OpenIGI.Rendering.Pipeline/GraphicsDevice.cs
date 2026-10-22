@@ -1,16 +1,13 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Diagnostics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
-using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Pipeline.RayTracing;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Pipeline.Textures;
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.Pipeline;
 

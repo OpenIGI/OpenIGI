@@ -1,8 +1,8 @@
-﻿using OpenIGI.Game.Ai;
+﻿using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
-using OpenIGI.Core.Configuration.Presets;
 
 namespace OpenIGI.Host.Configuration;
 

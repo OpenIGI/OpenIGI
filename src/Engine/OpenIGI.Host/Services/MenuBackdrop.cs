@@ -1,5 +1,5 @@
-using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Host.Menu;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Rhi;

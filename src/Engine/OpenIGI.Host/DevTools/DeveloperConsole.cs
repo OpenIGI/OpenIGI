@@ -1,12 +1,11 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
-using OpenIGI.UI;
 
 namespace OpenIGI.Host.DevTools;
 

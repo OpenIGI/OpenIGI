@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.World;
 using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;

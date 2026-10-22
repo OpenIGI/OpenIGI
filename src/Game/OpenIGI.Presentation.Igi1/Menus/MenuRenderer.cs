@@ -1,11 +1,11 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
-using OpenIGI.Rendering;
-using OpenIGI.Game.World;
 using OpenIGI.Game.Menus;
+using OpenIGI.Game.World;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.Menus;
 

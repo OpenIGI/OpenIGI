@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Config;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Player;

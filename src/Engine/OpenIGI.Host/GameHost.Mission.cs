@@ -1,33 +1,21 @@
-﻿using OpenIGI.Game.Hosting;
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game;
-using OpenIGI.Host.Infrastructure;
-using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.Host.Audio;
-using OpenIGI.Host.Configuration;
-using System.Diagnostics;
 
 namespace OpenIGI.Host;
 

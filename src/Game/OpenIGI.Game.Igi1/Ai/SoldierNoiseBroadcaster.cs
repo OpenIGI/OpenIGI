@@ -1,25 +1,10 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.Textures;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Physics;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game;
-using OpenIGI.Scripting.Qvm;
-using OpenIGI.Scripting.Runtime;
-using System.Runtime.InteropServices;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -43,8 +28,7 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
 
     private int _lastNoiseLogTick = -100;
 
-    /// <summary>One rate-limited delivery line per noise kind — the receipt half of the [aiflow] diff.</summary>
-    /// <summary>Gets or sets the level's humans in the order they joined the human list, every game's, which AI events are sent to.</summary>
+    /// <summary>Gets the level's humans in the order they joined the human list, every game's, which AI events are sent to.</summary>
     /// <remarks>Made when the soldiers are animated, from the level's tree; a guard spawned since joins at the end.</remarks>
     public List<IHumanAiEventTarget> Humans { get; } = [];
 

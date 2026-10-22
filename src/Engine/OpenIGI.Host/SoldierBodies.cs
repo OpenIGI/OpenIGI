@@ -2,7 +2,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Presentation;
-using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 

@@ -1,10 +1,7 @@
-using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Detection;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Soldiers;
-using OpenIGI.Game.Igi2.World;
 
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 

@@ -1,8 +1,8 @@
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
 

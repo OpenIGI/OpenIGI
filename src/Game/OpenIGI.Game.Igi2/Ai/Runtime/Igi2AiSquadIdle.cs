@@ -1,8 +1,3 @@
-using OpenIGI.Game.Ai;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Detection;
-using OpenIGI.Game.Igi2.Humans;
-
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
 /// <summary>The idle action (<c>AISquad_SquadActionIdle*</c>): one team firing on order, no targets, no danger, members cleared.</summary>

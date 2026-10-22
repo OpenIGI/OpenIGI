@@ -1,5 +1,4 @@
 ﻿using System.Collections.Concurrent;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;

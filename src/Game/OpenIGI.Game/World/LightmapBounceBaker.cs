@@ -1,4 +1,3 @@
-using System.Threading;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 

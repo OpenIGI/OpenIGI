@@ -1,10 +1,3 @@
-using OpenIGI.Game.Ai;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Detection;
-using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.Player;
-using OpenIGI.Scripting.Qvm;
-
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
 /// <summary>The squad voice lines, <c>AISquad_aazVoiceTable</c> as <c>AISquad_InitVoiceTable</c> fills it: four takes of each of twenty lines.</summary>

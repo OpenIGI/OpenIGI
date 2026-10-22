@@ -1,5 +1,3 @@
-using OpenIGI.Presentation;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Vfs;
@@ -8,10 +6,8 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

@@ -1,8 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Physics;
-using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi1.Physics;
 

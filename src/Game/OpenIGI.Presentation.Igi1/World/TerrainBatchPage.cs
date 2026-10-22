@@ -1,7 +1,7 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
-using System.Runtime.InteropServices;
 
 namespace OpenIGI.Presentation.Igi1.World;
 

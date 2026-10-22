@@ -1,6 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering.Rhi;
+﻿using OpenIGI.Rendering.Rhi;
 
 namespace OpenIGI.Rendering.Pipeline;
 

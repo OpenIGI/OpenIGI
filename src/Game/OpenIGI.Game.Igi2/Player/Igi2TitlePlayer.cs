@@ -7,9 +7,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
-using OpenIGI.Game.Igi2.Systems;
 using OpenIGI.Game.Igi2.World;
-using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 

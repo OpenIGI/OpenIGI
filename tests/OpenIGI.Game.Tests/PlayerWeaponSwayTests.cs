@@ -1,8 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 using static OpenIGI.Game.Tests.PlayerWeaponRecords;
 using static OpenIGI.Game.Tests.PlayerWeaponsDriver;
 

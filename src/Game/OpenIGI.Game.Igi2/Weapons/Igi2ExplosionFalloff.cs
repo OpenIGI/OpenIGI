@@ -1,9 +1,3 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
-using OpenIGI.Game.Igi2.World;
-using OpenIGI.Game.Weapons;
-using OpenIGI.Game.Physics;
-
 namespace OpenIGI.Game.Igi2.Weapons;
 
 /// <summary>How an explosion's damage falls away past its full range, <c>ExplosionDamageFalloffType_e</c>.</summary>

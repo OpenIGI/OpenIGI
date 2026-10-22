@@ -1,12 +1,12 @@
-﻿using OpenIGI.Presentation.Rendering;
+﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
-using OpenIGI.UI;
-using System.Diagnostics;
 
 namespace OpenIGI.Host;
 

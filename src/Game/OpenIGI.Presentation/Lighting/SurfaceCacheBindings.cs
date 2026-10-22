@@ -1,9 +1,6 @@
-using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
-using OpenIGI.Shaders;
 
 namespace OpenIGI.Presentation.Lighting;
 

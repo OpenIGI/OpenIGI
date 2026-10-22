@@ -1,12 +1,9 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
-using OpenIGI.Rendering;
-using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
-using OpenIGI.Host.Lighting;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
 

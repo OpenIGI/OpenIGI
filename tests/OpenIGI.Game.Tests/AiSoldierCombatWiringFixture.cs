@@ -1,14 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.World;
-using OpenIGI.Scripting.Qvm;
-using OpenIGI.Scripting.Runtime;
+using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
-using Xunit;
-using OpenIGI.Game.Igi1.Ai;
 
 namespace OpenIGI.Game.Tests;
 

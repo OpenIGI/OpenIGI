@@ -1,8 +1,4 @@
-using System.Numerics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.Igi2.World;
 

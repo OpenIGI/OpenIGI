@@ -1,22 +1,6 @@
-﻿using OpenIGI.Core.Configuration;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Titles;
-using OpenIGI.Frontend.Saves;
-using OpenIGI.Frontend.Screens;
-using OpenIGI.Frontend.Settings;
-using OpenIGI.Frontend;
-using OpenIGI.Game.Config;
-using OpenIGI.Game.Player;
-using OpenIGI.Input;
-using OpenIGI.Core.Configuration.Presets;
-using OpenIGI.Rendering;
+﻿using OpenIGI.Frontend.Screens;
 using OpenIGI.UI.Kit.Widgets;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI.Screens;
-using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
-using OpenIGI.UI;
-using System.Linq;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;

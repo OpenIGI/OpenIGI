@@ -4,11 +4,9 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

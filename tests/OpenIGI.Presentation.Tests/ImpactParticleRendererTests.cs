@@ -1,20 +1,16 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.World;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Tests;
 

@@ -146,7 +146,6 @@ public sealed class SurfaceCacheCaptureTests
         Assert.Equal([0, 1, 1], result.Value.Owners);
     }
 
-    /// <summary>A model with no uploaded mesh is skipped rather than drawn with a null handle.</summary>
     /// <summary>Every card's camera sits on its own face and looks in at the model.</summary>
     /// <remarks>
     /// The rotation and the translation of the card's view have to agree: the model goes through the
@@ -202,6 +201,7 @@ public sealed class SurfaceCacheCaptureTests
         Assert.Equal(expected.Z, actual.Z, 1e-4f);
     }
 
+    /// <summary>A model with no uploaded mesh is skipped rather than drawn with a null handle.</summary>
     [Fact]
     public void ModelsWithNoMeshAreSkipped()
     {

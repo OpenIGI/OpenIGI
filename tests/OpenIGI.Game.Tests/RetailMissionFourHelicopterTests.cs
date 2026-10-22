@@ -1,3 +1,5 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -7,13 +9,9 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 

@@ -1,25 +1,10 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.Textures;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Physics;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game;
-using OpenIGI.Scripting.Qvm;
-using OpenIGI.Scripting.Runtime;
-using System.Runtime.InteropServices;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -107,7 +92,6 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
         }
     }
 
-    /// <summary>Runs the native generator decision before any live soldier is advanced this tick.</summary>
     /// <summary>A GuardGenerator's update (<c>0x487EE0</c>): its expression, and a replacement for a dead guard.</summary>
     public void TickGuardGenerator(GuardGeneratorTask generator)
     {

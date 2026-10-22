@@ -1,7 +1,5 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats;
-using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
 

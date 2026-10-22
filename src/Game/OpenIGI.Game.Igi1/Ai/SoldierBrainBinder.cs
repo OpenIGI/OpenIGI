@@ -1,25 +1,13 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.Textures;
-using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Physics;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Physics;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using System.Runtime.InteropServices;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -298,7 +286,6 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
     /// <summary>The authored heading a soldier was placed with.</summary>
     private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
 
-    /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
     /// <summary>A level task's position by id — what the activate walk aims at.</summary>
     /// <param name="task">The subtree to search.</param>
     /// <param name="id">The task id the script named.</param>

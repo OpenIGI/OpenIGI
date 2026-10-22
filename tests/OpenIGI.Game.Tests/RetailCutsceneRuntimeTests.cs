@@ -1,20 +1,10 @@
-using OpenIGI.Game.Physics;
-using OpenIGI.Engine.Flow;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Level;
-using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Time;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
-using OpenIGI.Formats.World;
-using OpenIGI.Scripting.Runtime;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.World;
 using static OpenIGI.Game.Tests.RetailMissionFixture;
 
 namespace OpenIGI.Game.Tests;

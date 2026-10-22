@@ -1,5 +1,3 @@
-using OpenIGI.Core.Numerics;
-
 namespace OpenIGI.Game.World;
 
 /// <summary>The broad phase: a sparse 2D grid over the entries' build-time bounding spheres.</summary>

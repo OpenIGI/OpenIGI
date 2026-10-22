@@ -1,10 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
-using OpenIGI.Game.World;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Igi1.Ai;
 

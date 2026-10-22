@@ -1,15 +1,13 @@
-using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
-using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;

@@ -1,13 +1,13 @@
-﻿using OpenIGI.Game.Ai;
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;

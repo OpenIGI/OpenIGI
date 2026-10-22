@@ -1,18 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Config;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons.Ballistics;
-using OpenIGI.Game.Weapons;
-using OpenIGI.Game.World;
-using OpenIGI.Game;
-using OpenIGI.Input;
-using OpenIGI.Game.Igi1.Weapons;
-using OpenIGI.Game.Igi1.World;
+﻿using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Player;
 

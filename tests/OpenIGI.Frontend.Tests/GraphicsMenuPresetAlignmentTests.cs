@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Rendering;
-using OpenIGI.Core.Configuration.Presets;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;

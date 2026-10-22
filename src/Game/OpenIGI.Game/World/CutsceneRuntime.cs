@@ -1,12 +1,8 @@
-using OpenIGI.Game.Physics;
-using System.Globalization;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;

@@ -1,17 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Engine.Time;
-using OpenIGI.Frontend;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.World;
-using OpenIGI.Host.Infrastructure;
-using OpenIGI.Host.Menu;
-using OpenIGI.Presentation.Cameras;
-using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI;
 
 namespace OpenIGI.Host;
 

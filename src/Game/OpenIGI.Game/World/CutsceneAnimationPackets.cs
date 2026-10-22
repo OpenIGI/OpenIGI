@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using static OpenIGI.Game.World.DeclaredTaskValues;
 using static OpenIGI.Game.World.CutscenePoses;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 

@@ -3,9 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.World;
-using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Lighting;
-using OpenIGI.Host.Services;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.Services;

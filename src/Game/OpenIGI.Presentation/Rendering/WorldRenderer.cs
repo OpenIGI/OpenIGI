@@ -1,18 +1,13 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using System.Runtime.InteropServices;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Formats.Ilff;
-using OpenIGI.Formats.Textures;
-using OpenIGI.Formats.World;
+using OpenIGI.Formats;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
-using System.Runtime.InteropServices;
 
 namespace OpenIGI.Presentation.Rendering;
 
