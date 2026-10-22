@@ -123,8 +123,10 @@ Settings are saved to `settings.cfg` beside the executable if one exists there, 
 - **Content packs.** These are folders of replacement art with a load order, installed and ordered from the
   launcher's Content page. The tools to build one from your own installation, such as an AI-upscaled texture pack,
   are `tools/texture-forge` and `tools/OpenIGI.Tools.ResExtract`.
-- **Code mods.** Mods are C# assemblies written against a versioned API. They can add systems, replace the game's
-  tasks, and use the other game's data. Start one with the template:
+- **Mods.** A mod can ship files that stand in for the game's, whole new missions and campaigns, C# code, and shader
+  passes over the picture. Its code says what it changes with attributes (`[AddsLevelSystem]`, `[OnGameEvent]`,
+  `[ReplacesTask]` and the rest), and listens to the games' events, adds settings, HUD overlays and task types. A save
+  records the mods it was made with. Start one with the template:
 
   ```sh
   dotnet new install OpenIGI.Modding.Templates

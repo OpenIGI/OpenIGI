@@ -25,6 +25,9 @@
   <!-- The files a mod ships beside its code: data/ mirrors the game's own folders, and wins over them while the mod is on. -->
   <ItemGroup Condition="'$(EnableDefaultModItems)' != 'false'">
     <None Include="data\**" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- Its shaders, compiled beside their sources by the game's shader tool (see the modding guide), as the game reads them. -->
+    <None Include="shaders\Generated\**" CopyToOutputDirectory="PreserveNewest" Link="shaders\%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="mod.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(_ModHandWrittenManifest)')" />
   </ItemGroup>
 
@@ -77,6 +80,7 @@
       <Conflicts ParameterType="System.String" />
       <Dependencies ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
       <Campaigns ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
+      <PostPasses ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
     </ParameterGroup>
     <Task>
       <Using Namespace="System.Text" />
@@ -165,6 +169,26 @@
             json.Append("  \"campaigns\": [").Append(string.Join(", ", campaigns)).Append("],\n");
         }
 
+        if (PostPasses != null && PostPasses.Length > 0)
+        {
+            var passes = new List<string>();
+            foreach (var pass in PostPasses)
+            {
+                string module = pass.GetMetadata("Module");
+                string toggle = pass.GetMetadata("Toggle");
+                var entry = "{ \"name\": " + Quote(pass.ItemSpec) + ", \"module\": " + Quote(string.IsNullOrEmpty(module) ? pass.ItemSpec : module);
+                if (!string.IsNullOrEmpty(toggle))
+                {
+                    entry += ", \"toggle\": " + Quote(toggle);
+                }
+
+                entry += ", \"parameters\": " + List(pass.GetMetadata("Parameters")) + " }";
+                passes.Add(entry);
+            }
+
+            json.Append("  \"postPasses\": [").Append(string.Join(", ", passes)).Append("],\n");
+        }
+
         json.Append("  \"affectsSimulation\": ").Append(string.Equals(AffectsSimulation, "false", StringComparison.OrdinalIgnoreCase) ? "false" : "true").Append("\n");
         json.Append("}\n");
 
@@ -213,7 +237,8 @@
         RequiresTitleData="$(ModRequiresTitleData)"
         Conflicts="$(ModConflicts)"
         Dependencies="@(ModDependency)"
-        Campaigns="@(ModCampaign)" />
+        Campaigns="@(ModCampaign)"
+        PostPasses="@(ModPostPass)" />
   </Target>
 
   <Target Name="PackMod" AfterTargets="Build" DependsOnTargets="GetCopyToOutputDirectoryItems;ResolveModHasCode">

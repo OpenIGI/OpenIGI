@@ -23,4 +23,7 @@ public sealed class AddsLevelSystemAttribute<TBuild> : Attribute
 
     /// <summary>Gets or sets the system's own name, which other mods place theirs by; the class's and the method's names by default.</summary>
     public string? Name { get; set; }
+
+    /// <summary>Gets or sets the id of the game this is for, or <see langword="null"/> for every game the mod applies to.</summary>
+    public string? Title { get; set; }
 }

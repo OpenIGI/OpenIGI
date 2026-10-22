@@ -22,6 +22,8 @@ namespace OpenIGI.Modding.Loader;
 /// </remarks>
 public static class ModLoader
 {
+    private static readonly Dictionary<Guid, Assembly> LoadedBuilds = [];
+
     private const string LogCategory = "Mods";
 
     /// <summary>Loads the mods installed in a directory, on a machine with every game installed.</summary>
@@ -112,8 +114,7 @@ public static class ModLoader
             throw new ModLoadException($"its assembly '{assemblyName}' is not there");
         }
 
-        ModLoadContext context = new(manifest.Id, assemblyPath);
-        Assembly assembly = context.LoadFromAssemblyPath(assemblyPath);
+        Assembly assembly = Loaded(manifest.Id, assemblyPath);
         if (assembly.GetCustomAttribute<OpenIgiModAttribute>() is not { ModType: { } modType })
         {
             throw new ModLoadException($"'{assemblyName}' names no mod; mark its mod's partial class [OpenIgiMod], or the assembly [assembly: OpenIgiMod(typeof(...))]");
@@ -226,6 +227,30 @@ public static class ModLoader
         }
 
         return null;
+    }
+
+    // A mod's assembly, loaded once a process: the same build met again -- by its module version id, wherever it is
+    // installed -- is the one already loaded, so what its module initializer registers (its settings) is registered once.
+    private static Assembly Loaded(string id, string assemblyPath)
+    {
+        Guid build;
+        using (FileStream file = File.OpenRead(assemblyPath))
+        using (System.Reflection.PortableExecutable.PEReader pe = new(file))
+        {
+            System.Reflection.Metadata.MetadataReader metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+            build = metadata.GetGuid(metadata.GetModuleDefinition().Mvid);
+        }
+
+        lock (LoadedBuilds)
+        {
+            if (!LoadedBuilds.TryGetValue(build, out Assembly? assembly))
+            {
+                assembly = new ModLoadContext(id, assemblyPath).LoadFromAssemblyPath(assemblyPath);
+                LoadedBuilds[build] = assembly;
+            }
+
+            return assembly;
+        }
     }
 
     private static bool Conflict(ModManifest one, ModManifest other) =>

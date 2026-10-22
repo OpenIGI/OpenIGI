@@ -16,6 +16,11 @@
     <Authors>OpenIGI</Authors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- A pass over the scene, compiled from shaders/Source by the game's shader tool into shaders/Generated. -->
+    <ModPostPass Include="Greyscale" Toggle="mod_sample_greyscale" Parameters="mod_sample_greyscale_amount" />
+  </ItemGroup>
+
   <Import Project="..\..\sdk\OpenIGI.Modding.Sdk\Sdk\Sdk.targets" />
 
 </Project>

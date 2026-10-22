@@ -210,6 +210,7 @@ public sealed partial class GameHost
         {
             _device.EndPass();
             _device.EndSceneCapture();
+            UpdateModPostPasses();
             _device.ResolveScene(postProcess);
             captured = false;
             EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");

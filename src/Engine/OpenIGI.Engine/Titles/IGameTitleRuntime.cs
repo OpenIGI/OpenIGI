@@ -49,4 +49,7 @@ public interface IGameTitleRuntime
 
     /// <summary>Gets the mods the title is played with that change what happens in play, which its saves record.</summary>
     IReadOnlyList<ModReference> Mods => [];
+
+    /// <summary>Gets the passes the title's mods run over the lit scene before the tone map, in order.</summary>
+    IReadOnlyList<TitlePostPass> PostPasses => [];
 }

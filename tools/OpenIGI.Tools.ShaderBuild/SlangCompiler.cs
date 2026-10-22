@@ -59,6 +59,10 @@ public sealed class SlangCompiler
         _dxcDirectory = dxcDirectory;
     }
 
+    /// <summary>Gets or sets the folders an <c>#include</c> is also looked for in, after the source's own.</summary>
+    /// <remarks>A mod's shaders name the game's library here, for the contract they are written against.</remarks>
+    public IReadOnlyList<string> IncludeDirectories { get; init; } = [];
+
     /// <summary>Gets the compiler's version string, as <c>slangc -v</c> reports it.</summary>
     /// <returns>The version string.</returns>
     public string Version()
@@ -130,6 +134,12 @@ public sealed class SlangCompiler
             // this until the first single-stage module was migrated.
             "-fvk-use-entrypoint-name",
         ];
+
+        foreach (string include in IncludeDirectories)
+        {
+            arguments.Add("-I");
+            arguments.Add(include);
+        }
 
         if (withReflection)
         {

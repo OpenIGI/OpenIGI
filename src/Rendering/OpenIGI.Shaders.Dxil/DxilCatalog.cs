@@ -21,7 +21,11 @@ public static class DxilCatalog
     /// <returns>The signed DXIL container.</returns>
     /// <exception cref="InvalidOperationException">The variant has no DXIL form for that stage.</exception>
     public static ReadOnlyMemory<byte> Get(ShaderModuleId id, ShaderVariant variant, ShaderStage stage) =>
-        Cache.GetOrAdd(
+        ShaderCatalog.TryGetExternal(id, out ExternalShaderModule? external)
+            ? external.Dxil.TryGetValue(stage, out byte[]? blob)
+                ? blob
+                : throw new InvalidOperationException($"The shader module {external.Name} has no {stage} DXIL.")
+            : Cache.GetOrAdd(
             ShaderCatalog.ResourceName(id, variant, $"{ShaderCatalog.StageName(stage)}.dxil"),
             static name =>
             {

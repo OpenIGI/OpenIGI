@@ -30,6 +30,9 @@ public sealed partial class GraphicsDevice
         // The shutter first, because everything after it is lens behaviour and a lens sees the smeared
         // picture: a bright moving highlight blooms along its own smear rather than from where it was.
         IRhiTextureView colour = RecordMotionBlur(scene, post) ?? ResolvedScene(scene);
+
+        // The mods' passes next, on the smeared picture, so the lens and the tone map see what they leave.
+        colour = RecordModPasses(scene, colour) ?? colour;
         IRhiTextureView? bloom = RecordBloom(scene, colour, post);
         float adapted = MeterExposure(scene, post);
 

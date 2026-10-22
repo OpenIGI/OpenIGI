@@ -17,6 +17,9 @@ public sealed class ModSet
     /// <summary>The folder in a mod's directory whose files stand in for the game's own at the same paths.</summary>
     public const string DataDirectoryName = "data";
 
+    /// <summary>The folder in a mod's directory that holds its compiled shaders.</summary>
+    public const string ShadersDirectoryName = "shaders";
+
     private readonly List<InstalledMod> _mods;
 
     /// <summary>Initializes a new instance of the <see cref="ModSet"/> class.</summary>
@@ -67,8 +70,12 @@ public sealed class ModSet
         List<TitleContentFolder> folders = [];
         List<TitleCampaign> campaigns = [];
         List<ModReference> played = [];
+        List<TitlePostPass> passes = [];
         foreach (InstalledMod mod in For(runtime.Title))
         {
+            string shaders = Path.Combine(mod.Directory, ShadersDirectoryName);
+            passes.AddRange(mod.Manifest.PostPasses.Select(p => new TitlePostPass($"{mod.Manifest.Id}.{p.Name}", shaders, p.Module, p.Toggle, p.Parameters)));
+
             if (mod.Manifest.AffectsSimulation)
             {
                 played.Add(new ModReference(mod.Manifest.Id, mod.Manifest.Version));
@@ -83,7 +90,7 @@ public sealed class ModSet
             }
         }
 
-        if (added.Count == 0 && edits.Count == 0 && folders.Count == 0 && campaigns.Count == 0 && played.Count == 0)
+        if (added.Count == 0 && edits.Count == 0 && folders.Count == 0 && campaigns.Count == 0 && played.Count == 0 && passes.Count == 0)
         {
             return runtime;
         }
@@ -95,7 +102,8 @@ public sealed class ModSet
             added.Count == 0 && edits.Count == 0 ? runtime.Modules : [.. runtime.Modules, .. added, new EditsModule(edits)],
             [.. folders, .. runtime.ContentFolders],
             [.. runtime.Campaigns, .. campaigns],
-            [.. runtime.Mods, .. played]);
+            [.. runtime.Mods, .. played],
+            [.. runtime.PostPasses, .. passes]);
     }
 
     // A game as it ships, with the mods' modules after its own, their data over its files and their campaigns beside its own.
@@ -104,7 +112,8 @@ public sealed class ModSet
         IReadOnlyList<IContentModule> modules,
         IReadOnlyList<TitleContentFolder> folders,
         IReadOnlyList<TitleCampaign> campaigns,
-        IReadOnlyList<ModReference> mods)
+        IReadOnlyList<ModReference> mods,
+        IReadOnlyList<TitlePostPass> postPasses)
         : IGameTitleRuntime
     {
         public GameTitle Title => inner.Title;
@@ -120,6 +129,8 @@ public sealed class ModSet
         public IReadOnlyList<TitleCampaign> Campaigns => campaigns;
 
         public IReadOnlyList<ModReference> Mods => mods;
+
+        public IReadOnlyList<TitlePostPass> PostPasses => postPasses;
     }
 
     // Publishes the mods' level-system edits to every session, the preview's sharing the played one's.

@@ -9,11 +9,11 @@ public sealed partial class ModdingSdkTests
     [Fact]
     public void The_sdk_writes_manifests_for_the_api_this_build_offers()
     {
-        string props = File.ReadAllText(Path.Combine(RepositoryRoot(), "sdk", "OpenIGI.Modding.Sdk", "Sdk", "Sdk.props"));
+        string props = File.ReadAllText(Path.Combine(RepositoryRoot(), "sdk", "OpenIGI.Modding.Sdk", "Sdk", "OpenIGI.Modding.props"));
 
         Match version = ApiVersion().Match(props);
 
-        Assert.True(version.Success, "Sdk.props names the modding API it builds for.");
+        Assert.True(version.Success, "OpenIGI.Modding.props names the modding API it builds for.");
         Assert.Equal(ModApi.Version, int.Parse(version.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
     }
 

@@ -213,4 +213,10 @@ public enum ShaderModuleId
 
     /// <summary>A round's tracer: the original's thin unfogged line, or the remaster's glowing streak.</summary>
     Tracer,
+
+    /// <summary>
+    /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is
+    /// labelled so; the catalogue gives each one an id of its own as it is registered (<see cref="ShaderCatalog.Register"/>).
+    /// </summary>
+    External,
 }

@@ -17,25 +17,8 @@
     installs (bin/<config>/<tfm>/mod/). See OpenIGI.Modding.targets.
   -->
 
-  <PropertyGroup>
-    <!-- The modding API this SDK builds for; the game's ModApi.Version, which a test holds this to. -->
-    <OpenIgiModApiVersion>1</OpenIgiModApiVersion>
-
-    <!-- A mod is a plugin: the packages it references itself are copied beside it. Set before the .NET SDK reads it. -->
-    <EnableDynamicLoading Condition="'$(EnableDynamicLoading)' == ''">true</EnableDynamicLoading>
-  </PropertyGroup>
-
   <!-- The version the SDK was packed as, which the game's packages are referenced at; absent in a checkout. -->
   <Import Project="Version.props" Condition="Exists('$(MSBuildThisFileDirectory)Version.props')" />
-
-  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
-
-  <PropertyGroup>
-    <TargetFramework Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == ''">net10.0</TargetFramework>
-    <Nullable Condition="'$(Nullable)' == ''">enable</Nullable>
-    <ImplicitUsings Condition="'$(ImplicitUsings)' == ''">enable</ImplicitUsings>
-    <LangVersion Condition="'$(LangVersion)' == ''">preview</LangVersion>
-  </PropertyGroup>
 
   <!--
     Where the game is built from: a checkout of its source when one is to hand, else the packages at the SDK's version.
@@ -52,5 +35,16 @@
     <OpenIgiRoot Condition="'$(OpenIgiRoot)' != ''">$([MSBuild]::NormalizeDirectory('$(OpenIgiRoot)'))</OpenIgiRoot>
     <OpenIgiFromSource Condition="'$(OpenIgiRoot)' != ''">true</OpenIgiFromSource>
   </PropertyGroup>
+
+  <!--
+    The SDK itself: from the checkout when the game is built from one, so that a change to it needs no new package, or else
+    the one this package carries.
+  -->
+  <PropertyGroup>
+    <_OpenIgiSdkDirectory Condition="'$(OpenIgiFromSource)' == 'true' and Exists('$(OpenIgiRoot)sdk\OpenIGI.Modding.Sdk\Sdk\OpenIGI.Modding.props')">$(OpenIgiRoot)sdk\OpenIGI.Modding.Sdk\Sdk\</_OpenIgiSdkDirectory>
+    <_OpenIgiSdkDirectory Condition="'$(_OpenIgiSdkDirectory)' == ''">$(MSBuildThisFileDirectory)</_OpenIgiSdkDirectory>
+  </PropertyGroup>
+
+  <Import Project="$(_OpenIgiSdkDirectory)OpenIGI.Modding.props" />
 
 </Project>

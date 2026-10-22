@@ -62,6 +62,9 @@ public sealed record ModManifest(
     /// <summary>Gets the campaigns the mod adds beside the game's own, each listed by the menu as a campaign of its own.</summary>
     public IReadOnlyList<ModCampaign> Campaigns { get; init; } = [];
 
+    /// <summary>Gets the passes the mod runs over the lit scene before the tone map, in the order they run.</summary>
+    public IReadOnlyList<ModPostPass> PostPasses { get; init; } = [];
+
     /// <summary>Gets the oldest game build the mod works with, or <see langword="null"/>; the launcher checks it.</summary>
     public string? MinGameVersion { get; init; }
 
@@ -100,6 +103,7 @@ public sealed record ModManifest(
             Dependencies = manifest.Dependencies ?? ReadOnlyDictionary<string, string>.Empty,
             Conflicts = manifest.Conflicts ?? [],
             Campaigns = [.. (manifest.Campaigns ?? []).Where(static c => c is { Name.Length: > 0, Missions.Count: > 0 })],
+            PostPasses = [.. (manifest.PostPasses ?? []).Where(static p => p is { Name.Length: > 0, Module.Length: > 0 }).Select(static p => p with { Parameters = p.Parameters ?? [] })],
         };
     }
 

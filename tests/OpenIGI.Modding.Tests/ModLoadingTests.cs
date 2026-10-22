@@ -338,14 +338,32 @@ public sealed class ModLoadingTests : IDisposable
         string package = Path.Combine(AppContext.BaseDirectory, "SampleMod");
 
         Assert.Equal(
-            ["SampleMod.deps.json", "SampleMod.dll", "SampleMod.pdb", ModManifest.FileName],
+            [
+                "Greyscale.default.compute.dxil",
+                "Greyscale.default.reflection.json",
+                "Greyscale.default.spv",
+                "Greyscale.default.wgsl",
+                "SampleMod.deps.json",
+                "SampleMod.dll",
+                "SampleMod.pdb",
+                ModManifest.FileName,
+            ],
             Directory.EnumerateFiles(package, "*", SearchOption.AllDirectories).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.True(File.Exists(Path.Combine(package, ModSet.ShadersDirectoryName, "Greyscale.default.spv")));
         CopyDirectory(package, Path.Combine(_mods, "sample"));
 
-        InstalledMod mod = Assert.Single(ModLoader.Load(_mods).Mods);
+        ModSet mods = ModLoader.Load(_mods);
+        InstalledMod mod = Assert.Single(mods.Mods);
         Assert.Equal("sample", mod.Manifest.Id);
         Assert.Empty(mod.Manifest.Titles);
         Assert.NotNull(mod.Code);
+
+        // Its pass, with the settings the manifest names, read from the folder the package holds its shaders in.
+        TitlePostPass pass = Assert.Single(mods.Extend(new Igi2Runtime()).PostPasses);
+        Assert.Equal("sample.Greyscale", pass.Name);
+        Assert.Equal("mod_sample_greyscale", pass.Toggle);
+        Assert.Equal(["mod_sample_greyscale_amount"], pass.Parameters);
+        Assert.True(OpenIGI.Shaders.ExternalShaderModule.Read(pass.ShadersDirectory, pass.Module).Compiles(OpenIGI.Shaders.ShaderTarget.Spirv));
     }
 
     // The sample's package under another manifest.

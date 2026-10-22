@@ -331,6 +331,7 @@ public sealed partial class GameHost
         hostServices.Provide(new PlayedMods(_titleRuntime.Mods));
         _title = TitleSession.Start(
             _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false, inherited: hostServices);
+        LoadModPostPasses();
 
         _mission.AdoptTitleServices(_title.Services);
 

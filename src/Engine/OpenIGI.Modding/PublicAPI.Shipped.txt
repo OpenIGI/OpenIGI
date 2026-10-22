@@ -1,6 +1,7 @@
 #nullable enable
 const OpenIGI.Modding.ModApi.Version = 1 -> int
 const OpenIGI.Modding.ModSet.DataDirectoryName = "data" -> string!
+const OpenIGI.Modding.ModSet.ShadersDirectoryName = "shaders" -> string!
 OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>
 OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.AddsLevelSystemAttribute() -> void
 OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.After.get -> string?
@@ -11,6 +12,8 @@ OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Name.get -> string?
 OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Name.set -> void
 OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Replaces.get -> string?
 OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Replaces.set -> void
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Title.get -> string?
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Title.set -> void
 OpenIGI.Modding.AddsTaskAttribute
 OpenIGI.Modding.AddsTaskAttribute.AddsTaskAttribute(string! typeName) -> void
 OpenIGI.Modding.AddsTaskAttribute.Title.get -> string?

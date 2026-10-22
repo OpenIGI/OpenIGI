@@ -4,6 +4,7 @@
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Loader\OpenIGI.Modding.Loader.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
     <!-- Built, not referenced: the tests load it as a mod is loaded, from a directory of its own. -->
     <ProjectReference Include="..\OpenIGI.Modding.SampleMod\OpenIGI.Modding.SampleMod.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>

@@ -30,7 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Sdk\Sdk.props;Sdk\Sdk.targets;Sdk\OpenIGI.Modding.targets" Pack="true" PackagePath="Sdk\" />
+    <None Include="Sdk\Sdk.props;Sdk\Sdk.targets;Sdk\OpenIGI.Modding.props;Sdk\OpenIGI.Modding.targets" Pack="true" PackagePath="Sdk\" />
     <None Include="..\..\src\Core\OpenIGI.Generators\bin\$(Configuration)\netstandard2.0\OpenIGI.Generators.dll"
           Pack="true" PackagePath="analyzers\dotnet\cs\" Visible="false" />
   </ItemGroup>
