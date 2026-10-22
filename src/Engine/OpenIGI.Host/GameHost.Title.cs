@@ -238,7 +238,7 @@ public sealed partial class GameHost
                 : null;
 
         _overrides = new ResourceOverrides(
-            ContentLayers.Resolve(_titleRuntime.Title.Id, dataRoot, _options, _logger),
+            ContentLayers.Resolve(_titleRuntime.Title.Id, dataRoot, _options, _logger, _titleRuntime.ContentFolders),
             _logger)
         {
             // Carried across a title switch: F8 is the player's, not the title's.
@@ -308,10 +308,14 @@ public sealed partial class GameHost
         // into a mission -- the lists, a save slot, the command line, a finished mission's successor --
         // meets the same limit without knowing there is one.
         IMissionCatalogue<MissionDescriptor> titleMissions = _missionCatalogue(_logger);
+
+        // A mod's campaigns are listed apart from the game's, so their missions are kept out of its progression.
+        _sideCampaigns = _titleRuntime.Campaigns.Count > 0 ? new SideCampaignMissionCatalogue(titleMissions, _titleRuntime.Campaigns) : null;
+        IMissionCatalogue<MissionDescriptor> gameMissions = (IMissionCatalogue<MissionDescriptor>?)_sideCampaigns ?? titleMissions;
         CampaignLimitedMissionCatalogue? limitedMissions = _options.CampaignMissionLimit is { } limit
-            ? new CampaignLimitedMissionCatalogue(titleMissions, limit)
+            ? new CampaignLimitedMissionCatalogue(gameMissions, limit)
             : null;
-        _missions = limitedMissions ?? titleMissions;
+        _missions = limitedMissions ?? gameMissions;
         _missions.Register(_loop.Natives);
         _missionState.Register(_loop.Natives);
 
@@ -416,17 +420,36 @@ public sealed partial class GameHost
 
         foreach (MissionDescriptor descriptor in _missions.InProgressionOrder())
         {
-            missions.Add(new MissionInfo(
-                descriptor.Id,
-                number++,
-                _menuStrings?.Get(descriptor.Name) ?? descriptor.Name,
-                _menuStrings?.Get(descriptor.Description) ?? descriptor.Description,
-                descriptor.BriefingSprite));
+            missions.Add(ShellMission(descriptor, number++, campaign: null));
+        }
+
+        // Each campaign a mod adds, after the game's, numbered from its own first mission. A build cut to the opening of the
+        // game's campaign offers none of them: its catalogue does not hand them out.
+        if (_sideCampaigns is { } side && ReferenceEquals(_missions, side))
+        {
+            foreach (TitleCampaign campaign in side.Campaigns)
+            {
+                number = 1;
+                foreach (MissionDescriptor descriptor in side.InSideCampaignOrder(campaign))
+                {
+                    missions.Add(ShellMission(descriptor, number++, campaign.Name));
+                }
+            }
         }
 
         _shellMissions = missions;
         return missions;
     }
+
+    // One mission as the shell lists it, its strings looked up in the menus' language table.
+    private MissionInfo ShellMission(MissionDescriptor descriptor, int number, string? campaign) =>
+        new(
+            descriptor.Id,
+            number,
+            _menuStrings?.Get(descriptor.Name) ?? descriptor.Name,
+            _menuStrings?.Get(descriptor.Description) ?? descriptor.Description,
+            descriptor.BriefingSprite,
+            campaign);
 
     /// <summary>Builds the shell's context for the title running now.</summary>
     /// <param name="host">The seam the shell acts through; it belongs to the session, not to a game.</param>

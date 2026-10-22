@@ -1,0 +1,252 @@
+<Project>
+
+  <!--
+    What a mod builds against, its manifest, and its package.
+
+    The package is the folder an installed mod is, which the launcher installs and the game's loader reads. Built beside
+    the mod's output (bin/<config>/<tfm>/mod/) after every build, it holds the mod.json, the mod's assembly with its symbols
+    and dependency manifest, the files the project copies to its output (its data/ folder among them), and the assemblies
+    of the packages the mod itself references. Nothing of the game's: the game's assemblies are the game's own at run time,
+    which the loader gives every mod, so a mod never carries a second copy of them.
+  -->
+
+  <PropertyGroup>
+    <ModId Condition="'$(ModId)' == ''">$(AssemblyName.ToLowerInvariant())</ModId>
+    <ModName Condition="'$(ModName)' == ''">$(AssemblyName)</ModName>
+    <ModSummary Condition="'$(ModSummary)' == ''">$(Description)</ModSummary>
+    <ModLicense Condition="'$(ModLicense)' == ''">$(PackageLicenseExpression)</ModLicense>
+    <ModHomepage Condition="'$(ModHomepage)' == ''">$(PackageProjectUrl)</ModHomepage>
+    <ModMinGameVersion Condition="'$(ModMinGameVersion)' == ''">$(OpenIgiSdkVersion)</ModMinGameVersion>
+    <ModAffectsSimulation Condition="'$(ModAffectsSimulation)' == ''">true</ModAffectsSimulation>
+
+    <_ModHandWrittenManifest>$(MSBuildProjectDirectory)\mod.json</_ModHandWrittenManifest>
+  </PropertyGroup>
+
+  <!-- The files a mod ships beside its code: data/ mirrors the game's own folders, and wins over them while the mod is on. -->
+  <ItemGroup Condition="'$(EnableDefaultModItems)' != 'false'">
+    <None Include="data\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="mod.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(_ModHandWrittenManifest)')" />
+  </ItemGroup>
+
+  <!--
+    From a checkout: the game's projects, and the source generator. Outside the game's own solution, which does not list
+    them, the configuration asked for has to reach every one of them and every project they reference, rather than each
+    falling back to Debug: the property that keeps it is handed down as a global one, so it holds the whole way down.
+  -->
+  <ItemDefinitionGroup Condition="'$(OpenIgiFromSource)' == 'true' and '$(CurrentSolutionConfigurationContents)' == ''">
+    <ProjectReference>
+      <AdditionalProperties>ShouldUnsetParentConfigurationAndPlatform=false</AdditionalProperties>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+
+  <ItemGroup Condition="'$(OpenIgiFromSource)' == 'true'">
+    <ProjectReference Include="$(OpenIgiRoot)src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="$(OpenIgiRoot)src\Engine\OpenIGI.Modding.Presentation\OpenIGI.Modding.Presentation.csproj" />
+    <ProjectReference Include="$(OpenIgiRoot)src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="$(OpenIgiRoot)src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <ProjectReference Include="$(OpenIgiRoot)src\Game\OpenIGI.Presentation.Igi1\OpenIGI.Presentation.Igi1.csproj" />
+    <ProjectReference Include="$(OpenIgiRoot)src\Game\OpenIGI.Presentation.Igi2\OpenIGI.Presentation.Igi2.csproj" />
+    <ProjectReference Include="$(OpenIgiRoot)src\Core\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- From a release: the game's packages at the SDK's version, and the generator the SDK carries. -->
+  <ItemGroup Condition="'$(OpenIgiFromSource)' != 'true'">
+    <_OpenIgiPackage Include="OpenIGI.Modding;OpenIGI.Modding.Presentation;OpenIGI.Game.Igi1;OpenIGI.Game.Igi2;OpenIGI.Presentation.Igi1;OpenIGI.Presentation.Igi2" />
+    <PackageReference Include="@(_OpenIgiPackage)" Version="$(OpenIgiSdkVersion)" Condition="'$(ManagePackageVersionsCentrally)' != 'true'" />
+    <PackageReference Include="@(_OpenIgiPackage)" VersionOverride="$(OpenIgiSdkVersion)" Condition="'$(ManagePackageVersionsCentrally)' == 'true'" />
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\OpenIGI.Generators.dll" />
+  </ItemGroup>
+
+  <UsingTask TaskName="WriteModManifest" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <File ParameterType="System.String" Required="true" />
+      <Id ParameterType="System.String" Required="true" />
+      <Name ParameterType="System.String" Required="true" />
+      <Version ParameterType="System.String" Required="true" />
+      <ApiVersion ParameterType="System.String" Required="true" />
+      <Assembly ParameterType="System.String" />
+      <AffectsSimulation ParameterType="System.String" />
+      <Summary ParameterType="System.String" />
+      <Authors ParameterType="System.String" />
+      <License ParameterType="System.String" />
+      <Homepage ParameterType="System.String" />
+      <MinGameVersion ParameterType="System.String" />
+      <Titles ParameterType="System.String" />
+      <RequiresTitleData ParameterType="System.String" />
+      <Conflicts ParameterType="System.String" />
+      <Dependencies ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
+      <Campaigns ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // The manifest the game's loader reads (ModManifest), written from the project's properties.
+        string Quote(string value)
+        {
+            var text = new StringBuilder("\"");
+            foreach (char c in value)
+            {
+                switch (c)
+                {
+                    case '"': text.Append("\\\""); break;
+                    case '\\': text.Append("\\\\"); break;
+                    case '\n': text.Append("\\n"); break;
+                    case '\r': text.Append("\\r"); break;
+                    case '\t': text.Append("\\t"); break;
+                    default:
+                        if (c < ' ') { text.Append("\\u").Append(((int)c).ToString("x4")); } else { text.Append(c); }
+                        break;
+                }
+            }
+
+            return text.Append('"').ToString();
+        }
+
+        string List(string value)
+        {
+            var items = new List<string>();
+            foreach (string part in (value ?? string.Empty).Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (part.Trim().Length > 0) { items.Add(Quote(part.Trim())); }
+            }
+
+            return "[" + string.Join(", ", items) + "]";
+        }
+
+        var json = new StringBuilder();
+        json.Append("{\n");
+        json.Append("  \"id\": ").Append(Quote(Id)).Append(",\n");
+        json.Append("  \"name\": ").Append(Quote(Name)).Append(",\n");
+        json.Append("  \"version\": ").Append(Quote(Version)).Append(",\n");
+        json.Append("  \"apiVersion\": ").Append(ApiVersion).Append(",\n");
+        json.Append("  \"titles\": ").Append(List(Titles)).Append(",\n");
+        if (!string.IsNullOrEmpty(Assembly)) { json.Append("  \"assembly\": ").Append(Quote(Assembly)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(Summary)) { json.Append("  \"summary\": ").Append(Quote(Summary)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(Authors)) { json.Append("  \"authors\": ").Append(List(Authors)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(License)) { json.Append("  \"license\": ").Append(Quote(License)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(Homepage)) { json.Append("  \"homepage\": ").Append(Quote(Homepage)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(MinGameVersion)) { json.Append("  \"minGameVersion\": ").Append(Quote(MinGameVersion)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(RequiresTitleData)) { json.Append("  \"requiresTitleData\": ").Append(List(RequiresTitleData)).Append(",\n"); }
+        if (!string.IsNullOrEmpty(Conflicts)) { json.Append("  \"conflicts\": ").Append(List(Conflicts)).Append(",\n"); }
+        if (Dependencies != null && Dependencies.Length > 0)
+        {
+            var pairs = new List<string>();
+            foreach (var dependency in Dependencies)
+            {
+                string range = dependency.GetMetadata("Version");
+                pairs.Add(Quote(dependency.ItemSpec) + ": " + Quote(string.IsNullOrEmpty(range) ? "*" : range));
+            }
+
+            json.Append("  \"dependencies\": { ").Append(string.Join(", ", pairs)).Append(" },\n");
+        }
+
+        if (Campaigns != null && Campaigns.Length > 0)
+        {
+            var campaigns = new List<string>();
+            foreach (var campaign in Campaigns)
+            {
+                var ids = new List<string>();
+                foreach (string part in campaign.GetMetadata("Missions").Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    int id;
+                    if (!int.TryParse(part.Trim(), out id))
+                    {
+                        Log.LogError("The campaign '" + campaign.ItemSpec + "' names '" + part.Trim() + "', which is not a mission id.");
+                        return false;
+                    }
+
+                    ids.Add(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+
+                campaigns.Add("{ \"name\": " + Quote(campaign.ItemSpec) + ", \"missions\": [" + string.Join(", ", ids) + "] }");
+            }
+
+            json.Append("  \"campaigns\": [").Append(string.Join(", ", campaigns)).Append("],\n");
+        }
+
+        json.Append("  \"affectsSimulation\": ").Append(string.Equals(AffectsSimulation, "false", StringComparison.OrdinalIgnoreCase) ? "false" : "true").Append("\n");
+        json.Append("}\n");
+
+        string text = json.ToString();
+        if (!System.IO.File.Exists(File) || System.IO.File.ReadAllText(File) != text)
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(File));
+            System.IO.File.WriteAllText(File, text);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- A mod with no source of its own is content alone: it ships no assembly. Known once the items are, so in a target. -->
+  <Target Name="ResolveModHasCode">
+    <ItemGroup>
+      <_ModOwnSource Include="@(Compile)" Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$(MSBuildProjectDirectory)', System.StringComparison.OrdinalIgnoreCase))
+                                                    and !$([System.String]::Copy('%(FullPath)').StartsWith('$(MSBuildProjectDirectory)\obj', System.StringComparison.OrdinalIgnoreCase))" />
+    </ItemGroup>
+    <PropertyGroup>
+      <ModHasCode Condition="'$(ModHasCode)' == '' and '@(_ModOwnSource)' != ''">true</ModHasCode>
+      <ModHasCode Condition="'$(ModHasCode)' == ''">false</ModHasCode>
+      <_ModAssemblyFile Condition="'$(ModHasCode)' == 'true'">$(TargetFileName)</_ModAssemblyFile>
+    </PropertyGroup>
+  </Target>
+
+  <!-- The manifest from the project's properties, unless the project keeps a mod.json of its own. -->
+  <Target Name="WriteModManifest" BeforeTargets="PackMod" DependsOnTargets="ResolveModHasCode" Condition="!Exists('$(_ModHandWrittenManifest)')">
+    <PropertyGroup>
+      <_ModManifest>$(IntermediateOutputPath)mod.json</_ModManifest>
+    </PropertyGroup>
+    <WriteModManifest
+        File="$(_ModManifest)"
+        Id="$(ModId)"
+        Name="$(ModName)"
+        Version="$(Version)"
+        ApiVersion="$(OpenIgiModApiVersion)"
+        Assembly="$(_ModAssemblyFile)"
+        AffectsSimulation="$(ModAffectsSimulation)"
+        Summary="$(ModSummary)"
+        Authors="$(Authors)"
+        License="$(ModLicense)"
+        Homepage="$(ModHomepage)"
+        MinGameVersion="$(ModMinGameVersion)"
+        Titles="$(ModTitles)"
+        RequiresTitleData="$(ModRequiresTitleData)"
+        Conflicts="$(ModConflicts)"
+        Dependencies="@(ModDependency)"
+        Campaigns="@(ModCampaign)" />
+  </Target>
+
+  <Target Name="PackMod" AfterTargets="Build" DependsOnTargets="GetCopyToOutputDirectoryItems;ResolveModHasCode">
+    <PropertyGroup>
+      <!-- Here rather than above: a project imports this before the SDK names its output folder. -->
+      <ModPackageDirectory Condition="'$(ModPackageDirectory)' == ''">$(OutDir)mod\</ModPackageDirectory>
+      <_ModOwnPackages>;@(PackageReference->'%(Identity)'->ToLowerInvariant());</_ModOwnPackages>
+      <_ModProjectDirectory>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)'))</_ModProjectDirectory>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_ModFile Include="$(_ModManifest)" TargetPath="mod.json" Condition="'$(_ModManifest)' != ''" />
+
+      <_ModFile Include="@(IntermediateAssembly->'%(FullPath)')" TargetPath="$(TargetFileName)" Condition="'$(ModHasCode)' == 'true'" />
+      <_ModFile Include="$(ProjectDepsFilePath)" TargetPath="$(ProjectDepsFileName)" Condition="'$(ModHasCode)' == 'true' and Exists('$(ProjectDepsFilePath)')" />
+      <_ModFile Include="$(TargetDir)$(TargetName).pdb" TargetPath="$(TargetName).pdb" Condition="'$(ModHasCode)' == 'true' and Exists('$(TargetDir)$(TargetName).pdb')" />
+
+      <!-- The project's own files copied to its output: a hand-written mod.json, and its data. -->
+      <_ModFile Include="@(AllItemsFullPathWithTargetPath)"
+                Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$(_ModProjectDirectory)', System.StringComparison.OrdinalIgnoreCase))" />
+
+      <!-- The packages the mod references itself, with their native and satellite files; never one of the game's. -->
+      <_ModFile Include="@(ReferenceCopyLocalPaths)"
+                TargetPath="%(ReferenceCopyLocalPaths.DestinationSubDirectory)%(Filename)%(Extension)"
+                Condition="'$(ModHasCode)' == 'true'
+                           and '%(ReferenceCopyLocalPaths.NuGetPackageId)' != ''
+                           and !$([System.String]::Copy('%(ReferenceCopyLocalPaths.NuGetPackageId)').StartsWith('OpenIGI.'))
+                           and $(_ModOwnPackages.Contains(';$([System.String]::Copy('%(ReferenceCopyLocalPaths.NuGetPackageId)').ToLowerInvariant());'))" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(ModPackageDirectory)" />
+    <Copy SourceFiles="@(_ModFile)" DestinationFiles="@(_ModFile->'$(ModPackageDirectory)%(TargetPath)')" />
+    <Message Importance="normal" Text="$(MSBuildProjectName) -> $(ModPackageDirectory) (mod package)" />
+  </Target>
+
+</Project>

@@ -337,7 +337,7 @@ public sealed class SmokeSpriteRenderer : IDisposable
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(_spriteArchive));
+            IresArchive archive = _fileSystem.ReadArchive(_spriteArchive);
             IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {

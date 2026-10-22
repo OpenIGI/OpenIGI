@@ -9,4 +9,8 @@ namespace OpenIGI.Frontend;
 /// <param name="Name">The resolved display name.</param>
 /// <param name="Description">The resolved description or briefing text.</param>
 /// <param name="BriefingSprite">The briefing sprite resource name, e.g. <c>mission1.spr</c>.</param>
-public sealed record MissionInfo(int Id, int Number, string Name, string Description, string BriefingSprite);
+/// <param name="Campaign">
+/// The campaign the mission is one of: <see langword="null"/> for the game's own, which the profile's progress unlocks, or a
+/// mod's, whose missions are all open.
+/// </param>
+public sealed record MissionInfo(int Id, int Number, string Name, string Description, string BriefingSprite, string? Campaign = null);

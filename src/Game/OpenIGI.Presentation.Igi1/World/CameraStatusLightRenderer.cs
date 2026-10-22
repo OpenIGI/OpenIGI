@@ -86,7 +86,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(fileSystem.ReadAllBytes(SpriteArchive));
+            IresArchive archive = fileSystem.ReadArchive(SpriteArchive);
             IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {

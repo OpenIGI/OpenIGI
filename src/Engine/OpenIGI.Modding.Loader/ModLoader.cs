@@ -114,23 +114,23 @@ public static class ModLoader
 
         ModLoadContext context = new(manifest.Id, assemblyPath);
         Assembly assembly = context.LoadFromAssemblyPath(assemblyPath);
-        if (assembly.GetCustomAttribute<OpenIgiModAttribute>() is not { } named)
+        if (assembly.GetCustomAttribute<OpenIgiModAttribute>() is not { ModType: { } modType })
         {
-            throw new ModLoadException($"'{assemblyName}' names no mod; it needs [assembly: OpenIgiMod(typeof(...))]");
+            throw new ModLoadException($"'{assemblyName}' names no mod; mark its mod's partial class [OpenIgiMod], or the assembly [assembly: OpenIgiMod(typeof(...))]");
         }
 
-        if (!typeof(IOpenIgiMod).IsAssignableFrom(named.ModType))
+        if (!typeof(IOpenIgiMod).IsAssignableFrom(modType))
         {
-            throw new ModLoadException($"{named.ModType.FullName} is not an {nameof(IOpenIgiMod)}");
+            throw new ModLoadException($"{modType.FullName} is not an {nameof(IOpenIgiMod)}");
         }
 
         try
         {
-            return new InstalledMod(manifest, directory, (IOpenIgiMod)Activator.CreateInstance(named.ModType)!);
+            return new InstalledMod(manifest, directory, (IOpenIgiMod)Activator.CreateInstance(modType)!);
         }
         catch (Exception ex) when (ex is MissingMethodException or TargetInvocationException)
         {
-            throw new ModLoadException($"{named.ModType.FullName} could not be made: {ex.InnerException?.Message ?? ex.Message}", ex);
+            throw new ModLoadException($"{modType.FullName} could not be made: {ex.InnerException?.Message ?? ex.Message}", ex);
         }
     }
 

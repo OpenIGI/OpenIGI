@@ -1,4 +1,7 @@
+using OpenIGI.Core.Titles;
+using OpenIGI.Engine.Events;
 using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Events;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Level;
 
@@ -96,7 +99,16 @@ public static class Igi1MissionSystems
                     host.DifficultySource);
             }))
             .InsertAfter(MissionSystemNames.AlarmsView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.LevelWalk, b =>
-                game.Tick.AttachToLevelWalk(b.LevelRoot)));
+                game.Tick.AttachToLevelWalk(b.LevelRoot)))
+            .Add(new LevelSystem<MissionLevelBuild>(MissionSystemNames.Events, b =>
+            {
+                game.World.EventWatch = null;
+                if (b.Services.TryGet(out GameEvents? events))
+                {
+                    game.World.EventWatch = new Igi1EventWatch(game.World, events);
+                    events.Raise(new LevelLoaded(GameTitle.Igi1, b.Id));
+                }
+            }));
     }
 
     // A step ran before the one it depends on.

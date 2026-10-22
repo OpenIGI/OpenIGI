@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
@@ -73,6 +74,9 @@ public sealed class TitleSession
         TitleSession session = new(
             modules,
             inherited is ServiceCatalog seed ? new ServiceCatalog(seed) : new ServiceCatalog());
+
+        // Every session tells what happens in its own play: a preview inherits the played session's tables, never its listeners.
+        session._services.Own(new GameEvents(log));
 
         ContentRegistrationContext registration = new(
             loop.Types, loop.Natives, loop.Variables, session._services, log);

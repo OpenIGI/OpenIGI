@@ -1,4 +1,5 @@
-﻿using OpenIGI.Engine.Titles;
+﻿using OpenIGI.Engine.Events;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -30,6 +31,8 @@ public sealed partial class GameHost
         public PlayerProfile? ActiveProfile => host._configuration.Active;
 
         public IMissionCatalogue<MissionDescriptor> Missions => host._missions;
+
+        public GameEvents? Events => host._title is { } title && title.Services.TryGet(out GameEvents? events) ? events : null;
 
         public void CloseComputer()
         {

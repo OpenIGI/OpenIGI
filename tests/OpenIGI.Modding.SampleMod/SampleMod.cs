@@ -1,37 +1,32 @@
-using OpenIGI.Engine.Titles;
+using OpenIGI.Game.Events;
 using OpenIGI.Game.Igi2.Systems;
-using OpenIGI.Game.Level;
 using OpenIGI.Modding;
-
-[assembly: OpenIgiMod(typeof(SampleMod.Sample))]
 
 namespace SampleMod;
 
-/// <summary>Adds a script constant to every game, and a level system to I.G.I. 2's right after its flow.</summary>
-public sealed class Sample : IOpenIgiMod
+/// <summary>A mod as a mod author writes one: what it changes is said by attributes, and its Configure is generated.</summary>
+[OpenIgiMod]
+public sealed partial class Sample
 {
-    /// <summary>The constant's name.</summary>
+    /// <summary>The name of the script constant the mod adds.</summary>
     public const string AnswerConstant = "SampleMod_Answer";
 
-    /// <summary>The level system's name.</summary>
+    /// <summary>The name of the level system the mod adds.</summary>
     public const string GreetingSystem = "SampleMod.Greeting";
 
-    /// <inheritdoc/>
-    public void Configure(IModBuilder builder)
+    /// <summary>The answer the level scripts read.</summary>
+    [ScriptConstant(AnswerConstant)]
+    public const int Answer = 42;
+
+    /// <summary>Gets how many levels the mod has seen loaded.</summary>
+    public int LevelsLoaded { get; private set; }
+
+    // Runs as each I.G.I. 2 level comes up, right after its flow.
+    [AddsLevelSystem<Igi2LevelBuild>(After = Igi2LevelSystems.Flow, Name = GreetingSystem)]
+    private static void Greet(Igi2LevelBuild build)
     {
-        builder.AddModule(new AnswerModule());
-        builder.EditLevelSystems<Igi2LevelBuild>(systems =>
-            systems.InsertAfter(Igi2LevelSystems.Flow, new LevelSystem<Igi2LevelBuild>(GreetingSystem, static _ => { })));
     }
 
-    private sealed class AnswerModule : IContentModule
-    {
-        public string Name => "SampleMod.Answer";
-
-        public void Register(ContentRegistrationContext context) => context.Natives.RegisterConstant(AnswerConstant, 42);
-
-        public void LoadTables(ContentLoadContext context)
-        {
-        }
-    }
+    [OnGameEvent]
+    private void Loaded(in LevelLoaded loaded) => LevelsLoaded++;
 }

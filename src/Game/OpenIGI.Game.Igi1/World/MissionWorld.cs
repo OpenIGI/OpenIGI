@@ -56,6 +56,9 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets the soldiers' presenter, which draws the simulation it carries, or <see langword="null"/> while none is up.</summary>
     public ISoldierPresenter? SoldierPresenter { get; private set; }
 
+    /// <summary>Gets or sets what tells the session's events what each tick changed, or <see langword="null"/> before a level is up.</summary>
+    internal Igi1EventWatch? EventWatch { get; set; }
+
     /// <summary>Gets or sets the level's player task, which the rounds and blasts that reach the player are sent to.</summary>
     public HumanPlayerTask? PlayerTask { get; set; }
 

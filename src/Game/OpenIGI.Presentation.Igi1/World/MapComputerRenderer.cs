@@ -80,7 +80,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
                 return false;
             }
 
-            _archive = IresArchive.Read(fileSystem.ReadAllBytes(name));
+            _archive = fileSystem.ReadArchive(name);
             _uiResources.SetArchives(_archive);
             return true;
         }

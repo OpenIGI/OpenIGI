@@ -48,6 +48,33 @@ public sealed class SettingsFileTests
         Assert.False(ResolutionText.TryParse(text, out _, out _));
 
     [Fact]
+    public void A_switched_off_mods_settings_are_kept_and_written_back_and_a_retired_setting_is_not()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"openigi-settings-{Guid.NewGuid():N}.cfg");
+        try
+        {
+            File.WriteAllLines(path, ["mod_nightfall_hard 1", "r_long_gone 4"]);
+            CVarRegistry variables = new();
+            ConsoleSystem console = new(variables);
+
+            Assert.True(SettingsFile.Load(console, path));
+            string written = SettingsFile.Render(console);
+
+            Assert.Contains("mod_nightfall_hard 1", written, StringComparison.Ordinal);
+            Assert.DoesNotContain("r_long_gone", written, StringComparison.Ordinal);
+
+            // Once the mod is on again it declares the variable, and its own value is what is written.
+            NumericCVar<int> hard = CVar.Int("mod_nightfall_hard", 0, 0, 1, CVarOptions.Archive, registry: variables);
+            hard.Value = 0;
+            Assert.DoesNotContain("mod_nightfall_hard", SettingsFile.Render(console), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Render_WritesOnlyArchivedVariablesThatDifferFromTheirDefault()
     {
         CVarRegistry variables = new();

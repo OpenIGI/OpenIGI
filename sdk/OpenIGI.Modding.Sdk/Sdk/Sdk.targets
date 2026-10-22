@@ -1,0 +1,6 @@
+<Project>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+  <Import Project="OpenIGI.Modding.targets" />
+
+</Project>

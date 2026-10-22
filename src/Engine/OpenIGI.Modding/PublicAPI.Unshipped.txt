@@ -1,2 +1,1 @@
 #nullable enable
-OpenIGI.Modding.IModBuilder.Directory.get -> string!

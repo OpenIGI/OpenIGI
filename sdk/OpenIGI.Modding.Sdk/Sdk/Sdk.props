@@ -1,0 +1,56 @@
+<Project>
+
+  <!--
+    OpenIGI.Modding.Sdk, the project SDK a mod is built with:
+
+      <Project Sdk="OpenIGI.Modding.Sdk/0.5.0">
+        <PropertyGroup>
+          <ModId>mymod</ModId>
+          <ModName>My mod</ModName>
+          <Version>1.0.0</Version>
+          <ModTitles>igi1</ModTitles>
+        </PropertyGroup>
+      </Project>
+
+    It is the .NET SDK with what a mod needs on top: the game's assemblies to build against, the source generator that writes
+    a mod's Configure from its attributes, the mod.json written from the project's properties, and the folder the launcher
+    installs (bin/<config>/<tfm>/mod/). See OpenIGI.Modding.targets.
+  -->
+
+  <PropertyGroup>
+    <!-- The modding API this SDK builds for; the game's ModApi.Version, which a test holds this to. -->
+    <OpenIgiModApiVersion>1</OpenIgiModApiVersion>
+
+    <!-- A mod is a plugin: the packages it references itself are copied beside it. Set before the .NET SDK reads it. -->
+    <EnableDynamicLoading Condition="'$(EnableDynamicLoading)' == ''">true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <!-- The version the SDK was packed as, which the game's packages are referenced at; absent in a checkout. -->
+  <Import Project="Version.props" Condition="Exists('$(MSBuildThisFileDirectory)Version.props')" />
+
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <PropertyGroup>
+    <TargetFramework Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == ''">net10.0</TargetFramework>
+    <Nullable Condition="'$(Nullable)' == ''">enable</Nullable>
+    <ImplicitUsings Condition="'$(ImplicitUsings)' == ''">enable</ImplicitUsings>
+    <LangVersion Condition="'$(LangVersion)' == ''">preview</LangVersion>
+  </PropertyGroup>
+
+  <!--
+    Where the game is built from: a checkout of its source when one is to hand, else the packages at the SDK's version.
+
+    The checkout is the one OpenIgiRoot or OPENIGI_ROOT names, the one this SDK file lives in, or an igi-remastered folder up
+    to three levels above the project. Built from a checkout, the game's projects are referenced (OpenIGI.Modding.targets).
+  -->
+  <PropertyGroup>
+    <OpenIgiRoot Condition="'$(OpenIgiRoot)' == '' and '$(OPENIGI_ROOT)' != ''">$(OPENIGI_ROOT)</OpenIgiRoot>
+    <OpenIgiRoot Condition="'$(OpenIgiRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\OpenIGI.slnx')">$(MSBuildThisFileDirectory)..\..\..\</OpenIgiRoot>
+    <OpenIgiRoot Condition="'$(OpenIgiRoot)' == '' and Exists('$(MSBuildProjectDirectory)\..\igi-remastered\OpenIGI.slnx')">$(MSBuildProjectDirectory)\..\igi-remastered\</OpenIgiRoot>
+    <OpenIgiRoot Condition="'$(OpenIgiRoot)' == '' and Exists('$(MSBuildProjectDirectory)\..\..\igi-remastered\OpenIGI.slnx')">$(MSBuildProjectDirectory)\..\..\igi-remastered\</OpenIgiRoot>
+    <OpenIgiRoot Condition="'$(OpenIgiRoot)' == '' and Exists('$(MSBuildProjectDirectory)\..\..\..\igi-remastered\OpenIGI.slnx')">$(MSBuildProjectDirectory)\..\..\..\igi-remastered\</OpenIgiRoot>
+    <OpenIgiRoot Condition="'$(OpenIgiRoot)' != ''">$([MSBuild]::NormalizeDirectory('$(OpenIgiRoot)'))</OpenIgiRoot>
+    <OpenIgiFromSource Condition="'$(OpenIgiRoot)' != ''">true</OpenIgiFromSource>
+  </PropertyGroup>
+
+</Project>

@@ -49,6 +49,46 @@ public sealed class CampaignShellTests : ShellTestHarness
     }
 
     [Fact]
+    public void A_mods_campaign_is_listed_apart_and_every_one_of_its_missions_is_open()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(
+                dir,
+                activeMission: 1,
+                extraMissions:
+                [
+                    new(901, 1, "Nightfall One", "A mod's first.", "nf1.spr", "Nightfall"),
+                    new(902, 2, "Nightfall Two", "A mod's second.", "nf2.spr", "Nightfall"),
+                ]);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            var screen = Assert.IsType<CampaignScreen>(shell.Stack.Top);
+            OptionCycler campaigns = Assert.Single(screen.Root!.Descendants().OfType<OptionCycler>(), static c => c.Label == "CAMPAIGN");
+            Assert.Equal(["The game", "Nightfall"], campaigns.Options);
+            Assert.Equal(["Mission One", "Mission Two"], screen.Root!.Descendants().OfType<ListCard>().Select(static r => r.Title));
+
+            campaigns.Step(1);
+            Pump(shell, 0.6f);
+
+            List<ListCard> rows = [.. shell.Stack.Top!.Root!.Descendants().OfType<ListCard>()];
+            Assert.Equal(["Nightfall One", "Nightfall Two"], rows.Select(static r => r.Title));
+            Assert.All(rows, static row => Assert.True(row.IsEnabled));
+            Assert.Equal(901, host.Previewed);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Clicking_a_mission_row_selects_it_and_previews_that_mission()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));

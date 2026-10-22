@@ -4,6 +4,7 @@ using System.Text;
 using OpenIGI.Core;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Resources;
+using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 
 namespace OpenIGI.Engine.Resources;
@@ -53,7 +54,7 @@ namespace OpenIGI.Engine.Resources;
 /// registry, for as long as that level lives -- and lets them go with it.
 /// </para>
 /// </remarks>
-public sealed class ResourceOverrides
+public sealed class ResourceOverrides : IFileOverlay
 {
     private const string LogCategory = "Overrides";
 
@@ -324,6 +325,53 @@ public sealed class ResourceOverrides
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Unlike <see cref="Has"/>, it answers for the layers in force: none while bypassed, only the enabled ones.</remarks>
+    public bool Supplies(string relativePath)
+    {
+        if (Bypassed || relativePath.Length == 0)
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _files.ContainsKey(relativePath);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool HasFile(string relativePath) => LayerFile(relativePath) is not null;
+
+    /// <inheritdoc/>
+    public bool TryReadFile(string relativePath, out ReadOnlyMemory<byte> data)
+    {
+        data = default;
+        if (LayerFile(relativePath) is not { } path)
+        {
+            return false;
+        }
+
+        try
+        {
+            data = File.ReadAllBytes(path);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning(LogCategory, $"Override '{path}' could not be read: {error.Message}");
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<string> EnumerateFiles(string relativeDirectory, string searchPattern) =>
+        LayerEntries(relativeDirectory, directory => Directory.EnumerateFiles(directory, searchPattern));
+
+    /// <inheritdoc/>
+    public IEnumerable<string> EnumerateDirectories(string relativeDirectory) =>
+        LayerEntries(relativeDirectory, Directory.EnumerateDirectories);
+
     /// <summary>Reads an override's bytes, from whichever enabled layer wins the path.</summary>
     /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
     /// <param name="data">Receives the bytes, or empty when there is no such override.</param>
@@ -406,6 +454,64 @@ public sealed class ResourceOverrides
             $"{candidate.Path.ToUpperInvariant()}|{candidate.Offset}|{candidate.Length}|{candidate.Written.Ticks}");
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
         return Convert.ToHexStringLower(hash.AsSpan(0, 8));
+    }
+
+    // The roots of the layers in force, highest first.
+    private IEnumerable<string> RootsInForce()
+    {
+        if (Bypassed)
+        {
+            yield break;
+        }
+
+        foreach (Layer layer in _layers)
+        {
+            if (layer.Enabled && layer.Root is { } root)
+            {
+                yield return root;
+            }
+        }
+    }
+
+    // The highest layer in force's file at exactly a path, or null.
+    private string? LayerFile(string relativePath)
+    {
+        if (relativePath.Length == 0)
+        {
+            return null;
+        }
+
+        foreach (string root in RootsInForce())
+        {
+            string path = Path.Combine(root, relativePath);
+            if (File.Exists(path) && Path.GetFullPath(path).StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    // What the layers in force hold in one folder, as paths relative to their roots, each once, in name order.
+    private List<string> LayerEntries(string relativeDirectory, Func<string, IEnumerable<string>> list)
+    {
+        SortedSet<string> found = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string root in RootsInForce())
+        {
+            string directory = Path.Combine(root, relativeDirectory);
+            if (!Directory.Exists(directory) || !Path.GetFullPath(directory).StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (string entry in list(directory))
+            {
+                found.Add(ResourcePath.Normalize(Path.GetRelativePath(root, entry)));
+            }
+        }
+
+        return [.. found];
     }
 
     private Dictionary<string, Candidate> ScanLayer(int layer)

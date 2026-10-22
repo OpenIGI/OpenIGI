@@ -88,6 +88,16 @@ public sealed class ServiceCatalog : IServiceCollector, IServiceCatalog
         }
     }
 
+    /// <summary>Publishes a service of the session's own, in place of one it inherited.</summary>
+    /// <typeparam name="T">The service type.</typeparam>
+    /// <param name="service">The service.</param>
+    internal void Own<T>(T service)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        _services[typeof(T)] = service;
+    }
+
     /// <inheritdoc/>
     public T GetOrProvide<T>(Func<T> factory)
         where T : class

@@ -1,34 +1,49 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    What a mod's author references: one package that brings the modding API and both games' gameplay and presentation
-    assemblies to build against, at the game's own version, and the build that turns a project with a mod.json into the
-    folder the launcher installs (build/OpenIGI.Modding.Sdk.targets, imported by NuGet into every project that references
-    this). Nothing of it ships with a mod: at run time the game's own assemblies are the ones a mod gets.
+    The project SDK a mod is built with (<Project Sdk="OpenIGI.Modding.Sdk/x.y.z">): Sdk/Sdk.props and Sdk/Sdk.targets, the
+    source generator that writes a mod's Configure, and the version the game's packages are referenced at. The game's
+    assemblies are packages of their own, packed with it at the same version from the build just made; nothing of them
+    ships with a mod, since at run time the game's own are the ones a mod gets.
   -->
   <PropertyGroup>
     <PackageId>OpenIGI.Modding.Sdk</PackageId>
-    <Description>Build mods for OpenIGI: the modding API, the games' assemblies to build against, and the mod package build.</Description>
-    <PackageTags>openigi;igi;mod;modding</PackageTags>
+    <PackageType>MSBuildSdk</PackageType>
+    <Description>Build mods for OpenIGI: the project SDK, the generator that writes a mod from its attributes, and the mod package build.</Description>
+    <PackageTags>openigi;igi;mod;modding;msbuildsdk</PackageTags>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Built and packed with the SDK; a mod references them as packages at the SDK's version (Sdk/OpenIGI.Modding.targets). -->
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Presentation\OpenIGI.Modding.Presentation.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi1\OpenIGI.Presentation.Igi1.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation.Igi2\OpenIGI.Presentation.Igi2.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Generators\OpenIGI.Generators.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="build\OpenIGI.Modding.Sdk.props" Pack="true" PackagePath="build\" />
-    <None Include="build\OpenIGI.Modding.Sdk.targets" Pack="true" PackagePath="build\" />
+    <None Include="Sdk\Sdk.props;Sdk\Sdk.targets;Sdk\OpenIGI.Modding.targets" Pack="true" PackagePath="Sdk\" />
+    <None Include="..\..\src\Core\OpenIGI.Generators\bin\$(Configuration)\netstandard2.0\OpenIGI.Generators.dll"
+          Pack="true" PackagePath="analyzers\dotnet\cs\" Visible="false" />
   </ItemGroup>
+
+  <!-- The version the game's packages are referenced at: the SDK's own, written beside its props. -->
+  <Target Name="PackSdkVersion" BeforeTargets="_GetPackageFiles">
+    <WriteLinesToFile File="$(IntermediateOutputPath)Version.props"
+                      Lines="&lt;Project&gt;&lt;PropertyGroup&gt;&lt;OpenIgiSdkVersion&gt;$(Version)&lt;/OpenIgiSdkVersion&gt;&lt;/PropertyGroup&gt;&lt;/Project&gt;"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(IntermediateOutputPath)Version.props" Pack="true" PackagePath="Sdk\" />
+    </ItemGroup>
+  </Target>
 
   <!--
     Every project the SDK builds on is a package of its own at the same version: packed with it, from the build just made.

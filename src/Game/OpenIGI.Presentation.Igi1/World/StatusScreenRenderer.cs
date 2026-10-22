@@ -125,14 +125,14 @@ internal sealed class StatusScreenRenderer : IHudPresenter
                 return false;
             }
 
-            _archive = IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenLayout.Archive));
+            _archive = fileSystem.ReadArchive(StatusScreenLayout.Archive);
 
             // The font is a global the whole game shares, so it comes out of a different archive. The
             // desktop host does not require fsconfig.qsc and therefore may not have COMPUTER: mounted;
             // probe the installation's physical path, just as MapComputerRenderer does.
             if (fileSystem.Exists(LocalFontArchive))
             {
-                _fontArchive = IresArchive.Read(fileSystem.ReadAllBytes(LocalFontArchive));
+                _fontArchive = fileSystem.ReadArchive(LocalFontArchive);
             }
             else
             {
@@ -144,7 +144,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
             // And the global sprites -- the scope overlay lives here, not in status.res.
             if (fileSystem.Exists(SpriteArchive))
             {
-                _spriteArchive = IresArchive.Read(fileSystem.ReadAllBytes(SpriteArchive));
+                _spriteArchive = fileSystem.ReadArchive(SpriteArchive);
             }
             else
             {

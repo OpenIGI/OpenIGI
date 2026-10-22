@@ -4,11 +4,18 @@
   "classifications": [ "OpenIGI", "Mod", "Game" ],
   "identity": "OpenIGI.Modding.Templates.Mod",
   "name": "OpenIGI mod",
-  "description": "A mod for OpenIGI: code built against the modding API, packaged as the launcher installs it.",
+  "description": "A mod for OpenIGI: code written with the modding API's attributes, or files that win over the game's, packaged as the launcher installs it.",
   "shortName": "openigi-mod",
   "sourceName": "MyMod",
   "preferNameDirectory": true,
   "tags": { "language": "C#", "type": "project" },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(kind == 'data')", "exclude": [ "MyMod.cs" ] }
+      ]
+    }
+  ],
   "symbols": {
     "modId": {
       "type": "parameter",
@@ -23,6 +30,16 @@
       "description": "Who the launcher credits.",
       "replaces": "AUTHOR",
       "defaultValue": "Your name"
+    },
+    "kind": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "What the mod is made of.",
+      "defaultValue": "code",
+      "choices": [
+        { "choice": "code", "description": "Code, with data/ files beside it." },
+        { "choice": "data", "description": "Files alone: textures, sounds, missions, which win over the game's." }
+      ]
     },
     "sdkVersion": {
       "type": "parameter",

@@ -1,12 +1,43 @@
 #nullable enable
 const OpenIGI.Modding.ModApi.Version = 1 -> int
+const OpenIGI.Modding.ModSet.DataDirectoryName = "data" -> string!
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.AddsLevelSystemAttribute() -> void
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.After.get -> string?
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.After.set -> void
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Before.get -> string?
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Before.set -> void
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Name.get -> string?
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Name.set -> void
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Replaces.get -> string?
+OpenIGI.Modding.AddsLevelSystemAttribute<TBuild>.Replaces.set -> void
+OpenIGI.Modding.AddsTaskAttribute
+OpenIGI.Modding.AddsTaskAttribute.AddsTaskAttribute(string! typeName) -> void
+OpenIGI.Modding.AddsTaskAttribute.Title.get -> string?
+OpenIGI.Modding.AddsTaskAttribute.Title.set -> void
+OpenIGI.Modding.AddsTaskAttribute.TypeName.get -> string!
 OpenIGI.Modding.IModBuilder
+OpenIGI.Modding.IModBuilder.AddConstant(string! name, int value) -> OpenIGI.Modding.IModBuilder!
 OpenIGI.Modding.IModBuilder.AddModule(OpenIGI.Engine.Titles.IContentModule! contentModule) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.AddTask(string! typeName, System.Func<OpenIGI.Engine.Tasks.GameTask!>! factory) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.Directory.get -> string!
 OpenIGI.Modding.IModBuilder.EditLevelSystems<TBuild>(System.Action<OpenIGI.Game.Level.LevelSystems<TBuild!>!>! edit) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.Listen<TEvent>(OpenIGI.Engine.Events.GameEventListener<TEvent>! listener) -> OpenIGI.Modding.IModBuilder!
 OpenIGI.Modding.IModBuilder.Manifest.get -> OpenIGI.Core.Content.ModManifest!
 OpenIGI.Modding.IModBuilder.MountTitleData(OpenIGI.Core.Titles.GameTitle! title, string! deviceName) -> OpenIGI.Modding.IModBuilder!
+OpenIGI.Modding.IModBuilder.OnLoaded(System.Action<OpenIGI.Modding.IModContext!>! loaded) -> OpenIGI.Modding.IModBuilder!
 OpenIGI.Modding.IModBuilder.ReplaceTask(string! typeName, System.Func<OpenIGI.Engine.Tasks.GameTask!>! factory, OpenIGI.Engine.Tasks.ITaskParameterAdapter? adapter = null) -> OpenIGI.Modding.IModBuilder!
 OpenIGI.Modding.IModBuilder.Title.get -> OpenIGI.Core.Titles.GameTitle!
+OpenIGI.Modding.IModContext
+OpenIGI.Modding.IModContext.Directory.get -> string!
+OpenIGI.Modding.IModContext.Events.get -> OpenIGI.Engine.Events.GameEvents!
+OpenIGI.Modding.IModContext.FileSystem.get -> OpenIGI.Engine.Vfs.VirtualFileSystem!
+OpenIGI.Modding.IModContext.Logger.get -> OpenIGI.Core.Diagnostics.IOpenIgiLogger!
+OpenIGI.Modding.IModContext.Manifest.get -> OpenIGI.Core.Content.ModManifest!
+OpenIGI.Modding.IModContext.Resources.get -> OpenIGI.Engine.Resources.ResourceRegistry!
+OpenIGI.Modding.IModContext.Services.get -> OpenIGI.Engine.Titles.IServiceCatalog!
+OpenIGI.Modding.IModContext.Title.get -> OpenIGI.Core.Titles.GameTitle!
+OpenIGI.Modding.IModContext.TryGetDataRoot(OpenIGI.Core.Titles.GameTitle! title, out string? root) -> bool
 OpenIGI.Modding.InstalledMod
 OpenIGI.Modding.InstalledMod.Code.get -> OpenIGI.Modding.IOpenIgiMod?
 OpenIGI.Modding.InstalledMod.Code.init -> void
@@ -18,12 +49,33 @@ OpenIGI.Modding.InstalledMod.Manifest.init -> void
 OpenIGI.Modding.IOpenIgiMod
 OpenIGI.Modding.IOpenIgiMod.Configure(OpenIGI.Modding.IModBuilder! builder) -> void
 OpenIGI.Modding.ModApi
+OpenIGI.Modding.ModConfig
 OpenIGI.Modding.ModSet
 OpenIGI.Modding.ModSet.Extend(OpenIGI.Engine.Titles.IGameTitleRuntime! runtime) -> OpenIGI.Engine.Titles.IGameTitleRuntime!
 OpenIGI.Modding.ModSet.For(OpenIGI.Core.Titles.GameTitle! title) -> System.Collections.Generic.IEnumerable<OpenIGI.Modding.InstalledMod!>!
 OpenIGI.Modding.ModSet.Mods.get -> System.Collections.Generic.IReadOnlyList<OpenIGI.Modding.InstalledMod!>!
 OpenIGI.Modding.ModSet.ModSet(System.Collections.Generic.IEnumerable<OpenIGI.Modding.InstalledMod!>! mods) -> void
+OpenIGI.Modding.OnGameEventAttribute
+OpenIGI.Modding.OnGameEventAttribute.OnGameEventAttribute() -> void
+OpenIGI.Modding.OnGameEventAttribute.Title.get -> string?
+OpenIGI.Modding.OnGameEventAttribute.Title.set -> void
+OpenIGI.Modding.OnModLoadedAttribute
+OpenIGI.Modding.OnModLoadedAttribute.OnModLoadedAttribute() -> void
+OpenIGI.Modding.OnModLoadedAttribute.Title.get -> string?
+OpenIGI.Modding.OnModLoadedAttribute.Title.set -> void
 OpenIGI.Modding.OpenIgiModAttribute
-OpenIGI.Modding.OpenIgiModAttribute.ModType.get -> System.Type!
+OpenIGI.Modding.OpenIgiModAttribute.ModType.get -> System.Type?
+OpenIGI.Modding.OpenIgiModAttribute.OpenIgiModAttribute() -> void
 OpenIGI.Modding.OpenIgiModAttribute.OpenIgiModAttribute(System.Type! modType) -> void
+OpenIGI.Modding.ReplacesTaskAttribute
+OpenIGI.Modding.ReplacesTaskAttribute.Adapter.get -> System.Type?
+OpenIGI.Modding.ReplacesTaskAttribute.Adapter.set -> void
+OpenIGI.Modding.ReplacesTaskAttribute.ReplacesTaskAttribute(string! typeName) -> void
+OpenIGI.Modding.ReplacesTaskAttribute.Title.get -> string?
+OpenIGI.Modding.ReplacesTaskAttribute.Title.set -> void
+OpenIGI.Modding.ReplacesTaskAttribute.TypeName.get -> string!
+OpenIGI.Modding.ScriptConstantAttribute
+OpenIGI.Modding.ScriptConstantAttribute.Name.get -> string!
+OpenIGI.Modding.ScriptConstantAttribute.ScriptConstantAttribute(string! name) -> void
+static OpenIGI.Modding.ModConfig.Read<T>(string! directory, string! fileName, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Reflection.Assembly? shipped = null) -> T
 static OpenIGI.Modding.ModSet.None.get -> OpenIGI.Modding.ModSet!

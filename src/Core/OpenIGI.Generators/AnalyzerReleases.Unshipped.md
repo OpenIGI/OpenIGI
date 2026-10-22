@@ -15,3 +15,12 @@ OIGI007 | OpenIGI  | Error    | Console variable container must be a static clas
 OIGI008 | OpenIGI  | Error    | [LevelService] requires a GameTask
 OIGI009 | OpenIGI  | Error    | Task type with level services must be partial
 OIGI010 | OpenIGI  | Error    | Level service must be a settable reference-type property
+OIGI101 | OpenIGI  | Error    | Mod class must be partial
+OIGI102 | OpenIGI  | Error    | Mod class must not write Configure
+OIGI103 | OpenIGI  | Error    | Level system method has the wrong shape
+OIGI104 | OpenIGI  | Error    | Level system must be placed once
+OIGI105 | OpenIGI  | Error    | Game event method has the wrong shape
+OIGI106 | OpenIGI  | Error    | Loaded method has the wrong shape
+OIGI107 | OpenIGI  | Error    | Task class cannot be made
+OIGI108 | OpenIGI  | Error    | Script constant must be an integer constant
+OIGI109 | OpenIGI  | Error    | One mod class per assembly

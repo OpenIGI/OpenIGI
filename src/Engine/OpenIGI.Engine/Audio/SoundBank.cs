@@ -134,7 +134,7 @@ public sealed class SoundBank
                 return 0;
             }
 
-            archive = IresArchive.Read(_fileSystem.ReadAllBytes(path));
+            archive = _fileSystem.ReadArchive(path);
         }
         catch (Exception error) when (error is IlffFormatException or IOException or EngineFatalException)
         {

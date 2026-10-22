@@ -59,6 +59,9 @@ public sealed record ModManifest(
     /// <summary>Gets the ids of mods this one cannot be played with; the later of the two in the order is left out.</summary>
     public IReadOnlyList<string> Conflicts { get; init; } = [];
 
+    /// <summary>Gets the campaigns the mod adds beside the game's own, each listed by the menu as a campaign of its own.</summary>
+    public IReadOnlyList<ModCampaign> Campaigns { get; init; } = [];
+
     /// <summary>Gets the oldest game build the mod works with, or <see langword="null"/>; the launcher checks it.</summary>
     public string? MinGameVersion { get; init; }
 
@@ -96,6 +99,7 @@ public sealed record ModManifest(
             RequiresTitleData = manifest.RequiresTitleData ?? [],
             Dependencies = manifest.Dependencies ?? ReadOnlyDictionary<string, string>.Empty,
             Conflicts = manifest.Conflicts ?? [],
+            Campaigns = [.. (manifest.Campaigns ?? []).Where(static c => c is { Name.Length: > 0, Missions.Count: > 0 })],
         };
     }
 
