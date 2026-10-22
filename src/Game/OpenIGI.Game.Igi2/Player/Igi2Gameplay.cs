@@ -296,6 +296,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             player.Human)
         {
             Glass = player.Glass,
+            PlayedMods = request.Services.TryGet(out Engine.Titles.PlayedMods? played) ? played.Mods : [],
         };
         if (PlayerSpawn.FindGameplayTask(request.World.LevelRoot) is Igi2HumanPlayerTask task)
         {

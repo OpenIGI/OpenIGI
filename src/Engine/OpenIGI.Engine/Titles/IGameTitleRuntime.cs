@@ -1,3 +1,4 @@
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Titles;
 using OpenIGI.Formats;
 
@@ -45,4 +46,7 @@ public interface IGameTitleRuntime
     /// and the menu lists each campaign apart.
     /// </remarks>
     IReadOnlyList<TitleCampaign> Campaigns => [];
+
+    /// <summary>Gets the mods the title is played with that change what happens in play, which its saves record.</summary>
+    IReadOnlyList<ModReference> Mods => [];
 }

@@ -11,6 +11,30 @@ public sealed class SaveSlotStoreTests
         Path.Combine(Path.GetTempPath(), "openigi-saves-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void A_slot_keeps_the_mods_it_was_saved_with_and_says_which_are_off()
+    {
+        string dir = TempDir();
+        try
+        {
+            var store = new SaveSlotStore(dir);
+            OpenIGI.Core.Content.ModReference nightfall = new("nightfall", "1.2");
+            store.Save(0, "Joe", 901, "Nightfall One", DateTimeOffset.UnixEpoch, [], 0, 0, [nightfall]);
+
+            SaveSlot read = new SaveSlotStore(dir).Find(0)!;
+
+            Assert.Equal([nightfall], read.Mods);
+            Assert.Equal([nightfall], OpenIGI.Core.Content.ModReference.Missing(read.Mods, []));
+            Assert.Equal([nightfall], OpenIGI.Core.Content.ModReference.Missing(read.Mods, [new("nightfall", "1.3")]));
+            Assert.Empty(OpenIGI.Core.Content.ModReference.Missing(read.Mods, [new("NIGHTFALL", "1.2")]));
+            Assert.Empty(OpenIGI.Core.Content.ModReference.Missing(null, []));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_saved_slot_round_trips_through_the_manifest_and_reloads()
     {
         string dir = TempDir();

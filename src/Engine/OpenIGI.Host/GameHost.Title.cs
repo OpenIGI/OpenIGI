@@ -328,6 +328,7 @@ public sealed partial class GameHost
         ServiceCatalog hostServices = new();
         hostServices.Provide<ITitleDataLocator>(new InstalledTitles(_titles));
         hostServices.Provide<ITitleAudioMixer>(new GuestAudioMixer(_audioOut, _logger));
+        hostServices.Provide(new PlayedMods(_titleRuntime.Mods));
         _title = TitleSession.Start(
             _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false, inherited: hostServices);
 

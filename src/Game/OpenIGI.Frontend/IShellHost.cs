@@ -81,6 +81,9 @@ public interface IShellHost
     /// <summary>Gets the running mission's own save games, for a title that keeps them, or <see langword="null"/>.</summary>
     OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => null;
 
+    /// <summary>Gets the mods that change play the running title is played with, which a save slot records.</summary>
+    IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => [];
+
     /// <summary>Captures the current frame for a save-slot thumbnail.</summary>
     /// <param name="width">Receives the capture width.</param>
     /// <param name="height">Receives the capture height.</param>

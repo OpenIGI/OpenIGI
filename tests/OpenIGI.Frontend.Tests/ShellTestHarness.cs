@@ -115,6 +115,8 @@ internal sealed class FakeHost : IShellHost
 
     public void ResetInputBindings(PlayerProfile profile) => TitleInputBindings.Reset(profile, Controls);
 
+    public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves { get; set; }
+
     public int? Previewed { get; private set; }
 
     public int StartedMission { get; private set; } = -1;

@@ -66,8 +66,14 @@ public sealed class ModSet
         LevelSystemEdits edits = new();
         List<TitleContentFolder> folders = [];
         List<TitleCampaign> campaigns = [];
+        List<ModReference> played = [];
         foreach (InstalledMod mod in For(runtime.Title))
         {
+            if (mod.Manifest.AffectsSimulation)
+            {
+                played.Add(new ModReference(mod.Manifest.Id, mod.Manifest.Version));
+            }
+
             campaigns.AddRange(mod.Manifest.Campaigns.Select(static c => new TitleCampaign(c.Name, c.Missions)));
             mod.Code?.Configure(new ModBuilder(mod, runtime.Title, added, edits));
             string data = Path.Combine(mod.Directory, DataDirectoryName);
@@ -77,7 +83,7 @@ public sealed class ModSet
             }
         }
 
-        if (added.Count == 0 && edits.Count == 0 && folders.Count == 0 && campaigns.Count == 0)
+        if (added.Count == 0 && edits.Count == 0 && folders.Count == 0 && campaigns.Count == 0 && played.Count == 0)
         {
             return runtime;
         }
@@ -88,7 +94,8 @@ public sealed class ModSet
             runtime,
             added.Count == 0 && edits.Count == 0 ? runtime.Modules : [.. runtime.Modules, .. added, new EditsModule(edits)],
             [.. folders, .. runtime.ContentFolders],
-            [.. runtime.Campaigns, .. campaigns]);
+            [.. runtime.Campaigns, .. campaigns],
+            [.. runtime.Mods, .. played]);
     }
 
     // A game as it ships, with the mods' modules after its own, their data over its files and their campaigns beside its own.
@@ -96,7 +103,8 @@ public sealed class ModSet
         IGameTitleRuntime inner,
         IReadOnlyList<IContentModule> modules,
         IReadOnlyList<TitleContentFolder> folders,
-        IReadOnlyList<TitleCampaign> campaigns)
+        IReadOnlyList<TitleCampaign> campaigns,
+        IReadOnlyList<ModReference> mods)
         : IGameTitleRuntime
     {
         public GameTitle Title => inner.Title;
@@ -110,6 +118,8 @@ public sealed class ModSet
         public IReadOnlyList<TitleContentFolder> ContentFolders => folders;
 
         public IReadOnlyList<TitleCampaign> Campaigns => campaigns;
+
+        public IReadOnlyList<ModReference> Mods => mods;
     }
 
     // Publishes the mods' level-system edits to every session, the preview's sharing the played one's.
