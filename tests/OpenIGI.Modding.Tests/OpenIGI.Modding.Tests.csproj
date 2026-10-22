@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Loader\OpenIGI.Modding.Loader.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Modding.Presentation\OpenIGI.Modding.Presentation.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
     <ProjectReference Include="..\..\sdk\OpenIGI.Modding.Testing\OpenIGI.Modding.Testing.csproj" />

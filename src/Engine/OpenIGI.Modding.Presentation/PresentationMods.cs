@@ -3,24 +3,38 @@ using OpenIGI.Presentation;
 
 namespace OpenIGI.Modding.Presentation;
 
-/// <summary>A mod's code that draws: what it adds to a game's presenters, said once, before the game starts.</summary>
-/// <remarks>
-/// Implemented beside <see cref="IOpenIgiMod"/> by the same class. <see cref="ConfigurePresentation"/> runs once for each game
-/// the mod applies to, after <see cref="IOpenIgiMod.Configure"/>; a build that draws nothing never calls it.
-/// </remarks>
-public interface IOpenIgiPresentationMod
-{
-    /// <summary>Says what the mod draws in one game.</summary>
-    /// <param name="title">The game.</param>
-    /// <param name="presenters">The game's presenters, to add to or replace.</param>
-    void ConfigurePresentation(GameTitle title, PresenterRegistry presenters);
-}
-
-/// <summary>Applies the mods' presentation to a game's presenters.</summary>
+/// <summary>What a mod draws: presenters of its own beside the game's, said in its <see cref="IOpenIgiMod.Configure"/>.</summary>
 public static class PresentationMods
 {
-    /// <summary>Lets every mod for a game that draws add to its presenters, in the order the mods were loaded.</summary>
-    /// <param name="mods">The mods.</param>
+    // Where a mod's builder keeps what it draws.
+    private const string Key = "OpenIGI.Modding.Presentation.Presenters";
+
+    extension(IModBuilder mod)
+    {
+        /// <summary>Adds to the game's presenters: a task type drawn, the level drawn over, a HUD overlay laid over the view.</summary>
+        /// <param name="configure">What the mod adds, run once the game's own presenters are registered.</param>
+        /// <returns>The builder.</returns>
+        /// <remarks>
+        /// <see cref="PresenterRegistry.ForTask{TTask}"/> draws a task type, <see cref="PresenterRegistry.ForLevel"/> draws over
+        /// the level, and <see cref="PresenterRegistry.ForHud"/> lays an overlay over the player's view after the game's HUD.
+        /// A build that draws nothing never runs it.
+        /// </remarks>
+        public IModBuilder Presenters(Action<PresenterRegistry> configure)
+        {
+            ArgumentNullException.ThrowIfNull(configure);
+            if (!mod.Properties.TryGetValue(Key, out object? kept) || kept is not List<Action<PresenterRegistry>> list)
+            {
+                list = [];
+                mod.Properties[Key] = list;
+            }
+
+            list.Add(configure);
+            return mod;
+        }
+    }
+
+    /// <summary>Adds what every mod for a game draws to its presenters, in the order the mods were loaded.</summary>
+    /// <param name="mods">The mods, already configured into the game (<see cref="ModSet.Extend"/>).</param>
     /// <param name="title">The game.</param>
     /// <param name="presenters">The game's presenters.</param>
     /// <returns>How many mods added to them.</returns>
@@ -32,9 +46,13 @@ public static class PresentationMods
         int applied = 0;
         foreach (InstalledMod mod in mods.For(title))
         {
-            if (mod.Code is IOpenIgiPresentationMod drawing)
+            if (mods.PropertiesOf(mod, title).TryGetValue(Key, out object? kept) && kept is List<Action<PresenterRegistry>> draws)
             {
-                drawing.ConfigurePresentation(title, presenters);
+                foreach (Action<PresenterRegistry> draw in draws)
+                {
+                    draw(presenters);
+                }
+
                 applied++;
             }
         }

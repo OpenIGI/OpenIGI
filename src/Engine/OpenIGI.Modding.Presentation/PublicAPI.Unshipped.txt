@@ -1,5 +1,5 @@
 #nullable enable
-OpenIGI.Modding.Presentation.IOpenIgiPresentationMod
-OpenIGI.Modding.Presentation.IOpenIgiPresentationMod.ConfigurePresentation(OpenIGI.Core.Titles.GameTitle! title, OpenIGI.Presentation.PresenterRegistry! presenters) -> void
 OpenIGI.Modding.Presentation.PresentationMods
+OpenIGI.Modding.Presentation.PresentationMods.extension(OpenIGI.Modding.IModBuilder!)
+OpenIGI.Modding.Presentation.PresentationMods.extension(OpenIGI.Modding.IModBuilder!).Presenters(System.Action<OpenIGI.Presentation.PresenterRegistry!>! configure) -> OpenIGI.Modding.IModBuilder!
 static OpenIGI.Modding.Presentation.PresentationMods.Apply(OpenIGI.Modding.ModSet! mods, OpenIGI.Core.Titles.GameTitle! title, OpenIGI.Presentation.PresenterRegistry! presenters) -> int

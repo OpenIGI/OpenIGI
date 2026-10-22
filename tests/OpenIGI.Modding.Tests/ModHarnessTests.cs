@@ -72,6 +72,6 @@ public sealed class ModHarnessTests : IDisposable
     {
         public const string Name = "Harness_Constant";
 
-        public void Configure(IModBuilder builder) => builder.AddConstant(Name, 7);
+        public void Configure(IModBuilder builder) => builder.Scripts.Constant(Name, 7);
     }
 }

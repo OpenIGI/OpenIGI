@@ -76,7 +76,7 @@ public sealed class ModLoadingTests : IDisposable
     }
 
     [Fact]
-    public void A_generated_mod_hears_the_events_its_attributes_name()
+    public void A_mod_hears_the_events_it_subscribes_to()
     {
         InstallSample("sample", """{ "id": "sample", "name": "Sample", "version": "1.0", "apiVersion": 1, "assembly": "SampleMod.dll" }""");
         ModSet mods = ModLoader.Load(_mods);
@@ -202,6 +202,10 @@ public sealed class ModLoadingTests : IDisposable
         Write("d-not-json", "not a manifest");
         Write("e-duplicate", """{ "id": "GOOD", "name": "Again", "version": "1", "apiVersion": 1 }""");
         Directory.CreateDirectory(Path.Combine(_mods, "f-no-manifest"));
+
+        // An assembly with no public class that is a mod: there is nothing to make.
+        string noMod = Write("g-no-mod-class", """{ "id": "nomod", "name": "No mod", "version": "1", "apiVersion": 1, "assembly": "xunit.assert.dll" }""");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "xunit.assert.dll"), Path.Combine(noMod, "xunit.assert.dll"));
 
         ModSet mods = ModLoader.Load(_mods);
 
@@ -424,19 +428,19 @@ public sealed class ModLoadingTests : IDisposable
 
     private sealed class StandInMod(ITaskParameterAdapter adapter) : IOpenIgiMod
     {
-        public void Configure(IModBuilder builder) => builder.ReplaceTask("HumanSoldier", static () => new StandInSoldier(), adapter);
+        public void Configure(IModBuilder builder) => builder.Tasks.Replace<StandInSoldier>("HumanSoldier", adapter);
     }
 
     private sealed class LoadedMod : IOpenIgiMod
     {
         public IModContext? Context { get; private set; }
 
-        public void Configure(IModBuilder builder) => builder.OnLoaded(context => Context = context);
+        public void Configure(IModBuilder builder) => builder.OnStarted(context => Context = context);
     }
 
     private sealed class AddsTaskMod : IOpenIgiMod
     {
-        public void Configure(IModBuilder builder) => builder.AddTask("ModSoldier", static () => new StandInSoldier());
+        public void Configure(IModBuilder builder) => builder.Tasks.Add<StandInSoldier>("ModSoldier");
     }
 
     private string Write(string directory, string manifest)

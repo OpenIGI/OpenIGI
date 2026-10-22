@@ -82,7 +82,6 @@
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Launcher.Tests/OpenIGI.Launcher.Tests.csproj" />
     <Project Path="tests/OpenIGI.Modding.SampleMod/OpenIGI.Modding.SampleMod.csproj" />
-    <Project Path="tests/OpenIGI.Generators.Tests/OpenIGI.Generators.Tests.csproj" />
     <Project Path="tests/OpenIGI.Modding.Tests/OpenIGI.Modding.Tests.csproj" />
     <Project Path="tests/OpenIGI.Platform.Web.Tests/OpenIGI.Platform.Web.Tests.csproj" />
     <Project Path="tests/OpenIGI.Presentation.Tests/OpenIGI.Presentation.Tests.csproj" />

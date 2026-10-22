@@ -21,13 +21,17 @@ public sealed class ModHarness
     /// <summary>The folder beside a mod's tests its referenced mods are installed in.</summary>
     public const string ModsDirectoryName = "mods";
 
-    private ModHarness(InstalledMod mod) => Mod = mod;
+    private ModHarness(InstalledMod mod)
+    {
+        Mod = mod;
+        Set = new ModSet([mod]);
+    }
 
     /// <summary>Gets the mod.</summary>
     public InstalledMod Mod { get; }
 
-    /// <summary>Gets the mod as the only one on.</summary>
-    public ModSet Set => new([Mod]);
+    /// <summary>Gets the mod as the only one on, which keeps what <see cref="Extend"/> configured it into.</summary>
+    public ModSet Set { get; }
 
     /// <summary>Holds a mod's code as the test made it.</summary>
     /// <param name="mod">The mod.</param>
