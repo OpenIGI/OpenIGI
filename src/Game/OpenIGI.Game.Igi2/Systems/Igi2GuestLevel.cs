@@ -2,6 +2,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
+using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Player;
@@ -32,12 +33,14 @@ public sealed class Igi2GuestLevel
 {
     private const int TopId = 4095;
 
+    private readonly Igi2GuestContent _content;
     private readonly GuestTitle _guest;
     private int _spare = TopId;
 
-    private Igi2GuestLevel(GuestTitle guest, LevelTask root, GameTask dynamic)
+    private Igi2GuestLevel(Igi2GuestContent content, LevelTask root, GameTask dynamic)
     {
-        _guest = guest;
+        _content = content;
+        _guest = content.Guest;
         Root = root;
         Dynamic = dynamic;
     }
@@ -49,15 +52,15 @@ public sealed class Igi2GuestLevel
     public GameTask Dynamic { get; }
 
     /// <summary>Opens a level in a guest session of I.G.I. 2: its root and its dynamic container.</summary>
-    /// <param name="guest">I.G.I. 2, started as a guest.</param>
+    /// <param name="content">What the level's soldiers are made of, in the guest session it was read in.</param>
     /// <returns>The level, empty.</returns>
-    public static Igi2GuestLevel Open(GuestTitle guest)
+    public static Igi2GuestLevel Open(Igi2GuestContent content)
     {
-        ArgumentNullException.ThrowIfNull(guest);
-        Engine.Flow.GameLoop loop = guest.Loop;
+        ArgumentNullException.ThrowIfNull(content);
+        Engine.Flow.GameLoop loop = content.Guest.Loop;
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         GameTask dynamic = loop.Tasks.New(root, loop.Types.Get(EngineTaskTypes.Dynamic));
-        return new Igi2GuestLevel(guest, root, dynamic);
+        return new Igi2GuestLevel(content, root, dynamic);
     }
 
     /// <summary>Adds a squad to the level, under its dynamic container, at a spare id.</summary>
@@ -95,22 +98,25 @@ public sealed class Igi2GuestLevel
 
     /// <summary>Brings the level up, as I.G.I. 2 brings its own: the bodies, the detectors, the minds and the run.</summary>
     /// <param name="start">What the host gives it.</param>
-    /// <returns>The level, running.</returns>
-    public Igi2GuestLevelRun Start(Igi2GuestLevelStart start)
+    /// <returns>The level, running, for the host to have its soldiers stand for its humans and then <see cref="Igi2HostedLevel.Begin"/>.</returns>
+    public Igi2HostedLevel Start(Igi2GuestLevelStart start)
     {
         ArgumentNullException.ThrowIfNull(start);
         Engine.Flow.GameLoop loop = _guest.Loop;
         IServiceCatalog services = _guest.Session.Services;
         Igi2ScriptFunctions functions = services.Require<Igi2ScriptFunctions>();
+        Igi2HostedLevel? hosted = null;
+        Func<int> ticks = () => hosted?.Ticks ?? 0;
 
+        Igi2Sounds sounds = new(_content.SoundDefinitions, start.Audio);
         Soldiers.Igi2Soldiers soldiers = Igi2Gameplay.SpawnSoldiers(
             Root,
             services,
             start.World,
-            start.Clips,
-            start.Models,
+            _content.Clips,
+            _content.Models,
             services.TryGet(out Igi2PlayerTuning? tuning) ? tuning : null,
-            start.Sounds,
+            sounds,
             start.Random,
             start.Difficulty,
             natives: loop.Natives,
@@ -124,8 +130,8 @@ public sealed class Igi2GuestLevel
 
         Igi2DetectionWorld detection = new(start.World, services.Require<Igi2GameMaterials>())
         {
-            FlowTicks = start.Ticks,
-            LevelTick = start.Ticks,
+            FlowTicks = ticks,
+            LevelTick = ticks,
         };
         detection.Detectables.Add(start.Player);
         foreach (Soldiers.Igi2HumanSoldier body in soldiers.Bodies)
@@ -162,7 +168,7 @@ public sealed class Igi2GuestLevel
             start.Player,
             [.. soldiers.Bodies.Cast<Humans.Igi2Human>()],
             start.Random,
-            start.Ticks)
+            ticks)
         {
             Detection = detection,
             FireTaskTypes = services.TryGet(out Igi2HumanWeapons? armoury) ? armoury.FireTaskTypes : null,
@@ -175,7 +181,12 @@ public sealed class Igi2GuestLevel
         Igi2Gameplay.HearAiEvents(soldiers.Bodies, () => ai);
 
         Igi2LevelRun run = new(Root, loop.Natives, functions) { Dynamic = new Igi2DynamicTasks() };
-        return new Igi2GuestLevelRun(soldiers, detection, ai, run);
+
+        // The soldiers see the player as I.G.I. 2 sees its own, not at their cones' full length -- from their first look.
+        Igi2HostPlayerVisibility? visibility = start.Visibility is { } seen ? new(start.Player, seen, start.Light) : null;
+        visibility?.Update();
+        hosted = new Igi2HostedLevel(loop.Tasks, Root, run, sounds, soldiers, detection, ai, visibility);
+        return hosted;
     }
 
     private GameTask New(GameTask parent, string typeName) => _guest.Loop.Tasks.New(parent, _guest.Loop.Types.Get(typeName));

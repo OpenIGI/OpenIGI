@@ -1,4 +1,3 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
 
@@ -26,44 +25,29 @@ public sealed partial class Igi2HumanPlayer
     /// </summary>
     private void UpdateVisibilityFactor()
     {
-        float factor = 1f;
-        if (IgnoreLightEffectOnVisibilityTimer == 0)
+        double? posture = Pose switch
         {
-            Fpu half = (Fpu)Lightmap * 0.5;
-            double light = half.Value >= 0.0 ? (half.Value <= 1.0 ? half.Value : 1.0) : 0.0;
-            factor = (float)Math.Pow(light, Task?.VisibilityGamma ?? 1f);
-        }
-
-        if (Pose == Igi2HumanPose.Crouching)
+            Igi2HumanPose.Crouching => Igi2VisibilityFactor.Crouched,
+            Igi2HumanPose.LyingFlat => Igi2VisibilityFactor.Lying,
+            _ => null,
+        };
+        float movement = Locomotion.CurrentState switch
         {
-            factor = ((Fpu)factor * 0.800000011920929).F;
-        }
-        else if (Pose == Igi2HumanPose.LyingFlat)
-        {
-            factor = ((Fpu)factor * 0.6000000238418579).F;
-        }
-
-        int state = Locomotion.CurrentState;
-        float lift = state switch
-        {
-            Igi2PlayerState.StandTurn or Igi2PlayerState.CrouchTurn or Igi2PlayerState.FlatCrawl => 0.05000000074505806f,
-            >= 3 and <= 10 => 0.15000000596046448f,
-            (>= 11 and <= 18) or (>= 26 and <= 33) => 0.10000000149011612f,
+            Igi2PlayerState.StandTurn or Igi2PlayerState.CrouchTurn or Igi2PlayerState.FlatCrawl => Igi2VisibilityFactor.Turning,
+            >= 3 and <= 10 => Igi2VisibilityFactor.Running,
+            (>= 11 and <= 18) or (>= 26 and <= 33) => Igi2VisibilityFactor.Walking,
             _ => 0f,
         };
-        if (lift != 0f)
-        {
-            factor = ((Fpu)factor + lift).F;
-        }
 
-        if (Task is { } task)
-        {
-            factor = task.VisibilityMinimum <= factor
-                ? (task.VisibilityMaximum >= factor ? factor : task.VisibilityMaximum)
-                : task.VisibilityMinimum;
-        }
-
-        VisibilityFactor = factor;
+        // With no task, nothing bounds the factor.
+        VisibilityFactor = Igi2VisibilityFactor.Measure(
+            IgnoreLightEffectOnVisibilityTimer != 0,
+            Lightmap,
+            Task?.VisibilityGamma ?? 1f,
+            posture,
+            movement,
+            Task?.VisibilityMinimum ?? float.NegativeInfinity,
+            Task?.VisibilityMaximum ?? float.PositiveInfinity);
     }
 
     /// <inheritdoc/>
