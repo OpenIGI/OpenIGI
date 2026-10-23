@@ -48,6 +48,7 @@ public sealed class Igi2GuestLevel
     private Igi2TitlePlayer? _player;
     private Igi2CollisionWorld? _playerWorld;
     private Igi2Sounds? _sounds;
+    private readonly List<Weapons.Igi2StationaryGunTask> _guns = [];
     private int _spare = TopId;
 
     private Igi2GuestLevel(Igi2GuestContent content, LevelTask root, GameTask dynamic)
@@ -170,6 +171,14 @@ public sealed class Igi2GuestLevel
         player.Quirks = services.TryGet(out Igi2Quirks? quirks) ? quirks : new Igi2Quirks();
         TaskTree tasks = _guest.Loop.Tasks;
         player.TaskById = id => tasks.FromId(id);
+
+        // The map computer, which the player opens as I.G.I. 2's: its map looks down on the host's level.
+        if (services.TryGet(out Computer.Igi2Computer? computer))
+        {
+            computer.BeginLevel();
+            player.Computer = computer;
+        }
+
         _player = player;
         _playerWorld = world;
         return player;
@@ -197,6 +206,45 @@ public sealed class Igi2GuestLevel
         pickup.Position = position;
         pickup.Orientation = orientation;
         return true;
+    }
+
+    /// <summary>
+    /// Mounts one of I.G.I. 2's guns in the level where the host mounts one of its own, under the host's id, as a level's
+    /// <c>StationaryGun</c> stands (<see cref="Weapons.Igi2StationaryGunTask"/>), before the level starts, which then arms it
+    /// for its player and its soldiers to work.
+    /// </summary>
+    /// <param name="id">The host gun's id, which soldiers ordered to man it name (<c>AIFunction_SetGunnerID</c>).</param>
+    /// <param name="position">Its pivot, in world units.</param>
+    /// <param name="orientation">The way it faces, as a level gives a placement's angles.</param>
+    /// <param name="maxUp">The most it tilts up, in degrees.</param>
+    /// <param name="maxDown">The most it tilts down, in degrees (negative).</param>
+    /// <param name="maxSideways">The most it turns either way, in degrees.</param>
+    /// <param name="weaponId">Its weapon, by I.G.I. 2's id.</param>
+    /// <returns>The gun; <see langword="null"/> where the id is the guest's already.</returns>
+    public Weapons.Igi2StationaryGunTask? AddStationaryGun(
+        int id, Vector3d position, Vector3f orientation, float maxUp, float maxDown, float maxSideways, string weaponId = "WEAPON_ID_M2HB")
+    {
+        TaskTree tasks = _guest.Loop.Tasks;
+        if (tasks.FromId(id) is not null)
+        {
+            return null;
+        }
+
+        Weapons.Igi2StationaryGunTask gun = (Weapons.Igi2StationaryGunTask)New(Root, Weapons.Igi2StationaryGunTask.TypeName);
+        if (!tasks.TryBindId(id, gun))
+        {
+            tasks.Delete(gun);
+            return null;
+        }
+
+        gun.Position = position;
+        gun.Orientation = orientation;
+        gun.MaxUpAngle = maxUp;
+        gun.MaxDownAngle = maxDown;
+        gun.MaxSidewaysAngle = maxSideways;
+        gun.WeaponId = weaponId;
+        _guns.Add(gun);
+        return gun;
     }
 
     /// <summary>Adds a squad to the level, under its dynamic container, at a spare id.</summary>
@@ -404,6 +452,7 @@ public sealed class Igi2GuestLevel
         if (_player is { } own)
         {
             humans.Insert(0, own.Human);
+            own.MapHumans = humans;
             own.Grenades = grenades;
             own.Explosions = explosions;
             own.Human.Pickups = pickups;
@@ -543,6 +592,33 @@ public sealed class Igi2GuestLevel
             Graphs = graphs,
         });
         ai.Doors = [.. ai.Doors, .. start.Doors];
+        // The guns mounted in the host's stead, armed as a level's own are (Igi2VehicleSystems.StationaryGuns): its player works
+        // them, its soldiers find them by id, and they are run each tick.
+        if (_guns.Count > 0 && services.TryGet(out Igi2HumanWeapons? gunWeapons))
+        {
+            Igi2MagicObjTypes? magic = services.TryGet(out Igi2MagicObjTypes? magicTypes) ? magicTypes : null;
+            foreach (Weapons.Igi2StationaryGunTask gun in _guns)
+            {
+                gun.Magic = magic;
+                gun.Random = start.Random;
+                gun.Prepare(gunWeapons, _content.Models);
+                gun.Bind([]);
+                if (gun.Firing is { } firing)
+                {
+                    Weapons.Igi2StationaryGunTask armed = gun;
+                    firing.Effects = new Igi2LevelWeaponEffects(sounds, () => armed.Mount, ai);
+                    firing.ImpactEffects = new Igi2LevelImpactEffects(sounds, ai) { Explosions = explosions };
+                    firing.World = new Igi2LevelGunShotWorld(start.World, materials, ai);
+                }
+
+                _player?.Activatables.Add(gun);
+            }
+
+            _player?.StationaryGuns = [.. _guns];
+            Dictionary<int, Weapons.Igi2StationaryGunTask> gunsById = _guns.ToDictionary(static g => g.Id);
+            ai.StationaryGun = id => gunsById.GetValueOrDefault(id);
+        }
+
         Igi2Gameplay.HearAiEvents(soldiers.Bodies, () => ai);
         if (_player is { } heard)
         {
@@ -566,6 +642,9 @@ public sealed class Igi2GuestLevel
             Casings = casings,
             Alarms = [.. _alarms],
             Player = _player,
+            Guns = [.. _guns],
+            WeaponTables = services.TryGet(out Igi2HumanWeapons? dropped) ? dropped.Tables : null,
+            PickupModels = _content.Models,
         };
         return hosted;
     }

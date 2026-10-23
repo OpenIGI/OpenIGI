@@ -96,6 +96,40 @@ public sealed class Igi2HostedLevel
     /// <summary>Gets the level's own player, I.G.I. 2's, where the host stood one (<see cref="Igi2GuestLevel.AddPlayer"/>).</summary>
     public Player.Igi2TitlePlayer? Player { get; init; }
 
+    /// <summary>Gets the session's weapon tables, which a gun the host drops is made from; <see langword="null"/> where it has none.</summary>
+    public Weapons.Igi2WeaponTables? WeaponTables { get; init; }
+
+    /// <summary>Gets the models a dropped gun is made of, its reach their bound.</summary>
+    public Func<string, Formats.World.MefModel?>? PickupModels { get; init; }
+
+    /// <summary>
+    /// Throws a gun the host's level dropped into the level's pickups as I.G.I. 2's own, as a dying soldier's gun is thrown
+    /// (<c>HumanSoldier_CreateGunPickups</c>): falling from where it left the hand, a clip in it, for the level's player to take.
+    /// </summary>
+    /// <param name="weaponId">The weapon, by I.G.I. 2's id.</param>
+    /// <param name="position">Where it leaves the hand, in world units.</param>
+    /// <param name="orientation">How it lies.</param>
+    /// <returns>Whether it was thrown; not a weapon I.G.I. 2 has, nor in a level with no pickups.</returns>
+    public bool DropGun(string weaponId, Vector3d position, Matrix3f orientation)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(weaponId);
+        if (Pickups is not { } pickups || WeaponTables is not { } tables
+            || tables.WeaponTypes.FirstOrDefault(w => string.Equals(w.WeaponId, weaponId, StringComparison.Ordinal)) is not { } weapon)
+        {
+            return false;
+        }
+
+        float radius = weapon.FixedModel.Length > 0 && PickupModels?.Invoke(weapon.FixedModel) is { } model ? model.NativeMarkerBound : 1f;
+        float[] rows = [orientation.M11, orientation.M12, orientation.M13, orientation.M21, orientation.M22, orientation.M23,
+            orientation.M31, orientation.M32, orientation.M33];
+        int clip = weapon.AmmoInfo(0, tables).RoundsPerClip;
+        pickups.Add(Game.Igi2.Pickups.Igi2GunPickup.Thrown(weapon, tables, position, rows, 0f, isMoving: true, isThrowShort: true, clip, null, radius));
+        return true;
+    }
+
+    /// <summary>Gets the guns mounted in the host's stead (<see cref="Igi2GuestLevel.AddStationaryGun"/>), run each tick.</summary>
+    public IReadOnlyList<Weapons.Igi2StationaryGunTask> Guns { get; init; } = [];
+
     /// <summary>Gets the casings the soldiers' weapons have thrown.</summary>
     public Igi2GunCasings? Casings { get; init; }
 
@@ -336,6 +370,12 @@ public sealed class Igi2HostedLevel
         foreach (Interaction.Igi2AlarmControlTask alarm in Alarms)
         {
             _run.Run(alarm);
+        }
+
+        // The guns mounted in the host's stead turn and fire as the level's own do where its walk reaches them.
+        foreach (Weapons.Igi2StationaryGunTask gun in Guns)
+        {
+            _run.Run(gun);
         }
 
         foreach (Action action in _eachTick)

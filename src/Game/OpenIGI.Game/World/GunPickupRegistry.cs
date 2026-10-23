@@ -334,8 +334,12 @@ public sealed class GunPickupRegistry
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
         pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
         _items.Add(pickup);
+        Spawned?.Invoke(pickup);
         return pickup;
     }
+
+    /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>
+    public event Action<GunPickup>? Spawned;
 
     /// <summary>Advances runtime gun drops; authored level pickups remain fixed in place.</summary>
     public void Tick(RagdollWorld world)

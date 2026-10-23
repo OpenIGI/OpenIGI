@@ -107,8 +107,8 @@ internal sealed class SoldierWeaponDrawer(
         foreach ((AiStationaryGun gun, SoldierHeldWeapon? visual) in _armoury.StationaryWeaponVisuals)
         {
             // 0x474190 poses the gun on its stand every tick, whoever is on it (0x474420): an AI gunner holds his own
-            // weapon, which 0x4600C0 keeps on his hand, and works the stand's.
-            if (visual is null)
+            // weapon, which 0x4600C0 keeps on his hand, and works the stand's. Another game's gun on the mount draws itself.
+            if (visual is null || gun.IsHandedOver)
             {
                 continue;
             }
@@ -207,7 +207,7 @@ internal sealed class SoldierWeaponDrawer(
         // A gun the player is firing from its stand flames at the same pose DrawStationaryGuns drew.
         foreach ((AiStationaryGun gun, SoldierHeldWeapon? visual) in _armoury.StationaryWeaponVisuals)
         {
-            if (!gun.FiredThisTick || visual?.Presentation is not { } gunPresentation)
+            if (gun.IsHandedOver || !gun.FiredThisTick || visual?.Presentation is not { } gunPresentation)
             {
                 continue;
             }

@@ -10,8 +10,9 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// <remarks>
 /// <para>
 /// A switch is pressed, a door that is not locked opens or shuts, and the task each stands for is told it was used, which that
-/// game's alarms and scripts read, as its own player using it tells them. A locked door is not picked: that game's lock is
-/// opened by that game's player's own way of picking.
+/// game's alarms and scripts read, as its own player using it tells them. A locked door that game lets its player pick is picked
+/// as I.G.I. 2's player picks its own, for as long as that game's picking takes, and is then that game's picked lock: open, and
+/// open to that game's scripts for good.
 /// </para>
 /// </remarks>
 public abstract class Igi2HostInteraction : IIgi2Activatable
@@ -90,13 +91,27 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
 
         public bool IsLocked => Interaction.IsLocked;
 
-        public bool IsPickable => false;
+        // The pick that finished this activation, which opens the door as that game's finished pick does.
+        private bool _pickedNow;
 
-        public bool IsPicked { get; set; }
+        public bool IsPickable => Interaction.IsPickable && Interaction.IsLocked;
+
+        public bool IsPicked
+        {
+            get => Interaction.IsPicked;
+            set
+            {
+                if (value && !Interaction.IsPicked)
+                {
+                    Interaction.CompleteUse();
+                    _pickedNow = true;
+                }
+            }
+        }
 
         public int Status => Interaction.Door?.UseState ?? IAiDoor.Closed;
 
-        public float PickLockTime => 0f;
+        public float PickLockTime => Interaction.DurationTicks / 30f;
 
         public string ActivateSound => string.Empty;
 
@@ -106,7 +121,16 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
 
         public void ToggleOpen(Vector3d from)
         {
-            Interaction.Door?.Toggle();
+            // A pick just finished opened the door itself (WorldInteraction.CompleteUse): it is not toggled again.
+            if (_pickedNow)
+            {
+                _pickedNow = false;
+            }
+            else
+            {
+                Interaction.Door?.Toggle();
+            }
+
             Activated?.Invoke(Interaction.Task.Id);
         }
     }

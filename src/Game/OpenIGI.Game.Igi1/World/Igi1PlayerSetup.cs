@@ -509,16 +509,21 @@ public sealed class Igi1PlayerSetup(
 
         // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
         // about a metre over the feet standing and half that crouched -- not the eye.
-        runtime.VehicleCombatTarget = () => !mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(
+        // The rig, or another game's player standing in its stead: where its feet are and whether it keeps low.
+        (Vector3d Feet, bool Low)? Target() =>
+            mission.IsPlayerDead || mission.PlayerHealth.IsDead ? null
+            : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
+            : (player.Body.Position, player.Body.IsCrouched);
+        runtime.VehicleCombatTarget = () => Target() is { } aim
+            ? aim.Feet + new Vector3d(
                 0d,
                 0d,
-                player.Body.IsCrouched ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
+                aim.Low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
             : null;
         // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
         // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.VehicleSightTarget = () => !mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(player.Body.IsCrouched))
+        runtime.VehicleSightTarget = () => Target() is { } seen
+            ? seen.Feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(seen.Low))
             : null;
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             mission.Trace is null
