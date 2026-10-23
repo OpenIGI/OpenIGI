@@ -46,6 +46,28 @@ public sealed class RetailIgi2WorldModelCullingTests
         Assert.Equal(updates + 1, device.AnimatedMeshUpdates[mesh]);
     }
 
+    /// <summary>A body drawn for a thing the binoculars marked glows through walls in its colour; an unmarked one does not.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_marked_body_glows_through_walls_and_an_unmarked_one_does_not()
+    {
+        (LoadedMission mission, ResourceRegistry resources, string name, MefModel model) = Mission();
+        using RecordingGraphicsDevice device = new();
+        using Igi2ViewModelRenderer renderer = new(device, resources);
+        Assert.True(renderer.Load(mission));
+        object instance = new();
+        TitleWorldModel[] drawn = [new(name, new Vector3d(0, 409600, 0), Matrix3f.Identity, Pose(model, default), instance, 1)];
+        renderer.DrawWorld(drawn, Camera3D.Default, Matrix4f.CreateProjection(640f, 360f, 640f, 360f, 1280, 720, 0.1f, 1000f));
+
+        renderer.DrawWorldOutlines(drawn, new Dictionary<object, Bgra32>(), Camera3D.Default, 8f);
+        Assert.Equal(0, device.OutlineDrawCount);
+
+        Bgra32 red = Bgra32.FromRgba(255, 72, 72, 210);
+        renderer.DrawWorldOutlines(drawn, new Dictionary<object, Bgra32> { [instance] = red }, Camera3D.Default, 8f);
+        Assert.Equal(1, device.OutlineDrawCount);
+        Assert.Equal(red, device.LastOutlineColour);
+        Assert.True(device.LastOutlineThroughWalls);
+    }
+
     /// <summary>A fresh tick with an identical bone palette draws without skinning or uploading it again.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Unchanged_world_poses_do_not_upload_again_on_new_ticks()

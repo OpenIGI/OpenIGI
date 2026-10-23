@@ -17,6 +17,7 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
 {
     private readonly Igi2HostedLevel _level;
     private readonly Igi2ViewModelRenderer _renderer;
+    private float _blend = 1f;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2HostedLevelPresenter"/> class.</summary>
     /// <param name="device">The device to draw with.</param>
@@ -33,8 +34,15 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
     }
 
     /// <inheritdoc/>
-    public void Draw(in Camera3D camera, in Matrix4f projection, float blend) =>
+    public void Draw(in Camera3D camera, in Matrix4f projection, float blend)
+    {
+        _blend = blend;
         _renderer.DrawWorld(_level.Models(), camera, projection, blend);
+    }
+
+    /// <inheritdoc/>
+    public void DrawOutlines(IReadOnlyDictionary<object, Bgra32> marked, in Camera3D camera, float radiusPixels) =>
+        _renderer.DrawWorldOutlines(_level.Models(), marked, camera, radiusPixels, _blend);
 
     /// <inheritdoc/>
     /// <remarks>The soldiers stand in the level's light like its own: they shadow the ground under them and the lamps.</remarks>

@@ -20,6 +20,7 @@ public sealed class LevelJoiners
 {
     private readonly List<IExplosionHitTarget> _explosionTargets = [];
     private readonly List<IHumanAiEventTarget> _humans = [];
+    private readonly List<IAiDetectable> _seen = [];
 
     /// <summary>Gets the explosion targets that joined, in the order they joined.</summary>
     public IReadOnlyList<IExplosionHitTarget> ExplosionTargets => _explosionTargets;
@@ -32,6 +33,20 @@ public sealed class LevelJoiners
 
     /// <summary>Gets the humans that joined, in the order they joined.</summary>
     public IReadOnlyList<IHumanAiEventTarget> Humans => _humans;
+
+    /// <summary>
+    /// Gets the humans another game made for the level that the player's optics see as the level's own: the binoculars mark
+    /// them, in the order they joined.
+    /// </summary>
+    public IReadOnlyList<IAiDetectable> Seen => _seen;
+
+    /// <summary>A human joins those the player's optics see.</summary>
+    /// <param name="human">The human.</param>
+    public void JoinSeen(IAiDetectable human)
+    {
+        ArgumentNullException.ThrowIfNull(human);
+        _seen.Add(human);
+    }
 
     /// <summary>A task joins the explosion list.</summary>
     /// <param name="target">The task.</param>
@@ -49,11 +64,12 @@ public sealed class LevelJoiners
         _humans.Add(human);
     }
 
-    /// <summary>Empties both lists, as a level is left.</summary>
+    /// <summary>Empties the lists, as a level is left.</summary>
     public void Clear()
     {
         ExplosionDamageScale = 1f;
         _explosionTargets.Clear();
         _humans.Clear();
+        _seen.Clear();
     }
 }

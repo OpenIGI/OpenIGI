@@ -173,6 +173,12 @@ public sealed class Igi2HostedLevel
             mission.Joined.JoinHumans(soldier);
         }
 
+        // The player's binoculars mark the soldiers as they mark the level's own.
+        foreach (Soldiers.Igi2HumanSoldier body in Soldiers.Bodies)
+        {
+            mission.Joined.JoinSeen(body);
+        }
+
         // It hears the level's broadcasts for the player's loud shots.
         if (Visibility is not null)
         {

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -14,6 +15,9 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="context">The soldiers, their brains and the sight cast.</param>
 internal sealed class SoldierBinocularScan(SoldierContext context)
 {
+    // The slot key a joined human's marker is kept under: past any runtime id the level's own soldiers take.
+    private const int JoinedSlotBase = 0x40000000;
+
     private readonly SoldierContext _context = context;
 
     /// <summary>Gets the detector's slots.</summary>
@@ -28,6 +32,18 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
     // LOS is a simulation fact, not a render fact. Cache it for the fixed tick so a second render
     // of the same simulation state does not cast the same three rays again.
     public Dictionary<SoldierView, bool> Visibility { get; } = [];
+
+    /// <summary>Gets the joined humans the last scan drew a contact for, and the team colour their marker uses.</summary>
+    public Dictionary<IAiDetectable, BinocularMarkerColor> JoinedDetected { get; } = [];
+
+    /// <summary>Gets each joined human's line of sight from the eye, as last cast on <see cref="VisibilityTick"/>.</summary>
+    public Dictionary<IAiDetectable, bool> JoinedVisibility { get; } = [];
+
+    /// <summary>
+    /// Gets or sets the humans another game made for the level (<see cref="LevelJoiners.Seen"/>), whom the detector marks after
+    /// the level's own soldiers, or <see langword="null"/> when none joined.
+    /// </summary>
+    public LevelJoiners? Joined { get; set; }
 
     /// <summary>Gets or sets the fixed tick <see cref="Visibility"/> was cast on.</summary>
     public int VisibilityTick { get; set; } = int.MinValue;
@@ -72,11 +88,13 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
         if (simulationTick != int.MinValue && VisibilityTick != simulationTick)
         {
             Visibility.Clear();
+            JoinedVisibility.Clear();
             VisibilityTick = simulationTick;
         }
 
         Overlay.BeginScan();
         Detected.Clear();
+        JoinedDetected.Clear();
         float verticalTangent = horizontalTangent * screenHeight / Math.Max(1f, screenWidth);
         Vector3d eyeUnits = new(
             camera.Position.X * WorldScene.UnitsPerMetre,
@@ -195,6 +213,80 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
             Detected[view] = view.Soldier.Team != 1
                 ? BinocularMarkerColor.Team
                 : BinocularMarkerColor.Hostile;
+        }
+
+        // Another game's humans, marked as the level's own: where each stands and its side, from what it tells a detector; the
+        // marker sized and lifted by half its eye height, as a soldier's model bound is about. Their slots follow the soldiers'.
+        int joined = 0;
+        foreach (IAiDetectable human in Joined?.Seen ?? [])
+        {
+            int slot = JoinedSlotBase + joined++;
+            AiDetectionInfo info = human.DetectionInfo();
+            if (!info.IsAlive || !info.IsActive || human.IsGone)
+            {
+                continue;
+            }
+
+            Vector3d feetUnits = info.Feet;
+            double halfUnits = Math.Max(0.0, info.Head.Z - info.Feet.Z) * 0.5;
+            if (halfUnits <= 0.0)
+            {
+                continue;
+            }
+
+            Vector3d targetUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + halfUnits);
+            Vector3d delta = new(
+                targetUnits.X / WorldScene.UnitsPerMetre - camera.Position.X,
+                targetUnits.Y / WorldScene.UnitsPerMetre - camera.Position.Y,
+                targetUnits.Z / WorldScene.UnitsPerMetre - camera.Position.Z);
+            Vector3d viewPosition = camera.Orientation.Transposed().Transform(delta);
+            if (viewPosition.Z <= 0f || viewPosition.Z > maxDetectionMetres)
+            {
+                continue;
+            }
+
+            float screenX = screenWidth * 0.5f
+                + (float)(viewPosition.X / (viewPosition.Z * horizontalTangent) * screenWidth * 0.5f);
+            float screenY = screenHeight * 0.5f
+                - (float)(viewPosition.Y / (viewPosition.Z * verticalTangent) * screenHeight * 0.5f);
+            if (screenX < -8f || screenX > screenWidth + 8f || screenY < -8f || screenY > screenHeight + 8f)
+            {
+                continue;
+            }
+
+            if (_context.Sight is { } lineOfSight)
+            {
+                if (simulationTick == int.MinValue || !JoinedVisibility.TryGetValue(human, out bool visible))
+                {
+                    visible = SoldierSightQueries.HasLineOfSight(lineOfSight, eyeUnits, targetUnits)
+                        || SoldierSightQueries.HasLineOfSight(lineOfSight, eyeUnits, info.Head)
+                        || SoldierSightQueries.HasLineOfSight(lineOfSight, eyeUnits, feetUnits);
+                    if (simulationTick != int.MinValue)
+                    {
+                        JoinedVisibility[human] = visible;
+                    }
+                }
+
+                if (!visible)
+                {
+                    continue;
+                }
+            }
+
+            double markerScaleMetres = halfUnits / WorldScene.UnitsPerMetre;
+            Overlay.Upsert(
+                slot,
+                (float)viewPosition.Z,
+                configFlag: 1,
+                screenX,
+                screenY,
+                eventParam: 0,
+                extraParam1: info.Team != 1 ? 1 : 0,
+                extraParam2: 0,
+                tick,
+                (float)(markerScaleMetres * screenWidth / (Math.Max(0.001, viewPosition.Z) * horizontalTangent)),
+                (float)(markerScaleMetres * screenHeight / (Math.Max(0.001, viewPosition.Z) * verticalTangent)));
+            JoinedDetected[human] = info.Team != 1 ? BinocularMarkerColor.Team : BinocularMarkerColor.Hostile;
         }
 
         Overlay.ExpireInactive(tick);

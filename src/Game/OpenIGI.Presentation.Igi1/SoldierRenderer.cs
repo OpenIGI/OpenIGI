@@ -7,6 +7,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Physics;
 using OpenIGI.Game.Igi1.Player;
@@ -44,6 +45,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
     /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
     private readonly List<MeshDrawRange> _outlineRanges = [];
+    private readonly Dictionary<object, Bgra32> _markedOthers = [];
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
     private TexTextureCache? _textureCache;
@@ -269,6 +271,21 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         }
 
         return false;
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyDictionary<object, Bgra32> BinocularMarkedOthers
+    {
+        get
+        {
+            _markedOthers.Clear();
+            foreach ((IAiDetectable human, BinocularMarkerColor marker) in _sim.BinocularJoinedDetected)
+            {
+                _markedOthers[human] = SoldierSimulation.MarkerGlow(marker);
+            }
+
+            return _markedOthers;
+        }
     }
 
     /// <inheritdoc/>

@@ -452,6 +452,15 @@ public sealed partial class GameHost
             && Viewpoint?.IsBinocularsOpen == true)
         {
             _soldiers?.DrawBinocularOutlines(eye, radiusPixels: 8f);
+
+            // Another game's humans the scan marked, glowed by what draws them.
+            if (_soldiers?.BinocularMarkedOthers is { Count: > 0 } marked)
+            {
+                foreach (ITaskPresenter taskPresenter in _taskPresenters)
+                {
+                    taskPresenter.DrawOutlines(marked, eye, radiusPixels: 8f);
+                }
+            }
         }
 
         // The developer inspector's selection, drawn as a real glow around the model rather

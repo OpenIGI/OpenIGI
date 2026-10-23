@@ -41,6 +41,17 @@ public interface ITaskPresenter : IDisposable
     /// shadow maps as well, inside each pass, as a level's own characters are.
     /// </summary>
     bool CastsShadow => false;
+
+    /// <summary>
+    /// Glows through walls those of its models that stand for things the binoculars marked, as the level's own marked soldiers
+    /// glow; a presenter that draws no such things draws nothing.
+    /// </summary>
+    /// <param name="marked">What was marked, and the glow each takes.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="radiusPixels">The glow's screen-space radius.</param>
+    void DrawOutlines(IReadOnlyDictionary<object, Bgra32> marked, in Camera3D camera, float radiusPixels)
+    {
+    }
 }
 
 /// <summary>The presenters a title draws with, keyed by what each is made from and the interface it is used through.</summary>

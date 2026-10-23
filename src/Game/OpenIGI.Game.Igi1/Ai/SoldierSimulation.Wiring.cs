@@ -120,7 +120,15 @@ public sealed partial class SoldierSimulation
     public HumanPlayerTask? PlayerTask => _context.PlayerTask;
 
     /// <inheritdoc cref="SoldierNoiseBroadcaster.Joined"/>
-    public LevelJoiners? Joined { get => _noise.Joined; set => _noise.Joined = value; }
+    public LevelJoiners? Joined
+    {
+        get => _noise.Joined;
+        set
+        {
+            _noise.Joined = value;
+            _binoculars.Joined = value;
+        }
+    }
 
     /// <summary>Gets where soldiers' rounds go, so another AI gun (a vehicle's) can fire through the same cast.</summary>
     public SoldierRound? RoundHandler => _fire.OnRound;
@@ -200,6 +208,9 @@ public sealed partial class SoldierSimulation
 
     /// <inheritdoc cref="SoldierBinocularScan.Detected"/>
     internal Dictionary<SoldierView, BinocularMarkerColor> BinocularDetected => _binoculars.Detected;
+
+    /// <summary>Gets the joined humans the last binocular scan marked, and their marker colours.</summary>
+    internal Dictionary<IAiDetectable, BinocularMarkerColor> BinocularJoinedDetected => _binoculars.JoinedDetected;
 
     /// <inheritdoc cref="SoldierBinocularScan.Visibility"/>
     internal Dictionary<SoldierView, bool> BinocularVisibility => _binoculars.Visibility;
