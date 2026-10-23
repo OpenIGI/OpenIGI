@@ -39,13 +39,17 @@ public sealed class Igi2HostLadder(LadderPlacement ladder) : IIgi2Ladder
     public IReadOnlyList<float> AttachOrientation => _frame;
 
     /// <inheritdoc/>
-    public Vector3d Centre => _ladder.Origin;
+    /// <remarks>Halfway up it, as a ladder's model is found round its middle, so it is found from its top as from its foot.</remarks>
+    public Vector3d Centre => (_ladder.Bottom + _ladder.ActivationTop) * 0.5;
 
     /// <inheritdoc/>
-    public float Radius => (float)LadderPlacement.ActivateRadiusUnits;
+    public float Radius => (float)(((_ladder.ActivationTop - _ladder.Bottom).Length * 0.5) + LadderPlacement.ActivateRadiusUnits);
 
     /// <inheritdoc/>
     public Igi2ActivateKind Kind => Igi2ActivateKind.Ladder;
+
+    /// <inheritdoc/>
+    public bool KeepsFooting => false;
 
     /// <inheritdoc/>
     /// <remarks>The second is where the view finds its top; the third and fourth its foot and top, as the climber stands.</remarks>

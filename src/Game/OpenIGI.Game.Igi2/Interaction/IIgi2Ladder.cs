@@ -20,4 +20,11 @@ public interface IIgi2Ladder : IIgi2Activatable, IAttachParent
     /// <param name="index">The vertex.</param>
     /// <returns>The vertex's position.</returns>
     Vector3d MagicVertex(int index);
+
+    /// <summary>
+    /// Gets a value indicating whether the climber still looks for its footing while on it, as on I.G.I. 2's own ladders. Another
+    /// game's ladder runs past that game's buildings, whose faces the look would take for ground, and that game's climber looks for
+    /// none.
+    /// </summary>
+    bool KeepsFooting => true;
 }
