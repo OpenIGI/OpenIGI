@@ -93,11 +93,16 @@ public interface ITitleViewModelPresenter : IDisposable
 /// </remarks>
 public interface ITitleWorldModelPresenter
 {
-    /// <summary>Draws the models.</summary>
+    /// <summary>Draws the models, between the last two ticks.</summary>
     /// <param name="models">The models and where they stand.</param>
     /// <param name="camera">Where they are seen from, in metres.</param>
     /// <param name="projection">The world's projection.</param>
-    void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection);
+    /// <param name="blend">
+    /// How far the frame is between the last two ticks: a model the title names by its <see cref="TitleWorldModel.Instance"/>
+    /// is drawn that far from where it was a tick ago to where it is, its pose with it; one draws every model where the last
+    /// tick left it.
+    /// </param>
+    void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f);
 
     /// <summary>Draws camera-facing additive lights against the world's depth.</summary>
     /// <param name="sprites">The title's lights.</param>

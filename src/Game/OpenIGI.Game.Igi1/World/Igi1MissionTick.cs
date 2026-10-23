@@ -1,15 +1,13 @@
-using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Config;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Input;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -824,7 +822,13 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
             // silenced weapons no longer wake the whole 30-metre neighbourhood.
             if (player.FiredThisTick && player.HeldWeaponType is { } audibleWeapon)
             {
-                mission.Soldiers?.NotifyGunshot(player.Body.Eye, audibleWeapon.AiDetectionRange);
+                // Along the view, as far as the gun reaches: the line another game's humans see the shot by.
+                Matrix3f view = player.Camera.Orientation;
+                float reach = audibleWeapon.EffectiveRange * (float)WorldScene.UnitsPerMetre;
+                mission.Soldiers?.NotifyGunshot(
+                    player.Body.Eye,
+                    audibleWeapon.AiDetectionRange,
+                    line: new Vector3f(view.M31 * reach, view.M32 * reach, view.M33 * reach));
             }
 
             audio.SoundPlayerWeaponAndBody();

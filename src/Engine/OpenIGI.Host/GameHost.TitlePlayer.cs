@@ -382,7 +382,7 @@ public sealed partial class GameHost
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
-            models.DrawWorld(owned.WorldModels, eye, projection);
+            models.DrawWorld(owned.WorldModels, eye, projection, _titlePresentationBlend);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);
         }
     }

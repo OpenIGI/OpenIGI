@@ -89,6 +89,13 @@ public abstract partial class Igi2Human
     /// </summary>
     protected virtual IIgi2GraphFooting? GraphFooting => null;
 
+    /// <summary>
+    /// Gets or sets whether a brain that has no graph to stand the human on leaves it to find its ground as a human without one
+    /// does, by casting for it. Retail does not: its feet go to height nought (<see cref="GroundCollision"/>), which its levels,
+    /// every soldier of them on a graph, never show. Another game's level, whose graphs were not made for this game's brains, may.
+    /// </summary>
+    public bool CastsForGroundOffGraph { get; set; }
+
     /// <summary>Gets where the rigid object underfoot stands now, if the human stands on one.</summary>
     /// <param name="position">The object's position.</param>
     /// <returns><see langword="false"/> when the ground is not a rigid object.</returns>
@@ -136,9 +143,8 @@ public abstract partial class Igi2Human
     /// </remarks>
     public void GroundCollision(Vector3d from, ref Vector3d to, float tolerance)
     {
-        if (!IsDead && GraphFooting is { } brain)
+        if (!IsDead && GraphFooting is { } brain && (GraphGroundCollision(brain, from, ref to) || !CastsForGroundOffGraph))
         {
-            GraphGroundCollision(brain, from, ref to);
             return;
         }
 
@@ -204,15 +210,22 @@ public abstract partial class Igi2Human
     /// half): no line is cast and no roof is looked for; the light is the graph's, not averaged; and the human always stands.
     /// </summary>
     /// <remarks>
-    /// With no graph the footing stays empty and the human still stands, on it: retail puts its feet at height nought.
+    /// With no graph the footing stays empty and the human still stands, on it: retail puts its feet at height nought. Unless it
+    /// casts for its ground off the graph (<see cref="CastsForGroundOffGraph"/>), when nothing is done here and it does.
     /// </remarks>
-    private void GraphGroundCollision(IIgi2GraphFooting brain, Vector3d from, ref Vector3d to)
+    /// <returns>Whether the human was stood: on the graph, or, for one that does not cast off it, at nought.</returns>
+    private bool GraphGroundCollision(IIgi2GraphFooting brain, Vector3d from, ref Vector3d to)
     {
-        GroundIntersection.Clear();
-        DistanceToGround = 0.0;
         WorldIntersection ground = _graphFooting;
         ground.Clear();
         bool footed = brain.TryGetFooting(from, ground, out float light);
+        if (!footed && CastsForGroundOffGraph)
+        {
+            return false;
+        }
+
+        GroundIntersection.Clear();
+        DistanceToGround = 0.0;
         if (footed)
         {
             Lightmap = light;
@@ -230,6 +243,8 @@ public abstract partial class Igi2Human
         {
             Shadow.Lose();
         }
+
+        return true;
     }
 
     /// <summary>The material probe and the distance test: whether the human stands on what the footing struck.</summary>

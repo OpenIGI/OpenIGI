@@ -137,13 +137,13 @@ public sealed class Igi2GunShot
     private const float StepLength = 40.96f;
 
     /// <summary>The AI event a bullet's strike raises, <c>42</c>.</summary>
-    private const int StrikeEvent = 42;
+    public const int StrikeEvent = 42;
 
-    /// <summary>The strike event's flags, <c>0x402</c>.</summary>
-    private const int StrikeFlags = 0x402;
+    /// <summary>The strike event's flags, <c>0x402</c>: in reach, quieter in noise.</summary>
+    public const int StrikeFlags = 0x402;
 
     /// <summary>How far the strike is heard, <c>40960</c> units: ten metres.</summary>
-    private const float StrikeRadius = 40960f;
+    public const float StrikeRadius = 40960f;
 
     /// <summary>The groups a bullet is traced against, <c>Forest_bQTaskGroup | 0x58000001</c>; the ground's is added unless the shot ignores it.</summary>
     private const uint ObjectGroups = Igi2CollisionWorld.ForestGroup | 0x58000001u;

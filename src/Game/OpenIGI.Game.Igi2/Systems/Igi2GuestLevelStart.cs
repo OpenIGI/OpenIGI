@@ -20,6 +20,15 @@ public sealed record Igi2GuestLevelStart(Igi2CollisionWorld World, IgiRandom Ran
     /// <summary>Gets where the soldiers' sounds are heard, or <see langword="null"/> where nothing is.</summary>
     public ITitleAudio? Audio { get; init; }
 
+    /// <summary>
+    /// Gets the host's other humans, which the soldiers see as they see their own: friends or foes by their team, alive or
+    /// lying dead. Its own soldiers, those it has not given the guest to stand in for, are these.
+    /// </summary>
+    public IReadOnlyList<IAiDetectable> Others { get; init; } = [];
+
+    /// <summary>Gets the host's doors, which the soldiers open on their way as they open their own.</summary>
+    public IReadOnlyList<IAiDoor> Doors { get; init; } = [];
+
     /// <summary>Gets the host's own things the guest's world holds after its bodies, its player among them.</summary>
     public IReadOnlyList<IWorldLineCollider> Colliders { get; init; } = [];
 

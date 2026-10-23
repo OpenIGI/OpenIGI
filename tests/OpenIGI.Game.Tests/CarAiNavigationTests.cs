@@ -7,7 +7,7 @@ using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
-using static OpenIGI.TestSupport.QvmExpression;
+using static OpenIGI.Scripting.Qvm.QvmExpression;
 
 namespace OpenIGI.Game.Tests;
 

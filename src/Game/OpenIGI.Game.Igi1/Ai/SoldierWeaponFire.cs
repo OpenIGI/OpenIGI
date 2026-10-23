@@ -231,9 +231,19 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
 
         OnRound?.Invoke(origin, aim, brain.HitProbability, weapon, view);
 
-        // Every other soldier near the shot hears it -- the same AIEVENT_GUNSHOT a player's shot raises.
-        _noise.NotifyGunshot(origin, weapon.AiDetectionRange, except: view);
+        // Every other soldier near the shot hears it -- the same AIEVENT_GUNSHOT a player's shot raises -- and another game's
+        // humans which way it went.
+        _noise.NotifyGunshot(origin, weapon.AiDetectionRange, except: view, line: Line(aim - origin, weapon.EffectiveRange * WorldScene.UnitsPerMetre));
         return true;
+    }
+
+    // A shot's way, as long as the gun reaches: what another game's humans read the line of fire by.
+    private static Vector3f Line(Vector3d way, double reach)
+    {
+        double length = way.Length;
+        return length > 0.0
+            ? new Vector3f((float)(way.X / length * reach), (float)(way.Y / length * reach), (float)(way.Z / length * reach))
+            : default;
     }
 
     /// <summary>

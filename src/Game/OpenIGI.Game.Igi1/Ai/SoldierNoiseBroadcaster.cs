@@ -52,7 +52,14 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
             except);
 
     /// <summary>Delivers a gunshot using the firing weapon's exact AI detection range.</summary>
-    public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
+    /// <param name="origin">Where the shot was fired, in world units.</param>
+    /// <param name="range">The weapon's AI detection range, in world units.</param>
+    /// <param name="except">A soldier not to notify: the shooter.</param>
+    /// <param name="line">
+    /// The line of fire, as long as the gun reaches, which another game's humans read (<see cref="HumanAiEvent.Direction"/>);
+    /// this game's brains hear only where the shot was.
+    /// </param>
+    public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null, Vector3f line = default)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -71,7 +78,7 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
             int shooterId = except?.Soldier.Id ?? AiDetectionCandidate.PlayerId;
             return brain.HearGunshot(origin, range, fromSameSide: shooterTeam == view.Soldier.Team, shooterId);
         });
-        Broadcast(noise, AiEvent.Gunshot, except?.Soldier.Team ?? _context.PlayerTeam, HumanNoiseFilter, range, origin, (GameTask?)except?.Soldier ?? _context.PlayerTask);
+        Broadcast(noise, AiEvent.Gunshot, except?.Soldier.Team ?? _context.PlayerTeam, HumanNoiseFilter, range, origin, (GameTask?)except?.Soldier ?? _context.PlayerTask, line);
         ReportNoise("gunshot", noise.Heard, range);
     }
 
@@ -79,7 +86,7 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
     /// <param name="origin">The explosion centre in engine units.</param>
     /// <param name="rangeUnits">The authored full-radius plus falloff envelope.</param>
     /// <remarks>
-    /// This is intentionally separate from <see cref="NotifyGunshot(Vector3d, double, SoldierView?)"/>. Retail registers and queues
+    /// This is intentionally separate from <see cref="NotifyGunshot(Vector3d, double, SoldierView?, Vector3f)"/>. Retail registers and queues
     /// <c>AIEVENT_EXPLOSION</c> (21), so an explosive object must not masquerade as a rifle shot.
     /// </remarks>
     public void NotifyExplosion(
@@ -103,10 +110,15 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
     /// <param name="impact">The selected nearest world contact.</param>
     /// <param name="shooterPosition">The player's live position for source-based script actions.</param>
     /// <param name="radiusInUnits">Five metres for a round; five or ten metres for a landing.</param>
+    /// <param name="flight">
+    /// A round's flight to where it struck, which another game's humans tell a round's impact from a landing by
+    /// (<see cref="HumanAiEvent.Direction"/>); nought for anything else.
+    /// </param>
     public void NotifyGroundImpact(
         Vector3d impact,
         Vector3d shooterPosition,
-        double radiusInUnits = Igi1HumanAi.GroundImpactRadiusInUnits)
+        double radiusInUnits = Igi1HumanAi.GroundImpactRadiusInUnits,
+        Vector3f flight = default)
     {
         Igi1Noise noise = new((view, brain) =>
         {
@@ -116,7 +128,7 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
             }
             return brain.ReceiveGroundImpact(impact, shooterPosition, radiusInUnits);
         });
-        Broadcast(noise, AiEvent.GroundImpact, _context.PlayerTeam, HumanNoiseFilter, radiusInUnits, impact, _context.PlayerTask);
+        Broadcast(noise, AiEvent.GroundImpact, _context.PlayerTeam, HumanNoiseFilter, radiusInUnits, impact, _context.PlayerTask, flight);
         ReportNoise("impact", noise.Heard, radiusInUnits);
     }
 
@@ -306,8 +318,9 @@ internal sealed class SoldierNoiseBroadcaster(SoldierContext context)
         Broadcast(noise, new HumanAiEvent(Type: -1, Team: -1, Flags: 0, Radius: 0f, Position: null, Source: null, Subject: null, Context: noise));
 
     // The broadcast of a record the way its sender posts it, which another game's humans read; this game's read the noise.
-    private void Broadcast(Igi1Noise noise, AiEvent type, int team, AiEventFilter filter, double radius, Vector3d position, GameTask? source) =>
-        Broadcast(noise, new HumanAiEvent((int)type, team, (int)filter, (float)radius, position, source, source, noise));
+    private void Broadcast(
+        Igi1Noise noise, AiEvent type, int team, AiEventFilter filter, double radius, Vector3d position, GameTask? source, Vector3f direction = default) =>
+        Broadcast(noise, new HumanAiEvent((int)type, team, (int)filter, (float)radius, position, source, source, noise, direction));
 
     private void Broadcast(Igi1Noise noise, in HumanAiEvent aiEvent) =>
         HumanAiEvents.Send(

@@ -29,7 +29,7 @@ public sealed class Igi2ForestCollider : IWorldCollider
     private readonly Vector3f[] _scales;
     private readonly float[][] _orientations;
     private readonly Igi2RigidObject _tree;
-    private readonly WorldLineTrace _scratch;
+    private WorldLineTrace _scratch;
     private readonly float _treeRadius;
     private readonly float _marginX;
     private readonly float _marginY;
@@ -182,6 +182,12 @@ public sealed class Igi2ForestCollider : IWorldCollider
         {
             Grow(trace.Starts[i]);
             Grow(trace.Ends[i]);
+        }
+
+        // As many lines as the trace has: a graph's cover is felt for with 128 at once.
+        if (_scratch.Starts.Length < trace.Count)
+        {
+            _scratch = new WorldLineTrace(trace.Count);
         }
 
         _scratch.Count = trace.Count;

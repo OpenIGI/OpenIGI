@@ -39,11 +39,14 @@ public static class Igi2BodyFrame
         }
 
         int weaponObject = 0;
+        int index = 0;
         foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(attachClip, pose.AttachTime, pose.Pose, heldModel))
         {
             Vector3f local = orientation.Transposed().Transform(part.Position);
             Vector3d at = new(human.Position.X + local.X, human.Position.Y + local.Y, human.Position.Z + local.Z);
-            models.Add(new TitleWorldModel(part.Model, at, orientation * part.Orientation)
+
+            // Named as the body's own part, so it is drawn between ticks with the hand that holds it.
+            models.Add(new TitleWorldModel(part.Model, at, orientation * part.Orientation, Instance: new AttachedPartKey(human, index++), Tick: tick)
             {
                 MuzzleFlashes = IsWeaponObject(part, heldModel) ? flashes?.Present(weaponObject++) : null,
             });
@@ -59,3 +62,8 @@ public static class Igi2BodyFrame
     internal static bool IsWeaponObject(Igi2AttachedPart part, string? heldModel) =>
         heldModel is not null && string.Equals(part.Model, heldModel, StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>One part a body's clips hang on it, the same from tick to tick.</summary>
+/// <param name="Body">The body.</param>
+/// <param name="Index">The part's place among the body's.</param>
+internal readonly record struct AttachedPartKey(Igi2Human Body, int Index);

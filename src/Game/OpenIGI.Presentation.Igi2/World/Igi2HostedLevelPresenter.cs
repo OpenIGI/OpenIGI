@@ -34,7 +34,7 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
 
     /// <inheritdoc/>
     public void Draw(in Camera3D camera, in Matrix4f projection, float blend) =>
-        _renderer.DrawWorld(_level.Models(), camera, projection);
+        _renderer.DrawWorld(_level.Models(), camera, projection, blend);
 
     /// <inheritdoc/>
     /// <remarks>The soldiers stand in the level's light like its own: they shadow the ground under them and the lamps.</remarks>

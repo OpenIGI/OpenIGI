@@ -1,10 +1,7 @@
-using OpenIGI.Scripting.Qvm;
-
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Scripting.Qvm;
 
 /// <summary>
-/// An expression in a synthetic level script: a literal, or a call whose arguments are themselves
-/// expressions.
+/// An expression in a script written in code: a literal, a symbol, or a call whose arguments are themselves expressions.
 /// </summary>
 /// <remarks>
 /// Level data is one deeply nested tree of <c>Task_New</c> calls, and the QVM encodes each argument as
@@ -27,6 +24,11 @@ public abstract class QvmExpression
     /// <param name="value">The value.</param>
     /// <returns>The expression.</returns>
     public static QvmExpression Text(string value) => new TextLiteral(value);
+
+    /// <summary>Creates a symbol's value: a constant or a variable the script's namespace resolves by name.</summary>
+    /// <param name="name">The symbol's script name.</param>
+    /// <returns>The expression.</returns>
+    public static QvmExpression Symbol(string name) => new SymbolValue(name);
 
     /// <summary>Creates a call.</summary>
     /// <param name="name">The native's script name.</param>
@@ -73,6 +75,14 @@ public abstract class QvmExpression
         return BuildProgram([.. statements]);
     }
 
+    /// <summary>Emits the expression's code into a writer, leaving its value on the stack.</summary>
+    /// <param name="writer">The writer.</param>
+    public void EmitTo(QvmWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        Emit(writer);
+    }
+
     internal abstract void Emit(QvmWriter writer);
 
     private sealed class IntLiteral(int value) : QvmExpression
@@ -83,6 +93,11 @@ public abstract class QvmExpression
     private sealed class RealLiteral(float value) : QvmExpression
     {
         internal override void Emit(QvmWriter writer) => writer.Code.PushF(value);
+    }
+
+    private sealed class SymbolValue(string name) : QvmExpression
+    {
+        internal override void Emit(QvmWriter writer) => writer.PushSymbol(name);
     }
 
     private sealed class TextLiteral(string value) : QvmExpression

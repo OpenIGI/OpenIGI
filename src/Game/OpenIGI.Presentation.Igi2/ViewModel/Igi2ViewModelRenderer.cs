@@ -9,11 +9,8 @@ using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation;
-using OpenIGI.Rendering;
-using OpenIGI.Game.Igi2;
-using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Presentation.Igi2.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi2.ViewModel;
 
@@ -51,6 +48,8 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     private readonly Dictionary<string, Part?> _parts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<object, Part?> _bodies = new(ReferenceEqualityComparer.Instance);
     private readonly List<Part> _skinBatch = [];
+    private readonly Dictionary<object, Track> _tracks = [];
+    private long _worldFrame;
     // The most skinning jobs at once.
     private const int SkinWorkers = 4;
 
@@ -178,7 +177,12 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     }
 
     /// <inheritdoc/>
-    public void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection)
+    /// <remarks>
+    /// A body is skinned once a tick, so the animated mesh's previous stream is the tick before's pose: drawn between the two
+    /// when the last two skins are a tick apart, and at the last alone when they are not -- a body that stood still, or was
+    /// out of view, has nothing to come from.
+    /// </remarks>
+    public void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f)
     {
         ArgumentNullException.ThrowIfNull(models);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -193,10 +197,13 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _device.SetMaterialOverride(SurfaceMaterial.Default);
         FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
         _flashMeshCursor = 0;
+        _worldFrame++;
+        float between = Math.Clamp(blend, 0f, 1f);
         PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
-            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(wanted.Position), wanted.Orientation);
+            (Vector3d at, Matrix3f orientation) = Placed(wanted, between);
+            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
             if (_models(wanted.Model) is not { } model || !WorldModelVisible(wanted, model, modelView, frustum))
             {
                 continue;
@@ -219,22 +226,90 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                 }
 
                 part.Tick = wanted.Tick;
+                PoseBetween(part, wanted.Tick, between);
             }
             else
             {
                 part = Resolve(wanted.Model, skinned: false);
+                _device.ClearPoseInterpolation();
             }
 
             if (part is not null)
             {
-                DrawPart(part, modelView, wanted.Orientation);
-                QueueFlashes(wanted.MuzzleFlashes, wanted.Model, wanted.Position, wanted.Orientation);
+                DrawPart(part, modelView, orientation);
+                QueueFlashes(wanted.MuzzleFlashes, wanted.Model, at, orientation);
             }
         }
 
+        _device.ClearPoseInterpolation();
+        ForgetUnseenTracks();
         DrawQueuedFlashes(camera, firstPerson: false);
         _device.SetVertexSun(Vector3f.Zero);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+    }
+
+    // Where a model is drawn this frame: between where it was a tick ago and where it is, when the title names it.
+    private (Vector3d At, Matrix3f Orientation) Placed(TitleWorldModel wanted, float blend)
+    {
+        if (wanted.Instance is not { } instance)
+        {
+            return (wanted.Position, wanted.Orientation);
+        }
+
+        if (!_tracks.TryGetValue(instance, out Track? track))
+        {
+            track = new Track();
+            _tracks[instance] = track;
+        }
+
+        if (track.Tick != wanted.Tick)
+        {
+            bool next = track.Tick == wanted.Tick - 1;
+            track.From = next ? track.To : wanted.Position;
+            track.FromOrientation = next ? track.ToOrientation : wanted.Orientation;
+            track.To = wanted.Position;
+            track.ToOrientation = wanted.Orientation;
+            track.Tick = wanted.Tick;
+        }
+        else
+        {
+            // Drawn again within its tick, as it is now: the tick's latest state is where it goes, from where it was.
+            track.To = wanted.Position;
+            track.ToOrientation = wanted.Orientation;
+        }
+
+        track.SeenFrame = _worldFrame;
+        if (blend >= 1f || (track.From == track.To && track.FromOrientation == track.ToOrientation))
+        {
+            return (track.To, track.ToOrientation);
+        }
+
+        return (Vector3d.Lerp(track.From, track.To, blend), Interpolation.InterpolateRotation(track.FromOrientation, track.ToOrientation, blend));
+    }
+
+    // A body drawn between its last two skins when they are a tick apart; the blend last frame drew with is the frame's motion.
+    private void PoseBetween(Part part, long tick, float blend)
+    {
+        bool between = blend < 1f && part.SkinTick == tick && part.PreviousSkinTick == tick - 1;
+        float poseBlend = between ? 1f - blend : 0f;
+        float previous = part.LastDrawnSkinTick == part.SkinTick ? part.LastPoseBlend : 1f;
+        part.LastPoseBlend = poseBlend;
+        part.LastDrawnSkinTick = part.SkinTick;
+        _device.SetPoseInterpolation(poseBlend, between ? previous : 0f);
+    }
+
+    // A model no longer drawn for a while is forgotten, so the history holds only what the world still shows.
+    private void ForgetUnseenTracks()
+    {
+        if (_worldFrame % 300 != 0)
+        {
+            return;
+        }
+
+        foreach (object stale in _tracks.Where(entry => _worldFrame - entry.Value.SeenFrame > 300).Select(static entry => entry.Key).ToArray())
+        {
+            _tracks.Remove(stale);
+        }
     }
 
     private static bool WorldModelVisible(TitleWorldModel wanted, MefModel model, in Matrix4f modelView, in FrustumCulling.Frustum frustum)
@@ -388,7 +463,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             try
             {
                 if (part.SkinError is { } error) { throw error; }
-                UploadSkin(part, part.PendingPose!);
+                UploadSkin(part, part.PendingPose!, part.PendingTick);
                 part.Tick = part.PendingTick;
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
@@ -419,19 +494,21 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         }
     }
 
-    private void UploadSkin(Part part, BonePose pose)
+    private void UploadSkin(Part part, BonePose pose, long tick)
     {
         if (part.Mesh.IsValid) { _device.UpdateAnimatedMesh(part.Mesh, part.Vertices); }
         else { part.Mesh = _device.CreateAnimatedMesh(part.Vertices, part.Geometry.Indices); }
         part.SkinnedPose = pose;
+        part.PreviousSkinTick = part.SkinTick;
+        part.SkinTick = tick;
     }
 
-    private bool Reskin(Part part, BonePose pose, string model, Action drop)
+    private bool Reskin(Part part, BonePose pose, string model, Action drop, long tick = long.MinValue)
     {
         try
         {
             part.Skin!.Skin(pose, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
-            UploadSkin(part, pose);
+            UploadSkin(part, pose, tick);
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
@@ -493,5 +570,31 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         public long PendingTick { get; set; }
 
         public ArgumentException? SkinError { get; set; }
+
+        // The ticks of the last two poses uploaded: the previous vertex stream is the earlier's.
+        public long SkinTick { get; set; } = long.MinValue;
+
+        public long PreviousSkinTick { get; set; } = long.MinValue;
+
+        // The blend the last frame drew with, and the skin it drew, for the frame's pose motion.
+        public float LastPoseBlend { get; set; }
+
+        public long LastDrawnSkinTick { get; set; } = long.MinValue;
+    }
+
+    // Where one named model was a tick ago and where it is, to be drawn between.
+    private sealed class Track
+    {
+        public long Tick { get; set; } = long.MinValue;
+
+        public Vector3d From { get; set; }
+
+        public Vector3d To { get; set; }
+
+        public Matrix3f FromOrientation { get; set; }
+
+        public Matrix3f ToOrientation { get; set; }
+
+        public long SeenFrame { get; set; }
     }
 }

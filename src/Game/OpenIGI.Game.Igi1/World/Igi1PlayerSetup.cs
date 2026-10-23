@@ -1,15 +1,11 @@
-using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.World;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Formats.World;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -658,7 +654,12 @@ public sealed class Igi1PlayerSetup(
 
             return found;
         };
-        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(impact, candidate.Body.Position);
+        // A round's impact, which another game's humans tell from a landing by its flight from the eye.
+        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(
+            impact,
+            candidate.Body.Position,
+            flight: new Vector3f(
+                (float)(impact.X - candidate.Body.Eye.X), (float)(impact.Y - candidate.Body.Eye.Y), (float)(impact.Z - candidate.Body.Eye.Z)));
         candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
             noise, candidate.Body.Position, candidate.Body.Position);
 

@@ -36,6 +36,12 @@ public sealed class Igi2HostMissionDevice : IFileDevice
     /// <inheritdoc/>
     public string Name => DeviceName;
 
+    /// <summary>
+    /// Gets the scripts written for soldiers of the host's own, by their minds' ids (<see cref="Igi2SoldierScript"/>), which a
+    /// soldier reads in place of the generic one.
+    /// </summary>
+    public IDictionary<int, byte[]> SoldierScripts { get; } = new Dictionary<int, byte[]>();
+
     /// <inheritdoc/>
     public bool Exists(string path) => Script(path) is not null || _mission.Exists(path);
 
@@ -57,7 +63,8 @@ public sealed class Igi2HostMissionDevice : IFileDevice
     /// <inheritdoc/>
     public IEnumerable<string> EnumerateDirectories(string path) => _mission.EnumerateDirectories(path);
 
-    // The generic script a path names: a soldier's AI/<id>.qvm or a squad's AI/Squad_<id>.qvm.
+    // The script a path names: a soldier's AI/<id>.qvm, its own where one was written, else the generic one; or a squad's
+    // AI/Squad_<id>.qvm.
     private byte[]? Script(string path)
     {
         string normal = ResourcePath.Normalize(path).TrimStart(ResourcePath.DirectorySeparator);
@@ -73,6 +80,6 @@ public sealed class Igi2HostMissionDevice : IFileDevice
             return int.TryParse(stem[6..], out _) ? _scripts.Squad : null;
         }
 
-        return int.TryParse(stem, out _) ? _scripts.Soldier : null;
+        return int.TryParse(stem, out int id) ? SoldierScripts.TryGetValue(id, out byte[]? own) ? own : _scripts.Soldier : null;
     }
 }

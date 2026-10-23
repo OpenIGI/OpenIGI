@@ -47,6 +47,17 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
     /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
     public void ActivateTask(int taskId) => _activatedTasks.Add(taskId);
 
+    /// <summary>
+    /// Uses a task as one of the level's guards uses it on reaching it: published to the alarm and activation conditions, and
+    /// passed to what the activation reaches in the live world (<see cref="TaskActivator"/>), a switch pressed among them.
+    /// </summary>
+    /// <param name="taskId">The task's id.</param>
+    public void ActivateAsGuard(int taskId)
+    {
+        _activatedTasks.Add(taskId);
+        TaskActivator?.Invoke(taskId);
+    }
+
     /// <summary>Forgets the tasks pressed so far, for a new level.</summary>
     public void ClearActivations() => _activatedTasks.Clear();
 

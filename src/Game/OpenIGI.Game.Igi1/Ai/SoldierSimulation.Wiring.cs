@@ -93,6 +93,11 @@ public sealed partial class SoldierSimulation
     /// <remarks>Used by placed security cameras, whose alarm loop follows the mission-wide alarm state.</remarks>
     public bool AnyAlarmOn => AlarmControls?.AnyOn ?? false;
 
+    /// <summary>Gets whether one alarm control's alarm is sounding this tick.</summary>
+    /// <param name="controlId">The control's task id.</param>
+    /// <returns>Whether it is on; an id that names no control is off.</returns>
+    public bool IsAlarmOn(int controlId) => AlarmControls?.IsOn(controlId) ?? false;
+
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
     public CutsceneRuntime? Cutscenes { get => _context.Cutscenes; set => _context.Cutscenes = value; }
 
@@ -283,6 +288,9 @@ public sealed partial class SoldierSimulation
     /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
     public void ActivateTask(int taskId) => _brains.ActivateTask(taskId);
 
+    /// <inheritdoc cref="SoldierBrainBinder.ActivateAsGuard"/>
+    public void ActivateAsGuard(int taskId) => _brains.ActivateAsGuard(taskId);
+
     /// <summary>Connects an AI's input-channel activation to the live world interaction task.</summary>
     public void SetAiTaskActivator(Action<int>? activator) => _brains.TaskActivator = activator;
 
@@ -417,9 +425,9 @@ public sealed partial class SoldierSimulation
     public void NotifyGunshot(Vector3d origin, bool silenced, SoldierView? except = null) =>
         _noise.NotifyGunshot(origin, silenced, except);
 
-    /// <inheritdoc cref="SoldierNoiseBroadcaster.NotifyGunshot(Vector3d, double, SoldierView)"/>
-    public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null) =>
-        _noise.NotifyGunshot(origin, range, except);
+    /// <inheritdoc cref="SoldierNoiseBroadcaster.NotifyGunshot(Vector3d, double, SoldierView, Vector3f)"/>
+    public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null, Vector3f line = default) =>
+        _noise.NotifyGunshot(origin, range, except, line);
 
     /// <inheritdoc cref="SoldierNoiseBroadcaster.NotifyExplosion"/>
     public void NotifyExplosion(Vector3d origin, double rangeUnits = Igi1HumanAi.FlashbangEventRadiusInUnits) =>
@@ -429,8 +437,9 @@ public sealed partial class SoldierSimulation
     public void NotifyGroundImpact(
         Vector3d impact,
         Vector3d shooterPosition,
-        double radiusInUnits = Igi1HumanAi.GroundImpactRadiusInUnits) =>
-        _noise.NotifyGroundImpact(impact, shooterPosition, radiusInUnits);
+        double radiusInUnits = Igi1HumanAi.GroundImpactRadiusInUnits,
+        Vector3f flight = default) =>
+        _noise.NotifyGroundImpact(impact, shooterPosition, radiusInUnits, flight);
 
     /// <inheritdoc cref="SoldierNoiseBroadcaster.NotifyWalk"/>
     public void NotifyWalk(Vector3d step, Vector3d walkerPosition, double radiusUnits) =>

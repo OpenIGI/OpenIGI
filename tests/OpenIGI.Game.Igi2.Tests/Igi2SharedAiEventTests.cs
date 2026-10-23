@@ -45,6 +45,45 @@ public sealed class Igi2SharedAiEventTests
         Assert.Equal(0, step.Team);
     }
 
+    [Fact]
+    public void Another_games_gunshot_is_the_shot_this_games_guns_raise_along_its_line_of_fire()
+    {
+        HumanPlayerTask shooter = new() { Team = 0 };
+        Vector3f line = new(0f, 409600f, 0f);
+        HumanAiEvent loud = Event((int)AiEvent.Gunshot, 0x46, shooter) with { Radius = 122880f, Direction = line };
+
+        IReadOnlyList<Igi2AiEvent> heard = Igi2AiEvent.FromShared(loud);
+
+        Assert.Equal([39, 15, 23], heard.Select(static e => e.Event));
+        Assert.Equal([0x2C2, 0x442, 0x522], heard.Select(static e => e.Flags));
+        Assert.Equal([614400f, 122880f, 122880f], heard.Select(static e => e.Radius));
+        Assert.All(heard, e =>
+        {
+            Assert.Equal(line, e.Direction);
+            Assert.Same(shooter, e.Originator);
+            Assert.Equal(0, e.Team);
+        });
+
+        // A silenced gun's is not loud: no one sees it from afar.
+        Assert.Equal([15, 23], Igi2AiEvent.FromShared(loud with { Radius = 4096f }).Select(static e => e.Event));
+    }
+
+    [Fact]
+    public void A_round_striking_the_ground_is_this_games_bullet_strike_and_a_landing_its_ground_impact()
+    {
+        HumanPlayerTask shooter = new() { Team = 0 };
+        HumanAiEvent round = Event((int)AiEvent.GroundImpact, 0x46, shooter) with { Direction = new Vector3f(0f, 4096f, -512f) };
+
+        Igi2AiEvent strike = Assert.Single(Igi2AiEvent.FromShared(round));
+        Assert.Equal(42, strike.Event);
+        Assert.Equal(0x402, strike.Flags);
+        Assert.Equal(40960f, strike.Radius);
+        Assert.Equal(new Vector3f(0f, -4096f, 512f), strike.Direction);
+
+        Igi2AiEvent landing = Assert.Single(Igi2AiEvent.FromShared(round with { Direction = default }));
+        Assert.Equal(10, landing.Event);
+    }
+
     private static HumanAiEvent Event(int type, int flags, HumanTask? human) =>
         new(type, human?.Team ?? -1, flags, 20480f, new Vector3d(1, 2, 3), human, human, new object());
 }

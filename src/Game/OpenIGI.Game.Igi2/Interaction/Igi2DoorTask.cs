@@ -32,7 +32,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached
+public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached, IAiDoor
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Door";
@@ -338,6 +338,16 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         _isOpenDoor ^= 1;
         _isOpenDoorChanged = 1;
     }
+
+    /// <inheritdoc/>
+    /// <remarks>Where it is now, which <c>Door_AIFindActivateHandler</c> answers with.</remarks>
+    Vector3d IAiDoor.DoorPosition => CurrentPosition;
+
+    /// <inheritdoc/>
+    int IAiDoor.UseState => Status;
+
+    /// <inheritdoc/>
+    void IAiDoor.OpenForSoldier() => ToggleOpenBySoldier();
 
     /// <summary>Holds the door where it is for some ticks, as a soldier on its way does (<c>Door+0x3A0</c>).</summary>
     /// <param name="ticks">The ticks.</param>

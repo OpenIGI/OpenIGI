@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai;
@@ -7,6 +8,7 @@ using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.ViewModel;
+using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -37,6 +39,7 @@ public sealed class Igi2HostedLevel
     private readonly Dictionary<HumanTask, Igi2AiSquadTask> _squads = [];
     private readonly Dictionary<HumanTask, Igi2HumanSoldier> _standIns = [];
     private readonly Dictionary<HumanTask, bool> _inWorld = [];
+    private readonly HashSet<Igi2AiSquadTask> _squadsRun = [];
     private readonly List<Action> _eachTick = [];
     private readonly List<Action> _onLeave = [];
     private TitleWorldModel[] _drawn = [];
@@ -76,6 +79,18 @@ public sealed class Igi2HostedLevel
 
     /// <summary>Gets how the soldiers see the host's player, or <see langword="null"/> where they see it at a cone's full length.</summary>
     public Igi2HostPlayerVisibility? Visibility { get; }
+
+    /// <summary>Gets the weapons the soldiers have dropped, lying where they fell, or <see langword="null"/> without weapon tables.</summary>
+    public Pickups.Igi2PickupList? Pickups { get; init; }
+
+    /// <summary>Gets the soldiers' grenades and missiles in flight, or <see langword="null"/> without physics types.</summary>
+    public Igi2Grenades? Grenades { get; init; }
+
+    /// <summary>Gets the host's alarms the level holds controls for (<see cref="Igi2GuestLevel.AddAlarm"/>), run each tick.</summary>
+    public IReadOnlyList<Interaction.Igi2AlarmControlTask> Alarms { get; init; } = [];
+
+    /// <summary>Gets the casings the soldiers' weapons have thrown.</summary>
+    public Igi2GunCasings? Casings { get; init; }
 
     /// <summary>Gets each host human, and the I.G.I. 2 soldier that stands for it.</summary>
     public IReadOnlyDictionary<HumanTask, Igi2HumanSoldier> HandedOver => _standIns;
@@ -166,19 +181,32 @@ public sealed class Igi2HostedLevel
     }
 
     /// <summary>
-    /// Has the host level's walk run the soldiers: each squad where the walk reaches the human its soldier stands for, so the
-    /// containers that held the host's human hold the soldier, and the level's tick finished as the walk's ends.
+    /// Has the host level's walk run the soldiers: each squad where the walk first reaches a human one of its soldiers stands
+    /// for, so the containers that held the host's humans hold the squad, and the level's tick finished as the walk's ends.
     /// </summary>
     /// <param name="walk">The host level's walk.</param>
+    /// <remarks>
+    /// A squad runs its soldiers as it runs (<c>AISquad_RunHandler</c>), so a squad of several runs once a tick, however many
+    /// of its soldiers' humans the walk reaches.
+    /// </remarks>
     public void BindTo(LevelRun walk)
     {
         ArgumentNullException.ThrowIfNull(walk);
         foreach (HumanTask host in _squads.Keys)
         {
-            walk.Bind(host, () => _run.Run(_squads[host]));
+            walk.Bind(host, () => RunSquadOnce(_squads[host]));
         }
 
         walk.AddTickEnd(EndTick);
+    }
+
+    // A squad's run, once a tick.
+    private void RunSquadOnce(Igi2AiSquadTask squad)
+    {
+        if (_squadsRun.Add(squad))
+        {
+            _run.Run(squad);
+        }
     }
 
     /// <summary>Runs the level a tick on its own: every squad and its soldier, then each soldier's body and mind.</summary>
@@ -188,17 +216,35 @@ public sealed class Igi2HostedLevel
         Finish();
     }
 
-    /// <summary>Gets the models the soldiers in the world draw as of the last tick: each body posed, its weapon in hand.</summary>
+    /// <summary>
+    /// Gets the models the level draws as of the last tick: the weapons lying where soldiers dropped them, the grenades and
+    /// missiles in flight, each soldier in the world posed with its weapon in hand, and the casings.
+    /// </summary>
     /// <returns>The models.</returns>
     /// <remarks>
-    /// As <see cref="Igi2Soldiers.Models"/> builds them, for the soldiers whose host humans are in the world: one a container holds
-    /// out of it is not there to be seen.
+    /// As I.G.I. 2's own level draws them (<c>Igi2TitlePlayer.WorldModels</c>), for the soldiers whose host humans are in the
+    /// world: one a container holds out of it is not there to be seen.
     /// </remarks>
     public IReadOnlyList<TitleWorldModel> Models()
     {
         if (_drawnTick != Ticks)
         {
             List<TitleWorldModel> models = [];
+            if (Pickups is { } lying)
+            {
+                models.AddRange(lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation))));
+            }
+
+            if (Grenades is { } grenades)
+            {
+                models.AddRange(grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation))));
+                models.AddRange(grenades.Dynamic.Tasks.OfType<Igi2ImpactGrenade>()
+                    .Where(static g => g.Parameters.Model.Length != 0)
+                    .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))));
+                models.AddRange(grenades.Dynamic.Tasks.OfType<Igi2Missile>()
+                    .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))));
+            }
+
             foreach ((HumanTask host, Igi2HumanSoldier body) in _standIns)
             {
                 if (_inWorld.GetValueOrDefault(host) && body.Model is { } model)
@@ -211,6 +257,11 @@ public sealed class Igi2HostedLevel
                         Ticks,
                         body.Weapon.Firing?.Flashes));
                 }
+            }
+
+            if (Casings is { } casings)
+            {
+                models.AddRange(casings.Models());
             }
 
             _drawn = [.. models];
@@ -238,6 +289,7 @@ public sealed class Igi2HostedLevel
     private void EndTick()
     {
         _run.EndHostedTick();
+        _squadsRun.Clear();
         Finish();
     }
 
@@ -258,6 +310,12 @@ public sealed class Igi2HostedLevel
 
     private void Finish()
     {
+        // The host's alarms, as the level's own controls run in its walk: each tells the soldiers as it starts and stops.
+        foreach (Interaction.Igi2AlarmControlTask alarm in Alarms)
+        {
+            _run.Run(alarm);
+        }
+
         foreach (Action action in _eachTick)
         {
             action();
@@ -270,6 +328,9 @@ public sealed class Igi2HostedLevel
 
         // The soldiers' sounds run once a tick after the level, as the game's own do: each follows what it hangs off, and one
         // that has ended is let go.
+        // The weapons lying about, as the player's delayed pass steps them, and the casings once the level has run.
+        Pickups?.Run();
+        Casings?.Run();
         _sounds.Run();
         Ticks++;
 
@@ -323,6 +384,9 @@ public sealed class Igi2HostedLevel
             level.Wear(template, lives[_current].Squad, lives[_current].Body);
         }
     }
+
+    // Nine floats row by row as a matrix.
+    private static Matrix3f Rows(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
     // A soldier as a blast finds it: only while it is in the world.
     private sealed class InWorld(Igi2HumanSoldierTask soldier) : IExplosionHitTarget

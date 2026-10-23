@@ -1,9 +1,8 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Interaction;
-using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Ai.Runtime;
 
@@ -706,7 +705,7 @@ public sealed partial class Igi2HumanAi
                     break;
                 }
 
-                if (World.DoorNearest(head.Position) is { } blown)
+                if (World.DoorNearest(head.Position) is Igi2DoorTask blown)
                 {
                     blown.HoldOpen(300);
                 }
@@ -753,13 +752,15 @@ public sealed partial class Igi2HumanAi
             IsDoorTriggered = true;
         }
 
-        if (Door is not Igi2DoorTask door)
+        if (Door is not IAiDoor door)
         {
             return null;
         }
 
-        int status = door.Status;
-        if (door.StopOnCollision && door.HoldTimer != 0 && status != 0)
+        // A host's door is opened alike; only this game's own jam against what is in the way, and are held.
+        Igi2DoorTask? own = door as Igi2DoorTask;
+        int status = door.UseState;
+        if (own is { StopOnCollision: true, HoldTimer: not 0 } && status != 0)
         {
             if (_movementQueue.Count > 1 && World.Player is { } player
                 && Igi2AiMath.Distance(player.Position, Soldier.Position) < 12288f)
@@ -775,14 +776,14 @@ public sealed partial class Igi2HumanAi
 
         switch (status)
         {
-            case 0:
-                door.HoldOpen(300);
+            case IAiDoor.Open:
+                own?.HoldOpen(300);
                 return null;
-            case 1 or 3:
-                door.ToggleOpenBySoldier();
+            case IAiDoor.Closed or IAiDoor.Closing:
+                door.OpenForSoldier();
                 FacePositionSelectSpeed(head.Position, (float)RollWindow, level: true);
                 return 1;
-            case 2:
+            case IAiDoor.Opening:
                 FacePositionSelectSpeed(head.Position, (float)RollWindow, level: true);
                 return 1;
             default:
