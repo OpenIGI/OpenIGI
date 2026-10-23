@@ -530,6 +530,10 @@
     {
       "id": "ModDisplay",
       "source": "Post/ModDisplay.slang"
+    },
+    {
+      "id": "HudFx",
+      "source": "Ui/HudFx.slang"
     }
   ]
 }

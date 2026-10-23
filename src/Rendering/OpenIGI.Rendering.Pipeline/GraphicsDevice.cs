@@ -346,6 +346,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _frameDrawn = false;
 
+        // A heads-up display layer left open is laid down plain rather than lost, and the next frame starts without it.
+        if (_hudActive)
+        {
+            ComposeHudLayer(HudFxSettings.None);
+        }
+
         _sprites.EndFrame();
 
         // The interface layer over the picture, where they were drawn apart; the capture and the present
@@ -570,6 +576,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _inFrame = true;
+        EndHudLayer();
         ReleaseWorldIfAsked();
 
         // A frame's depth buffer starts empty. The interface has a ClearDepth, and the game does not

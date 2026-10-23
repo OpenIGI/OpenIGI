@@ -30,7 +30,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// a separate screen and remains owned by <see cref="MapComputerRenderer"/>.
 /// </para>
 /// </remarks>
-internal sealed class StatusScreenRenderer : IHudPresenter
+internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation.Hud.Remastered.IHudIconSource
 {
     private const string LogCategory = "Hud";
 
@@ -316,7 +316,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     /// <remarks>
     /// This is the original call order: <c>Human::StatusDisplay</c> adds health after the weapon handler,
     /// <c>HumanPlayer</c> adds the held-action progress bar, then <c>StatusScreen::Render</c> adds the timer.
-    /// Keeping it separate from <see cref="Draw"/> also lets health and progress remain visible while a
+    /// Keeping it separate from <see cref="Draw(SpriteBatch, WeaponType?, int, int, int, int, int, int, int)"/> also lets health and progress remain visible while a
     /// full-body interaction has hidden the first-person weapon.
     /// </remarks>
     public void DrawPlayerStatus(
@@ -480,7 +480,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     // eighteen sprites. The names are the archive's own; matching on the weapon's script id is this
     // port's shortcut for the original's hard-coded case labels, and it gives the same answer for every
     // shipped weapon.
-    private static string IconFor(WeaponType weapon) => weapon.ScriptId switch
+    internal static string IconFor(WeaponType weapon) => weapon.ScriptId switch
     {
         "WEAPON_ID_AK47" => "ak47.spr",
         "WEAPON_ID_BINOCULARS" => "binoculars.spr",
@@ -708,6 +708,31 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     }
 
     private SpriteResource? Sprite(string name) => _resources.Sprite(name);
+
+    /// <inheritdoc/>
+    /// <remarks>The status archive's own sprites, which the remastered display draws as Project I.G.I.'s pictures.</remarks>
+    public bool TryMeasure(OpenIGI.Presentation.Hud.Remastered.HudIcon icon, out float width, out float height)
+    {
+        if (icon.IsSome && Sprite(icon.Name) is { Asset.Frames.Count: > 0 } sprite)
+        {
+            width = sprite.Asset.Frames[0].Width;
+            height = sprite.Asset.Frames[0].Height;
+            return true;
+        }
+
+        width = 0f;
+        height = 0f;
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public void Draw(SpriteBatch batch, OpenIGI.Presentation.Hud.Remastered.HudIcon icon, float x, float y, float scale, Bgra32 colour)
+    {
+        if (icon.IsSome && Sprite(icon.Name) is { Asset.Frames.Count: > 0 } sprite)
+        {
+            sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, scale, scale, colour);
+        }
+    }
 
     // Only the global sprite archive, under a key of its own: binoculars.spr names both the HUD icon in
     // status.res and the device frame in the global archive, and the overlay wants the frame.

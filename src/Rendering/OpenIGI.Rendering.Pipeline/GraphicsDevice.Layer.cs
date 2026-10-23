@@ -43,7 +43,11 @@ public sealed partial class GraphicsDevice
     private bool DrawsIntoLayer => _layered;
 
     /// <summary>Gets the image the next 2D draw lands in: the interface layer, or the back buffer.</summary>
-    private IRhiTextureView FrameDrawTarget => _layered && _interfaceLayer is { } layer ? layer.View : _frame.Target;
+    /// <remarks>The remastered heads-up display's own layer comes first while it is open (<see cref="BeginHudLayer"/>).</remarks>
+    private IRhiTextureView FrameDrawTarget =>
+        _hudActive && _hudLayer is { } hud ? hud.View
+        : _layered && _interfaceLayer is { } layer ? layer.View
+        : _frame.Target;
 
     /// <summary>Gets the image the frame's picture is read from by a copy: the picture's own, or the back buffer.</summary>
     private IRhiTexture FrameColourSource => _layered && _display is { } display ? display : _frame.Target.Texture;
@@ -166,6 +170,8 @@ public sealed partial class GraphicsDevice
     /// <summary>Ends the frame's layering, whether or not it was composed.</summary>
     private void EndLayers()
     {
+        _hudActive = false;
+        _hudClearPending = false;
         _layered = false;
         _layerClearPending = false;
         _sprites.DrawsIntoLayer = false;
@@ -179,5 +185,6 @@ public sealed partial class GraphicsDevice
         _displayResolve?.Dispose();
         _display?.Dispose();
         _interfaceLayer?.Dispose();
+        DisposeHudLayer();
     }
 }

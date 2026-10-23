@@ -16,8 +16,9 @@
           Link="Assets\weather\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
 
-    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
-          Link="Assets\fonts\Barlow-Regular.ttf"
+    <!-- The interface's four faces, which the remastered display draws its text in. -->
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf;..\..\apps\OpenIGI.Composition\Assets\fonts\BarlowCondensed-SemiBold.ttf;..\..\apps\OpenIGI.Composition\Assets\fonts\BarlowCondensed-Bold.ttf;..\..\apps\OpenIGI.Composition\Assets\fonts\JetBrainsMono-Regular.ttf"
+          Link="Assets\fonts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

@@ -38,15 +38,27 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
 
         DrawCutsceneFraming(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawZoomOverlay(batch, title, width, height); }
-        DrawMessages(batch, title, width, height);
-        if (!title.IsCutscenePlaying && !title.Human.IsDead)
+        // The remastered display in place of the status display, inventory, action row and messages, where it is chosen.
+        bool remastered = RemasteredChosen;
+        if (remastered)
         {
-            DrawStatus(batch, title, width, height);
-            DrawInventory(batch, title);
-            DrawInteraction(batch, title.Human, width, height);
+            DrawRemastered(batch, title, screenWidth, screenHeight, requestedScale);
         }
+        else
+        {
+            DrawMessages(batch, title, width, height);
+            if (!title.IsCutscenePlaying && !title.Human.IsDead)
+            {
+                DrawStatus(batch, title, width, height);
+                DrawInventory(batch, title);
+                DrawInteraction(batch, title.Human, width, height);
+            }
+        }
+
         DrawSight(batch, title, screenWidth, screenHeight);
-        if (!title.IsCutscenePlaying) { DrawEffects(batch, title.Human, screenWidth, screenHeight); }
+
+        // Through the visor the hit washes the corners itself; otherwise the original's red corners.
+        if (!title.IsCutscenePlaying) { DrawEffects(batch, title.Human, screenWidth, screenHeight, damage: !(remastered && HudCVars.HudFx.Value)); }
     }
 
     private static void DrawSight(SpriteBatch batch, Igi2TitlePlayer title, int screenWidth, int screenHeight)

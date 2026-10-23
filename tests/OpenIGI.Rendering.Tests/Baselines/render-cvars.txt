@@ -79,6 +79,11 @@ r_gi_temporal_frames	8	archive
 r_glass_reflection	1	archive
 r_grain	0	archive
 r_hdr	1	archive
+r_hud_density	contextual	archive
+r_hud_fx	1	archive
+r_hud_fx_intensity	1	archive
+r_hud_sway	1	archive
+r_hud_threat	1	archive
 r_impact_effects	1	archive
 r_impact_particles	1	archive
 r_interaction_prompt	1	archive
@@ -181,4 +186,5 @@ r_white_point	1.1	archive
 r_window_mode	borderless	archive
 r_world_briefing	1	archive
 r_world_cull	0	archive
+r_world_objective	1	archive
 r_world_occlusion	1	archive

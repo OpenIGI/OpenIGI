@@ -46,7 +46,8 @@ public sealed partial class GraphicsDevice
 
         // The interface layer starts each frame transparent: it holds only what is drawn into it, and the
         // end of the frame lays it over the picture by its coverage.
-        bool clearLayer = DrawsIntoLayer && _layerClearPending;
+        // The heads-up display's own layer likewise, while it is open (BeginHudLayer).
+        bool clearLayer = _hudActive ? _hudClearPending : DrawsIntoLayer && _layerClearPending;
 
         _pass = encoder.BeginRenderPass(new RhiRenderPassDescriptor(
             [
@@ -72,7 +73,14 @@ public sealed partial class GraphicsDevice
 
         _clearPending = false;
         _clearDepthPending = false;
-        _layerClearPending = false;
+        if (_hudActive)
+        {
+            _hudClearPending = false;
+        }
+        else
+        {
+            _layerClearPending = false;
+        }
 
         ApplyViewport(_pass);
         return _pass;

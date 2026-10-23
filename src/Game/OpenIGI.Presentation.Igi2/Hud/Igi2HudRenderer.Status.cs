@@ -61,6 +61,8 @@ public sealed partial class Igi2HudRenderer
     /// <inheritdoc/>
     public void Dispose()
     {
+        _remastered?.Dispose();
+        _remastered = null;
         _font = null;
         _textFont = null;
         if (_bandStripes != TextureHandle.None) { _device.DestroyTexture(_bandStripes); _bandStripes = TextureHandle.None; }
@@ -70,12 +72,12 @@ public sealed partial class Igi2HudRenderer
         _assets = null;
     }
 
-    private static void DrawEffects(SpriteBatch batch, Igi2HumanPlayer human, int width, int height)
+    private static void DrawEffects(SpriteBatch batch, Igi2HumanPlayer human, int width, int height, bool damage = true)
     {
         if (human.CameraMode != 1) { return; }
         // humanplayer.c HumanPlayer_DrawDamageFlash: four independently fading corner opacities.
         IReadOnlyList<float> flash = human.DamageFlash;
-        if (flash[0] != 0f || flash[1] != 0f || flash[2] != 0f || flash[3] != 0f)
+        if (damage && (flash[0] != 0f || flash[1] != 0f || flash[2] != 0f || flash[3] != 0f))
         {
             Bgra32 Corner(int i) => Bgra32.FromRgba(255, 0, 0, Channel(flash[i]));
             batch.DrawQuad(TextureHandle.None, new Vertex2D(0f, 0f, 0f, 0f, Corner(0)),

@@ -1,6 +1,10 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Presentation.Hud.Remastered;
+using OpenIGI.Presentation.Igi1.Hud;
+using OpenIGI.Presentation.Igi1.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -13,6 +17,8 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
 {
     private readonly IGraphicsDevice _device = device;
     private readonly Igi1Gameplay _gameplay = gameplay;
+    private readonly HudModel _model = new();
+    private RemasteredHud? _remastered;
 
     /// <inheritdoc/>
     public void DrawWeaponHud(SpriteBatch batch, in MissionHudFrame frame)
@@ -248,31 +254,32 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         batch.End();
     }
 
+    // The remastered display, shared with I.G.I. 2's and drawn in Project I.G.I.'s theme, its pictures the status archive's.
     if (frame.RemasterHud
         && frame.ShowFirstPersonHud
-        && mission.Player is { Weapons: { } modernCarried }
-        && !mission.Player.IsBinocularsOpen
-        && frame.RemasteredHud is { IsReady: true } modernHud)
+        && mission.Player is { } modernPlayer
+        && !modernPlayer.IsBinocularsOpen
+        && frame.Hud is IHudIconSource icons
+        && (_remastered ??= CreateRemastered()).IsReady)
     {
-        CarriedWeapon? inHand = modernCarried.InHand;
+        Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model);
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        modernHud.Draw(
-            batch,
-            new RemasteredHudSnapshot(
-                mission.PlayerHealth.RemainingFraction,
-                mission.Player.Yaw,
-                inHand?.Weapon,
-                inHand?.Gun.RoundsInClip ?? 0,
-                inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
-                modernCarried.State,
-                mission.Player.ActionSprite,
-                mission.Objectives?.Objectives ?? [],
-                mission.Player.IsSniperScoped,
-                frame.WorldInteractionPrompt),
-            frame.Width,
-            frame.Height);
+        HudProjector? projector = modernPlayer.View is { } view
+            ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, view.TanX, frame.Width, frame.Height)
+            : null;
+        _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 8f) with
+        {
+            Projector = projector,
+        });
         batch.End();
     }
+    }
+
+    private RemasteredHud CreateRemastered()
+    {
+        RemasteredHud hud = new(_device, NullLogger.Instance);
+        hud.Load();
+        return hud;
     }
 }

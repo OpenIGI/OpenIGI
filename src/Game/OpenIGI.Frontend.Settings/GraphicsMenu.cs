@@ -452,6 +452,33 @@ public static class GraphicsMenu
             "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "
                 + "the original's."),
         new GraphicsSetting(
+            "r_hud_density",
+            "HUD Density",
+            "How much of the remastered HUD stays up. Contextual dims the weapon and inventory until something "
+                + "about them changes; Minimal shows only what is urgent; Full keeps everything on screen."),
+        new GraphicsSetting(
+            "r_hud_fx",
+            "HUD Visor Effects",
+            "Projects the remastered HUD as if on a visor: a slight bend, colour fringing, scanlines, a glow on "
+                + "bright figures, a flicker as it appears, and a shake and a red wash at the corners when you are hit."),
+        new GraphicsSetting(
+            "r_hud_fx_intensity",
+            "HUD Visor Strength",
+            "How strongly the visor effects above are applied."),
+        new GraphicsSetting(
+            "r_hud_sway",
+            "HUD Sway",
+            "Lets the HUD trail your view by a few pixels as you turn, then settle, as a helmet's display would."),
+        new GraphicsSetting(
+            "r_hud_threat",
+            "Threat Indicators",
+            "Marks the edge of the screen towards each soldier who is noticing you, and tints the HUD amber, "
+                + "then red, as they close in on seeing you."),
+        new GraphicsSetting(
+            "r_world_objective",
+            "Projected Objective",
+            "Projects the objective you are working on onto its place in the level, so you read it where it is."),
+        new GraphicsSetting(
             "r_interaction_prompt",
             "Interaction Markers",
             "Marks a door, ladder or terminal you can use with a badge on the object itself, showing the "

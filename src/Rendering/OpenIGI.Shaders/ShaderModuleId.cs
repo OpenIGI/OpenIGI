@@ -217,6 +217,9 @@ public enum ShaderModuleId
     /// <summary>Post: the finished picture the mods' passes over it left, put where the tone map would have drawn it.</summary>
     ModDisplay,
 
+    /// <summary>UI: the remastered heads-up display laid over the picture as if projected on a visor.</summary>
+    HudFx,
+
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is
     /// labelled so; the catalogue gives each one an id of its own as it is registered (<see cref="ShaderCatalog.Register"/>).

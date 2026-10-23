@@ -98,4 +98,21 @@ public interface IDisplayDevice
     /// </para>
     /// </remarks>
     BackdropBlur BlurFrameForBackdrop() => BackdropBlur.None;
+
+    /// <summary>Starts drawing the interface into a layer of its own, for <see cref="ComposeHudLayer"/> to lay over the frame.</summary>
+    /// <returns>
+    /// Whether the layer was begun; on a device that has none, the interface draws straight into the frame as ever and the
+    /// compose does nothing.
+    /// </returns>
+    /// <remarks>
+    /// The 2D drawing that follows lands in a transparent layer, as premultiplied colour and coverage, until the compose. The
+    /// remastered heads-up display is drawn so, so that one pass can bend, fringe, line and light it as a whole.
+    /// </remarks>
+    bool BeginHudLayer() => false;
+
+    /// <summary>Lays the layer begun by <see cref="BeginHudLayer"/> over the frame, through the visor's effects, and ends it.</summary>
+    /// <param name="fx">The visor's look and this moment's effects.</param>
+    void ComposeHudLayer(in HudFxSettings fx)
+    {
+    }
 }

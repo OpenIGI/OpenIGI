@@ -37,6 +37,89 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the remastered HUD is laid over the picture as if projected on a visor.</summary>
+    /// <remarks>
+    /// The display bends a little with the visor, splits its colours at the edges, carries scanlines, flickers in, glows,
+    /// and shakes and reddens at its corners when the player is hit (<see cref="HudFxSettings"/>). Only while
+    /// <see cref="RemasteredHud"/> is on; off draws the remastered HUD flat.
+    /// </remarks>
+    public static readonly BoolCVar HudFx = Presets.Define(
+        CVar.Bool(
+            "r_hud_fx",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, project it as on a visor: curvature, fringe, scanlines, glow and hit effects."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How strongly the remastered HUD's visor effects are applied, nought to one.</summary>
+    public static readonly NumericCVar<float> HudFxIntensity = Presets.Define(
+        CVar.Float(
+            "r_hud_fx_intensity",
+            1f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Strength of the remaster HUD's visor effects, 0 to 1."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How much of the remastered HUD stays on screen.</summary>
+    /// <remarks>
+    /// Full keeps everything up. Contextual dims the weapon and the inventory when nothing about them changes and brings them
+    /// back on a reload, a switch, low rounds, a hit or an alarm. Minimal shows only what is urgent.
+    /// </remarks>
+    public static readonly EnumCVar<HudDensity> HudDensity = Presets.Define(
+        CVar.Choice(
+            "r_hud_density",
+            global::OpenIGI.Rendering.HudDensity.Contextual,
+            CVarOptions.Archive,
+            "How much of the remaster HUD stays up: full, contextual or minimal."),
+        vanilla: "full",
+        enhanced: "contextual",
+        high: "contextual",
+        ultra: "contextual");
+
+    /// <summary>Whether the remastered HUD trails the view a little as it turns, as a visor's display would.</summary>
+    public static readonly BoolCVar HudSway = Presets.Define(
+        CVar.Bool(
+            "r_hud_sway",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, let it trail the view a few pixels as it turns, then settle."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the remastered HUD marks the edges of the screen towards those who are noticing the player.</summary>
+    public static readonly BoolCVar HudThreat = Presets.Define(
+        CVar.Bool(
+            "r_hud_threat",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, mark the screen's edge towards each soldier noticing you, and tint the visor as they do."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the objective being worked on is projected onto its place in the level.</summary>
+    public static readonly BoolCVar WorldObjective = Presets.Define(
+        CVar.Bool(
+            "r_world_objective",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, project the current objective onto its place in the level."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>Whether a usable object is marked in the world rather than captioned across the screen.</summary>
     /// <remarks>
     /// <para>
