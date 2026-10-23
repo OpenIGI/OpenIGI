@@ -526,6 +526,20 @@ public sealed class Igi2WeaponFiring
         _inventory.Status = Igi2WeaponStatus.Ready;
     }
 
+    /// <summary>
+    /// Lets the primary trigger go if the weapon is busy, as a soldier waiting out its fire delay does
+    /// (<c>HumanAIContent_ShootAtTarget</c>, <c>humanaicontent.c</c>): a weapon not ready has its primary let go and is made
+    /// ready; a ready one is left alone, so a wait between bursts lets go once, not every tick.
+    /// </summary>
+    public void ReleasePrimaryIfBusy()
+    {
+        if (_inventory.Status != Igi2WeaponStatus.Ready)
+        {
+            _fireTypes[0].IsReleaseFire = true;
+            _inventory.Status = Igi2WeaponStatus.Ready;
+        }
+    }
+
     /// <summary>Clears the kick once the holder has taken it.</summary>
     public void TakeKickback() => IsKickback = false;
 
