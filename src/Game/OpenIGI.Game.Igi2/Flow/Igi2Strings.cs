@@ -37,18 +37,38 @@ public sealed class Igi2Strings(ResourceRegistry resources, string language = Ig
     /// <summary>Gets the text of a key.</summary>
     /// <param name="key">The key.</param>
     /// <returns>Its text in the language, or the key itself where nothing holds it.</returns>
-    public string Get(string key)
+    public string Get(string key) => TryGet(key, out string? text) ? text : key;
+
+    /// <summary>Gets the text of a key, where something holds it.</summary>
+    /// <param name="key">The key.</param>
+    /// <param name="text">Receives its text in the language.</param>
+    /// <returns>Whether something holds it; <c>Config_GetLocalizedStringForLanguage</c>'s null.</returns>
+    public bool TryGet(string key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? text)
     {
         ArgumentNullException.ThrowIfNull(key);
         // Only what is loaded is looked in (Resource_IsLoadedInternal): a key is never read from a loose file.
         if (_resources.TryGetEntry("GLOBAL:" + key, out ResourceEntry? entry)
             || _resources.TryGetEntry("LOCAL:" + language + "/" + key, out entry))
         {
-            ReadOnlySpan<byte> text = entry.Data.Span;
-            int end = text.IndexOf((byte)0);
-            return System.Text.Encoding.Latin1.GetString(end < 0 ? text : text[..end]);
+            ReadOnlySpan<byte> bytes = entry.Data.Span;
+            int end = bytes.IndexOf((byte)0);
+            text = System.Text.Encoding.Latin1.GetString(end < 0 ? bytes : bytes[..end]);
+            return true;
         }
 
-        return key;
+        text = null;
+        return false;
+    }
+
+    /// <summary>
+    /// A weapon's short name, as the inventory shows it (<c>HumanPlayer_StatusDisplayHandler</c>): its short string, else its
+    /// string, else its name as written.
+    /// </summary>
+    /// <param name="name">The weapon type's name.</param>
+    /// <returns>The text.</returns>
+    public string WeaponShortName(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return TryGet("weapons/strings/short/" + name, out string? text) || TryGet("weapons/strings/" + name, out text) ? text : name;
     }
 }

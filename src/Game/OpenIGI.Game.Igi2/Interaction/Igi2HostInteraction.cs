@@ -82,11 +82,23 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
     }
 
     /// <inheritdoc/>
-    /// <remarks>Found from its spot, in front of the view and within reach, while its task is in the world.</remarks>
+    /// <remarks>
+    /// Found as that game's player finds it (<see cref="WorldInteractionRegistry.Resolve(Vector3d, float, float)"/>): while its task
+    /// is in the world and it is to be had, only from the side that game offers it from (<see cref="WorldInteraction.CanOfferFrom"/>),
+    /// so not through the wall behind it, and then from its nearest spot to the view, and a door from its own spot too, in front of
+    /// the view and within reach.
+    /// </remarks>
     public void EvaluateActivate(Igi2EvaluateActivate context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (Interaction.IsInWorld && Interaction.IsAvailable)
+        Vector3d view = context.ViewPosition;
+        if (!Interaction.IsInWorld || !Interaction.IsAvailable || !Interaction.CanOfferFrom(view))
+        {
+            return;
+        }
+
+        context.Resolve(Interaction.CandidatePoint(view), this);
+        if (Interaction.Type == InteractionActivateType.Door)
         {
             context.Resolve(Interaction.Anchor, this);
         }
@@ -202,25 +214,41 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
 
         public Vector3f LocalMagicVertex(int index) => new(0f, (float)(index == 0 ? -_half : _half), 0f);
 
+        // As I.G.I. 2's own wire reckons them (Igi2WireTask.Local and World). That game's places are far out, where a human's place,
+        // kept to a float, is rounded to some units: a place just put on the wire reads back as the place put, so one put at its
+        // end's margin is not taken for past it.
         public (double X, double Y, double Z) Local(Vector3d point)
         {
+            if (_put is { } put && (point - put.World).Length <= PutTolerance)
+            {
+                return put.Local;
+            }
+
             float[] m = _frame;
-            Vector3d d = point - Midpoint;
+            Vector3d p = Midpoint;
+            Fpu dx = (Fpu)point.X - p.X, dy = (Fpu)point.Y - p.Y, dz = (Fpu)point.Z - p.Z;
             return (
-                (m[6] * d.Z) + (m[3] * d.Y) + (m[0] * d.X),
-                (m[7] * d.Z) + (m[4] * d.Y) + (m[1] * d.X),
-                (m[8] * d.Z) + (m[5] * d.Y) + (m[2] * d.X));
+                ((((Fpu)m[6] * dz) + ((Fpu)m[3] * dy)) + ((Fpu)m[0] * dx)).Value,
+                ((((Fpu)m[7] * dz) + ((Fpu)m[4] * dy)) + ((Fpu)m[1] * dx)).Value,
+                ((((Fpu)m[8] * dz) + ((Fpu)m[5] * dy)) + ((Fpu)m[2] * dx)).Value);
         }
 
         public Vector3d World(Vector3d local)
         {
             float[] m = _frame;
             Vector3d p = Midpoint;
-            return new Vector3d(
-                (m[2] * local.Z) + (m[0] * local.X) + (m[1] * local.Y) + p.X,
-                (m[5] * local.Z) + (m[3] * local.X) + (m[4] * local.Y) + p.Y,
-                (m[8] * local.Z) + (m[6] * local.X) + (m[7] * local.Y) + p.Z);
+            Vector3d world = new(
+                (((((Fpu)m[2] * local.Z) + ((Fpu)m[0] * local.X)) + ((Fpu)m[1] * local.Y)) + p.X).Value,
+                (((((Fpu)m[5] * local.Z) + ((Fpu)m[3] * local.X)) + ((Fpu)m[4] * local.Y)) + p.Y).Value,
+                (((((Fpu)m[8] * local.Z) + ((Fpu)m[6] * local.X)) + ((Fpu)m[7] * local.Y)) + p.Z).Value);
+            _put = (world, (local.X, local.Y, local.Z));
+            return world;
         }
+
+        // How far a float's rounding takes a place this far out, with room: 64 units, a sixtieth of a metre.
+        private const double PutTolerance = 64.0;
+
+        private (Vector3d World, (double X, double Y, double Z) Local)? _put;
 
         public void Activate(int activateTime)
         {

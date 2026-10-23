@@ -35,10 +35,11 @@ public sealed class RetailIgi2LookPreviewTests
     public void Preview_respects_pitch_bounds_and_view_locks()
     {
         Igi2TitlePlayer player = Player();
-        Matrix3f up = player.PreviewLook(0f, 10000f, 1f, false);
-        Matrix3f down = player.PreviewLook(0f, 10000f, 1f, true);
-        Assert.InRange(up.Column2.Z, 0.99f, 1f);
+        // The mouse moved down looks down, and up when the profile inverts it.
+        Matrix3f down = player.PreviewLook(0f, 10000f, 1f, false);
+        Matrix3f up = player.PreviewLook(0f, 10000f, 1f, true);
         Assert.InRange(down.Column2.Z, -1f, -0.99f);
+        Assert.InRange(up.Column2.Z, 0.99f, 1f);
         player.Human.View.IsLockOrientation = true;
         Assert.False(player.CanPreviewLook);
         Assert.Equal(player.LookOrientation, player.PreviewLook(255f, 255f, 1f, false));
@@ -118,10 +119,10 @@ public sealed class RetailIgi2LookPreviewTests
         Assert.InRange(retail.Human.Gamma, -1.257f, -1.256f);
         float filteredPitch = retail.Human.View.IdealPitch;
         retail.Tick(new TitlePlayerInput(0f, 0f, default, default, 0.4f, false));
-        Assert.True(retail.Human.View.IdealPitch > filteredPitch);
+        Assert.True(retail.Human.View.IdealPitch < filteredPitch);
     }
 
-    /// <summary>Both titles use the same physical count-to-angle curve and zoom scaling, with the title's pitch convention.</summary>
+    /// <summary>Both titles use the same physical count-to-angle curve and zoom scaling, and look the same way.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Smooth_mouse_matches_igi1_at_every_sensitivity_and_zoom()
     {
@@ -137,7 +138,7 @@ public sealed class RetailIgi2LookPreviewTests
                     float zoom = MouseLookSettings.ZoomSensitivityScale(fov);
                     player.Tick(new TitlePlayerInput(19.5f, -7.25f, default, default, sensitivity, invert, UnfilteredMouse: true));
                     Assert.InRange(MathF.Abs(player.Human.Gamma + (igi1.YawDelta(19.5f) * zoom)), 0f, 0.000001f);
-                    Assert.InRange(MathF.Abs(player.Human.View.IdealPitch + (igi1.PitchDelta(-7.25f) * zoom)), 0f, 0.000001f);
+                    Assert.InRange(MathF.Abs(player.Human.View.IdealPitch - (igi1.PitchDelta(-7.25f) * zoom)), 0f, 0.000001f);
                 }
             }
         }
@@ -148,12 +149,12 @@ public sealed class RetailIgi2LookPreviewTests
     public void Frame_pitch_clamping_does_not_swallow_a_reversal()
     {
         Igi2TitlePlayer player = Player();
-        player.Human.View.IdealPitch = Humans.Igi2HumanView.PitchLimit - 0.0001f;
+        player.Human.View.IdealPitch = -Humans.Igi2HumanView.PitchLimit + 0.0001f;
         player.GatherLook(0f, 10000f, 0.4f, false);
         player.GatherLook(0f, -1f, 0.4f, false);
         Matrix3f preview = player.PreviewLook(0f, 9999f, 0.4f, false);
         player.Tick(new TitlePlayerInput(0f, 9999f, default, default, 0.4f, false, UnfilteredMouse: true));
-        float expected = Humans.Igi2HumanView.PitchLimit - MouseLookSettings.FromSensitivity(0.4f, false).PitchDelta(-1f);
+        float expected = -Humans.Igi2HumanView.PitchLimit + MouseLookSettings.FromSensitivity(0.4f, false).PitchDelta(-1f);
         Assert.InRange(MathF.Abs(player.Human.View.IdealPitch - expected), 0f, 0.000001f);
         Assert.InRange((preview.Column2 - player.ViewOrientation.Row3).Length, 0f, 0.00001f);
     }
@@ -173,7 +174,7 @@ public sealed class RetailIgi2LookPreviewTests
             {
                 player.GatherLook(count, count, 0.4f, false);
                 gamma -= igi1.YawDelta(count);
-                pitch -= igi1.PitchDelta(count);
+                pitch += igi1.PitchDelta(count);
                 sum += count;
             }
             Matrix3f preview = player.PreviewLook(sum, sum, 0.4f, false);

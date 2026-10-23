@@ -83,7 +83,7 @@ public sealed class RetailIgi2StationaryGunTests
 
         for (int tick = 0; tick < 300; tick++)
         {
-            player.Tick(RetailIgi2Mission1.Idle with { MouseY = 1f });
+            player.Tick(RetailIgi2Mission1.Idle with { MouseY = -1f });
             gun.Run(run);
         }
 

@@ -512,8 +512,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);
         Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
         _reader.MouseSensitivity = input.MouseSensitivity;
-        _reader.InvertMouse = input.InvertMouse;
-        Human.InvertMouse = input.InvertMouse;
+        // Retail keeps the profile's flag the other way round from its menu (config.c: isInvertMouse is 1 by default, and the menu's
+        // get and set negate it); the host's says what the player chose.
+        _reader.InvertMouse = !input.InvertMouse;
+        Human.InvertMouse = !input.InvertMouse;
         Human.UnfilteredMouse = input.UnfilteredMouse && CanPreviewLook;
         _lookInput = input;
         _rawKeys = input.Raw;

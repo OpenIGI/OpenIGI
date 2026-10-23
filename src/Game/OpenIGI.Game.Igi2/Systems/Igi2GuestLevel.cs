@@ -171,6 +171,7 @@ public sealed class Igi2GuestLevel
         player.Quirks = services.TryGet(out Igi2Quirks? quirks) ? quirks : new Igi2Quirks();
         TaskTree tasks = _guest.Loop.Tasks;
         player.TaskById = id => tasks.FromId(id);
+        player.Strings ??= new Flow.Igi2Strings(_guest.Resources);
 
         // The map computer, which the player opens as I.G.I. 2's: its map looks down on the host's level.
         if (services.TryGet(out Computer.Igi2Computer? computer))
