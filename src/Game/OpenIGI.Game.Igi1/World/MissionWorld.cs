@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
@@ -37,6 +36,13 @@ public sealed class MissionWorld : MissionState
 
     /// <summary>Gets or sets the soldiers' simulation: their brains, bodies and rounds, or <see langword="null"/> before a level has any.</summary>
     public SoldierSimulation? Soldiers { get; set; }
+
+    /// <summary>
+    /// Gets another game's player standing in the rig's stead, as the mission's player task's body (<see cref="HumanTask.Body"/>):
+    /// where its feet and eyes are and how it stands, which the mission's guards, areas and lifts read for the player's; or
+    /// <see langword="null"/> while the rig is the player, or no player stands.
+    /// </summary>
+    public IHumanBodyState? PlayerStandIn => Player is null && PlayerTask?.Body is { } body and not Igi1PlayerBody ? body : null;
 
     /// <summary>Gets or sets the world the original's physics objects step in: the cars, and the thrown grenades.</summary>
     public IRetailCarWorld? RetailWorld { get; set; }

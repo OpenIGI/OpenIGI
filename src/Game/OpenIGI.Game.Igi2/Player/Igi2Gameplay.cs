@@ -319,7 +319,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
     // The session's AI, which hears what the level's weapons and explosions do (HumanAI_SendEvent); none when it has none.
     /// <summary>The overlay task types' names by the ids the session's <c>TASKTYPE_*</c> constants give them.</summary>
-    private static Dictionary<int, string> OverlayTypeNames(OpenIGI.Scripting.Runtime.NativeRegistry? natives)
+    internal static Dictionary<int, string> OverlayTypeNames(OpenIGI.Scripting.Runtime.NativeRegistry? natives)
     {
         Dictionary<int, string> names = [];
         if (natives is null)

@@ -4,15 +4,20 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.Audio;
+using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Flow;
+using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Scripting;
+using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Systems;
@@ -40,6 +45,9 @@ public sealed class Igi2GuestLevel
     private readonly Igi2GuestContent _content;
     private readonly GuestTitle _guest;
     private readonly List<Interaction.Igi2AlarmControlTask> _alarms = [];
+    private Igi2TitlePlayer? _player;
+    private Igi2CollisionWorld? _playerWorld;
+    private Igi2Sounds? _sounds;
     private int _spare = TopId;
 
     private Igi2GuestLevel(Igi2GuestContent content, LevelTask root, GameTask dynamic)
@@ -66,6 +74,129 @@ public sealed class Igi2GuestLevel
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         GameTask dynamic = loop.Tasks.New(root, loop.Types.Get(EngineTaskTypes.Dynamic));
         return new Igi2GuestLevel(content, root, dynamic);
+    }
+
+    /// <summary>Gets the level's own player, I.G.I. 2's, where the host stood one (<see cref="AddPlayer"/>); else <see langword="null"/>.</summary>
+    public Igi2TitlePlayer? Player => _player;
+
+    /// <summary>
+    /// Stands I.G.I. 2's player in the level in the host's player's stead, as I.G.I. 2 stands its own (<see cref="Igi2Gameplay.CreatePlayer"/>):
+    /// dressed and armed, its first-person view and its weapons' effects, moving through the level's collision; before the level
+    /// starts, which then makes it the one the soldiers look out for, the one their blasts and the level's pickups reach.
+    /// </summary>
+    /// <param name="world">The level's collision, which the soldiers move through too (<see cref="Igi2GuestLevelStart.World"/>).</param>
+    /// <param name="start">Who the player is.</param>
+    /// <returns>The player, which the host ticks as I.G.I. 2's own (<see cref="Game.Player.ITitlePlayer"/>).</returns>
+    /// <exception cref="InvalidOperationException">The level has a player already.</exception>
+    public Igi2TitlePlayer AddPlayer(Igi2CollisionWorld world, Igi2GuestPlayerStart start)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(start);
+        if (_player is not null)
+        {
+            throw new InvalidOperationException("The level has its player.");
+        }
+
+        IServiceCatalog services = _guest.Session.Services;
+        services.TryGet(out Igi2PlayerTuning? tuning);
+        Func<string, Formats.World.MefModel?> models = _content.Models;
+        string? arms = start.FirstPersonModel is { Length: > 0 } wanted && models(wanted)?.BoneHierarchy is not null
+            ? wanted
+            : models(Igi2Gameplay.FirstPersonFallbackModel)?.BoneHierarchy is not null ? Igi2Gameplay.FirstPersonFallbackModel : null;
+        Igi2PlayerWeapons? weapons = null;
+        if (services.TryGet(out Igi2HumanWeapons? armoury))
+        {
+            Igi2Inventory inventory = armoury.CreateInventory(tuning?.AmmoLimits ?? []);
+            armoury.RunWeaponScript(inventory, start.WeaponScript);
+            weapons = new Igi2PlayerWeapons(inventory, armoury.FireTaskTypes, _content.Clips);
+        }
+
+        _sounds ??= new Igi2Sounds(_content.SoundDefinitions, start.Audio);
+        Igi2TitlePlayer player = Igi2TitlePlayer.Spawn(
+            world,
+            tuning?.General ?? Igi2HumanPlayerGeneral.Unset,
+            start.Position,
+            start.Gamma,
+            start.Difficulty,
+            _content.Clips,
+            models(start.Model)?.BoneHierarchy,
+            weapons,
+            arms is null ? null : models(arms)?.BoneHierarchy,
+            _sounds);
+        player.GameConfig = services.TryGet(out Config.Igi2GameConfig? config) ? config : null;
+        player.ModelAttachments = new Igi2ModelAttachments(models, services.TryGet(out Igi2MagicObjTypes? attachments) ? attachments : null);
+        player.Casings = new Igi2GunCasings(models);
+        player.OverlayTypeNames = Igi2Gameplay.OverlayTypeNames(_guest.Loop.Natives);
+        if (services.TryGet(out Igi2WhizzbyClock? clock))
+        {
+            player.Human.WhizzbyClock = clock;
+        }
+
+        if (services.TryGet(out Igi2DeadBodySoundCycle? deadBodySounds))
+        {
+            player.Human.DeadBodySounds = deadBodySounds;
+        }
+
+        player.Human.Model = Igi2BodyModel.From(start.Model, models(start.Model));
+        player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
+        world.AddBody(player.Human.Collider);
+        Igi2AiWorld? ai = services.TryGet(out Igi2AiWorld? levelAi) ? levelAi : null;
+        if (weapons is not null)
+        {
+            weapons.Effects = new Igi2LevelWeaponEffects(_sounds, () => player.Human.View.Position, ai, player.EjectCasing);
+            weapons.ImpactEffects = new Igi2LevelImpactEffects(_sounds, ai);
+            if (services.TryGet(out Igi2GameMaterials? materials))
+            {
+                weapons.World = new Igi2LevelGunShotWorld(world, materials, ai);
+            }
+        }
+
+        if (services.TryGet(out Igi2AnimTriggers? triggers))
+        {
+            player.Human.AnimTriggers = triggers;
+        }
+
+        if (models(start.Model) is { } body)
+        {
+            player.Human.ModelRadius = body.NativeMarkerBound;
+            if (body.BoneHierarchy is { BoneCount: > 0 } bones)
+            {
+                player.Human.RootTranslation = bones.Translations[0];
+            }
+        }
+
+        player.Human.View.ObjectModel = arms ?? string.Empty;
+        player.Human.WeaponCycle = tuning?.WeaponCycle ?? [];
+        player.Quirks = services.TryGet(out Igi2Quirks? quirks) ? quirks : new Igi2Quirks();
+        TaskTree tasks = _guest.Loop.Tasks;
+        player.TaskById = id => tasks.FromId(id);
+        _player = player;
+        _playerWorld = world;
+        return player;
+    }
+
+    /// <summary>
+    /// Lays a weapon in the level for its player to pick up, as a level's <c>GunPickup</c> lies (<see cref="Pickups.Igi2GunPickupTask"/>),
+    /// before the level starts, which then lists it among its pickups.
+    /// </summary>
+    /// <param name="weaponId">The weapon, by I.G.I. 2's id (<c>WEAPON_ID_AK47</c>); one I.G.I. 2 has no weapon of is not laid.</param>
+    /// <param name="position">Where it lies, in world units.</param>
+    /// <param name="orientation">How it lies, as a level gives a placement's angles.</param>
+    /// <returns>Whether it was laid.</returns>
+    public bool AddGunPickup(string weaponId, Vector3d position, Vector3f orientation)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(weaponId);
+        if (!_guest.Session.Services.TryGet(out Igi2HumanWeapons? armoury)
+            || !armoury.Tables.WeaponTypes.Any(w => string.Equals(w.WeaponId, weaponId, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        Pickups.Igi2GunPickupTask pickup = (Pickups.Igi2GunPickupTask)New(Root, Pickups.Igi2GunPickupTask.TypeName);
+        pickup.WeaponId = weaponId;
+        pickup.Position = position;
+        pickup.Orientation = orientation;
+        return true;
     }
 
     /// <summary>Adds a squad to the level, under its dynamic container, at a spare id.</summary>
@@ -209,7 +340,11 @@ public sealed class Igi2GuestLevel
         Igi2HostedLevel? hosted = null;
         Func<int> ticks = () => hosted?.Ticks ?? 0;
 
-        Igi2Sounds sounds = new(_content.SoundDefinitions, start.Audio);
+        Igi2Sounds sounds = _sounds ??= new(_content.SoundDefinitions, start.Audio);
+        if (_player is not null && !ReferenceEquals(_playerWorld, start.World))
+        {
+            throw new InvalidOperationException("The level's player moves through another collision than its soldiers.");
+        }
         Igi2GameMaterials materials = services.Require<Igi2GameMaterials>();
         Igi2AiWorld levelAi = services.Require<Igi2AiWorld>();
         Igi2DynamicTasks dynamic = new();
@@ -263,8 +398,26 @@ public sealed class Igi2GuestLevel
             worn: null,
             casings);
 
-        // Human_ptQTaskList: every human of the level, the bodies each move is kept out of; and one particle system for all.
+        // Human_ptQTaskList: every human of the level, the bodies each move is kept out of; and one particle system for all. The
+        // level's own player is among them, and throws, blows up and picks up in the level's world.
         List<Humans.Igi2Human> humans = [.. soldiers.Bodies];
+        if (_player is { } own)
+        {
+            humans.Insert(0, own.Human);
+            own.Grenades = grenades;
+            own.Explosions = explosions;
+            own.Human.Pickups = pickups;
+            if (grenades is not null && own.Weapons is { } arms)
+            {
+                arms.Grenades = grenades;
+            }
+
+            if (own.Weapons?.ImpactEffects is Igi2LevelImpactEffects impacts)
+            {
+                impacts.Explosions = explosions;
+            }
+        }
+
         Igi2Particles particles = new(start.World, dynamic);
         explosions.Humans = humans;
         explosions.Particles = particles;
@@ -285,8 +438,15 @@ public sealed class Igi2GuestLevel
             body.CastsForGroundOffGraph = true;
         }
 
-        // The host's player is struck by the soldiers' blasts as by their rounds.
-        explosions.AddTarget(start.Player);
+        // The player is struck by the soldiers' blasts as by their rounds: the level's own, else the host's.
+        if (_player is { } blasted)
+        {
+            explosions.AddTarget(blasted.Human);
+        }
+        else
+        {
+            explosions.AddTarget(start.Player);
+        }
 
         // What the host's own level adds to the guest's world, after the guest's bodies: its player among them.
         foreach (IWorldLineCollider collider in start.Colliders)
@@ -299,7 +459,38 @@ public sealed class Igi2GuestLevel
             FlowTicks = ticks,
             LevelTick = ticks,
         };
-        detection.Detectables.Add(start.Player);
+        // The host's doors and switches, which the level's own player uses as I.G.I. 2's player uses its own.
+        if (_player is { } user)
+        {
+            foreach (WorldInteraction interaction in start.Interactions)
+            {
+                if (Interaction.Igi2HostInteraction.For(interaction, start.Activated) is { } usable)
+                {
+                    user.Activatables.Add(usable);
+                }
+            }
+
+            foreach (LadderPlacement ladder in start.Ladders)
+            {
+                user.Activatables.Add(new Interaction.Igi2HostLadder(ladder));
+            }
+        }
+
+        // The detectors look out for the level's own player where it has one, as I.G.I. 2's do; else for the host's.
+        if (_player is { } seenPlayer)
+        {
+            detection.Detectables.Add(seenPlayer.Human);
+            Igi2Gameplay.SeeThrough(seenPlayer.Human, detection);
+            if (seenPlayer.Human.Surroundings is Igi2LevelSurroundings seenFrom)
+            {
+                seenFrom.Detection = detection;
+            }
+        }
+        else
+        {
+            detection.Detectables.Add(start.Player);
+        }
+
         foreach (IAiDetectable other in start.Others)
         {
             detection.Detectables.Add(other);
@@ -338,7 +529,7 @@ public sealed class Igi2GuestLevel
             _guest.Resources,
             loop.Natives,
             functions,
-            start.Player,
+            (IAiPlayer?)_player?.Human ?? start.Player,
             [.. soldiers.Bodies.Cast<Humans.Igi2Human>()],
             start.Random,
             ticks)
@@ -353,6 +544,10 @@ public sealed class Igi2GuestLevel
         });
         ai.Doors = [.. ai.Doors, .. start.Doors];
         Igi2Gameplay.HearAiEvents(soldiers.Bodies, () => ai);
+        if (_player is { } heard)
+        {
+            Igi2Gameplay.HearAiEvents([heard.Human], () => ai);
+        }
         foreach (Interaction.Igi2AlarmControlTask alarm in _alarms)
         {
             alarm.AiEvents = e => ai.SendEvent(e);
@@ -361,7 +556,8 @@ public sealed class Igi2GuestLevel
         Igi2LevelRun run = new(Root, loop.Natives, functions) { Dynamic = dynamic };
 
         // The soldiers see the player as I.G.I. 2 sees its own, not at their cones' full length -- from their first look.
-        Igi2HostPlayerVisibility? visibility = start.Visibility is { } seen ? new(start.Player, seen, start.Light) : null;
+        // The level's own player measures its own (Igi2HumanPlayer), as I.G.I. 2's does.
+        Igi2HostPlayerVisibility? visibility = _player is null && start.Visibility is { } seen ? new(start.Player, seen, start.Light) : null;
         visibility?.Update();
         hosted = new Igi2HostedLevel(loop.Tasks, Root, run, sounds, soldiers, detection, ai, visibility)
         {
@@ -369,6 +565,7 @@ public sealed class Igi2GuestLevel
             Grenades = grenades,
             Casings = casings,
             Alarms = [.. _alarms],
+            Player = _player,
         };
         return hosted;
     }

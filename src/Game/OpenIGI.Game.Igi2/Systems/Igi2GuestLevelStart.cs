@@ -26,6 +26,18 @@ public sealed record Igi2GuestLevelStart(Igi2CollisionWorld World, IgiRandom Ran
     /// </summary>
     public IReadOnlyList<IAiDetectable> Others { get; init; } = [];
 
+    /// <summary>
+    /// Gets the host's doors, switches and the rest its player uses, which the level's own player uses where it can
+    /// (<see cref="Interaction.Igi2HostInteraction"/>).
+    /// </summary>
+    public IReadOnlyList<WorldInteraction> Interactions { get; init; } = [];
+
+    /// <summary>Gets the host's ladders, which the level's own player climbs as I.G.I. 2's player climbs its own.</summary>
+    public IReadOnlyList<LadderPlacement> Ladders { get; init; } = [];
+
+    /// <summary>Gets what the host is told of a task the level's own player used, by its id, as its own player tells it.</summary>
+    public Action<int>? Activated { get; init; }
+
     /// <summary>Gets the host's doors, which the soldiers open on their way as they open their own.</summary>
     public IReadOnlyList<IAiDoor> Doors { get; init; } = [];
 

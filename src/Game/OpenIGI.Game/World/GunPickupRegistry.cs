@@ -1,9 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
 
@@ -295,6 +294,26 @@ public sealed class GunPickupRegistry
         }
 
         return collected ?? [];
+    }
+
+    /// <summary>
+    /// Takes a pickup out of the level as collecting it does, into no one's hands: another game's pickup lies in its place, for
+    /// that game's player to take.
+    /// </summary>
+    /// <param name="pickup">The pickup.</param>
+    public void Withdraw(GunPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        if (pickup.IsCollected || !_items.Contains(pickup))
+        {
+            return;
+        }
+
+        pickup.IsCollected = true;
+        if (pickup.Task is { } task)
+        {
+            task.Tree.Delete(task);
+        }
     }
 
     /// <summary>Creates a runtime pickup when a human drops their gun.</summary>

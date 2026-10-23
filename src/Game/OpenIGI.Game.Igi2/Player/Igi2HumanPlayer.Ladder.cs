@@ -71,7 +71,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
     {
         if (IsInitClimbLadder)
         {
-            if (ActivatingTarget is not Igi2LadderTask ladder)
+            if (ActivatingTarget is not IIgi2Ladder ladder)
             {
                 IsInitClimbLadder = false;
                 return;
@@ -153,7 +153,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
     }
 
     /// <summary>Faces the ladder: its heading turned half round, <c>Real32x9_GetAngles</c> and <c>Human_PopOrientation</c>.</summary>
-    private void FaceLadder(Igi2LadderTask ladder)
+    private void FaceLadder(IIgi2Ladder ladder)
     {
         IReadOnlyList<float> m = ladder.Frame;
         PopOrientation(((Fpu)Igi2Pose.Gamma(m[0], m[3]) + HalfTurn).F);
@@ -420,7 +420,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2LadderClimber
     // or in water; then half a metre back, stopped, the sounds gone, off the ladder.
     private void RunClimbLadderSlideDown()
     {
-        Vector3d foot = (ActivatingTarget as Igi2LadderTask)?.MagicVertex(0) ?? Position;
+        Vector3d foot = (ActivatingTarget as IIgi2Ladder)?.MagicVertex(0) ?? Position;
         Vector3f s = Speed;
         float fall = (((Fpu)s.Z - 44.600887298583984) * 0.9900000095367432).F;
         Speed = new Vector3f(((Fpu)s.X * 0.9900000095367432).F, ((Fpu)s.Y * 0.9900000095367432).F, fall);

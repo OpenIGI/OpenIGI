@@ -42,6 +42,10 @@ public sealed class Igi2HostedLevel
     private readonly HashSet<Igi2AiSquadTask> _squadsRun = [];
     private readonly List<Action> _eachTick = [];
     private readonly List<Action> _onLeave = [];
+
+    // The host's player task and mission, once the level joined them, which I.G.I. 2's player's death is latched onto.
+    private HumanTask? _hostPlayer;
+    private MissionState? _mission;
     private TitleWorldModel[] _drawn = [];
     private int _drawnTick = -1;
 
@@ -88,6 +92,9 @@ public sealed class Igi2HostedLevel
 
     /// <summary>Gets the host's alarms the level holds controls for (<see cref="Igi2GuestLevel.AddAlarm"/>), run each tick.</summary>
     public IReadOnlyList<Interaction.Igi2AlarmControlTask> Alarms { get; init; } = [];
+
+    /// <summary>Gets the level's own player, I.G.I. 2's, where the host stood one (<see cref="Igi2GuestLevel.AddPlayer"/>).</summary>
+    public Player.Igi2TitlePlayer? Player { get; init; }
 
     /// <summary>Gets the casings the soldiers' weapons have thrown.</summary>
     public Igi2GunCasings? Casings { get; init; }
@@ -177,6 +184,15 @@ public sealed class Igi2HostedLevel
         foreach (Soldiers.Igi2HumanSoldier body in Soldiers.Bodies)
         {
             mission.Joined.JoinSeen(body);
+        }
+
+        // I.G.I. 2's player, standing for the level's own: the level's rounds and blasts find its body as the level's player.
+        if (Player is { } own && PlayerSpawn.FindGameplayTask(levelRoot) is { } hostPlayer)
+        {
+            mission.Bodies.Add(new Player.Igi2ShootablePlayer(hostPlayer, own.Human) { DamageScale = damageScale });
+            mission.Joined.JoinExplosions(hostPlayer);
+            _hostPlayer = hostPlayer;
+            _mission = mission;
         }
 
         // It hears the level's broadcasts for the player's loud shots.
@@ -339,6 +355,14 @@ public sealed class Igi2HostedLevel
         Casings?.Run();
         _sounds.Run();
         Ticks++;
+
+        // The level's player dies with I.G.I. 2's standing for it: its scripts read the latch (HumanPlayer.isDead), and the mission
+        // knows its player is down.
+        if (Player is { Human.IsDead: true } && _hostPlayer is { IsDead: false } fallen)
+        {
+            fallen.IsDead = true;
+            _mission?.IsPlayerDead = true;
+        }
 
         // A host human dies with the soldier standing for it, the latch the host's scripts read (HumanSoldier_N.isDead).
         foreach ((HumanTask host, Igi2HumanSoldier body) in _standIns)

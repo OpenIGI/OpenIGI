@@ -98,10 +98,10 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
     /// </remarks>
     public SoldierEnemy SoldierEnemyNow()
     {
-        bool body = host.PlayerMode && mission.Player is not null;
-        Vector3d eye = body ? mission.Player!.Body.Eye : host.FreeCameraPosition ?? mission.Player?.Body.Eye ?? default;
-        Vector3d feet = body ? mission.Player!.Body.Position : eye;
-        return new SoldierEnemy(eye, !mission.IsPlayerDead && mission.Cutscenes?.IsPlaying != true, feet, body && mission.Player!.IsCrouched);
+        bool body = Walking();
+        Vector3d eye = body ? PlayerEye : host.FreeCameraPosition ?? PlayerEyeIfAny ?? default;
+        Vector3d feet = body ? PlayerFeet : eye;
+        return new SoldierEnemy(eye, !mission.IsPlayerDead && mission.Cutscenes?.IsPlaying != true, feet, body && PlayerCrouched);
     }
 
     /// <summary>The player as an area counts it at the moment the area updates.</summary>
@@ -116,14 +116,30 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         Vector3d? cutsceneView = mission.Cutscenes?.Frame?.Camera.Position;
         Vector3d? freeView = !host.PlayerMode ? host.FreeCameraPosition : null;
         return new AreaPlayer(
-            AreaOccupancy.AreaActivationOccupant(mission.Player?.Body.Origin, cutsceneView, freeView),
+            AreaOccupancy.AreaActivationOccupant(PlayerOrigin, cutsceneView, freeView),
             mission.Soldiers?.PlayerTeam ?? 0,
-            AreaOccupancy.AreaActivationExtraOccupant(mission.Player?.Body.Origin, cutsceneView),
+            AreaOccupancy.AreaActivationExtraOccupant(PlayerOrigin, cutsceneView),
             !mission.IsPlayerDead);
     }
 
-    // Whether the player's body is what the world sees, asked afresh each time as the tick may change it.
-    private bool Walking() => host.PlayerMode && mission.Player is not null;
+    // Whether the player's body is what the world sees, asked afresh each time as the tick may change it: the rig's, or another
+    // game's player standing in its stead.
+    private bool Walking() => host.PlayerMode && (mission.Player is not null || mission.PlayerStandIn is not null);
+
+    // Where the player's eyes and feet are, whether it crouches, and the middle of its body an area counts: the rig's, else the
+    // player standing in its stead.
+    private Vector3d PlayerEye => PlayerEyeIfAny ?? default;
+
+    private Vector3d? PlayerEyeIfAny => mission.Player?.Body.Eye ?? mission.PlayerStandIn?.Eyes;
+
+    private Vector3d PlayerFeet => mission.Player?.Body.Position ?? mission.PlayerStandIn?.Feet ?? default;
+
+    private bool PlayerCrouched => mission.Player?.IsCrouched ?? mission.PlayerStandIn?.IsKeepingLow ?? false;
+
+    private Vector3d? PlayerOrigin => mission.Player?.Body.Origin
+        ?? (mission.PlayerStandIn is { } standIn
+            ? new Vector3d(standIn.Feet.X, standIn.Feet.Y, (standIn.Feet.Z + standIn.Eyes.Z) * 0.5)
+            : null);
 
     private void BeginTick()
     {
@@ -136,7 +152,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         {
             // The player's position is for carrying a passenger, not for starting a car: the original
             // starts one on its own script alone.
-            elevators.SetPlayerPositionProvider(mission.Player is { } p ? () => p.Body.Position : null);
+            elevators.SetPlayerPositionProvider(mission.Player is not null || mission.PlayerStandIn is not null ? () => PlayerFeet : null);
 
             // A level the walk does not reach steps its lifts here, ahead of everything else.
             if (!mission.ElevatorsInWalk)
@@ -156,9 +172,9 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         Vector3d? areaCutsceneView = mission.Cutscenes?.Frame?.Camera.Position;
         Vector3d? areaFreeView = !host.PlayerMode ? host.FreeCameraPosition : null;
         mission.Objectives?.SetLevelStateInputs(
-            AreaOccupancy.AreaActivationOccupant(mission.Player?.Body.Origin, areaCutsceneView, areaFreeView),
+            AreaOccupancy.AreaActivationOccupant(PlayerOrigin, areaCutsceneView, areaFreeView),
             mission.Soldiers?.PlayerTeam ?? 0,
-            AreaOccupancy.AreaActivationExtraOccupant(mission.Player?.Body.Origin, areaCutsceneView),
+            AreaOccupancy.AreaActivationExtraOccupant(PlayerOrigin, areaCutsceneView),
             playerAlive: !mission.IsPlayerDead);
         mission.PlayerTicked = false;
         mission.InteractionsTickedByPlayer = false;
@@ -201,8 +217,8 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         // The player's eye is what the guards' view cones are tested against -- and in the
         // fly-through it is the CAMERA's, not the body's. A shell affordance, not engine behaviour.
         Vector3d watched = Walking()
-            ? mission.Player!.Body.Eye
-            : host.FreeCameraPosition ?? mission.Player?.Body.Eye ?? default;
+            ? PlayerEye
+            : host.FreeCameraPosition ?? PlayerEyeIfAny ?? default;
 
         // A dead player is no longer a target: the guards lose it and stop firing at the corpse, the
         // way the retail detection scan (0x489750) unregisters a human that has died.
@@ -210,7 +226,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         // The eye is what vision watches; the FEET are what combat aims at (sub_451380 raises the
         // target task's position 0.5 m, 0.25 m crouched) -- in the fly-through there is no body, so
         // the camera stands in for both.
-        Vector3d watchedFeet = Walking() ? mission.Player!.Body.Position : watched;
+        Vector3d watchedFeet = Walking() ? PlayerFeet : watched;
 
         // The areas and edit variables ran inside the level walk above, before the AlarmControls that
         // consume them (Mission 1's alarm latch depends on that order).
@@ -264,7 +280,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
                 watched,
                 enemyAlive: !mission.IsPlayerDead && mission.Cutscenes?.IsPlaying != true,
                 enemyFeet: watchedFeet,
-                enemyCrouching: Walking() && mission.Player!.IsCrouched);
+                enemyCrouching: Walking() && PlayerCrouched);
         }
 
         // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
@@ -717,11 +733,11 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
     {
         bool walking = Walking();
         Vector3d feet = walking
-            ? mission.Player!.Body.Position
-            : host.FreeCameraPosition ?? mission.Player?.Body.Eye ?? default;
+            ? PlayerFeet
+            : host.FreeCameraPosition ?? PlayerEyeIfAny ?? default;
         return new SecurityCameraScan(
             feet,
-            walking && mission.Player!.IsCrouched,
+            walking && PlayerCrouched,
             TargetAlive: !mission.IsPlayerDead,
             PlayerOnCamerasSide: (mission.Soldiers?.PlayerTeam ?? 0) == 1,
             mission.Soldiers?.CameraSubjects() ?? []);
