@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// not run.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2WireTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable
+public sealed partial class Igi2WireTask : Igi2Task, IIgi2PlacedTask, IIgi2Wire
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Wire";

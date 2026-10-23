@@ -86,6 +86,69 @@ public interface IIgi2WorkedActivatable : IIgi2Activatable
     void Finish();
 }
 
+/// <summary>Something a human climbs over, as a fence is: across its frame's Y, anywhere along its X.</summary>
+public interface IIgi2Fence : IIgi2Activatable
+{
+    /// <summary>Gets its frame, row by row.</summary>
+    IReadOnlyList<float> Frame { get; }
+
+    /// <summary>Gets its pivot, in world units.</summary>
+    Vector3d Position { get; }
+}
+
+/// <summary>Something a human hangs from and goes along, as a wire is: down its frame's Y, between its two magic vertices.</summary>
+public interface IIgi2Wire : IIgi2Activatable
+{
+    /// <summary>Gets its frame, row by row.</summary>
+    IReadOnlyList<float> Frame { get; }
+
+    /// <summary>Gets a value indicating whether it is ridden down rather than climbed, <c>Wire_IsSliding</c>.</summary>
+    bool IsSliding { get; }
+
+    /// <summary>A magic vertex in its own frame: 0 at its start, 1 at its end.</summary>
+    /// <param name="index">The vertex.</param>
+    /// <returns>The vertex.</returns>
+    Vector3f LocalMagicVertex(int index);
+
+    /// <summary>A point in its frame.</summary>
+    /// <param name="point">The point.</param>
+    /// <returns>The point in its frame.</returns>
+    (double X, double Y, double Z) Local(Vector3d point);
+
+    /// <summary>A point of its frame in the world.</summary>
+    /// <param name="local">The point in its frame.</param>
+    /// <returns>The point.</returns>
+    Vector3d World(Vector3d local);
+
+    /// <summary>The human lets go of it.</summary>
+    void Release();
+}
+
+/// <summary>Something a human searches, as a cabinet is: it stands before it, pulls its drawer out and pushes it back.</summary>
+public interface IIgi2Cabinet : IIgi2Activatable
+{
+    /// <summary>Gets its frame, row by row.</summary>
+    IReadOnlyList<float> Frame { get; }
+
+    /// <summary>Gets where the human stands before it from, its model's first magic vertex.</summary>
+    Vector3d SearchVertex { get; }
+
+    /// <summary>Gets the seconds a search takes.</summary>
+    float SearchTime { get; }
+
+    /// <summary>The search clip's trigger pulls the drawer out.</summary>
+    void OpenDrawer();
+
+    /// <summary>The search clip's trigger pushes the drawer back.</summary>
+    void CloseDrawer();
+
+    /// <summary>A search cut short shuts the drawer at once.</summary>
+    void SnapDrawerClosed();
+
+    /// <summary>The search is done.</summary>
+    void Searched();
+}
+
 /// <summary>An activatable that opens and closes, as a door does, and may be locked.</summary>
 public interface IIgi2Door : IIgi2Activatable
 {
