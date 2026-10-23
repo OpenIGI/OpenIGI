@@ -228,11 +228,16 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
                 part.Tick = wanted.Tick;
                 PoseBetween(part, wanted.Tick, between);
+
+                // A body is cloth and skin, which do not shine, and is left out of the ambient occlusion: the body material
+                // Project I.G.I.'s soldiers are drawn with (SurfaceMaterial.Body).
+                _device.SetMaterialOverride(SurfaceMaterial.Body);
             }
             else
             {
                 part = Resolve(wanted.Model, skinned: false);
                 _device.ClearPoseInterpolation();
+                _device.SetMaterialOverride(SurfaceMaterial.Default);
             }
 
             if (part is not null)

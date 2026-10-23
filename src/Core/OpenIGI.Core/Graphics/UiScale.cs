@@ -47,15 +47,28 @@ public static class UiScale
     /// The <b>smaller</b> of the two ratios, so a wide display magnifies by its height and nothing runs
     /// off the edge. 1920×1080 gives 2 (its height allows 2.25), 2560×1440 gives 3.
     /// </remarks>
-    public static int For(int screenWidth, int screenHeight)
+    public static int For(int screenWidth, int screenHeight) => For(screenWidth, screenHeight, AuthoredWidth, AuthoredHeight);
+
+    /// <summary>Works out the magnification for a back buffer, for an interface authored at a size of its own.</summary>
+    /// <param name="screenWidth">The back buffer's width in pixels.</param>
+    /// <param name="screenHeight">The back buffer's height in pixels.</param>
+    /// <param name="authoredWidth">The width the interface is laid out for.</param>
+    /// <param name="authoredHeight">The height the interface is laid out for.</param>
+    /// <returns>A whole-number scale, at least <see cref="Native"/>.</returns>
+    /// <remarks>
+    /// The same rule as <see cref="For(int, int)"/>, for a title whose interface was laid out at a larger display: I.G.I. 2 places
+    /// its status art in the display's own pixels and was played at 720 lines and more, so it is magnified by how many times that
+    /// the display holds, as Project I.G.I.'s is by how many times it holds 640×480.
+    /// </remarks>
+    public static int For(int screenWidth, int screenHeight, int authoredWidth, int authoredHeight)
     {
-        if (screenWidth <= 0 || screenHeight <= 0)
+        if (screenWidth <= 0 || screenHeight <= 0 || authoredWidth <= 0 || authoredHeight <= 0)
         {
             return Native;
         }
 
-        int horizontal = screenWidth / AuthoredWidth;
-        int vertical = screenHeight / AuthoredHeight;
+        int horizontal = screenWidth / authoredWidth;
+        int vertical = screenHeight / authoredHeight;
         int scale = horizontal < vertical ? horizontal : vertical;
 
         return scale < Native ? Native : scale > Maximum ? Maximum : scale;
@@ -68,11 +81,21 @@ public static class UiScale
     /// <param name="screenWidth">The back buffer's width in pixels.</param>
     /// <param name="screenHeight">The back buffer's height in pixels.</param>
     /// <returns>The scale to draw at.</returns>
-    public static int Resolve(int requested, int screenWidth, int screenHeight)
+    public static int Resolve(int requested, int screenWidth, int screenHeight) =>
+        Resolve(requested, screenWidth, screenHeight, AuthoredWidth, AuthoredHeight);
+
+    /// <summary>Resolves a requested scale against a back buffer, for an interface authored at a size of its own.</summary>
+    /// <param name="requested"><see cref="Automatic"/> to derive one, or a whole number to force it.</param>
+    /// <param name="screenWidth">The back buffer's width in pixels.</param>
+    /// <param name="screenHeight">The back buffer's height in pixels.</param>
+    /// <param name="authoredWidth">The width the interface is laid out for.</param>
+    /// <param name="authoredHeight">The height the interface is laid out for.</param>
+    /// <returns>The scale to draw at.</returns>
+    public static int Resolve(int requested, int screenWidth, int screenHeight, int authoredWidth, int authoredHeight)
     {
         if (requested <= Automatic)
         {
-            return For(screenWidth, screenHeight);
+            return For(screenWidth, screenHeight, authoredWidth, authoredHeight);
         }
 
         return requested > Maximum ? Maximum : requested;

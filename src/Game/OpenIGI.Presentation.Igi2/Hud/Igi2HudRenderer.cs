@@ -12,13 +12,21 @@ namespace OpenIGI.Presentation.Igi2.Hud;
 /// <summary>The retail status display for the title-owned player.</summary>
 public sealed partial class Igi2HudRenderer : ITitleHudPresenter
 {
+    /// <summary>The display the status art is laid out for: 1280×720, so a 1440-line display draws it twice over.</summary>
+    public const int AuthoredWidth = 1280;
+
+    /// <summary>The height of the display the status art is laid out for.</summary>
+    public const int AuthoredHeight = 720;
+
     /// <inheritdoc/>
-    public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight)
+    public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (player is not Igi2TitlePlayer title || screenWidth <= 0 || screenHeight <= 0) { return; }
-        // Keep the authored status art readable at modern resolutions; world-space sights and view flashes stay in pixels.
-        _scale = screenHeight / 720f;
+        // The status art by the interface scale every title's is drawn at (UiScale), for the display I.G.I. 2's was laid out at:
+        // retail places it in the display's own pixels, so it lays out here in the pixels of a display that many times smaller.
+        // World-space sights and view flashes stay in pixels.
+        _scale = UiScale.Resolve(requestedScale, screenWidth, screenHeight, AuthoredWidth, AuthoredHeight);
         float width = screenWidth / _scale, height = screenHeight / _scale;
         // The open computer covers the view and the status display.
         MeasureComputer(title, screenWidth, screenHeight);
@@ -34,6 +42,7 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         if (!title.IsCutscenePlaying && !title.Human.IsDead)
         {
             DrawStatus(batch, title, width, height);
+            DrawInventory(batch, title);
             DrawInteraction(batch, title.Human, width, height);
         }
         DrawSight(batch, title, screenWidth, screenHeight);
