@@ -125,6 +125,8 @@ public sealed class Igi2GuestLevel
             arms is null ? null : models(arms)?.BoneHierarchy,
             _sounds);
         player.GameConfig = services.TryGet(out Config.Igi2GameConfig? config) ? config : null;
+        // The session's materials name what the player stands on: his steps' sounds, his landings, what his eyes see through.
+        player.Materials = services.TryGet(out Igi2GameMaterials? standing) ? standing : null;
         player.ModelAttachments = new Igi2ModelAttachments(models, services.TryGet(out Igi2MagicObjTypes? attachments) ? attachments : null);
         player.Casings = new Igi2GunCasings(models);
         player.OverlayTypeNames = Igi2Gameplay.OverlayTypeNames(_guest.Loop.Natives);
