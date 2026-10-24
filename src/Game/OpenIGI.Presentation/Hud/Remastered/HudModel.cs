@@ -290,6 +290,9 @@ public sealed class HudModel
     /// <summary>Gets or sets where the view looks up or down, in radians, up positive; with the heading, how fast it turns.</summary>
     public float? PitchRadians { get; set; }
 
+    /// <summary>Gets or sets how far the soldiers are onto the player, as the title's AI tells it.</summary>
+    public OpenIGI.Game.Ai.PlayerAlertStatus AlertStatus { get; set; }
+
     /// <summary>Gets the weapon wheel, shut unless a title fills it.</summary>
     public HudWheelView Wheel { get; } = new();
 
@@ -332,6 +335,7 @@ public sealed class HudModel
         Damage = default;
         PitchRadians = null;
         _threats.Clear();
+        AlertStatus = OpenIGI.Game.Ai.PlayerAlertStatus.None;
         Wheel.Reset();
     }
 

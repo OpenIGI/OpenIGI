@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Igi1.Ai;
@@ -39,5 +40,31 @@ public sealed partial class SoldierSimulation
         }
 
         return _threats;
+    }
+
+    /// <summary>How far the soldiers are onto the player, in Project I.G.I.'s own terms.</summary>
+    /// <returns>
+    /// Detected while any living soldier sees the player -- its AI has no stage short of seeing him; an alarm while one sounds;
+    /// searching while a soldier still holds the alert a lost sighting or an alarm gave it; otherwise none.
+    /// </returns>
+    public PlayerAlertStatus AlertStatus()
+    {
+        bool alerted = false;
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
+        {
+            if (view.IsDead || !brain.PlayerIsEnemy)
+            {
+                continue;
+            }
+
+            if (brain.SeesPlayer)
+            {
+                return PlayerAlertStatus.Detected;
+            }
+
+            alerted |= brain.Alerted;
+        }
+
+        return AnyAlarmOn ? PlayerAlertStatus.Alarm : alerted ? PlayerAlertStatus.Searching : PlayerAlertStatus.None;
     }
 }

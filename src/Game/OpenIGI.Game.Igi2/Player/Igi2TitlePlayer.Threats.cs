@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
@@ -61,6 +62,57 @@ public sealed partial class Igi2TitlePlayer
         }
 
         return _threats;
+    }
+
+    /// <summary>How far the soldiers are onto the player, in I.G.I. 2's own terms: from their sight's lists and their alarm.</summary>
+    /// <returns>
+    /// Detected while a soldier has the player in plain sight and has confirmed him; an alarm while a soldier is alarmed;
+    /// suspicious while one is still making out a figure he sees; searching while one keeps the player in his list after
+    /// losing sight of him; otherwise none.
+    /// </returns>
+    public PlayerAlertStatus AlertStatus()
+    {
+        PlayerAlertStatus status = PlayerAlertStatus.None;
+        foreach (Igi2Human human in MapHumans)
+        {
+            if (human is not Igi2HumanSoldier { IsDead: false, Mind: Igi2HumanAi ai } || ReferenceEquals(human, Human))
+            {
+                continue;
+            }
+
+            if (ai.IsAlarmed && status < PlayerAlertStatus.Alarm)
+            {
+                status = PlayerAlertStatus.Alarm;
+            }
+
+            Igi2AiDetection detection;
+            try
+            {
+                detection = ai.Detection;
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            foreach (Igi2DetectionItem item in detection.Enemies)
+            {
+                if (!ReferenceEquals(item.Target, Human))
+                {
+                    continue;
+                }
+
+                PlayerAlertStatus seen = !item.IsFullVisible ? PlayerAlertStatus.Searching
+                    : item.IsIdentifying ? PlayerAlertStatus.Suspicious
+                    : PlayerAlertStatus.Detected;
+                if (seen > status)
+                {
+                    status = seen;
+                }
+            }
+        }
+
+        return status;
     }
 
     /// <summary>

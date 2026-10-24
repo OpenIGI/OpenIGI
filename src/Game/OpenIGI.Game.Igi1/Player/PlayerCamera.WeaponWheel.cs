@@ -14,8 +14,8 @@ public sealed partial class PlayerCamera
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Everything carried in the order it was given, each by its weapon id, but the binoculars, which keep their own key: taking
-    /// them is a toggle the wheel has no way to show.
+    /// Everything carried in the order it was given, each by its weapon id; the binoculars, taken, are raised to the eye as
+    /// their key raises them.
     /// </remarks>
     public (IReadOnlyList<string> Choices, int Current) WheelChoices()
     {
@@ -26,11 +26,6 @@ public sealed partial class PlayerCamera
             int inHand = weapons.InHand is { } held ? held.Weapon.WeaponId : -1;
             foreach (CarriedWeapon carried in weapons.Carried)
             {
-                if (carried.Weapon.Category == WeaponCategory.Binocular)
-                {
-                    continue;
-                }
-
                 if (carried.Weapon.WeaponId == inHand)
                 {
                     current = _wheelChoices.Count;

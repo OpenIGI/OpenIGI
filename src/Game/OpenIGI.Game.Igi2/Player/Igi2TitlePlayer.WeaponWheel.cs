@@ -62,13 +62,26 @@ public sealed partial class Igi2TitlePlayer
     }
 
     // The wheel's pick goes into the weapon-select channel as a number key's would (Human_SelectWeaponFromCategory), on the tick
-    // after it was taken; a number key pressed on the same tick writes over it.
+    // after it was taken; a number key pressed on the same tick writes over it. The binoculars are raised instead, as their key
+    // raises them (Igi2HumanPlayer.CheckBinoculars): their channel pressed for the tick.
     private void TakeWheelPick()
     {
-        if (_wheelPick >= 0)
+        if (_wheelPick < 0)
         {
-            _frame[(int)Igi2HumanChannel.SelectWeapon] = _wheelPick;
-            _wheelPick = -1;
+            return;
         }
+
+        bool binoculars = false;
+        foreach (Igi2WeaponItem item in Inventory?.Weapons ?? [])
+        {
+            if (item.Number == _wheelPick)
+            {
+                binoculars = item.WeaponType.WeaponId == Igi2HumanPlayer.BinocularsWeaponId;
+                break;
+            }
+        }
+
+        _frame[(int)(binoculars ? Igi2HumanChannel.Binoculars : Igi2HumanChannel.SelectWeapon)] = binoculars ? 1f : _wheelPick;
+        _wheelPick = -1;
     }
 }

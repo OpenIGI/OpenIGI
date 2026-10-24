@@ -30,6 +30,7 @@ internal sealed class PlayerWeaponSelector
     private int _heldIndex = -1;
     private int _categoryPick = -1;
     private int _wheelPick = -1;
+    private bool _wheelBinoculars;
     private int _lastNonBinocularWeaponId = -1;
     private bool _binocularTogglePending;
     private bool _binocularOpenPending;
@@ -161,10 +162,18 @@ internal sealed class PlayerWeaponSelector
     /// the cycler hands on as the pending change, with the cycle's cursor kept on it so the next and previous keys step on from it.
     /// </summary>
     /// <param name="weaponId">The weapon's id; one not carried, or the one in hand, changes nothing.</param>
+    /// <remarks>The binoculars are raised as their own key raises them (<see cref="SelectBinoculars"/>), not merely put in hand.</remarks>
     internal void Pick(int weaponId)
     {
-        if (IndexOf(weaponId) < 0 || (InHand is { } held && held.Weapon.WeaponId == weaponId))
+        int index = IndexOf(weaponId);
+        if (index < 0 || (InHand is { } held && held.Weapon.WeaponId == weaponId))
         {
+            return;
+        }
+
+        if (_carried[index].Weapon.Category == WeaponCategory.Binocular)
+        {
+            _wheelBinoculars = true;
             return;
         }
 
@@ -178,7 +187,10 @@ internal sealed class PlayerWeaponSelector
 
     internal void SelectBinoculars(PlayerInputState input)
     {
-        if (!input.IsRisingEdge(PlayerInputSlot.Binoculars))
+        // The remaster's wheel raises them as the key does, on the tick after it chose them.
+        bool wheel = _wheelBinoculars;
+        _wheelBinoculars = false;
+        if (!input.IsRisingEdge(PlayerInputSlot.Binoculars) && !wheel)
         {
             return;
         }

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Presentation.Igi1.Hud;
@@ -108,31 +109,33 @@ public sealed class RemasteredHudTests
     }
 
     [Fact]
-    public void The_detection_word_shows_for_a_moment_as_the_alarm_rises_and_not_while_it_holds()
+    public void The_alert_banner_comes_up_on_a_change_holds_while_it_lasts_and_lingers_fading_once_it_clears()
     {
         HudReactiveState state = new();
         HudModel model = new() { Show = HudParts.All };
         state.Update(model, 0f);
-        Assert.Equal(0f, state.DetectionWord);
+        Assert.Equal(0f, state.BannerOpacity);
 
-        model.AddThreat(new HudThreat(0f, 1f));
+        model.AlertStatus = PlayerAlertStatus.Detected;
         state.Update(model, 1f);
-        Assert.Equal(1f, state.DetectionWord, 2);
+        Assert.Equal(PlayerAlertStatus.Detected, state.Banner);
+        Assert.Equal(0f, state.BannerOpacity, 2);
+        state.Update(model, 1f + HudReactiveState.BannerInSeconds);
+        Assert.Equal(1f, state.BannerOpacity, 2);
 
-        state.Update(model, 1f + (HudReactiveState.DetectionWordSeconds * 0.5f));
-        Assert.Equal(0.5f, state.DetectionWord, 2);
+        // Held: it stays.
+        state.Update(model, 30f);
+        Assert.Equal(1f, state.BannerOpacity, 2);
 
-        // Held: it does not come back.
-        state.Update(model, 1f + HudReactiveState.DetectionWordSeconds + 5f);
-        Assert.Equal(0f, state.DetectionWord);
-
-        // Lost and found again: it does.
-        model.Reset();
-        model.Show = HudParts.All;
-        state.Update(model, 20f);
-        model.AddThreat(new HudThreat(0f, 0.8f));
-        state.Update(model, 21f);
-        Assert.Equal(1f, state.DetectionWord, 2);
+        // Cleared: the last word lingers, fading.
+        model.AlertStatus = PlayerAlertStatus.None;
+        state.Update(model, 31f);
+        Assert.Equal(PlayerAlertStatus.Detected, state.Banner);
+        state.Update(model, 31f + (HudReactiveState.BannerOutSeconds * 0.5f));
+        Assert.Equal(0.5f, state.BannerOpacity, 2);
+        state.Update(model, 31f + HudReactiveState.BannerOutSeconds);
+        Assert.Equal(0f, state.BannerOpacity);
+        Assert.Equal("SEARCHING", HudAlertBanner.Word(PlayerAlertStatus.Searching));
     }
 
     [Fact]
@@ -147,29 +150,6 @@ public sealed class RemasteredHudTests
 
         Assert.Equal(1f, state.Presence(HudParts.Inventory, HudDensity.Contextual, model));
         Assert.Equal(1f, state.Presence(HudParts.Inventory, HudDensity.Minimal, model));
-    }
-
-    [Fact]
-    public void A_watcher_in_view_is_marked_over_him_and_one_out_of_view_is_pointed_to_from_the_aim()
-    {
-        HudProjector view = HudProjector.FromYawPitch(default, 0f, 0f, 1f, 1920f, 1080f);
-
-        (UiVec2 ahead, bool inView, _) = HudDetection.Place(view, new Vector3d(0, 40960, 0), 56f);
-        Assert.True(inView);
-        Assert.Equal(960f, ahead.X, 1);
-        Assert.Equal(540f, ahead.Y, 1);
-
-        // Far off to the right: out of view, the way to him pointing right.
-        (_, bool rightInView, float towards) = HudDetection.Place(view, new Vector3d(409600, 4096, 0), 56f);
-        Assert.False(rightInView);
-        Assert.True(MathF.Abs(towards) < 0.3f);
-
-        // Behind: out of view, the way to him pointing down the screen; behind and to the right, down and to the right.
-        (_, bool behindInView, float behindWay) = HudDetection.Place(view, new Vector3d(0, -40960, 0), 56f);
-        Assert.False(behindInView);
-        Assert.InRange(behindWay, (MathF.PI * 0.5f) - 0.05f, (MathF.PI * 0.5f) + 0.05f);
-        (_, _, float behindRight) = HudDetection.Place(view, new Vector3d(30000, -40960, 0), 56f);
-        Assert.InRange(behindRight, 0.05f, (MathF.PI * 0.5f) - 0.05f);
     }
 
     [Fact]

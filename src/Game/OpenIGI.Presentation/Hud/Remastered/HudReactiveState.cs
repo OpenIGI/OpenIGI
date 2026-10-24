@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Animation;
 
@@ -32,8 +33,11 @@ public sealed class HudReactiveState
     /// <summary>How long a part takes to dim, once its attention has run out, in seconds.</summary>
     public const float DimSeconds = 0.6f;
 
-    /// <summary>How long the word marking a rise in the alarm shows, in seconds.</summary>
-    public const float DetectionWordSeconds = 2.2f;
+    /// <summary>How long the alert banner takes to come up, in seconds.</summary>
+    public const float BannerInSeconds = 0.25f;
+
+    /// <summary>How long the alert banner lingers, fading, once the soldiers are off the player, in seconds.</summary>
+    public const float BannerOutSeconds = 1.4f;
 
     /// <summary>How far the display trails a turning view at most, in design pixels.</summary>
     public const float MaximumSway = 4f;
@@ -53,8 +57,10 @@ public sealed class HudReactiveState
     private float _alertAt = float.NegativeInfinity;
     private string? _firstActionKey;
     private float _actionAt = float.NegativeInfinity;
-    private float _detectionAt = float.NegativeInfinity;
-    private int _detectionStage;
+    private PlayerAlertStatus _alert;
+    private PlayerAlertStatus _banner;
+    private float _bannerAt = float.NegativeInfinity;
+    private float _bannerGoneAt = float.NegativeInfinity;
     private float _weaponAt = float.NegativeInfinity;
     private float _statusAt = float.NegativeInfinity;
     private int? _lastMagazine;
@@ -89,8 +95,15 @@ public sealed class HudReactiveState
     /// <summary>Gets how far the first action has flickered in since it changed, nought to one.</summary>
     public float ActionAppear => 1f - Remaining(_actionAt, AppearSeconds);
 
-    /// <summary>Gets how much the word marking the alarm's last rise still shows, one as it rises to nought after a moment.</summary>
-    public float DetectionWord => _detectionStage > 0 ? Remaining(_detectionAt, DetectionWordSeconds) : 0f;
+    /// <summary>Gets the alert the banner tells: the soldiers' status now, or the last one while it fades.</summary>
+    public PlayerAlertStatus Banner => _banner;
+
+    /// <summary>Gets how much of the alert banner shows: up over a moment as the status changes, fading after it clears.</summary>
+    public float BannerOpacity =>
+        _alert != PlayerAlertStatus.None ? 1f - Remaining(_bannerAt, BannerInSeconds) : Remaining(_bannerGoneAt, BannerOutSeconds);
+
+    /// <summary>Gets the flash the banner gives as its status changes, one at the change to nought.</summary>
+    public float BannerFlash => _alert != PlayerAlertStatus.None ? Remaining(_bannerAt, BannerInSeconds * 3f) : 0f;
 
     /// <summary>Gets the visibility warning's pulse, one at its peak to nought, repeating while the player can be seen.</summary>
     public float AlertPulse => _wasAlert ? 1f - (((Seconds - _alertAt) % PulseSeconds) / PulseSeconds) : 0f;
@@ -225,14 +238,21 @@ public sealed class HudReactiveState
         // The threat eases, so the visor's tint swells and fades rather than blinking.
         _threat.Target = model.ThreatLevel;
 
-        // The alarm's stage -- nought, suspicious, detected -- and when it last rose, for the word that marks the rise.
-        int stage = model.ThreatLevel >= 0.95f ? 2 : model.ThreatLevel >= 0.7f ? 1 : 0;
-        if (stage > _detectionStage)
+        // The alert banner: a new status comes up with a flash; one cleared lingers, fading.
+        if (model.AlertStatus != _alert)
         {
-            _detectionAt = seconds;
-        }
+            if (model.AlertStatus != PlayerAlertStatus.None)
+            {
+                _banner = model.AlertStatus;
+                _bannerAt = seconds;
+            }
+            else
+            {
+                _bannerGoneAt = seconds;
+            }
 
-        _detectionStage = stage;
+            _alert = model.AlertStatus;
+        }
         _threat.Update(elapsed);
 
         // The sway: the display lags the way the view turns, by how fast it turns, and springs back.

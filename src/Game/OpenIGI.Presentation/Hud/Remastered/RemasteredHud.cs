@@ -167,9 +167,9 @@ public sealed class RemasteredHud : IDisposable
             HudObjective.Draw(context, model, projector);
         }
 
-        if (frame.Threats && frame.Projector is { } view)
+        if (frame.Threats)
         {
-            HudDetection.Draw(context, model, view);
+            HudAlertBanner.Draw(context);
         }
         HudReadouts.DrawProgress(context, model);
         HudReadouts.DrawTimer(context, model);

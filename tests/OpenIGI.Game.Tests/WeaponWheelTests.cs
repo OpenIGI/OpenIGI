@@ -109,4 +109,27 @@ public sealed class WeaponWheelTests
         Equip(weapons);
         Assert.Equal(held, weapons.InHand?.Weapon.ScriptId);
     }
+
+    [Fact]
+    public void Binoculars_the_wheel_takes_are_raised_as_their_key_raises_them()
+    {
+        PlayerWeapons weapons = new([20, 30]);
+        weapons.Carry(Knife);
+        weapons.Carry(Binoculars);
+        Equip(weapons);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+
+        weapons.RequestWeapon(Binoculars.WeaponId);
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame());
+        Assert.Equal(HumanWeaponState.ChangingWeapon, weapons.State);
+        for (int i = 0; i < 4 * HumanViewSway.TicksToTravel && weapons.State != HumanWeaponState.Ready; i++)
+        {
+            Tick(weapons, input, Frame(), clipEnded: true);
+        }
+
+        // In hand, and raised to the eye: the toggle the view takes is the one the binoculars' key leaves.
+        Assert.Equal("WEAPON_ID_BINOCULARS", weapons.InHand?.Weapon.ScriptId);
+        Assert.True(weapons.ConsumeBinocularToggle());
+    }
 }
