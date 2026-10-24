@@ -114,4 +114,46 @@ public sealed partial class GameHost
     }
 
     private void PlayWheelSound(string name, float gain) => _audioOut.Sounds?.PlayExternal(name, gain: gain, priority: 180);
+
+    private ShotTally? _heardTally;
+    private int _heardHits;
+    private int _heardKills;
+
+    /// <summary>
+    /// Ticks for the player's hits and kills since the last frame, the remastered crosshair's sounds: the title's player's tally,
+    /// else the mission's. A kill sounds alone; a tally newly in hand sounds nothing.
+    /// </summary>
+    private void PlayHitSounds()
+    {
+        ShotTally? tally = (TitlePlayer as IShotTallySource)?.PlayerShots ?? (_hosted as IShotTallySource)?.PlayerShots;
+        if (tally is null)
+        {
+            _heardTally = null;
+            return;
+        }
+
+        if (!ReferenceEquals(tally, _heardTally))
+        {
+            _heardTally = tally;
+            _heardHits = tally.Hits;
+            _heardKills = tally.Kills;
+            return;
+        }
+
+        bool sounds = HudCVars.HitSounds.Value && HudCVars.Crosshair.Value;
+        if (tally.Kills > _heardKills)
+        {
+            if (sounds)
+            {
+                PlayWheelSound(HitSounds.KillSoundName, tally.LastKillHead ? 1f : 0.85f);
+            }
+        }
+        else if (tally.Hits > _heardHits && sounds)
+        {
+            PlayWheelSound(HitSounds.HitSoundName, tally.LastHitHead ? 0.85f : 0.65f);
+        }
+
+        _heardHits = tally.Hits;
+        _heardKills = tally.Kills;
+    }
 }

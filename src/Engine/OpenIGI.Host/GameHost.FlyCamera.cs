@@ -155,6 +155,7 @@ public sealed partial class GameHost
             }
 
             FinishWeaponWheel(elapsed);
+            PlayHitSounds();
 
             if (_options.LogCamera && (right || rawX != 0f || rawY != 0f))
             {

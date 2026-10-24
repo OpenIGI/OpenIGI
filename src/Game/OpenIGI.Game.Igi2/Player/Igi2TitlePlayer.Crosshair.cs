@@ -16,6 +16,9 @@ public sealed partial class Igi2TitlePlayer
     private const float DegreesToRadians = MathF.PI / 180f;
 
     private readonly WorldLineTrace _aimTrace = new(1);
+
+    /// <inheritdoc/>
+    public ShotTally? PlayerShots => Human.Shots;
     private long _shotsFired;
     private int _bulletsSeen = -1;
 

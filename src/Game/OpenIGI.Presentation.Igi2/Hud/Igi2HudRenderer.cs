@@ -55,17 +55,30 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
             }
         }
 
-        DrawSight(batch, title, screenWidth, screenHeight);
+        // The remastered crosshair stands in for the original's sight where it is chosen; scopes keep their own.
+        if (!(remastered && HudCVars.Crosshair.Value))
+        {
+            DrawSight(batch, title, screenWidth, screenHeight);
+        }
 
         // Through the visor the hit washes the corners itself; otherwise the original's red corners.
         if (!title.IsCutscenePlaying) { DrawEffects(batch, title.Human, screenWidth, screenHeight, damage: !(remastered && HudCVars.HudFx.Value)); }
     }
 
+    /// <summary>
+    /// Whether the player aims with a sight now: not in a cutscene, alive, at no timed action, in the first-person camera with a
+    /// weapon in hand and no scope or zoom on -- as the original draws its sight.
+    /// </summary>
+    /// <param name="title">The player.</param>
+    /// <returns>Whether a sight shows.</returns>
+    internal static bool SightShown(Igi2TitlePlayer title) =>
+        !(title.IsCutscenePlaying || title.Human.IsDead || title.Human.IsProgressBar
+            || title.Human.IsThirdPerson || title.Human.View.IsOverride || title.Human.CameraMode != 1
+            || title.Weapons is not { Inventory.Current: not null } weapons || weapons.IsZoomFireModeActive);
+
     private static void DrawSight(SpriteBatch batch, Igi2TitlePlayer title, int screenWidth, int screenHeight)
     {
-        if (title.IsCutscenePlaying || title.Human.IsDead || title.Human.IsProgressBar
-            || title.Human.IsThirdPerson || title.Human.View.IsOverride || title.Human.CameraMode != 1
-            || title.Weapons is not { Inventory.Current: { } held } weapons || weapons.IsZoomFireModeActive)
+        if (!SightShown(title) || title.Weapons is not { Inventory.Current: { } held })
         {
             return;
         }

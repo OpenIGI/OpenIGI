@@ -25,6 +25,7 @@ r_chromatic	0	archive
 r_computer_tactical	1	archive
 r_contact_shadows	0.35	archive
 r_contrast	1	archive
+r_crosshair	1	archive
 r_damage_flash	0.55	archive
 r_day_length	40	archive
 r_day_night_cycle	0	archive
@@ -79,6 +80,8 @@ r_gi_temporal_frames	8	archive
 r_glass_reflection	1	archive
 r_grain	0	archive
 r_hdr	1	archive
+r_hit_markers	1	archive
+r_hit_sounds	1	archive
 r_hud_density	contextual	archive
 r_hud_fx	1	archive
 r_hud_fx_intensity	1	archive

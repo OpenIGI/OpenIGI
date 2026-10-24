@@ -9,7 +9,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IHostedMission
+public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
 {
     private readonly IMissionHostServices _host;
 
@@ -34,6 +34,9 @@ public sealed class Igi1Gameplay : IHostedMission
 
     /// <summary>Gets the player the host steers and looks through, or <see langword="null"/> before a level places one.</summary>
     public IHostedPlayer? Player => World.Player;
+
+    /// <inheritdoc/>
+    public ShotTally? PlayerShots => World.Player?.Shots;
 
     /// <summary>Gets what hurts the player and how it dies.</summary>
     public Igi1PlayerHarm Harm { get; }

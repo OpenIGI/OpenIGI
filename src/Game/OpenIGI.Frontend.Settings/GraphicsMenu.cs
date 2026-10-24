@@ -474,6 +474,18 @@ public static class GraphicsMenu
             "Alert Status",
             "Says at the top of the screen how far the soldiers are onto you: searching, suspicious, alarm or detected."),
         new GraphicsSetting(
+            "r_crosshair",
+            "Crosshair",
+            "A clean crosshair shaped to the weapon in hand: it opens as you fire, turns red over an enemy, in place of the original's."),
+        new GraphicsSetting(
+            "r_hit_markers",
+            "Hit Markers",
+            "A mark on the crosshair when a round hits, and a red cross when it kills; larger for a headshot."),
+        new GraphicsSetting(
+            "r_hit_sounds",
+            "Hit Sounds",
+            "A short tick when a round hits and a deeper one when it kills."),
+        new GraphicsSetting(
             "r_scope_glint",
             "Scope Glint",
             "A sniper who has you in his sights shows the glint of his scope, a flash of light where he is."),

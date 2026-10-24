@@ -35,3 +35,10 @@ public sealed class ShotTally
         LastKillHead = head;
     }
 }
+
+/// <summary>Where the host finds what the player's rounds have done: a title's gameplay or its player.</summary>
+public interface IShotTallySource
+{
+    /// <summary>Gets the player's tally, or <see langword="null"/> while there is no player.</summary>
+    ShotTally? PlayerShots { get; }
+}

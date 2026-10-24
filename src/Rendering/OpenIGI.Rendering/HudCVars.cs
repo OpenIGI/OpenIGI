@@ -108,6 +108,42 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the remastered display draws its own crosshair, one for each kind of weapon, in place of the original's.</summary>
+    public static readonly BoolCVar Crosshair = Presets.Define(
+        CVar.Bool(
+            "r_crosshair",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, a clean crosshair shaped to each kind of weapon that opens as you fire and turns red over an enemy."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the crosshair marks a hit and confirms a kill.</summary>
+    public static readonly BoolCVar HitMarkers = Presets.Define(
+        CVar.Bool(
+            "r_hit_markers",
+            true,
+            CVarOptions.Archive,
+            "With the remastered crosshair, a mark when a round hits and a red cross when it kills."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether a hit and a kill sound a short tick.</summary>
+    public static readonly BoolCVar HitSounds = Presets.Define(
+        CVar.Bool(
+            "r_hit_sounds",
+            true,
+            CVarOptions.Archive,
+            "With the remastered crosshair, a short tick when a round hits and a deeper one when it kills."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>Whether a sniper aiming at the player shows the glint of his scope.</summary>
     public static readonly BoolCVar ScopeGlint = Presets.Define(
         CVar.Bool(

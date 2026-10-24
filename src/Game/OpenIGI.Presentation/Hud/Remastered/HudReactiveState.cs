@@ -74,6 +74,9 @@ public sealed class HudReactiveState
     /// <summary>Gets the seconds of the last update.</summary>
     public float Seconds { get; private set; }
 
+    /// <summary>Gets the crosshair's motion: its opening, its enemy colour, its hit and kill marks.</summary>
+    public HudCrosshairState Crosshair { get; } = new();
+
     /// <summary>Gets the health drawn, easing to the true health.</summary>
     public float Health => _health.Value;
 
@@ -181,6 +184,7 @@ public sealed class HudReactiveState
         }
 
         _wasShown = shown;
+        Crosshair.Update(model.Aim, seconds, elapsed);
 
         // A hit: the health drops at once, its trail follows slowly, and the display shakes by how much was lost.
         float health = Math.Clamp(model.Health, 0f, 1f);

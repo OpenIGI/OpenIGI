@@ -306,6 +306,9 @@ public sealed class HudModel
     /// <summary>Gets the weapon wheel, shut unless a title fills it.</summary>
     public HudWheelView Wheel { get; } = new();
 
+    /// <summary>Gets or sets what the player's aim and rounds are doing, for the crosshair: its shape, spread and marks.</summary>
+    public OpenIGI.Game.Player.PlayerAimFeedback Aim { get; set; }
+
     /// <summary>Gets those noticing the player.</summary>
     public IReadOnlyList<HudThreat> Threats => _threats;
 
@@ -328,6 +331,7 @@ public sealed class HudModel
     public void Reset()
     {
         Show = HudParts.None;
+        Aim = default;
         Health = 1f;
         Stance = HudStance.None;
         Visibility = null;

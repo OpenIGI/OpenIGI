@@ -107,6 +107,9 @@ public static class Igi1HudTheme
             }
         }
 
+        // What the crosshair shows: the weapon's own, its spread, an enemy under it, the rounds' hits and kills.
+        model.Aim = OpenIGI.Game.Igi1.Player.Igi1Crosshair.Feedback(player, mission.Soldiers);
+
         if (player.Weapons is { InHand: { } held } carried)
         {
             WeaponType weapon = held.Weapon;

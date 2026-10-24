@@ -175,9 +175,18 @@ public sealed class RemasteredHud : IDisposable
         HudReadouts.DrawProgress(context, model);
         HudReadouts.DrawTimer(context, model);
         HudReadouts.DrawMessages(context, model);
-        if (frame.CrosshairSpread > 0f)
+        // The remastered crosshair, shaped to the weapon and answering the aim; without it, the plain mark the frame opens.
+        if (HudCVars.Crosshair.Value)
+        {
+            HudCrosshair.Draw(context, model, frame);
+        }
+        else if (frame.CrosshairSpread > 0f)
         {
             HudReadouts.DrawCrosshair(context, model, frame.CrosshairSpread);
+        }
+
+        if (frame.CrosshairSpread > 0f)
+        {
             HudAlerts.DrawAmmoArc(context, model, frame.CrosshairSpread);
         }
 

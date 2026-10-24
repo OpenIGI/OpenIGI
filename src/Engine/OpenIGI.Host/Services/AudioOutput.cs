@@ -82,10 +82,15 @@ internal sealed class AudioOutput(
             Sounds.RegisterExternal(name, LampSounds.Format, pcm);
         }
 
-        // And the remaster's weapon wheel.
+        // And the remaster's weapon wheel and crosshair.
         foreach ((string name, byte[] pcm) in WeaponWheelSounds.All)
         {
             Sounds.RegisterExternal(name, WeaponWheelSounds.Format, pcm);
+        }
+
+        foreach ((string name, byte[] pcm) in HitSounds.All)
+        {
+            Sounds.RegisterExternal(name, HitSounds.Format, pcm);
         }
 
         MountMenuSounds();

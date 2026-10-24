@@ -116,7 +116,20 @@ internal static class UiGeometryEmitter
     /// <param name="polygon">The polygon, in device space.</param>
     /// <param name="color">The polygon's colour, already faded; the fringe fades it to nothing.</param>
     /// <param name="blend">How the fringe combines with what is behind it.</param>
-    public static void FeatherEdges(IUiRenderer renderer, UiRect clip, ReadOnlySpan<UiVertex> polygon, Bgra32 color, UiBlend blend)
+    public static void FeatherEdges(IUiRenderer renderer, UiRect clip, ReadOnlySpan<UiVertex> polygon, Bgra32 color, UiBlend blend) =>
+        FeatherEdges(renderer, clip, polygon, color, blend, allEdges: false);
+
+    /// <summary>Feathers a device-space polygon's edges: its slanted ones, or every one.</summary>
+    /// <param name="renderer">Where the quads go.</param>
+    /// <param name="clip">The clip.</param>
+    /// <param name="polygon">The polygon, convex, in order.</param>
+    /// <param name="color">Its colour, faded to nothing a pixel out.</param>
+    /// <param name="blend">How the feather combines with what is behind it.</param>
+    /// <param name="allEdges">
+    /// Whether edges that run along the pixel grid are feathered too: a filled rectangle's are already crisp, but a thin stroke
+    /// a fraction of a pixel off the grid shimmers without it.
+    /// </param>
+    public static void FeatherEdges(IUiRenderer renderer, UiRect clip, ReadOnlySpan<UiVertex> polygon, Bgra32 color, UiBlend blend, bool allEdges)
     {
         int n = polygon.Length;
         Span<UiVec2> points = stackalloc UiVec2[n];
@@ -132,7 +145,7 @@ internal static class UiGeometryEmitter
         {
             UiVec2 a = points[i];
             UiVec2 b = points[(i + 1) % n];
-            if (MathF.Abs(a.X - b.X) < 0.01f || MathF.Abs(a.Y - b.Y) < 0.01f)
+            if (!allEdges && (MathF.Abs(a.X - b.X) < 0.01f || MathF.Abs(a.Y - b.Y) < 0.01f))
             {
                 continue;
             }

@@ -14,7 +14,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>The ported player as the host steps it.</summary>
-public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels, IWeaponWheelPlayer
+public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels, IWeaponWheelPlayer, IShotTallySource
 {
     /// <summary>Gets or sets the title profile whose HUD preferences are currently active.</summary>
     public Config.Igi2GameConfig? GameConfig { get; set; }

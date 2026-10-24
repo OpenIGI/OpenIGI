@@ -97,6 +97,13 @@ public sealed partial class Igi2HudRenderer
             }
         }
 
+        // The crosshair, where the original would draw its sight.
+        if (SightShown(title))
+        {
+            model.Show |= HudParts.Crosshair;
+            model.Aim = title.AimFeedback();
+        }
+
         if (title.Inventory is { } inventory)
         {
             BuildWeapon(title, inventory, model);
