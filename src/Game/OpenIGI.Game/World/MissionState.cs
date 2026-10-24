@@ -160,6 +160,13 @@ public class MissionState : IInspectableMission
     /// <summary>Gets or sets the vehicle whose gun's round is being cast, so the cast passes through its own hull.</summary>
     public GameTask? VehicleRoundOwner { get; set; }
 
+    /// <summary>
+    /// Gets or sets what a round landing on one of the level's placed objects does there, as the mission's own game answers it:
+    /// where it landed, the placed task and placement struck, and the round's damage. Another game's rounds hand their
+    /// contacts to it, so a camera, a pane or a barrel they hit breaks as one the mission's own player shot would.
+    /// </summary>
+    public Action<Vector3d, GameTask?, WorldPlacement?, float>? RoundContact { get; set; }
+
     /// <summary>Gets or sets the level's fans and radar heads, which turn a step each tick.</summary>
     public IPlacementSpin? Spins { get; set; }
 
