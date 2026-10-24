@@ -155,10 +155,11 @@ public readonly record struct HudActionView(HudIcon Icon, HudIcon Second, HudIco
 /// <param name="Key">What identifies it from frame to frame.</param>
 public readonly record struct HudMessageView(string Text, float Opacity, int Key);
 
-/// <summary>Someone noticing the player: which way they are, and how close they are to having seen.</summary>
+/// <summary>Someone who has the player in sight: which way they are, how close they are to sure, and where to mark them.</summary>
 /// <param name="Bearing">Where they are from the view's facing, in radians clockwise: nought ahead, π behind.</param>
 /// <param name="Awareness">How far they are to seeing the player, nought (not at all) to one (seen).</param>
-public readonly record struct HudThreat(float Bearing, float Awareness);
+/// <param name="Mark">The point over their head the eye is drawn at, in world units, or <see langword="null"/> for none.</param>
+public readonly record struct HudThreat(float Bearing, float Awareness, OpenIGI.Core.Numerics.Vector3d? Mark = null);
 
 /// <summary>Where the player was last hit from, and how hard: what washes the display's corners.</summary>
 /// <param name="TopLeft">The top left corner's wash, nought to one.</param>
@@ -252,24 +253,6 @@ public sealed class HudModel
             }
 
             return most;
-        }
-    }
-
-    /// <summary>Gets the one who has noticed the player most, or <see langword="null"/> for no one.</summary>
-    public HudThreat? Strongest
-    {
-        get
-        {
-            HudThreat? strongest = null;
-            foreach (HudThreat threat in _threats)
-            {
-                if (strongest is not { } most || threat.Awareness > most.Awareness)
-                {
-                    strongest = threat;
-                }
-            }
-
-            return strongest;
         }
     }
 

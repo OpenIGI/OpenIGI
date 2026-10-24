@@ -9,11 +9,14 @@ namespace OpenIGI.Game.Igi2.Player;
 /// <content>Who is noticing the player, and the objective being worked on, as a heads-up display marks them.</content>
 public sealed partial class Igi2TitlePlayer
 {
+    /// <summary>How far over a watching soldier's eyes he is marked, in world units: 0.45 m.</summary>
+    public const double OverEyes = 1843.2;
+
     private readonly List<(Vector3d Position, float Awareness)> _threats = [];
 
     /// <summary>
-    /// The soldiers noticing the player, each with where they stand and how close they are to having seen it: from their own
-    /// sight's lists (<c>AIDetection_RunDetection</c>'s enemies), not anything they cannot know.
+    /// The soldiers noticing the player, each with a point a hand over their eyes, in their posture, and how close they are to
+    /// having seen it: from their own sight's lists (<c>AIDetection_RunDetection</c>'s enemies), not anything they cannot know.
     /// </summary>
     /// <returns>The soldiers, refilled each call.</returns>
     /// <remarks>
@@ -51,7 +54,8 @@ public sealed partial class Igi2TitlePlayer
                 float awareness = item.IsIdentifying
                     ? 0.5f + (0.4f * Math.Clamp((ai.World.LevelTick() - item.BecameVisibleTick) / 60f, 0f, 1f))
                     : 1f;
-                _threats.Add((soldier.Position, awareness));
+                Vector3d eyes = Igi2Human.EyesAt(soldier.Position, soldier.Pose);
+                _threats.Add((new Vector3d(eyes.X, eyes.Y, eyes.Z + OverEyes), awareness));
                 break;
             }
         }

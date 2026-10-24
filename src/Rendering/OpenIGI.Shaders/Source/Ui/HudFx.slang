@@ -12,8 +12,8 @@
 //   - its own glow, the blurred layer's bright parts, is laid back over it, so bright figures bloom and the glass stays clear;
 //   - a hit tears the picture on the side it came from: slices of it jump sideways, its colours split, it blurs and greys
 //     -- no paint over the picture;
-//   - being noticed swells a soft glow in from the side the watcher is, a crescent along the screen's oval holding a faint
-//     drifting honeycomb; once they have the player, arcs ripple inward from it.
+//
+// Who is watching the player is not this pass's: the display marks each watcher itself (HudDetection).
 //
 // At nought intensity every one of those is nothing and the layer is laid over exactly as drawn.
 
@@ -44,7 +44,7 @@ struct HudFxParams
     // scanlines per 1080 lines, scanline strength, appear, seconds.
     float4 lines;
 
-    // shake x, shake y in pixels, the strongest watcher's bearing in radians clockwise from ahead, whether there is one.
+    // shake x, shake y in pixels, unused, unused.
     float4 shake;
 
     // the hit's wash in each corner: top left, top right, bottom left, bottom right.
@@ -54,7 +54,7 @@ struct HudFxParams
     // encodes as it stores, two where it can and the target stores what it is given, so the picture goes out encoded.
     float4 damageColour;
 
-    // how near the player is to being seen, nought to one, and the tint it brings in from the edges.
+    // unused.
     float4 alert;
 };
 
@@ -71,16 +71,6 @@ Varyings vertexMain(uint index : SV_VertexID)
 float Hash(float n)
 {
     return frac(sin(n * 12.9898) * 43758.5453);
-}
-
-// How near a point is to the edge of its cell of a hexagonal grid, nought on the edge: the shield's honeycomb.
-float HexEdge(float2 v)
-{
-    const float2 s = float2(1.0, 1.7320508);
-    float2 a = fmod(abs(v), s) - (s * 0.5);
-    float2 b = fmod(abs(v - (s * 0.5)), s) - (s * 0.5);
-    float2 g = abs(dot(a, a) < dot(b, b) ? a : b);
-    return 0.5 - max(dot(g, normalize(s)), g.x);
 }
 
 // Linear light to the sRGB encoding, for a target that stores what it is given.
@@ -181,37 +171,6 @@ float4 fragmentMain(Varyings input) : SV_Target
         + (p.damage.z * exp(-dot(bl, bl) * 2.6))
         + (p.damage.w * exp(-dot(br, br) * 2.6));
     hit = saturate(hit * 1.6) * intensity;
-
-    // Whatever lights the visor, added: the glow of being noticed.
-    float3 light = float3(0.0, 0.0, 0.0);
-
-    // Being noticed: a glow swells in from the side the watcher is -- no frame, no edge: a soft crescent following the
-    // screen's oval, filled with a faint honeycomb that drifts, and once they have the player, arcs rippling inward.
-    float threat = saturate(p.alert.x) * intensity;
-    if (threat > 0.0)
-    {
-        // How far out on the screen's oval: nought in the middle, one at the middle of each edge.
-        float oval = length((q - 0.5) * 2.0);
-
-        // Towards the watcher, clockwise from straight up as the bearing is; someone behind swells from the bottom. With no
-        // one in particular, a faint even ring.
-        float facing = atan2(fromMiddle.x, -fromMiddle.y);
-        float toward = pow(saturate(0.5 + (0.5 * cos(facing - p.shake.z))), 6.0);
-        float side = lerp(0.3, toward, saturate(p.shake.w));
-
-        float swell = smoothstep(0.62 + (0.25 * (1.0 - threat)), 1.25, oval) * side;
-        float cells = 1.0 - smoothstep(0.0, 0.06, HexEdge((qa * 22.0) + float2(0.0, time * 0.35)));
-        float shimmer = 0.75 + (0.25 * sin((time * 4.0) + (oval * 18.0)));
-
-        // Once they have the player, arcs ripple in from the edge on their side.
-        float sure = saturate((threat - 0.7) / 0.25);
-        float phase = frac(time * 0.8);
-        float ripple = exp(-pow((oval - (1.3 - (phase * 0.55))) / 0.012, 2.0)) * (1.0 - phase) * sure * side;
-
-        light += p.alert.yzw * (((swell * (0.35 + (0.45 * cells)) * shimmer) + (ripple * 0.9)) * threat);
-    }
-
-    colour.rgb += light;
 
     // The picture under the display, torn where the hit lands: slices slid sideways, split, blurred, greyed and dimmed,
     // laid back under the display only there. Without the picture, the dimming alone, as black laid over.

@@ -96,13 +96,13 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>Whether the remastered HUD marks the edges of the screen towards those who are noticing the player.</summary>
+    /// <summary>Whether the remastered HUD marks each soldier who has the player in sight with an eye that fills as he makes the player out.</summary>
     public static readonly BoolCVar HudThreat = Presets.Define(
         CVar.Bool(
             "r_hud_threat",
             true,
             CVarOptions.Archive,
-            "With the remaster HUD, mark the screen's edge towards each soldier noticing you, and tint the visor as they do."),
+            "With the remaster HUD, mark each soldier who can see you with an eye that fills as he makes you out."),
         vanilla: "0",
         enhanced: "1",
         high: "1",

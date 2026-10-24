@@ -1,10 +1,13 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Hud.Remastered;
+using OpenIGI.Presentation.Hud.Remastered.Widgets;
 using OpenIGI.Presentation.Igi1.Hud;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
+using OpenIGI.UI.Layout;
 using Xunit;
 
 namespace OpenIGI.Presentation.Tests;
@@ -116,6 +119,30 @@ public sealed class RemasteredHudTests
 
         Assert.Equal(1f, state.Presence(HudParts.Inventory, HudDensity.Contextual, model));
         Assert.Equal(1f, state.Presence(HudParts.Inventory, HudDensity.Minimal, model));
+    }
+
+    [Fact]
+    public void A_watcher_in_view_is_marked_over_him_and_one_out_of_view_at_the_edge_towards_him()
+    {
+        HudProjector view = HudProjector.FromYawPitch(default, 0f, 0f, 1f, 1920f, 1080f);
+
+        (UiVec2 ahead, bool inView, _) = HudDetection.Place(view, new Vector3d(0, 40960, 0), 56f);
+        Assert.True(inView);
+        Assert.Equal(960f, ahead.X, 1);
+        Assert.Equal(540f, ahead.Y, 1);
+
+        // Far off to the right: held at the right edge, pointing right.
+        (UiVec2 right, bool rightInView, float towards) = HudDetection.Place(view, new Vector3d(409600, 4096, 0), 56f);
+        Assert.False(rightInView);
+        Assert.True(right.X > 1800f);
+        Assert.True(MathF.Abs(towards) < 0.3f);
+
+        // Behind: held low, inside the screen; behind and to the right, on the right.
+        (UiVec2 behind, bool behindInView, _) = HudDetection.Place(view, new Vector3d(0, -40960, 0), 56f);
+        Assert.False(behindInView);
+        Assert.True(behind.Y > 540f && behind.Y <= 1080f - 55f);
+        (UiVec2 behindRight, _, _) = HudDetection.Place(view, new Vector3d(30000, -40960, 0), 56f);
+        Assert.True(behindRight.X > 960f);
     }
 
     [Fact]

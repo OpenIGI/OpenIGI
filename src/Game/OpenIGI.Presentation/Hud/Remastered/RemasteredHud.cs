@@ -156,6 +156,11 @@ public sealed class RemasteredHud : IDisposable
         {
             HudObjective.Draw(context, model, projector);
         }
+
+        if (frame.Threats && frame.Projector is { } view)
+        {
+            HudDetection.Draw(context, model, view);
+        }
         HudReadouts.DrawProgress(context, model);
         HudReadouts.DrawTimer(context, model);
         HudReadouts.DrawMessages(context, model);
@@ -193,17 +198,13 @@ public sealed class RemasteredHud : IDisposable
         context.PartOpacity = 1f;
     }
 
-    // The theme's visor at the player's strength, with this frame's flicker, shake, sway, hit and threat.
+    // The theme's visor at the player's strength, with this frame's flicker, shake, sway and hit.
     private HudFxSettings Fx(in HudFxSettings look, HudModel model, in HudFrame frame, float scale)
     {
         float shake = _reactive.Shake;
         float angle = frame.Seconds * 71f;
         HudDamage damage = model.Damage;
         (float swayX, float swayY) = frame.Sway ? _reactive.Sway : (0f, 0f);
-        float threat = frame.Threats ? _reactive.Threat : 0f;
-
-        // Amber while they are only wondering, red as they come to see.
-        float red = Math.Clamp((threat - 0.4f) / 0.5f, 0f, 1f);
         return look with
         {
             Intensity = Math.Clamp(frame.Intensity, 0f, 1f),
@@ -211,10 +212,6 @@ public sealed class RemasteredHud : IDisposable
             Seconds = frame.Seconds,
             Shake = ((MathF.Sin(angle) * 6f * scale * shake) + (swayX * scale), (MathF.Cos(angle * 1.3f) * 4f * scale * shake) + (swayY * scale)),
             Damage = (damage.TopLeft, damage.TopRight, damage.BottomLeft, damage.BottomRight),
-            Alert = threat,
-            AlertColour = (1f, 0.62f - (0.5f * red), 0.12f - (0.08f * red)),
-            AlertBearing = model.Strongest?.Bearing ?? 0f,
-            AlertDirected = frame.Threats && model.Strongest is not null,
         };
     }
 

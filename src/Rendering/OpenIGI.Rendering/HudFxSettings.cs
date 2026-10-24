@@ -54,21 +54,6 @@ public readonly record struct HudFxSettings
     /// <summary>Gets the colour of the hit wash, as linear red, green and blue.</summary>
     public (float R, float G, float B) DamageColour { get; init; }
 
-    /// <summary>Gets how near the player is to being seen, nought to one: the edges take <see cref="AlertColour"/> as it grows.</summary>
-    public float Alert { get; init; }
-
-    /// <summary>Gets the colour the edges take as the player is noticed, as linear red, green and blue.</summary>
-    public (float R, float G, float B) AlertColour { get; init; }
-
-    /// <summary>
-    /// Gets which way the one who has noticed the player most is, in radians clockwise from the view's facing: the visor's rim
-    /// burns brightest on that side.
-    /// </summary>
-    public float AlertBearing { get; init; }
-
-    /// <summary>Gets a value indicating whether <see cref="AlertBearing"/> says anything, or the rim burns evenly.</summary>
-    public bool AlertDirected { get; init; }
-
     /// <summary>Gets a value indicating whether the pass changes anything at all.</summary>
     public bool IsActive => Intensity > 0f;
 }

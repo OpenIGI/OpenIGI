@@ -16,6 +16,9 @@ public static class Igi1HudTheme
 {
     private static readonly Bgra32 Phosphor = Bgra32.FromRgba(78, 255, 120, 255);
 
+    /// <summary>How far over a soldier's feet his eye is marked, in world units: 2.15 m, a hand over a standing head.</summary>
+    public const double OverHead = 8806.4;
+
     /// <summary>Gets the theme.</summary>
     public static HudTheme Theme { get; } = new(
         "Project I.G.I.",
@@ -83,7 +86,8 @@ public static class Igi1HudTheme
         model.HeadingRadians = player.Yaw;
         model.PitchRadians = player.Pitch;
 
-        // Who is noticing the player, by their bearing from where the camera faces: forward is (sin yaw, cos yaw).
+        // Who has the player in sight, by their bearing from where the camera faces -- forward is (sin yaw, cos yaw) -- and the
+        // point over their heads the eye is drawn at.
         if (mission.Soldiers is { } soldiers)
         {
             float forwardX = MathF.Sin(player.Yaw), forwardY = MathF.Cos(player.Yaw);
@@ -92,7 +96,7 @@ public static class Igi1HudTheme
                 double dx = at.X - player.Body.Position.X, dy = at.Y - player.Body.Position.Y;
                 float ahead = (float)((dx * forwardX) + (dy * forwardY));
                 float across = (float)((dx * forwardY) - (dy * forwardX));
-                model.AddThreat(new HudThreat(MathF.Atan2(across, ahead), awareness));
+                model.AddThreat(new HudThreat(MathF.Atan2(across, ahead), awareness, at + new OpenIGI.Core.Numerics.Vector3d(0.0, 0.0, OverHead)));
             }
         }
 

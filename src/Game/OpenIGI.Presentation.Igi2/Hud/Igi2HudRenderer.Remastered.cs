@@ -87,7 +87,7 @@ public sealed partial class Igi2HudRenderer
                 double dx = at.X - human.Position.X, dy = at.Y - human.Position.Y;
                 float ahead = (float)((dx * forwardX) + (dy * forwardY));
                 float across = (float)((dx * view.M11) + (dy * view.M21));
-                model.AddThreat(new HudThreat(MathF.Atan2(across, ahead), awareness));
+                model.AddThreat(new HudThreat(MathF.Atan2(across, ahead), awareness, at));
             }
         }
 
