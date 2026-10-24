@@ -122,7 +122,7 @@ public sealed class RemasteredHudTests
     }
 
     [Fact]
-    public void A_watcher_in_view_is_marked_over_him_and_one_out_of_view_at_the_edge_towards_him()
+    public void A_watcher_in_view_is_marked_over_him_and_one_out_of_view_is_pointed_to_from_the_aim()
     {
         HudProjector view = HudProjector.FromYawPitch(default, 0f, 0f, 1f, 1920f, 1080f);
 
@@ -131,18 +131,17 @@ public sealed class RemasteredHudTests
         Assert.Equal(960f, ahead.X, 1);
         Assert.Equal(540f, ahead.Y, 1);
 
-        // Far off to the right: held at the right edge, pointing right.
-        (UiVec2 right, bool rightInView, float towards) = HudDetection.Place(view, new Vector3d(409600, 4096, 0), 56f);
+        // Far off to the right: out of view, the way to him pointing right.
+        (_, bool rightInView, float towards) = HudDetection.Place(view, new Vector3d(409600, 4096, 0), 56f);
         Assert.False(rightInView);
-        Assert.True(right.X > 1800f);
         Assert.True(MathF.Abs(towards) < 0.3f);
 
-        // Behind: held low, inside the screen; behind and to the right, on the right.
-        (UiVec2 behind, bool behindInView, _) = HudDetection.Place(view, new Vector3d(0, -40960, 0), 56f);
+        // Behind: out of view, the way to him pointing down the screen; behind and to the right, down and to the right.
+        (_, bool behindInView, float behindWay) = HudDetection.Place(view, new Vector3d(0, -40960, 0), 56f);
         Assert.False(behindInView);
-        Assert.True(behind.Y > 540f && behind.Y <= 1080f - 55f);
-        (UiVec2 behindRight, _, _) = HudDetection.Place(view, new Vector3d(30000, -40960, 0), 56f);
-        Assert.True(behindRight.X > 960f);
+        Assert.InRange(behindWay, (MathF.PI * 0.5f) - 0.05f, (MathF.PI * 0.5f) + 0.05f);
+        (_, _, float behindRight) = HudDetection.Place(view, new Vector3d(30000, -40960, 0), 56f);
+        Assert.InRange(behindRight, 0.05f, (MathF.PI * 0.5f) - 0.05f);
     }
 
     [Fact]

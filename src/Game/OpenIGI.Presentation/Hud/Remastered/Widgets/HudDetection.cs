@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.UI;
+using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Presentation.Hud.Remastered.Widgets;
@@ -142,15 +143,13 @@ public static class HudDetection
             return;
         }
 
-        context.Painter.StrokeLine(left, Lerp(left, peak, share), thickness, colour);
-        context.Painter.StrokeLine(right, Lerp(right, peak, share), thickness, colour);
+        context.Painter.StrokeLine(left, Interpolate.Lerp(left, peak, share), thickness, colour);
+        context.Painter.StrokeLine(right, Interpolate.Lerp(right, peak, share), thickness, colour);
     }
 
     // White while he looks, orange as he grows suspicious, the theme's danger once he is sure.
     private static Bgra32 Colour(float awareness, Bgra32 danger) =>
         awareness >= Sure ? danger : awareness >= Suspicious ? Warning : Looking;
-
-    private static UiVec2 Lerp(UiVec2 a, UiVec2 b, float t) => new(a.X + ((b.X - a.X) * t), a.Y + ((b.Y - a.Y) * t));
 
     // A steady pseudo-random number in [0, 1) for a number, so a flicker repeats the same on each frame of its tick.
     private static float Hash(float n)
