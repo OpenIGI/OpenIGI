@@ -86,12 +86,18 @@ public sealed class HudDrawContext
     {
         if (Smooth is { } smooth && Icons.Resolve(icon) is { Asset.Frames.Count: > 0 } source && smooth.Get(source) is { } copy)
         {
-            copy.DrawFrame(Batch, copy.Asset.Frames[0], x, y, scale, scale, Fade(colour, PartOpacity));
+            copy.DrawFrame(Batch, copy.Asset.Frames[0], x, y, scale, scale, Fade(colour, PartOpacity * Behind));
             return;
         }
 
-        Icons.Draw(Batch, icon, x, y, scale, Fade(colour, PartOpacity));
+        Icons.Draw(Batch, icon, x, y, scale, Fade(colour, PartOpacity * Behind));
     }
+
+    /// <summary>Gets or sets how much of the display under the weapon wheel shows, one with the wheel shut.</summary>
+    public float Behind { get; set; } = 1f;
+
+    /// <summary>Gets a value indicating whether the visor pass draws the world behind the weapon wheel, so the wheel draws none.</summary>
+    public bool ShaderBackdrop { get; init; }
 
     /// <summary>Gets the smooth copies of the title's pictures, or <see langword="null"/> to draw the title's own.</summary>
     public HudSmoothSprites? Smooth { get; init; }

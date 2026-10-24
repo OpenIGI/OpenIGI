@@ -54,6 +54,9 @@ public readonly record struct HudFxSettings
     /// <summary>Gets the colour of the hit wash, as linear red, green and blue.</summary>
     public (float R, float G, float B) DamageColour { get; init; }
 
+    /// <summary>Gets how far the weapon wheel is open, nought to one: the world behind it drained, smeared and darkened.</summary>
+    public float Wheel { get; init; }
+
     /// <summary>Gets a value indicating whether the pass changes anything at all.</summary>
     public bool IsActive => Intensity > 0f;
 }

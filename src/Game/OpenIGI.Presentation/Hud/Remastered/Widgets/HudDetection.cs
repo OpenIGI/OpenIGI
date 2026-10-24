@@ -9,7 +9,8 @@ namespace OpenIGI.Presentation.Hud.Remastered.Widgets;
 /// <summary>
 /// A detection mark for each soldier who has the player in sight, after Splinter Cell: Blacklist's: a thin, flat chevron over
 /// his head that fills from its ends to its peak as he makes the player out -- white while he only looks, doubled and orange
-/// under "WARNING" as he grows suspicious, red under a flickering "DETECTED" once he is sure. One out of view is a thin arc on
+/// as he grows suspicious, red once he is sure -- smaller the further off he is; marks that would crowd one another give way to
+/// the surest. As the alarm rises, the surest soldier in view carries the word for a moment: "WARNING", then "DETECTED". One out of view is a thin arc on
 /// a ring round the aim, on his side, with a point out towards him, in the same colours.
 /// </summary>
 /// <remarks>
@@ -26,6 +27,12 @@ public static class HudDetection
 
     /// <summary>How sure a soldier must be for his arc to turn red, nought to one.</summary>
     public const float Sure = 0.95f;
+
+    /// <summary>How many soldiers are marked at most.</summary>
+    public const int MaximumMarks = 24;
+
+    /// <summary>How close two marks may come, in design pixels, before the less sure is left out.</summary>
+    public const float CrowdRadius = 70f;
 
     /// <summary>How suspicious a soldier must be for his chevron to double and warn, nought to one.</summary>
     public const float Suspicious = 0.7f;
@@ -62,9 +69,30 @@ public static class HudDetection
             return;
         }
 
-        UiVec2 aim = new(context.Width * 0.5f, context.Height * 0.5f);
-        foreach (HudThreat threat in model.Threats)
+        // The surest first, so where marks would crowd one another the surest is the one drawn, and the word goes over him alone.
+        int count = Math.Min(model.Threats.Count, MaximumMarks);
+        Span<int> order = stackalloc int[count];
+        for (int i = 0; i < count; i++)
         {
+            order[i] = i;
+        }
+
+        for (int i = 1; i < count; i++)
+        {
+            for (int j = i; j > 0 && model.Threats[order[j]].Awareness > model.Threats[order[j - 1]].Awareness; j--)
+            {
+                (order[j], order[j - 1]) = (order[j - 1], order[j]);
+            }
+        }
+
+        UiVec2 aim = new(context.Width * 0.5f, context.Height * 0.5f);
+        Span<UiVec2> drawn = stackalloc UiVec2[count];
+        int marks = 0;
+        bool worded = false;
+        float crowd = context.Px(CrowdRadius);
+        foreach (int index in order)
+        {
+            HudThreat threat = model.Threats[index];
             if (threat.Mark is not { } mark || threat.Awareness <= 0.01f)
             {
                 continue;
@@ -74,7 +102,25 @@ public static class HudDetection
             (UiVec2 at, bool inView, float towards) = Place(projector, mark, context.Px(EdgeMargin));
             if (inView)
             {
-                Chevron(context, at, awareness);
+                bool crowded = false;
+                for (int k = 0; k < marks && !crowded; k++)
+                {
+                    crowded = MathF.Abs(drawn[k].X - at.X) < crowd && MathF.Abs(drawn[k].Y - at.Y) < crowd * 0.6f;
+                }
+
+                if (crowded)
+                {
+                    continue;
+                }
+
+                drawn[marks++] = at;
+
+                // Smaller the further off he is, so a crowd far away is not a wall of marks.
+                double dx = mark.X - projector.Eye.X, dy = mark.Y - projector.Eye.Y, dz = mark.Z - projector.Eye.Z;
+                float metres = (float)(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 4096.0);
+                float size = Math.Clamp(1.15f - (metres / 70f), 0.55f, 1f);
+                Chevron(context, at, awareness, size, word: !worded);
+                worded = true;
             }
             else
             {
@@ -87,14 +133,15 @@ public static class HudDetection
     }
 
     // The chevron over a soldier: two thin legs rising from its ends to a low peak over him, a faint track filled from the ends
-    // to the peak by how sure he is; suspicious, a second chevron over it and "WARNING"; sure, red, glowing, "DETECTED".
-    private static void Chevron(HudDrawContext context, UiVec2 over, float awareness)
+    // to the peak by how sure he is; suspicious, a second chevron over it; sure, red and glowing. The surest soldier in view
+    // carries the word -- "WARNING", "DETECTED" -- and only for a moment after the alarm rises (HudReactiveState.DetectionWord).
+    private static void Chevron(HudDrawContext context, UiVec2 over, float awareness, float size, bool word)
     {
         bool sure = awareness >= Sure, warned = awareness >= Suspicious;
         float beat = sure ? 0.5f + (0.5f * MathF.Sin(context.Seconds * 10f)) : 0f;
         float opacity = context.Reactive.Appear;
         Bgra32 colour = Colour(awareness, context.Palette.Danger);
-        float half = context.Px(52f), rise = context.Px(13f), thickness = MathF.Max(1.5f, context.Px(2.6f));
+        float half = context.Px(44f) * size, rise = context.Px(11f) * size, thickness = MathF.Max(1.5f, context.Px(2.4f) * size);
         UiVec2 left = new(over.X - half, over.Y), peak = new(over.X, over.Y - rise), right = new(over.X + half, over.Y);
 
         if (sure)
@@ -116,21 +163,28 @@ public static class HudDetection
         UiVec2 left2 = new(over.X - (half * 0.62f), over.Y - lift), peak2 = new(over.X, over.Y - rise - (lift * 0.55f)), right2 = new(over.X + (half * 0.62f), over.Y - lift);
         Legs(context, left2, peak2, right2, 1f, thickness, HudDrawContext.Fade(colour, 0.9f * opacity));
 
-        // Its word over it; "DETECTED" flickers, a slice of it slipping now and then.
-        string word = sure ? "DETECTED" : "WARNING";
-        float size = context.Px(24f);
-        float width = UiPainter.MeasureLabel(context.Fonts.Name, word, size, 0.08f);
-        UiVec2 at = new(over.X - (width * 0.5f), peak2.Y - size - context.Px(6f));
+        // Its word over it, for a moment after the alarm rises: "DETECTED" flickers, a slice of it slipping now and then.
+        float shown = word ? context.Reactive.DetectionWord : 0f;
+        if (shown <= 0.01f)
+        {
+            return;
+        }
+
+        string text = sure ? "DETECTED" : "WARNING";
+        float textSize = context.Px(20f);
+        float width = UiPainter.MeasureLabel(context.Fonts.Name, text, textSize, 0.12f);
+        UiVec2 at = new(over.X - (width * 0.5f), peak2.Y - textSize - context.Px(6f));
+        float fade = opacity * shown;
         if (sure)
         {
             float tick = MathF.Floor(context.Seconds * 18f);
-            float slip = (Hash(tick) > 0.7f ? (Hash(tick + 3.1f) - 0.5f) : 0f) * context.Px(10f);
-            context.Painter.DrawLabel(context.Fonts.Name, word, new UiVec2(at.X + slip + context.Px(2.5f), at.Y), size, HudDrawContext.Fade(colour, 0.35f * opacity), 0.08f);
-            context.Painter.DrawLabel(context.Fonts.Name, word, new UiVec2(at.X - slip, at.Y), size, HudDrawContext.Fade(colour, (0.85f + (0.15f * beat)) * opacity), 0.08f);
+            float slip = (Hash(tick) > 0.7f ? (Hash(tick + 3.1f) - 0.5f) : 0f) * context.Px(8f);
+            context.Painter.DrawLabel(context.Fonts.Name, text, new UiVec2(at.X + slip + context.Px(2f), at.Y), textSize, HudDrawContext.Fade(colour, 0.35f * fade), 0.12f);
+            context.Painter.DrawLabel(context.Fonts.Name, text, new UiVec2(at.X - slip, at.Y), textSize, HudDrawContext.Fade(colour, (0.85f + (0.15f * beat)) * fade), 0.12f);
         }
         else
         {
-            context.Painter.DrawLabel(context.Fonts.Name, word, at, size, HudDrawContext.Fade(colour, opacity), 0.08f);
+            context.Painter.DrawLabel(context.Fonts.Name, text, at, textSize, HudDrawContext.Fade(colour, fade), 0.12f);
         }
     }
 
@@ -143,8 +197,27 @@ public static class HudDetection
             return;
         }
 
-        context.Painter.StrokeLine(left, Interpolate.Lerp(left, peak, share), thickness, colour);
-        context.Painter.StrokeLine(right, Interpolate.Lerp(right, peak, share), thickness, colour);
+        Line(context, left, Interpolate.Lerp(left, peak, share), thickness, colour);
+        Line(context, right, Interpolate.Lerp(right, peak, share), thickness, colour);
+    }
+
+    // A thick line as a quad with its long edges smoothed.
+    private static void Line(HudDrawContext context, UiVec2 from, UiVec2 to, float thickness, Bgra32 colour)
+    {
+        float dx = to.X - from.X, dy = to.Y - from.Y;
+        float length = MathF.Sqrt((dx * dx) + (dy * dy));
+        if (length < 1e-3f)
+        {
+            return;
+        }
+
+        float nx = -dy / length * thickness * 0.5f, ny = dx / length * thickness * 0.5f;
+        Span<UiVec2> quad = stackalloc UiVec2[4];
+        quad[0] = new UiVec2(from.X + nx, from.Y + ny);
+        quad[1] = new UiVec2(to.X + nx, to.Y + ny);
+        quad[2] = new UiVec2(to.X - nx, to.Y - ny);
+        quad[3] = new UiVec2(from.X - nx, from.Y - ny);
+        context.Painter.FillPolygon(quad, colour);
     }
 
     // White while he looks, orange as he grows suspicious, the theme's danger once he is sure.

@@ -148,8 +148,16 @@ public sealed class RemasteredHud : IDisposable
         LayoutContext layout = new(frame.Width, frame.Height);
         UiPainter painter = UiPainter.Create(batch, layout, glass);
         _smooth ??= new HudSmoothSprites(_device);
-        HudDrawContext context = new(batch, painter, theme, fonts, icons, _reactive, frame.Width, frame.Height, scale) { Smooth = _smooth };
+        float behind = 1f - model.Wheel.Openness;
+        HudDrawContext context = new(batch, painter, theme, fonts, icons, _reactive, frame.Width, frame.Height, scale)
+        {
+            Smooth = _smooth,
+            Behind = behind,
+            ShaderBackdrop = layered && glass is not null,
+        };
 
+        // The rest of the display gives way as the weapon wheel opens.
+        painter.PushOpacity(behind);
         Part(context, HudParts.Status, frame.Density, model, static (c, m) => HudStatus.Draw(c, m));
         Part(context, HudParts.Inventory, frame.Density, model, static (c, m) => HudInventory.Draw(c, m));
         Part(context, HudParts.Weapon, frame.Density, model, static (c, m) => HudWeapon.Draw(c, m));
@@ -172,7 +180,10 @@ public sealed class RemasteredHud : IDisposable
             HudAlerts.DrawAmmoArc(context, model, frame.CrosshairSpread);
         }
 
-        // Over everything, the weapon wheel while it is open: its backdrop blurs out the rest of the display with the world.
+        painter.PopOpacity();
+        context.Behind = 1f;
+
+        // Over everything, the weapon wheel while it is open.
         HudWheel.Draw(context, model);
 
         if (layered)
@@ -222,6 +233,7 @@ public sealed class RemasteredHud : IDisposable
         {
             Intensity = Math.Clamp(frame.Intensity, 0f, 1f),
             Curvature = look.Curvature * flat,
+            Wheel = OpenIGI.UI.Animation.Easing.Evaluate(OpenIGI.UI.Animation.Ease.OutCubic, model.Wheel.Openness),
             FringePixels = look.FringePixels * flat,
             Appear = _reactive.Appear,
             Seconds = frame.Seconds,

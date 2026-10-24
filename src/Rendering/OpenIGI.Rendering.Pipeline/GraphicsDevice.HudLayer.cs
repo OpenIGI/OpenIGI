@@ -173,7 +173,7 @@ public sealed partial class GraphicsDevice
         private readonly float _width, _height, _inverseWidth, _inverseHeight;
         private readonly float _intensity, _curvature, _fringe, _glow;
         private readonly float _scanlines, _scanlineStrength, _appear, _seconds;
-        private readonly float _shakeX, _shakeY, _unused0, _unused1;
+        private readonly float _shakeX, _shakeY, _wheel, _unused1;
         private readonly float _topLeft, _topRight, _bottomLeft, _bottomRight;
         private readonly float _red, _green, _blue, _scene;
         private readonly float _unused2, _unused3, _unused4, _unused5;
@@ -183,7 +183,7 @@ public sealed partial class GraphicsDevice
             (_width, _height, _inverseWidth, _inverseHeight) = (width, height, 1f / width, 1f / height);
             (_intensity, _curvature, _fringe, _glow) = (Math.Clamp(fx.Intensity, 0f, 1f), fx.Curvature, fx.FringePixels, fx.Glow);
             (_scanlines, _scanlineStrength, _appear, _seconds) = (fx.ScanlineDensity, fx.ScanlineStrength, fx.Appear, fx.Seconds);
-            (_shakeX, _shakeY, _unused0, _unused1) = (fx.Shake.X, fx.Shake.Y, 0f, 0f);
+            (_shakeX, _shakeY, _wheel, _unused1) = (fx.Shake.X, fx.Shake.Y, fx.Wheel, 0f);
             (_topLeft, _topRight, _bottomLeft, _bottomRight) = fx.Damage;
             (_red, _green, _blue, _scene) = (fx.DamageColour.R, fx.DamageColour.G, fx.DamageColour.B, !scene ? 0f : targetEncodes ? 1f : 2f);
             (_unused2, _unused3, _unused4, _unused5) = (0f, 0f, 0f, 0f);

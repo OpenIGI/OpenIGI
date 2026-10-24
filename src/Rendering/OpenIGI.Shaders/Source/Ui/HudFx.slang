@@ -12,6 +12,8 @@
 //   - its own glow, the blurred layer's bright parts, is laid back over it, so bright figures bloom and the glass stays clear;
 //   - a hit tears the picture on the side it came from: slices of it jump sideways, its colours split, it blurs and greys
 //     -- no paint over the picture;
+//   - the weapon wheel, open, takes the world behind it out of time: drained to black and white, pulled in towards the
+//     middle in a radial smear, darkened at its edges and grained like film.
 //
 // Who is watching the player is not this pass's: the display marks each watcher itself (HudDetection).
 //
@@ -44,7 +46,7 @@ struct HudFxParams
     // scanlines per 1080 lines, scanline strength, appear, seconds.
     float4 lines;
 
-    // shake x, shake y in pixels, unused, unused.
+    // shake x, shake y in pixels, how far the weapon wheel is open, unused.
     float4 shake;
 
     // the hit's wash in each corner: top left, top right, bottom left, bottom right.
@@ -71,6 +73,18 @@ Varyings vertexMain(uint index : SV_VertexID)
 float Hash(float n)
 {
     return frac(sin(n * 12.9898) * 43758.5453);
+}
+
+// Film grain's noise: an integer hash of the pixel and the tick, free of the bands a sine hash leaves.
+float Grain(float2 pixel, float tick)
+{
+    uint h = (uint(pixel.x) * 1664525u) ^ (uint(pixel.y) * 1013904223u) ^ (uint(tick) * 2654435761u);
+    h ^= h >> 16;
+    h *= 0x7feb352du;
+    h ^= h >> 15;
+    h *= 0x846ca68bu;
+    h ^= h >> 16;
+    return float(h) * (1.0 / 4294967295.0);
 }
 
 // Linear light to the sRGB encoding, for a target that stores what it is given.
@@ -192,6 +206,36 @@ float4 fragmentMain(Varyings input) : SV_Target
         }
 
         tear = saturate(hit * 1.5);
+    }
+
+    // The weapon wheel: the world behind it drained, smeared in towards the middle, darkened at its edges and grained.
+    float wheel = saturate(p.shake.z) * intensity;
+    if (wheel > 0.0 && p.damageColour.w > 0.5)
+    {
+        float2 towards = q - 0.5;
+        float3 smear = float3(0.0, 0.0, 0.0);
+        const int Taps = 10;
+        for (int i = 0; i < Taps; i++)
+        {
+            float k = 1.0 - ((float(i) / float(Taps - 1)) * 0.07 * wheel);
+            smear += uScene.SampleLevel(uHudSampler, 0.5 + (towards * k), 0.0).rgb;
+        }
+
+        smear *= 1.0 / float(Taps);
+        smear = lerp(smear, uSceneBlur.SampleLevel(uHudSampler, q, 0.0).rgb, 0.35 * wheel);
+        float grey = dot(smear, float3(0.2126, 0.7152, 0.0722));
+        grey = grey * grey * (3.0 - (2.0 * grey));
+        float3 drained = lerp(smear, float3(grey, grey * 0.985, grey * 0.96), 0.92 * wheel);
+        float edge = smoothstep(0.25, 0.85, length(towards * float2(aspect, 1.0)));
+        drained *= (1.0 - (0.3 * wheel)) * (1.0 - (0.6 * wheel * edge));
+        drained += (Grain(q * p.frame.xy, tick) - 0.5) * 0.025 * wheel;
+        if (p.damageColour.w > 1.5)
+        {
+            drained = LinearToSrgb(drained);
+        }
+
+        torn = lerp(torn * tear, drained, wheel) / max(max(tear, wheel), 1e-4);
+        tear = max(tear, wheel);
     }
 
     float dim = p.damageColour.w > 0.5 ? 0.0 : hit * 0.15;

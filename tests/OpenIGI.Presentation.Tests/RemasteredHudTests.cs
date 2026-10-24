@@ -108,6 +108,34 @@ public sealed class RemasteredHudTests
     }
 
     [Fact]
+    public void The_detection_word_shows_for_a_moment_as_the_alarm_rises_and_not_while_it_holds()
+    {
+        HudReactiveState state = new();
+        HudModel model = new() { Show = HudParts.All };
+        state.Update(model, 0f);
+        Assert.Equal(0f, state.DetectionWord);
+
+        model.AddThreat(new HudThreat(0f, 1f));
+        state.Update(model, 1f);
+        Assert.Equal(1f, state.DetectionWord, 2);
+
+        state.Update(model, 1f + (HudReactiveState.DetectionWordSeconds * 0.5f));
+        Assert.Equal(0.5f, state.DetectionWord, 2);
+
+        // Held: it does not come back.
+        state.Update(model, 1f + HudReactiveState.DetectionWordSeconds + 5f);
+        Assert.Equal(0f, state.DetectionWord);
+
+        // Lost and found again: it does.
+        model.Reset();
+        model.Show = HudParts.All;
+        state.Update(model, 20f);
+        model.AddThreat(new HudThreat(0f, 0.8f));
+        state.Update(model, 21f);
+        Assert.Equal(1f, state.DetectionWord, 2);
+    }
+
+    [Fact]
     public void The_inventory_never_dims_at_any_density()
     {
         HudReactiveState state = new();
