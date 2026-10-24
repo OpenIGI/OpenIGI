@@ -318,6 +318,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         if (!invulnerable)
         {
             float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
             if (BloodSpray is { } bleed)
             {
                 Vector3d line = round.End - round.Origin;
@@ -335,6 +336,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                 // The brain hears of the round that kills it too: the event is posted to an AI that is not dead yet,
                 // and the body falls after.
                 brain?.ReceiveDamage(round.Origin, round.Shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
+                round.Credit?.Killed(hit.Zone == HumanDamage.NeckZone);
                 Die(struckView, hit, round.Origin, round.End, round.Category, SoldierDeath.ModeFor(round.Category));
             }
             else

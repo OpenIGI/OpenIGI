@@ -1,7 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -41,6 +43,29 @@ public sealed partial class SoldierSimulation
         }
 
         return _threats;
+    }
+
+    /// <summary>How far ahead the crosshair looks for a soldier, in world units: three hundred metres.</summary>
+    public const double AimReachUnits = 300.0 * 4096.0;
+
+    /// <summary>
+    /// Whether a living enemy is under the crosshair: the nearest soldier along the view, as a round would meet him, one the
+    /// player is an enemy to, with no wall nearer than him (the soldiers' own sight line, which sees through glass). <b>Not
+    /// retail</b>: the remastered crosshair's mark.
+    /// </summary>
+    /// <param name="eye">Where the player looks from.</param>
+    /// <param name="forward">Which way, of unit length.</param>
+    /// <returns>Whether an enemy is there.</returns>
+    public bool EnemyUnderAim(Vector3d eye, Vector3f forward)
+    {
+        Vector3d end = new(eye.X + (forward.X * AimReachUnits), eye.Y + (forward.Y * AimReachUnits), eye.Z + (forward.Z * AimReachUnits));
+        if (!_bodies.TryNearest(eye, end, out HumanHit hit, out SoldierView? view) || view is null
+            || (Brains.TryGetValue(view, out Igi1HumanAi? brain) && !brain.PlayerIsEnemy))
+        {
+            return false;
+        }
+
+        return Sight is not { } sight || !sight(eye, hit.Position, out WorldRayHit wall) || wall.Distance >= hit.Distance - 1.0;
     }
 
     /// <summary>How far the soldiers are onto the player, in Project I.G.I.'s own terms.</summary>

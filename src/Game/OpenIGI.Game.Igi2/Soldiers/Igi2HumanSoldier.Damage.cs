@@ -103,12 +103,14 @@ public sealed partial class Igi2HumanSoldier : IIgi2WeaponHitTarget, IIgi2Explos
         }
 
         Damage.Add(part, damage);
+        hit.Tally?.Hit(part == Igi2DamagePart.Head);
         CreateFleshEnterEffect(hit.ShotVector, hit.Intersection.Position, this);
         RecoilMeter = ((Fpu)damage + RecoilMeter).F;
         Vector3d? shooterAt = hit.Shooter is Igi2Human from ? from.Position : null;
         if (Damage.IsFatal)
         {
             (hit.Shooter as Igi2Human)?.KilledByYou(this);
+            hit.Tally?.Killed(part == Igi2DamagePart.Head);
             Vector3f towardShooter = shooterAt is { } s ? Toward(s) : default;
             SendAiEvent(new Igi2AiEvent(Igi2AiEvent.FriendlyDying, Team, 419, 122880f, Position, towardShooter, this));
             if (damage >= Damage.MaxDamage)

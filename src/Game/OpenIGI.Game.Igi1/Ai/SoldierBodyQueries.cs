@@ -369,35 +369,45 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
     }
 
     /// <summary>Finds the nearest living soldier on a segment without scoring the hit.</summary>
-    public bool TryIntersect(Vector3d origin, Vector3d end, out HumanHit hit)
+    public bool TryIntersect(Vector3d origin, Vector3d end, out HumanHit hit) => TryNearest(origin, end, out hit, out _);
+
+    /// <summary>Finds the nearest living soldier on a segment, and which it is, without scoring the hit.</summary>
+    /// <param name="origin">Where the segment starts.</param>
+    /// <param name="end">Where it ends.</param>
+    /// <param name="hit">Where it meets the soldier.</param>
+    /// <param name="soldier">The soldier met.</param>
+    /// <returns>Whether it meets one.</returns>
+    public bool TryNearest(Vector3d origin, Vector3d end, out HumanHit hit, out SoldierView? soldier)
     {
         hit = default;
+        soldier = null;
         bool found = false;
 
         foreach (SoldierModelGroup group in _context.Roster)
         {
             foreach (SoldierAgent member in group.Agents)
             {
-                SoldierView soldier = member.View;
-                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
-                    || soldier.IsDead
-                    || (_context.Health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
+                SoldierView view = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
+                    || view.IsDead
+                    || (_context.Health.TryGetValue(view, out HumanHealth? health) && health is { IsDead: true }))
                 {
                     continue;
                 }
 
-                Matrix3f m = soldier.Orientation;
+                Matrix3f m = view.Orientation;
                 Vector3f facing = new(m.M12, m.M22, m.M32);
-                double snappedZ = _context.SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
-                Vector3d feet = new(soldier.Position.X, soldier.Position.Y, snappedZ);
+                double snappedZ = _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
+                Vector3d feet = new(view.Position.X, view.Position.Y, snappedZ);
                 bool met = group.Body.CollisionMesh is { } collision
                     ? HumanHitTest.TryCastMesh(
-                        origin, end, feet, facing, collision, soldier.Pose(), soldier.RootSample.Z, out HumanHit candidate)
+                        origin, end, feet, facing, collision, view.Pose(), view.RootSample.Z, out HumanHit candidate)
                     : HumanHitTest.TryCast(
-                        origin, end, feet, facing, soldier.Pose(), out candidate, soldier.RootSample.Z);
+                        origin, end, feet, facing, view.Pose(), out candidate, view.RootSample.Z);
                 if (met && (!found || candidate.Distance < hit.Distance))
                 {
                     hit = candidate;
+                    soldier = view;
                     found = true;
                 }
             }

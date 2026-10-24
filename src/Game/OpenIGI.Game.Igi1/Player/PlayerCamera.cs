@@ -210,6 +210,12 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets how many of this player's rounds have struck a human.</summary>
     public int HumanHits => _shots.HumanHits;
 
+    /// <summary>
+    /// Gets what this player's rounds have done to the soldiers of either game, hit by hit and kill by kill, for the display's
+    /// marks. <b>Not retail.</b> Carried with each round the player fires.
+    /// </summary>
+    public ShotTally Shots { get; } = new();
+
     /// <summary>Gets the zone the last round to strike a human landed in, or <c>-1</c>.</summary>
     public int LastHumanZone => _shots.LastHumanZone;
 

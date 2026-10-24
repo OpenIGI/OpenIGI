@@ -13,6 +13,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="Category">What kind of weapon it is.</param>
 /// <param name="Shooter">The soldier who fired it, or <see langword="null"/> for the player or a gun nobody holds.</param>
 /// <param name="FromPlayer">Whether the player fired it.</param>
+/// <param name="Credit">The tally of the player who fired it, of either game, which the struck soldier counts its hit and kill on.</param>
 public sealed record Igi1WeaponHit(
     HumanHit Hit,
     Vector3d Origin,
@@ -20,7 +21,8 @@ public sealed record Igi1WeaponHit(
     float DamageFactor,
     WeaponCategory Category,
     SoldierView? Shooter,
-    bool FromPlayer)
+    bool FromPlayer,
+    ShotTally? Credit = null)
 {
     /// <summary>The hit as either game's targets read it.</summary>
     /// <returns>The shared hit, this as its context.</returns>
@@ -35,7 +37,8 @@ public sealed record Igi1WeaponHit(
             Shooter?.Soldier,
             this,
             Category,
-            Hit.Bone);
+            Hit.Bone,
+            Credit);
     }
 
     /// <summary>Another game's round in this game's terms, met where it struck.</summary>
@@ -45,7 +48,7 @@ public sealed record Igi1WeaponHit(
     public static Igi1WeaponHit FromShared(in WeaponHit hit, HumanHit struck)
     {
         Vector3d shot = new(hit.ShotVector.X, hit.ShotVector.Y, hit.ShotVector.Z);
-        return new Igi1WeaponHit(struck, hit.Position - shot, hit.Position, hit.Damage, hit.Category, Shooter: null, FromPlayer: false);
+        return new Igi1WeaponHit(struck, hit.Position - shot, hit.Position, hit.Damage, hit.Category, Shooter: null, FromPlayer: false, hit.Credit);
     }
 
     /// <summary>

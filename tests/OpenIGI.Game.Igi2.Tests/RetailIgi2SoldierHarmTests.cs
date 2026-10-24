@@ -374,6 +374,37 @@ public sealed class RetailIgi2SoldierHarmTests
     }
 
     /// <summary>
+    /// A player's round of either game carries his tally: the soldier counts the hit on it, the head when the round struck it,
+    /// and the kill. <b>Not retail</b>: the remastered crosshair's marks.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_players_round_counts_its_hit_and_kill_on_his_tally()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2ShootableSoldiers soldiers = new(m.Tree.OfType<Ai.Igi2HumanSoldierTask>());
+        LevelBodies bodies = new();
+        bodies.Add(soldiers);
+        Game.Player.ShotTally tally = new();
+        Vector3d p = body.Position;
+        Vector3d from = new(p.X + 20480.0, p.Y, p.Z + 4096.0);
+        Vector3d to = new(p.X - 20480.0, p.Y, p.Z + 4096.0);
+        WeaponHit Round(Game.Player.HumanHit met, float damage) =>
+            new(met.Position, default, damage, new Vector3f(-40960f, 0f, 0f), null, new object(), WeaponCategory.Gun, met.Bone, tally);
+
+        Assert.True(bodies.Shoot(from, to, null, met => Round(met, 0.01f), out _));
+        Assert.Equal(1, tally.Hits);
+        Assert.Equal(0, tally.Kills);
+        Assert.Equal(body.Damage.LastPart == Igi2DamagePart.Head, tally.LastHitHead);
+
+        Assert.True(bodies.Shoot(from, to, null, met => Round(met, 1000f), out _));
+        Assert.True(body.IsDead);
+        Assert.Equal(2, tally.Hits);
+        Assert.Equal(1, tally.Kills);
+    }
+
+    /// <summary>
     /// A blow from in front lands on the chest and one from behind on the back (<c>HumanSoldier_CloseCombatDamageHandler</c>,
     /// <c>igi2 0x4EBCD0</c>), each at its zone's multiplier; enough of them kill, how it died 4.
     /// </summary>
