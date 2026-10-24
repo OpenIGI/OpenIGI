@@ -342,6 +342,13 @@ public sealed class Igi2AiDetection
     /// <summary>Gets or sets its flags, <c>bFlags</c>.</summary>
     public int Flags { get; set; }
 
+    /// <summary>
+    /// Gets or sets how far out from the view its lines of sight start, in world units: what lies nearer the eye is looked past, as
+    /// a watcher looks over the railing he leans on. <b>Not retail</b>: I.G.I. 2's lines start at the eye (nought, the default). A
+    /// line never starts past half way to what it looks at.
+    /// </summary>
+    public double SightClearance { get; set; }
+
     /// <summary>Gets its side, <c>eTeam</c>.</summary>
     public int Team { get; }
 
@@ -512,6 +519,23 @@ public sealed class Igi2AiDetection
         Friends.RemoveAll(static item => item.Target.IsGone);
     }
 
+    /// <summary>Where a line of sight from an eye to a point starts, <see cref="SightClearance"/> out along it.</summary>
+    /// <param name="eye">The eye.</param>
+    /// <param name="at">The point looked at.</param>
+    /// <returns>The line's start.</returns>
+    public Vector3d ClearOf(Vector3d eye, Vector3d at)
+    {
+        if (SightClearance <= 0.0)
+        {
+            return eye;
+        }
+
+        double dx = at.X - eye.X, dy = at.Y - eye.Y, dz = at.Z - eye.Z;
+        double length = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        double step = Math.Min(SightClearance, length * 0.5) / Math.Max(length, 1e-9);
+        return new Vector3d(eye.X + (dx * step), eye.Y + (dy * step), eye.Z + (dz * step));
+    }
+
     // AIDetection_RunDetectionCheck (igi2 0x474950): the cone checked at its interval, and while any point is inside it, one
     // point looked at in turn at its interval; either every tick when continuous.
     private void Check(Igi2DetectionItem item, AiDetectionInfo info, Igi2DetectionView view, IAiDetectable? source)
@@ -541,7 +565,7 @@ public sealed class Igi2AiDetection
             {
                 int point = item.CurrentPoint;
                 Vector3d at = info.Point(point);
-                bool seen = World.CanSee(view.Position, at, source, item.Target, out int? material);
+                bool seen = World.CanSee(ClearOf(view.Position, at), at, source, item.Target, out int? material);
                 if (seen)
                 {
                     item.Materials[point] = material;

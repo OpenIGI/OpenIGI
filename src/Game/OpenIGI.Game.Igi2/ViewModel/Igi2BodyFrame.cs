@@ -55,6 +55,31 @@ public static class Igi2BodyFrame
         return models;
     }
 
+    /// <summary>Where the weapon in a body's hands is: the first weapon object its clip hangs on it, in the level.</summary>
+    /// <param name="human">The body.</param>
+    /// <param name="pose">The body's pose, or <see langword="null"/>.</param>
+    /// <param name="heldModel">The weapon in hand's fixed model, or <see langword="null"/>.</param>
+    /// <returns>The weapon object's origin, or <see langword="null"/> when the body holds none.</returns>
+    public static Vector3d? HeldWeaponAt(Igi2Human human, Igi2BodyPose? pose, string? heldModel)
+    {
+        ArgumentNullException.ThrowIfNull(human);
+        if (pose?.AttachClip is not { } attachClip || heldModel is null)
+        {
+            return null;
+        }
+
+        foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(attachClip, pose.AttachTime, pose.Pose, heldModel))
+        {
+            if (IsWeaponObject(part, heldModel))
+            {
+                Vector3f local = human.Orientation.Transposed().Transform(part.Position);
+                return new Vector3d(human.Position.X + local.X, human.Position.Y + local.Y, human.Position.Z + local.Z);
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Whether a part is a weapon object, the weapon in hand drawn where the clip hangs it.</summary>
     /// <param name="part">The part.</param>
     /// <param name="heldModel">The weapon in hand's fixed model, or <see langword="null"/>.</param>

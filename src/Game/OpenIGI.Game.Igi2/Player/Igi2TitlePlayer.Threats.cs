@@ -125,18 +125,34 @@ public sealed partial class Igi2TitlePlayer
                 continue;
             }
 
-            WorldLineOfSight sight = new(from, target, Materials ?? (IWorldMaterialTransparency)detection.World.Materials)
+            WorldLineOfSight sight = new(detection.ClearOf(from, target), target, Materials ?? (IWorldMaterialTransparency)detection.World.Materials)
             {
                 Includes = owner => !ReferenceEquals(owner, Human) && !ReferenceEquals(owner, soldier),
             };
             world.LineOfSight(sight, uint.MaxValue);
-            if (!sight.IsBlocked)
+
+            // Only a sniper who has the player in his sight's list aims at him: a scope that merely sweeps past an unseen
+            // player catches no sun he would see.
+            if (!sight.IsBlocked && detection.Enemies.Any(item => ReferenceEquals(item.Target, Human)))
             {
-                _glints.Add((from, strength));
+                _glints.Add((ScopeAt(soldier, from, dx / length, dy / length, dz / length), strength));
             }
         }
 
         return _glints;
+    }
+
+    // Where a sniper's scope is: on his line of sight to the player, level with the rifle in his hands -- an aimed scope sits on
+    // that line, so the point on it nearest the weapon object is the glass. A body with no rifle in its hands glints at the eye.
+    private static Vector3d ScopeAt(Igi2HumanSoldier soldier, Vector3d eye, double dx, double dy, double dz)
+    {
+        if (ViewModel.Igi2BodyFrame.HeldWeaponAt(soldier, soldier.BodyPose(), soldier.Weapon.Inventory?.Current?.WeaponType.FixedModel) is not { } rifle)
+        {
+            return eye;
+        }
+
+        double along = ((rifle.X - eye.X) * dx) + ((rifle.Y - eye.Y) * dy) + ((rifle.Z - eye.Z) * dz);
+        return along <= 0.0 ? rifle : new Vector3d(eye.X + (dx * along), eye.Y + (dy * along), eye.Z + (dz * along));
     }
 
     /// <summary>How far the soldiers are onto the player, in I.G.I. 2's own terms: from their sight's lists and their alarm.</summary>

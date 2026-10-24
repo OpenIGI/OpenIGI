@@ -32,4 +32,10 @@ public sealed record Igi2SoldierOrders
 
     /// <summary>Gets whether it cannot be hurt.</summary>
     public bool? IsInvulnerable { get; init; }
+
+    /// <summary>
+    /// Gets the tunings set on creation after the default handler, each an <c>AIFunction_Set…</c> native and its value, in order:
+    /// as I.G.I. 2's own sniper scripts set their cones, reach and accuracy.
+    /// </summary>
+    public IReadOnlyList<(string Native, float Value)> Tunings { get; init; } = [];
 }

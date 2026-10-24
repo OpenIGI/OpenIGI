@@ -17,6 +17,9 @@ public sealed partial class Igi2HumanAi
     /// <summary>Gets its detection, <c>tAIDetection</c>, once readied.</summary>
     public Igi2AiDetection Detection => _detection ?? throw new InvalidOperationException("The mind's detection is not readied.");
 
+    /// <summary>Gets a value indicating whether its detection is readied.</summary>
+    public bool HasDetection => _detection is not null;
+
     /// <summary>Gets the view its detection looks through, <c>tAIDetectionView</c>.</summary>
     public Igi2DetectionView DetectionView { get; } = new();
 

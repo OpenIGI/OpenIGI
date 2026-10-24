@@ -61,6 +61,11 @@ public static class Igi2SoldierScript
             Statement(writer, QvmExpression.Call("AIFunction_SetInvulnerability", QvmExpression.Int(invulnerable ? 1 : 0)));
         }
 
+        foreach ((string native, float value) in orders.Tunings)
+        {
+            Statement(writer, QvmExpression.Call(native, QvmExpression.Real(value)));
+        }
+
         code.Branch(QvmOpcode.Bra, end);
         code.MarkLabel(notCreate);
 
