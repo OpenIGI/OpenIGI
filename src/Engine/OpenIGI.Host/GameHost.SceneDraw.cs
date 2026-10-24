@@ -354,6 +354,13 @@ public sealed partial class GameHost
         // the smoke trails and columns, and the fireball over all of it as light.
         _effects.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
+        // And another game's 2-D particles -- its blood, its smoke -- in the engine both titles share, with that game's sprites.
+        DrawTitleParticles(eye, projection, smoothPresentation ? tickBlend : 1f);
+        foreach (ITaskPresenter particlePresenter in _taskPresenters)
+        {
+            particlePresenter.DrawParticles(eye, projection, smoothPresentation ? tickBlend : 1f);
+        }
+
         // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
         // While the camera is inside a building's shell the rain is suppressed, exactly as the
         // reference editor does per frame — buildings keep the weather outside.

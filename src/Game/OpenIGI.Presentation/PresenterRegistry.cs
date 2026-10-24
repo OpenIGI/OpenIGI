@@ -46,6 +46,14 @@ public interface ITaskPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the 2-D particles -- blood, dust, smoke -- of what the presenter stands in the level, over the lit scene.</summary>
+    /// <param name="camera">The camera the frame is drawn from.</param>
+    /// <param name="projection">The frame's projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    void DrawParticles(in Camera3D camera, in Matrix4f projection, float blend)
+    {
+    }
+
     /// <summary>
     /// Gets a value indicating whether the task casts a shadow: <see cref="Draw"/> is called for the sun's cascades and the lamps'
     /// shadow maps as well, inside each pass, as a level's own characters are.

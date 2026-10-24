@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -20,7 +21,7 @@ public readonly record struct Igi2FlashBangHit(Vector3d Position, float Range, i
 public sealed class Igi2FlashBang(Igi2ExplosionWorld world, Vector3d position) : IIgi2DynamicTask
 {
     /// <summary>Gets its three-particle puff, <c>flashbang.c FlashBang_CreateHandler</c>.</summary>
-    public Igi2Particle2DSystem? System { get; private set; }
+    public Particle2DSystem? System { get; private set; }
 
     /// <summary>Creates the particle child after the flash task has joined the dynamic list.</summary>
     internal void Prepare()

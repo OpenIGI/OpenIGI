@@ -423,6 +423,18 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>Draws the 2-D particles of the title's level, over the lit picture.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    private void DrawTitleParticles(in Camera3D eye, in Matrix4f projection, float blend)
+    {
+        if (_titleFeatures?.WorldModels?.Particles is { } particles && TitleWorldModelPresenter is { } models)
+        {
+            models.DrawParticles(particles, eye, projection, blend);
+        }
+    }
+
     /// <summary>Draws the muzzle flashes of the title's world models, over the lit picture.</summary>
     /// <param name="eye">The camera the frame is drawn from.</param>
     /// <param name="projection">The world's projection.</param>

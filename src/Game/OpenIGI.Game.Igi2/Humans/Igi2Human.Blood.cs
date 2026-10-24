@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -16,10 +17,22 @@ public readonly record struct Igi2BloodStain(IWorldCollider Struck, WorldInterse
 public abstract partial class Igi2Human
 {
     /// <summary>The sprite of the blood mist at the wound, <c>blood1.spr</c>.</summary>
-    public const string BloodMistSprite = "blood1.spr";
+    public const string BloodMistSprite = BloodTuning.MistSprite;
 
     /// <summary>The sprite of the flying blood drops, <c>blood2.spr</c>.</summary>
-    public const string BloodDropSprite = "blood2.spr";
+    public const string BloodDropSprite = BloodTuning.DropSprite;
+
+    /// <summary>
+    /// I.G.I. 2's blood, as <c>HumanDamage_CreateFleshEnterEffect</c> (<c>igi2 0x4734F0</c>) throws it: twenty drops of 143.36 a
+    /// body, twelve to fourteen forward in a quarter-turn cone, sixteen to eighteen back in a half-turn one, fading over
+    /// twenty-two ticks.
+    /// </summary>
+    public static readonly BloodTuning Blood = new(
+        DropSize: 143.36000061035156f,
+        DropCapacity: 20,
+        DropFade: 22,
+        Forward: new BloodSpray(12, 3, 0.7853981852531433f, 379f, 606f),
+        Back: new BloodSpray(16, 3, 3.1415927410125732f, 37f, 113f));
 
     /// <summary>How far behind the wound a stain is looked for: three metres.</summary>
     private const double BloodStainReach = 12288.0;
@@ -32,8 +45,8 @@ public abstract partial class Igi2Human
 
     private readonly WorldLineTrace _stainTrace = new(1) { Includes = static owner => owner is not Igi2Human };
 
-    private Igi2Particle2DSystem? _bloodMist;
-    private Igi2Particle2DSystem? _bloodDrops;
+    private readonly Particle2DBleeding _bleeding = new();
+    private IParticleCollider? _dropLanding;
 
     /// <summary>
     /// Blood where a round goes into the body: a stain on what lies three metres beyond the wound, a mist at the wound, a cone of
@@ -82,7 +95,8 @@ public abstract partial class Igi2Human
             }
         }
 
-        // The mist takes the wounded body's light: up to 128 grey.
+        // The mist and the drops take the wounded body's light: up to 128 grey. Both are the engine both titles share
+        // (Particle2DBleeding), in I.G.I. 2's numbers.
         float grey = 127f;
         if (wounded is not null)
         {
@@ -90,37 +104,10 @@ public abstract partial class Igi2Human
             grey = lit.Value >= 128.0 ? 128f : lit.F;
         }
 
-        if (_bloodMist is not { IsDeleted: false })
-        {
-            _bloodMist = particles.New(
-                BloodMistSprite, animated: true, frames: 0, acceleration: default, color: new Vector3f(grey, grey, grey),
-                width: 1228.800048828125f, height: 1228.800048828125f, range: 409600f, transparency: 0, animationDelta: 0,
-                sizeDelta: 0f, shininess: 0f, maxParticles: 2, onCollision: null);
-        }
-
-        _bloodMist.AddParticle(position, default, intensity: 1f, rotationDelta: 0f, rotation: 0f, size: 1f, lifeTime: 15, fadeTime: 0);
-
-        if (_bloodDrops is not { IsDeleted: false })
-        {
-            _bloodDrops = particles.New(
-                BloodDropSprite, animated: false, frames: 0, acceleration: new Vector3f(0f, 0f, -14.866963386535645f),
-                color: new Vector3f(grey, grey, grey), width: 143.36000061035156f, height: 143.36000061035156f, range: 409600f,
-                transparency: 0x80000, animationDelta: 0, sizeDelta: 0f, shininess: 0f, maxParticles: 20, onCollision: StainWhereDropLands);
-        }
-
-        int forward = (int)(Random.NextRaw() % 3) + 12;
-        for (int i = 0; i < forward; i++)
-        {
-            _bloodDrops.AddConeParticle(position, along, 0.7853981852531433f, 379f, 606f, 1f, DropSpin(), 0f, 1f, 30, 22);
-        }
-
-        Vector3f back = Unit(direction);
-        back = new Vector3f(-back.X, -back.Y, -back.Z);
-        int backward = (int)(Random.NextRaw() % 3) + 16;
-        for (int i = 0; i < backward; i++)
-        {
-            _bloodDrops.AddConeParticle(position, back, 3.1415927410125732f, 37f, 113f, 1f, DropSpin(), 0f, 1f, 30, 22);
-        }
+        _dropLanding ??= particles.Collider(Blood.DropCapacity, StainWhereDropLands);
+        _bleeding.Spray(
+            particles.Module, Blood, position, direction, Random, new Vector3f(grey, grey, grey), particles.Module.FramesOf(BloodMistSprite),
+            _dropLanding);
     }
 
     /// <summary>
@@ -152,13 +139,6 @@ public abstract partial class Igi2Human
         float radius = (((Fpu)Random.NextDouble() * 204.8000030517578f) + 102.4000015258789f).F;
         string stain = DropStains[Random.NextRaw() & 1];
         Surroundings.MarkBloodStain(new Igi2BloodStain(struck, hit, stain, radius));
-    }
-
-    /// <summary>A drop's spin: about a degree and a half either side of a small turn, from one run-stream draw used twice.</summary>
-    private float DropSpin()
-    {
-        Fpu share = (Fpu)(double)(ushort)Random.NextRaw() * IgiRandom.Scale;
-        return (((((share - 0.5) + share) - 0.5) * 0.05235987901687622) + 0.012799081392586231).F;
     }
 
     /// <summary>A vector scaled by the reciprocal of its length, or left as it is when zero.</summary>

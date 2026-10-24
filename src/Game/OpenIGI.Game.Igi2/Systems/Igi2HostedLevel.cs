@@ -87,6 +87,9 @@ public sealed class Igi2HostedLevel
     /// <summary>Gets the weapons the soldiers have dropped, lying where they fell, or <see langword="null"/> without weapon tables.</summary>
     public Pickups.Igi2PickupList? Pickups { get; init; }
 
+    /// <summary>Gets the level's 2-D particles: its wounded's blood, its smoke, its trails.</summary>
+    public OpenIGI.Game.World.Particles.Particle2DModule? Particles { get; init; }
+
     /// <summary>Gets the soldiers' grenades and missiles in flight, or <see langword="null"/> without physics types.</summary>
     public Igi2Grenades? Grenades { get; init; }
 

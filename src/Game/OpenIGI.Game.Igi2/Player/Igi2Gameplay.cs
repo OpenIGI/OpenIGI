@@ -240,7 +240,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         List<Igi2Human> humans = LevelHumans(request.World.LevelRoot, player);
 
         // Particle2DDynCubeObj's module: one stream and collision phase for every system the level makes.
-        Igi2Particles particles = new(world, player.Dynamic);
+        Igi2Particles particles = new(world, player.Dynamic, new OpenIGI.Game.World.Particles.Particle2DSprites(request.World.Resources.FileSystem).FramesOf);
         if (player.Explosions is { } grenadeEffects)
         {
             grenadeEffects.Humans = humans;

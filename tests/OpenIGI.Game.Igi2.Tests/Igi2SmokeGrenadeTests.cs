@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using Xunit;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -78,8 +79,8 @@ public sealed class Igi2SmokeGrenadeTests
             Particles = new Igi2Particles(query, tasks),
         };
         Igi2SmokeTask smoke = world.Smoke(default);
-        Assert.Equal(new Vector3f(31.5f, 31.5f, 31.5f), smoke.System!.Color);
-        Assert.Equal(4096f, smoke.System.Width);
+        Assert.Equal(new Vector3f(31.5f, 31.5f, 31.5f), smoke.System!.Look.Color);
+        Assert.Equal(4096f, smoke.System.Look.Width);
         Assert.Equal(0.6f, smoke.SizeDelta);
         for (int i = 0; i < 6; i++)
         {

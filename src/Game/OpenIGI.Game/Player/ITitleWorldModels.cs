@@ -19,6 +19,9 @@ public interface ITitleWorldModels
 
     /// <summary>Gets the marks lying on the ground as of the last tick: shadows and pools of blood.</summary>
     IReadOnlyList<TitleGroundDecal> GroundDecals => [];
+
+    /// <summary>Gets the level's 2-D particles -- blood, dust, smoke -- in the engine both titles share; none when it has none.</summary>
+    OpenIGI.Game.World.Particles.Particle2DModule? Particles => null;
 }
 
 /// <summary>A square laid on the ground, blended over it.</summary>

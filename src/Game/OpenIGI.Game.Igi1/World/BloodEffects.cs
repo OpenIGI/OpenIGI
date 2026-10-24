@@ -1,6 +1,7 @@
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -27,9 +28,9 @@ namespace OpenIGI.Game.Igi1.World;
 /// <item><description><b>The mist.</b> One <c>blood1.spr</c> quad at the wound, motionless, a third of
 /// a metre across, holding for <see cref="MistHoldTicks"/> ticks while its seven frames play, then
 /// gone in one more.</description></item>
-/// <item><description><b>The forward spray.</b> <see cref="ForwardDropletCount"/> <c>blood2.spr</c>
+/// <item><description><b>The forward spray.</b> Three to five <c>blood2.spr</c>
 /// droplets into a <see cref="ForwardConeRadians">ten-degree</see> cone along the round's line, fast.</description></item>
-/// <item><description><b>The back spray.</b> <see cref="BackDropletCount"/> droplets into a
+/// <item><description><b>The back spray.</b> Two to four droplets into a
 /// <see cref="BackConeRadians">seventy-degree</see> cone <i>against</i> it, slow — the splashback
 /// towards the shooter.</description></item>
 /// </list>
@@ -43,10 +44,10 @@ namespace OpenIGI.Game.Igi1.World;
 public static class BloodEffects
 {
     /// <summary>The sprite the wound mist is drawn with.</summary>
-    public const string MistSprite = "blood1.spr";
+    public const string MistSprite = BloodTuning.MistSprite;
 
     /// <summary>The sprite one flying droplet is drawn with.</summary>
-    public const string DropletSprite = "blood2.spr";
+    public const string DropletSprite = BloodTuning.DropSprite;
 
     /// <summary>The marks a backstop splash may leave, in the order <c>rand(2)</c> selects them.</summary>
     public static readonly string[] BackstopTextures = ["hole_blood1.tex", "hole_blood2.tex"];
@@ -199,147 +200,17 @@ public static class BloodEffects
         return dot < 0.0;
     }
 
-    /// <summary>How many droplets the forward spray throws.</summary>
-    /// <param name="uniformSample">A uniform integer on 0 to <see cref="ForwardDropletRange"/> minus one.</param>
-    /// <returns>Three, four or five.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The sample is outside its range.</exception>
-    public static int ForwardDropletCount(int uniformSample)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(uniformSample);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(uniformSample, ForwardDropletRange);
 
-        return uniformSample + ForwardDropletMinimum;
-    }
 
-    /// <summary>How many droplets the back spray throws.</summary>
-    /// <param name="uniformSample">A uniform integer on 0 to <see cref="BackDropletRange"/> minus one.</param>
-    /// <returns>Two, three or four.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The sample is outside its range.</exception>
-    public static int BackDropletCount(int uniformSample)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(uniformSample);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(uniformSample, BackDropletRange);
-
-        return uniformSample + BackDropletMinimum;
-    }
-
-    /// <summary>Builds the mist's particle system, sized for one body.</summary>
-    /// <param name="frameCount">How many frames <c>blood1.spr</c> has; retail ships seven.</param>
-    /// <returns>The system.</returns>
-    /// <remarks>
-    /// <b>The frame rate is integer division.</b> <c>0x463D95</c> computes <c>15 / frameCount</c> as
-    /// whole ticks, so seven frames run at two ticks each — fourteen of the fifteen the mist holds, and
-    /// the last frame is held one tick longer than the rest.
-    /// </remarks>
-    public static RetailParticleSystem CreateMistSystem(int frameCount) => new(
-        acceleration: Vector3f.Zero,
-        sizeInUnits: MistSizeInUnits,
-        growthPerTick: 0f,
-        frameCount: Math.Max(1, frameCount),
-        ticksPerFrame: MistHoldTicks / Math.Max(1, frameCount),
-        capacity: MistCapacity);
-
-    /// <summary>Builds the droplet system, sized for one body.</summary>
-    /// <returns>The system, which collides.</returns>
-    public static RetailParticleSystem CreateDropletSystem() => new(
-        acceleration: new Vector3f(0f, 0f, DropletGravityPerTick),
-        sizeInUnits: DropletSizeInUnits,
-        growthPerTick: 0f,
-        frameCount: 1,
-        ticksPerFrame: 0,
-        capacity: DropletCapacity,
-        collides: true);
-
-    /// <summary>Draws one quad's spin, which the blood spray shares with the wall puff.</summary>
-    /// <param name="uniformSample">A uniform draw on <c>[0, 1)</c>.</param>
-    /// <returns>The spin, in radians per tick.</returns>
-    public static float Spin(float uniformSample) => GunShotImpactEffects.Spin(uniformSample);
-
-    /// <summary>Fills the two systems for one wound, in the original's own order.</summary>
-    /// <param name="mist">The body's mist system.</param>
-    /// <param name="droplets">The body's droplet system.</param>
-    /// <param name="position">Where the round entered, in world units.</param>
-    /// <param name="direction">The round's travel direction; need not be unit length.</param>
-    /// <param name="random">The draw source.</param>
-    /// <exception cref="ArgumentNullException">A system or the draw source is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// The mist comes first and takes no draws at all; then the forward spray, whose count is drawn
-    /// before any of its particles; then the back spray, whose direction is the wound's reversed. Each
-    /// droplet draws its own spin before it is emitted, exactly as <c>0x463F10</c> and
-    /// <c>0x464044</c> do.
-    /// </remarks>
-    public static void Spray(
-        RetailParticleSystem mist,
-        RetailParticleSystem droplets,
-        Vector3d position,
-        Vector3f direction,
-        IgiRandom random)
-        => Spray(mist, droplets, position, direction, random, random);
-
-    /// <summary>Throws one wound's mist and droplets, the emitter drawing from its own stream as <c>0x4FE210</c> does.</summary>
-    /// <param name="mist">The body's mist system.</param>
-    /// <param name="droplets">The body's droplet system.</param>
-    /// <param name="position">Where the round entered.</param>
-    /// <param name="direction">The round's travel direction.</param>
-    /// <param name="random">The level stream: the two counts and each droplet's spin.</param>
-    /// <param name="emitter">The particle emitter's own stream (<c>dword_A7A4C0</c>): each droplet's direction and speed.</param>
-    public static void Spray(
-        RetailParticleSystem mist,
-        RetailParticleSystem droplets,
-        Vector3d position,
-        Vector3f direction,
-        IgiRandom random,
-        IgiRandom emitter)
-    {
-        ArgumentNullException.ThrowIfNull(mist);
-        ArgumentNullException.ThrowIfNull(droplets);
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(emitter);
-
-        mist.Emit(
-            position,
-            Vector3f.Zero,
-            alpha: 1f,
-            spin: 0f,
-            angle: 0f,
-            growth: 1f,
-            holdTicks: MistHoldTicks,
-            fadeTicks: 0);
-
-        int forward = ForwardDropletCount((int)random.NextBounded(ForwardDropletRange));
-        for (int i = 0; i < forward; i++)
-        {
-            droplets.EmitCone(
-                position,
-                direction,
-                ForwardConeRadians,
-                ForwardSpeedMinimum,
-                ForwardSpeedMaximum,
-                alpha: 1f,
-                spin: Spin(random.NextSingle()),
-                angle: 0f,
-                growth: 1f,
-                holdTicks: DropletHoldTicks,
-                fadeTicks: DropletFadeTicks,
-                emitter);
-        }
-
-        int back = BackDropletCount((int)random.NextBounded(BackDropletRange));
-        for (int i = 0; i < back; i++)
-        {
-            droplets.EmitCone(
-                position,
-                -direction,
-                BackConeRadians,
-                BackSpeedMinimum,
-                BackSpeedMaximum,
-                alpha: 1f,
-                spin: Spin(random.NextSingle()),
-                angle: 0f,
-                growth: 1f,
-                holdTicks: DropletHoldTicks,
-                fadeTicks: DropletFadeTicks,
-                emitter);
-        }
-    }
+    /// <summary>
+    /// Project I.G.I.'s blood, as <c>0x463AD0</c> throws it: ten drops of 102.4 a body, three to five forward in a ten-degree
+    /// cone and two to four back in a seventy-degree one, fading over seven ticks. The routine is the one both titles share
+    /// (<see cref="Particle2DBleeding"/>); Project I.G.I.'s blood is never lit, so it is drawn in <see cref="BloodTuning.Unlit"/>.
+    /// </summary>
+    public static readonly BloodTuning Tuning = new(
+        DropSize: DropletSizeInUnits,
+        DropCapacity: DropletCapacity,
+        DropFade: DropletFadeTicks,
+        Forward: new BloodSpray(ForwardDropletMinimum, ForwardDropletRange, ForwardConeRadians, ForwardSpeedMinimum, ForwardSpeedMaximum),
+        Back: new BloodSpray(BackDropletMinimum, BackDropletRange, BackConeRadians, BackSpeedMinimum, BackSpeedMaximum));
 }

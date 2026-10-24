@@ -1,13 +1,15 @@
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>One body's pair of blood systems, as a <c>Human</c> holds them at <c>+2104</c>/<c>+2108</c>.</summary>
-/// <param name="Mist">The <c>blood1.spr</c> quads at the wound.</param>
-/// <param name="Droplets">The <c>blood2.spr</c> droplets in the air.</param>
-public readonly record struct BloodSystems(RetailParticleSystem Mist, RetailParticleSystem Droplets);
+/// <summary>What one droplet's collision segment met.</summary>
+/// <param name="From">Where the segment started, in world units.</param>
+/// <param name="To">Where it ended — the particle's position this tick.</param>
+/// <param name="Hit">The surface it met.</param>
+public readonly record struct RetailParticleContact(Vector3d From, Vector3d To, WorldRayHit Hit);
 
 /// <summary>What one wound's blood did, for diagnosis.</summary>
 /// <param name="Sprayed">Whether the mist and droplets were thrown at all.</param>
@@ -43,15 +45,6 @@ public readonly record struct BloodReport(
 /// </remarks>
 public sealed class ImpactEffectRuntime
 {
-    /// <summary>How many wall-puff quads may be alive across the whole world.</summary>
-    /// <remarks>
-    /// <b>A port-level bound, not the original's.</b> The original gives every puffing impact its own
-    /// two-particle system and lets the task system carry them, so the real limit is however many
-    /// impacts are in flight. Two hundred and fifty-six is a hundred and twenty-eight simultaneous
-    /// impacts, which no weapon in the game can produce.
-    /// </remarks>
-    public const int PuffCapacity = 256;
-
     /// <summary>How many chips may be in the air across the whole world.</summary>
     /// <remarks>The same kind of bound, for the same reason.</remarks>
     public const int FragmentCapacity = 256;
@@ -61,10 +54,11 @@ public sealed class ImpactEffectRuntime
 
     private IgiRandom _random;
 
-    // The particle emitter's own stream, dword_A7A4C0: the droplets' cone and speed, which the level stream never sees.
-    // Particle2DDynCubeObjTask's registration (0x4FCF50) resets it once for the whole run and mixes in 0x12332D53.
-    private readonly IgiRandom _emitterRandom = EmitterStream();
-    private readonly Dictionary<object, BloodSystems> _blood = [];
+    private readonly DropletLanding _landing;
+    private WorldRayCast? _walls;
+    private BulletMarks? _marks;
+    private GameMaterialRegistry? _materials;
+    private readonly Dictionary<object, Particle2DBleeding> _blood = [];
     private readonly List<object> _idleBodies = [];
     private readonly List<ImpactFragment> _fragments = [];
     private readonly List<PendingChips> _pendingChips = [];
@@ -75,15 +69,17 @@ public sealed class ImpactEffectRuntime
     public ImpactEffectRuntime(IgiRandom? random = null)
     {
         _random = random ?? new IgiRandom();
-        Puffs = new RetailParticleSystem(
-            acceleration: Vector3f.Zero,
-            sizeInUnits: GunShotImpactEffects.PuffSizeInUnits,
-            growthPerTick: GunShotImpactEffects.PuffGrowthPerTick,
-            frameCount: 1,
-            ticksPerFrame: 0,
-            capacity: PuffCapacity);
+        _landing = new DropletLanding(this);
     }
 
+    /// <summary>
+    /// Gets the 2-D particle engine the dust and blood run in, the one both titles share. Its stream is the emitter's own,
+    /// <c>dword_A7A4C0</c>: the droplets' cone and speed, which the level stream never sees.
+    /// </summary>
+    public Particle2DModule Particles { get; } = new(EmitterStream());
+
+    // Particle2DDynCubeObjTask's registration (0x4FCF50) resets the emitter's stream once for the whole run and mixes in
+    // 0x12332D53.
     private static IgiRandom EmitterStream()
     {
         IgiRandom stream = new();
@@ -100,14 +96,26 @@ public sealed class ImpactEffectRuntime
         _random = random;
     }
 
-    /// <summary>Gets the dust the world's impacts have kicked up.</summary>
-    public RetailParticleSystem Puffs { get; }
+    /// <summary>Gets how many dust particles the world's impacts have in the air.</summary>
+    public int PuffCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (Particle2DSystem system in Particles.Systems)
+            {
+                count += system.Look.Sprite == GunShotImpactEffects.PuffSprite ? system.Count : 0;
+            }
+
+            return count;
+        }
+    }
 
     /// <summary>Gets the chips in the air.</summary>
     public IReadOnlyList<ImpactFragment> Fragments => _fragments;
 
     /// <summary>Gets the bodies currently bleeding, and their systems.</summary>
-    public IReadOnlyDictionary<object, BloodSystems> Blood => _blood;
+    public IReadOnlyDictionary<object, Particle2DBleeding> Blood => _blood;
 
     /// <summary>Gets or sets whether blood is drawn at all — the <c>GOIsBlood</c> game option.</summary>
     /// <remarks>
@@ -127,7 +135,7 @@ public sealed class ImpactEffectRuntime
     /// <summary>Drops every live effect, as changing level does.</summary>
     public void Clear()
     {
-        Puffs.Clear();
+        Particles.Clear();
         _fragments.Clear();
         _pendingChips.Clear();
         _blood.Clear();
@@ -173,25 +181,9 @@ public sealed class ImpactEffectRuntime
         float alpha = (_random.NextSingle() * GunShotImpactEffects.PuffAlphaRange)
             + GunShotImpactEffects.PuffAlphaMinimum;
 
-        Puffs.Emit(
-            first,
-            new Vector3f(0f, 0f, rise),
-            alpha,
-            GunShotImpactEffects.Spin(_random.NextSingle()),
-            angle: 0f,
-            growth: 1f,
-            GunShotImpactEffects.PuffHoldTicks,
-            GunShotImpactEffects.PuffFadeTicks);
-
-        Puffs.Emit(
-            second,
-            new Vector3f(0f, 0f, rise * GunShotImpactEffects.PuffSecondSpeedScale),
-            alpha,
-            GunShotImpactEffects.Spin(_random.NextSingle()),
-            angle: 0f,
-            growth: 1f,
-            GunShotImpactEffects.PuffHoldTicks,
-            GunShotImpactEffects.PuffFadeTicks);
+        float firstSpin = GunShotImpactEffects.Spin(_random.NextSingle());
+        float secondSpin = GunShotImpactEffects.Spin(_random.NextSingle());
+        Puff(first, second, rise, alpha, firstSpin, secondSpin);
     }
 
     /// <summary>Runs one recorded impact's <c>GunShotEffect</c> in the original's order (<c>0x438440</c>).</summary>
@@ -249,24 +241,7 @@ public sealed class ImpactEffectRuntime
             return;
         }
 
-        Puffs.Emit(
-            first,
-            new Vector3f(0f, 0f, rise),
-            alpha,
-            firstSpin,
-            angle: 0f,
-            growth: 1f,
-            GunShotImpactEffects.PuffHoldTicks,
-            GunShotImpactEffects.PuffFadeTicks);
-        Puffs.Emit(
-            second,
-            new Vector3f(0f, 0f, rise * GunShotImpactEffects.PuffSecondSpeedScale),
-            alpha,
-            secondSpin,
-            angle: 0f,
-            growth: 1f,
-            GunShotImpactEffects.PuffHoldTicks,
-            GunShotImpactEffects.PuffFadeTicks);
+        Puff(first, second, rise, alpha, firstSpin, secondSpin);
     }
 
     /// <summary>Detonates every chip container placed since the last call, in the order they were placed.</summary>
@@ -343,8 +318,7 @@ public sealed class ImpactEffectRuntime
         // 0x463B9C: the splash on whatever stood behind the target, three metres on.
         BloodReport report = StampBackstop(position, line, walls, marks, materials);
 
-        BloodSystems systems = SystemsFor(owner);
-        BloodEffects.Spray(systems.Mist, systems.Droplets, position, line, _random, _emitterRandom);
+        BleedingOf(owner).Spray(Particles, BloodEffects.Tuning, position, line, _random, BloodTuning.Unlit, _mistFrameCount, _landing);
         return report with { Sprayed = true };
     }
 
@@ -354,7 +328,11 @@ public sealed class ImpactEffectRuntime
     /// <param name="materials">The material table, which decides whether a struck face marks.</param>
     public void Tick(WorldRayCast? walls, BulletMarks? marks, GameMaterialRegistry? materials)
     {
-        Puffs.Tick();
+        // Every system a tick, in the order they were made; a landing droplet stamps where it lands.
+        _walls = walls;
+        _marks = marks;
+        _materials = materials;
+        Particles.RunAll();
         TickFragments();
 
         if (_blood.Count == 0)
@@ -362,15 +340,11 @@ public sealed class ImpactEffectRuntime
             return;
         }
 
+        // A body whose two systems have both burnt out holds none.
         _idleBodies.Clear();
-        foreach ((object owner, BloodSystems systems) in _blood)
+        foreach ((object owner, Particle2DBleeding bleeding) in _blood)
         {
-            systems.Mist.Tick();
-            systems.Droplets.Tick(
-                walls,
-                contact => StampDroplet(contact, marks, materials));
-
-            if (systems.Mist.Count == 0 && systems.Droplets.Count == 0)
+            if (bleeding.IsQuiet)
             {
                 _idleBodies.Add(owner);
             }
@@ -382,6 +356,16 @@ public sealed class ImpactEffectRuntime
         }
 
         _idleBodies.Clear();
+    }
+
+    // 0x438440: the two puffs of one impact, in a two-particle system of their own.
+    private void Puff(Vector3d first, Vector3d second, float rise, float alpha, float firstSpin, float secondSpin)
+    {
+        Particle2DSystem puff = Particles.New(GunShotImpactEffects.PuffLook, Vector3f.Zero, GunShotImpactEffects.PuffGrowthPerTick, GunShotImpactEffects.PuffCapacity, collider: null);
+        puff.AddParticle(first, new Vector3f(0f, 0f, rise), alpha, firstSpin, 0f, 1f, GunShotImpactEffects.PuffHoldTicks, GunShotImpactEffects.PuffFadeTicks);
+        puff.AddParticle(
+            second, new Vector3f(0f, 0f, rise * GunShotImpactEffects.PuffSecondSpeedScale), alpha, secondSpin, 0f, 1f,
+            GunShotImpactEffects.PuffHoldTicks, GunShotImpactEffects.PuffFadeTicks);
     }
 
     private void SpawnFragments(Vector3d position, Vector3f direction, string model)
@@ -463,16 +447,17 @@ public sealed class ImpactEffectRuntime
         }
     }
 
-    private BloodSystems SystemsFor(object owner)
+    // A body's blood, kept across its wounds; the shared routine makes each system anew once the last has burnt out.
+    private Particle2DBleeding BleedingOf(object owner)
     {
-        if (_blood.TryGetValue(owner, out BloodSystems existing))
+        if (_blood.TryGetValue(owner, out Particle2DBleeding? existing))
         {
             return existing;
         }
 
         if (_blood.Count >= BloodBodyCapacity)
         {
-            // Every slot is bleeding: give this wound the least recently added body's systems rather
+            // Every slot is bleeding: give this wound the least recently added body's place rather
             // than showing nothing, which is the only place this bound can be felt at all.
             foreach (object first in _blood.Keys)
             {
@@ -481,11 +466,9 @@ public sealed class ImpactEffectRuntime
             }
         }
 
-        BloodSystems systems = new(
-            BloodEffects.CreateMistSystem(_mistFrameCount),
-            BloodEffects.CreateDropletSystem());
-        _blood[owner] = systems;
-        return systems;
+        Particle2DBleeding bleeding = new();
+        _blood[owner] = bleeding;
+        return bleeding;
     }
 
     private BloodReport StampBackstop(
@@ -553,6 +536,27 @@ public sealed class ImpactEffectRuntime
         }
 
         marks.AddMark(Lift(contact.Hit), contact.Hit.Normal, texture, radius);
+    }
+
+    // A droplet's line, traced against the world: one that meets a face stamps it and dies.
+    private sealed class DropletLanding(ImpactEffectRuntime runtime) : IParticleCollider
+    {
+        public void Collide(ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<bool> struck)
+        {
+            if (runtime._walls is not { } walls)
+            {
+                return;
+            }
+
+            for (int k = 0; k < starts.Length; k++)
+            {
+                if (walls(starts[k], ends[k], out WorldRayHit hit))
+                {
+                    runtime.StampDroplet(new RetailParticleContact(starts[k], ends[k], hit), runtime._marks, runtime._materials);
+                    struck[k] = true;
+                }
+            }
+        }
     }
 
     // The same five millimetres off the face a bullet hole takes, so a splash does not fight the

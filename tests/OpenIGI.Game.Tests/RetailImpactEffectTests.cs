@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using Xunit;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Tests;
 
@@ -68,46 +69,43 @@ public sealed class RetailImpactEffectTests
         }
     }
 
+    // One wound of Project I.G.I.'s blood, thrown along +Y by the routine both titles share.
+    private static Particle2DBleeding Wound(Particle2DModule module, int mistFrames, uint seed = 5u)
+    {
+        Particle2DBleeding wound = new();
+        wound.Spray(module, BloodEffects.Tuning, default, new Vector3f(0f, 1f, 0f), new IgiRandom(seed), BloodTuning.Unlit, mistFrames, landing: null);
+        return wound;
+    }
+
+    // A system of the engine both titles share, with the puff's look unless another is given.
+    private static Particle2DSystem System(Particle2DModule module, Vector3f acceleration = default, float sizeDelta = 0f, int capacity = 2, IParticleCollider? collider = null) =>
+        module.New(GunShotImpactEffects.PuffLook, acceleration, sizeDelta, capacity, collider);
+
     [Fact]
     public void AParticleHoldsThenFadesAndDies()
     {
         // The wall puff's own numbers: fifteen ticks at its starting alpha, then a thirtieth off each
         // tick until it is gone.
-        RetailParticleSystem system = new(
-            acceleration: Vector3f.Zero,
-            sizeInUnits: GunShotImpactEffects.PuffSizeInUnits,
-            growthPerTick: GunShotImpactEffects.PuffGrowthPerTick,
-            frameCount: 1,
-            ticksPerFrame: 0,
-            capacity: 2);
-
-        Assert.True(system.Emit(
-            default,
-            Vector3f.Zero,
-            alpha: 1f,
-            spin: 0f,
-            angle: 0f,
-            growth: 1f,
-            holdTicks: GunShotImpactEffects.PuffHoldTicks,
-            fadeTicks: GunShotImpactEffects.PuffFadeTicks));
+        Particle2DSystem system = System(new Particle2DModule(), sizeDelta: GunShotImpactEffects.PuffGrowthPerTick);
+        Assert.True(system.AddParticle(default, Vector3f.Zero, 1f, 0f, 0f, 1f, GunShotImpactEffects.PuffHoldTicks, GunShotImpactEffects.PuffFadeTicks));
 
         for (int tick = 0; tick < GunShotImpactEffects.PuffHoldTicks; tick++)
         {
-            system.Tick();
+            system.Run();
             Assert.Equal(1, system.Count);
-            Assert.Equal(1f, system.Particles[0].Alpha, 5);
+            Assert.Equal(1f, system.Particles[0].Intensity, 5);
         }
 
         // The growth has been running the whole time, so the quad is already wider than authored.
-        Assert.True(system.Particles[0].Growth > 1f);
+        Assert.True(system.Particles[0].Size > 1f);
 
         for (int tick = 0; tick < GunShotImpactEffects.PuffFadeTicks - 1; tick++)
         {
-            system.Tick();
+            system.Run();
         }
 
         Assert.Equal(1, system.Count);
-        system.Tick();
+        system.Run();
         Assert.Equal(0, system.Count);
     }
 
@@ -116,37 +114,23 @@ public sealed class RetailImpactEffectTests
     {
         // 0x4FE133 only writes when live < capacity. A body already showing its ten droplets shows no
         // more until some die -- there is no oldest-first eviction anywhere in the original.
-        RetailParticleSystem system = new(
-            acceleration: Vector3f.Zero,
-            sizeInUnits: 1f,
-            growthPerTick: 0f,
-            frameCount: 1,
-            ticksPerFrame: 0,
-            capacity: 2);
-
-        Assert.True(system.Emit(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 10, 10));
-        Assert.True(system.Emit(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 10, 10));
-        Assert.False(system.Emit(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 10, 10));
+        Particle2DSystem system = System(new Particle2DModule());
+        Assert.True(system.AddParticle(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 10, 10));
+        Assert.True(system.AddParticle(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 10, 10));
+        Assert.False(system.AddParticle(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 10, 10));
         Assert.Equal(2, system.Count);
     }
 
     [Fact]
     public void AParticleIntegratesTheSystemsAccelerationNotItsOwn()
     {
-        RetailParticleSystem system = new(
-            acceleration: new Vector3f(0f, 0f, BloodEffects.DropletGravityPerTick),
-            sizeInUnits: BloodEffects.DropletSizeInUnits,
-            growthPerTick: 0f,
-            frameCount: 1,
-            ticksPerFrame: 0,
-            capacity: 4);
-
-        system.Emit(default, new Vector3f(100f, 0f, 0f), 1f, 0f, 0f, 1f, 30, 7);
-        system.Tick();
+        Particle2DSystem system = System(new Particle2DModule(), new Vector3f(0f, 0f, BloodEffects.DropletGravityPerTick), capacity: 4);
+        system.AddParticle(default, new Vector3f(100f, 0f, 0f), 1f, 0f, 0f, 1f, 30, 7);
+        system.Run();
 
         // Velocity first, then position -- so the very first tick already carries the acceleration.
-        Assert.Equal(100f, system.Particles[0].Velocity.X, 3);
-        Assert.Equal(BloodEffects.DropletGravityPerTick, system.Particles[0].Velocity.Z, 3);
+        Assert.Equal(100f, system.Particles[0].Speed.X, 3);
+        Assert.Equal(BloodEffects.DropletGravityPerTick, system.Particles[0].Speed.Z, 3);
         Assert.Equal(100.0, system.Particles[0].Position.X, 3);
         Assert.Equal(BloodEffects.DropletGravityPerTick, system.Particles[0].Position.Z, 3);
     }
@@ -156,20 +140,18 @@ public sealed class RetailImpactEffectTests
     {
         // blood1.spr ships seven frames and the mist's budget is fifteen ticks, so 15 / 7 == 2 whole
         // ticks a frame -- integer division, which is what leaves the last frame held a tick longer.
-        RetailParticleSystem system = BloodEffects.CreateMistSystem(frameCount: 7);
-        Assert.Equal(2, system.TicksPerFrame);
-
-        system.Emit(default, Vector3f.Zero, 1f, 0f, 0f, 1f, BloodEffects.MistHoldTicks, 0);
+        Particle2DSystem system = Wound(new Particle2DModule(), mistFrames: 7).Mist!;
+        Assert.Equal(2, system.Look.AnimationDelta);
         for (int tick = 0; tick < 2; tick++)
         {
-            system.Tick();
+            system.Run();
         }
 
         Assert.Equal(1, system.Particles[0].Frame);
 
         for (int tick = 0; tick < 12; tick++)
         {
-            system.Tick();
+            system.Run();
         }
 
         // Six advances in fourteen ticks reaches the last frame and stops there.
@@ -181,39 +163,30 @@ public sealed class RetailImpactEffectTests
     {
         // 0x4FD6FB computes frameCount - 1 and guards on it, so a one-frame sprite skips the whole
         // animation block rather than sitting on frame zero by luck.
-        RetailParticleSystem system = BloodEffects.CreateDropletSystem();
-        system.Emit(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 30, 7);
+        Particle2DSystem system = Wound(new Particle2DModule(), mistFrames: 7).Drops!;
         for (int tick = 0; tick < 20; tick++)
         {
-            system.Tick();
+            system.Run();
         }
 
         Assert.Equal(0, system.Particles[0].Frame);
     }
 
     [Fact]
-    public void ADropletIsTracedOnceEverySixteenTicks()
+    public void ADropletIsTracedEveryFifteenTicks()
     {
-        RetailParticleSystem.ResetStagger();
-        RetailParticleSystem system = BloodEffects.CreateDropletSystem();
-        system.Emit(new Vector3d(0, 0, 0), new Vector3f(0f, 10f, 0f), 1f, 0f, 0f, 1f, 60, 7);
-
-        int traces = 0;
-        bool Walls(Vector3d origin, Vector3d end, out WorldRayHit hit)
-        {
-            traces++;
-            hit = default;
-            return false;
-        }
-
+        // 0x4FD660 takes a particle's countdown down and traces it at nought, reloading fifteen -- I.G.I. 2's
+        // Particle2DDynCubeObj_RunHandler is the same code. The first particle of a fresh engine starts at nought, so it is
+        // traced on the first tick and every fifteenth after: ticks one, sixteen and thirty-one of thirty-two.
+        CountingCollider walls = new();
+        Particle2DSystem system = System(new Particle2DModule(), capacity: 1, collider: walls);
+        system.AddParticle(new Vector3d(0, 0, 0), new Vector3f(0f, 10f, 0f), 1f, 0f, 0f, 1f, 60, 7);
         for (int tick = 0; tick < 32; tick++)
         {
-            system.Tick(Walls);
+            system.Run();
         }
 
-        // The first particle emitted after a reset has a zero countdown, so it traces on tick one and
-        // then every sixteenth tick after it.
-        Assert.Equal(2, traces);
+        Assert.Equal(3, walls.Lines);
     }
 
     [Fact]
@@ -236,15 +209,13 @@ public sealed class RetailImpactEffectTests
     [Fact]
     public void OneWoundSpraysTheAuthoredCountsIntoTheirTwoCones()
     {
-        IgiRandom random = new(11u);
-        RetailParticleSystem mist = BloodEffects.CreateMistSystem(frameCount: 7);
-        RetailParticleSystem droplets = BloodEffects.CreateDropletSystem();
-
-        BloodEffects.Spray(mist, droplets, default, new Vector3f(0f, 1f, 0f), random);
+        Particle2DBleeding wound = Wound(new Particle2DModule(), mistFrames: 7, seed: 11u);
+        Particle2DSystem mist = wound.Mist!;
+        Particle2DSystem droplets = wound.Drops!;
 
         // One motionless mist quad at the wound.
         Assert.Equal(1, mist.Count);
-        Assert.Equal(0f, mist.Particles[0].Velocity.Length, 5);
+        Assert.Equal(0f, mist.Particles[0].Speed.Length, 5);
 
         // Three to five forward and two to four back, and the pool holds ten, so none is dropped.
         Assert.InRange(
@@ -258,9 +229,9 @@ public sealed class RetailImpactEffectTests
 
         int forward = 0;
         int back = 0;
-        foreach (RetailParticle droplet in droplets.Particles)
+        foreach (Particle2D droplet in droplets.Particles)
         {
-            float speed = droplet.Velocity.Length;
+            float speed = droplet.Speed.Length;
             if (speed >= BloodEffects.ForwardSpeedMinimum)
             {
                 forward++;
@@ -268,7 +239,7 @@ public sealed class RetailImpactEffectTests
                     speed,
                     BloodEffects.ForwardSpeedMinimum - 0.01f,
                     BloodEffects.ForwardSpeedMaximum + 0.01f);
-                Assert.True(droplet.Velocity.Y > 0f, "a forward droplet travels with the round");
+                Assert.True(droplet.Speed.Y > 0f, "a forward droplet travels with the round");
             }
             else
             {
@@ -277,7 +248,7 @@ public sealed class RetailImpactEffectTests
                     speed,
                     BloodEffects.BackSpeedMinimum - 0.01f,
                     BloodEffects.BackSpeedMaximum + 0.01f);
-                Assert.True(droplet.Velocity.Y < 0f, "a back droplet travels towards the shooter");
+                Assert.True(droplet.Speed.Y < 0f, "a back droplet travels towards the shooter");
             }
         }
 
@@ -288,49 +259,31 @@ public sealed class RetailImpactEffectTests
     [Fact]
     public void ConeEmissionStaysInsideHalfTheAuthoredAngle()
     {
-        IgiRandom random = new(3u);
-        RetailParticleSystem system = new(
-            acceleration: Vector3f.Zero,
-            sizeInUnits: 1f,
-            growthPerTick: 0f,
-            frameCount: 1,
-            ticksPerFrame: 0,
-            capacity: 256);
-
+        Particle2DSystem system = System(new Particle2DModule(), capacity: 1);
         Vector3f axis = new(0.3f, 0.9f, -0.2f);
         Vector3f unitAxis = axis * (1f / axis.Length);
-
-        for (int i = 0; i < 256; i++)
-        {
-            system.Emit(default, Vector3f.Zero, 1f, 0f, 0f, 1f, 100, 100);
-        }
-
-        system.Clear();
-
         for (int i = 0; i < 200; i++)
         {
-            system.Clear();
-            Assert.True(system.EmitCone(
-                default,
-                axis,
-                BloodEffects.BackConeRadians,
-                BloodEffects.BackSpeedMinimum,
-                BloodEffects.BackSpeedMaximum,
-                alpha: 1f,
-                spin: 0f,
-                angle: 0f,
-                growth: 1f,
-                holdTicks: 10,
-                fadeTicks: 10,
-                random));
+            system.RemoveParticles();
+            Assert.True(system.AddConeParticle(
+                default, axis, BloodEffects.BackConeRadians, BloodEffects.BackSpeedMinimum, BloodEffects.BackSpeedMaximum,
+                intensity: 1f, rotationDelta: 0f, rotation: 0f, size: 1f, lifeTime: 10, fadeTime: 10));
 
-            Vector3f velocity = system.Particles[0].Velocity;
+            Vector3f velocity = system.Particles[0].Speed;
             float cosine = Vector3f.Dot(velocity * (1f / velocity.Length), unitAxis);
             float angle = MathF.Acos(Math.Clamp(cosine, -1f, 1f));
 
             // The pitch is drawn on plus or minus HALF the authored cone (0x4FE42B).
             Assert.InRange(angle, 0f, (BloodEffects.BackConeRadians * 0.5f) + 1e-4f);
         }
+    }
+
+    // Counts the lines a system traces, meeting nothing.
+    private sealed class CountingCollider : IParticleCollider
+    {
+        public int Lines { get; private set; }
+
+        public void Collide(ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<bool> struck) => Lines += starts.Length;
     }
 
     [Fact]
@@ -347,9 +300,9 @@ public sealed class RetailImpactEffectTests
         // One body, one pair of systems, and the pools cap what a burst can show: two mist quads and
         // ten droplets however many rounds landed.
         Assert.Single(runtime.Blood);
-        BloodSystems systems = runtime.Blood[guard];
-        Assert.Equal(BloodEffects.MistCapacity, systems.Mist.Count);
-        Assert.Equal(BloodEffects.DropletCapacity, systems.Droplets.Count);
+        Particle2DBleeding systems = runtime.Blood[guard];
+        Assert.Equal(BloodEffects.MistCapacity, systems.Mist!.Count);
+        Assert.Equal(BloodEffects.DropletCapacity, systems.Drops!.Count);
     }
 
     [Fact]
@@ -404,7 +357,7 @@ public sealed class RetailImpactEffectTests
                 struckHuman: true);
         }
 
-        Assert.Equal(0, runtime.Puffs.Count);
+        Assert.Equal(0, runtime.PuffCount);
         Assert.Empty(runtime.Fragments);
     }
 
@@ -415,7 +368,7 @@ public sealed class RetailImpactEffectTests
         ImpactEffectRuntime runtime = new(new IgiRandom(2u));
         GunShotEffect concrete = new(true, false, "bullethole_concrete.tex", "dent_concrete.tex", 0.05f, string.Empty);
 
-        for (int shot = 0; shot < 16 && runtime.Puffs.Count == 0; shot++)
+        for (int shot = 0; shot < 16 && runtime.PuffCount == 0; shot++)
         {
             runtime.SpawnSurfaceImpact(
                 new Vector3d(0, 0, 0),
@@ -425,10 +378,12 @@ public sealed class RetailImpactEffectTests
                 struckHuman: false);
         }
 
-        Assert.Equal(2, runtime.Puffs.Count);
+        Assert.Equal(2, runtime.PuffCount);
 
-        RetailParticle first = runtime.Puffs.Particles[0];
-        RetailParticle second = runtime.Puffs.Particles[1];
+        // One impact's pair, in a two-particle system of its own (0x438440).
+        Particle2DSystem puff = Assert.Single(runtime.Particles.Systems);
+        Particle2D first = puff.Particles[0];
+        Particle2D second = puff.Particles[1];
 
         // 0x438624 lifts the pair three authored sizes along the normal; 0x4386B8 puts the second a
         // quarter of a size higher again, in world space rather than along the normal.
@@ -439,16 +394,16 @@ public sealed class RetailImpactEffectTests
             2);
 
         // Both rise straight up, and the second a quarter faster (0x438757).
-        Assert.Equal(0f, first.Velocity.X, 5);
-        Assert.Equal(0f, first.Velocity.Y, 5);
-        Assert.True(first.Velocity.Z > 0f);
+        Assert.Equal(0f, first.Speed.X, 5);
+        Assert.Equal(0f, first.Speed.Y, 5);
+        Assert.True(first.Speed.Z > 0f);
         Assert.Equal(
-            first.Velocity.Z * GunShotImpactEffects.PuffSecondSpeedScale, second.Velocity.Z, 3);
+            first.Speed.Z * GunShotImpactEffects.PuffSecondSpeedScale, second.Speed.Z, 3);
 
         // And they share the alpha draw, which is taken once for the pair.
-        Assert.Equal(first.Alpha, second.Alpha, 5);
+        Assert.Equal(first.Intensity, second.Intensity, 5);
         Assert.InRange(
-            first.Alpha,
+            first.Intensity,
             GunShotImpactEffects.PuffAlphaMinimum,
             GunShotImpactEffects.PuffAlphaMinimum + GunShotImpactEffects.PuffAlphaRange);
     }
@@ -478,10 +433,9 @@ public sealed class RetailImpactEffectTests
         GameMaterialRegistry materials = MaterialsMarking();
         object guard = new();
 
-        RetailParticleSystem.ResetStagger();
         runtime.SpawnBlood(guard, new Vector3d(0, 0, 0), new Vector3f(0f, 1f, 0f), null, marks, materials);
 
-        int before = runtime.Blood[guard].Droplets.Count;
+        int before = runtime.Blood[guard].Drops!.Count;
         Assert.True(before > 0);
 
         // A floor the droplets meet on their first collision tick.

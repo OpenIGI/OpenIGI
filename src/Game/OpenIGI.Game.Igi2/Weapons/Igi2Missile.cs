@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -64,7 +65,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
     private readonly Igi2WeaponTypeTask? _weaponType;
     private readonly Func<int> _levelTick;
     private readonly MefModel? _model;
-    private readonly Igi2Particle2DSystem? _smoke;
+    private readonly Particle2DSystem? _smoke;
     private readonly Vector3d _target;
     private float _realThrust = 1f;
     private float _realDeltaAlpha;

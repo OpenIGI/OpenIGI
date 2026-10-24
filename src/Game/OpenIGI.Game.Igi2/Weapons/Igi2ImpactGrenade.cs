@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -75,7 +76,7 @@ public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
     private readonly Igi2ExplosionWorld _explosions;
     private readonly IIgi2CollisionQuery _collision;
     private readonly IIgi2WeaponOwner? _shooter;
-    private readonly Igi2Particle2DSystem? _trail;
+    private readonly Particle2DSystem? _trail;
     private Vector3f _speed;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ImpactGrenade"/> class: fired, <c>ImpactGrenade_New</c> (<c>igi2 0x4CC940</c>).</summary>

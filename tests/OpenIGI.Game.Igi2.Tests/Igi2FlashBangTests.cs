@@ -110,7 +110,7 @@ public sealed class Igi2FlashBangTests
         Assert.Empty(effects.Sounds);
         Igi2FlashBang flash = Assert.Single(dynamic.Tasks.OfType<Igi2FlashBang>());
         Assert.Equal(0, flash.System!.Count);
-        Assert.Equal(0x1040008, flash.System.Transparency);
+        Assert.Equal(0x1040008, flash.System.Look.Transparency);
         Assert.True(flash.System.IsSelfDestruct);
         dynamic.Run();
         Assert.Equal("explo_flash", Assert.Single(effects.Sounds));

@@ -75,6 +75,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
     }
 
+    /// <inheritdoc/>
+    public OpenIGI.Game.World.Particles.Particle2DModule? Particles => Human.Surroundings.Particles?.Module;
+
     private TitleGroundDecal[] _decals = [];
     private long _decalsTick = -1;
 

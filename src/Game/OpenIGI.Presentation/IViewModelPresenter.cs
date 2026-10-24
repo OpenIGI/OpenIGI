@@ -110,6 +110,13 @@ public interface ITitleWorldModelPresenter
     /// <param name="projection">The world projection.</param>
     void DrawWorldSprites(IReadOnlyList<TitleWorldSprite> sprites, in Camera3D camera, in Matrix4f projection) { }
 
+    /// <summary>Draws the level's 2-D particles over the lit scene, with the title's own sprites.</summary>
+    /// <param name="particles">The level's particles.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    void DrawParticles(OpenIGI.Game.World.Particles.Particle2DModule particles, in Camera3D camera, in Matrix4f projection, float blend) { }
+
     /// <summary>
     /// Draws the muzzle flashes of the models the last <see cref="DrawWorld"/> drew, as light over the lit scene: drawn among
     /// the solid models they land in the G-buffer, where most of each is cut away and the rest is shaded as a wall.

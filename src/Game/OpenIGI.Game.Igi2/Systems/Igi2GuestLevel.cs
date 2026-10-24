@@ -470,7 +470,7 @@ public sealed class Igi2GuestLevel
             }
         }
 
-        Igi2Particles particles = new(start.World, dynamic);
+        Igi2Particles particles = new(start.World, dynamic, new OpenIGI.Game.World.Particles.Particle2DSprites(_content.Guest.FileSystem).FramesOf);
         explosions.Humans = humans;
         explosions.Particles = particles;
         foreach (Humans.Igi2Human human in humans)
@@ -642,6 +642,7 @@ public sealed class Igi2GuestLevel
         {
             Pickups = pickups,
             Grenades = grenades,
+            Particles = particles.Module,
             Casings = casings,
             Alarms = [.. _alarms],
             Player = _player,

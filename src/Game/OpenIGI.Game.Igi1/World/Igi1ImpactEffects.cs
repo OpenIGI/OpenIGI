@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
@@ -6,6 +6,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -238,7 +239,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                 Runtime.SpawnSurfaceImpact(hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
                 string where = FormattableString.Invariant($"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
                 string report =
-                    $"{material.Name} at {where}: {Runtime.Puffs.Count} dust quad(s), "
+                    $"{material.Name} at {where}: {Runtime.PuffCount} dust quad(s), "
                         + $"{Runtime.Fragments.Count} chip(s) of {material.Entry.Model}.";
                 context.Print(report);
                 logger.Information("Impact", report);
@@ -295,9 +296,9 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                             + $"{(blood.BackstopMarked ? "splashed" : "no splash -- that row marks nothing")}")
                     : "nothing within three metres behind the wound";
                 int droplets = 0;
-                foreach (BloodSystems systems in Runtime.Blood.Values)
+                foreach (Particle2DBleeding systems in Runtime.Blood.Values)
                 {
-                    droplets += systems.Droplets.Count;
+                    droplets += systems.Drops?.Count ?? 0;
                 }
 
                 string report = Runtime.BloodEnabled

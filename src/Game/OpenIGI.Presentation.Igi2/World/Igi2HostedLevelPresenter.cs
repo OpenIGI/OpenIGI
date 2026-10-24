@@ -52,5 +52,18 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
     public void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection) => _renderer.DrawWorldMuzzleFlashes(camera, projection);
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The level's particles, whichever player stands in it: a guest player's own presenter leaves them to this one, so they
+    /// are drawn once.
+    /// </remarks>
+    public void DrawParticles(in Camera3D camera, in Matrix4f projection, float blend)
+    {
+        if (_level.Particles is { } particles)
+        {
+            _renderer.DrawParticles(particles, camera, projection, blend);
+        }
+    }
+
+    /// <inheritdoc/>
     public void Dispose() => _renderer.Dispose();
 }
