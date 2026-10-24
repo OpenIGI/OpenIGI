@@ -24,7 +24,7 @@ public sealed partial class GameHost
 
     /// <summary>Gets the input the player and the free camera are steered by this frame.</summary>
     private InputState ViewInput => ScriptedViewInput
-        ?? (_switch.IsHolding ? _stillInput : _window.Input);
+        ?? (_switch.IsHolding || WheelHoldsInput ? _stillInput : _window.Input);
 
     /// <summary>
     /// Gets or sets input a harness steers the player with in place of the window's, or <see langword="null"/>.

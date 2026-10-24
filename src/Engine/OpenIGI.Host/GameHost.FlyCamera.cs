@@ -117,6 +117,13 @@ public sealed partial class GameHost
                 HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;
             }
+            else if (_playerMode && SteerWeaponWheel(rawX, rawY))
+            {
+                // The weapon wheel has the mouse: it steers the wheel, and the view holds where it was. The settling
+                // frame is re-armed so letting go does not throw the view with the travel the wheel took.
+                HostedPlayer?.HoldStill();
+                _window.CursorLocked = !state.CaptureMode;
+            }
             else if (_playerMode && TitlePlayer is not null)
             {
                 // A title's own player takes its look on the tick, as the original does; the frame only
@@ -146,6 +153,8 @@ public sealed partial class GameHost
                 // so the view keeps turning however far the mouse is dragged. It comes back on release.
                 _window.CursorLocked = !state.CaptureMode && _camera.IsCapturingMouse;
             }
+
+            FinishWeaponWheel(elapsed);
 
             if (_options.LogCamera && (right || rawX != 0f || rawY != 0f))
             {

@@ -82,6 +82,12 @@ internal sealed class AudioOutput(
             Sounds.RegisterExternal(name, LampSounds.Format, pcm);
         }
 
+        // And the remaster's weapon wheel.
+        foreach ((string name, byte[] pcm) in WeaponWheelSounds.All)
+        {
+            Sounds.RegisterExternal(name, WeaponWheelSounds.Format, pcm);
+        }
+
         MountMenuSounds();
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs to the

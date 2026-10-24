@@ -72,15 +72,15 @@ public static class LampSounds
 
     private static readonly Lazy<(string Name, byte[] Pcm)[]> Cache = new(() =>
     [
-        (SwitchName, ToPcm(WallSwitch(), 0.5f)),
-        (StarterName, ToPcm(Starter(0x51A27u, 1f), 0.5f)),
-        (StarterAltName, ToPcm(Starter(0x3B0D9u, 0.92f), 0.5f)),
-        (TubeHumName, ToPcm(TubeHum(), 0.5f)),
-        (IgnitorName, ToPcm(Ignitor(), 0.5f)),
-        (DischargeHumName, ToPcm(DischargeHum(), 0.5f)),
-        (FilamentName, ToPcm(Filament(), 0.5f)),
-        (OffName, ToPcm(BallastOff(), 0.5f)),
-        (SputterName, ToPcm(Sputter(), 0.5f)),
+        (SwitchName, ResonantSynthesis.ToPcm(WallSwitch(), 0.5f)),
+        (StarterName, ResonantSynthesis.ToPcm(Starter(0x51A27u, 1f), 0.5f)),
+        (StarterAltName, ResonantSynthesis.ToPcm(Starter(0x3B0D9u, 0.92f), 0.5f)),
+        (TubeHumName, ResonantSynthesis.ToPcm(TubeHum(), 0.5f)),
+        (IgnitorName, ResonantSynthesis.ToPcm(Ignitor(), 0.5f)),
+        (DischargeHumName, ResonantSynthesis.ToPcm(DischargeHum(), 0.5f)),
+        (FilamentName, ResonantSynthesis.ToPcm(Filament(), 0.5f)),
+        (OffName, ResonantSynthesis.ToPcm(BallastOff(), 0.5f)),
+        (SputterName, ResonantSynthesis.ToPcm(Sputter(), 0.5f)),
     ]);
 
     // A rocker switch on the wall: the finger landing, the rocker snapping over, and the contacts seating a
@@ -365,28 +365,6 @@ public static class LampSounds
         }
 
         return samples;
-    }
-
-    // Peak at a fraction of full scale, and out as little-endian sixteen-bit. Every sound is normalised the
-    // same way, and how loud each is against the others is the player's gain, not the sample's.
-    private static byte[] ToPcm(float[] samples, float peakLevel)
-    {
-        float peak = 1e-6f;
-        foreach (float sample in samples)
-        {
-            peak = MathF.Max(peak, MathF.Abs(sample));
-        }
-
-        byte[] pcm = new byte[samples.Length * 2];
-        float scale = peakLevel / peak;
-        for (int i = 0; i < samples.Length; i++)
-        {
-            short value = (short)Math.Clamp(MathF.Round(samples[i] * scale * short.MaxValue), short.MinValue, short.MaxValue);
-            pcm[i * 2] = (byte)(value & 0xFF);
-            pcm[(i * 2) + 1] = (byte)((value >> 8) & 0xFF);
-        }
-
-        return pcm;
     }
 
     private static float Unit(ref uint state) => (XorShift32.NextSigned(ref state) + 1f) * 0.5f;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
@@ -124,6 +125,8 @@ public static class Igi1HudTheme
                 state);
         }
 
+        BuildWheel(player, iconFor, model);
+
         if (!worldPrompt)
         {
             if (player.ActionSprite is { Length: > 0 } action)
@@ -156,6 +159,45 @@ public static class Igi1HudTheme
                 model.ObjectiveDistanceMetres = (float)(Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) / 4096.0);
                 break;
             }
+        }
+    }
+
+    // The weapon wheel while it is open: each weapon it offers with its picture, its name and its rounds, loaded over carried.
+    private static void BuildWheel(OpenIGI.Game.Igi1.Player.PlayerCamera player, Func<WeaponType, string> iconFor, HudModel model)
+    {
+        if (player.Wheel is not { Openness: > 0f } wheel || player.Weapons is not { } carried)
+        {
+            return;
+        }
+
+        model.Wheel.From(wheel);
+        (IReadOnlyList<string> choices, _) = player.WheelChoices();
+        foreach (string choice in choices)
+        {
+            CarriedWeapon? found = null;
+            foreach (CarriedWeapon weapon in carried.Carried)
+            {
+                if (string.Equals(weapon.Weapon.WeaponId.ToString(CultureInfo.InvariantCulture), choice, StringComparison.Ordinal))
+                {
+                    found = weapon;
+                    break;
+                }
+            }
+
+            if (found is not { } one)
+            {
+                model.Wheel.Add(new HudWheelEntry(HudIcon.None, string.Empty, string.Empty));
+                continue;
+            }
+
+            WeaponType type = one.Weapon;
+            bool counted = type.AmmoDisplay != AmmoDisplayType.None || type.Category == WeaponCategory.Medipack;
+            bool loads = counted && type.Category != WeaponCategory.Medipack && one.Gun.RoundsInClip != GunTiming.UnloadedClipSentinel;
+            int reserve = one.Gun.Reserve(carried.Ammunition);
+            string count = !counted ? string.Empty
+                : loads ? string.Create(CultureInfo.InvariantCulture, $"{one.Gun.RoundsInClip}/{reserve}")
+                : reserve.ToString(CultureInfo.InvariantCulture);
+            model.Wheel.Add(new HudWheelEntry(new HudIcon(iconFor(type)), type.DisplayName, count));
         }
     }
 }

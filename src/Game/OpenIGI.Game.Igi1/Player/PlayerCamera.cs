@@ -35,7 +35,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// the states that own locomotion. This class keeps <c>HumanPlayer_Update</c>'s order and the surface the host drives.
 /// </para>
 /// </remarks>
-public sealed class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
+public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost, IWeaponWheelPlayer
 {
     /// <summary>
     /// The delta translation a walk covers in one tick, in the body's frame.

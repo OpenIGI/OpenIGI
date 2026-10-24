@@ -161,6 +161,58 @@ public readonly record struct HudMessageView(string Text, float Opacity, int Key
 /// <param name="Mark">The point over their head the eye is drawn at, in world units, or <see langword="null"/> for none.</param>
 public readonly record struct HudThreat(float Bearing, float Awareness, OpenIGI.Core.Numerics.Vector3d? Mark = null);
 
+/// <summary>One weapon on the weapon wheel.</summary>
+/// <param name="Icon">Its picture.</param>
+/// <param name="Name">Its name, short.</param>
+/// <param name="Count">Its rounds as the title counts them, or empty.</param>
+public readonly record struct HudWheelEntry(HudIcon Icon, string Name, string Count);
+
+/// <summary>The weapon wheel as the display draws it: its weapons, which is pointed at and which is in hand, and how far it is open.</summary>
+public sealed class HudWheelView
+{
+    private readonly List<HudWheelEntry> _entries = [];
+
+    /// <summary>Gets the weapons round the ring, the first straight up and the rest clockwise.</summary>
+    public IReadOnlyList<HudWheelEntry> Entries => _entries;
+
+    /// <summary>Gets or sets how far the wheel is open, nought (shut, not drawn) to one.</summary>
+    public float Openness { get; set; }
+
+    /// <summary>Gets or sets the weapon pointed at, or -1.</summary>
+    public int Hovered { get; set; } = -1;
+
+    /// <summary>Gets or sets the weapon in hand, or -1.</summary>
+    public int Current { get; set; } = -1;
+
+    /// <summary>Gets or sets the way the pointer points, in radians clockwise from straight up, or <see langword="null"/> for none.</summary>
+    public float? PointerAngle { get; set; }
+
+    /// <summary>Adds a weapon round the ring.</summary>
+    /// <param name="entry">The weapon.</param>
+    public void Add(in HudWheelEntry entry) => _entries.Add(entry);
+
+    /// <summary>Empties it, shut, for a new frame.</summary>
+    public void Reset()
+    {
+        _entries.Clear();
+        Openness = 0f;
+        Hovered = -1;
+        Current = -1;
+        PointerAngle = null;
+    }
+
+    /// <summary>Takes the wheel's state from the player's: how open it is, which is pointed at and which is in hand.</summary>
+    /// <param name="wheel">The player's wheel.</param>
+    public void From(OpenIGI.Game.Player.WeaponWheel wheel)
+    {
+        ArgumentNullException.ThrowIfNull(wheel);
+        Openness = wheel.Openness;
+        Hovered = wheel.Hovered;
+        Current = wheel.Current;
+        PointerAngle = wheel.PointerAngle;
+    }
+}
+
 /// <summary>Where the player was last hit from, and how hard: what washes the display's corners.</summary>
 /// <param name="TopLeft">The top left corner's wash, nought to one.</param>
 /// <param name="TopRight">The top right corner's.</param>
@@ -238,6 +290,9 @@ public sealed class HudModel
     /// <summary>Gets or sets where the view looks up or down, in radians, up positive; with the heading, how fast it turns.</summary>
     public float? PitchRadians { get; set; }
 
+    /// <summary>Gets the weapon wheel, shut unless a title fills it.</summary>
+    public HudWheelView Wheel { get; } = new();
+
     /// <summary>Gets those noticing the player.</summary>
     public IReadOnlyList<HudThreat> Threats => _threats;
 
@@ -277,6 +332,7 @@ public sealed class HudModel
         Damage = default;
         PitchRadians = null;
         _threats.Clear();
+        Wheel.Reset();
     }
 
     /// <summary>Adds a weapon carried.</summary>

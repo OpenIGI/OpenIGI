@@ -66,4 +66,27 @@ internal static class ResonantSynthesis
         }
     }
 
+    /// <summary>Normalises samples to a peak and writes them out as little-endian sixteen-bit PCM.</summary>
+    /// <param name="samples">The samples.</param>
+    /// <param name="peakLevel">The peak, as a fraction of full scale: how loud each sound is against another is the player's gain.</param>
+    /// <returns>The PCM.</returns>
+    public static byte[] ToPcm(float[] samples, float peakLevel)
+    {
+        float peak = 1e-6f;
+        foreach (float sample in samples)
+        {
+            peak = MathF.Max(peak, MathF.Abs(sample));
+        }
+
+        byte[] pcm = new byte[samples.Length * 2];
+        float scale = peakLevel / peak;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            short value = (short)Math.Clamp(MathF.Round(samples[i] * scale * short.MaxValue), short.MinValue, short.MaxValue);
+            pcm[i * 2] = (byte)(value & 0xFF);
+            pcm[(i * 2) + 1] = (byte)((value >> 8) & 0xFF);
+        }
+
+        return pcm;
+    }
 }

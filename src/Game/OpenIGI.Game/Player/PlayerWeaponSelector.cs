@@ -29,6 +29,7 @@ internal sealed class PlayerWeaponSelector
     private int _pendingWeaponId = -1;
     private int _heldIndex = -1;
     private int _categoryPick = -1;
+    private int _wheelPick = -1;
     private int _lastNonBinocularWeaponId = -1;
     private bool _binocularTogglePending;
     private bool _binocularOpenPending;
@@ -87,7 +88,9 @@ internal sealed class PlayerWeaponSelector
     // writing into the frame, which is the one thing here that is not literal.
     internal void SelectCategory(PlayerInputState input)
     {
-        _categoryPick = -1;
+        // The remaster's wheel answers through the same register, taken here so a number key pressed on the same tick wins.
+        _categoryPick = _wheelPick;
+        _wheelPick = -1;
 
         if (_categories.Count == 0)
         {
@@ -151,6 +154,26 @@ internal sealed class PlayerWeaponSelector
         }
 
         _categoryIndex = wanted;
+    }
+
+    /// <summary>
+    /// Takes a weapon as the weapon wheel picks it: as a number key's pick on the next tick (<see cref="SelectCategory"/>), which
+    /// the cycler hands on as the pending change, with the cycle's cursor kept on it so the next and previous keys step on from it.
+    /// </summary>
+    /// <param name="weaponId">The weapon's id; one not carried, or the one in hand, changes nothing.</param>
+    internal void Pick(int weaponId)
+    {
+        if (IndexOf(weaponId) < 0 || (InHand is { } held && held.Weapon.WeaponId == weaponId))
+        {
+            return;
+        }
+
+        _wheelPick = weaponId;
+        int cycleIndex = _cycle.IndexOf(weaponId);
+        if (cycleIndex >= 0)
+        {
+            _cycleIndex = cycleIndex;
+        }
     }
 
     internal void SelectBinoculars(PlayerInputState input)

@@ -41,6 +41,10 @@ public enum PlayerAction
     /// </remarks>
     Flashlight = 0x10,
 
+    /// <summary>Hold the weapon wheel open; let go to take the weapon pointed at.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the remaster's wheel (<see cref="WeaponWheel"/>) takes the next free bit.</remarks>
+    WeaponWheel = 0x20,
+
     /// <summary>Fire the held weapon.</summary>
     Fire = 0x100,
 

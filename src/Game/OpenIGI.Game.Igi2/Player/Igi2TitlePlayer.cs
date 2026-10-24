@@ -14,7 +14,7 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Game.Igi2.Player;
 
 /// <summary>The ported player as the host steps it.</summary>
-public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels
+public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, ITitleWorldModels, IWeaponWheelPlayer
 {
     /// <summary>Gets or sets the title profile whose HUD preferences are currently active.</summary>
     public Config.Igi2GameConfig? GameConfig { get; set; }
@@ -521,6 +521,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         _rawKeys = input.Raw;
         _reader.Read(new Igi2PlayerInputState(
             Analog(input.MouseX, Human.UnfilteredMouse), Analog(input.MouseY, Human.UnfilteredMouse), held, pressed), _frame);
+        TakeWheelPick();
         if (Level is { } level)
         {
             Flow?.IsBreakKeyDown = input.BreakCutscene;

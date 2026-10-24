@@ -23,10 +23,10 @@ public sealed class PlayerProfile
 {
     /// <summary>The number of key bindings a profile carries.</summary>
     /// <remarks>
-    /// The <see cref="RetailBindingCount"/> the original writes, plus the remaster's flashlight — the one
-    /// action the original does not have.
+    /// The <see cref="RetailBindingCount"/> the original writes, plus the remaster's flashlight and weapon wheel —
+    /// the two actions the original does not have.
     /// </remarks>
-    public const int BindingCount = RetailBindingCount + 1;
+    public const int BindingCount = RetailBindingCount + 2;
 
     /// <summary>The number of key bindings the original's profile carries.</summary>
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
@@ -75,6 +75,7 @@ public sealed class PlayerProfile
         new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
         new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
         new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"),
+        new("WeaponWheel", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_3"),
     ];
 
     /// <summary>The bindings the original's own fresh profile starts with.</summary>

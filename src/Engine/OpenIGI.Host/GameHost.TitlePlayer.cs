@@ -210,6 +210,17 @@ public sealed partial class GameHost
 
         held |= _titleScriptHeld;
 
+        // The weapon wheel holds the player still while it is open: nothing it was given goes through.
+        bool still = WheelHoldsInput;
+        if (still)
+        {
+            held = default;
+            _titlePressed = default;
+            _titleExtraPressed = 0;
+            _titleMouseX = 0f;
+            _titleMouseY = 0f;
+        }
+
         PlayerProfile? profile = _configuration.Active;
         PlayerAction replaced = Gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -222,7 +233,7 @@ public sealed partial class GameHost
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
             UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
-            TitleHeld: Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
+            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
         _titlePresentation.CaptureTick(_titleFeatures!);

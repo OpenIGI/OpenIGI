@@ -95,6 +95,7 @@ public sealed partial class Igi2HudRenderer
         {
             BuildWeapon(title, inventory, model);
             BuildSlots(title, inventory, model);
+            BuildWheel(title, inventory, model);
         }
 
         BuildActions(human, model);
@@ -159,6 +160,43 @@ public sealed partial class Igi2HudRenderer
             secondary,
             counted ? HudGauge.Clip : HudGauge.None,
             state);
+    }
+
+    // The weapon wheel while it is open: each weapon it offers with its picture, its short name and its rounds, loaded over
+    // carried, as the inventory counts them.
+    private static void BuildWheel(Igi2TitlePlayer title, Igi2Inventory inventory, HudModel model)
+    {
+        if (title.Wheel is not { Openness: > 0f } wheel)
+        {
+            return;
+        }
+
+        model.Wheel.From(wheel);
+        (IReadOnlyList<string> choices, _) = title.WheelChoices();
+        foreach (string choice in choices)
+        {
+            Igi2WeaponItem? item = null;
+            foreach (Igi2WeaponItem candidate in inventory.Weapons)
+            {
+                if (string.Equals(candidate.Number.ToString(CultureInfo.InvariantCulture), choice, StringComparison.Ordinal))
+                {
+                    item = candidate;
+                    break;
+                }
+            }
+
+            if (item is null)
+            {
+                model.Wheel.Add(new HudWheelEntry(HudIcon.None, string.Empty, string.Empty));
+                continue;
+            }
+
+            Igi2FireTypeRounds rounds = inventory.FireTypeRounds(item, 0);
+            string count = rounds.AmmoType is null ? string.Empty
+                : string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded}/{rounds.Available}");
+            string name = title.Strings?.WeaponShortName(item.WeaponType.WeaponName) ?? item.WeaponType.WeaponName;
+            model.Wheel.Add(new HudWheelEntry(new HudIcon(item.WeaponType.WeaponSprite), name, count));
+        }
     }
 
     // The weapons carried, by the retail inventory's slots (InventorySlots): one column a slot, the grenades sharing theirs with

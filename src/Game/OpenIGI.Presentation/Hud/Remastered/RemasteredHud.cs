@@ -170,6 +170,9 @@ public sealed class RemasteredHud : IDisposable
             HudAlerts.DrawAmmoArc(context, model, frame.CrosshairSpread);
         }
 
+        // Over everything, the weapon wheel while it is open: its backdrop blurs out the rest of the display with the world.
+        HudWheel.Draw(context, model);
+
         if (layered)
         {
             batch.End();
@@ -205,9 +208,14 @@ public sealed class RemasteredHud : IDisposable
         float angle = frame.Seconds * 71f;
         HudDamage damage = model.Damage;
         (float swayX, float swayY) = frame.Sway ? _reactive.Sway : (0f, 0f);
+        // The weapon wheel's backdrop fills the screen, and the visor's bend would draw its edges in off the screen's: flat
+        // while it is open.
+        float flat = 1f - model.Wheel.Openness;
         return look with
         {
             Intensity = Math.Clamp(frame.Intensity, 0f, 1f),
+            Curvature = look.Curvature * flat,
+            FringePixels = look.FringePixels * flat,
             Appear = _reactive.Appear,
             Seconds = frame.Seconds,
             Shake = ((MathF.Sin(angle) * 6f * scale * shake) + (swayX * scale), (MathF.Cos(angle * 1.3f) * 4f * scale * shake) + (swayY * scale)),

@@ -261,6 +261,10 @@ public sealed class PlayerWeapons
     /// <returns><see langword="true"/> when it is carried.</returns>
     public bool HasWeapon(int weaponId) => _selector.IndexOf(weaponId) >= 0;
 
+    /// <summary>Switches to a weapon on the next tick, as the remaster's weapon wheel picks it (<see cref="WeaponWheel"/>).</summary>
+    /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>; one not carried, or the one in hand, changes nothing.</param>
+    public void RequestWeapon(int weaponId) => _selector.Pick(weaponId);
+
     /// <summary>Appends a weapon to the switch cycle unless it is already in it.</summary>
     /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
     /// <remarks>

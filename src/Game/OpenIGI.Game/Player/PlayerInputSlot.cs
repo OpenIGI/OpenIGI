@@ -168,8 +168,9 @@ public enum PlayerInputSlot
     /// </remarks>
     Flashlight = 35,
 
-    /// <summary>Unassigned.</summary>
-    Unused36 = 36,
+    /// <summary>Action bit <c>0x20</c> — <see cref="PlayerAction.WeaponWheel"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
+    WeaponWheel = 36,
 
     /// <summary>Unassigned.</summary>
     Unused37 = 37,
@@ -191,10 +192,10 @@ public static class PlayerInputBindings
 {
     /// <summary>Every slot that carries a bound action, paired with that action.</summary>
     /// <remarks>
-    /// Twenty-seven entries, one per row of the binding table, and one more for the remaster's
-    /// <see cref="PlayerAction.Flashlight"/>. <see cref="PlayerInputSlot.LookX"/>,
+    /// Twenty-seven entries, one per row of the binding table, and two more for the remaster's
+    /// <see cref="PlayerAction.Flashlight"/> and <see cref="PlayerAction.WeaponWheel"/>. <see cref="PlayerInputSlot.LookX"/>,
     /// <see cref="PlayerInputSlot.LookY"/>, the four developer chords,
-    /// <see cref="PlayerInputSlot.SelectedWeaponScratch"/> and the four unassigned slots are absent —
+    /// <see cref="PlayerInputSlot.SelectedWeaponScratch"/> and the three unassigned slots are absent —
     /// none of them is an action a key can be bound to.
     /// </remarks>
     public static IReadOnlyList<(PlayerInputSlot Slot, PlayerAction Action)> All { get; } =
@@ -227,6 +228,7 @@ public static class PlayerInputBindings
         (PlayerInputSlot.MapComputer, PlayerAction.MapComputer),
         (PlayerInputSlot.Binoculars, PlayerAction.Binoculars),
         (PlayerInputSlot.Flashlight, PlayerAction.Flashlight),
+        (PlayerInputSlot.WeaponWheel, PlayerAction.WeaponWheel),
     ];
 
     /// <summary>Gets the action name used by the persisted retail configuration.</summary>
