@@ -375,6 +375,9 @@ public sealed partial class Igi1HumanAi
     /// <summary>Gets a value indicating whether it can currently see its enemy.</summary>
     public bool SeesEnemy => TargetSlot.IsVisible;
 
+    /// <summary>Gets a value indicating whether the enemy it can currently see is the player.</summary>
+    public bool SeesPlayer => SeesEnemy && TargetIsPlayer;
+
     // --- State the behaviour script configures through the AI natives (HumanAI ctor 0x44F060). ---
     // Every default here is the literal the constructor writes; nothing is assumed.
 

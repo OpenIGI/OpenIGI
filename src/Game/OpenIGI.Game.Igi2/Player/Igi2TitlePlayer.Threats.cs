@@ -17,8 +17,9 @@ public sealed partial class Igi2TitlePlayer
     /// </summary>
     /// <returns>The soldiers, refilled each call.</returns>
     /// <remarks>
-    /// A soldier still holding the player after losing sight of it counts a third; one making out a figure it has glimpsed
-    /// counts from half towards the whole the longer it looks; one that has confirmed it and sees it counts whole.
+    /// Only a soldier with the player in plain sight now counts: one making out a figure counts from half towards the whole
+    /// the longer it looks, one that has confirmed it counts whole. One that has lost sight of the player, or never had it,
+    /// gives the player nothing the player could not know.
     /// </remarks>
     public IReadOnlyList<(Vector3d Position, float Awareness)> Threats()
     {
@@ -42,15 +43,14 @@ public sealed partial class Igi2TitlePlayer
 
             foreach (Igi2DetectionItem item in detection.Enemies)
             {
-                if (!ReferenceEquals(item.Target, Human))
+                if (!ReferenceEquals(item.Target, Human) || !item.IsFullVisible)
                 {
                     continue;
                 }
 
                 float awareness = item.IsIdentifying
                     ? 0.5f + (0.4f * Math.Clamp((ai.World.LevelTick() - item.BecameVisibleTick) / 60f, 0f, 1f))
-                    : item.IsFullVisible ? 1f
-                    : 0.35f;
+                    : 1f;
                 _threats.Add((soldier.Position, awareness));
                 break;
             }

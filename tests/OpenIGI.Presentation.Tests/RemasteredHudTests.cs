@@ -105,6 +105,20 @@ public sealed class RemasteredHudTests
     }
 
     [Fact]
+    public void The_inventory_never_dims_at_any_density()
+    {
+        HudReactiveState state = new();
+        HudModel model = new() { Show = HudParts.All, Weapon = Weapon("WEAPON_ID_MP5", 30) };
+        for (float t = 0f; t <= 15f; t += 0.1f)
+        {
+            state.Update(model, t);
+        }
+
+        Assert.Equal(1f, state.Presence(HudParts.Inventory, HudDensity.Contextual, model));
+        Assert.Equal(1f, state.Presence(HudParts.Inventory, HudDensity.Minimal, model));
+    }
+
+    [Fact]
     public void A_point_ahead_projects_to_the_middle_and_one_to_the_right_lands_right()
     {
         HudProjector view = HudProjector.FromYawPitch(default, 0f, 0f, 1f, 1920f, 1080f);

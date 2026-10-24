@@ -33,7 +33,7 @@ public sealed class HudReactiveState
     public const float DimSeconds = 0.6f;
 
     /// <summary>How far the display trails a turning view at most, in design pixels.</summary>
-    public const float MaximumSway = 14f;
+    public const float MaximumSway = 4f;
 
     private readonly Spring _health = new(1f, 0.08f);
     private readonly Spring _healthTrail = new(1f, 0.55f);
@@ -51,7 +51,6 @@ public sealed class HudReactiveState
     private string? _firstActionKey;
     private float _actionAt = float.NegativeInfinity;
     private float _weaponAt = float.NegativeInfinity;
-    private float _inventoryAt = float.NegativeInfinity;
     private float _statusAt = float.NegativeInfinity;
     private int? _lastMagazine;
     private HudWeaponState _lastState;
@@ -96,9 +95,10 @@ public sealed class HudReactiveState
 
     /// <summary>
     /// How much of a part shows at a density: all of it at full; at contextual and minimal, all of it for a while after something
-    /// about it changed, then dimming to a ghost -- or to nothing at minimal -- unless what it shows is urgent.
+    /// about it changed, then dimming to a ghost -- or to nothing at minimal -- unless what it shows is urgent. The inventory
+    /// never dims: what the player carries is always to be read at a glance.
     /// </summary>
-    /// <param name="part">The part: <see cref="HudParts.Status"/>, <see cref="HudParts.Weapon"/> or <see cref="HudParts.Inventory"/>.</param>
+    /// <param name="part">The part: <see cref="HudParts.Status"/> or <see cref="HudParts.Weapon"/>; any other always shows whole.</param>
     /// <param name="density">The density.</param>
     /// <param name="model">The frame's model, for what is urgent.</param>
     /// <returns>Its opacity, nought to one.</returns>
@@ -115,7 +115,6 @@ public sealed class HudReactiveState
         {
             HudParts.Status => (_statusAt, model.Health < 0.5f || (model.Visibility is { } v && v >= model.VisibilityAlert) || model.ThreatLevel > 0.2f, minimal ? 0f : 0.55f),
             HudParts.Weapon => (_weaponAt, model.Weapon is { State: HudWeaponState.Reloading or HudWeaponState.Empty } || LowRounds(model.Weapon), minimal ? 0f : 0.4f),
-            HudParts.Inventory => (_inventoryAt, false, minimal ? 0f : 0.2f),
             _ => (Seconds, true, 1f),
         };
 
@@ -157,7 +156,6 @@ public sealed class HudReactiveState
         {
             _shownAt = seconds;
             _weaponAt = seconds;
-            _inventoryAt = seconds;
             _statusAt = seconds;
         }
 
@@ -196,7 +194,6 @@ public sealed class HudReactiveState
             if (_weaponKey is not null || !first)
             {
                 _switchAt = seconds;
-                _inventoryAt = seconds;
             }
 
             _weaponAt = seconds;
@@ -237,8 +234,8 @@ public sealed class HudReactiveState
 
         _lastHeading = model.HeadingRadians;
         _lastPitch = model.PitchRadians;
-        _swayX.Target = Math.Clamp(-yawRate * 4f, -MaximumSway, MaximumSway);
-        _swayY.Target = Math.Clamp(pitchRate * 4f, -MaximumSway, MaximumSway);
+        _swayX.Target = Math.Clamp(-yawRate * 1.2f, -MaximumSway, MaximumSway);
+        _swayY.Target = Math.Clamp(pitchRate * 1.2f, -MaximumSway, MaximumSway);
         _swayX.Update(elapsed);
         _swayY.Update(elapsed);
 

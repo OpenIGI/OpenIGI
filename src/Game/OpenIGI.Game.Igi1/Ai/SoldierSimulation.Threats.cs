@@ -9,8 +9,8 @@ public sealed partial class SoldierSimulation
     private readonly List<(Vector3d Position, float Awareness)> _threats = [];
 
     /// <summary>
-    /// The living soldiers noticing an enemy, with where they stand and how much: one that sees its enemy has seen, one only
-    /// alerted -- by an alarm, or a sighting it has lost -- is wondering.
+    /// The living soldiers that can see the player now, with where they stand. Only a sighting counts: one alerted by an
+    /// alarm or a sighting it has lost, or one behind a wall, gives the player nothing the player could not know.
     /// </summary>
     /// <returns>The soldiers, refilled each call.</returns>
     public IReadOnlyList<(Vector3d Position, float Awareness)> Threats()
@@ -23,13 +23,9 @@ public sealed partial class SoldierSimulation
                 continue;
             }
 
-            if (brain.SeesEnemy)
+            if (brain.SeesPlayer)
             {
                 _threats.Add((view.Position, 1f));
-            }
-            else if (brain.Alerted)
-            {
-                _threats.Add((view.Position, 0.45f));
             }
         }
 
