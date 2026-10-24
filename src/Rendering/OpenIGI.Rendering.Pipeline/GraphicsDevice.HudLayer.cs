@@ -16,8 +16,9 @@ namespace OpenIGI.Rendering.Pipeline;
 /// interface layer of a frame drawn apart -- through <c>Ui/HudFx.slang</c>, blended as premultiplied "over".
 /// </para>
 /// <para>
-/// The frame's picture is never read here, so the frosted glass under the display's panels, which samples the picture
-/// without the interface, is unaffected.
+/// Where the glass copied the frame's picture this frame (<see cref="BlurFrameForBackdrop"/>), the pass reads that copy too,
+/// sharp and blurred, so a hit can tear the picture on the side it came from. Only the pixels a hit touches are laid back;
+/// everywhere else the picture under the display is left as it was drawn.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
@@ -101,7 +102,14 @@ public sealed partial class GraphicsDevice
         _hudFxBindings.Bind("uGlow1", chain[Math.Min(1, chain.Count - 1)].View);
         _hudFxBindings.Bind("uGlow2", chain[Math.Min(2, chain.Count - 1)].View);
 
-        HudFxPush push = HudFxPush.From(fx, width, height);
+        // The picture under the display, sharp and blurred, where the glass copied it this frame: what a hit tears. Without
+        // it the layer stands in, and the pass is told there is no picture to tear.
+        bool scene = _backdropFresh && _backdropSource is not null && _backdropBlur is { Chain.Count: > 0 };
+        IReadOnlyList<IRhiTexture>? sceneChain = scene ? _backdropBlur!.Chain : null;
+        _hudFxBindings.Bind("uScene", scene ? _backdropSource!.View : layer.View);
+        _hudFxBindings.Bind("uSceneBlur", sceneChain is not null ? sceneChain[Math.Min(2, sceneChain.Count - 1)].View : chain[0].View);
+
+        HudFxPush push = HudFxPush.From(fx, width, height, scene, PresentFormat.IsSrgb());
 
         // Over whatever the interface draws into, kept: the picture, or the interface layer of a frame drawn apart, which
         // starts transparent if nothing has been drawn into it yet.
@@ -165,22 +173,23 @@ public sealed partial class GraphicsDevice
         private readonly float _width, _height, _inverseWidth, _inverseHeight;
         private readonly float _intensity, _curvature, _fringe, _glow;
         private readonly float _scanlines, _scanlineStrength, _appear, _seconds;
-        private readonly float _shakeX, _shakeY, _unused0, _unused1;
+        private readonly float _shakeX, _shakeY, _bearing, _directed;
         private readonly float _topLeft, _topRight, _bottomLeft, _bottomRight;
-        private readonly float _red, _green, _blue, _unused2;
+        private readonly float _red, _green, _blue, _scene;
         private readonly float _alert, _alertRed, _alertGreen, _alertBlue;
 
-        private HudFxPush(in HudFxSettings fx, int width, int height)
+        private HudFxPush(in HudFxSettings fx, int width, int height, bool scene, bool targetEncodes)
         {
             (_width, _height, _inverseWidth, _inverseHeight) = (width, height, 1f / width, 1f / height);
             (_intensity, _curvature, _fringe, _glow) = (Math.Clamp(fx.Intensity, 0f, 1f), fx.Curvature, fx.FringePixels, fx.Glow);
             (_scanlines, _scanlineStrength, _appear, _seconds) = (fx.ScanlineDensity, fx.ScanlineStrength, fx.Appear, fx.Seconds);
-            (_shakeX, _shakeY, _unused0, _unused1) = (fx.Shake.X, fx.Shake.Y, 0f, 0f);
+            (_shakeX, _shakeY, _bearing, _directed) = (fx.Shake.X, fx.Shake.Y, fx.AlertBearing, fx.AlertDirected ? 1f : 0f);
             (_topLeft, _topRight, _bottomLeft, _bottomRight) = fx.Damage;
-            (_red, _green, _blue, _unused2) = (fx.DamageColour.R, fx.DamageColour.G, fx.DamageColour.B, 0f);
+            (_red, _green, _blue, _scene) = (fx.DamageColour.R, fx.DamageColour.G, fx.DamageColour.B, !scene ? 0f : targetEncodes ? 1f : 2f);
             (_alert, _alertRed, _alertGreen, _alertBlue) = (fx.Alert, fx.AlertColour.R, fx.AlertColour.G, fx.AlertColour.B);
         }
 
-        public static HudFxPush From(in HudFxSettings fx, int width, int height) => new(fx, width, height);
+        public static HudFxPush From(in HudFxSettings fx, int width, int height, bool scene, bool targetEncodes) =>
+            new(fx, width, height, scene, targetEncodes);
     }
 }

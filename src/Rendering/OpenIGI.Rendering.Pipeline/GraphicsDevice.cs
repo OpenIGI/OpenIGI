@@ -577,6 +577,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _inFrame = true;
         EndHudLayer();
+        _backdropFresh = false;
         ReleaseWorldIfAsked();
 
         // A frame's depth buffer starts empty. The interface has a ClearDepth, and the game does not

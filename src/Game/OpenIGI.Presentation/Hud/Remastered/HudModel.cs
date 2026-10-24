@@ -255,6 +255,24 @@ public sealed class HudModel
         }
     }
 
+    /// <summary>Gets the one who has noticed the player most, or <see langword="null"/> for no one.</summary>
+    public HudThreat? Strongest
+    {
+        get
+        {
+            HudThreat? strongest = null;
+            foreach (HudThreat threat in _threats)
+            {
+                if (strongest is not { } most || threat.Awareness > most.Awareness)
+                {
+                    strongest = threat;
+                }
+            }
+
+            return strongest;
+        }
+    }
+
     /// <summary>Empties it for a new frame.</summary>
     public void Reset()
     {

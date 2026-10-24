@@ -88,6 +88,36 @@
         "register": 3,
         "space": 0
       }
+    },
+    {
+      "name": "uScene",
+      "group": 0,
+      "binding": 5,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 4,
+        "space": 0
+      }
+    },
+    {
+      "name": "uSceneBlur",
+      "group": 0,
+      "binding": 6,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 5,
+        "space": 0
+      }
     }
   ],
   "pushBlock": {

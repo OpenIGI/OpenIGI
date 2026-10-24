@@ -9,8 +9,8 @@ namespace OpenIGI.Rendering;
 /// The display is drawn into a layer of its own and laid over the picture by one full-screen pass that bends it as a visor
 /// would (<see cref="Curvature"/>), splits its colours at the edges as a projection does (<see cref="FringePixels"/>), runs
 /// scanlines through it and lets them roll (<see cref="ScanlineDensity"/>, <see cref="ScanlineStrength"/>), flickers it in
-/// band by band as it appears (<see cref="Appear"/>), shakes it when the player is hit (<see cref="Shake"/>), washes its
-/// corners red from where the hit came (<see cref="Damage"/>), and lays its own glow back over it (<see cref="Glow"/>).
+/// band by band as it appears (<see cref="Appear"/>), shakes it when the player is hit (<see cref="Shake"/>), tears the
+/// picture on the side the hit came from (<see cref="Damage"/>), and lays its own glow back over it (<see cref="Glow"/>).
 /// </para>
 /// <para>
 /// Every term is zero for a plain overlay, which is what <see cref="None"/> is: the pass then gives back the layer as drawn.
@@ -59,6 +59,15 @@ public readonly record struct HudFxSettings
 
     /// <summary>Gets the colour the edges take as the player is noticed, as linear red, green and blue.</summary>
     public (float R, float G, float B) AlertColour { get; init; }
+
+    /// <summary>
+    /// Gets which way the one who has noticed the player most is, in radians clockwise from the view's facing: the visor's rim
+    /// burns brightest on that side.
+    /// </summary>
+    public float AlertBearing { get; init; }
+
+    /// <summary>Gets a value indicating whether <see cref="AlertBearing"/> says anything, or the rim burns evenly.</summary>
+    public bool AlertDirected { get; init; }
 
     /// <summary>Gets a value indicating whether the pass changes anything at all.</summary>
     public bool IsActive => Intensity > 0f;

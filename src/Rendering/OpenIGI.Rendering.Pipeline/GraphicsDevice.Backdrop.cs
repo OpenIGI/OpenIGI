@@ -11,6 +11,9 @@ public sealed partial class GraphicsDevice
     private TextureHandle[] _backdropHandles = [];
     private BackdropBlur _backdropResult = BackdropBlur.None;
 
+    // Whether the frame has been copied for the backdrop this frame: the visor pass then has the picture to tear on a hit.
+    private bool _backdropFresh;
+
     /// <inheritdoc/>
     /// <remarks>
     /// The frame is copied into an sRGB texture the size of the screen — so the pyramid built from it holds
@@ -68,6 +71,8 @@ public sealed partial class GraphicsDevice
         {
             _backdropBlur.Record(pass, _backdropSource.View, width, height, FrameSlot);
         }
+
+        _backdropFresh = true;
 
         if (_backdropHandles.Length == 0)
         {

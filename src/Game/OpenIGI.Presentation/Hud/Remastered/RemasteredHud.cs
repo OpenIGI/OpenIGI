@@ -152,11 +152,6 @@ public sealed class RemasteredHud : IDisposable
         Part(context, HudParts.Inventory, frame.Density, model, static (c, m) => HudInventory.Draw(c, m));
         Part(context, HudParts.Weapon, frame.Density, model, static (c, m) => HudWeapon.Draw(c, m));
         HudActions.Draw(context, model);
-        if (frame.Threats)
-        {
-            HudAlerts.DrawThreats(context, model);
-        }
-
         if (frame.WorldObjective && frame.Projector is { } projector)
         {
             HudObjective.Draw(context, model, projector);
@@ -218,6 +213,8 @@ public sealed class RemasteredHud : IDisposable
             Damage = (damage.TopLeft, damage.TopRight, damage.BottomLeft, damage.BottomRight),
             Alert = threat,
             AlertColour = (1f, 0.62f - (0.5f * red), 0.12f - (0.08f * red)),
+            AlertBearing = model.Strongest?.Bearing ?? 0f,
+            AlertDirected = frame.Threats && model.Strongest is not null,
         };
     }
 
