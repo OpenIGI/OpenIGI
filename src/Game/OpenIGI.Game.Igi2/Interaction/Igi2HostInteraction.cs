@@ -45,10 +45,10 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
     protected Action<int>? Activated { get; }
 
     /// <inheritdoc/>
-    public Vector3d Centre => Interaction.Anchor;
+    public virtual Vector3d Centre => Interaction.Anchor;
 
     /// <inheritdoc/>
-    public float Radius => FindRadius;
+    public virtual float Radius => FindRadius;
 
     /// <inheritdoc/>
     public abstract Igi2ActivateKind Kind { get; }
@@ -176,6 +176,16 @@ public abstract class Igi2HostInteraction : IIgi2Activatable
         : Igi2HostInteraction(interaction, activated), IIgi2Fence
     {
         public override Igi2ActivateKind Kind => Igi2ActivateKind.Fence;
+
+        // Found along its whole length, as Project I.G.I. scores its model's bounds: its anchor is the task's origin, at one end of
+        // a fence eight metres long, so a sphere round that alone finds only the end of it.
+        public override Vector3d Centre => Interaction.HasLocalBounds
+            ? Interaction.Anchor + Interaction.Orientation.Transposed().Transform((Interaction.LocalBoundsMinimum + Interaction.LocalBoundsMaximum) * 0.5)
+            : Interaction.Anchor;
+
+        public override float Radius => Interaction.HasLocalBounds
+            ? (float)((Interaction.LocalBoundsMaximum - Interaction.LocalBoundsMinimum).Length * 0.5) + FindRadius
+            : FindRadius;
 
         public IReadOnlyList<float> Frame => Rows();
 
