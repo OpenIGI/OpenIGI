@@ -131,9 +131,9 @@ public sealed partial class Igi2TitlePlayer
             };
             world.LineOfSight(sight, uint.MaxValue);
 
-            // Only a sniper who has the player in his sight's list aims at him: a scope that merely sweeps past an unseen
+            // Only a sniper who has seen the player, or heard him shoot, aims at him: a scope that merely sweeps past an unseen
             // player catches no sun he would see.
-            if (!sight.IsBlocked && detection.Enemies.Any(item => ReferenceEquals(item.Target, Human)))
+            if (!sight.IsBlocked && detection.Enemies.Any(item => ReferenceEquals(item.Target, Human) && IsOnto(item)))
             {
                 _glints.Add((ScopeAt(soldier, from, dx / length, dy / length, dz / length), strength));
             }
@@ -155,11 +155,15 @@ public sealed partial class Igi2TitlePlayer
         return along <= 0.0 ? rifle : new Vector3d(eye.X + (dx * along), eye.Y + (dy * along), eye.Z + (dz * along));
     }
 
+    // Whether a soldier's listing of an enemy means he is onto it: he has seen it, or heard it shoot. I.G.I. 2 lists every
+    // enemy in reach at once, so the listing alone says nothing.
+    private static bool IsOnto(Igi2DetectionItem item) => item.HasBeenFullVisible || item.IsCreatedByGunShot;
+
     /// <summary>How far the soldiers are onto the player, in I.G.I. 2's own terms: from their sight's lists and their alarm.</summary>
     /// <returns>
     /// Detected while a soldier has the player in plain sight and has confirmed him; an alarm while a soldier is alarmed;
-    /// suspicious while one is still making out a figure he sees; searching while one keeps the player in his list after
-    /// losing sight of him; otherwise none.
+    /// suspicious while one is still making out a figure he sees; searching while one who has seen him, or heard him shoot,
+    /// keeps him in his list without sight of him; otherwise none.
     /// </returns>
     public PlayerAlertStatus AlertStatus()
     {
@@ -188,7 +192,9 @@ public sealed partial class Igi2TitlePlayer
 
             foreach (Igi2DetectionItem item in detection.Enemies)
             {
-                if (!ReferenceEquals(item.Target, Human))
+                // A soldier's list holds every enemy in reach from the start, seen or not: only one he has seen, or heard
+                // shoot, is onto the player.
+                if (!ReferenceEquals(item.Target, Human) || !IsOnto(item))
                 {
                     continue;
                 }
