@@ -34,6 +34,34 @@ public sealed partial class Igi2ViewModelRenderer
     private readonly List<PendingFlash> _pendingFlashes = [];
     private int _flashMeshCursor;
 
+    /// <summary>The flashes' surface: unlit, glowing as it is drawn, and left out of the occlusion and the history, as Project I.G.I.'s gun flame is.</summary>
+    private static readonly SurfaceMaterial FlashMaterial = new(
+        Roughness: 1f,
+        Metallic: 0f,
+        Emissive: 1f,
+        CastsOcclusion: false,
+        NoHistory: true);
+
+    /// <summary>
+    /// Draws the flashes the last <see cref="DrawWorld"/> queued, over the lit scene, against its depth: the host calls it in its
+    /// forward pass, where light is added rather than shaded.
+    /// </summary>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    public void DrawWorldMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_pendingFlashes.Count == 0)
+        {
+            return;
+        }
+
+        _device.SetProjection(projection);
+        _device.SetMaterialOverride(FlashMaterial);
+        DrawQueuedFlashes(camera, firstPerson: false);
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
+    }
+
     /// <summary>Notes a part's flashes to be drawn once the pass's solid models are down.</summary>
     private void QueueFlashes(IReadOnlyList<TitleMuzzleFlash>? flashes, string model, Vector3d position, Matrix3f orientation)
     {

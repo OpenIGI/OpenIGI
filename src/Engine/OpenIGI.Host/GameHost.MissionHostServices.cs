@@ -89,7 +89,7 @@ public sealed partial class GameHost
 
 
 
-        public void StepEffectsAfterDeath() => host.StepEffectsAfterDeath();
+        public void StepWorldEffects() => host.StepWorldEffects();
 
         public void StepScreen() => host._hud?.Tick();
 

@@ -37,6 +37,16 @@ public interface ITaskPresenter : IDisposable
     void Draw(in Camera3D camera, in Matrix4f projection, float blend);
 
     /// <summary>
+    /// Draws the muzzle flashes of what the last <see cref="Draw"/> drew, as light over the lit scene; a presenter whose
+    /// models fire nothing draws nothing.
+    /// </summary>
+    /// <param name="camera">The camera the frame is drawn from.</param>
+    /// <param name="projection">The frame's projection.</param>
+    void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
+    {
+    }
+
+    /// <summary>
     /// Gets a value indicating whether the task casts a shadow: <see cref="Draw"/> is called for the sun's cascades and the lamps'
     /// shadow maps as well, inside each pass, as a level's own characters are.
     /// </summary>

@@ -187,9 +187,24 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     {
         ArgumentNullException.ThrowIfNull(models);
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // The flashes' meshes are reused frame on frame from here, whether or not any world model stands this frame.
+        _flashMeshCursor = 0;
+        _pendingFlashes.Clear();
         if (_models is null || models.Count == 0)
         {
             return;
+        }
+
+        // Every model's flashes, seen or not: the pass that draws them is the forward pass's, after this one, and a shadow
+        // map's drawing of the same models must leave the same flashes queued as the eye's.
+        foreach (TitleWorldModel wanted in models)
+        {
+            if (wanted.MuzzleFlashes is { Count: > 0 })
+            {
+                (Vector3d flashAt, Matrix3f flashOrientation) = Placed(wanted, Math.Clamp(blend, 0f, 1f));
+                QueueFlashes(wanted.MuzzleFlashes, wanted.Model, flashAt, flashOrientation);
+            }
         }
 
         _device.SetProjection(projection);
@@ -197,7 +212,6 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
         FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
-        _flashMeshCursor = 0;
         _worldFrame++;
         float between = Math.Clamp(blend, 0f, 1f);
         PrepareWorldSkins(models, camera, frustum);
@@ -243,13 +257,11 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             if (part is not null)
             {
                 DrawPart(part, modelView, orientation);
-                QueueFlashes(wanted.MuzzleFlashes, wanted.Model, at, orientation);
             }
         }
 
         _device.ClearPoseInterpolation();
         ForgetUnseenTracks();
-        DrawQueuedFlashes(camera, firstPerson: false);
         _device.SetVertexSun(Vector3f.Zero);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }

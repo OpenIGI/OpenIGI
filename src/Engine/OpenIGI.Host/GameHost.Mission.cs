@@ -706,12 +706,16 @@ public sealed partial class GameHost
         _effects.SpawnMissileTrails(player.Missiles, _mission.VehicleMissiles);
     }
 
-    /// <summary>The world's effects stepping on under the death camera, after the player's update has stopped.</summary>
+    /// <summary>
+    /// The world's effects stepping on where the player's own update does not step them: under the death camera, or while
+    /// another game's player stands in for the mission's.
+    /// </summary>
     /// <remarks>
     /// A blast that killed the player burns out, and its debris and smoke settle, under the death camera as they do in the
-    /// original. Stepping them only from the player's update froze them on screen.
+    /// original; and a camera another game's player shoots out burns as one the mission's own player shoots. Stepping them only
+    /// from the player's update froze them on screen.
     /// </remarks>
-    private void StepEffectsAfterDeath()
+    private void StepWorldEffects()
     {
         _effects.Tick();
         _hosted.Impacts.Tick();

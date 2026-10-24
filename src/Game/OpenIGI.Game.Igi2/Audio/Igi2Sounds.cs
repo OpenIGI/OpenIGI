@@ -42,7 +42,16 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
     {
         if (!Definitions.TryResolve(name, out _))
         {
-            return null;
+            // A name this game never defines may still be heard where the mixer finds it elsewhere: I.G.I. 2's clips name all
+            // of Project I.G.I.'s reload clicks and ship two. Played or not at all.
+            if (audio is null || !audio.CanBorrow(name) || audio.Play(name, position, looping) is not { } borrowed)
+            {
+                return null;
+            }
+
+            Igi2Sound found = new(this, name, borrowed, follow);
+            _playing.Add(found);
+            return found;
         }
 
         Igi2Sound sound = new(this, name, audio?.Play(name, position, looping), follow);

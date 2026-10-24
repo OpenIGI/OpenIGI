@@ -92,6 +92,48 @@ public sealed partial class Igi2HumanPlayer
             ((x * o.M31) + (y * o.M32) + ((Fpu)o.M33 * 0f)).F);
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the ground speed turns with the body, so turning while moving redirects the
+    /// movement at once. <b>Not retail</b>, which leaves it pointing where it pointed: see <see cref="CarrySpeedThroughTurn"/>.
+    /// </summary>
+    public bool SteadyTurns { get; set; }
+
+    /// <summary>
+    /// Turns the ground speed with the body over the turn this tick made (<see cref="SteadyTurns"/>), so it keeps its place in
+    /// the body's frame as the body turns.
+    /// </summary>
+    /// <param name="before">The body's orientation before the turn.</param>
+    /// <remarks>
+    /// <para>
+    /// Retail keeps <see cref="GroundMovementSpeed"/> in the world's frame and <c>Human_UpdateBody</c> never touches it, so after
+    /// a turn the old speed points off to the body's side, and <c>HumanPlayer_MoveOnGround</c> clears a side speed at only the
+    /// strafe step a tick (63.6 running, against 890.7 of forward speed): a quick turn at a run slides the player a metre and a
+    /// half sideways for half a second, and a steady turn faster than about four degrees a tick drifts like a car. The steps are
+    /// the strafe keys' feel, not meant to undo a turn.
+    /// </para>
+    /// <para>
+    /// The speed is taken into the frame before the turn and put back out through the frame after it, on the ground only -- in
+    /// the air the body's turn is the player's look, and a jump keeps the way it was thrown. Starting, stopping and changing keys
+    /// still move at retail's steps.
+    /// </para>
+    /// </remarks>
+    private void CarrySpeedThroughTurn(Matrix3f before)
+    {
+        if (!SteadyTurns || !Has(Igi2PlayerSignal.Grounded))
+        {
+            return;
+        }
+
+        Matrix3f o = Orientation;
+        Vector3f s = GroundMovementSpeed;
+        float localX = (s.X * before.M11) + (s.Y * before.M21) + (s.Z * before.M31);
+        float localY = (s.X * before.M12) + (s.Y * before.M22) + (s.Z * before.M32);
+        GroundMovementSpeed = new Vector3f(
+            (localX * o.M11) + (localY * o.M12),
+            (localX * o.M21) + (localY * o.M22),
+            (localX * o.M31) + (localY * o.M32));
+    }
+
     /// <summary>A change clamped to at most a step either way, as <c>HumanPlayer_MoveOnGround</c> compares it.</summary>
     private static Fpu Step(Fpu change, float maxChange)
     {

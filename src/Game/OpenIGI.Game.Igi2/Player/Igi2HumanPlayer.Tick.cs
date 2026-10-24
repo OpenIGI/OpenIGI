@@ -162,7 +162,9 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Signal &= ~Igi2PlayerSignal.Hit;
+        Matrix3f turnedFrom = Orientation;
         UpdateBody();
+        CarrySpeedThroughTurn(turnedFrom);
         View.UpdateView(Channels, UnfilteredMouse);
         CheckViewCollision();
         if (!IsDisableDeltaTranslationScale)

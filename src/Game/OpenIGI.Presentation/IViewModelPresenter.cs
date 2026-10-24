@@ -110,6 +110,14 @@ public interface ITitleWorldModelPresenter
     /// <param name="projection">The world projection.</param>
     void DrawWorldSprites(IReadOnlyList<TitleWorldSprite> sprites, in Camera3D camera, in Matrix4f projection) { }
 
+    /// <summary>
+    /// Draws the muzzle flashes of the models the last <see cref="DrawWorld"/> drew, as light over the lit scene: drawn among
+    /// the solid models they land in the G-buffer, where most of each is cut away and the rest is shaded as a wall.
+    /// </summary>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawWorldMuzzleFlashes(in Camera3D camera, in Matrix4f projection) { }
+
     /// <summary>Draws marks lying on the ground, blended over the world and tested against its depth.</summary>
     /// <param name="decals">The marks.</param>
     /// <param name="camera">The world camera.</param>

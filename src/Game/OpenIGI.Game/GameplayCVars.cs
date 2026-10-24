@@ -91,6 +91,24 @@ public static class GameplayCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether I.G.I. 2's player's ground speed turns with him, or drifts on as retail's does.</summary>
+    /// <remarks>
+    /// Retail keeps the speed pointing where it pointed when the player turns, and clears the part left pointing sideways only
+    /// at the strafe step a tick, so a turn at a run slides him sideways like a car. On, the speed turns with him, as Project
+    /// I.G.I.'s player's does. A third exception to the rule above: where the player goes is game logic. The Vanilla preset
+    /// forces it off, as with <see cref="RealisticDrops"/>.
+    /// </remarks>
+    public static readonly BoolCVar SteadyTurns = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+        CVar.Bool(
+            "g_steady_turns",
+            true,
+            CVarOptions.Archive,
+            "I.G.I. 2's player keeps moving the way he faces as he turns. Off drifts sideways after a turn, as the original does."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>How hard a round throws a body it kills.</summary>
     /// <remarks>
     /// <para>

@@ -423,6 +423,17 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>Draws the muzzle flashes of the title's world models, over the lit picture.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    private void DrawTitleMuzzleFlashes(in Camera3D eye, in Matrix4f projection)
+    {
+        if (_titleFeatures?.WorldModels is not null && TitleWorldModelPresenter is { } models)
+        {
+            models.DrawWorldMuzzleFlashes(eye, projection);
+        }
+    }
+
     /// <summary>Draws the marks the title's player has lying on the ground, over the lit picture.</summary>
     /// <param name="eye">The camera the frame is drawn from.</param>
     /// <param name="projection">The world's projection.</param>

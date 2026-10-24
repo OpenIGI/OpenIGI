@@ -49,5 +49,8 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
     public bool CastsShadow => true;
 
     /// <inheritdoc/>
+    public void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection) => _renderer.DrawWorldMuzzleFlashes(camera, projection);
+
+    /// <inheritdoc/>
     public void Dispose() => _renderer.Dispose();
 }

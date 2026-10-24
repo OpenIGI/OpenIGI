@@ -20,7 +20,9 @@ internal sealed class GuestAudioMixer(AudioOutput output, IOpenIgiLogger logger)
 
         // The host's device, a silent one where it has no sound: the listener is the device's, so both mixes hear from one ear.
         SoundBank bank = new(files, logger);
-        TitleAudio audio = new(new SoundSystem(output.Device, bank, files, logger), bank);
+        // A sound the guest's banks lack is borrowed from the host's, which defines it under the same name where the two games
+        // share their clips.
+        TitleAudio audio = new(new SoundSystem(output.Device, bank, files, logger), bank, () => output.Sounds);
         audio.UseDefinitions(definitions, bankDirectories);
         return audio;
     }

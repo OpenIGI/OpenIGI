@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
+public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
 {
     private bool _reportedShot;
     private int _reportedHumanHits;
@@ -73,6 +73,10 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         {
             ResolvePlayerTick();
             ReportPlayerShots();
+        }
+        else if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.PlayerStandIn is { } standIn)
+        {
+            ResolveStandInTick(standIn);
         }
 
         // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
@@ -892,7 +896,7 @@ public sealed class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, I
         }
         else if (mission.IsPlayerDead)
         {
-            host.StepEffectsAfterDeath();
+            host.StepWorldEffects();
         }
     }
 

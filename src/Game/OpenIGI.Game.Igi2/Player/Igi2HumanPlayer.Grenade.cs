@@ -78,7 +78,8 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     public void TriggerFromView(in Igi2AnimationTrigger trigger)
     {
-        if (!IsPlayerTrigger(trigger.TriggerId))
+        // The first-person reload's clicks: an anim sound's trigger, answered by its own type, from the view.
+        if (TriggerAnimSound(trigger, AnimTriggers) || !IsPlayerTrigger(trigger.TriggerId))
         {
             return;
         }

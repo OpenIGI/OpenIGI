@@ -343,6 +343,13 @@ public sealed partial class GameHost
         // firing guard's muzzle. Light draws over the lit scene.
         (_soldiers ?? _menuBackdrop.Soldiers)?.DrawMuzzleFlashes(eye, projection);
 
+        // And another game's: the title's own models and those its presenters stand in the level.
+        DrawTitleMuzzleFlashes(eye, projection);
+        foreach (ITaskPresenter flashPresenter in _taskPresenters)
+        {
+            flashPresenter.DrawMuzzleFlashes(eye, projection);
+        }
+
         // The world's effects over the lit scene: the impact bursts, the original's own dust, chips and blood,
         // the smoke trails and columns, and the fireball over all of it as light.
         _effects.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
