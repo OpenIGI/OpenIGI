@@ -195,4 +195,9 @@ public interface IHudIconSource
     /// <param name="scale">How many pixels each of its own is drawn as.</param>
     /// <param name="colour">The colour it is drawn in; its own colours are kept where the title's art carries them.</param>
     void Draw(OpenIGI.Rendering.SpriteBatch batch, HudIcon icon, float x, float y, float scale, Bgra32 colour);
+
+    /// <summary>The picture itself, for the display to draw from a smooth copy of it; <see langword="null"/> to have <see cref="Draw"/> draw it.</summary>
+    /// <param name="icon">The picture.</param>
+    /// <returns>The title's uploaded picture, or <see langword="null"/>.</returns>
+    OpenIGI.Presentation.Rendering.SpriteResource? Resolve(HudIcon icon) => null;
 }

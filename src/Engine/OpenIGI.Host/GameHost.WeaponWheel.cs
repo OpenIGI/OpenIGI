@@ -15,7 +15,8 @@ namespace OpenIGI.Host;
 /// </para>
 /// <para>
 /// While it is open the player is held still: the mouse steers the wheel and the keys do nothing. Time slows to
-/// <see cref="WheelTimeScale"/> as it opens and comes back as it shuts, by pushing the clock's time base on by the share of each
+/// <see cref="WheelTimeScale"/> as it opens and comes back as it shuts, and every sound with the music is pitched down and muffled
+/// with it (<see cref="OpenIGI.Audio.IAudioDevice.SetTimeWarp"/>), by pushing the clock's time base on by the share of each
 /// frame not to be counted (<see cref="Engine.Time.GameClock.TimeAdjustMilliseconds"/>): the schedule stretches for both games
 /// at once and nothing in either's tick changes. Not under lockstep, whose synthetic clock moves only as frames render, and
 /// they render only as ticks fall due: pushing the schedule there would hold both still for ever.
@@ -25,6 +26,9 @@ public sealed partial class GameHost
 {
     /// <summary>How fast the world runs while the wheel is fully open, against real time.</summary>
     public const float WheelTimeScale = 0.2f;
+
+    /// <summary>The rate every sound plays at while the wheel is fully open: a little under an octave down.</summary>
+    public const float WheelAudioPitch = 0.6f;
 
     private float _wheelTimeCarry;
     private bool _wheelSteered;
@@ -63,7 +67,6 @@ public sealed partial class GameHost
             }
 
             wheel.Open(offered.Count, current);
-            PlayWheelSound(WeaponWheelSounds.OpenSoundName, 0.7f);
         }
         else if (!held)
         {
@@ -75,7 +78,6 @@ public sealed partial class GameHost
                 PlayWheelSound(WeaponWheelSounds.ChooseSoundName, 0.8f);
             }
 
-            PlayWheelSound(WeaponWheelSounds.CloseSoundName, 0.5f);
             return false;
         }
 
@@ -106,6 +108,9 @@ public sealed partial class GameHost
         int whole = (int)stretch;
         _wheelTimeCarry = openness > 0f ? stretch - whole : 0f;
         _loop.Clock.TimeAdjustMilliseconds = whole;
+
+        // And the world is heard slowed: every voice and the music pitched down and muffled as the wheel opens.
+        _audioOut.Device.SetTimeWarp(1f - ((1f - WheelAudioPitch) * openness), openness);
     }
 
     private void PlayWheelSound(string name, float gain) => _audioOut.Sounds?.PlayExternal(name, gain: gain, priority: 180);

@@ -74,6 +74,7 @@ public sealed class RemasteredHud : IDisposable
     private HudFonts? _fonts;
     private RhiBackdrop? _glass;
     private BackdropBlur? _blur;
+    private HudSmoothSprites? _smooth;
 
     /// <summary>Initializes a new instance of the <see cref="RemasteredHud"/> class.</summary>
     /// <param name="device">The device the faces are uploaded to and the layer drawn through.</param>
@@ -146,7 +147,8 @@ public sealed class RemasteredHud : IDisposable
         float scale = theme.ScaleFor(frame.RequestedScale, frame.Width, frame.Height);
         LayoutContext layout = new(frame.Width, frame.Height);
         UiPainter painter = UiPainter.Create(batch, layout, glass);
-        HudDrawContext context = new(batch, painter, theme, fonts, icons, _reactive, frame.Width, frame.Height, scale);
+        _smooth ??= new HudSmoothSprites(_device);
+        HudDrawContext context = new(batch, painter, theme, fonts, icons, _reactive, frame.Width, frame.Height, scale) { Smooth = _smooth };
 
         Part(context, HudParts.Status, frame.Density, model, static (c, m) => HudStatus.Draw(c, m));
         Part(context, HudParts.Inventory, frame.Density, model, static (c, m) => HudInventory.Draw(c, m));
@@ -183,7 +185,12 @@ public sealed class RemasteredHud : IDisposable
 
     /// <inheritdoc/>
     /// <remarks>The faces are the interface's shared set, and stay.</remarks>
-    public void Dispose() => _fonts = null;
+    public void Dispose()
+    {
+        _fonts = null;
+        _smooth?.Dispose();
+        _smooth = null;
+    }
 
     // A part at the density's opacity: the painter carries it to the shapes and text, the context to the title's pictures.
     private static void Part(HudDrawContext context, HudParts part, HudDensity density, HudModel model, Action<HudDrawContext, HudModel> draw)

@@ -60,7 +60,7 @@ public sealed partial class Igi2HudRenderer
         Igi2HumanPlayer human = title.Human;
         bool playing = !title.IsCutscenePlaying && !human.IsDead;
         model.Show = playing
-            ? HudParts.Status | HudParts.Weapon | HudParts.Inventory | HudParts.Actions | HudParts.Messages | HudParts.Progress | HudParts.Timer
+            ? HudParts.Status | HudParts.Weapon | HudParts.Actions | HudParts.Messages | HudParts.Progress | HudParts.Timer
             : HudParts.Messages;
 
         model.Health = human.Damage.MaxDamage > 0f ? Math.Clamp(1f - (human.Damage.Damage / human.Damage.MaxDamage), 0f, 1f) : 0f;
@@ -94,7 +94,6 @@ public sealed partial class Igi2HudRenderer
         if (title.Inventory is { } inventory)
         {
             BuildWeapon(title, inventory, model);
-            BuildSlots(title, inventory, model);
             BuildWheel(title, inventory, model);
         }
 
@@ -196,63 +195,6 @@ public sealed partial class Igi2HudRenderer
                 : string.Create(CultureInfo.InvariantCulture, $"{rounds.Loaded}/{rounds.Available}");
             string name = title.Strings?.WeaponShortName(item.WeaponType.WeaponName) ?? item.WeaponType.WeaponName;
             model.Wheel.Add(new HudWheelEntry(new HudIcon(item.WeaponType.WeaponSprite), name, count));
-        }
-    }
-
-    // The weapons carried, by the retail inventory's slots (InventorySlots): one column a slot, the grenades sharing theirs with
-    // the one in hand at its head.
-    private static void BuildSlots(Igi2TitlePlayer title, Igi2Inventory inventory, HudModel model)
-    {
-        Igi2WeaponItem? held = inventory.Current;
-        InventorySlot[] slots = [.. InventorySlots];
-        if (held is not null && IsGrenade(held.WeaponType.WeaponCategory))
-        {
-            int at = Array.FindIndex(slots, GrenadeSlot, 3, s => s.Category == held.WeaponType.WeaponCategory);
-            if (at > GrenadeSlot)
-            {
-                (slots[GrenadeSlot], slots[at]) = (slots[at], slots[GrenadeSlot]);
-            }
-        }
-
-        int column = -1;
-        bool inGrenades = false;
-        for (int i = 0; i < slots.Length; i++)
-        {
-            InventorySlot slot = slots[i];
-            Igi2WeaponItem? item = null;
-            foreach (Igi2WeaponItem candidate in inventory.Weapons)
-            {
-                if (candidate.IsActive && candidate.WeaponType.WeaponCategory == slot.Category)
-                {
-                    item = candidate;
-                    break;
-                }
-            }
-
-            if (item is null)
-            {
-                continue;
-            }
-
-            bool grenade = i is >= GrenadeSlot and < GrenadeSlot + 3;
-            bool head = !grenade || !inGrenades;
-            inGrenades = grenade;
-            if (head)
-            {
-                column++;
-            }
-
-            string count = string.Empty;
-            if (head && slot.CountsRounds)
-            {
-                Igi2FireTypeRounds rounds = inventory.FireTypeRounds(item, 0);
-                count = item.WeaponType.WeaponId == "WEAPON_ID_M16A2"
-                    ? string.Create(CultureInfo.InvariantCulture, $"{rounds.Available + rounds.Loaded}/{inventory.FireTypeRounds(item, 1).Available}")
-                    : (rounds.Available + (slot.LeavesOutLoaded ? 0 : rounds.Loaded)).ToString(CultureInfo.InvariantCulture);
-            }
-
-            string name = title.Strings?.WeaponShortName(item.WeaponType.WeaponName) ?? item.WeaponType.WeaponName;
-            model.AddSlot(new HudSlotView(column, head ? slot.Key : string.Empty, name, head ? new HudIcon(item.WeaponType.WeaponSprite) : HudIcon.None, count, ReferenceEquals(item, held), head));
         }
     }
 

@@ -92,59 +92,37 @@ public static class HudWheel
         context.Painter.DrawLabel(context.Fonts.Label, Hint, new UiVec2(centre.X - (hintWidth * 0.5f), centre.Y + outer + (22f * unit)), hintSize, HudDrawContext.Fade(palette.Dim, open), 0.18f);
     }
 
-    // One sector: glass between two arcs, cut back from its neighbours by a gap and filled strip by strip, so a sector wider than
-    // half a turn fills as truly as a narrow one; the one pointed at bright, with a thick rim along its outer edge; the one in
-    // hand marked with a notch on its inner edge.
+    // One sector: glass between two arcs, cut back from its neighbours by a gap, every edge smoothed; the one pointed at bright,
+    // with a thick rim along its outer edge; the one in hand marked with a notch on its inner edge.
     private static void Sector(HudDrawContext context, UiVec2 centre, float inner, float outer, float from, float to, float unit, bool hovered, bool current, float open)
     {
         HudPalette palette = context.Palette;
-        int steps = Math.Max(6, (int)MathF.Ceiling((to - from) / 0.08f));
-        Span<UiVec2> outerEdge = stackalloc UiVec2[steps + 1];
-        Span<UiVec2> innerEdge = stackalloc UiVec2[steps + 1];
-        float gap = 5f * unit;
-        float outerTrim = gap / outer, innerTrim = gap / inner;
-        for (int s = 0; s <= steps; s++)
-        {
-            float t = s / (float)steps;
-            outerEdge[s] = Point(centre, outer, from + outerTrim + ((to - from - (2f * outerTrim)) * t));
-            innerEdge[s] = Point(centre, inner, from + innerTrim + ((to - from - (2f * innerTrim)) * t));
-        }
-
-        Bgra32 glass = HudDrawContext.Fade(palette.Glass, open);
-        Bgra32 lit = HudDrawContext.Fade(palette.Primary, 0.32f * open);
-        Bgra32 rimColour = HudDrawContext.Fade(palette.Highlight, open);
-        float rim = MathF.Max(2f, 4f * unit);
-        for (int s = 0; s < steps; s++)
-        {
-            context.Painter.FillQuad(innerEdge[s], outerEdge[s], outerEdge[s + 1], innerEdge[s + 1], glass);
-            if (hovered)
-            {
-                context.Painter.FillQuad(innerEdge[s], outerEdge[s], outerEdge[s + 1], innerEdge[s + 1], lit);
-                UiVec2 a = Point(centre, outer - rim, Angle(centre, outerEdge[s])), b = Point(centre, outer - rim, Angle(centre, outerEdge[s + 1]));
-                context.Painter.FillQuad(outerEdge[s], outerEdge[s + 1], b, a, rimColour);
-            }
-        }
-
-        // Its outline: both arcs and both cut sides.
+        float trim = 5f * unit / ((inner + outer) * 0.5f);
+        float start = from + trim, end = to - trim;
+        context.Painter.FillArc(centre, inner, outer, start, end, HudDrawContext.Fade(palette.Glass, open));
         float hairline = MathF.Max(1f, 1.2f * unit);
-        Bgra32 line = HudDrawContext.Fade(hovered ? palette.Highlight : palette.Primary, (hovered ? 0.9f : 0.35f) * open);
-        for (int s = 0; s < steps; s++)
+        if (hovered)
         {
-            context.Painter.StrokeLine(outerEdge[s], outerEdge[s + 1], hairline, line);
-            context.Painter.StrokeLine(innerEdge[s], innerEdge[s + 1], hairline, line);
+            context.Painter.FillArc(centre, inner, outer, start, end, HudDrawContext.Fade(palette.Primary, 0.32f * open));
+            context.Painter.FillArc(centre, outer - MathF.Max(2f, 4f * unit), outer, start, end, HudDrawContext.Fade(palette.Highlight, open));
+            context.Painter.FillArc(centre, inner, inner + hairline, start, end, HudDrawContext.Fade(palette.Highlight, 0.9f * open));
         }
-
-        context.Painter.StrokeLine(innerEdge[0], outerEdge[0], hairline, line);
-        context.Painter.StrokeLine(innerEdge[steps], outerEdge[steps], hairline, line);
+        else
+        {
+            Bgra32 line = HudDrawContext.Fade(palette.Primary, 0.35f * open);
+            context.Painter.FillArc(centre, outer - hairline, outer, start, end, line);
+            context.Painter.FillArc(centre, inner, inner + hairline, start, end, line);
+        }
 
         if (current)
         {
             float middle = (from + to) * 0.5f;
             float size = 6f * unit;
-            UiVec2 tip = Point(centre, inner + size + (3f * unit), middle);
-            UiVec2 left = Point(centre, inner + (3f * unit), middle - (size / inner));
-            UiVec2 right = Point(centre, inner + (3f * unit), middle + (size / inner));
-            context.Painter.FillTriangle(left, tip, right, HudDrawContext.Fade(palette.Accent, open));
+            Span<UiVec2> notch = stackalloc UiVec2[3];
+            notch[0] = Point(centre, inner + (3f * unit), middle - (size / inner));
+            notch[1] = Point(centre, inner + size + (3f * unit), middle);
+            notch[2] = Point(centre, inner + (3f * unit), middle + (size / inner));
+            context.Painter.FillPolygon(notch, HudDrawContext.Fade(palette.Accent, open));
         }
     }
 
@@ -179,14 +157,8 @@ public static class HudWheel
     private static void Middle(HudDrawContext context, HudWheelView wheel, UiVec2 centre, float radius, float unit, float open)
     {
         HudPalette palette = context.Palette;
-        Span<UiVec2> disc = stackalloc UiVec2[40];
-        for (int i = 0; i < disc.Length; i++)
-        {
-            disc[i] = Point(centre, radius, i * MathF.Tau / disc.Length);
-        }
-
-        context.Painter.FillPolygon(disc, HudDrawContext.Fade(palette.Glass, open));
-        context.Painter.StrokePolygon(disc, MathF.Max(1f, 1.2f * unit), HudDrawContext.Fade(palette.Primary, 0.4f * open));
+        context.Painter.FillArc(centre, 0f, radius, 0f, MathF.Tau, HudDrawContext.Fade(palette.Glass, open));
+        context.Painter.FillArc(centre, radius - MathF.Max(1f, 1.2f * unit), radius, 0f, MathF.Tau, HudDrawContext.Fade(palette.Primary, 0.4f * open));
 
         const string Caption = "WEAPONS";
         float captionSize = 11f * unit;
@@ -226,24 +198,18 @@ public static class HudWheel
         }
 
         Bgra32 colour = HudDrawContext.Fade(context.Palette.Highlight, open);
-        float half = 0.16f, thickness = MathF.Max(2f, 3f * unit);
-        const int Pieces = 8;
-        for (int i = 0; i < Pieces; i++)
-        {
-            float a0 = angle - half + (2f * half * i / Pieces), a1 = angle - half + (2f * half * (i + 1) / Pieces);
-            context.Painter.FillQuad(
-                Point(centre, radius - thickness, a0), Point(centre, radius, a0), Point(centre, radius, a1), Point(centre, radius - thickness, a1), colour);
-        }
+        float thickness = MathF.Max(2f, 3f * unit);
+        context.Painter.FillArc(centre, radius - thickness, radius, angle - 0.16f, angle + 0.16f, colour);
 
         float size = 7f * unit;
-        context.Painter.FillTriangle(
-            Point(centre, radius, angle - (size / radius)), Point(centre, radius + size, angle), Point(centre, radius, angle + (size / radius)), colour);
+        Span<UiVec2> tip = stackalloc UiVec2[3];
+        tip[0] = Point(centre, radius, angle - (size / radius));
+        tip[1] = Point(centre, radius + size, angle);
+        tip[2] = Point(centre, radius, angle + (size / radius));
+        context.Painter.FillPolygon(tip, colour);
     }
 
     // A point at a radius and a way clockwise from straight up.
     private static UiVec2 Point(UiVec2 centre, float radius, float angle) =>
         new(centre.X + (MathF.Sin(angle) * radius), centre.Y - (MathF.Cos(angle) * radius));
-
-    // The way a point lies from the centre, clockwise from straight up.
-    private static float Angle(UiVec2 centre, UiVec2 point) => MathF.Atan2(point.X - centre.X, centre.Y - point.Y);
 }

@@ -100,4 +100,7 @@ internal sealed class Igi2HudIcons(Func<Igi2SpriteResources?> assets) : IHudIcon
             sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, scale, scale, colour);
         }
     }
+
+    /// <inheritdoc/>
+    public OpenIGI.Presentation.Rendering.SpriteResource? Resolve(HudIcon icon) => icon.IsSome ? assets()?.Get(icon.Name) : null;
 }

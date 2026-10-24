@@ -25,7 +25,7 @@ namespace OpenIGI.UI;
 /// recording renderer without a GPU.
 /// </para>
 /// </remarks>
-public sealed class UiPainter
+public sealed partial class UiPainter
 {
     private readonly Stack<UiRect> _clips = new();
     private readonly Stack<float> _opacityStack = new();

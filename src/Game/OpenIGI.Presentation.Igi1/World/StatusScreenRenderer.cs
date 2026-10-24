@@ -734,6 +734,9 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
         }
     }
 
+    /// <inheritdoc/>
+    public SpriteResource? Resolve(OpenIGI.Presentation.Hud.Remastered.HudIcon icon) => icon.IsSome ? Sprite(icon.Name) : null;
+
     // Only the global sprite archive, under a key of its own: binoculars.spr names both the HUD icon in
     // status.res and the device frame in the global archive, and the overlay wants the frame.
     private SpriteResource? GlobalSprite(string name) =>

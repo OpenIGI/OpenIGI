@@ -81,8 +81,20 @@ public sealed class HudDrawContext
     /// <param name="y">Its top edge, in pixels.</param>
     /// <param name="scale">How many pixels each of its own is drawn as.</param>
     /// <param name="colour">Its colour.</param>
-    public void DrawIcon(HudIcon icon, float x, float y, float scale, Bgra32 colour) =>
+    /// <remarks>A picture the title hands over whole is drawn from its smooth copy (<see cref="Smooth"/>) where there is one.</remarks>
+    public void DrawIcon(HudIcon icon, float x, float y, float scale, Bgra32 colour)
+    {
+        if (Smooth is { } smooth && Icons.Resolve(icon) is { Asset.Frames.Count: > 0 } source && smooth.Get(source) is { } copy)
+        {
+            copy.DrawFrame(Batch, copy.Asset.Frames[0], x, y, scale, scale, Fade(colour, PartOpacity));
+            return;
+        }
+
         Icons.Draw(Batch, icon, x, y, scale, Fade(colour, PartOpacity));
+    }
+
+    /// <summary>Gets the smooth copies of the title's pictures, or <see langword="null"/> to draw the title's own.</summary>
+    public HudSmoothSprites? Smooth { get; init; }
 
     /// <summary>Gets the palette.</summary>
     public HudPalette Palette => Theme.Palette;
