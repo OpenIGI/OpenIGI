@@ -534,6 +534,10 @@
     {
       "id": "HudFx",
       "source": "Ui/HudFx.slang"
+    },
+    {
+      "id": "ScopeGlint",
+      "source": "Ui/ScopeGlint.slang"
     }
   ]
 }

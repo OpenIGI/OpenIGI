@@ -141,6 +141,7 @@ public sealed class RemasteredHud : IDisposable
         // The glass's backdrop is the frame as it stands, before the display: blurred now, while the batch is closed.
         batch.End();
         RhiBackdrop? glass = Glass(frame.Width, frame.Height);
+        DrawGlints(model, frame);
         bool layered = frame.Effects && frame.Intensity > 0f && _device.BeginHudLayer();
         batch.Begin();
 
@@ -201,6 +202,33 @@ public sealed class RemasteredHud : IDisposable
         _fonts = null;
         _smooth?.Dispose();
         _smooth = null;
+    }
+
+    // The glints of snipers' scopes, over the picture and under the display: each where its scope is on the screen, a little
+    // larger the brighter it is. One behind the view or off the screen shows nothing.
+    private void DrawGlints(HudModel model, in HudFrame frame)
+    {
+        if (!HudCVars.ScopeGlint.Value || model.Glints.Count == 0 || frame.Projector is not { } view)
+        {
+            return;
+        }
+
+        Span<ScopeGlint> glints = stackalloc ScopeGlint[Math.Min(model.Glints.Count, 28)];
+        int count = 0;
+        float radius = frame.Height * 0.022f;
+        foreach ((OpenIGI.Core.Numerics.Vector3d at, float strength) in model.Glints)
+        {
+            if (count == glints.Length || !view.TryProject(at, out UiVec2 screen)
+                || screen.X < -radius || screen.Y < -radius || screen.X > frame.Width + radius || screen.Y > frame.Height + radius)
+            {
+                continue;
+            }
+
+            float s = Math.Clamp(strength, 0f, 1f);
+            glints[count++] = new ScopeGlint(screen.X, screen.Y, radius * (0.7f + (0.3f * s)), s);
+        }
+
+        _device.DrawScopeGlints(glints[..count], frame.Seconds);
     }
 
     // A part at the density's opacity: the painter carries it to the shapes and text, the context to the title's pictures.

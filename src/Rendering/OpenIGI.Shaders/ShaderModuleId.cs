@@ -1,4 +1,4 @@
-﻿namespace OpenIGI.Shaders;
+namespace OpenIGI.Shaders;
 
 /// <summary>
 /// The shader modules the library carries. One value per <c>.slang</c> source under
@@ -219,6 +219,9 @@ public enum ShaderModuleId
 
     /// <summary>UI: the remastered heads-up display laid over the picture as if projected on a visor.</summary>
     HudFx,
+
+    /// <summary>A sniper's scope catching the light: a star of streaks added over the picture (<c>Ui/ScopeGlint.slang</c>).</summary>
+    ScopeGlint,
 
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is

@@ -137,6 +137,7 @@ r_rt_world_angle	1	archive
 r_rt_world_radius	300	archive
 r_saturation	1	archive
 r_scale	1	archive
+r_scope_glint	1	archive
 r_screen_gi	0	archive
 r_screen_gi_cadence	1	archive
 r_screen_gi_filter	2	archive

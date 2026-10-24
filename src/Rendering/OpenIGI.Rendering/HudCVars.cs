@@ -96,13 +96,25 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>Whether the remastered HUD marks each soldier who has the player in sight with an eye that fills as he makes the player out.</summary>
+    /// <summary>Whether the remastered HUD says in a word, at the top of the screen, how far the soldiers are onto the player.</summary>
     public static readonly BoolCVar HudThreat = Presets.Define(
         CVar.Bool(
             "r_hud_threat",
             true,
             CVarOptions.Archive,
-            "With the remaster HUD, mark each soldier who can see you with an eye that fills as he makes you out."),
+            "With the remaster HUD, say at the top of the screen how far the soldiers are onto you: searching, suspicious, alarm, detected."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether a sniper aiming at the player shows the glint of his scope.</summary>
+    public static readonly BoolCVar ScopeGlint = Presets.Define(
+        CVar.Bool(
+            "r_scope_glint",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, a sniper who has you in his sights shows the glint of his scope."),
         vanilla: "0",
         enhanced: "1",
         high: "1",

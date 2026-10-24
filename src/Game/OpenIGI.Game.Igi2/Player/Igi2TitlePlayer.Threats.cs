@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Igi2.Ai.Runtime;
+using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Soldiers;
@@ -62,6 +64,79 @@ public sealed partial class Igi2TitlePlayer
         }
 
         return _threats;
+    }
+
+    private readonly List<(Vector3d Position, float Strength)> _glints = [];
+
+    /// <summary>The widest turn off a sniper's aim at which his scope still shows its full glint, in radians: twelve degrees.</summary>
+    public const float GlintFullAngle = 0.21f;
+
+    /// <summary>The turn off his aim past which it shows none, in radians: twenty-five degrees.</summary>
+    public const float GlintNoAngle = 0.44f;
+
+    /// <summary>
+    /// The snipers whose scopes point at the player, as a shooter's game marks them: living soldiers holding a scoped rifle
+    /// (<see cref="Game.Weapons.ScopedWeapons"/>) whose view points within <see cref="GlintNoAngle"/> of the player's eyes, full
+    /// within <see cref="GlintFullAngle"/>, with nothing solid between -- seen or not, as the glass catches the light whether he
+    /// has made the player out or not, but never through a wall.
+    /// </summary>
+    /// <returns>The scopes, each at its sniper's eye, refilled each call.</returns>
+    public IReadOnlyList<(Vector3d Position, float Strength)> ScopeGlints()
+    {
+        _glints.Clear();
+        Igi2CollisionWorld world = CollisionWorld;
+        Vector3d target = EyePosition;
+        foreach (Igi2Human human in MapHumans)
+        {
+            if (human is not Igi2HumanSoldier { IsDead: false, Mind: Igi2HumanAi ai } soldier || ReferenceEquals(human, Human)
+                || !Game.Weapons.ScopedWeapons.IsScoped(soldier.Weapon.Inventory?.Current?.WeaponType.WeaponId))
+            {
+                continue;
+            }
+
+            // Where his view points: the cone's frame looks along its second column.
+            Igi2DetectionView view = ai.DetectionView;
+            float[] m = view.Orientation;
+            Vector3d from = view.Position;
+            double dx = target.X - from.X, dy = target.Y - from.Y, dz = target.Z - from.Z;
+            double length = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            if (length < 1.0)
+            {
+                continue;
+            }
+
+            double ahead = ((m[1] * dx) + (m[4] * dy) + (m[7] * dz)) / length;
+            float off = (float)Math.Acos(Math.Clamp(ahead, -1.0, 1.0));
+            float strength = Math.Clamp((GlintNoAngle - off) / (GlintNoAngle - GlintFullAngle), 0f, 1f);
+            if (strength <= 0f)
+            {
+                continue;
+            }
+
+            // What his eyes see through -- glass, leaves -- by the materials his own sight reads, which a guest player in
+            // another game's level does not hold for itself.
+            Igi2AiDetection detection;
+            try
+            {
+                detection = ai.Detection;
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            WorldLineOfSight sight = new(from, target, Materials ?? (IWorldMaterialTransparency)detection.World.Materials)
+            {
+                Includes = owner => !ReferenceEquals(owner, Human) && !ReferenceEquals(owner, soldier),
+            };
+            world.LineOfSight(sight, uint.MaxValue);
+            if (!sight.IsBlocked)
+            {
+                _glints.Add((from, strength));
+            }
+        }
+
+        return _glints;
     }
 
     /// <summary>How far the soldiers are onto the player, in I.G.I. 2's own terms: from their sight's lists and their alarm.</summary>

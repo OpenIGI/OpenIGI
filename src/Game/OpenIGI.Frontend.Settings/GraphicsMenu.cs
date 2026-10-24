@@ -471,9 +471,12 @@ public static class GraphicsMenu
             "Lets the HUD trail your view by a few pixels as you turn, then settle, as a helmet's display would."),
         new GraphicsSetting(
             "r_hud_threat",
-            "Threat Indicators",
-            "Marks the edge of the screen towards each soldier who is noticing you, and tints the HUD amber, "
-                + "then red, as they close in on seeing you."),
+            "Alert Status",
+            "Says at the top of the screen how far the soldiers are onto you: searching, suspicious, alarm or detected."),
+        new GraphicsSetting(
+            "r_scope_glint",
+            "Scope Glint",
+            "A sniper who has you in his sights shows the glint of his scope, a flash of light where he is."),
         new GraphicsSetting(
             "r_world_objective",
             "Projected Objective",

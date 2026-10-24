@@ -83,6 +83,11 @@ public sealed partial class Igi2HudRenderer
         if (playing)
         {
             model.AlertStatus = title.AlertStatus();
+            foreach ((OpenIGI.Core.Numerics.Vector3d scope, float strength) in title.ScopeGlints())
+            {
+                model.AddGlint(scope, strength);
+            }
+
             foreach ((OpenIGI.Core.Numerics.Vector3d at, float awareness) in title.Threats())
             {
                 double dx = at.X - human.Position.X, dy = at.Y - human.Position.Y;

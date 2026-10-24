@@ -115,4 +115,12 @@ public interface IDisplayDevice
     void ComposeHudLayer(in HudFxSettings fx)
     {
     }
+
+    /// <summary>Adds the glints of snipers' scopes over the picture as it stands (<c>Ui/ScopeGlint.slang</c>).</summary>
+    /// <param name="glints">The glints, on the screen.</param>
+    /// <param name="seconds">The clock they twinkle by.</param>
+    /// <remarks><b>Not retail</b>. A device that cannot draws none.</remarks>
+    void DrawScopeGlints(ReadOnlySpan<ScopeGlint> glints, float seconds)
+    {
+    }
 }

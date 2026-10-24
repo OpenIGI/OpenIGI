@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
@@ -66,5 +67,30 @@ public sealed partial class SoldierSimulation
         }
 
         return AnyAlarmOn ? PlayerAlertStatus.Alarm : alerted ? PlayerAlertStatus.Searching : PlayerAlertStatus.None;
+    }
+
+    private readonly List<(Vector3d Position, float Strength)> _glints = [];
+
+    /// <summary>
+    /// The snipers aiming at the player: living soldiers holding a scoped rifle (<see cref="ScopedWeapons"/>) who see the
+    /// player now, each at his eye, as strong as he is sure of the player (<see cref="Threats"/>' sighting ramp).
+    /// </summary>
+    /// <returns>The scopes, refilled each call; call <see cref="Threats"/> first in the frame, which times the sightings.</returns>
+    public IReadOnlyList<(Vector3d Position, float Strength)> ScopeGlints()
+    {
+        _glints.Clear();
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
+        {
+            if (view.IsDead || !brain.PlayerIsEnemy || !brain.SeesPlayer
+                || !ScopedWeapons.IsScoped(_context.FindAgent(view)?.WeaponType?.ScriptId))
+            {
+                continue;
+            }
+
+            float sure = _seenSince.TryGetValue(brain, out int since) ? Math.Clamp((float)(TickCount - since) / SureTicks, 0f, 1f) : 0f;
+            _glints.Add((brain.EyePosition(), 0.5f + (0.5f * sure)));
+        }
+
+        return _glints;
     }
 }

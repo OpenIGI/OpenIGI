@@ -234,6 +234,8 @@ public readonly record struct HudDamage(float TopLeft, float TopRight, float Bot
 /// </remarks>
 public sealed class HudModel
 {
+    private readonly List<(OpenIGI.Core.Numerics.Vector3d At, float Strength)> _glints = [];
+
     private readonly List<HudSlotView> _slots = [];
     private readonly List<HudActionView> _actions = [];
     private readonly List<HudMessageView> _messages = [];
@@ -293,6 +295,14 @@ public sealed class HudModel
     /// <summary>Gets or sets how far the soldiers are onto the player, as the title's AI tells it.</summary>
     public OpenIGI.Game.Ai.PlayerAlertStatus AlertStatus { get; set; }
 
+    /// <summary>Gets the scopes of snipers aiming at the player: where each is in the level, and how bright its glint is.</summary>
+    public IReadOnlyList<(OpenIGI.Core.Numerics.Vector3d At, float Strength)> Glints => _glints;
+
+    /// <summary>Adds a sniper's scope.</summary>
+    /// <param name="at">Where it is, in the level's units.</param>
+    /// <param name="strength">How bright its glint is, nought to one.</param>
+    public void AddGlint(OpenIGI.Core.Numerics.Vector3d at, float strength) => _glints.Add((at, strength));
+
     /// <summary>Gets the weapon wheel, shut unless a title fills it.</summary>
     public HudWheelView Wheel { get; } = new();
 
@@ -335,6 +345,7 @@ public sealed class HudModel
         Damage = default;
         PitchRadians = null;
         _threats.Clear();
+        _glints.Clear();
         AlertStatus = OpenIGI.Game.Ai.PlayerAlertStatus.None;
         Wheel.Reset();
     }

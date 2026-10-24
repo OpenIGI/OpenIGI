@@ -93,6 +93,11 @@ public static class Igi1HudTheme
         {
             float forwardX = MathF.Sin(player.Yaw), forwardY = MathF.Cos(player.Yaw);
             model.AlertStatus = soldiers.AlertStatus();
+            foreach ((OpenIGI.Core.Numerics.Vector3d scope, float strength) in soldiers.ScopeGlints())
+            {
+                model.AddGlint(scope, strength);
+            }
+
             foreach ((OpenIGI.Core.Numerics.Vector3d at, float awareness) in soldiers.Threats())
             {
                 double dx = at.X - player.Body.Position.X, dy = at.Y - player.Body.Position.Y;
