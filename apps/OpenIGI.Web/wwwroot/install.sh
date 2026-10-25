@@ -31,7 +31,7 @@ main() {
   fi
 
   local api="https://api.openigi.com/download"
-  local releases="https://dl.openigi.com/releases"
+  local releases="https://github.com/OpenIGI/OpenIGI/releases/download"
   local name="OpenIGI Launcher"
 
   setup_colours
@@ -82,7 +82,7 @@ main() {
   trap "rm -rf '$work'" EXIT
 
   # The newest launcher is where the service redirects to: a file in its release folder, which names the
-  # version and holds the checksums. An older one is asked of the download store by name.
+  # version and holds the checksums. An older one is asked of its GitHub release by name.
   local url
   if [ "$target" = latest ]; then
     step "Finding the latest release"
@@ -92,11 +92,13 @@ main() {
     step "Finding release $target"
     local extension=""
     [ "$os" = Darwin ] && extension=".tar.gz"
-    url="$releases/launcher-$target/openigi-launcher-$target-$rid$extension"
+    url="$releases/launcher-v$target/openigi-launcher-$target-$rid$extension"
   fi
   local file="${url##*/}"
   local folder="${url%/*}"
+  # The folder is a GitHub release tag (launcher-v0.4.1) or a download store folder (launcher-0.4.1).
   local version="${folder##*/launcher-}"
+  version="${version#v}"
   # Anything else (an error page, a moved store) stops here rather than becoming a path.
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || fail "The download service answered with something unexpected: $url"
   done_step "$name $version for $rid"
