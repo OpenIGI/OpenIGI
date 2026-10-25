@@ -133,7 +133,7 @@ internal sealed class ContentRow : Grid, IReorderItem
             _thumbnail.Local = true;
             _thumbnail.Dimmed = !localMod.Enabled;
             _info.Name = dropped.Manifest.Name;
-            _info.Tags = dropped.Manifest.RunsCode ? ["LOCAL", "RUNS CODE"] : ["LOCAL"];
+            _info.Tags = ["LOCAL", .. ModTags(dropped.Manifest.RunsCode, dropped.Manifest.Experimental)];
             _info.Description = dropped.Manifest.Summary ?? "A mod in the library's local mods folder.";
             (_info.Detail, _info.DetailColor) = localMod.Enabled
                 ? ($"{dropped.Manifest.Version} · {dropped.Folder.ToUpperInvariant()}", ContentInk.Caption)
@@ -178,7 +178,7 @@ internal sealed class ContentRow : Grid, IReorderItem
         (_info.Detail, _info.DetailColor) = Item is { } listed ? Describe(listed, string.Empty) : (string.Empty, ContentInk.Caption);
         if (entry.Pack.Mod is { } mod)
         {
-            _info.Tags = mod.RunsCode ? ["RUNS CODE"] : [];
+            _info.Tags = ModTags(mod.RunsCode, mod.Experimental);
             (_info.Detail, _info.DetailColor) = DescribeMod(entry, mod, Item);
         }
 
@@ -372,6 +372,10 @@ internal sealed class ContentRow : Grid, IReorderItem
     }
 
     // A CONFLICT tag on a row another enabled layer wins files from.
+    // Experimental first: it is the one a player should read before switching the mod on.
+    private static string[] ModTags(bool runsCode, bool experimental) =>
+        [.. experimental ? ["EXPERIMENTAL"] : Array.Empty<string>(), .. runsCode ? ["RUNS CODE"] : Array.Empty<string>()];
+
     private static string[] ConflictTag(LoadOrderItem item) => item.Enabled && item.Conflict.CoveredFiles > 0 ? ["CONFLICT"] : [];
 
     // The third line: what this layer loses to the ones above it, else what it wins over the ones below.

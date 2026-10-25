@@ -215,6 +215,7 @@ public enum ContentKind
 /// <param name="Dependencies">The mods it needs played with it, each with the oldest version that will do, or <see langword="null"/>.</param>
 /// <param name="Conflicts">The mods it cannot be played with, or <see langword="null"/>.</param>
 /// <param name="AffectsSimulation">Whether it changes what happens in play rather than only how it looks or sounds.</param>
+/// <param name="Experimental">Whether its author says this version is not ready to be relied on yet.</param>
 public sealed record ContentModInfo(
     IReadOnlyList<string> Titles,
     IReadOnlyList<string> Authors,
@@ -226,7 +227,8 @@ public sealed record ContentModInfo(
     IReadOnlyList<string>? RequiresTitleData = null,
     IReadOnlyDictionary<string, string>? Dependencies = null,
     IReadOnlyList<string>? Conflicts = null,
-    bool AffectsSimulation = true)
+    bool AffectsSimulation = true,
+    bool Experimental = false)
 {
     /// <summary>Whether the mod is for a game.</summary>
     /// <param name="titleId">The game, by title id.</param>

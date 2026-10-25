@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -24,7 +24,7 @@ public sealed class WorldCullingSettingsFixture
     public const string Name = "World culling settings";
 }
 
-/// <summary>Protects interior geometry in both titles when Ultra enables world backface culling.</summary>
+/// <summary>Protects interior geometry in both titles when Ultra enables world backface culling: only coincident skins are culled.</summary>
 [Collection(WorldCullingSettingsFixture.Name)]
 public sealed class RetailWorldInteriorCullingTests
 {
@@ -60,7 +60,7 @@ public sealed class RetailWorldInteriorCullingTests
             RecordingGraphicsDevice.MeshDrawCall[] caveDraws = device.MeshDraws
                 .Where(draw => caveMeshes.Contains(draw.Mesh.Id)).ToArray();
             Assert.NotEmpty(caveDraws);
-            Assert.All(caveDraws, draw => Assert.Equal(CullMode.None, draw.CullMode));
+            AssertTwoSidedButItsSkins(device, caveDraws);
 
             device.MeshDraws.Clear();
             GeometryCVars.WorldCull.Value = 0;
@@ -123,7 +123,39 @@ public sealed class RetailWorldInteriorCullingTests
             using WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1);
             renderer.Draw(subject, camera, Matrix4f.CreatePerspective(MathF.PI / 2, 16f / 9f, 0.05f, 5000f));
             Assert.NotEmpty(device.MeshDraws);
-            Assert.All(device.MeshDraws, draw => Assert.Equal(expected, draw.CullMode));
+            if (expected == CullMode.None)
+            {
+                AssertTwoSidedButItsSkins(device, device.MeshDraws);
+            }
+            else
+            {
+                Assert.All(device.MeshDraws, draw => Assert.Equal(expected, draw.CullMode));
+            }
+        }
+    }
+
+    // Drawn two-sided, a mesh still draws its coincident skins culled -- the two faces of a sheet with no thickness, which
+    // would otherwise fight over each pixel (CoincidentSkins). So: some of it is drawn two-sided, and every triangle drawn
+    // culled is one face of such a pair, never a wall the viewer stands inside.
+    private static void AssertTwoSidedButItsSkins(RecordingGraphicsDevice device, IEnumerable<RecordingGraphicsDevice.MeshDrawCall> draws)
+    {
+        RecordingGraphicsDevice.MeshDrawCall[] all = [.. draws];
+        Assert.Contains(all, draw => draw.CullMode == CullMode.None);
+        float tolerance = (float)(0.5 / WorldScene.UnitsPerMetre);
+        Dictionary<uint, bool[]> skins = [];
+        foreach (RecordingGraphicsDevice.MeshDrawCall draw in all.Where(draw => draw.CullMode != CullMode.None))
+        {
+            Assert.Equal(CullMode.CounterClockwise, draw.CullMode);
+            if (!skins.TryGetValue(draw.Mesh.Id, out bool[]? skin))
+            {
+                (Vertex3D[] vertices, ushort[] indices) = device.Meshes[draw.Mesh.Id];
+                skins[draw.Mesh.Id] = skin = CoincidentSkins.Find(vertices, indices, tolerance);
+            }
+
+            for (int t = draw.IndexOffset / 3; t < (draw.IndexOffset + draw.IndexCount) / 3; t++)
+            {
+                Assert.True(skin[t], $"Mesh {draw.Mesh.Id} culls triangle {t}, which is no coincident skin.");
+            }
         }
     }
 

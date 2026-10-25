@@ -20,7 +20,7 @@ namespace OpenIGI.Game.Igi2.Tests;
 /// </remarks>
 public sealed class Igi2PresentationProviderTests
 {
-    /// <summary>The title presents its world and admits it presents nothing else.</summary>
+    /// <summary>The title presents its world and the shared computer, and admits it presents nothing else.</summary>
     /// <remarks>
     /// <para>
     /// A census, and it is meant to shrink. Each null is a milestone that has not happened — the arms
@@ -55,7 +55,6 @@ public sealed class Igi2PresentationProviderTests
         Assert.Null(provider.Presenters.Create<HudPresentationRequest, IHudPresenter>(default));
         Assert.Null(provider.Presenters.Create<HudPresentationRequest, IRemasteredHudPresenter>(default));
         Assert.Null(provider.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(default));
-        Assert.Null(provider.Presenters.Create<MapComputerPresentationRequest, ITacticalComputerPresenter>(default));
         Assert.Null(provider.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(default));
         Assert.Null(provider.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(default));
 
@@ -67,6 +66,12 @@ public sealed class Igi2PresentationProviderTests
 
         Assert.NotNull(world);
         Assert.Equal(0, world.LastDrawCount);
+
+        // So is the remastered computer, which both games share.
+        using ITacticalComputerPresenter? computer = provider.Presenters.Create<MapComputerPresentationRequest, ITacticalComputerPresenter>(
+            new MapComputerPresentationRequest(new RecordingGraphicsDevice(), resources, logger, static key => key));
+
+        Assert.NotNull(computer);
     }
 
     /// <summary>The provider reads and draws a real level's ground.</summary>

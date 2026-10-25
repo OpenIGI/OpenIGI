@@ -34,6 +34,7 @@ public sealed class ModManifestTests
         Assert.Empty(manifest.Conflicts);
         Assert.Null(manifest.Summary);
         Assert.Null(manifest.MinGameVersion);
+        Assert.False(manifest.Experimental);
     }
 
     [Fact]
@@ -44,11 +45,13 @@ public sealed class ModManifestTests
               "id": "soldiers", "version": "1.2", "apiVersion": 1, "assembly": "Soldiers.dll",
               "summary": "Other soldiers.", "authors": ["Someone", "Another"], "homepage": "https://example.org/soldiers",
               "license": "MIT", "titles": ["igi1"], "requiresTitleData": ["igi2"],
-              "dependencies": { "library": ">=2.0", "any": "*" }, "conflicts": ["rival"], "minGameVersion": "0.9.0"
+              "dependencies": { "library": ">=2.0", "any": "*" }, "conflicts": ["rival"], "minGameVersion": "0.9.0",
+              "experimental": true
             }
             """);
 
         Assert.True(manifest.RunsCode);
+        Assert.True(manifest.Experimental);
         Assert.Equal(["Someone", "Another"], manifest.Authors);
         Assert.Equal("Other soldiers.", manifest.Summary);
         Assert.Equal("https://example.org/soldiers", manifest.Homepage);

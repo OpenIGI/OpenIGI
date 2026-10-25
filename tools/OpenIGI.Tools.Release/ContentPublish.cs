@@ -97,7 +97,8 @@ internal static class ContentPublish
             manifest.RequiresTitleData.Count > 0 ? manifest.RequiresTitleData : null,
             manifest.Dependencies.Count > 0 ? manifest.Dependencies : null,
             manifest.Conflicts.Count > 0 ? manifest.Conflicts : null,
-            manifest.AffectsSimulation);
+            manifest.AffectsSimulation,
+            manifest.Experimental);
         return new Details(
             manifest.Id,
             manifest.Version,
