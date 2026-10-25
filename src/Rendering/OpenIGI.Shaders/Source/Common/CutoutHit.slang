@@ -63,6 +63,45 @@ bool CutoutCandidateIsSolid<let F : int>(inout RayQuery<F> query, uint2 records,
     return masks.Load(int4(texel, layer, 0)).r > 0.5;
 }
 
+// The committed hit's face normal, turned to face the ray that found it, or nought where there are no
+// records to name its triangle. The same walk as the test above, made for the hit that was kept rather than
+// a candidate: what a trace hands the surface cache, which is sampled by the way the surface faces.
+float3 CommittedFaceNormal<let F : int>(inout RayQuery<F> query, uint2 records, float3 rayW)
+{
+    if ((records.x | records.y) == 0u || query.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    uint record = uint(query.CommittedInstanceID()) + uint(query.CommittedGeometryIndex());
+    HitWords words = HitWordsAt(records.x, records.y);
+    uint at = record * kHitRecordWords;
+
+    HitFloats vertices = HitFloatsAt(
+        words[at + kHitVertexAddressWord], words[at + kHitVertexAddressWord + 1u]);
+    HitWords indices = HitWordsAt(
+        words[at + kHitIndexAddressWord], words[at + kHitIndexAddressWord + 1u]);
+
+    uint first = words[at + kHitFirstIndexWord] + (uint(query.CommittedPrimitiveIndex()) * 3u);
+    uint v0 = HitIndexAt(indices, first + 0u) * kHitVertexFloats;
+    uint v1 = HitIndexAt(indices, first + 1u) * kHitVertexFloats;
+    uint v2 = HitIndexAt(indices, first + 2u) * kHitVertexFloats;
+
+    float3 p0 = float3(vertices[v0 + 0u], vertices[v0 + 1u], vertices[v0 + 2u]);
+    float3 p1 = float3(vertices[v1 + 0u], vertices[v1 + 1u], vertices[v1 + 2u]);
+    float3 p2 = float3(vertices[v2 + 0u], vertices[v2 + 1u], vertices[v2 + 2u]);
+
+    float3 face = mul((float3x3)query.CommittedObjectToWorld3x4(), cross(p1 - p0, p2 - p0));
+    float length2 = dot(face, face);
+    if (length2 < 1e-20)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    face *= rsqrt(length2);
+    return dot(face, rayW) > 0.0 ? -face : face;
+}
+
 // Runs a query to its end, committing each cut-out candidate whose mask is solid there. What it leaves
 // committed is then the answer: for a shadow query built to end on its first hit, whether anything solid
 // stands in the way; for a query left to find the nearest, the nearest solid surface.

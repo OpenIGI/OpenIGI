@@ -29,6 +29,14 @@
 // centimetres; a door that comes back black from every gather ray loses all of it.
 static const float kTraceNearSkip = 0.08;
 
+// How near a gather ray looks first, and how parallel to the surface it left a near hit has to be to be that
+// surface's second skin rather than something standing against it. See VisibilityAt.
+static const float kTraceNearestHit = 0.005;
+static const float kTraceSkinParallel = 0.7;
+
+// How far a gather's traced rays start back towards the eye from the point it saw. See GatherIndirect.
+static const float kTraceViewPull = 0.02;
+
 // How far off its surface a traced ray starts. TMin skips the second skin some surfaces carry in front of
 // the drawn one; this only has to clear the rounding.
 static const float kTraceSurfaceOffset = 0.03;
@@ -39,9 +47,14 @@ static const float kTraceSurfaceOffset = 0.03;
 #include "HitRecords.slang"
 #include "CutoutHit.slang"
 
+// The face the last VisibilityAt struck, turned towards the ray, or nought: for a host to choose the surface
+// cache's cards by, as the march's field gradient is chosen by in the other form.
+static float3 gTraceHitNormal = float3(0.0, 0.0, 0.0);
+
 float VisibilityAt(float3 world, float3 normal, float3 direction, out float3 hit)
 {
     hit = world;
+    gTraceHitNormal = float3(0.0, 0.0, 0.0);
 
     // Off the surface by a few centimetres, enough for the rounding at this distance from the origin, and
     // over the reach the field would have described, so the two forms agree about how far a gather looks.
@@ -61,7 +74,7 @@ float VisibilityAt(float3 world, float3 normal, float3 direction, out float3 hit
 
     // Into the space the structure was built in.
     ray.Origin = at + kTraceOrigin;
-    ray.TMin = kTraceNearSkip;
+    ray.TMin = kTraceNearestHit;
     ray.Direction = direction;
     ray.TMax = reach;
 
@@ -77,20 +90,43 @@ float VisibilityAt(float3 world, float3 normal, float3 direction, out float3 hit
     // never confirmed, which made them invisible -- right for the glass in a window, wrong for the
     // wall the window is cut into, which is the same texture and so the same surface, and whose light
     // then passed straight through. The mask answers both.
-    RayQuery<RAY_FLAG_NONE> query;
-
-    // Everything but the first-person rig. A hand-sized occluder wrapped permanently around the camera
-    // would darken whatever the player happened to be facing.
-    query.TraceRayInline(uScene, RAY_FLAG_NONE, 0x7F, ray);
-    ProceedWithCutouts(query, uCutoutRecords, uCutoutMasks);
-
-    if (query.CommittedStatus() == COMMITTED_NOTHING)
+    //
+    // And the skin skipped only where it is a skin. The whole first eight centimetres used to be, and in a
+    // corner that is the other wall: a ray from within a hand's breadth of it went straight through, and
+    // brought back whatever stood beyond -- a bright seam down every corner and along every ceiling. So the
+    // ray looks from a few millimetres, and a hit inside the skip on a face parallel to the one it left is
+    // the second skin, looked past by a second ray beyond it; one at an angle, or one no record can name, is
+    // what it struck.
+    for (int attempt = 0; attempt < 2; attempt++)
     {
-        return 1.0;
+        RayQuery<RAY_FLAG_NONE> query;
+
+        // Everything but the first-person rig. A hand-sized occluder wrapped permanently around the camera
+        // would darken whatever the player happened to be facing.
+        query.TraceRayInline(uScene, RAY_FLAG_NONE, 0x7F, ray);
+        ProceedWithCutouts(query, uCutoutRecords, uCutoutMasks);
+
+        if (query.CommittedStatus() == COMMITTED_NOTHING)
+        {
+            return 1.0;
+        }
+
+        float t = query.CommittedRayT();
+        float3 face = CommittedFaceNormal(query, uCutoutRecords, direction);
+        bool skin = t < kTraceNearSkip
+            && (dot(face, face) < 0.5 || abs(dot(face, normal)) > kTraceSkinParallel);
+        if (skin && attempt == 0)
+        {
+            ray.TMin = kTraceNearSkip;
+            continue;
+        }
+
+        hit = at + (direction * t);
+        gTraceHitNormal = face;
+        return 0.0;
     }
 
-    hit = at + (direction * query.CommittedRayT());
-    return 0.0;
+    return 1.0;
 }
 
 // Whether anything stands between a surface and a point a known distance away: a lamp. A shadow ray, so

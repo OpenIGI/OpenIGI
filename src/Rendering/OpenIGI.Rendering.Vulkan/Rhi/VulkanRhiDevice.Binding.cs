@@ -148,6 +148,10 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         VkCheck.Ok(_vk.BeginCommandBuffer(command, &begin), "vkBeginCommandBuffer");
 
+        // Its first marker before anything is recorded: a device lost ahead of the first pass otherwise said
+        // only that the queue had passed no checkpoint at all.
+        _device.Checkpoint(command, VulkanCheckpointMarkers.Label($"start of '{label}'"));
+
         return new VulkanRhiCommandEncoder(this, _vk, command, label);
     }
 
