@@ -195,8 +195,9 @@ internal sealed class RetailExplosionEffects
                     (_random.NextSingle() - 0.5d) * range,
                     (_random.NextSingle() - 0.5d) * range,
                     (_random.NextSingle() - 0.5d) * range);
-                int life = (int)((_random.NextSingle() + 1d) * RetailFireballLifeTicks * 0.5d);
-                int delay = (i * (RetailFireballLifeTicks / fireballs)) + (int)(_random.NextSingle() * 15f);
+                // 0x47F200 rounds both to the nearest tick; its spread is -15, taken off the stagger.
+                int life = (int)Math.Round((_random.NextSingle() + 1d) * RetailFireballLifeTicks * 0.5d);
+                int delay = (i * (RetailFireballLifeTicks / fireballs)) - (int)Math.Round(_random.NextSingle() * -15f);
                 _retailFireballs.Add(new RetailFireball(positionUnits + offset, size, delay, life, life));
             }
         }
@@ -225,11 +226,16 @@ internal sealed class RetailExplosionEffects
         {
             float speed = (_random.NextSingle() * (RetailFragmentMaxSpeed - RetailFragmentMinSpeed))
                 + RetailFragmentMinSpeed;
-            Vector3f direction = RandomUnitVectorInCone(RetailFragmentConeRadians, axis);
-            Matrix3f roll = Matrix3f.FromEngineEulerAngles(
-                _random.NextSingle() * RetailFragmentRollRange,
-                _random.NextSingle() * RetailFragmentRollRange,
-                _random.NextSingle() * RetailFragmentRollRange);
+            float around = _random.NextSingle() * MathF.PI;
+            float off = _random.NextSingle() * RetailFragmentConeRadians;
+            Vector3f direction = FragmentDirection(axis, around, off);
+            _ = _random.NextSingle();
+
+            // 0x47F0D0 draws the chip's turn about Z first, then Y, then X.
+            float rollZ = _random.NextSingle() * RetailFragmentRollRange;
+            float rollY = _random.NextSingle() * RetailFragmentRollRange;
+            float rollX = _random.NextSingle() * RetailFragmentRollRange;
+            Matrix3f roll = Matrix3f.FromEngineEulerAngles(rollX, rollY, rollZ);
             _retailFragments.Add(new RetailFragment(
                 positionUnits,
                 positionUnits,
@@ -241,38 +247,26 @@ internal sealed class RetailExplosionEffects
         }
     }
 
-    /// <summary>Picks a direction inside a cone the way <c>GameFunctions_GetRandomUnitVectorInCone</c> does.</summary>
+    /// <summary>The way one fragment leaves the blast (<c>0x47F200</c>).</summary>
     /// <remarks>
-    /// A random turn about the axis and a random fraction of the cone's tangent. At the right-angle cone
-    /// every destructible uses, the single-precision tangent is enormous, so almost every fragment leaves
-    /// square to the blast's axis: a flat spray, not a sphere.
+    /// A frame is stood on the blast's axis (<c>0x4B4010</c>: a level side, the axis, and the third square to both),
+    /// turned by <paramref name="around"/> about the axis and tipped <paramref name="off"/> away from it; the fragment
+    /// leaves along the tipped axis. Both turns are a draw times a range, the first over half a turn only, so every
+    /// fragment of a blast flies to the same side of it, at any angle from straight along the axis to the cone's edge.
     /// </remarks>
-    private Vector3f RandomUnitVectorInCone(float coneRadians, Vector3f axis)
+    /// <param name="axis">The blast's axis.</param>
+    /// <param name="around">The turn about the axis, in radians.</param>
+    /// <param name="off">The tip away from the axis, in radians.</param>
+    /// <returns>The unit direction.</returns>
+    internal static Vector3f FragmentDirection(Vector3f axis, float around, float off)
     {
-        float turn = _random.NextSingle() * MathF.Tau;
-        float reach = _random.NextSingle() * MathF.Tan(coneRadians);
-        float x = MathF.Sin(turn) * reach;
-        float y = MathF.Cos(turn) * reach;
-        float length = MathF.Sqrt((x * x) + (y * y) + 1f);
-        x /= length;
-        y /= length;
-        float z = 1f / length;
-
         Vector3f d = axis.Normalized();
-        Vector3f side = new(d.Y, -d.X, 0f);
-        Vector3f up;
-        if (side.Length <= 0.1f)
-        {
-            up = new Vector3f(0f, -d.Z, d.Y).Normalized();
-            side = Vector3f.Cross(d, up).Normalized();
-        }
-        else
-        {
-            side = side.Normalized();
-            up = Vector3f.Cross(side, d).Normalized();
-        }
-
-        return (side * x) + (up * y) + (d * z);
+        Vector3f level = d.X == 0f && d.Y == 0f ? new Vector3f(0f, 1f, 0f) : new Vector3f(d.Y, -d.X, 0f).Normalized();
+        Vector3f side = Vector3f.Cross(level, d);
+        Vector3f other = Vector3f.Cross(d, side).Normalized();
+        side = side.Normalized();
+        float tip = MathF.Sin(off);
+        return (side * (MathF.Sin(around) * tip)) - (other * (MathF.Cos(around) * tip)) + (d * MathF.Cos(off));
     }
 
     /// <summary>Advances one <c>SimpointObj</c> fragment through the retail container update.</summary>

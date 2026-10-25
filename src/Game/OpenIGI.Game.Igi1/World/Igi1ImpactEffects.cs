@@ -19,7 +19,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="host">Whether the player wants blood.</param>
 public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost host) : IMissionImpacts
 {
-    /// <summary>The missile's scorch half-width: <c>0x476AC0</c> hands <c>Explosion0</c> 6144.</summary>
+    /// <summary>The missile's and the grenade's scorch half-width: <c>0x428390</c> and <c>0x476AC0</c> hand <c>Explosion0</c> 6144.</summary>
     public const float MissileScorchHalfWidthInUnits = 6144f;
 
     /// <summary>The M203 round's scorch half-width: <c>0x47647B</c> hands <c>Explosion0</c> 4096.</summary>
@@ -89,6 +89,20 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
         // The name carries its .tex so the bullet-mark renderer's common-textures candidate matches the exact entry
         // burn1.tex is registered under (common textures, not the level's).
         marks.AddMark(at, n, "burn1.tex", halfWidthInUnits, surface, placement);
+    }
+
+    /// <summary>Burns the scorch onto whatever lies within <paramref name="dropUnits"/> straight below a blast.</summary>
+    /// <param name="positionUnits">The blast's centre, in world units.</param>
+    /// <param name="dropUnits">How far down the line looks: 2048 for a grenade (<c>0x476AC0</c>), 12288 for a missile (<c>0x428390</c>).</param>
+    /// <param name="halfWidthInUnits">The scorch's half-width.</param>
+    /// <remarks>A grenade and a missile hand <c>Explosion0</c> what a dropped line struck, and nothing when it struck nothing.</remarks>
+    public void ScorchBelow(Vector3d positionUnits, double dropUnits, float halfWidthInUnits)
+    {
+        if (Walls is { } walls
+            && walls(positionUnits, new Vector3d(positionUnits.X, positionUnits.Y, positionUnits.Z - dropUnits), out WorldRayHit hit))
+        {
+            Scorch(hit.Position, hit.Normal, halfWidthInUnits);
+        }
     }
 
     /// <summary>Runs one marched round's <c>GunShotEffect</c> where it met something, if the player wants impact effects drawn.</summary>

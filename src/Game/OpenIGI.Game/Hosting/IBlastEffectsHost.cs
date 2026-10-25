@@ -29,10 +29,6 @@ public interface IBlastEffectsHost
     /// <param name="positionInUnits">Where it went off.</param>
     void FlashbangSmoke(Vector3d positionInUnits);
 
-    /// <summary>Spawns the fireball a grenade, rocket or launcher round makes.</summary>
-    /// <param name="positionInUnits">Where it went off.</param>
-    void Fireball(Vector3d positionInUnits);
-
     /// <summary>Spawns an <c>Explosion0</c>'s fire and fragments.</summary>
     /// <param name="positionInUnits">Where.</param>
     /// <param name="fullRangeUnits">Its full range.</param>

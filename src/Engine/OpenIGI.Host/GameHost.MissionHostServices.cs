@@ -214,9 +214,6 @@ public sealed partial class GameHost
 
         public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
 
-        public void Fireball(Vector3d positionInUnits) =>
-            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
-
 
         public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>
             host._effects.Particles?.SpawnRetailExplosion(positionInUnits, new RetailExplosionShape(fullRangeUnits, fireballs, fragments));

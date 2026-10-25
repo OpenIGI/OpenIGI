@@ -634,7 +634,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
-                soldiers.NotifyFlashbang(blast.Position, blast.RadiusUnits);
+                soldiers.NotifyFlashbang(blast.Position);
             }
             else
             {
