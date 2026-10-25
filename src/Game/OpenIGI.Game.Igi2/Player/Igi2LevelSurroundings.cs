@@ -148,9 +148,10 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
 
     public void PlaySound(string name) => StartSound(name);
 
-    public void ShowStatusMessage(string key)
-    {
-    }
+    public void ShowStatusMessage(string key) => StatusMessage?.Invoke(key);
+
+    /// <summary>Gets or sets where a line the game says to the player goes: the player's status message screen.</summary>
+    public Action<string>? StatusMessage { get; set; }
 
     public IIgi2SoundInstance StartSound(string name) =>
         sounds.New(name, View(), View) ?? (IIgi2SoundInstance)new SilentSound();

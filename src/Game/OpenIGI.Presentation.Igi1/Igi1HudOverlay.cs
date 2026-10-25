@@ -234,26 +234,6 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         batch.End();
     }
 
-    if (frame.RemasteredOptics
-        && frame.ShowFirstPersonHud
-        && mission.Player is { IsBinocularsOpen: true }
-        && mission.Player.View is { } binocularView
-        && frame.RemasteredHud is { IsReady: true } binocularHud)
-    {
-        _device.Set2DProjection(frame.Width, frame.Height);
-        batch.Begin();
-        binocularHud.DrawBinocularOverlay(
-            batch,
-            mission.Player.Yaw,
-            binocularView.TanX,
-            frame.Width,
-            frame.Height,
-            frame.BinocularTargets,
-            frame.BinocularSeconds,
-            frame.BinocularRangeMetres);
-        batch.End();
-    }
-
     // The remastered display, shared with I.G.I. 2's and drawn in Project I.G.I.'s theme, its pictures the status archive's.
     if (frame.RemasterHud
         && frame.ShowFirstPersonHud
@@ -262,7 +242,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         && frame.Hud is IHudIconSource icons
         && (_remastered ??= CreateRemastered()).IsReady)
     {
-        Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model);
+        Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model, messages: frame.TacticalMessages);
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
         HudProjector? projector = modernPlayer.View is { } view
@@ -274,6 +254,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         });
         batch.End();
     }
+
     }
 
     private RemasteredHud CreateRemastered()

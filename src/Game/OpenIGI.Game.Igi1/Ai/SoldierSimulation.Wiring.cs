@@ -576,9 +576,6 @@ public sealed partial class SoldierSimulation
         out IReadOnlyList<HumanBodyCrossing> crossings) =>
         _playerBody.TryCastPlayerBody(origin, end, playerFeetUnits, playerYaw, out crossings);
 
-    /// <inheritdoc cref="SoldierBinocularScan.MarkerGlow"/>
-    internal static Bgra32 MarkerGlow(BinocularMarkerColor marker) => SoldierBinocularScan.MarkerGlow(marker);
-
     /// <inheritdoc cref="SoldierSightQueries.HasLineOfSight(WorldRayCast, Vector3d, Vector3d)"/>
     internal static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to) =>
         SoldierSightQueries.HasLineOfSight(cast, from, to);

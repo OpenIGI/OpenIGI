@@ -54,7 +54,11 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<GroundPresentationRequest, ITerrainPresenter>(CreateGround)
             .Add<ScenePresentationRequest, IForestPresenter>(CreateForest)
-            .Add<ScenePresentationRequest, IWaterPresenter>(CreateWater);
+            .Add<ScenePresentationRequest, IWaterPresenter>(CreateWater)
+
+            // The remastered computer is both games' own: the shared display, fed whichever mission's objectives there are.
+            .Add<MapComputerPresentationRequest, ITacticalComputerPresenter>(static (in MapComputerPresentationRequest request) =>
+                new TacticalComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText));
 
     /// <inheritdoc/>
     public PresenterRegistry Presenters { get; }

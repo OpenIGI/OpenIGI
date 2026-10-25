@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Rendering;
 
@@ -53,6 +54,9 @@ public static class Igi1HudTheme
             [HudElement.Weapon] = new(HudEdgeX.Right, 10f, HudEdgeY.Bottom, 10f),
             [HudElement.Actions] = new(HudEdgeX.Centre, 0f, HudEdgeY.Bottom, 72f),
             [HudElement.Progress] = new(HudEdgeX.Centre, 0f, HudEdgeY.Bottom, 92f),
+
+            // The status messages centred along the top, as I.G.I. 2's are.
+            [HudElement.Messages] = new(HudEdgeX.Centre, 0f, HudEdgeY.Top, 36f),
         });
 
     /// <summary>The health gauge's colour: phosphor green when whole, through amber, to red when spent.</summary>
@@ -71,18 +75,23 @@ public static class Igi1HudTheme
     /// <param name="worldPrompt">Whether the world-anchored prompt shows what may be done, so the row does not.</param>
     /// <param name="iconFor">The status screen's picture for a weapon.</param>
     /// <param name="model">The model, refilled.</param>
-    public static void Build(MissionWorld mission, bool worldPrompt, Func<WeaponType, string> iconFor, HudModel model)
+    /// <param name="messages">Whether the mission's status messages are among what the display shows.</param>
+    public static void Build(MissionWorld mission, bool worldPrompt, Func<WeaponType, string> iconFor, HudModel model, bool messages = false)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(iconFor);
         ArgumentNullException.ThrowIfNull(model);
         model.Reset();
+        HudParts said = messages && mission.Objectives is { } runtime && model.AddMissionMessages(runtime.DisplayedMessages)
+            ? HudParts.Messages
+            : HudParts.None;
+
         if (mission.Player is not { } player)
         {
             return;
         }
 
-        model.Show = HudParts.Status | HudParts.Weapon | HudParts.Actions | HudParts.Progress | HudParts.Crosshair;
+        model.Show = HudParts.Status | HudParts.Weapon | HudParts.Actions | HudParts.Progress | HudParts.Crosshair | said;
         model.Health = mission.PlayerHealth.RemainingFraction;
         model.HeadingRadians = player.Yaw;
         model.PitchRadians = player.Pitch;

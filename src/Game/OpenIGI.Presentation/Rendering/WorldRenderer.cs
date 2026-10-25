@@ -23,7 +23,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// nothing. That is why the horizon is empty rather than the sky being wrong.
 /// </para>
 /// </remarks>
-public sealed class WorldRenderer : IWorldPresenter
+public sealed partial class WorldRenderer : IWorldPresenter
 {
     /// <summary>The alpha a cut-out surface has to reach to be drawn, matching what the shaders test.</summary>
     /// <remarks>
@@ -533,14 +533,7 @@ public sealed class WorldRenderer : IWorldPresenter
                         appliedSun = sun;
                     }
 
-                    _device.DrawMesh(
-                        model.Mesh,
-                        subset.IndexOffset,
-                        subset.IndexCount,
-                        modelView,
-                        subset.Diffuse,
-                        subset.Lightmap,
-                        rotorsOnly || glassOnly ? BlendMode.AlphaBlend : BlendMode.Opaque);
+                    DrawSubset(model.Mesh, subset, modelView, rotorsOnly || glassOnly ? BlendMode.AlphaBlend : BlendMode.Opaque, appliedCull);
 
                     draws++;
                     triangles += subset.TriangleCount;

@@ -360,12 +360,12 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     /// <see cref="DrawWorld"/> drew it and posed as it was posed then.
     /// </summary>
     /// <param name="models">The models the world draw drew.</param>
-    /// <param name="marked">What was marked, by the instance its body is drawn for, and the glow each takes.</param>
+    /// <param name="marked">What was marked, by the instance its body is drawn for, and the class of contact each is.</param>
     /// <param name="camera">The eye.</param>
     /// <param name="radiusPixels">The glow's screen-space radius.</param>
     /// <param name="blend">Where between the last two ticks the world draw stood.</param>
     public void DrawWorldOutlines(
-        IReadOnlyList<TitleWorldModel> models, IReadOnlyDictionary<object, Bgra32> marked, in Camera3D camera, float radiusPixels, float blend = 1f)
+        IReadOnlyList<TitleWorldModel> models, IReadOnlyDictionary<object, OpenIGI.Game.Player.BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels, float blend = 1f)
     {
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(marked);
@@ -373,7 +373,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         float between = Math.Clamp(blend, 0f, 1f);
         foreach (TitleWorldModel wanted in models)
         {
-            if (wanted.Instance is not { } instance || !marked.TryGetValue(instance, out Bgra32 glow)
+            if (wanted.Instance is not { } instance || !marked.TryGetValue(instance, out OpenIGI.Game.Player.BinocularMarkerColor marker)
                 || !_bodies.TryGetValue(instance, out Part? part) || part is null || part.Tick != wanted.Tick)
             {
                 continue;
@@ -396,13 +396,13 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             (Vector3d at, Matrix3f orientation) = Placed(wanted, between);
             bool poseBetween = between < 1f && part.SkinTick == wanted.Tick && part.PreviousSkinTick == wanted.Tick - 1;
             _device.SetPoseInterpolation(poseBetween ? 1f - between : 0f, poseBetween ? part.LastPoseBlend : 0f);
-            _device.DrawOutline(
+            OpenIGI.Presentation.Rendering.BinocularMarking.Draw(
+                _device,
                 part.Mesh,
                 System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_outlineRanges),
                 camera.CreateModelView(WorldScene.ToMetres(at), orientation),
-                glow,
-                radiusPixels,
-                throughWalls: true);
+                marker,
+                radiusPixels);
         }
 
         _device.ClearPoseInterpolation();

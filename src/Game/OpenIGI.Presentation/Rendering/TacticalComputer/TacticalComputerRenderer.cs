@@ -5,7 +5,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
@@ -14,7 +13,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// The remaster's map computer: a full-screen tactical interface drawn over a live overhead view of the
@@ -26,7 +25,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// aperture cut in it, and everything the player came to read is inside that aperture — which at a modern
 /// resolution is a postage stamp in the middle of the screen surrounded by a low-polygon casing. This
 /// draws the map edge to edge and floats the interface over it, which is the whole reason the redesign
-/// exists. <see cref="MapComputerRenderer"/> keeps the original for the vanilla path; the two do not
+/// exists. the retail map computer (<see cref="IMapComputerPresenter"/>) keeps the original for the vanilla path; the two do not
 /// share code, because the one that must not change cannot be built out of the one that will.
 /// </para>
 /// <para>
@@ -50,7 +49,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// rasterisation.
 /// </para>
 /// </remarks>
-internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
+public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 {
     private const string LogCategory = "Computer";
 
@@ -330,7 +329,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         SpriteBatch batch,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         Vector3d player,
         IReadOnlyList<Vector3d> guards,
         IEnumerable<ComputerMapHighlight> highlights,
@@ -448,7 +447,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         LayoutContext context,
         in TacticalComputerChrome chrome,
         UiFont body,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         int contacts,
         float lift)
     {
@@ -696,7 +695,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         LayoutContext context,
         in TacticalComputerChrome chrome,
         UiFont body,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         float lift)
     {
         UiRect card = chrome.Page with { Y = chrome.Page.Y + lift };
@@ -732,7 +731,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         LayoutContext context,
         UiFont body,
         UiFont label,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         UiRect card,
         float pad,
         float y)
@@ -753,7 +752,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         for (int i = 0; i < runtime.Objectives.Count; i++)
         {
             MissionObjective objective = runtime.Objectives[i];
-            string text = ComputerString(objective.TextResource);
+            string text = objective.Text.Length > 0 ? objective.Text : ComputerString(objective.TextResource);
             string wrapped = body.WrapText(text, textSize, MathF.Max(context.Px(120f), textWidth));
             float textHeight = body.Measure(wrapped, textSize).Y;
             float rowHeight = MathF.Max(context.Px(58f), textHeight + (rowPad * 2f));
@@ -787,7 +786,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         LayoutContext context,
         UiFont body,
         UiFont label,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         UiRect card,
         float pad,
         float y)
@@ -815,7 +814,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 break;
             }
 
-            string wrapped = body.WrapText(ComputerString(entry.TextResource), textSize, MathF.Max(context.Px(120f), textWidth));
+            string wrapped = body.WrapText(entry.Text.Length > 0 ? entry.Text : ComputerString(entry.TextResource), textSize, MathF.Max(context.Px(120f), textWidth));
             float height = body.Measure(wrapped, textSize).Y;
 
             // The newest entry is the only one at full strength. Older ones step back a little each time

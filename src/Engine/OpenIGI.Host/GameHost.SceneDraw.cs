@@ -463,8 +463,11 @@ public sealed partial class GameHost
         // remastered optics are up.
         if (remasteredOptics
             && HudCVars.BinocularOutline.Value
-            && Viewpoint?.IsBinocularsOpen == true)
+            && BinocularsOpen)
         {
+            // Whom a title's own player's binoculars picked out, highlighted by what draws them.
+            DrawTitleBinocularMarks(eye);
+
             _soldiers?.DrawBinocularOutlines(eye, radiusPixels: 8f);
 
             // Another game's humans the scan marked, glowed by what draws them.

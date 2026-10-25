@@ -1,6 +1,6 @@
 using OpenIGI.UI.Layout;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Where every piece of the interface is this frame, in back-buffer pixels.</summary>
 /// <remarks>

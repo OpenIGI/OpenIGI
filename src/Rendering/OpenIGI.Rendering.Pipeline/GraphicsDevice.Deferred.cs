@@ -670,6 +670,7 @@ public sealed partial class GraphicsDevice
         DisposeTemporal();
         DisposeReconstruction();
         DisposeLayers();
+        DisposeSilhouette();
         DisposeShadows();
         DisposeGlazing();
         DisposeRain();

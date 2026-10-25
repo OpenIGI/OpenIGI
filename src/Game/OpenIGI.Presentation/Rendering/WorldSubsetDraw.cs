@@ -15,6 +15,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <param name="Material">What the surface is made of.</param>
 /// <param name="Lightmap">The baked lightmap page it samples, or none.</param>
 /// <param name="IsLamp">Whether the lamp detection called it a fixture.</param>
+/// <param name="SkinIndexCount">How many of its last indices are coincident skins, drawn culled when the rest is two-sided.</param>
 internal readonly record struct WorldSubsetDraw(
     int IndexOffset,
     int IndexCount,
@@ -22,4 +23,5 @@ internal readonly record struct WorldSubsetDraw(
     TextureHandle Diffuse,
     SurfaceMaterial Material,
     TextureHandle Lightmap,
-    bool IsLamp = false);
+    bool IsLamp = false,
+    int SkinIndexCount = 0);

@@ -64,10 +64,10 @@ public interface ITaskPresenter : IDisposable
     /// Glows through walls those of its models that stand for things the binoculars marked, as the level's own marked soldiers
     /// glow; a presenter that draws no such things draws nothing.
     /// </summary>
-    /// <param name="marked">What was marked, and the glow each takes.</param>
+    /// <param name="marked">What was marked, and the class of contact each is.</param>
     /// <param name="camera">The eye.</param>
-    /// <param name="radiusPixels">The glow's screen-space radius.</param>
-    void DrawOutlines(IReadOnlyDictionary<object, Bgra32> marked, in Camera3D camera, float radiusPixels)
+    /// <param name="radiusPixels">The glow's screen-space radius, where the highlight is a glow.</param>
+    void DrawOutlines(IReadOnlyDictionary<object, OpenIGI.Game.Player.BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels)
     {
     }
 }

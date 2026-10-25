@@ -519,6 +519,11 @@ public static class GraphicsMenu
             "Outlines soldiers seen through the binoculars, so a distant figure against a hillside can be "
                 + "picked out."),
         new GraphicsSetting(
+            "r_binocular_silhouette",
+            "Silhouette Highlight",
+            "Draws that highlight as a soft outline over a faint fill, red for enemies, seen through walls "
+                + "and fading towards the edges of the view. Off, it is a coloured glow."),
+        new GraphicsSetting(
             "r_world_briefing",
             "Posted Briefing",
             "Stands the mission briefing against the nearest wall or fence where you start, to be read "

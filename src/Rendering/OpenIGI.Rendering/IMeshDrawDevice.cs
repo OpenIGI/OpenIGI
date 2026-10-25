@@ -84,4 +84,22 @@ public interface IMeshDrawDevice
         Bgra32 colour,
         float radius,
         bool throughWalls);
+
+    /// <summary>Marks a mesh for this frame's silhouette highlight: a translucent fill inside a soft outline, seen through walls.</summary>
+    /// <param name="mesh">The mesh, as created.</param>
+    /// <param name="ranges">The index ranges that make up the model, so its silhouette is the whole model's.</param>
+    /// <param name="modelView">The same transform the model was drawn with.</param>
+    /// <param name="group">Which group it is highlighted as.</param>
+    /// <exception cref="ArgumentException">The handle is unknown, or a range lies outside the mesh.</exception>
+    /// <remarks>
+    /// Noted when called and drawn once the picture is finished, over it and under the interface: every body marked in a
+    /// frame goes into a mask of its group with no depth test, and one pass over the screen then finds each group's
+    /// silhouette edges in it and lays the group's fill and outline over the picture. A posed mesh is marked in the pose
+    /// currently set through <see cref="IDrawStateDevice.SetPoseInterpolation"/>.
+    /// </remarks>
+    void DrawSilhouette(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
+        in Matrix4f modelView,
+        SilhouetteGroup group);
 }

@@ -538,6 +538,10 @@
     {
       "id": "ScopeGlint",
       "source": "Ui/ScopeGlint.slang"
+    },
+    {
+      "id": "Silhouette",
+      "source": "Post/Silhouette.slang"
     }
   ]
 }

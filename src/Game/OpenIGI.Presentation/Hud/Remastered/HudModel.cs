@@ -369,4 +369,35 @@ public sealed class HudModel
     /// <summary>Adds a message.</summary>
     /// <param name="message">The message.</param>
     public void AddMessage(in HudMessageView message) => _messages.Add(message);
+
+    /// <summary>How many ticks a mission's status message takes to fade in, as Project I.G.I.'s panel does over its first nine.</summary>
+    public const float MissionMessageFadeTicks = 9f;
+
+    /// <summary>
+    /// Adds a mission's status messages as they stand: each typed out so far and fading in over its first ticks, in their slots'
+    /// order; a cutscene's are subtitles, not the display's.
+    /// </summary>
+    /// <param name="messages">The messages.</param>
+    /// <param name="firstKey">The key the first is told apart by, so they do not share keys with the display's other messages.</param>
+    /// <returns>Whether any was added.</returns>
+    public bool AddMissionMessages(IEnumerable<OpenIGI.Game.World.StatusMessageDisplay> messages, int firstKey = 0)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        int key = firstKey;
+        bool any = false;
+        foreach (OpenIGI.Game.World.StatusMessageDisplay message in messages)
+        {
+            key++;
+            if (message.IsCutscene || message.RevealedCharacters <= 0)
+            {
+                continue;
+            }
+
+            string text = message.Text[..Math.Min(message.RevealedCharacters, message.Text.Length)];
+            AddMessage(new HudMessageView(text, Math.Clamp((message.DisplayFrame + 1) / MissionMessageFadeTicks, 0f, 1f), key));
+            any = true;
+        }
+
+        return any;
+    }
 }

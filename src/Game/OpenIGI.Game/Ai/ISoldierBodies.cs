@@ -41,13 +41,13 @@ public interface ISoldierBodies : IDisposable
     void DrawBinocularOutlines(in Camera3D camera, float radiusPixels);
 
     /// <summary>
-    /// Gets what else the last binocular scan marked -- another game's humans in the level -- and the glow each takes, for
+    /// Gets what else the last binocular scan marked -- another game's humans in the level -- and the class of contact each is, for
     /// whatever draws them to outline as <see cref="DrawBinocularOutlines"/> outlines the level's own.
     /// </summary>
-    IReadOnlyDictionary<object, Bgra32> BinocularMarkedOthers => NoneMarked;
+    IReadOnlyDictionary<object, OpenIGI.Game.Player.BinocularMarkerColor> BinocularMarkedOthers => NoneMarked;
 
     /// <summary>Nothing marked.</summary>
-    private static readonly IReadOnlyDictionary<object, Bgra32> NoneMarked = new Dictionary<object, Bgra32>();
+    private static readonly IReadOnlyDictionary<object, OpenIGI.Game.Player.BinocularMarkerColor> NoneMarked = new Dictionary<object, OpenIGI.Game.Player.BinocularMarkerColor>();
 
     /// <summary>Builds the drawable soldiers from a loaded level.</summary>
     /// <param name="mission">The mission whose packs hold the models and animation sets.</param>

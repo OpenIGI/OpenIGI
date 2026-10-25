@@ -161,7 +161,7 @@ public interface ITacticalComputerPresenter : IDisposable
 
     /// <summary>Draws the display.</summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="runtime">The mission's objectives, which the display lists.</param>
+    /// <param name="runtime">The mission's objectives and transmissions, which the display lists: whichever game's mission it is.</param>
     /// <param name="player">Where the player is, in engine units.</param>
     /// <param name="guards">Where the guards the display knows about are.</param>
     /// <param name="highlights">The marks to show.</param>
@@ -170,7 +170,7 @@ public interface ITacticalComputerPresenter : IDisposable
     /// <param name="opacity">How far the display has faded in, from zero to one.</param>
     void Draw(
         SpriteBatch batch,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         Vector3d player,
         IReadOnlyList<Vector3d> guards,
         IEnumerable<ComputerMapHighlight> highlights,

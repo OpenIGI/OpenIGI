@@ -126,6 +126,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human = human;
         Weapons = weapons;
         _surroundings = surroundings;
+        surroundings.StatusMessage = key => ShowStatusMessage(key);
     }
 
     /// <summary>Gets the ported player.</summary>
@@ -540,6 +541,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             RunPlayer();
             Dynamic.Run();
             RunPlayerDelayed();
+
+            // Standing in another game's level, the player's own screen prints what is said to it.
+            StatusMessages.Run();
         }
 
         _movementCamera.Run(Human, CollisionWorld, input.MouseX * CountsToAnalog, input.MouseY * CountsToAnalog);

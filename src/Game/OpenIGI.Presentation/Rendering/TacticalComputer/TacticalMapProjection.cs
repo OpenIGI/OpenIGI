@@ -2,7 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// The tactical computer's straight-down projection: engine units on the ground to pixels on the map

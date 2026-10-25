@@ -577,6 +577,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _inFrame = true;
         EndHudLayer();
+        _silhouetteDraws.Clear();
         _backdropFresh = false;
         ReleaseWorldIfAsked();
 

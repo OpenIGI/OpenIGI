@@ -253,6 +253,23 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the binoculars' highlight is drawn in the silhouette style rather than as a glow.</summary>
+    /// <remarks>
+    /// On, a marked contact is filled faintly and outlined softly over the finished picture, by its group, and the highlight
+    /// fades towards the screen's edges; off, it is the glow of <see cref="BinocularOutline"/>, drawn into the scene. Only
+    /// while that is on.
+    /// </remarks>
+    public static readonly BoolCVar BinocularSilhouette = Presets.Define(
+        CVar.Bool(
+            "r_binocular_silhouette",
+            true,
+            CVarOptions.Archive,
+            "Draw the binoculars' highlight as a soft outline over a faint fill, rather than as a glow."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>The remastered binocular detector's range at the default zoom, in metres.</summary>
     /// <remarks>
     /// A modern optics touch: the detector has a finite range rather than tagging every enemy in the

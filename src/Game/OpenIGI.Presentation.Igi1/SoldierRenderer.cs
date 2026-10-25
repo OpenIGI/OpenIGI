@@ -45,7 +45,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
     /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
     private readonly List<MeshDrawRange> _outlineRanges = [];
-    private readonly Dictionary<object, Bgra32> _markedOthers = [];
+    private readonly Dictionary<object, BinocularMarkerColor> _markedOthers = [];
     private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
     private TexTextureCache? _textureCache;
@@ -274,14 +274,14 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
-    public IReadOnlyDictionary<object, Bgra32> BinocularMarkedOthers
+    public IReadOnlyDictionary<object, BinocularMarkerColor> BinocularMarkedOthers
     {
         get
         {
             _markedOthers.Clear();
             foreach ((IAiDetectable human, BinocularMarkerColor marker) in _sim.BinocularJoinedDetected)
             {
-                _markedOthers[human] = SoldierSimulation.MarkerGlow(marker);
+                _markedOthers[human] = marker;
             }
 
             return _markedOthers;
@@ -322,13 +322,13 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                 }
 
                 _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
-                _device.DrawOutline(
+                BinocularMarking.Draw(
+                    _device,
                     member.Mesh,
                     CollectionsMarshal.AsSpan(_outlineRanges),
                     camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation),
-                    SoldierSimulation.MarkerGlow(marker),
-                    radiusPixels,
-                    throughWalls: true);
+                    marker,
+                    radiusPixels);
                 _device.ClearPoseInterpolation();
             }
         }

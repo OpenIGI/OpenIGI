@@ -284,6 +284,25 @@ public sealed partial class Igi2HudRenderer
                 Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
             y += 28f;
         }
+
+        // The other game's mission's lines, under the player's own, in the same face.
+        if (title.IsCutscenePlaying)
+        {
+            return;
+        }
+
+        foreach (OpenIGI.Game.World.StatusMessageDisplay line in _missionMessages)
+        {
+            if (line.IsCutscene || line.RevealedCharacters <= 0)
+            {
+                continue;
+            }
+
+            float fade = Math.Clamp((line.DisplayFrame + 1) / OpenIGI.Presentation.Hud.Remastered.HudModel.MissionMessageFadeTicks, 0f, 1f);
+            _font?.DrawCentered(batch, line.Text.AsSpan(0, Math.Min(line.RevealedCharacters, line.Text.Length)), width * 0.5f * _scale, y * _scale,
+                Bgra32.FromRgba(255, 255, 255, Channel(fade)), _scale, _scale);
+            y += 28f;
+        }
     }
 
     private void Sprite(SpriteBatch batch, string name, float x, float y, Bgra32 colour)

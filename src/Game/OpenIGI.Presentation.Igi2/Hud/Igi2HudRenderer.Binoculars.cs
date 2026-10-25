@@ -7,6 +7,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi2;
 using OpenIGI.Presentation.Igi2.World;
+using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Presentation.Igi2.Hud;
 
@@ -46,6 +47,9 @@ public sealed partial class Igi2HudRenderer
 
         switch (title.ZoomOverlay)
         {
+            // The remastered binoculars are the host's, drawn for whichever player looks through them.
+            case Igi2TitlePlayer.BinocularOverlayType when RemasteredHudPresentation.UsesRemasteredTitleOptics:
+                break;
             case Igi2TitlePlayer.BinocularOverlayType:
                 DrawBinoculars(batch, title, width, height);
                 break;

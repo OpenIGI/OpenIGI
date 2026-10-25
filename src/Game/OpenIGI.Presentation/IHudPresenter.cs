@@ -34,6 +34,15 @@ public interface ITitleHudPresenter : IDisposable
     /// or a whole number every title's interface is drawn at.
     /// </param>
     void Draw(SpriteBatch batch, OpenIGI.Game.Player.ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic);
+
+    /// <summary>
+    /// Gives the display the status messages of the mission its player stands in, when that is another game's mission: they are
+    /// shown with the display's own, in its own look. Set before each <see cref="Draw"/>; empty in a mission of the title's own.
+    /// </summary>
+    /// <param name="messages">The mission's messages as they stand.</param>
+    void ShowMissionMessages(IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> messages)
+    {
+    }
 }
 
 /// <summary>Draws a title's heads-up display, in the shape the original drew it.</summary>
@@ -187,25 +196,6 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     void Draw(SpriteBatch batch, in RemasteredHudSnapshot snapshot, int screenWidth, int screenHeight);
-
-    /// <summary>Draws the binocular overlay and whatever it has picked out.</summary>
-    /// <param name="batch">The batch to draw into.</param>
-    /// <param name="headingRadians">Where the player is looking, for the compass strip.</param>
-    /// <param name="tanX">The horizontal half-tangent of the view, for placing the boxes.</param>
-    /// <param name="screenWidth">The target width in pixels.</param>
-    /// <param name="screenHeight">The target height in pixels.</param>
-    /// <param name="targets">The boxes over spotted enemies, or null for none.</param>
-    /// <param name="seconds">The wall clock, for anything that animates.</param>
-    /// <param name="rangeMetres">The range to what is centred, or null when nothing is.</param>
-    void DrawBinocularOverlay(
-        SpriteBatch batch,
-        float headingRadians,
-        float tanX,
-        int screenWidth,
-        int screenHeight,
-        IReadOnlyList<EnemyOverlayBox>? targets,
-        float seconds,
-        float? rangeMetres);
 
     /// <summary>Draws the prompt for the action available where the player is looking.</summary>
     /// <param name="batch">The batch to draw into.</param>

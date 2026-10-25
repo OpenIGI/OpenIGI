@@ -1,13 +1,12 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Presentation.Igi1.World;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>The tactical computer's map layer: the world-aligned grid and every marker on it.</summary>
 /// <remarks>
@@ -45,7 +44,7 @@ internal sealed class TacticalMapOverlay
         in TacticalComputerChrome chrome,
         Viewport map,
         float fieldOfView,
-        MissionObjectiveRuntime runtime,
+        IComputerObjectives runtime,
         Vector3d player,
         IReadOnlyList<Vector3d> guards,
         IEnumerable<ComputerMapHighlight> highlights,

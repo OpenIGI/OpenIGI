@@ -6,6 +6,7 @@ using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi2;
 using OpenIGI.Presentation.Igi2.World;
+using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Presentation.Igi2.Hud;
 
@@ -17,6 +18,14 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
 
     /// <summary>The height of the display the status art is laid out for.</summary>
     public const int AuthoredHeight = 720;
+
+    // The first key the other game's mission's lines take, past any of the player's own slots.
+    private const int MissionMessageKeys = 1000;
+
+    private IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> _missionMessages = [];
+
+    /// <inheritdoc/>
+    public void ShowMissionMessages(IReadOnlyList<OpenIGI.Game.World.StatusMessageDisplay> messages) => _missionMessages = messages ?? [];
 
     /// <inheritdoc/>
     public void Draw(SpriteBatch batch, ITitlePlayer player, int screenWidth, int screenHeight, int requestedScale = UiScale.Automatic)
@@ -38,13 +47,15 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
 
         DrawCutsceneFraming(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawZoomOverlay(batch, title, width, height); }
-        // The remastered display in place of the status display, inventory, action row and messages, where it is chosen.
+        // The remastered display in place of the status display, inventory, action row and messages, where it is chosen. Neither
+        // through the remastered binoculars, whose view is the optics' alone, as Project I.G.I.'s is.
         bool remastered = RemasteredChosen;
-        if (remastered)
+        bool optics = title.IsBinocularsOpen && RemasteredHudPresentation.UsesRemasteredTitleOptics;
+        if (remastered && !optics)
         {
             DrawRemastered(batch, title, screenWidth, screenHeight, requestedScale);
         }
-        else
+        else if (!optics)
         {
             DrawMessages(batch, title, width, height);
             if (!title.IsCutscenePlaying && !title.Human.IsDead)

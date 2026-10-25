@@ -175,7 +175,7 @@ public sealed partial class GameHost
         // camera and its field of view, which is what makes the climb and the fall a move of the
         // player's own eye rather than a cut to a second one.
         MapSceneView? mapScene = null;
-        if (_computerOpen && Viewpoint?.BodyPositionUnits is { } mapBody)
+        if (_computerOpen && ComputerBodyUnits is { } mapBody)
         {
             if (TacticalComputer is { } tacticalView)
             {
@@ -229,7 +229,7 @@ public sealed partial class GameHost
         int binocularNow = _loop.TimeSource.Milliseconds;
         float binocularElapsed = Math.Clamp((binocularNow - _lastBinocularMilliseconds) / 1000f, 0f, 0.1f);
         _lastBinocularMilliseconds = binocularNow;
-        _binocularOptics.Update(Viewpoint?.IsBinocularsOpen == true, binocularElapsed);
+        _binocularOptics.Update(BinocularsOpen, binocularElapsed);
         BinocularDisplaySettings binocularDisplay =
             HudCVars.BinocularLens.Value ? _binocularOptics.Display : default;
         // A little extra edge fringing while the optics are up, on top of the ordinary value, so

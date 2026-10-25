@@ -41,7 +41,7 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
     }
 
     /// <inheritdoc/>
-    public void DrawOutlines(IReadOnlyDictionary<object, Bgra32> marked, in Camera3D camera, float radiusPixels) =>
+    public void DrawOutlines(IReadOnlyDictionary<object, OpenIGI.Game.Player.BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels) =>
         _renderer.DrawWorldOutlines(_level.Models(), marked, camera, radiusPixels, _blend);
 
     /// <inheritdoc/>

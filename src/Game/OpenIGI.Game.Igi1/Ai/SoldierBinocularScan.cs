@@ -48,14 +48,6 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
     /// <summary>Gets or sets the fixed tick <see cref="Visibility"/> was cast on.</summary>
     public int VisibilityTick { get; set; } = int.MinValue;
 
-    /// <summary>The through-wall glow colour for a detector marker class.</summary>
-    public static Bgra32 MarkerGlow(BinocularMarkerColor marker) => marker switch
-    {
-        BinocularMarkerColor.Team => Bgra32.FromRgba(96, 220, 120, 200),
-        BinocularMarkerColor.Disabled => Bgra32.FromRgba(96, 150, 255, 200),
-        _ => Bgra32.FromRgba(255, 72, 72, 210),
-    };
-
     /// <summary>Projects living, visible soldiers through the native ten-slot binocular detector.</summary>
     /// <param name="camera">The presented eye the contacts are projected through.</param>
     /// <param name="horizontalTangent">The optics' horizontal half-angle tangent (the zoom).</param>

@@ -10,6 +10,8 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi2.ViewModel;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -58,13 +60,26 @@ public sealed class RetailIgi2WorldModelCullingTests
         TitleWorldModel[] drawn = [new(name, new Vector3d(0, 409600, 0), Matrix3f.Identity, Pose(model, default), instance, 1)];
         renderer.DrawWorld(drawn, Camera3D.Default, Matrix4f.CreateProjection(640f, 360f, 640f, 360f, 1280, 720, 0.1f, 1000f));
 
-        renderer.DrawWorldOutlines(drawn, new Dictionary<object, Bgra32>(), Camera3D.Default, 8f);
-        Assert.Equal(0, device.OutlineDrawCount);
+        renderer.DrawWorldOutlines(drawn, new Dictionary<object, BinocularMarkerColor>(), Camera3D.Default, 8f);
+        Assert.Equal(0, device.OutlineDrawCount + device.SilhouetteDrawCount);
 
-        Bgra32 red = Bgra32.FromRgba(255, 72, 72, 210);
-        renderer.DrawWorldOutlines(drawn, new Dictionary<object, Bgra32> { [instance] = red }, Camera3D.Default, 8f);
+        // The silhouette highlight by default, by the marker's group; the glow in its colour when that is off.
+        renderer.DrawWorldOutlines(drawn, new Dictionary<object, BinocularMarkerColor> { [instance] = BinocularMarkerColor.Hostile }, Camera3D.Default, 8f);
+        Assert.Equal(1, device.SilhouetteDrawCount);
+        Assert.Equal(SilhouetteGroup.Hostile, device.LastSilhouetteGroup);
+
+        HudCVars.BinocularSilhouette.Value = false;
+        try
+        {
+            renderer.DrawWorldOutlines(drawn, new Dictionary<object, BinocularMarkerColor> { [instance] = BinocularMarkerColor.Hostile }, Camera3D.Default, 8f);
+        }
+        finally
+        {
+            HudCVars.BinocularSilhouette.Value = true;
+        }
+
         Assert.Equal(1, device.OutlineDrawCount);
-        Assert.Equal(red, device.LastOutlineColour);
+        Assert.Equal(BinocularMarking.Glow(BinocularMarkerColor.Hostile), device.LastOutlineColour);
         Assert.True(device.LastOutlineThroughWalls);
     }
 

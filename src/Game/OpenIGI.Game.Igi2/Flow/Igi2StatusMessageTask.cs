@@ -181,19 +181,40 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     {
         ArgumentNullException.ThrowIfNull(level);
         _flow = level.LevelFlow;
+        StatusMessageStep step = Step(_flow?.Tick ?? 0, () =>
+        {
+            _send ??= Igi2LevelExpressions.Create(SendScript, Name, level.Natives);
+            return !_send.IsEmpty && level.Evaluate(_send) != 0.0;
+        });
+        if (step == StatusMessageStep.Done)
+        {
+            Tree.Delete(this);
+        }
+        else if (step == StatusMessageStep.Running)
+        {
+            level.RunChildren(this);
+        }
+    }
+
+    /// <summary>A tick of the line itself, <c>StatusMessage_RunHandler</c>'s own part, on whichever clock it is shown by.</summary>
+    /// <param name="now">The tick it is shown at: the level flow's, or the player's own where there is no level flow.</param>
+    /// <param name="sent">Whether its script sends it now; asked only of a line not forced and not showing.</param>
+    /// <returns>Whether it goes on and its children run, sits finished, or is done and gone.</returns>
+    public StatusMessageStep Step(int now, Func<bool> sent)
+    {
+        ArgumentNullException.ThrowIfNull(sent);
         if (_isFinishedDisplay != 0)
         {
             _ticksSinceFinishedDisplay++;
             if (IsSendOnce)
             {
-                return;
+                return StatusMessageStep.Finished;
             }
         }
 
         if (_isDisplay == 0)
         {
-            _send ??= Igi2LevelExpressions.Create(SendScript, Name, level.Natives);
-            if (IsForceSend || (!_send.IsEmpty && level.Evaluate(_send) != 0.0))
+            if (IsForceSend || sent())
             {
                 _tickSent = SentAtOnce;
                 _isDisplay = 1;
@@ -211,7 +232,6 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
         {
             // StatusMessage_UpdateMorph (igi2 0x50F660) sets the morph bodies' faces from the sound's lip sync; not ported.
             _ticks++;
-            int now = _flow?.Tick ?? 0;
             if (now > unchecked(_tickSent + Wait()))
             {
                 if (_next is not null)
@@ -238,8 +258,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
                         KillSound();
                         if (IsForceSend)
                         {
-                            Tree.Delete(this);
-                            return;
+                            return StatusMessageStep.Done;
                         }
 
                         _ticks = 0;
@@ -254,7 +273,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
             }
         }
 
-        level.RunChildren(this);
+        return StatusMessageStep.Running;
     }
 
     /// <summary>Exports its five (<c>StatusMessage_RegisterScriptSymbolsHandler</c>, <c>igi2 0x50FF80</c>).</summary>
@@ -378,4 +397,17 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
         _sound?.Delete();
         _sound = null;
     }
+}
+
+/// <summary>What a tick of a status message left it doing.</summary>
+public enum StatusMessageStep
+{
+    /// <summary>Waiting to be sent, or showing: it goes on, and its children run.</summary>
+    Running,
+
+    /// <summary>Shown once and finished: it sits, and its children do not run.</summary>
+    Finished,
+
+    /// <summary>A line forced on the screen, shown and gone: it deletes itself.</summary>
+    Done,
 }

@@ -56,6 +56,26 @@ public sealed class HudCrosshairTests
     }
 
     [Fact]
+    public void A_kill_hides_the_hit_and_a_second_kill_punches_it_out_again()
+    {
+        HudCrosshairState state = new();
+        state.Update(Aim(), 0f, 0f);
+        state.Update(Aim(hits: 1), 0.1f, 0.1f);
+        Assert.True(state.HitShowing);
+        state.Update(Aim(hits: 2, kills: 1), 0.2f, 0.1f);
+        Assert.False(state.HitShowing);
+        Assert.True(state.KillShowing);
+        Assert.Equal(HudCrosshairState.KillHeldScale, state.KillScale);
+
+        state.Update(Aim(hits: 3, kills: 2), 0.4f, 0.2f);
+        Assert.Equal(HudCrosshairState.KillPunchScale, state.KillScale, 3);
+        state.Update(Aim(hits: 3, kills: 2), 0.4f + (HudCrosshairState.KillSeconds * 0.5f), 0.1f);
+        Assert.InRange(state.KillScale, HudCrosshairState.KillHeldScale, HudCrosshairState.KillPunchScale);
+        state.Update(Aim(hits: 3, kills: 2), 0.4f + HudCrosshairState.KillSeconds, 0.1f);
+        Assert.False(state.KillShowing);
+    }
+
+    [Fact]
     public void Over_an_enemy_it_turns_and_turns_back()
     {
         HudCrosshairState state = new();

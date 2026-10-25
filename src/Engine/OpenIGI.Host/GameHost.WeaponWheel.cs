@@ -140,20 +140,36 @@ public sealed partial class GameHost
             return;
         }
 
-        bool sounds = HudCVars.HitSounds.Value && HudCVars.Crosshair.Value;
-        if (tally.Kills > _heardKills)
+        if (HudCVars.HitSounds.Value && HudCVars.Crosshair.Value)
         {
-            if (sounds)
-            {
-                PlayWheelSound(HitSounds.KillSoundName, tally.LastKillHead ? 1f : 0.85f);
-            }
-        }
-        else if (tally.Hits > _heardHits && sounds)
-        {
-            PlayWheelSound(HitSounds.HitSoundName, tally.LastHitHead ? 0.85f : 0.65f);
+            PlayHitPools(HitSounds.Current, tally);
         }
 
         _heardHits = tally.Hits;
         _heardKills = tally.Kills;
+    }
+
+    // A hit or a kill draws one sound from its own pool, and one from each impact pool: the round's strike plays with either.
+    private void PlayHitPools(HitSoundFolder folder, ShotTally tally)
+    {
+        bool killed = tally.Kills > _heardKills;
+        if (!killed && tally.Hits <= _heardHits)
+        {
+            return;
+        }
+
+        PlayOneOf(killed ? (tally.LastKillHead ? folder.HeadshotKill : folder.Kill) : folder.Hit);
+        foreach (IReadOnlyList<string> impact in folder.Impacts)
+        {
+            PlayOneOf(impact);
+        }
+    }
+
+    private void PlayOneOf(IReadOnlyList<string> pool)
+    {
+        if (pool.Count > 0)
+        {
+            PlayWheelSound(pool[Random.Shared.Next(pool.Count)], 1f);
+        }
     }
 }

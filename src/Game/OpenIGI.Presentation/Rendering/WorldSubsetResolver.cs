@@ -355,7 +355,8 @@ internal sealed class WorldSubsetResolver
                 diffuse,
                 material,
                 lightmap,
-                lamp);
+                lamp,
+                subset.SkinIndexCount);
         }
 
         // Which of the level's lights this placement is the housing of, so that switching that light off

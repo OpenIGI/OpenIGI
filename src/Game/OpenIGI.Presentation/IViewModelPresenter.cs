@@ -93,6 +93,20 @@ public interface ITitleViewModelPresenter : IDisposable
 /// </remarks>
 public interface ITitleWorldModelPresenter
 {
+    /// <summary>
+    /// Highlights those of the models drawn last that stand for people the binoculars marked, as the level's own marked soldiers
+    /// are highlighted (<see cref="Rendering.BinocularMarking"/>); a presenter that draws no people draws nothing.
+    /// </summary>
+    /// <param name="models">The models the world draw drew.</param>
+    /// <param name="marked">What was marked, by the instance its body is drawn for, and the class of contact each is.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="radiusPixels">The glow's screen-space radius, where the highlight is a glow.</param>
+    /// <param name="blend">Where between the last two ticks the world draw stood.</param>
+    void DrawWorldOutlines(
+        IReadOnlyList<TitleWorldModel> models, IReadOnlyDictionary<object, BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels, float blend = 1f)
+    {
+    }
+
     /// <summary>Draws the models, between the last two ticks.</summary>
     /// <param name="models">The models and where they stand.</param>
     /// <param name="camera">Where they are seen from, in metres.</param>

@@ -88,9 +88,9 @@ internal sealed class AudioOutput(
             Sounds.RegisterExternal(name, WeaponWheelSounds.Format, pcm);
         }
 
-        foreach ((string name, byte[] pcm) in HitSounds.All)
+        foreach ((string name, AudioFormat format, byte[] pcm) in HitSounds.Current.Sounds)
         {
-            Sounds.RegisterExternal(name, HitSounds.Format, pcm);
+            Sounds.RegisterExternal(name, format, pcm);
         }
 
         MountMenuSounds();

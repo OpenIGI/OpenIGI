@@ -210,8 +210,9 @@ public sealed partial class GameHost
 
         held |= _titleScriptHeld;
 
-        // The weapon wheel holds the player still while it is open: nothing it was given goes through.
-        bool still = WheelHoldsInput;
+        // The weapon wheel holds the player still while it is open: nothing it was given goes through. So does the mission's
+        // computer, while it serves this player.
+        bool still = WheelHoldsInput || (_computerOpen && TitleUsesMissionComputer);
         if (still)
         {
             held = default;
@@ -223,6 +224,12 @@ public sealed partial class GameHost
 
         PlayerProfile? profile = _configuration.Active;
         PlayerAction replaced = Gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
+
+        // The computer's key opens the mission's computer, not the title's own, where the mission's serves it.
+        if (TitleUsesMissionComputer)
+        {
+            replaced |= PlayerAction.MapComputer;
+        }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         player.Tick(new TitlePlayerInput(
             _titleMouseX,

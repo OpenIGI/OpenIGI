@@ -41,9 +41,7 @@ public sealed partial class GameHost
         // contacts it finds while the scene is still being captured. The HUD after the resolve
         // reuses this same target list rather than advancing the detector a second time.
         bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(HudCVars.RemasteredHud.Value);
-        bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
-            TacticalComputer is not null,
-            _remasteredHud is { IsReady: true });
+        bool remasteredOptics = RemasteredOpticsUp();
         bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
             remasterHud,
             HudCVars.TacticalMessages.Value);
@@ -90,8 +88,7 @@ public sealed partial class GameHost
                 + ((HudCVars.BinocularRangeZoomed.Value - HudCVars.BinocularRange.Value) * binocularZoomIn)
             : float.PositiveInfinity;
         IReadOnlyList<EnemyOverlayBox> binocularTargets =
-            showFirstPersonHud
-            && Viewpoint?.IsBinocularsOpen == true
+            ((showFirstPersonHud && Viewpoint?.IsBinocularsOpen == true) || TitleBinocularsOpen)
             && _soldiers is { } binocularSoldiers
                 ? binocularSoldiers.BinocularTargets(
                     // Use the same presented eye that rendered the world. The detector owns
@@ -154,6 +151,26 @@ public sealed partial class GameHost
             _hud,
             _remasteredHud);
     }
+
+    /// <summary>The mission's status messages, for a title's player standing in it in the mission's own player's stead.</summary>
+    /// <returns>The messages, or none where the mission has its own player or no messages.</returns>
+    /// <remarks>
+    /// Another game's player standing in the mission is not the mission's player, so the mission's HUD stands down for it; its
+    /// radio and status lines -- Anya's, in the first mission -- are the mission's to say all the same, and the player's own
+    /// display shows them in its own look.
+    /// </remarks>
+    private List<StatusMessageDisplay> GuestMissionMessages()
+    {
+        _guestMessages.Clear();
+        if (HostedPlayer is null && _mission.Objectives is { } runtime)
+        {
+            _guestMessages.AddRange(runtime.DisplayedMessages);
+        }
+
+        return _guestMessages;
+    }
+
+    private readonly List<StatusMessageDisplay> _guestMessages = [];
 
     /// <summary>Draws what the mods lay over the player's view, after the game's HUD and status and before a cut-scene's framing.</summary>
     /// <param name="state">The frame loop's state, whose sprite batch they draw into.</param>
@@ -228,12 +245,14 @@ public sealed partial class GameHost
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
+            titleHud.ShowMissionMessages(GuestMissionMessages());
             titleHud.Draw(state.Batch, titleHudPlayer, _window.Width, _window.Height, _options.UiScale);
             state.Batch.End();
         }
 
         MissionHudFrame hudFrame = HudFrame(state, remasterHud, remasteredOptics, showFirstPersonHud, showPlayerHud, tacticalMessages, worldInteractionPrompt, binocularTargets, binocularRangeMetres);
         _hudOverlay?.DrawWeaponHud(state.Batch, hudFrame);
+        DrawRemasteredBinoculars(state, view, binocularRangeMetres);
 
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
         DrawModHudOverlays(state, view);
@@ -280,8 +299,8 @@ public sealed partial class GameHost
         }
 
         if (_computerOpen
-            && _mission.Objectives is { } objectiveRuntime
-            && Viewpoint?.BodyPositionUnits is { } computerBody)
+            && ComputerObjectives is { } computerObjectives
+            && ComputerBodyUnits is { } computerBody)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
@@ -289,7 +308,7 @@ public sealed partial class GameHost
             {
                 tacticalChrome.Draw(
                     state.Batch,
-                    objectiveRuntime,
+                    computerObjectives,
                     computerBody,
                     _soldiers?.MapContacts() ?? [],
                     _computerHighlights?.Visible() ?? [],
@@ -297,7 +316,7 @@ public sealed partial class GameHost
                     _window.Height,
                     _computerFlight.ChromeOpacity);
             }
-            else if (_mapComputer is { IsReady: true } computer)
+            else if (_mapComputer is { IsReady: true } computer && _mission.Objectives is { } objectiveRuntime)
             {
                 computer.Draw(
                     state.Batch,
@@ -346,28 +365,8 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // The HUD is in the condition, not asserted inside it. Every presenter is nullable so a
-        // title under construction draws the passes it has and skips the rest -- and I.G.I. 2 has
-        // no HUD at all yet, so the null-forgiving read of it here took the process down as soon
-        // as one of its missions had an objective to post.
-        if (tacticalMessages
-            && showFirstPersonHud
-            && _remasteredHud is { } messageHud
-            && _mission.Objectives is { } modernMessages
-            && _messages is { IsReady: true } modernCards)
-        {
-            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
-            float topOffset = new LayoutContext(_window.Width, _window.Height)
-                .Px(messageHud.MessageTopInset);
-            modernCards.Draw(
-                state.Batch,
-                modernMessages.DisplayedMessages.Where(static message => !message.IsCutscene),
-                _window.Width,
-                _window.Height,
-                topOffset);
-            state.Batch.End();
-        }
+        // In play the mission's messages are the remastered display's, each title's in its own look (Igi1HudOverlay and the
+        // title's own display); the cards below stand in only for a cutscene's subtitles where the original's face is missing.
 
         // Cutscene StatusMessages are subtitles, not HUD. They remain visible while the authored
         // camera owns the frame even though the arms, weapon and ordinary mission UI are hidden.

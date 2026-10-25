@@ -89,5 +89,18 @@ public sealed partial class RecordingGraphicsDevice
         LastOutlineThroughWalls = throughWalls;
     }
 
+    /// <summary>Gets how many silhouette marks have been drawn.</summary>
+    public int SilhouetteDrawCount { get; private set; }
+
+    /// <summary>Gets the last silhouette mark's group.</summary>
+    public SilhouetteGroup LastSilhouetteGroup { get; private set; }
+
+    /// <inheritdoc/>
+    public void DrawSilhouette(MeshHandle mesh, ReadOnlySpan<MeshDrawRange> ranges, in Matrix4f modelView, SilhouetteGroup group)
+    {
+        SilhouetteDrawCount++;
+        LastSilhouetteGroup = group;
+    }
+
     public int MeshBatchDrawCount { get; private set; }
 }

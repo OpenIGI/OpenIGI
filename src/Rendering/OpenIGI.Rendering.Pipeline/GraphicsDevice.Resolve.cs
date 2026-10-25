@@ -92,6 +92,9 @@ public sealed partial class GraphicsDevice
             RecordModDisplayPasses(scene, pictureTarget, resolveFormat);
         }
 
+        // The silhouette highlight over the finished picture, under the interface.
+        RecordSilhouette(pictureTarget);
+
         // The resolve cleared the frame and then covered all of it, so a clear the caller asked for is
         // done. Left armed, it is honoured by whatever opens the frame's pass next — the letterbox, the
         // HUD — which clears away the whole picture a moment after it was drawn.

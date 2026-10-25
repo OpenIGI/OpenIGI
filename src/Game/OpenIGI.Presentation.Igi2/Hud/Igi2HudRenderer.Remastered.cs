@@ -38,6 +38,9 @@ public sealed partial class Igi2HudRenderer
         }
 
         Build(title, _model);
+
+        // The lines of the other game's mission the player stands in, after its own, told apart from them by their keys.
+        _model.AddMissionMessages(_missionMessages, firstKey: MissionMessageKeys);
         _icons ??= new Igi2HudIcons(() => _assets);
         float seconds = title.Human.Ticks / 30f;
         // The player's view as the host draws it: the eye, the view's rows (right, up, forward) and its half width.
