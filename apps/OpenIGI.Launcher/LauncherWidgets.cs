@@ -141,11 +141,14 @@ internal sealed class Paragraph(UI.Text.UiFont font, string text, float size, Bg
     }
 }
 
-/// <summary>The content rows' two mono inks: the grey of a caption, and the warm colour of a conflict.</summary>
+/// <summary>The content rows' mono inks: the grey of a caption, the warm colour of a conflict, and a warning's yellow.</summary>
 internal static class ContentInk
 {
     /// <summary>The colour a conflict, or a missing game or mod, is called out in.</summary>
     public static readonly Bgra32 Conflict = Bgra32.FromRgb(255, 138, 107);
+
+    /// <summary>The colour of a caution that is not a fault: a mod its author calls experimental.</summary>
+    public static readonly Bgra32 Warning = Bgra32.FromRgb(242, 200, 75);
 
     /// <summary>The grey of the design's mono captions and detail lines.</summary>
     public static readonly Bgra32 Caption = Bgra32.FromRgb(110, 112, 115);
@@ -315,12 +318,19 @@ internal sealed class PackInfo(UiTheme theme) : UiElement
         float nameHeight = theme.Heading.LineHeight(nameSize);
         foreach (string tag in Tags)
         {
-            // The design's tag: mono in a hairline box; CONFLICT in the conflict colour.
-            Bgra32 ink = tag == "CONFLICT" ? ContentInk.Conflict : Bgra32.FromRgb(140, 142, 144);
+            // The design's tag: mono in a hairline box; CONFLICT in the conflict colour, EXPERIMENTAL in a warning's,
+            // tinted behind so it is read before the mod is switched on.
+            Bgra32? called = tag switch { "CONFLICT" => ContentInk.Conflict, "EXPERIMENTAL" => ContentInk.Warning, _ => null };
+            Bgra32 ink = called ?? Bgra32.FromRgb(140, 142, 144);
             float width = UiPainter.MeasureLabel(theme.Mono, tag, monoSize, 0.16f);
             float boxHeight = theme.Mono.LineHeight(monoSize) + context.Px(4f);
             var box = new UiRect(x + context.Px(12f), y + ((nameHeight - boxHeight) * 0.5f), width + context.Px(14f), boxHeight);
-            painter.StrokeRect(box, context.Px(1f), tag == "CONFLICT" ? ContentInk.Conflict.WithAlpha(150) : UiPalette.White(0.2f));
+            if (tag == "EXPERIMENTAL")
+            {
+                painter.FillRect(box, ContentInk.Warning.WithAlpha(28));
+            }
+
+            painter.StrokeRect(box, context.Px(1f), called is { } line ? line.WithAlpha(150) : UiPalette.White(0.2f));
             painter.DrawLabel(theme.Mono, tag, new UiVec2(box.X + context.Px(7f), UiRowStyle.CenterY(theme.Mono, monoSize, box)), monoSize, ink, 0.16f);
             x = box.Right - context.Px(4f);
         }
