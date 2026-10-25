@@ -88,6 +88,9 @@ internal static class Igi2ScriptSystems
             Logger = b.Request.World.Logger,
             World = b.SessionAi,
             NoiseAt = noise,
+
+            // Graph_UpdateInternalDataAfterLoadHandler: each node's room, asked as a human asks, with tolerance.
+            SectorAt = b.SectorLocator is { } locator ? point => locator.SectorAt(point, lift: true) : null,
         });
 
         Igi2Gameplay.HearAiEvents(everyone, () => player.Ai);

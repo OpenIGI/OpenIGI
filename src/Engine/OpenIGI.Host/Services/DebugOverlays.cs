@@ -212,6 +212,12 @@ internal sealed class DebugOverlays(
                     I($"yaw {camera.Yaw * 180f / MathF.PI:F1}  pitch {camera.Pitch * 180f / MathF.PI:F1}"),
                     target,
                 ];
+
+                // The sector the title's cull found the eye in, as the original prints "Camera sector: %s" to its frame console.
+                if (worldPresenter.Visibility?.DescribeView() is { } sector)
+                {
+                    lines.Add(sector);
+                }
             }
 
             if (detect is not null)

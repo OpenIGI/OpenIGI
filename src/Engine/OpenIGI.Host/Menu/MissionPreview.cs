@@ -80,6 +80,10 @@ namespace OpenIGI.Host.Menu;
 /// The ground the level's own data describes, when the title's walk produced one. Project I.G.I.'s comes
 /// with the mission instead, so this is null there and the host falls back to it.
 /// </param>
+/// <param name="Visibility">
+/// The title's view culling over the scene, when its walk produced one. Carried for the same reason as
+/// <paramref name="Spins"/>: a promoted mission keeps the backdrop's renderer.
+/// </param>
 /// <param name="Decoded">
 /// The level's textures, decoded on the thread pool while the rest of this was being built. The render
 /// thread then only uploads them — see <see cref="TextureDecodeCache"/>.
@@ -104,4 +108,5 @@ public sealed record MissionPreview(
     int DistanceFieldResolution,
     TextureDecodeCache? Decoded,
     IGroundHeightField? Ground = null,
-    IPlacementSpin? Spins = null);
+    IPlacementSpin? Spins = null,
+    IPlacementVisibility? Visibility = null);

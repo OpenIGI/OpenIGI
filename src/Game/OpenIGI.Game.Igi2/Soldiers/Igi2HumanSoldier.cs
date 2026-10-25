@@ -298,8 +298,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
     /// </summary>
     /// <remarks>
     /// The main clip steps a frame a tick again, the soldier is as visible as the light it stands in (less crouched or lying),
-    /// and its speed scale is one. The sector the soldier's nodes place it in (<c>HumanSoldier_UpdateSector</c>, <c>0x4EA030</c>)
-    /// waits on the graph nodes' sectors.
+    /// its speed scale is one, and it takes the room its nodes place it in (<see cref="UpdateSector"/>).
     /// </remarks>
     public void RunDelayed()
     {
@@ -311,6 +310,7 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
             _ => Lightmap,
         };
         MovementSpeedScale = 1f;
+        UpdateSector();
         RunHuman();
         Animation.AutoStep();
         TouchPose();
@@ -319,6 +319,50 @@ public sealed partial class Igi2HumanSoldier : Igi2Human
         // weapon.c Weapon_RunDelayedHandler runs the GunShot child after firing; gunshot.c GunShot_RunHandler.
         Weapon.Firing?.RunGunShot();
         TouchPose();
+    }
+
+    /// <summary>
+    /// Gets the room the soldier's body is drawn by, <c>Human_s.ptSectorQTask</c>, or <see langword="null"/> outdoors: what
+    /// <see cref="UpdateSector"/> last found.
+    /// </summary>
+    public object? Sector { get; private set; }
+
+    /// <summary>Takes the room the soldier's graph nodes place it in: <c>HumanSoldier_UpdateSector</c> (<c>igi2 0x4EA030</c>).</summary>
+    /// <remarks>
+    /// Its mind's graph decides. Between two legal nodes, the first one's room -- unless the two lie in different rooms and the
+    /// second is no farther from the body, when it is the second's. Otherwise the room of the node it is at. No graph, no room.
+    /// The graph nodes carry their rooms from the level's load (<see cref="Ai.Runtime.Igi2LevelAi.AssignNodeSectors"/>).
+    /// </remarks>
+    public void UpdateSector()
+    {
+        if (Mind is not Ai.Runtime.Igi2HumanAi { Graph: { } graph } mind)
+        {
+            Sector = null;
+            return;
+        }
+
+        if (!mind.LegalNodes.IsUsed)
+        {
+            Sector = graph.NodeAt(mind.CurrentNode)?.Sector;
+            return;
+        }
+
+        Ai.Igi2AiGraphNode? first = graph.NodeAt(mind.LegalNodes.Node1);
+        Ai.Igi2AiGraphNode? second = graph.NodeAt(mind.LegalNodes.Node2);
+        object? sector = first?.Sector;
+        if (first is not null && second is not null && !ReferenceEquals(sector, second.Sector))
+        {
+            Vector3d at = Position;
+            Vector3d a = first.Position, b = second.Position;
+            float d1x = (float)(a.X - at.X), d1y = (float)(a.Y - at.Y), d1z = (float)(a.Z - at.Z);
+            float d2x = (float)(b.X - at.X), d2y = (float)(b.Y - at.Y), d2z = (float)(b.Z - at.Z);
+            if (Math.Sqrt((d2x * d2x) + (d2y * d2y) + (d2z * d2z)) <= Math.Sqrt((d1x * d1x) + (d1y * d1y) + (d1z * d1z)))
+            {
+                sector = second.Sector;
+            }
+        }
+
+        Sector = sector;
     }
 
     /// <summary>The main controller's step back to a frame a tick.</summary>

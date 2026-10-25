@@ -148,6 +148,16 @@ public sealed class MefModel
     /// <remarks>I.G.I. 2's <c>Glass_ExplosionHitHandler</c> (glass.c) sizes a pane by it.</remarks>
     public float RenderSphereRadius { get; private init; }
 
+    /// <summary>Gets the centre of the mesh's own bounding sphere, <c>Mesh3D_Mesh_t.tSphere</c> at <c>MESH+0x50</c>, in model space.</summary>
+    /// <remarks>
+    /// The sphere a building's optimal inside sphere is merged from: <c>SectorObject_GetOptimalInsideSphere</c>
+    /// (<c>IGI.exe 0x4DF500</c>, <c>igi2 e/3/sectorobject.c</c>) copies the four floats at <c>+80</c> of each room's mesh.
+    /// </remarks>
+    public Vector3f BoundingSphereCentre { get; private init; }
+
+    /// <summary>Gets the radius of the mesh's own bounding sphere, <c>tSphere</c>'s radius at <c>MESH+0x5C</c>.</summary>
+    public float BoundingSphereRadius { get; private init; }
+
     /// <summary>Gets the vertices, widened to the 40-byte layout.</summary>
     public ReadOnlySpan<MefVertex> Vertices => _vertices;
 
@@ -329,6 +339,11 @@ public sealed class MefModel
         {
             RenderSphereCentre = renderSphereCentre,
             RenderSphereRadius = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x3C..]),
+            BoundingSphereCentre = new Vector3f(
+                BinaryPrimitives.ReadSingleLittleEndian(mesh[0x50..]),
+                BinaryPrimitives.ReadSingleLittleEndian(mesh[0x54..]),
+                BinaryPrimitives.ReadSingleLittleEndian(mesh[0x58..])),
+            BoundingSphereRadius = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x5C..]),
         };
     }
 

@@ -163,7 +163,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
             options.MinimumRadius,
             options.OcclusionCulling,
             options.RotorsOnly,
-            options.GlassOnly);
+            options.GlassOnly,
+            options.FromEye);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -261,6 +262,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// keeps what that pass discarded. Like the rotors it tests depth without writing it, and its tallies
     /// accumulate onto the opaque pass's rather than replacing them.
     /// </param>
+    /// <param name="fromEye">
+    /// Whether the pass is drawn from the frame's eye, so a placement the title's culling sees through a window is scissored to it
+    /// (<see cref="IPlacementVisibility.ClipOf"/>). A light's pass is never narrowed.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         WorldScene scene,
@@ -269,7 +274,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
         float minimumRadius = 0f,
         bool occlusionCulling = false,
         bool rotorsOnly = false,
-        bool glassOnly = false)
+        bool glassOnly = false,
+        bool fromEye = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -299,6 +305,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
         float appliedScale = _lightmapPages.Scale;
         Vector3f appliedSun = Vector3f.Zero;
         bool appliedMotion = false;
+        ViewClip? appliedClip = null;
 
         int draws = 0;
         int triangles = 0;
@@ -456,6 +463,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 }
             }
 
+            if (!ApplyClip(entry, fromEye, ref appliedClip))
+            {
+                continue;
+            }
+
             WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, entry.Displayed!);
 
             CullMode cull = cullBackFaces && model.CanCullBackFaces ? CullMode.CounterClockwise : CullMode.None;
@@ -573,6 +585,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
         if (appliedMotion)
         {
             _device.SetObjectMotion(false);
+        }
+
+        if (appliedClip is not null)
+        {
+            _device.SetDrawClip(null);
         }
     }
 

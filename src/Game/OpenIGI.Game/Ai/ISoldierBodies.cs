@@ -29,6 +29,16 @@ public interface ISoldierBodies : IDisposable
     /// </remarks>
     bool PlayerBodyFollowVisible { get; set; }
 
+    /// <summary>
+    /// Gets or sets the title's own view culling, which the bodies are drawn by as the world's placements are, or
+    /// <see langword="null"/> for none. Ignored by a title whose culling leaves no body out.
+    /// </summary>
+    IPlacementVisibility? Visibility
+    {
+        get => null;
+        set { }
+    }
+
     /// <summary>Draws a team-coloured through-wall glow over every soldier the last binocular scan marked.</summary>
     /// <remarks>
     /// Reuses the same inverted-hull selection glow as <c>DrawOutline</c>, keyed by the contacts

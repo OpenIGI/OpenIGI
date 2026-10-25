@@ -33,27 +33,23 @@ public sealed class Igi2SectorPortals
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(graph);
-        // A sector is any object whose mesh carries portals: the placement's own model, or one of the parts a building places.
-        // Of the placement's solids, its own model's if that is a sector, and otherwise the first that is.
-        foreach (Igi2Sector sector in graph.Sectors)
+        // Every sector object's portal-carrying solids get their bytes up front, and each sector of the graph -- a shell or a room
+        // -- answers from the solid it was built as.
+        foreach (Igi2SectorObject building in graph.Objects)
         {
-            Igi2RigidObject? found = null;
-            foreach (Igi2RigidObject solid in world.SolidsOf(sector.Placement.TypeName, sector.Placement.LevelId))
+            IReadOnlyList<Igi2RigidObject> solids = world.SolidsOf(building.Shell.TypeName, building.Shell.LevelId);
+            foreach (Igi2RigidObject solid in solids)
             {
-                if (!IsSector(solid))
+                if (IsSector(solid))
                 {
-                    continue;
-                }
-
-                Bytes(solid, create: true);
-                if (found is null
-                    || (solid.Owner is Igi2CollisionOwner owner && string.Equals(owner.Model, sector.Placement.Model, StringComparison.OrdinalIgnoreCase)))
-                {
-                    found = solid;
+                    Bytes(solid, create: true);
                 }
             }
 
-            _bySector.Add(found);
+            foreach (Igi2Sector sector in building.Sectors)
+            {
+                _bySector.Add(Igi2SectorLocator.SolidOf(solids, sector));
+            }
         }
     }
 
@@ -69,7 +65,7 @@ public sealed class Igi2SectorPortals
     /// <returns>The count, nought for shut.</returns>
     public byte this[Igi2RigidObject sector, int portal] => _status.TryGetValue(sector, out byte[]? bytes) && (uint)portal < Capacity ? bytes[portal] : (byte)1;
 
-    /// <summary>Gets whether a portal of a sector of the graph is open, the answer <see cref="Igi2PortalCulling.Visit"/> asks for.</summary>
+    /// <summary>Gets whether a portal of a sector of the graph is open, the answer <see cref="Igi2PortalCulling"/> asks for.</summary>
     /// <param name="sector">The sector's index in <see cref="Igi2SectorGraph.Sectors"/>.</param>
     /// <param name="portal">The portal.</param>
     /// <returns><see langword="true"/> unless its byte is nought.</returns>

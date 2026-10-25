@@ -59,6 +59,12 @@ public sealed record Igi2LevelAiSetup(
     /// <c>AIGraph</c> the level's tree places.
     /// </summary>
     public Igi2AiGraphs? Graphs { get; init; }
+
+    /// <summary>
+    /// Gets the room a point stands in, asked with tolerance, or <see langword="null"/> to leave every graph node outdoors; see
+    /// <see cref="Igi2LevelAi.AssignNodeSectors"/>.
+    /// </summary>
+    public Func<Vector3d, object?>? SectorAt { get; init; }
 }
 
 /// <summary>
@@ -70,6 +76,29 @@ public sealed record Igi2LevelAiSetup(
 /// </summary>
 public static class Igi2LevelAi
 {
+    /// <summary>
+    /// Gives every graph node the room it stands in: <c>Graph_UpdateInternalDataAfterLoadHandler</c> (<c>igi2 h/2/graph.c</c>).
+    /// </summary>
+    /// <param name="graphs">The level's graphs.</param>
+    /// <param name="sectorAt">The room a point stands in, asked with tolerance.</param>
+    /// <remarks>
+    /// A node laid on the terrain is outdoors without asking; every other node asks <c>QCube_eGetSectorQTaskEvent</c> at its world
+    /// position with <c>isTolerance</c> set. A soldier's <c>ptCurrentSectorQTask</c> and <c>isBetweenSectors</c> come from these
+    /// (<c>HumanAI_FindCurrentSectorFromNodes</c>), and so does the room its body is drawn by (<c>HumanSoldier_UpdateSector</c>).
+    /// </remarks>
+    public static void AssignNodeSectors(Igi2AiGraphs graphs, Func<Vector3d, object?> sectorAt)
+    {
+        ArgumentNullException.ThrowIfNull(graphs);
+        ArgumentNullException.ThrowIfNull(sectorAt);
+        foreach (Igi2AiGraph graph in graphs.Graphs.Values)
+        {
+            foreach (Igi2AiGraphNode node in graph.Nodes.Values)
+            {
+                node.Sector = node.Terrain != 0 ? null : sectorAt(node.Position);
+            }
+        }
+    }
+
     /// <summary>Builds the level's AI.</summary>
     /// <param name="setup">What it is built from.</param>
     /// <returns>The AI module.</returns>
@@ -102,6 +131,10 @@ public static class Igi2LevelAi
         world.Detection = setup.Detection;
         world.Player = setup.Player;
         world.Graphs = setup.Graphs ?? Igi2AiGraphs.Build(setup.Root, setup.Resources, setup.Natives, setup.Functions, setup.Logger);
+        if (setup.SectorAt is { } sectorAt)
+        {
+            AssignNodeSectors(world.Graphs, sectorAt);
+        }
         world.TaskById = id => byId.GetValueOrDefault(id);
         world.TaskPosition = id => PositionOf(byId.GetValueOrDefault(id));
         world.PatrolPath = id => byId.GetValueOrDefault(id) as Igi2PatrolPathTask;

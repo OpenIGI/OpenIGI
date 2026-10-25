@@ -4,6 +4,7 @@ using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
+using OpenIGI.Game.World.Sectors;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -16,14 +17,14 @@ namespace OpenIGI.Game.Igi2.Tests;
 /// The questions these answer are the ones a port of <c>Sector_IsPortalVisible</c>
 /// (<c>igi2.exe 0x587D10</c>) can get silently wrong: whether the index arithmetic on a portal's faces
 /// holds on real data, whether the back-face relief is the distance the binary's constant says it is and
-/// is measured to the thing it is measured to, and whether the traversal stays inside the sector group
+/// is measured to the thing it is measured to, and whether the traversal stays inside the building
 /// it started in.
 /// </remarks>
 public sealed class RetailIgi2PortalCullingTests
 {
     private const float TangentHalfFovX = 0.75f;
 
-    private static readonly Igi2ScreenRect Viewport = new(0f, 0f, 639f, 479f);
+    private static readonly SectorScreenRect Viewport = new(0f, 0f, 639f, 479f);
 
     /// <summary>A portal face names a vertex of its own portal, which is what lets the index arithmetic work.</summary>
     /// <remarks>
@@ -63,9 +64,9 @@ public sealed class RetailIgi2PortalCullingTests
             }
         }
 
-        // 2,790 portal triangles across the 24 shipped levels, and not one of them reaches outside the
-        // portal that owns it.
-        Assert.Equal(2790, faces);
+        // 6,802 portal triangles across the 24 shipped levels' shells and rooms, and not one of them
+        // reaches outside the portal that owns it.
+        Assert.Equal(6802, faces);
         Assert.Equal(0, outside);
 
         // The scratch array the original transforms into holds 100 vertices with no bound check. The
@@ -111,9 +112,9 @@ public sealed class RetailIgi2PortalCullingTests
             }
         }
 
-        // 712 of the corpus's 794 portals stand within 60 degrees of upright. Every one of them behaves
+        // 1,725 of the corpus's 1,881 portals stand within 60 degrees of upright. Every one of them behaves
         // the same way, which is what makes 409.6 a constant of the algorithm rather than of one mesh.
-        Assert.Equal(712, tested);
+        Assert.Equal(1725, tested);
         Assert.Equal(tested, admittedInside);
         Assert.Equal(tested, refusedOutside);
     }
@@ -142,7 +143,7 @@ public sealed class RetailIgi2PortalCullingTests
             }
         }
 
-        Assert.Equal(712, tested);
+        Assert.Equal(1725, tested);
         Assert.Equal(tested, admitted);
     }
 
@@ -158,14 +159,14 @@ public sealed class RetailIgi2PortalCullingTests
     /// The totals are pinned because they are the only thing that would notice a portal that stopped
     /// occluding or a link that stopped being followed. The invariants checked on every result are the
     /// three the port's structure has to guarantee: the camera's own sector comes first with the whole
-    /// display area, nothing outside the starting sector's container is ever reached, and no clip window
+    /// display area, nothing outside the starting sector's building is ever reached, and no clip window
     /// leaves the display area.
     /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
     public void A_camera_looking_through_a_portal_reaches_what_is_beyond_it()
     {
-        Igi2ScreenProjection projection = Igi2ScreenProjection.FromViewport(Viewport, TangentHalfFovX);
+        SectorScreenProjection projection = SectorScreenProjection.FromViewport(Viewport, TangentHalfFovX);
         int views = 0;
         int reached = 0;
         int windows = 0;
@@ -192,12 +193,12 @@ public sealed class RetailIgi2PortalCullingTests
 
             foreach (Igi2VisibleSector entry in visible)
             {
-                // The candidate set is the starting sector's container for the whole walk, so nothing
+                // The candidate set is the starting sector's building for the whole walk, so nothing
                 // outside it can be reached however many portal slots line up.
-                Assert.Equal(portal.Sector.ContainerId, entry.Sector.ContainerId);
+                Assert.Equal(portal.Sector.ObjectIndex, entry.Sector.ObjectIndex);
 
                 windows += entry.ClipWindows.Count;
-                foreach (Igi2ScreenRect window in entry.ClipWindows)
+                foreach (SectorScreenRect window in entry.ClipWindows)
                 {
                     // Every rectangle is a portal's clipped box intersected with the one it was seen
                     // through, so it can never leave the display area.
@@ -216,23 +217,24 @@ public sealed class RetailIgi2PortalCullingTests
             }
         }
 
-        // 712 views, one per portal that stands within 60 degrees of upright. `reached` counts sector
-        // requests including the camera's own -- 3,689 over 712 walks, so a shade over four sectors
-        // drawn per view. `windows` counts the rectangles those requests carry: a sector reached by two
-        // routes is requested once and carries two windows, which is why it is the larger number.
-        // 563 of the 712 views see past their own room at all; the rest look at a portal that leads
-        // nowhere the slot rule links, which an outside wall's window legitimately does.
-        Assert.Equal(712, views);
-        Assert.Equal(3689, reached);
-        Assert.Equal(6372, windows);
-        Assert.Equal(563, withNeighbours);
+        // 1,725 views, one per portal of a shell or a room that stands within 60 degrees of upright.
+        // `reached` counts sector requests including the camera's own -- 3,915 over 1,725 walks, a shade
+        // over two sectors per view, because a walk never leaves its building and most buildings are a
+        // shell and one room. `windows` counts the rectangles those requests carry once a sector holding
+        // more than four is left with their union, as SectorObject_EnterHandler leaves it. 1,722 of the
+        // views see past their own sector: a room's opening and its shell's are numbered alike, so a
+        // portal leads somewhere almost without exception.
+        Assert.Equal(1725, views);
+        Assert.Equal(3915, reached);
+        Assert.Equal(4789, windows);
+        Assert.Equal(1722, withNeighbours);
 
         // The point of the whole algorithm: what is beyond a portal is drawn through less than the whole
         // screen. The camera's own sector holds exactly one window each -- it is on the discard list for
-        // its entire walk, so nothing can re-request it -- leaving 5,660 windows that belong to a sector
-        // reached through a portal. All but 168 of them are strictly smaller than the display area; those
-        // 168 are portals the camera stands close enough to that their outline covers it.
-        Assert.Equal(5492, narrowed);
+        // its entire walk, so nothing can re-request it -- leaving 3,064 windows that belong to a sector
+        // reached through a portal. All but 262 of them are strictly smaller than the display area; those
+        // 262 are portals the camera stands close enough to that their outline covers it.
+        Assert.Equal(2802, narrowed);
     }
 
     /// <summary>The traversal's answer does not depend on the port's own recursion budget.</summary>
@@ -245,7 +247,7 @@ public sealed class RetailIgi2PortalCullingTests
     [RequiresTitleDataFact("igi2")]
     public void The_traversal_budget_never_binds_on_the_shipped_levels()
     {
-        Igi2ScreenProjection projection = Igi2ScreenProjection.FromViewport(Viewport, TangentHalfFovX);
+        SectorScreenProjection projection = SectorScreenProjection.FromViewport(Viewport, TangentHalfFovX);
         int reached = 0;
         int windows = 0;
 
@@ -263,8 +265,8 @@ public sealed class RetailIgi2PortalCullingTests
             windows += visible.Sum(static v => v.ClipWindows.Count);
         }
 
-        Assert.Equal(3689, reached);
-        Assert.Equal(6372, windows);
+        Assert.Equal(3915, reached);
+        Assert.Equal(4789, windows);
     }
 
     /// <summary>A closed portal admits nothing, which is the whole of what a door drives.</summary>
@@ -277,7 +279,7 @@ public sealed class RetailIgi2PortalCullingTests
     [RequiresTitleDataFact("igi2")]
     public void Closing_every_portal_leaves_a_camera_with_only_its_own_sector()
     {
-        Igi2ScreenProjection projection = Igi2ScreenProjection.FromViewport(Viewport, TangentHalfFovX);
+        SectorScreenProjection projection = SectorScreenProjection.FromViewport(Viewport, TangentHalfFovX);
         int starts = 0;
 
         foreach (Igi2Level level in Igi2Level.All())
@@ -288,7 +290,7 @@ public sealed class RetailIgi2PortalCullingTests
             for (int i = 0; i < graph.Sectors.Count; i++)
             {
                 starts++;
-                Camera3D camera = new(graph.Sectors[i].Placement.Position, Camera3D.LookRotation(0f, 0f));
+                Camera3D camera = new(graph.Sectors[i].Position, Camera3D.LookRotation(0f, 0f));
                 IReadOnlyList<Igi2VisibleSector> visible =
                     culling.Visit(camera, projection, i, static (_, _) => false);
 
@@ -297,7 +299,7 @@ public sealed class RetailIgi2PortalCullingTests
             }
         }
 
-        Assert.Equal(242, starts);
+        Assert.Equal(866, starts);
     }
 
     private static bool Outside(int vertex, MefPortal portal) =>
@@ -316,7 +318,7 @@ public sealed class RetailIgi2PortalCullingTests
     private static bool Visible(PlacedPortal portal, float ahead, float sideways) =>
         Igi2PortalCulling.TryGetPortalBounds(
             Facing(portal, ahead, sideways),
-            Igi2ScreenProjection.FromViewport(Viewport, TangentHalfFovX),
+            SectorScreenProjection.FromViewport(Viewport, TangentHalfFovX),
             portal.Sector,
             portal.Record,
             Viewport,
@@ -377,7 +379,7 @@ public sealed class RetailIgi2PortalCullingTests
 
                 // The same rotation the culling applies: Matrix3f.Transform is the row-vector product, so
                 // transposing first gives the `orientation · v` the original's object matrix is applied as.
-                Matrix3f rotate = WorldScene.ToOrientation(sector.Placement.Orientation).Transposed();
+                Matrix3f rotate = sector.Orientation.Transposed();
 
                 foreach (MefPortal portal in sector.Portals.Portals)
                 {
@@ -409,8 +411,8 @@ public sealed class RetailIgi2PortalCullingTests
                         index,
                         sector,
                         portal,
-                        World(sector.Placement.Position, local),
-                        World(sector.Placement.Position, planePoint),
+                        World(sector.Position, local),
+                        World(sector.Position, planePoint),
                         normal);
                 }
             }
@@ -420,10 +422,5 @@ public sealed class RetailIgi2PortalCullingTests
     private static Vector3d World(Vector3d origin, Vector3f offset) =>
         new(origin.X + offset.X, origin.Y + offset.Y, origin.Z + offset.Z);
 
-    private static Igi2SectorGraph Graph(Igi2Level level) =>
-        Igi2SectorGraph.Build(
-            level.Root,
-            model => level.Table.TryResolveMesh(model, out string? mesh) && level.TryReadModel(mesh, out MefModel? read)
-                ? read.Portals
-                : null);
+    private static Igi2SectorGraph Graph(Igi2Level level) => Igi2SectorGraph.Build(level.Scene, level.ModelFor);
 }

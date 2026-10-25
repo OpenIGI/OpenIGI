@@ -93,6 +93,10 @@ public static class Igi2DrawableScene
         // RotateAttachment consumes this, and only this moment has both in hand.
         List<Igi2AttachedPlacement> parts = [];
 
+        // The models, as the sector graph resolves them, and how many rooms the building being emitted has made so far.
+        Func<string, MefModel?> models = Models(table, packs);
+        int rooms = 0;
+
         // One node of an object's tree: its own model, then everything hanging off it. Returns false
         // only when the model itself cannot be found, which for a root is what "unresolved" counts.
         //
@@ -109,6 +113,7 @@ public static class Igi2DrawableScene
             IIgi2PlacementGeometry? geometry,
             int variant,
             int depth,
+            Igi2VisibilityKey? key,
             ref int index)
         {
             if (!table.TryResolveMesh(modelName, out string? mesh)
@@ -178,6 +183,9 @@ public static class Igi2DrawableScene
                 // separates a decal or a pane of glass from the geometry it has to come after.
                 RenderGroup = placementGroup,
 
+                // What the sector cull decides this part by: its object's, or its room's.
+                VisibilityKey = key,
+
                 // What the object is drawn as once it is destroyed. Only the object's own model is swapped; its parts
                 // hang on as they were.
                 DestroyedReplacement = depth == 0 ? Replacement(placementDestroyed) : null,
@@ -218,7 +226,7 @@ public static class Igi2DrawableScene
                         unitsPosition.Z + mountOffset.Z);
                 }
 
-                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, ref index))
+                if (Emit(mounted, Igi2Pose.FromMatrix(mountPosition, mountedOrientation), string.Empty, default, null, variant, depth + 1, key, ref index))
                 {
                     attached++;
                 }
@@ -245,6 +253,18 @@ public static class Igi2DrawableScene
                 // A model mounted on an attach object rather than on the host goes with that object, facing as it faces.
                 int at = drawable.Count;
                 Igi2Pose attachedPose = pose.Attach(attachment);
+
+                // A building's shell makes a room of each attach point that is a sector (SectorObject_CreateAttachObjects);
+                // the room and all it carries are drawn by the room, every other part by the shell.
+                Igi2VisibilityKey? attachedKey = key;
+                if (depth == 0
+                    && key is { Kind: Igi2VisibilityKind.Shell }
+                    && Igi2SectorGraph.RoomModel(attachment, magic) is { } roomName
+                    && models(roomName) is { IsSector: true })
+                {
+                    attachedKey = key with { Kind = Igi2VisibilityKind.Room, Room = rooms++ };
+                }
+
                 bool carries = depth == 0 && placementMountedOn.Length > 0 && magic?.Find(attachment.Name)?.TaskType == placementMountedOn;
                 if (Emit(
                     attachedModel,
@@ -254,6 +274,7 @@ public static class Igi2DrawableScene
                     geometry: null,
                     variant,
                     depth + 1,
+                    attachedKey,
                     ref index))
                 {
                     attached++;
@@ -291,16 +312,19 @@ public static class Igi2DrawableScene
             placementWears = placement.Wears;
 
             int index = 0;
+            rooms = 0;
+            Igi2Pose rootPose = placement.Frame is { } frame
+                ? Igi2Pose.FromMatrix(placement.Position, frame)
+                : Igi2Pose.FromAngles(placement.Position, placement.Orientation);
             if (!Emit(
                 placement.Model,
-                placement.Frame is { } frame
-                    ? Igi2Pose.FromMatrix(placement.Position, frame)
-                    : Igi2Pose.FromAngles(placement.Position, placement.Orientation),
+                rootPose,
                 placement.MountedModel,
                 WorldScene.ToOrientation(placement.MountedOrientation),
                 placement.Geometry,
                 placement.ModelVariant,
                 depth: 0,
+                VisibilityKeyOf(placement, rootPose, models),
                 ref index))
             {
                 unresolved++;
@@ -327,6 +351,45 @@ public static class Igi2DrawableScene
             unresolved,
             lit,
             attached);
+    }
+
+    /// <summary>The key the sector cull decides a placed object by.</summary>
+    /// <param name="placement">The placement.</param>
+    /// <param name="pose">Its pose.</param>
+    /// <param name="models">Resolves a model name to its mesh.</param>
+    /// <returns>A shell's key for a building; an object's for anything else; <see langword="null"/> for a model nothing ships.</returns>
+    /// <remarks>
+    /// Every rigid mesh is culled (<c>Direct3DRender_DrawRigidMesh</c>), so every placement carries a key. An object's sphere is its
+    /// model's render sphere turned by its rows and placed at it -- the centre <c>SectorObject_RegisterInteriorDynCubeObjSpecificSectorObject</c>
+    /// locates and the sphere <c>ModelObj_Exclude</c> tests. A spline segment bent along its curve keeps its straight model's sphere.
+    /// </remarks>
+    public static Igi2VisibilityKey? VisibilityKeyOf(Igi2Placement placement, Igi2Pose pose, Func<string, MefModel?> models)
+    {
+        ArgumentNullException.ThrowIfNull(pose);
+        ArgumentNullException.ThrowIfNull(models);
+        if (string.Equals(placement.TypeName, Igi2SectorGraph.SectorObjectType, StringComparison.Ordinal) && placement.Geometry is null)
+        {
+            return new Igi2VisibilityKey(
+                Igi2VisibilityKind.Shell, placement.LevelId, placement.Model, pose.Position, Igi2Sector.Shell, pose.Position, 0f);
+        }
+
+        if (models(placement.Model) is not { } model)
+        {
+            return null;
+        }
+
+        IReadOnlyList<float> m = pose.Orientation;
+        Vector3f c = model.RenderSphereCentre;
+        Vector3d centre = new(
+            pose.Position.X + (m[0] * c.X) + (m[1] * c.Y) + (m[2] * c.Z),
+            pose.Position.Y + (m[3] * c.X) + (m[4] * c.Y) + (m[5] * c.Z),
+            pose.Position.Z + (m[6] * c.X) + (m[7] * c.Y) + (m[8] * c.Z));
+        return new Igi2VisibilityKey(
+            Igi2VisibilityKind.Object, placement.LevelId, placement.Model, pose.Position, Igi2Sector.Shell, centre, model.RenderSphereRadius)
+        {
+            RegistersInRooms = Igi2SectorInteriorTypes.RegistersInRooms(placement.TypeName),
+            IsShownUnseen = Igi2SectorInteriorTypes.IsShownUnseen(placement.TypeName),
+        };
     }
 
     /// <summary>Resolves a placement's model name to its mesh: through the pack table, then the packs nearest first.</summary>

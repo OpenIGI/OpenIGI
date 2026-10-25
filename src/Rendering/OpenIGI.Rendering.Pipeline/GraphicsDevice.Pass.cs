@@ -146,6 +146,6 @@ public sealed partial class GraphicsDevice
             _viewport.MinDepth,
             _viewport.MaxDepth is 0f && _viewport.MinDepth is 0f ? 1f : _viewport.MaxDepth);
 
-        pass.SetScissor(Math.Max(0, _viewport.X), Math.Max(0, _viewport.Y), width, height);
+        SetClippedScissor(pass, Math.Max(0, _viewport.X), Math.Max(0, _viewport.Y), width, height);
     }
 }

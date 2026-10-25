@@ -86,6 +86,9 @@ public sealed partial class GameHost
             // The backdrop turns its fans too, and a promoted mission keeps this very renderer, so
             // setting it here is what makes the mission behave the same whichever way it was entered.
             _world.Spins = _mission.Spins;
+
+            // And culls as the mission does, for the same reason.
+            _world.Visibility = preview.Visibility;
         }
 
         // Decoded on the pool while this backdrop was being built, so the capture below uploads rather

@@ -26,11 +26,16 @@ namespace OpenIGI.Presentation;
 /// sorted into it, so the host issues a second draw for them. A title whose scenes mark no rotors draws
 /// nothing and costs a walk of the list.
 /// </param>
+/// <param name="FromEye">
+/// Whether the pass is drawn from the frame's eye, so the title's view culling may narrow a placement to the part of the view it
+/// is seen through (<see cref="IPlacementVisibility.ClipOf"/>). False for a light's view, which has no window onto anything.
+/// </param>
 public readonly record struct WorldDrawOptions(
     float MinimumRadius = 0f,
     bool OcclusionCulling = false,
     bool RotorsOnly = false,
-    bool GlassOnly = false);
+    bool GlassOnly = false,
+    bool FromEye = false);
 
 /// <summary>Draws a title's static world geometry.</summary>
 /// <remarks>
@@ -130,6 +135,12 @@ public interface IWorldPresenter : IDisposable
 
     /// <summary>Gets or sets which placements a title's own objects have destroyed, or null when none can be.</summary>
     IPlacementDestruction? Destruction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the title's own view culling, which leaves placements out of every pass of the frame, or null when only
+    /// the renderer's culling applies.
+    /// </summary>
+    IPlacementVisibility? Visibility { get; set; }
 
     /// <summary>Gets or sets which of their models the placements wear by their objects' state, or null when none change.</summary>
     IPlacementVariant? Variants { get; set; }

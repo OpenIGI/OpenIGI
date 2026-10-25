@@ -6,7 +6,7 @@ using Xunit;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
-/// <summary>The sectors an I.G.I. 2 level places, and what a portal leads to.</summary>
+/// <summary>The sector objects an I.G.I. 2 level places -- each building's shell and its rooms -- and what a portal leads to.</summary>
 public sealed class RetailIgi2SectorTests
 {
     /// <summary>Every sector's portal records index within the model that holds them.</summary>
@@ -26,6 +26,7 @@ public sealed class RetailIgi2SectorTests
         int portals = 0;
         int quads = 0;
         int strips = 0;
+        List<string> degenerate = [];
 
         foreach (Igi2Level level in Igi2Level.All())
         {
@@ -49,115 +50,120 @@ public sealed class RetailIgi2SectorTests
                         strips++;
                     }
 
-                    // The facing comes from the first face alone, so a degenerate one would leave a
-                    // renderer with no plane to cull against.
-                    Assert.NotEqual(default, sector.Portals.NormalOf(portal));
-                }
-            }
-        }
-
-        Assert.Equal(242, sectors);
-        Assert.Equal(794, portals);
-
-        // A portal is NOT always a quad, and NOT always a triangle fan. The quad is merely the commonest
-        // shape; the rest run to 28 vertices and 22 triangles, and 41 have a face count that is not
-        // `vertices - 2` -- v28 f14 is seven separate quads. Pinned in both directions because assuming
-        // either would be wrong on a quarter of the corpus, and silently so: the portal would still
-        // occlude, just with the wrong outline.
-        Assert.Equal(602, quads);
-        Assert.Equal(41, strips);
-    }
-
-    /// <summary>Sectors do not meet portal to portal, so linkage cannot be geometric.</summary>
-    /// <remarks>
-    /// <para>
-    /// The load-bearing negative result. A portal is an opening in one sector's own shell; the room
-    /// beyond has an opening of its own nearby, not in the same place. Of the 180 portals belonging to
-    /// sectors placed without rotation — the ones whose world position needs no orientation convention to
-    /// compute — <b>4 coincide with a portal of another sector</b>, and those are two meshes each placed
-    /// twice.
-    /// </para>
-    /// <para>
-    /// So <c>SectorObject_TraverseSector</c>'s slot matching is not an optimisation standing in for a
-    /// geometric test. It is the only rule there is, and an implementation that "improved" on it by
-    /// pairing portals in space would connect almost nothing.
-    /// </para>
-    /// </remarks>
-    [RequiresTitleDataFact("igi2")]
-    public void Portals_of_different_sectors_do_not_coincide_in_space()
-    {
-        int upright = 0;
-        int coincident = 0;
-
-        foreach (Igi2Level level in Igi2Level.All())
-        {
-            List<(int Id, Vector3d Centre)> centres = [];
-            foreach (Igi2Sector sector in Graph(level).Sectors)
-            {
-                Igi2Placement placement = sector.Placement;
-                if (Math.Abs(placement.Orientation.X) > 1e-6f
-                    || Math.Abs(placement.Orientation.Y) > 1e-6f
-                    || Math.Abs(placement.Orientation.Z) > 1e-6f)
-                {
-                    continue;
-                }
-
-                foreach (MefPortal portal in sector.Portals.Portals)
-                {
-                    upright++;
-                    centres.Add((placement.LevelId, Centre(sector.Portals, portal, placement.Position)));
-                }
-            }
-
-            for (int i = 0; i < centres.Count; i++)
-            {
-                for (int j = 0; j < centres.Count; j++)
-                {
-                    if (i != j && centres[i].Id != centres[j].Id && Near(centres[i].Centre, centres[j].Centre))
+                    // The facing comes from the first face alone, so a degenerate one leaves the walk no plane to
+                    // test against, and the port refuses that portal.
+                    if (sector.Portals.NormalOf(portal) == default)
                     {
-                        coincident++;
-                        break;
+                        degenerate.Add($"{sector.Model} slot {portal.Slot}");
                     }
                 }
             }
         }
 
-        Assert.Equal(199, upright);
-        Assert.Equal(4, coincident);
+        // 491 shells and 375 rooms.
+        Assert.Equal(866, sectors);
+        Assert.Equal(1881, portals);
+
+        // A portal is NOT always a quad, and NOT always a triangle fan. The quad is merely the commonest
+        // shape; the rest run to 28 vertices, and some have a face count that is not `vertices - 2` --
+        // v28 f14 is seven separate quads. Pinned in both directions because assuming either would be
+        // wrong on a good part of the corpus, and silently so: the portal would still occlude, just with
+        // the wrong outline.
+        Assert.Equal(1391, quads);
+        Assert.Equal(83, strips);
+
+        // One portal in the corpus has a first face with no area: a room of the multiplayer map sandstorm.
+        Assert.Equal(["439_02_1 slot 0"], degenerate);
     }
 
-    /// <summary>A sector hangs under a container-shaped task, which is what groups the linkage.</summary>
+    /// <summary>A building is a shell and the rooms its model attaches; nothing else is a sector object.</summary>
     /// <remarks>
-    /// The evidence for reading <c>ptSectorContainer</c> as the parent task. It is not proof — the
-    /// field's assignment was not found in the binary — so this pins the observation instead, and will
-    /// fail loudly if a level ever disagrees.
+    /// <c>SectorObject_CreateAttachObjects</c> moves every attach object derived from <c>Sector</c> into the building's
+    /// <c>ptSectorContainer</c>; the port's reading -- an attach point the magic table does not hold, whose model has portals --
+    /// finds 375 of them in 230 buildings. A room never comes without a shell, and every shell that has portals has rooms to
+    /// lead into, bar the handful whose openings give onto nothing the building carries.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void A_sector_hangs_under_a_container()
+    public void A_building_is_a_shell_and_its_rooms()
     {
-        Dictionary<string, int> parents = [];
+        int buildings = 0;
+        int withRooms = 0;
+        int rooms = 0;
 
         foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (Igi2Sector sector in Graph(level).Sectors)
+            Igi2SectorGraph graph = Graph(level);
+            foreach (Igi2SectorObject building in graph.Objects)
             {
-                parents.TryGetValue(sector.ContainerType, out int count);
-                parents[sector.ContainerType] = count + 1;
+                buildings++;
+                Assert.True(building.Shell.IsShell);
+                Assert.Same(building.Shell, graph.Sectors[building.Shell.Index]);
+                for (int i = 0; i < building.Rooms.Count; i++)
+                {
+                    Igi2Sector room = building.Rooms[i];
+                    Assert.Equal(i, room.Room);
+                    Assert.Equal(building.Index, room.ObjectIndex);
+                    Assert.NotEmpty(room.Portals.Portals);
+                }
+
+                rooms += building.Rooms.Count;
+                withRooms += building.Rooms.Count > 0 ? 1 : 0;
             }
         }
 
-        Assert.Equal(145, parents["Container"]);
-        Assert.Equal(93, parents["ConditionalContainer"]);
-        Assert.Equal(3, parents["Building"]);
-        Assert.Equal(1, parents["Dynamic"]);
-        Assert.Equal(4, parents.Count);
+        Assert.Equal(491, buildings);
+        Assert.Equal(230, withRooms);
+        Assert.Equal(375, rooms);
     }
 
-    /// <summary>Stepping through a portal leads somewhere, and never back to where it started.</summary>
+    /// <summary>A room's opening and its shell's opening of the same slot are one doorway, though not one polygon.</summary>
+    /// <remarks>
+    /// The slot is the whole link, so the claim measured here is only the reading behind it: a room's portal and its shell's
+    /// portal numbered alike stand at the same opening, nearly always. Their centres are compared in the world, within a metre.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_room_and_its_shell_number_one_opening_alike()
+    {
+        int paired = 0;
+        int together = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            foreach (Igi2SectorObject building in Graph(level).Objects)
+            {
+                foreach (Igi2Sector room in building.Rooms)
+                {
+                    foreach (MefPortal portal in room.Portals.Portals)
+                    {
+                        int outside = building.Shell.Portals.Portals.ToList().FindIndex(p => p.Slot == portal.Slot);
+                        if (outside < 0)
+                        {
+                            continue;
+                        }
+
+                        paired++;
+                        Vector3d a = Centre(room, portal);
+                        Vector3d b = Centre(building.Shell, building.Shell.Portals.Portals[outside]);
+                        if ((a - b).Length < 4096.0)
+                        {
+                            together++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 783 room portals have a shell portal of the same slot, and 766 of those stand within a metre of it; the other 17 are
+        // openings the author numbered alike a little further apart -- a slot is a name, not a place.
+        Assert.Equal(783, paired);
+        Assert.Equal(766, together);
+    }
+
+    /// <summary>Stepping through a portal leads somewhere in the same building, and never back to where it started.</summary>
     /// <remarks>
     /// Exercises the traversal rule end to end. A sector with no neighbour through a given slot is
-    /// ordinary — an outside wall's window has nowhere to lead — so the claim is that the links which do
-    /// exist are well formed, and that enough of them exist for the rule to connect anything at all.
+    /// ordinary — a room's window onto a wall the shell has no opening in has nowhere to lead — so the claim is that the links
+    /// which do exist are well formed, and that enough of them exist for the rule to connect anything at all.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
     public void A_portal_leads_to_other_sectors_and_never_to_itself()
@@ -174,48 +180,29 @@ public sealed class RetailIgi2SectorTests
                     foreach (Igi2Sector beyond in graph.Beyond(sector, portal.Slot))
                     {
                         links++;
-                        Assert.NotEqual(sector.Placement.LevelId, beyond.Placement.LevelId);
-                        Assert.Equal(sector.ContainerId, beyond.ContainerId);
+                        Assert.NotEqual(sector.Index, beyond.Index);
+                        Assert.Equal(sector.ObjectIndex, beyond.ObjectIndex);
                         Assert.Contains(beyond.Portals.Portals, p => p.Slot == portal.Slot);
                     }
                 }
             }
         }
 
-        Assert.True(links > 100, $"The slot rule produced only {links} links across the corpus.");
+        Assert.True(links > 1000, $"The slot rule produced only {links} links across the corpus.");
     }
 
-    private static bool Near(Vector3d a, Vector3d b)
+    // A portal's centre in the world: the mean of its vertices, turned by the sector's rows and placed at it.
+    private static Vector3d Centre(Igi2Sector sector, MefPortal portal)
     {
-        double dx = a.X - b.X;
-        double dy = a.Y - b.Y;
-        double dz = a.Z - b.Z;
-        return (dx * dx) + (dy * dy) + (dz * dz) < 1.0;
-    }
-
-    private static Vector3d Centre(MefPortalSet set, MefPortal portal, Vector3d origin)
-    {
-        double x = 0;
-        double y = 0;
-        double z = 0;
+        Vector3f sum = Vector3f.Zero;
         for (int i = 0; i < portal.VertexCount; i++)
         {
-            Vector3f vertex = set.Vertices[portal.FirstVertex + i];
-            x += vertex.X;
-            y += vertex.Y;
-            z += vertex.Z;
+            sum += sector.Portals.Vertices[portal.FirstVertex + i];
         }
 
-        return new Vector3d(
-            origin.X + (x / portal.VertexCount),
-            origin.Y + (y / portal.VertexCount),
-            origin.Z + (z / portal.VertexCount));
+        Vector3f local = sector.Orientation.Transposed().Transform(sum / portal.VertexCount);
+        return new Vector3d(sector.Position.X + local.X, sector.Position.Y + local.Y, sector.Position.Z + local.Z);
     }
 
-    private static Igi2SectorGraph Graph(Igi2Level level) =>
-        Igi2SectorGraph.Build(
-            level.Root,
-            model => level.Table.TryResolveMesh(model, out string? mesh) && level.TryReadModel(mesh, out MefModel? read)
-                ? read.Portals
-                : null);
+    private static Igi2SectorGraph Graph(Igi2Level level) => Igi2SectorGraph.Build(level.Scene, level.ModelFor);
 }

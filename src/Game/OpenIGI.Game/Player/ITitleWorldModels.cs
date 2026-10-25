@@ -14,6 +14,12 @@ public interface ITitleWorldModels
     /// <summary>Gets the models as of the last tick.</summary>
     IReadOnlyList<TitleWorldModel> WorldModels { get; }
 
+    /// <summary>
+    /// Gets the models as of the last tick before the title's view culling took any out: what an outline drawn through walls --
+    /// the binoculars' marks -- is drawn over. The same as <see cref="WorldModels"/> for a title that culls nothing.
+    /// </summary>
+    IReadOnlyList<TitleWorldModel> OutlineModels => WorldModels;
+
     /// <summary>Gets depth-tested light sprites as of the last tick.</summary>
     IReadOnlyList<TitleWorldSprite> WorldSprites => [];
 

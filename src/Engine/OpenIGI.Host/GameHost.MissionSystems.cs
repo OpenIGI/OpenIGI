@@ -173,6 +173,10 @@ public sealed partial class GameHost
             // other registries below because a promoted backdrop skips that block entirely, and it
             // arrives with its own already walked.
             world.Spins = _mission.Spins;
+
+            // The title's own view culling, when its walk decides it -- Project I.G.I.'s sector cull. The sequel's arrives
+            // with its player instead.
+            world.Visibility = built.Visibility;
             _world = world;
             solids = built.Solids ?? ObjectCollisionIndex.Build([]);
             _mission.Solids = solids;

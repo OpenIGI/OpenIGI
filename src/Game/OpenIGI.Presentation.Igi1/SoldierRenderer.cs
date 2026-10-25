@@ -84,6 +84,14 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     public MaterialDetailPack? DetailMaps { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>Project I.G.I.'s sector cull gates each soldier as <c>QCube_CallHandlers</c> gates every queued object.</remarks>
+    public IPlacementVisibility? Visibility
+    {
+        get => _drawer.Visibility;
+        set => _drawer.Visibility = value as Game.Igi1.World.Igi1SectorVisibility;
+    }
+
+    /// <inheritdoc/>
     public bool PlayerBodyFollowVisible
     {
         get => _playerBody.FollowVisible;

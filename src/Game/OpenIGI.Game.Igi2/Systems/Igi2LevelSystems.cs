@@ -81,6 +81,9 @@ public static class Igi2LevelSystems
     /// <summary>The doors' sector portals.</summary>
     public const string DoorPortals = "DoorPortals";
 
+    /// <summary>The sector cull: <see cref="Igi2InteractionSystems.SectorVisibility"/>.</summary>
+    public const string SectorVisibility = "SectorVisibility";
+
     /// <summary>The spline path guides.</summary>
     public const string SplineGuides = "SplineGuides";
 
@@ -163,6 +166,7 @@ public static class Igi2LevelSystems
         .Add(System(Lifts, Igi2InteractionSystems.Lifts))
         .Add(System(Doors, Igi2InteractionSystems.Doors))
         .Add(System(DoorPortals, Igi2InteractionSystems.DoorPortals))
+        .Add(System(SectorVisibility, Igi2InteractionSystems.SectorVisibility))
         .Add(System(SplineGuides, Igi2WorldSystems.SplineGuides))
         .Add(System(Props, Igi2InteractionSystems.Props))
         .Add(System(Trains, Igi2VehicleSystems.Trains))

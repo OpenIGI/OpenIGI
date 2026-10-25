@@ -45,6 +45,10 @@ public readonly record struct WorldBuildRequest(
 /// The placements' collision, read in the title's own mesh layout, which the rays and the bodies collide with; <see langword="null"/>
 /// for a title whose walk builds none.
 /// </param>
+/// <param name="Visibility">
+/// The title's own view culling over this scene, or <see langword="null"/> for a title whose culling is the renderer's alone or is
+/// supplied later by its player. Project I.G.I.'s sector cull is decided by the scene and its collision, so its walk produces it.
+/// </param>
 /// <remarks>
 /// The two counts are diagnostics rather than data: a scene walk that silently placed nothing would
 /// produce an empty world and no complaint, and these are what let the host say how much of the level it
@@ -56,7 +60,8 @@ public readonly record struct WorldBuildResult(
     int LightmappedCount,
     IGroundHeightField? Ground = null,
     IPlacementSpin? Spins = null,
-    ObjectCollisionIndex? Solids = null);
+    ObjectCollisionIndex? Solids = null,
+    IPlacementVisibility? Visibility = null);
 
 /// <summary>Turns a title's loaded level into the shared scene everything downstream consumes.</summary>
 /// <remarks>

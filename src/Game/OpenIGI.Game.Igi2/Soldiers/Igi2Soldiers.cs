@@ -19,6 +19,7 @@ public sealed class Igi2Soldiers
     private readonly List<Igi2HumanSoldier> _bodies;
     private TitleWorldModel[] _drawn = [];
     private long _drawnTick = -1;
+    private readonly List<(Igi2HumanSoldier Soldier, IReadOnlyList<TitleWorldModel> Parts)> _perBody = [];
 
     private Igi2Soldiers(List<Igi2HumanSoldier> bodies)
     {
@@ -30,25 +31,40 @@ public sealed class Igi2Soldiers
 
     /// <summary>The models the soldiers draw as a tick left them: each body posed, and the weapon in its hand.</summary>
     /// <param name="tick">The tick.</param>
-    /// <returns>The models, built once a tick.</returns>
-    public IReadOnlyList<TitleWorldModel> Models(long tick)
+    /// <param name="isDrawn">Whether a body is drawn this frame, the sector cull's answer, or <see langword="null"/> for every body.</param>
+    /// <returns>The models: each body's built once a tick, the drawn ones gathered per call.</returns>
+    public IReadOnlyList<TitleWorldModel> Models(long tick, Func<Igi2HumanSoldier, bool>? isDrawn = null)
     {
         if (_drawnTick != tick)
         {
-            List<TitleWorldModel> models = [];
+            _perBody.Clear();
             foreach (Igi2HumanSoldier body in _bodies)
             {
                 if (body.Model is { } model)
                 {
-                    models.AddRange(Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes));
+                    _perBody.Add((body, Igi2BodyFrame.Build(body, body.BodyPose(), model.Name, body.Weapon.Inventory?.Current?.WeaponType.FixedModel, tick, body.Weapon.Firing?.Flashes)));
                 }
             }
 
-            _drawn = [.. models];
+            _drawn = [.. _perBody.SelectMany(static b => b.Parts)];
             _drawnTick = tick;
         }
 
-        return _drawn;
+        if (isDrawn is null)
+        {
+            return _drawn;
+        }
+
+        List<TitleWorldModel> drawn = new(_drawn.Length);
+        foreach ((Igi2HumanSoldier body, IReadOnlyList<TitleWorldModel> parts) in _perBody)
+        {
+            if (isDrawn(body))
+            {
+                drawn.AddRange(parts);
+            }
+        }
+
+        return drawn;
     }
 
     /// <summary>

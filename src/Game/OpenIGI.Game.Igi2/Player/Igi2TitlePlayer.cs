@@ -58,6 +58,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     private long _heldTick = -1;
     private TitleWorldModel[] _lying = [];
     private long _lyingTick = -1;
+    private long _lyingFrame = -1;
+    private TitleWorldModel[] _outline = [];
+    private long _outlineTick = -1;
     private TitleWorldSprite[] _lights = [];
     private long _lightsTick = -1;
 
@@ -183,6 +186,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     public IPlacementVariant? Variants { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementVisibility? Visibility { get; set; }
 
     /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
     public Igi2LevelRun? Level { get; set; }
@@ -413,43 +419,74 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     /// <remarks>
     /// The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies, then the grenades in flight, each
-    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand, then the figures; built once a tick.
+    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand, then the figures; built once a tick,
+    /// and again whenever the sector cull decides a new frame, because it may leave a soldier out between two ticks.
     /// </remarks>
     public IReadOnlyList<TitleWorldModel> WorldModels
     {
         get
         {
-            if (_lyingTick != _ticks)
+            Igi2SectorVisibility? cull = Visibility as Igi2SectorVisibility;
+            long frame = cull?.Frame ?? -1;
+            if (_lyingTick != _ticks || _lyingFrame != frame)
             {
-                IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
-                    ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
-                    : [];
-                IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
-                    ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
-                        .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
-                            .Where(static g => g.Parameters.Model.Length != 0)
-                            .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
-                        .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
-                            .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
-                    : [];
-                IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
-                IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
-                IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
-                IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
-                IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
-                    ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
-                    : [];
-                // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
-                // interaction mode draws the working body rather than the first-person weapon.
-                IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
-                    ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
-                IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings];
+                bool infra = Human.IsInfraEnabled;
+                _lying = Gather(cull is null ? null : body => cull.IsHumanVisible(body, infra));
                 _lyingTick = _ticks;
+                _lyingFrame = frame;
             }
 
             return _lying;
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every soldier, whatever the sector cull left out of <see cref="WorldModels"/>.</remarks>
+    public IReadOnlyList<TitleWorldModel> OutlineModels
+    {
+        get
+        {
+            if (Visibility is not Igi2SectorVisibility)
+            {
+                return WorldModels;
+            }
+
+            if (_outlineTick != _ticks)
+            {
+                _outline = Gather(null);
+                _outlineTick = _ticks;
+            }
+
+            return _outline;
+        }
+    }
+
+    private TitleWorldModel[] Gather(Func<Soldiers.Igi2HumanSoldier, bool>? isDrawn)
+    {
+        IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
+            ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
+            : [];
+        IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
+            ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
+                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
+                    .Where(static g => g.Parameters.Model.Length != 0)
+                    .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
+                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
+                    .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
+            : [];
+        IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
+        IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
+        IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
+        IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+        IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
+            ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
+            : [];
+        // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
+        // interaction mode draws the working body rather than the first-person weapon.
+        IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
+            ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
+        IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
+        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings];
     }
 
     /// <summary>Makes the player at its spawn, as <c>HumanPlayer_CreateHandler</c> does, over a collision world.</summary>

@@ -23,6 +23,10 @@ public sealed partial class GameHost
     private IMissionViewpoint? _viewpoint;
 
     /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
+    /// <summary>Gets the ground, unless the title's culling leaves the world outside its buildings out of this frame.</summary>
+    /// <remarks>The cascades take it from here too, so a ground the eye cannot see out to casts nothing into the room.</remarks>
+    private ITerrainPresenter? OutsideTerrain => _world?.Visibility?.IsOutsideVisible == false ? null : _terrain;
+
     private void DrawSceneGeometry(
         MapSceneView? mapScene, bool captured, Camera3D eye, Matrix4f projection, float verticalFieldOfView, float aspectRatio, bool cascadesRead,
         int cascadeCount, bool smoothPresentation, float tickBlend)
@@ -95,7 +99,7 @@ public sealed partial class GameHost
         // fewer. Where the order does decide the picture, the render group is honoured: the sky
         // is drawn first, the water last, and the world's own objects come out grouped, which is
         // what BuildDrawOrder is for.
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: GeometryCVars.WorldOcclusion.Value));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: GeometryCVars.WorldOcclusion.Value, FromEye: true));
         EndStageIfSlow("the sky and the world's objects");
 
         if (captured)
@@ -113,7 +117,18 @@ public sealed partial class GameHost
             _device.SetFog(RetailAir(_globalLight.TerrainFog));
         }
 
-        _terrain?.Draw(new TerrainFrame(
+        // Nothing outside the buildings is drawn while the title's culling says the eye cannot see out: I.G.I. 2 skips its
+        // terrain and its forests outright while the camera is in a room no window or doorway shows the outside through.
+        bool outsideVisible = _world.Visibility?.IsOutsideVisible != false;
+
+        // ...and seen through the outside's windows, I.G.I. 2 clips them to the frustum enclosing those windows.
+        ViewClip? outsideClip = _world.Visibility?.OutsideClip;
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(outsideClip);
+        }
+
+        OutsideTerrain?.Draw(new TerrainFrame(
             eye,
             projection,
             verticalFieldOfView,
@@ -144,10 +159,18 @@ public sealed partial class GameHost
         // The foliage after the ground it is planted in, so a tree's trunk depth-tests against
         // the hillside rather than against whatever was drawn there before it. Half-tangents
         // rather than the angle, because the cull's planes are built straight out of them.
-        _forest?.Draw(new ForestFrame(
-            eye,
-            MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
-            MathF.Tan(verticalFieldOfView * 0.5f)));
+        if (outsideVisible)
+        {
+            _forest?.Draw(new ForestFrame(
+                eye,
+                MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
+                MathF.Tan(verticalFieldOfView * 0.5f)));
+        }
+
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(null);
+        }
         EndStageIfSlow("the forest");
 
         // With the world and the terrain both in the depth buffer, the world's occlusion
@@ -257,7 +280,7 @@ public sealed partial class GameHost
             // the finished picture. It writes no depth, because the tracers and the smoke are
             // drawn after it through the same buffer.
             _device.BeginPass(ScenePass.GlassLayer);
-            _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true));
+            _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true, FromEye: true));
 
             _device.EndPass();
             _device.BeginPass(ScenePass.Forward);
@@ -277,14 +300,14 @@ public sealed partial class GameHost
                 Math.Max(1, (int)(rotorMap.Viewport.Width * scaleX)),
                 Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
         }
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true, FromEye: true));
 
         // The level's glazing, over a picture the lighting has finished. It has to follow the
         // opaque world for the ordinary reason anything blended does, and it is a pass of its own
         // rather than part of the rotor pass above because the two share nothing: a rotor is a
         // whole placement that blends, and a pane is half of a texture on a placement whose other
         // half was drawn into the G-buffer.
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true, FromEye: true));
         if (mapScene is not null)
         {
             _device.SetViewport(new Viewport(0, 0,

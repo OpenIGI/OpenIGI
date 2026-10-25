@@ -50,6 +50,9 @@ internal sealed class WorldFrameState
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
     internal GenericPickupRegistry? GenericPickups { get; set; }
 
+    /// <summary>Gets or sets the title's own view culling, asked once a frame for every placement.</summary>
+    internal IPlacementVisibility? Visibility { get; set; }
+
     /// <summary>Gets the prepared frame's entry for every placement, in scene order.</summary>
     internal WorldFrameEntry[] Entries => _frame;
 
@@ -125,8 +128,11 @@ internal sealed class WorldFrameState
             ref WorldFrameEntry entry = ref _frame[i];
             WorldPlacement authored = scene.Placements[i];
 
+            // The title's own culling as well as the gates: the eye it was decided from is the frame's, and every pass
+            // shares the verdict, so what the eye cannot see casts nothing into what it can.
             if (GenericPickups?.IsCollected(authored.Owner) == true
-                || !ConditionalContainerGate.IsTaskActive(authored.Owner))
+                || !ConditionalContainerGate.IsTaskActive(authored.Owner)
+                || Visibility?.IsVisible(authored) == false)
             {
                 entry.Skip = true;
                 continue;
@@ -143,6 +149,7 @@ internal sealed class WorldFrameState
 
             entry.Skip = false;
             entry.IsRotor = authored.IsRotor;
+            entry.Clip = Visibility?.ClipOf(authored);
 
             bool destroyed = _transforms.UsesDestroyedReplacement(authored);
             int variant = _transforms.VariantOf(authored);

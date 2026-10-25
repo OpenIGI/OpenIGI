@@ -69,31 +69,36 @@ public sealed class Igi2AmbientAreaTests
         Assert.Contains(areas, static a => a.Sounds.Count > 0);
     }
 
-    /// <summary>The player starts in the open; a point a metre above a building's floor, under its roof, stands in its sector.</summary>
+    /// <summary>
+    /// The player starts in the open; a point a metre above a room's floor, under its roof, stands in that room -- and a
+    /// building's shell is never the answer, because <c>SectorObject_GetSectorHandler</c> traces only the rooms.
+    /// </summary>
     [RequiresTitleDataFact("igi2")]
-    public void The_locator_finds_a_buildings_sector()
+    public void The_locator_finds_a_buildings_room()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        Igi2SectorGraph graph = Igi2SectorGraph.Build(
-            m.Level.Root,
-            model => m.Level.Table.TryResolveMesh(model, out string? mesh) && m.Level.TryReadModel(mesh, out MefModel? read)
-                ? read.Portals
-                : null);
+        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Scene, m.Level.ModelFor);
         Igi2SectorLocator locator = new(m.Collision!, graph);
         Assert.True(PlayerSpawn.TryFindGameplay(m.Level.Root, out PlayerSpawnPoint spawn));
         Assert.Null(locator.SectorAt(spawn.Position, lift: true));
 
+        int rooms = 0;
         int inside = 0;
-        foreach (Igi2Sector sector in graph.Sectors)
+        foreach (Igi2Sector room in graph.Sectors.Where(static s => !s.IsShell))
         {
-            Vector3d p = sector.Placement.Position;
-            if (locator.SectorAt(new Vector3d(p.X, p.Y, p.Z + 4096.0)) is { } found && found.Placement.LevelId == sector.Placement.LevelId)
+            rooms++;
+            Vector3d p = room.Position;
+            if (locator.SectorAt(new Vector3d(p.X, p.Y, p.Z + 4096.0)) is { } found)
             {
-                inside++;
+                Assert.False(found.IsShell);
+                if (found.Index == room.Index)
+                {
+                    inside++;
+                }
             }
         }
 
-        Assert.True(inside > 0, $"no sector holds a point above its own origin out of {graph.Sectors.Count}");
+        Assert.True(inside > 0, $"no room holds a point above its own origin out of {rooms}");
     }
 
     private static Flow.Igi2LevelRun Level()

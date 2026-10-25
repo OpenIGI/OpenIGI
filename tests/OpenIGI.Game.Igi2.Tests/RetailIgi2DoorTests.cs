@@ -119,7 +119,7 @@ public sealed class RetailIgi2DoorTests
     public void A_door_opens_and_shuts_the_portals_it_stands_in()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Root, model => m.Level.ModelFor(model)?.Portals);
+        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Scene, m.Level.ModelFor);
         Igi2SectorPortals portals = new(m.Collision!, graph);
         foreach (Igi2DoorTask each in m.Doors)
         {

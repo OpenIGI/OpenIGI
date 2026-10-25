@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
@@ -14,6 +15,9 @@ internal struct WorldFrameEntry
 
     /// <summary>Whether the placement moves on its own, so its draws stamp their own motion.</summary>
     public bool Moving;
+
+    /// <summary>The window the title's view culling sees the placement through this frame, or null for the whole view.</summary>
+    public ViewClip? Clip;
     public ResolvedWorldModel? Model;
     public WorldPlacement? Displayed;
     public Vector3d Position;

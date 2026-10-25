@@ -118,6 +118,16 @@ public sealed record WorldPlacement(
     /// </remarks>
     public string MagicTaskTypeName { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Gets what the title's <see cref="IPlacementVisibility"/> decides this placement's visibility by, or <see langword="null"/>
+    /// for a placement it never culls.
+    /// </summary>
+    /// <remarks>
+    /// Opaque to everything but the title that set it. Every part of one object shares its object's key, because the original
+    /// culls an object and draws its attach objects with it.
+    /// </remarks>
+    public object? VisibilityKey { get; init; }
+
     /// <summary>Gets the attached magic object's authored FireBall count, when it has one.</summary>
     public float MagicExplosionFireballs { get; init; }
 

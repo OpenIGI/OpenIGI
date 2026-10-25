@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
 
@@ -117,6 +118,18 @@ public interface IDrawStateDevice
     /// rather than a draw argument because a material spans a run of sub-meshes.
     /// </remarks>
     void SetMaterialOverride(in SurfaceMaterial material);
+
+    /// <summary>Narrows the following draws to a part of the view, or lets them cover all of it again.</summary>
+    /// <param name="clip">The part of the view, or <see langword="null"/> for all of it.</param>
+    /// <remarks>
+    /// A scissor over the current viewport, kept until it is changed: the sector cull's window onto the outside, which the
+    /// original clips the outside's geometry to. A pass opened while it is set is opened narrowed. Ignored by a device that
+    /// cannot scissor, which then draws the whole view as it always did.
+    /// </remarks>
+    void SetDrawClip(in ViewClip? clip)
+    {
+        _ = clip;
+    }
 
     /// <summary>Sets the headroom the following draws' lightmap pages were encoded with.</summary>
     /// <param name="scale">

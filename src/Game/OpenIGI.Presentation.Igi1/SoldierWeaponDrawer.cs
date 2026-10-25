@@ -35,6 +35,9 @@ internal sealed class SoldierWeaponDrawer(
     private readonly Func<TexTextureCache> _textures = textures;
     private readonly IOpenIgiLogger _logger = logger;
 
+    /// <summary>Gets or sets the sector cull the soldiers are drawn by, or <see langword="null"/> for none.</summary>
+    public Game.Igi1.World.Igi1SectorVisibility? Visibility { get; set; }
+
     /// <summary>Draws every active soldier's body and held weapon, and the stationary and vehicle guns.</summary>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The current world projection.</param>
@@ -58,6 +61,9 @@ internal sealed class SoldierWeaponDrawer(
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
 
+        // Narrowed to the outside's window only from the frame's own eye; a light's view of the soldiers has no window.
+        Game.Igi1.World.Igi1SectorVisibility? clipping = Visibility is { } eyeCull && eyeCull.IsEye(camera) ? eyeCull : null;
+        ViewClip? appliedClip = null;
         foreach (SoldierGroup group in _groups)
         {
             foreach (SoldierMember member in group.Soldiers)
@@ -73,6 +79,19 @@ internal sealed class SoldierWeaponDrawer(
                 if (!member.HasFrameState)
                 {
                     _frames.ResolveFrameState(member, 1f, smooth: false);
+                }
+
+                // Every pass the frame draws a soldier in leaves out the ones the sector cull does, its shadow among them.
+                if (Visibility is { } cull && !IsDrawn(cull, group, member))
+                {
+                    continue;
+                }
+
+                ViewClip? clip = clipping?.ClipOfObject(WorldScene.ToUnits(member.DrawnWhere));
+                if (clip != appliedClip)
+                {
+                    _device.SetDrawClip(clip);
+                    appliedClip = clip;
                 }
 
                 Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
@@ -100,6 +119,26 @@ internal sealed class SoldierWeaponDrawer(
                 _device.ClearPoseInterpolation();
             }
         }
+
+        if (appliedClip is not null)
+        {
+            _device.SetDrawClip(null);
+        }
+    }
+
+    // The soldier's own position is what the inside sphere is measured to; its exclusion sphere is its mesh's render sphere,
+    // moved by the root bone and turned by the body, as a bone object is excluded.
+    private static bool IsDrawn(Game.Igi1.World.Igi1SectorVisibility cull, SoldierGroup group, SoldierMember member)
+    {
+        Vector3d origin = WorldScene.ToUnits(member.DrawnWhere);
+        if (group.Body.Model is not { } model)
+        {
+            return cull.IsObjectVisible(origin, origin, 0f);
+        }
+
+        Vector3f root = model.BoneHierarchy is { BoneCount: > 0 } rig ? rig.Translations[0] : Vector3f.Zero;
+        Vector3f turned = member.DrawnOrientation.Transposed().Transform(model.RenderSphereCentre + root);
+        return cull.IsObjectVisible(origin, new Vector3d(origin.X + turned.X, origin.Y + turned.Y, origin.Z + turned.Z), model.RenderSphereRadius);
     }
 
     private void DrawStationaryGuns(in Camera3D camera, in Matrix4f projection)
@@ -187,7 +226,8 @@ internal sealed class SoldierWeaponDrawer(
                 if (!member.Agent.FiredThisTick
                     || !member.HasWeaponFrameState
                     || member.Weapon is not { } weapon
-                    || weapon.Presentation is not { } presentation)
+                    || weapon.Presentation is not { } presentation
+                    || (Visibility is { } cull && !IsDrawn(cull, group, member)))
                 {
                     continue;
                 }
