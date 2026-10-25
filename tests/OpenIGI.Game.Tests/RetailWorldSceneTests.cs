@@ -225,6 +225,36 @@ public sealed class RetailWorldSceneTests
         Assert.DoesNotContain(switches, placement => placement.Instance.Name == "switch");
     }
 
+    [RequiresGameDataFact]
+    public void AlarmLightsArePlacedWearingTheirOnModelWithTheirOffModelBeside()
+    {
+        // 0x43A0E0 makes an alarm light a model of the world, and 0x43A450 dresses it in its "On model".
+        (WorldScene scene, _) = Build(6, includeMagic: true, out _);
+        WorldPlacement[] lights = scene.Placements
+            .Where(placement => placement.Owner.Type.Name == WorldScene.AlarmLightType)
+            .ToArray();
+
+        Assert.NotEmpty(lights);
+        Assert.All(lights, light =>
+        {
+            Assert.Equal("344_03_1", light.Instance.Name);
+            Assert.NotNull(light.Variants);
+            Assert.Equal("344_01_1", light.Variants![1]!.Instance.Name);
+        });
+
+        // The turning reflector (TASKTYPE_ALARMLIGHTREFLECTOR, 0x439A50) is a magic object of the OFF model, 344_01_1, and
+        // magic objects are made once, in the model a light is set up in (0x43A450): mission 6's lights have none.
+        Assert.DoesNotContain(scene.Placements, placement => placement.MagicTaskTypeName == "TASKTYPE_ALARMLIGHTREFLECTOR");
+
+        // Mission 8 sets two of its lights up in 344_01_1, and those two turn.
+        (WorldScene eight, _) = Build(8, includeMagic: true, out _);
+        WorldPlacement[] reflectors = eight.Placements
+            .Where(placement => placement.MagicTaskTypeName == "TASKTYPE_ALARMLIGHTREFLECTOR")
+            .ToArray();
+        Assert.Equal(2, reflectors.Length);
+        Assert.All(reflectors, reflector => Assert.Equal(WorldScene.AlarmLightType, reflector.Owner.Type.Name));
+    }
+
     private static void AssertEnginePosition(Vector3d expectedUnits, Vector3d actualMetres)
     {
         const double toleranceUnits = 0.75;

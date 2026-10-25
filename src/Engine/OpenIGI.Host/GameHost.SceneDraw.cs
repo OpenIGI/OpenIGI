@@ -479,6 +479,15 @@ public sealed partial class GameHost
                 smoothPresentation);
         }
 
+        // An alarm light's turning reflector throws its red flare at the eye (0x439F10), with the camera lamps' sprite.
+        if (_mission.AlarmSpeakers is { Reflectors.Count: > 0 } lights)
+        {
+            _cameraStatusLights?.DrawGlows(
+                lights.ReflectorFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f),
+                eye,
+                projection);
+        }
+
         // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD
         // pass and for the same reason as the inspector selection below: submitted from the world
         // pass it would be lit and fogged into a smear. Here it composites over the finished

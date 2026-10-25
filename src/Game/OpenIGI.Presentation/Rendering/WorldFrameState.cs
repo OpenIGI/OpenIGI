@@ -140,7 +140,8 @@ internal sealed class WorldFrameState
 
             // Blown up with nothing authored to stand in its place: there is no rubble model to
             // swap to, so the placement leaves the frame entirely rather than drawing intact.
-            if ((_transforms.Destructibles?.IsDestroyed(authored) == true || _transforms.Destruction?.IsDestroyed(authored) == true)
+            if ((_transforms.Destructibles?.IsDestroyed(authored) == true || _transforms.Destruction?.IsDestroyed(authored) == true
+                    || _transforms.AlarmSpeakers?.IsLightGone(authored.Owner) == true)
                 && authored.DestroyedReplacement is null)
             {
                 entry.Skip = true;

@@ -97,6 +97,15 @@ public sealed class WorldScene
     /// <summary>A switch's five models, in the order its update picks them (<c>0x4450F0</c>, <c>+368 + 16 * slot</c>).</summary>
     public static readonly string[] SwitchModelParameters = ["On model", "On pressed model", "Off model", "Off pressed model", "Destroyed model"];
 
+    /// <summary>The alarm light task type: a light that turns with the alarm.</summary>
+    public const string AlarmLightType = "AlarmLight";
+
+    /// <summary>The models an alarm light wears, on and off, in the order <see cref="WorldPlacement.Variants"/> keeps them.</summary>
+    public static readonly string[] AlarmLightModelParameters = ["On model", "Off model"];
+
+    /// <summary>The parameter an alarm light names its shot-out model by, as the level data spells it.</summary>
+    public const string AlarmLightDeadModelParameter = "Destroyde model";
+
     /// <summary>The retail task that owns a visible, destructible alarm speaker.</summary>
     public const string SirenType = "Siren";
 
@@ -204,6 +213,16 @@ public sealed class WorldScene
                     yield return SecurityCameraModels[i];
                 }
             }
+        }
+
+        // An alarm light wears its "On model" from the moment it is made (0x43A450) -- its off model only once it has been on
+        // and gone off, which the alarm registry picks (AlarmLightModelParameters).
+        if (string.Equals(task.Type.Name, AlarmLightType, StringComparison.Ordinal)
+            && task.TryGetValue(SwitchModelParameter, out object? rawLight)
+            && rawLight is string lightModel
+            && lightModel.Length > 0)
+        {
+            yield return lightModel;
         }
 
         // A switch's model is the name its task declares in "On model" — an alarm pad names its own
@@ -636,6 +655,32 @@ public sealed class WorldScene
                     if (any)
                     {
                         placement = placement with { Variants = variants };
+                    }
+                }
+
+                // An alarm light wears its on model or its off model (0x43A270), and its dead model once shot out -- under the
+                // level data's own spelling, "Destroyde model".
+                if (string.Equals(declared.Type.Name, AlarmLightType, StringComparison.Ordinal))
+                {
+                    WorldModelBinding?[] worn = new WorldModelBinding?[AlarmLightModelParameters.Length];
+                    for (int i = 0; i < worn.Length; i++)
+                    {
+                        if (declared.TryGetValue(AlarmLightModelParameters[i], out object? rawWorn)
+                            && rawWorn is string wornName
+                            && wornName.Length > 0
+                            && TryResolveDestroyedBinding(wornName, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? binding))
+                        {
+                            worn[i] = binding;
+                        }
+                    }
+
+                    placement = placement with { Variants = worn };
+                    if (declared.TryGetValue(AlarmLightDeadModelParameter, out object? rawDead)
+                        && rawDead is string deadName
+                        && deadName.Length > 0
+                        && TryResolveDestroyedBinding(deadName, placement, mission, byName, destroyedModelArchiveName, out WorldModelBinding? dead))
+                    {
+                        placement = placement with { DestroyedReplacement = dead };
                     }
                 }
 

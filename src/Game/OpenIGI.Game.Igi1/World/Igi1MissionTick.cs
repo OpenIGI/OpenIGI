@@ -902,6 +902,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // room hears when a guard reaches a switch.
             blasts.TickDestructibles();
             audio.SoundAlarms();
+            mission.AlarmSpeakers?.RunLights();
 
             // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
             // impact list carries both the instant rays and the ballistic arrivals, so either
