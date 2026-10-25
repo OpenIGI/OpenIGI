@@ -1,0 +1,121 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
+
+namespace OpenIGI.Game.Igi1.Ai;
+
+/// <content>Who is noticing the player, as a heads-up display marks them.</content>
+public sealed partial class SoldierSimulation
+{
+    /// <summary>The ticks a soldier must hold the player in sight for before the mark counts him sure: a second and a half.</summary>
+    public const int SureTicks = 45;
+
+    private readonly List<(Vector3d Position, float Awareness)> _threats = [];
+    private readonly Dictionary<Igi1HumanAi, int> _seenSince = [];
+
+    /// <summary>
+    /// The living soldiers that can see the player now, with where they stand and how long they have: from half as the sighting
+    /// begins to whole after <see cref="SureTicks"/> ticks of it unbroken. Only a sighting counts: one alerted by an alarm or a
+    /// sighting it has lost, or one behind a wall, gives the player nothing the player could not know.
+    /// </summary>
+    /// <returns>The soldiers, refilled each call.</returns>
+    public IReadOnlyList<(Vector3d Position, float Awareness)> Threats()
+    {
+        _threats.Clear();
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
+        {
+            if (view.IsDead || !brain.PlayerIsEnemy || !brain.SeesPlayer)
+            {
+                _seenSince.Remove(brain);
+                continue;
+            }
+
+            if (!_seenSince.TryGetValue(brain, out int since))
+            {
+                since = TickCount;
+                _seenSince[brain] = since;
+            }
+
+            _threats.Add((view.Position, 0.5f + (0.5f * Math.Clamp((float)(TickCount - since) / SureTicks, 0f, 1f))));
+        }
+
+        return _threats;
+    }
+
+    /// <summary>How far ahead the crosshair looks for a soldier, in world units: three hundred metres.</summary>
+    public const double AimReachUnits = 300.0 * 4096.0;
+
+    /// <summary>
+    /// Whether a living enemy is under the crosshair: the nearest soldier along the view, as a round would meet him, one the
+    /// player is an enemy to, with no wall nearer than him (the soldiers' own sight line, which sees through glass). <b>Not
+    /// retail</b>: the remastered crosshair's mark.
+    /// </summary>
+    /// <param name="eye">Where the player looks from.</param>
+    /// <param name="forward">Which way, of unit length.</param>
+    /// <returns>Whether an enemy is there.</returns>
+    public bool EnemyUnderAim(Vector3d eye, Vector3f forward)
+    {
+        Vector3d end = new(eye.X + (forward.X * AimReachUnits), eye.Y + (forward.Y * AimReachUnits), eye.Z + (forward.Z * AimReachUnits));
+        if (!_bodies.TryNearest(eye, end, out HumanHit hit, out SoldierView? view) || view is null
+            || (Brains.TryGetValue(view, out Igi1HumanAi? brain) && !brain.PlayerIsEnemy))
+        {
+            return false;
+        }
+
+        return Sight is not { } sight || !sight(eye, hit.Position, out WorldRayHit wall) || wall.Distance >= hit.Distance - 1.0;
+    }
+
+    /// <summary>How far the soldiers are onto the player, in Project I.G.I.'s own terms.</summary>
+    /// <returns>
+    /// Detected while any living soldier sees the player -- its AI has no stage short of seeing him; an alarm while one sounds;
+    /// searching while a soldier still holds the alert a lost sighting or an alarm gave it; otherwise none.
+    /// </returns>
+    public PlayerAlertStatus AlertStatus()
+    {
+        bool alerted = false;
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
+        {
+            if (view.IsDead || !brain.PlayerIsEnemy)
+            {
+                continue;
+            }
+
+            if (brain.SeesPlayer)
+            {
+                return PlayerAlertStatus.Detected;
+            }
+
+            alerted |= brain.Alerted;
+        }
+
+        return AnyAlarmOn ? PlayerAlertStatus.Alarm : alerted ? PlayerAlertStatus.Searching : PlayerAlertStatus.None;
+    }
+
+    private readonly List<(Vector3d Position, float Strength)> _glints = [];
+
+    /// <summary>
+    /// The snipers aiming at the player: living soldiers holding a scoped rifle (<see cref="ScopedWeapons"/>) who see the
+    /// player now, each at his eye, as strong as he is sure of the player (<see cref="Threats"/>' sighting ramp).
+    /// </summary>
+    /// <returns>The scopes, refilled each call; call <see cref="Threats"/> first in the frame, which times the sightings.</returns>
+    public IReadOnlyList<(Vector3d Position, float Strength)> ScopeGlints()
+    {
+        _glints.Clear();
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
+        {
+            if (view.IsDead || !brain.PlayerIsEnemy || !brain.SeesPlayer
+                || !ScopedWeapons.IsScoped(_context.FindAgent(view)?.WeaponType?.ScriptId))
+            {
+                continue;
+            }
+
+            float sure = _seenSince.TryGetValue(brain, out int since) ? Math.Clamp((float)(TickCount - since) / SureTicks, 0f, 1f) : 0f;
+            _glints.Add((brain.EyePosition(), 0.5f + (0.5f * sure)));
+        }
+
+        return _glints;
+    }
+}

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 #pragma warning disable CS1591 // Public members are documented by the elevator registry contract.
 
@@ -480,7 +481,7 @@ public sealed class ElevatorRegistry
         if (task is DeclaredTask declared
             && string.Equals(declared.Type.Name, "Elevator", StringComparison.Ordinal))
         {
-            int? splineId = ReadInt(declared, "SplineObj taskid");
+            int? splineId = IntStrictOrNull(declared, "SplineObj taskid");
             GameTask? spline = splineId is int id ? FindById(root, id) : null;
             List<DeclaredTask> waypoints = spline?.Children
                 .OfType<DeclaredTask>()
@@ -488,40 +489,40 @@ public sealed class ElevatorRegistry
                 .ToList() ?? [];
             List<ElevatorFloor> floors = [.. waypoints.Select((child, i) => new ElevatorFloor(
                 child.Id,
-                ReadPosition(child, "Position", default))
+                Vector(child, "Position", default))
             {
                 SegmentLength = i > 0 && spline is DeclaredTask splineObj ? SegmentLength(splineObj, waypoints[i - 1], child) : null,
             })];
 
             if (floors.Count > 0)
             {
-                Vector3d start = ReadPosition(declared, "Position", floors[0].Position);
+                Vector3d start = Vector(declared, "Position", floors[0].Position);
                 ElevatorState state = new(
                     start,
                     floors,
-                    ReadReal(declared, "Max speed", 1f) * WorldScene.UnitsPerMetre,
-                    ReadReal(declared, "Speed inertia", 1f) * WorldScene.UnitsPerMetre,
-                    ReadInt(declared, "Start floor task ID"));
+                    DoubleFromNumber(declared, "Max speed", 1f) * WorldScene.UnitsPerMetre,
+                    DoubleFromNumber(declared, "Speed inertia", 1f) * WorldScene.UnitsPerMetre,
+                    IntStrictOrNull(declared, "Start floor task ID"));
                 PlacedElevator elevator = new(
                     declared,
                     state,
                     ReadOrientation(declared, "Orientation"),
-                    ReadString(declared, "Model"),
-                    ReadString(declared, "Start sound"),
-                    ReadString(declared, "Stop sound"),
-                    ReadString(declared, "Move sound"),
+                    TextOrEmpty(declared, "Model"),
+                    TextOrEmpty(declared, "Start sound"),
+                    TextOrEmpty(declared, "Stop sound"),
+                    TextOrEmpty(declared, "Move sound"),
                     ElevatorSplineFrame.For(declared, spline));
                 registry._elevators.Add(elevator);
                 List<string> wantedExpressions = Enumerable.Range(0, 10)
-                    .Select(i => ReadString(declared, $"Wanted floor {i}"))
+                    .Select(i => TextOrEmpty(declared, $"Wanted floor {i}"))
                     .ToList();
                 List<Func<bool>> wantedFloors = wantedExpressions
                     .Select(expression => (Func<bool>)(() => expressions.EvaluateCondition(
                         expression, emptyValue: false, declared)))
                     .ToList();
-                string canStart = ReadString(declared, "Can start");
-                string floorUp = ReadString(declared, "Floor up");
-                string floorDown = ReadString(declared, "Floor down");
+                string canStart = TextOrEmpty(declared, "Can start");
+                string floorUp = TextOrEmpty(declared, "Floor up");
+                string floorDown = TextOrEmpty(declared, "Floor down");
                 List<ExteriorSwitchCall> exteriorCalls = FindExteriorSwitchCalls(
                     root, declared, floors, wantedExpressions);
                 registry._commands.Add(new ElevatorCommand(
@@ -678,8 +679,8 @@ public sealed class ElevatorRegistry
             {
                 string[] expressions =
                 [
-                    ReadString(task, "Close door expression"),
-                    ReadString(task, "Open door expression"),
+                    TextOrEmpty(task, "Close door expression"),
+                    TextOrEmpty(task, "Open door expression"),
                 ];
                 bool owned = IsDescendantOf(task, elevator);
                 bool mentionsElevator = expressions.Any(expression =>
@@ -735,7 +736,7 @@ public sealed class ElevatorRegistry
                 continue;
             }
 
-            Vector3d position = ReadPosition(switchTask, "Position", default);
+            Vector3d position = Vector(switchTask, "Position", default);
             int floor = 0;
             double distance = double.MaxValue;
             for (int i = 0; i < floors.Count; i++)
@@ -779,13 +780,13 @@ public sealed class ElevatorRegistry
     // which no lift that bends uses, so such a segment keeps its straight run.
     private static double? SegmentLength(DeclaredTask spline, DeclaredTask previous, DeclaredTask waypoint)
     {
-        bool linear = ReadBool(spline, "Linear Segments") || ReadBool(waypoint, "Align");
-        if (!linear && (ReadBool(spline, "Automatic Orientation") || ReadBool(waypoint, "Automatic Orientation")))
+        bool linear = BoolStrict(spline, "Linear Segments") || BoolStrict(waypoint, "Align");
+        if (!linear && (BoolStrict(spline, "Automatic Orientation") || BoolStrict(waypoint, "Automatic Orientation")))
         {
             return null;
         }
 
-        int count = Math.Min(Math.Min(ReadInt(waypoint, "NumAreas") ?? 20, ReadInt(spline, "Number of Matrices / Segment") ?? 20), 20);
+        int count = Math.Min(Math.Min(IntStrictOrNull(waypoint, "NumAreas") ?? 20, IntStrictOrNull(spline, "Number of Matrices / Segment") ?? 20), 20);
         if (!linear && count < 1)
         {
             return null;
@@ -794,34 +795,13 @@ public sealed class ElevatorRegistry
         Vector3f a0 = previous.TryGetValue("Orientation", out object? r0) && r0 is Vector3f o0 ? o0 : default;
         Vector3f a1 = waypoint.TryGetValue("Orientation", out object? r1) && r1 is Vector3f o1 ? o1 : default;
         return RetailSplineSegment.Length(
-            ReadPosition(previous, "Position", default),
-            ReadPosition(waypoint, "Position", default),
+            Vector(previous, "Position", default),
+            Vector(waypoint, "Position", default),
             RetailSplineSegment.AnglesToMatrix(a0.X, a0.Y, a0.Z),
             RetailSplineSegment.AnglesToMatrix(a1.X, a1.Y, a1.Z),
             count,
             linear);
     }
-
-    private static bool ReadBool(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is true;
-
-    private static Vector3d ReadPosition(DeclaredTask task, string name, Vector3d fallback) =>
-        task.TryGetValue(name, out object? value) && value is Vector3d position ? position : fallback;
-
-    private static int? ReadInt(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is int integer ? integer : null;
-
-    private static double ReadReal(DeclaredTask task, string name, double fallback) =>
-        task.TryGetValue(name, out object? value) ? value switch
-        {
-            float single => single,
-            double real => real,
-            int integer => integer,
-            _ => fallback,
-        } : fallback;
-
-    private static string ReadString(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is string text ? text : string.Empty;
 
     private static Matrix3f ReadOrientation(DeclaredTask task, string name) =>
         task.TryGetValue(name, out object? value) && value is Vector3f angles

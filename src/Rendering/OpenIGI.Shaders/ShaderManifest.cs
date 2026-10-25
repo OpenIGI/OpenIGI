@@ -58,14 +58,23 @@ public sealed record ShaderVariantEntry(
 }
 
 /// <summary>One module, as the manifest declares it.</summary>
-/// <param name="Id">The module, which must have a matching <see cref="ShaderModuleId"/> value.</param>
+/// <param name="Name">
+/// The module's name, its <c>id</c>: the library's own match a <see cref="ShaderModuleId"/> value, a mod's are its own.
+/// </param>
 /// <param name="Source">The Slang source's path relative to <c>Source/</c>.</param>
 /// <param name="Variants">The variants to compile; empty means the default variant alone.</param>
 public sealed record ShaderModuleEntry(
-    ShaderModuleId Id,
+    [property: JsonPropertyName("id")] string Name,
     string Source,
     IReadOnlyList<ShaderVariantEntry> Variants)
 {
+    /// <summary>Gets the module's value in the library, or <see cref="ShaderModuleId.External"/> for one from outside it.</summary>
+    [JsonIgnore]
+    public ShaderModuleId Id =>
+        Enum.TryParse(Name, ignoreCase: false, out ShaderModuleId id) && id != ShaderModuleId.External && Enum.IsDefined(id)
+            ? id
+            : ShaderModuleId.External;
+
     /// <summary>Gets the variants to compile, substituting the default when none are declared.</summary>
     public IReadOnlyList<ShaderVariantEntry> Variants { get; init; } =
         Variants is { Count: > 0 }

@@ -42,6 +42,15 @@ public sealed class Igi2GunFire : IIgi2FireHandler
     /// <summary>The second event every shot raises, <c>23</c>.</summary>
     public const int ShotLineEvent = 23;
 
+    /// <summary>The loud shot's flags, <c>0x2C2</c>: in reach, in view at any distance, of either side.</summary>
+    public const int LoudShotFlags = 0x2C2;
+
+    /// <summary>The shot's flags, <c>0x442</c>: in reach, quieter in noise.</summary>
+    public const int ShotFlags = 0x442;
+
+    /// <summary>The shot line's flags, <c>0x522</c>.</summary>
+    public const int ShotLineFlags = 0x522;
+
     private const float DegreesToRadians = 0.017453292f;
 
     /// <summary>The flash a shot lights its holder with, red to blue.</summary>
@@ -227,11 +236,11 @@ public sealed class Igi2GunFire : IIgi2FireHandler
         float range = gun.AIdetectionRange;
         if (range > LoudRange)
         {
-            effects.SendAiEvent(new Igi2WeaponAiEvent(LoudShotEvent, 0x2C2, LoudEventRadius, request.Position, line, owner.Team, owner, owner));
+            effects.SendAiEvent(new Igi2WeaponAiEvent(LoudShotEvent, LoudShotFlags, LoudEventRadius, request.Position, line, owner.Team, owner, owner));
         }
 
-        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotEvent, 0x442, range, request.Position, line, owner.Team, owner, owner));
-        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotLineEvent, 0x522, range, request.Position, line, owner.Team, owner, owner));
+        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotEvent, ShotFlags, range, request.Position, line, owner.Team, owner, owner));
+        effects.SendAiEvent(new Igi2WeaponAiEvent(ShotLineEvent, ShotLineFlags, range, request.Position, line, owner.Team, owner, owner));
         if (range > LoudRange)
         {
             owner.IgnoreLightOnVisibility(LoudVisibilityTicks);

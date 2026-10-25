@@ -21,7 +21,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="openigi-mod\**" Exclude="openigi-mod\bin\**;openigi-mod\obj\**;openigi-mod\.template.config\template.json" />
+    <Content Include="openigi-mod\**" Exclude="openigi-mod\bin\**;openigi-mod\obj\**;openigi-mod\.template.config\template.json;openigi-mod\shaders\ShaderModules.json" />
   </ItemGroup>
 
   <!-- template.json, with the SDK's version this package is built as. -->
@@ -35,6 +35,26 @@
                       WriteOnlyWhenDifferent="true" />
     <ItemGroup>
       <Content Include="$(_StampedTemplate)" PackagePath="content\openigi-mod\.template.config\template.json" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    The shader kind's manifest, pinning the Slang and DXC the game's own library is compiled with: the shader tool refuses a
+    mod's shaders compiled with any other.
+  -->
+  <Target Name="StampShaderVersions" BeforeTargets="_GetPackageFiles">
+    <PropertyGroup>
+      <_LibraryShaderManifest>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\..\..\src\Rendering\OpenIGI.Shaders\ShaderModules.json'))</_LibraryShaderManifest>
+      <_SlangVersion>$([System.Text.RegularExpressions.Regex]::Replace($(_LibraryShaderManifest), '(?s)^.*?"slangVersion"\s*:\s*"([^"]+)".*$', '$1'))</_SlangVersion>
+      <_DxcVersion>$([System.Text.RegularExpressions.Regex]::Replace($(_LibraryShaderManifest), '(?s)^.*?"dxcVersion"\s*:\s*"([^"]+)".*$', '$1'))</_DxcVersion>
+      <_StampedShaders>$(IntermediateOutputPath)ShaderModules.json</_StampedShaders>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_StampedShaders)"
+                      Lines="$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\openigi-mod\shaders\ShaderModules.json').Replace('SLANG_VERSION', '$(_SlangVersion)').Replace('DXC_VERSION', '$(_DxcVersion)'))"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="$(_StampedShaders)" PackagePath="content\openigi-mod\shaders\ShaderModules.json" />
     </ItemGroup>
   </Target>
 

@@ -3,8 +3,8 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Time;
-using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend;
+using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -82,7 +82,7 @@ public sealed partial class GameHost
         // the console and the flag can never report different things.
         if (!_options.VSync)
         {
-            RenderCVars.VSync.Value = false;
+            FrameCVars.VSync.Value = false;
         }
     }
 
@@ -91,27 +91,27 @@ public sealed partial class GameHost
     {
         // Set before anything uploads a texture: the sampler a texture is created with is the one it
         // keeps, so a level loaded before this would keep the filtering it started with.
-        _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
-        WhenChanged(RenderCVars.Anisotropy, () => _device.SetTextureQuality(RenderCVars.Anisotropy.Value));
+        _device.SetTextureQuality(MaterialCVars.Anisotropy.Value);
+        WhenChanged(MaterialCVars.Anisotropy, () => _device.SetTextureQuality(MaterialCVars.Anisotropy.Value));
 
-        _device.VSyncEnabled = RenderCVars.VSync.Value;
-        WhenChanged(RenderCVars.VSync, () => _device.VSyncEnabled = RenderCVars.VSync.Value);
+        _device.VSyncEnabled = FrameCVars.VSync.Value;
+        WhenChanged(FrameCVars.VSync, () => _device.VSyncEnabled = FrameCVars.VSync.Value);
 
         // The window's mode and size as saved, and the API: r_renderer was read by the composition root
         // before there was a device, and from here a change to it rebuilds the game over the one it names.
         ApplyDisplaySettings();
 
-        WhenChanged(RenderCVars.WeatherEnabled, ApplyWeatherSettings);
-        WhenChanged(RenderCVars.WeatherStyle, ApplyWeatherSettings);
-        WhenChanged(RenderCVars.WeatherSpeed, ApplyWeatherSettings);
-        WhenChanged(RenderCVars.WeatherForce, ApplyWeatherSettings);
-        WhenChanged(RenderCVars.Storm, ApplyWeatherSettings);
-        WhenChanged(RenderCVars.StormIntensity, ApplyWeatherSettings);
+        WhenChanged(WeatherCVars.WeatherEnabled, ApplyWeatherSettings);
+        WhenChanged(WeatherCVars.WeatherStyle, ApplyWeatherSettings);
+        WhenChanged(WeatherCVars.WeatherSpeed, ApplyWeatherSettings);
+        WhenChanged(WeatherCVars.WeatherForce, ApplyWeatherSettings);
+        WhenChanged(WeatherCVars.Storm, ApplyWeatherSettings);
+        WhenChanged(WeatherCVars.StormIntensity, ApplyWeatherSettings);
 
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
-        _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
-        WhenChanged(RenderCVars.PerformanceLog, () => _device.SetStageTiming(RenderCVars.PerformanceLog.Value));
+        _device.SetStageTiming(FrameCVars.PerformanceLog.Value);
+        WhenChanged(FrameCVars.PerformanceLog, () => _device.SetStageTiming(FrameCVars.PerformanceLog.Value));
 
         _flowHost = new HostFlowHost(_logger);
     }
@@ -294,7 +294,7 @@ public sealed partial class GameHost
         // the first pass, so every one of them saw the default of false and cached the answer "no map".
         // A mission started from the menu never hit it, because the loop is already running by then.
         // Measured: 27 maps derived over 600 frames of -mission, against a level's worth of textures.
-        _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+        _detailMaps.DeriveMissing = MaterialCVars.MaterialDetail.Value > 0f;
         _detailMaps.Enabled = _detailMaps.DeriveMissing;
 
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
@@ -316,7 +316,7 @@ public sealed partial class GameHost
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
         // meant changing the table from the console while browsing the campaign re-graded to mission 0.
-        WhenChanged(RenderCVars.ColourLookupTable, () =>
+        WhenChanged(PostCVars.ColourLookupTable, () =>
             ApplyColourLookup(_session.Mission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission));
     }
 
@@ -488,7 +488,7 @@ public sealed partial class GameHost
             // order is the startup scan's, which is a directory walk and therefore alphabetical, so it
             // listed level 10 between level 1 and level 2. The retail menu walks the chain (0x405660) and
             // so does this.
-            state.Saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "state.Saves"));
+            state.Saves = new SaveSlotStore(SavesDirectory());
 
             state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
@@ -582,7 +582,7 @@ public sealed partial class GameHost
                     // both the mission loader and the menu's backdrop already reset the cycle from it. It
                     // is deliberately not archived, which is what makes a campaign choice safe to put in
                     // it -- a night run lasts the session and does not become a preference.
-                    RenderCVars.TimeOfDay.Value = conditions.StartHour;
+                    ExposureCVars.TimeOfDay.Value = conditions.StartHour;
 
                     // The weather gets no variable of its own. Forcing rain everywhere through
                     // r_weather_force WOULD be archived, so a campaign choice would outlive the campaign
@@ -596,7 +596,7 @@ public sealed partial class GameHost
                     // up by the next level they load.
                     if (_menuFlow.OverShowcase)
                     {
-                        _timeOfDay.DayNight.ResetForLevel(_timeOfDay.Sun, RenderCVars.TimeOfDay.Value);
+                        _timeOfDay.DayNight.ResetForLevel(_timeOfDay.Sun, ExposureCVars.TimeOfDay.Value);
                     }
                 },
                 resumeMission: () =>
@@ -709,7 +709,8 @@ public sealed partial class GameHost
                 {
                     TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
                 },
-                displayResolutions: DisplayResolutions);
+                displayResolutions: DisplayResolutions,
+                playedMods: () => _titleRuntime.Mods);
 
             state.ShellHostForEntryCam = state.ShellHost;
 
@@ -778,7 +779,7 @@ public sealed partial class GameHost
         _logger.Information(
             "Render",
             FormattableString.Invariant(
-                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
+                $"Camera effects: r_motion_blur {PostCVars.MotionBlur.Value:0.###}, r_hdr {FrameCVars.OffscreenScene.Value}, r_deferred {LightingCVars.Deferred.Value}, r_taa {ReconstructionCVars.TemporalFeedback.Value:0.###}, r_smooth {FrameCVars.SmoothPresentation.Value}, r_scale {ReconstructionCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => state.Running = false;
         _window.Show();
@@ -832,7 +833,7 @@ public sealed partial class GameHost
         // The distance-field shader is compiled here, when the feature is on, rather than when a level
         // first needs it -- a shader that does not compile would otherwise surface a long way into a run
         // as a stage that silently did nothing. Gated so a device with the feature off pays nothing.
-        if (RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
+        if (RayTracingCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
         {
             GlobalDistanceField.ValidateShader(_device, _logger);
         }
@@ -854,5 +855,32 @@ public sealed partial class GameHost
         // returning to its host. See the top of the loop.
         state.LastOutcome = FrameOutcome.Idle;
         state.TicksSinceStep = 0;
+    }
+
+    /// <summary>The folder the shell's save slots are kept in, under the player's own directory.</summary>
+    /// <returns>The folder.</returns>
+    /// <remarks>
+    /// <c>saves</c>, as it always was. For a while a build wrote them to <c>state.Saves</c> instead, a name a refactor left
+    /// behind; a player who saved then finds their slots moved back where they belong.
+    /// </remarks>
+    private string SavesDirectory()
+    {
+        string user = SettingsPaths.GetUserDirectory();
+        string saves = Path.Combine(user, "saves");
+        string misnamed = Path.Combine(user, "state.Saves");
+        if (!Directory.Exists(saves) && Directory.Exists(misnamed))
+        {
+            try
+            {
+                Directory.Move(misnamed, saves);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning("Saves", $"The save slots in '{misnamed}' could not be moved to '{saves}': {error.Message}");
+                return misnamed;
+            }
+        }
+
+        return saves;
     }
 }

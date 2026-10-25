@@ -86,9 +86,9 @@ public sealed partial class GraphicsDevice
             HitRecords: tracedSun ? TracedWorld!.HitRecordHandle : 0UL,
             Field: field,
             Seconds: (float)(_frameCounter % 1_000_000UL) / 60f,
-            BackScatter: RenderCVars.FogBackScatter.Value,
-            BackScatterWeight: RenderCVars.FogBackScatterWeight.Value,
-            Noise: RenderCVars.FogNoise.Value);
+            BackScatter: FogCVars.FogBackScatter.Value,
+            BackScatterWeight: FogCVars.FogBackScatterWeight.Value,
+            Noise: FogCVars.FogNoise.Value);
 
         bool cascades = _cascadeCount > 0 && _shadowsDrawn;
 

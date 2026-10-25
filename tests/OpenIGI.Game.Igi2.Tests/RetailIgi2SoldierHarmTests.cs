@@ -7,6 +7,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -32,7 +33,7 @@ public sealed class RetailIgi2SoldierHarmTests
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
 
-        Igi2Intersection? hit = Shoot(m.Collision!, body, height: 4096.0, includes: null);
+        WorldIntersection? hit = Shoot(m.Collision!, body, height: 4096.0, includes: null);
         Assert.NotNull(hit);
         Igi2BoneCollider collider = Assert.IsType<Igi2BoneCollider>(hit!.HitObject);
         Assert.Same(body, collider.Owner);
@@ -67,7 +68,7 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.Equal(tweaks.HitPoints, body.Damage.MaxDamage);
         Stand(body);
 
-        Igi2Intersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
+        WorldIntersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
         Igi2WeaponHit shot = Hit(body, hit, 0.01f);
         Igi2DamagePart part = body.DamagePartOf(shot);
         body.WeaponHit(shot);
@@ -95,7 +96,7 @@ public sealed class RetailIgi2SoldierHarmTests
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
 
-        Igi2Intersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
+        WorldIntersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
         Igi2WeaponHit shot = Hit(body, hit, 100f);
         body.WeaponHit(shot);
 
@@ -259,7 +260,7 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.True(drop.IsLanded);
         Assert.Single(sounds);
         Assert.StartsWith("weapondrop_0", sounds[0], StringComparison.Ordinal);
-        Igi2LineTrace ground = new(1);
+        WorldLineTrace ground = new(1);
         ground.Starts[0] = drop.Position;
         ground.Ends[0] = new Vector3d(drop.Position.X, drop.Position.Y, drop.Position.Z - 8192.0);
         m.Collision!.TraceLines(ground, Igi2CollisionWorld.TerrainGroup);
@@ -315,7 +316,7 @@ public sealed class RetailIgi2SoldierHarmTests
         (RetailIgi2Mission1 m, _) = Spawn();
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
-        Igi2Intersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
+        WorldIntersection hit = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
         object foreign = new();
         Vector3f shot = new(-40960f, 0f, 0f);
 
@@ -350,7 +351,7 @@ public sealed class RetailIgi2SoldierHarmTests
         (RetailIgi2Mission1 m, _) = Spawn();
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
-        Igi2Intersection expected = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
+        WorldIntersection expected = Shoot(m.Collision!, body, height: 4096.0, includes: null)!;
         Igi2ShootableSoldiers soldiers = new(m.Tree.OfType<Ai.Igi2HumanSoldierTask>());
         LevelBodies bodies = new();
         bodies.Add(soldiers);
@@ -370,6 +371,37 @@ public sealed class RetailIgi2SoldierHarmTests
         Assert.True(bodies.Shoot(from, to, null, met => Round(met) with { Damage = 1000f }, out _));
         Assert.True(body.IsDead);
         Assert.DoesNotContain(soldiers.Bodies(), b => b.Task is Ai.Igi2HumanSoldierTask { Body: var held } && ReferenceEquals(held, body));
+    }
+
+    /// <summary>
+    /// A player's round of either game carries his tally: the soldier counts the hit on it, the head when the round struck it,
+    /// and the kill. <b>Not retail</b>: the remastered crosshair's marks.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_players_round_counts_its_hit_and_kill_on_his_tally()
+    {
+        (RetailIgi2Mission1 m, _) = Spawn();
+        Igi2HumanSoldier body = Soldier(m, Target);
+        Stand(body);
+        Igi2ShootableSoldiers soldiers = new(m.Tree.OfType<Ai.Igi2HumanSoldierTask>());
+        LevelBodies bodies = new();
+        bodies.Add(soldiers);
+        Game.Player.ShotTally tally = new();
+        Vector3d p = body.Position;
+        Vector3d from = new(p.X + 20480.0, p.Y, p.Z + 4096.0);
+        Vector3d to = new(p.X - 20480.0, p.Y, p.Z + 4096.0);
+        WeaponHit Round(Game.Player.HumanHit met, float damage) =>
+            new(met.Position, default, damage, new Vector3f(-40960f, 0f, 0f), null, new object(), WeaponCategory.Gun, met.Bone, tally);
+
+        Assert.True(bodies.Shoot(from, to, null, met => Round(met, 0.01f), out _));
+        Assert.Equal(1, tally.Hits);
+        Assert.Equal(0, tally.Kills);
+        Assert.Equal(body.Damage.LastPart == Igi2DamagePart.Head, tally.LastHitHead);
+
+        Assert.True(bodies.Shoot(from, to, null, met => Round(met, 1000f), out _));
+        Assert.True(body.IsDead);
+        Assert.Equal(2, tally.Hits);
+        Assert.Equal(1, tally.Kills);
     }
 
     /// <summary>
@@ -413,23 +445,23 @@ public sealed class RetailIgi2SoldierHarmTests
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
         Vector3d p = body.Position;
-        Igi2LineOfSight Line(double offset) =>
+        WorldLineOfSight Line(double offset) =>
             new(new Vector3d(p.X - 8192.0, p.Y + offset, p.Z + 4096.0), new Vector3d(p.X + 8192.0, p.Y + offset, p.Z + 4096.0), m.Materials);
 
-        Igi2LineOfSight through = Line(0.0);
+        WorldLineOfSight through = Line(0.0);
         Assert.False(m.Collision!.LineOfSight(through, Igi2CollisionWorld.HumanGroup));
         Assert.True(through.IsHit);
 
-        Igi2LineOfSight unasked = Line(0.0);
+        WorldLineOfSight unasked = Line(0.0);
         Assert.True(m.Collision.LineOfSight(unasked, Igi2CollisionWorld.SplineGroup));
 
-        Igi2LineOfSight wide = Line(40960.0);
+        WorldLineOfSight wide = Line(40960.0);
         Assert.True(m.Collision.LineOfSight(wide, Igi2CollisionWorld.HumanGroup));
         Assert.Equal(1f, wide.Transparency);
     }
 
     private static Igi2WeaponHit At(Igi2HumanSoldier body, int bone, Vector3d position, Vector3f shot) =>
-        new(new Igi2Intersection { Sector = bone, Position = position, IsHit = true }, 0.01f, shot, null, body.Weapon.Inventory!.Current!.WeaponType, null);
+        new(new WorldIntersection { Sector = bone, Position = position, IsHit = true }, 0.01f, shot, null, body.Weapon.Inventory!.Current!.WeaponType, null);
 
     private static Igi2HumanSoldier Soldier(RetailIgi2Mission1 m, int id) =>
         m.Tree.OfType<Igi2HumanSoldierTask>().Single(t => t.Id == id).Body!;
@@ -458,18 +490,18 @@ public sealed class RetailIgi2SoldierHarmTests
     }
 
     /// <summary>A horizontal line along X through the soldier's upright axis, a height above where it stands.</summary>
-    private static Igi2Intersection? Shoot(Igi2CollisionWorld world, Igi2HumanSoldier body, double height, Func<object, bool>? includes)
+    private static WorldIntersection? Shoot(Igi2CollisionWorld world, Igi2HumanSoldier body, double height, Func<object, bool>? includes)
     {
-        Igi2LineTrace trace = new(1) { Includes = includes };
+        WorldLineTrace trace = new(1) { Includes = includes };
         Vector3d p = body.Position;
         trace.Starts[0] = new Vector3d(p.X + 20480.0, p.Y, p.Z + height);
         trace.Ends[0] = new Vector3d(p.X - 20480.0, p.Y, p.Z + height);
         world.TraceLines(trace, Igi2CollisionWorld.HumanGroup);
-        Igi2Intersection hit = trace.Intersections[0];
+        WorldIntersection hit = trace.Intersections[0];
         return hit.IsHit ? hit : null;
     }
 
-    private static Igi2WeaponHit Hit(Igi2HumanSoldier body, Igi2Intersection hit, float damage)
+    private static Igi2WeaponHit Hit(Igi2HumanSoldier body, WorldIntersection hit, float damage)
     {
         Igi2WeaponTypeTask gun = body.Weapon.Inventory!.Current!.WeaponType;
         return new Igi2WeaponHit(hit, damage, new Vector3f(-40960f, 0f, 0f), null, gun, null);

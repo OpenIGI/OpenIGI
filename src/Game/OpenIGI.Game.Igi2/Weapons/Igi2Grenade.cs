@@ -1,7 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
@@ -34,7 +33,7 @@ public static class Igi2GrenadeKind
 /// <param name="Thrower">Who threw it, or <see langword="null"/>.</param>
 public readonly record struct Igi2GrenadeExplosion(
     Vector3d Position,
-    Igi2Intersection Ground,
+    WorldIntersection Ground,
     float DamageFactor,
     float FullRange,
     float FalloffRange,
@@ -54,7 +53,7 @@ public interface IIgi2GrenadeEffects
     /// <param name="position">Where it went off.</param>
     /// <param name="ground">The ground probe's intersection.</param>
     /// <param name="team">The thrower's team, or minus one.</param>
-    void FlashBang(Vector3d position, Igi2Intersection ground, int team)
+    void FlashBang(Vector3d position, WorldIntersection ground, int team)
     {
     }
 
@@ -136,7 +135,7 @@ public sealed class Igi2Grenade : IIgi2DynamicTask
     /// <summary>The ticks without a contact after which the next one bounces again.</summary>
     public const int BounceRest = 10;
 
-    private readonly Igi2LineTrace _ground = new(1);
+    private readonly WorldLineTrace _ground = new(1);
     private readonly Igi2Grenades? _owner;
     private Igi2SmokeTask? _smoke;
     private bool _smokeStarted;

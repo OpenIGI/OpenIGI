@@ -51,6 +51,14 @@ public interface IAudioDevice : IDisposable
     /// <remarks>These are the player profile's own volume settings, applied as the original applies them.</remarks>
     void SetCategoryGain(SoundCategory category, float gain);
 
+    /// <summary>Slows and muffles every voice at once, the music with the rest: the world heard as if time had slowed.</summary>
+    /// <param name="pitch">The rate every voice plays at, against its own: one is untouched, a half an octave down.</param>
+    /// <param name="muffle">How muffled every voice is, nought (clear) to one (as through glass).</param>
+    /// <remarks><b>Not retail</b>: the remaster's weapon wheel slows the world. A device that cannot does nothing.</remarks>
+    void SetTimeWarp(float pitch, float muffle)
+    {
+    }
+
     /// <summary>Gets the gain of one mixing bus.</summary>
     /// <param name="category">The bus.</param>
     /// <returns>The linear gain.</returns>

@@ -7,7 +7,8 @@
 #
 # OpenIGI.Modding.Sdk is the one package a mod references: it brings the modding API and both games' gameplay and
 # presentation assemblies, each its own package at the same version, and the build that turns a project with a mod.json
-# into the folder the launcher installs. OpenIGI.Modding.Templates is `dotnet new openigi-mod`, referencing that version.
+# into the folder the launcher installs; it packs OpenIGI.Modding.Testing, which a mod's tests reference, with it.
+# OpenIGI.Modding.Templates is `dotnet new openigi-mod`, referencing that version.
 # A mod built against version V works with game builds from V on that still offer its modding API.
 set -euo pipefail
 

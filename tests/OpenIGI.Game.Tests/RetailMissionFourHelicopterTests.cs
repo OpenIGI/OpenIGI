@@ -1,3 +1,5 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -7,13 +9,9 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -855,8 +853,13 @@ public sealed class RetailMissionFourHelicopterTests
     [Fact]
     public void ParkedHeliRestDoesNotHardCodeTaskEightHundred()
     {
-        string source = File.ReadAllText(
-            Path.Combine(RepoSrc(), "Game", "OpenIGI.Game", "World", "CutsceneRuntime.cs"));
+        // The runtime and the collaborators it is built from: every Cutscene*.cs and the retail helicopter physics.
+        string world = Path.Combine(RepoSrc(), "Game", "OpenIGI.Game", "World");
+        string source = string.Concat(
+            Directory.GetFiles(world, "Cutscene*.cs")
+                .Append(Path.Combine(world, "RetailHelicopterPhysics.cs"))
+                .Order(StringComparer.Ordinal)
+                .Select(File.ReadAllText));
         Assert.False(
             System.Text.RegularExpressions.Regex.IsMatch(source, @"\b800\b"),
             "generic CutsceneRuntime must not contain Mission 4's task-800 identifier");

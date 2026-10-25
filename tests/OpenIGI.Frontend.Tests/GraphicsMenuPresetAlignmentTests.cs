@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Rendering;
-using OpenIGI.Core.Configuration.Presets;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;
@@ -40,7 +40,7 @@ public sealed class GraphicsMenuPresetAlignmentTests : IDisposable
     /// <summary>Remembers every managed value, so applying presets here does not leak into other tests.</summary>
     public GraphicsMenuPresetAlignmentTests()
     {
-        _ = RenderCVars.Lighting; // force the CVar container's static initialiser
+        _ = LightingCVars.Lighting; // force the CVar container's static initialiser
         _restore = GraphicsPresetRegistry.Default.Managed.ToDictionary(
             variable => variable, variable => variable.ValueText);
     }

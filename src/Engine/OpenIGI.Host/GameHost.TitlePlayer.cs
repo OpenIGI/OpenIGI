@@ -2,7 +2,6 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
@@ -32,6 +31,12 @@ public sealed partial class GameHost
     private const double TitleUnitsPerMetre = 4096.0;
 
     private ITitleGameplay? _gameplay;
+
+    // What stood the player now standing: the title's own gameplay, or one the session's content provides in its stead.
+    private ITitleGameplay? _standingGameplay;
+
+    // The gameplay whose input the player reads: the one that stood it, else the title's.
+    private ITitleGameplay? Gameplay => _standingGameplay ?? _gameplay;
     // The title's own player, with what it can do; null when the host's rig is the player.
     private TitlePlayerFeatures? _titleFeatures;
 
@@ -56,7 +61,11 @@ public sealed partial class GameHost
     private bool _titleLastLiveLook;
     private bool _titleLastCameraMatches;
 
-    /// <summary>Stands the title's own player where the level places it, when the title brings one.</summary>
+    /// <summary>
+    /// Stands the title's own player where the level places it, when the title brings one; or the player the session's content
+    /// provides instead (an <see cref="ITitleGameplay"/> among its services), a mod's, which may decline a mission and leave it to
+    /// the title.
+    /// </summary>
     /// <param name="loaded">The mission.</param>
     /// <param name="levelRoot">The level's tree.</param>
     /// <param name="scene">The placements the scene walk produced.</param>
@@ -68,22 +77,37 @@ public sealed partial class GameHost
         _titleHud = null;
         _titleArms?.Dispose();
         _titleArms = null;
-        if (_gameplay is null)
-        {
-            return;
-        }
-
-        ITitlePlayer? player = _gameplay.CreatePlayer(new TitlePlayerRequest(
+        _standingGameplay = null;
+        TitlePlayerRequest request = new(
             new WorldBuildRequest(
                 loaded, levelRoot, _resources, _mission.MagicObjects, _logger, _mission.VehiclePhysics, _title.Services),
             new WorldBuildResult(scene, 0, 0, _mission.Ground, _mission.Spins, _mission.Solids),
             _title.Services,
             (AiDifficulty)Math.Clamp(_mission.PlayerDifficulty, 0, 2),
             _audioOut.Sounds is { } sounds && _audioOut.Bank is { } bank ? new TitleAudio(sounds, bank) : null,
-            _loop.Natives));
+            _loop.Natives);
+
+        // Content's own player first, which stands in the title's stead; declining, it leaves the mission to the title.
+        ITitlePlayer? player = null;
+        if (_title.Services.TryGet(out ITitleGameplay? provided) && provided.CreatePlayer(request) is { } stood)
+        {
+            player = stood;
+            _standingGameplay = provided;
+            RestoreTitleInputBindings();
+        }
+        else if (_gameplay is not null)
+        {
+            player = _gameplay.CreatePlayer(request);
+            _standingGameplay = _gameplay;
+            if (player is null)
+            {
+                _logger.Warning("Player", "The level places no player for the title to stand.");
+            }
+        }
+
         if (player is null)
         {
-            _logger.Warning("Player", "The level places no player for the title to stand.");
+            _standingGameplay = null;
             return;
         }
 
@@ -139,7 +163,7 @@ public sealed partial class GameHost
         _titleWheel += _window.Input.Mouse.WheelDelta;
         if (_titleFeatures?.Look is { } look)
         {
-            if (RenderCVars.SmoothPresentation.Value && !_options.Lockstep)
+            if (FrameCVars.SmoothPresentation.Value && !_options.Lockstep)
             {
                 PlayerProfile? profile = _configuration.Active;
                 look.GatherLook(_window.Input.Mouse.DeltaX, _window.Input.Mouse.DeltaY,
@@ -154,7 +178,7 @@ public sealed partial class GameHost
                 _titlePressed |= action;
             }
         }
-        if (_gameplay is { } gameplay)
+        if (Gameplay is { } gameplay)
         {
             _titleExtraPressed |= TitleInputBindings.Sample(_configuration.Active, _window.Input, gameplay.InputBindings, pressed: true);
         }
@@ -186,8 +210,26 @@ public sealed partial class GameHost
 
         held |= _titleScriptHeld;
 
+        // The weapon wheel holds the player still while it is open: nothing it was given goes through. So does the mission's
+        // computer, while it serves this player.
+        bool still = WheelHoldsInput || (_computerOpen && TitleUsesMissionComputer);
+        if (still)
+        {
+            held = default;
+            _titlePressed = default;
+            _titleExtraPressed = 0;
+            _titleMouseX = 0f;
+            _titleMouseY = 0f;
+        }
+
         PlayerProfile? profile = _configuration.Active;
-        PlayerAction replaced = _gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
+        PlayerAction replaced = Gameplay is { } titleGameplay ? TitleInputBindings.ReplacedActions(titleGameplay.InputBindings) : 0;
+
+        // The computer's key opens the mission's computer, not the title's own, where the mission's serves it.
+        if (TitleUsesMissionComputer)
+        {
+            replaced |= PlayerAction.MapComputer;
+        }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
@@ -197,8 +239,8 @@ public sealed partial class GameHost
             profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity,
             profile?.InvertMouse ?? false,
             TitleBreakKey(),
-            UnfilteredMouse: RenderCVars.SmoothPresentation.Value && !_options.Lockstep,
-            TitleHeld: _gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
+            UnfilteredMouse: FrameCVars.SmoothPresentation.Value && !_options.Lockstep,
+            TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
         _titlePresentation.CaptureTick(_titleFeatures!);
@@ -236,7 +278,7 @@ public sealed partial class GameHost
 
     private void RestoreTitleInputBindings()
     {
-        if (_gameplay is not { } gameplay) { return; }
+        if (Gameplay is not { } gameplay) { return; }
         foreach (PlayerProfile profile in _configuration.Profiles) { TitleInputBindings.RestoreMissing(profile, gameplay.InputBindings); }
     }
 
@@ -307,7 +349,7 @@ public sealed partial class GameHost
                     return;
                 }
 
-                string gates = $"r_smooth={RenderCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
+                string gates = $"r_smooth={FrameCVars.SmoothPresentation.Value}, lockstep={_options.Lockstep}, "
                     + $"walking={_playerMode}, computer={_computerOpen}, entry={_entry.IsCameraActive}, "
                     + $"hostCutscene={_mission.Cutscenes?.IsPlaying == true}, titleCutscene={player.IsCutscenePlaying}, "
                     + $"canPreview={_titleFeatures?.Look is { CanPreviewLook: true }}, "
@@ -383,8 +425,31 @@ public sealed partial class GameHost
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
-            models.DrawWorld(owned.WorldModels, eye, projection);
+            models.DrawWorld(owned.WorldModels, eye, projection, _titlePresentationBlend);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);
+        }
+    }
+
+    /// <summary>Draws the 2-D particles of the title's level, over the lit picture.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    private void DrawTitleParticles(in Camera3D eye, in Matrix4f projection, float blend)
+    {
+        if (_titleFeatures?.WorldModels?.Particles is { } particles && TitleWorldModelPresenter is { } models)
+        {
+            models.DrawParticles(particles, eye, projection, blend);
+        }
+    }
+
+    /// <summary>Draws the muzzle flashes of the title's world models, over the lit picture.</summary>
+    /// <param name="eye">The camera the frame is drawn from.</param>
+    /// <param name="projection">The world's projection.</param>
+    private void DrawTitleMuzzleFlashes(in Camera3D eye, in Matrix4f projection)
+    {
+        if (_titleFeatures?.WorldModels is not null && TitleWorldModelPresenter is { } models)
+        {
+            models.DrawWorldMuzzleFlashes(eye, projection);
         }
     }
 

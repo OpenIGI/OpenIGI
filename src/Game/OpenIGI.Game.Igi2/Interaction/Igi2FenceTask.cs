@@ -43,7 +43,7 @@ public interface IIgi2ElectricTarget
 /// view across it within reach and between its ends, facing it within a sixth of a turn.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2FenceTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2Notified
+public sealed partial class Igi2FenceTask : Igi2Task, IIgi2PlacedTask, IIgi2Fence, IIgi2Notified
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Fence";

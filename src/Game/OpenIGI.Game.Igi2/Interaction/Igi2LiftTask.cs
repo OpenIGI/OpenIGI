@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Igi2.Interaction;
@@ -28,7 +29,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IIgi2AttachParent
+public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover, IAttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Lift";

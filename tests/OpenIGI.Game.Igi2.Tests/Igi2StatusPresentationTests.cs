@@ -83,7 +83,7 @@ public sealed class Igi2StatusPresentationTests
         // The font is uploaded first; all of this font's pages precede the status sprites.
         using RecordingGraphicsDevice metricsDevice = new();
         using Igi2SpriteResources metrics = new(metricsDevice, Files(), NullLogger.Instance);
-        SpriteResource font = metrics.Get("font3.fnt")!;
+        SpriteResource font = metrics.Get("font1.fnt")!;
         BitmapTextRenderer text = new(font);
         Weapons.Igi2WeaponTypeTask weapon = weapons.Inventory.Current!.WeaponType;
         string label = weapon.WeaponName + " : " + weapon.FiremodeName;

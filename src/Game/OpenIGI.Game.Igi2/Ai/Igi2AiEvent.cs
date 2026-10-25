@@ -111,8 +111,52 @@ public readonly record struct Igi2AiEvent(
             return false;
         }
 
-        aiEvent = new Igi2AiEvent(kind, shared.Team, shared.Flags, shared.Radius, shared.Position, default, shared.Source, shared.Subject);
+        aiEvent = new Igi2AiEvent(kind, shared.Team, shared.Flags, shared.Radius, shared.Position, shared.Direction, shared.Source, shared.Subject);
         return true;
+    }
+
+    /// <summary>
+    /// Another game's event as this game's own humans would raise it: a gunshot as this game's guns tell of one, a round
+    /// striking the ground as its bullets do, and anything else as <see cref="TryFromShared"/> reads it.
+    /// </summary>
+    /// <param name="shared">The event.</param>
+    /// <returns>This game's events, in the order its own would be sent; none where it has no such event.</returns>
+    /// <remarks>
+    /// <para>
+    /// A gun here (<see cref="Weapons.Igi2GunFire"/>) raises a shot and a shot along its line at its own range, and, louder than
+    /// <see cref="Weapons.Igi2GunFire.LoudRange"/>, a loud shot first, seen far off by whoever has the gun in view: so another
+    /// game's gunshot is those, at its own range and along its line of fire, with this game's flags.
+    /// </para>
+    /// <para>
+    /// A bullet striking here raises its strike (<see cref="Weapons.Igi2GunShot.StrikeEvent"/>), pointing back up its flight; a
+    /// ground impact with a flight is a round's, and is that. One without is a landing, and is read as it is.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<Igi2AiEvent> FromShared(in HumanAiEvent shared)
+    {
+        Vector3f way = shared.Direction;
+        if (shared.Type == (int)Game.Ai.AiEvent.Gunshot)
+        {
+            Igi2AiEvent shot = new(Weapons.Igi2GunFire.ShotEvent, shared.Team, Weapons.Igi2GunFire.ShotFlags, shared.Radius, shared.Position, way, shared.Source, shared.Source);
+            Igi2AiEvent line = shot with { Event = Weapons.Igi2GunFire.ShotLineEvent, Flags = Weapons.Igi2GunFire.ShotLineFlags };
+            return shared.Radius > Weapons.Igi2GunFire.LoudRange
+                ? [shot with { Event = Weapons.Igi2GunFire.LoudShotEvent, Flags = Weapons.Igi2GunFire.LoudShotFlags, Radius = Weapons.Igi2GunFire.LoudEventRadius }, shot, line]
+                : [shot, line];
+        }
+
+        if (shared.Type == (int)Game.Ai.AiEvent.GroundImpact && way is not { X: 0f, Y: 0f, Z: 0f })
+        {
+            return [new Igi2AiEvent(
+                Weapons.Igi2GunShot.StrikeEvent,
+                shared.Team,
+                Weapons.Igi2GunShot.StrikeFlags,
+                Weapons.Igi2GunShot.StrikeRadius,
+                shared.Position,
+                new Vector3f(-way.X, -way.Y, -way.Z),
+                shared.Source)];
+        }
+
+        return TryFromShared(shared, out Igi2AiEvent own) ? [own] : [];
     }
 
     /// <summary>
@@ -140,7 +184,7 @@ public readonly record struct Igi2AiEvent(
             return false;
         }
 
-        shared = new HumanAiEvent(type, Team, Flags, Radius, Position, Originator as Engine.Tasks.GameTask, Reference as Engine.Tasks.GameTask, this);
+        shared = new HumanAiEvent(type, Team, Flags, Radius, Position, Originator as Engine.Tasks.GameTask, Reference as Engine.Tasks.GameTask, this, Direction);
         return true;
     }
 }

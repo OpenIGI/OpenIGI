@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -627,19 +628,19 @@ public sealed class RetailIgi2FiringTests
 
         public Igi2GameMaterials Materials => materials;
 
-        public bool IsWater(IIgi2Collider struck) => false;
+        public bool IsWater(IWorldCollider struck) => false;
 
-        public bool IsBoned(IIgi2Collider struck) => false;
+        public bool IsBoned(IWorldCollider struck) => false;
 
-        public bool IsHuman(IIgi2Collider struck) => false;
+        public bool IsHuman(IWorldCollider struck) => false;
 
-        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups) => throw new NotSupportedException();
+        public void NextZ(WorldLineTrace trace, ReadOnlySpan<double> distances, uint groups) => throw new NotSupportedException();
 
-        public void TraceLines(Igi2LineTrace trace, uint groups)
+        public void TraceLines(WorldLineTrace trace, uint groups)
         {
             Vector3d start = trace.Starts[0], end = trace.Ends[0];
             Calls.Add((start, end));
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             hit.IsHit = Calls.Count == strikeOn;
             hit.HitObject = hit.IsHit ? Target : null;
             hit.Position = hit.IsHit ? new Vector3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2) : end;
@@ -647,13 +648,13 @@ public sealed class RetailIgi2FiringTests
         }
     }
 
-    private sealed class HitTarget : IIgi2Collider, IIgi2WeaponHitTarget
+    private sealed class HitTarget : IWorldCollider, IIgi2WeaponHitTarget
     {
         public List<Igi2WeaponHit> Hits { get; } = [];
 
         public object Owner => this;
 
-        public void NextZ(Igi2LineTrace trace) => throw new NotSupportedException();
+        public void NextZ(WorldLineTrace trace) => throw new NotSupportedException();
 
         public void WeaponHit(in Igi2WeaponHit hit) => Hits.Add(hit);
     }

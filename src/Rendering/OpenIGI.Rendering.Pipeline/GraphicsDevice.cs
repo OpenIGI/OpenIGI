@@ -1,16 +1,13 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Diagnostics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
-using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Pipeline.RayTracing;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Pipeline.Textures;
 using OpenIGI.Rendering.Rhi;
-using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.Pipeline;
 
@@ -116,7 +113,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         else if (device.AccelerationStructures is { } structures)
         {
             _ownedTracedWorld = new RayTracing.TracedWorld(
-                device, structures, RenderCVars.ReflectionTexture.Value, logger ?? NullLogger.Instance);
+                device, structures, ReflectionCVars.ReflectionTexture.Value, logger ?? NullLogger.Instance);
             _tracedWorld = _ownedTracedWorld;
         }
 
@@ -349,6 +346,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _frameDrawn = false;
 
+        // A heads-up display layer left open is laid down plain rather than lost, and the next frame starts without it.
+        if (_hudActive)
+        {
+            ComposeHudLayer(HudFxSettings.None);
+        }
+
         _sprites.EndFrame();
 
         // The interface layer over the picture, where they were drawn apart; the capture and the present
@@ -573,6 +576,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _inFrame = true;
+        EndHudLayer();
+        _silhouetteDraws.Clear();
+        _backdropFresh = false;
         ReleaseWorldIfAsked();
 
         // A frame's depth buffer starts empty. The interface has a ClearDepth, and the game does not

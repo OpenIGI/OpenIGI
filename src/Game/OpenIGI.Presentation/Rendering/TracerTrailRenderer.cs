@@ -1,7 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -303,7 +303,7 @@ public sealed class TracerTrailRenderer : IDisposable
 
         // A round whose state has gone non-finite draws nothing at all; see AddRibbonSegment for
         // what one NaN quad costs.
-        if (!IsFinite(round.Position) || !IsFinite(round.PreviousPosition))
+        if (!FiniteChecks.IsFinite(round.Position) || !FiniteChecks.IsFinite(round.PreviousPosition))
         {
             SkippedQuads++;
             return;
@@ -358,7 +358,7 @@ public sealed class TracerTrailRenderer : IDisposable
         for (int i = 0; i < count; i++)
         {
             Vector3d metres = (Presented(round, round.TrailAt(i)) / WorldScene.UnitsPerMetre) - eye;
-            if (!IsFinite(metres))
+            if (!FiniteChecks.IsFinite(metres))
             {
                 SkippedQuads++;
                 break;
@@ -417,7 +417,7 @@ public sealed class TracerTrailRenderer : IDisposable
             Vector3f nearAcross = _ribbonAcross[i];
             Vector3f farAcross = _ribbonAcross[i + 1];
 
-            if (!IsFinite(nearAcross) || !IsFinite(farAcross))
+            if (!FiniteChecks.IsFinite(nearAcross) || !FiniteChecks.IsFinite(farAcross))
             {
                 SkippedQuads++;
                 continue;
@@ -445,12 +445,6 @@ public sealed class TracerTrailRenderer : IDisposable
     // exploding into a one-frame square, and what keeps the streak's first metres off the gun modest.
     private static float NearFade(double distanceFromEyeMetres) =>
         Math.Clamp(((float)distanceFromEyeMetres - NearCullMetres) / NearFadeMetres, 0f, 1f);
-
-    private static bool IsFinite(Vector3f v) =>
-        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
-
-    private static bool IsFinite(Vector3d v) =>
-        double.IsFinite(v.X) && double.IsFinite(v.Y) && double.IsFinite(v.Z);
 
     private static Bgra32 Dimmed(Bgra32 colour, float factor)
     {
@@ -489,7 +483,7 @@ public sealed class TracerTrailRenderer : IDisposable
 
         // Checked FIRST, so a poisoned input is counted by the diagnostic rather than silently
         // swallowed by a length guard downstream.
-        if (!IsFinite(near) || !IsFinite(far))
+        if (!FiniteChecks.IsFinite(near) || !FiniteChecks.IsFinite(far))
         {
             SkippedQuads++;
             return;
@@ -532,7 +526,7 @@ public sealed class TracerTrailRenderer : IDisposable
         Vector3f across = new((float)acrossD.X, (float)acrossD.Y, (float)acrossD.Z);
         Vector3f normal = new((float)(toEye.X / midDistance), (float)(toEye.Y / midDistance), (float)(toEye.Z / midDistance));
 
-        if (!IsFinite(across) || !IsFinite(normal))
+        if (!FiniteChecks.IsFinite(across) || !FiniteChecks.IsFinite(normal))
         {
             SkippedQuads++;
             return;
@@ -606,7 +600,7 @@ public sealed class TracerTrailRenderer : IDisposable
         Vector3f centreF = new((float)centre.X, (float)centre.Y, (float)centre.Z);
         Vector3f normal = new((float)toEye.X, (float)toEye.Y, (float)toEye.Z);
 
-        if (!IsFinite(centreF) || !IsFinite(right) || !IsFinite(up) || !IsFinite(normal))
+        if (!FiniteChecks.IsFinite(centreF) || !FiniteChecks.IsFinite(right) || !FiniteChecks.IsFinite(up) || !FiniteChecks.IsFinite(normal))
         {
             SkippedQuads++;
             return;

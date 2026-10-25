@@ -66,12 +66,15 @@ public sealed partial class Igi2HumanSoldierTask : Igi2Task, IIgi2PlacedTask, IW
     public void ExplosionHit(in ExplosionHit hit) => ((IExplosionHitTarget?)Body)?.ExplosionHit(hit);
 
     /// <inheritdoc/>
-    /// <remarks>Another game's broadcast, read in this game's terms (<see cref="Igi2AiEvent.TryFromShared"/>) and given to the soldier's mind.</remarks>
+    /// <remarks>Another game's broadcast, read as this game's own would be raised (<see cref="Igi2AiEvent.FromShared"/>) and given to the soldier's mind.</remarks>
     public void SendEvent(in HumanAiEvent aiEvent)
     {
-        if (Body?.Mind is Igi2HumanAi mind && Igi2AiEvent.TryFromShared(aiEvent, out Igi2AiEvent own))
+        if (Body?.Mind is Igi2HumanAi mind)
         {
-            mind.Receive(own);
+            foreach (Igi2AiEvent own in Igi2AiEvent.FromShared(aiEvent))
+            {
+                mind.Receive(own);
+            }
         }
     }
 

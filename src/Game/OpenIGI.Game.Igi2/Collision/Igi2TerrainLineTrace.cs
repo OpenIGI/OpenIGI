@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
@@ -32,7 +33,7 @@ internal static class Igi2TerrainLineTrace
     /// <param name="ground">The terrain the lines hit, reported as the struck object.</param>
     /// <param name="surface">The level's ground.</param>
     /// <param name="trace">The lines and their running results.</param>
-    public static void Trace(Igi2TerrainCollider ground, Igi2TerrainSurface surface, Igi2LineTrace trace)
+    public static void Trace(Igi2TerrainCollider ground, Igi2TerrainSurface surface, WorldLineTrace trace)
     {
         for (int tile = 0; tile < surface.Tiles.Count; tile++)
         {
@@ -55,7 +56,7 @@ internal static class Igi2TerrainLineTrace
         in Tile frame,
         Vector3f local,
         Vector3d start,
-        Igi2Intersection hit)
+        WorldIntersection hit)
     {
         Vector3d origin = surface.Origin;
         double x = (((((Fpu)local.X + HalfSample) / frame.ScaleX) + frame.Source.Centre.X) - frame.HalfWidth).Value;

@@ -5,7 +5,7 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// Checks <see cref="LightmapBaker.LightmapBvh"/> against testing every triangle.
+/// Checks <see cref="LightmapBvh"/> against testing every triangle.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -34,8 +34,8 @@ public sealed class LightmapBvhTraversalTests
     [Fact]
     public void TraversalAgreesWithTestingEveryTriangle()
     {
-        LightmapBaker.LightmapTriangle[] triangles = Scene();
-        LightmapBaker.LightmapBvh bvh = LightmapBaker.LightmapBvh.Build(triangles);
+        LightmapTriangle[] triangles = Scene();
+        LightmapBvh bvh = LightmapBvh.Build(triangles);
 
         int compared = 0;
         int hits = 0;
@@ -75,7 +75,7 @@ public sealed class LightmapBvhTraversalTests
     [Fact]
     public void EmptyHierarchyMissesEverything()
     {
-        LightmapBaker.LightmapBvh bvh = LightmapBaker.LightmapBvh.Build([]);
+        LightmapBvh bvh = LightmapBvh.Build([]);
 
         Assert.False(bvh.ClosestHit(
             new Vector3d(WorldOrigin, WorldOrigin, 1.0), new Vector3d(0, 0, 1), 100.0, out int triangle, out _, out _));
@@ -85,11 +85,11 @@ public sealed class LightmapBvhTraversalTests
 
     /// <summary>The nearest hit a full search over every triangle finds, or infinity.</summary>
     private static double Brute(
-        LightmapBaker.LightmapTriangle[] triangles, Vector3d origin, Vector3d direction, double reach)
+        LightmapTriangle[] triangles, Vector3d origin, Vector3d direction, double reach)
     {
         double best = double.PositiveInfinity;
 
-        foreach (LightmapBaker.LightmapTriangle triangle in triangles)
+        foreach (LightmapTriangle triangle in triangles)
         {
             if (Moeller(origin, direction, triangle, out double t) && t > 1e-5 && t < reach && t < best)
             {
@@ -102,7 +102,7 @@ public sealed class LightmapBvhTraversalTests
 
     /// <summary>Moeller-Trumbore, written out independently of the one under test.</summary>
     private static bool Moeller(
-        Vector3d origin, Vector3d direction, LightmapBaker.LightmapTriangle tri, out double t)
+        Vector3d origin, Vector3d direction, LightmapTriangle tri, out double t)
     {
         t = 0;
 
@@ -138,7 +138,7 @@ public sealed class LightmapBvhTraversalTests
         return t > 0.0;
     }
 
-    private static double PlaneDistance(Vector3d origin, Vector3d direction, LightmapBaker.LightmapTriangle tri)
+    private static double PlaneDistance(Vector3d origin, Vector3d direction, LightmapTriangle tri)
     {
         Vector3d normal = Cross(Sub(tri.B, tri.A), Sub(tri.C, tri.A));
         return Dot(normal, Sub(tri.A, origin)) / Dot(normal, direction);
@@ -154,15 +154,15 @@ public sealed class LightmapBvhTraversalTests
         (a.X * b.Y) - (a.Y * b.X));
 
     /// <summary>A ground plane with boxes on it — enough geometry for the hierarchy to have to prune.</summary>
-    private static LightmapBaker.LightmapTriangle[] Scene()
+    private static LightmapTriangle[] Scene()
     {
-        List<LightmapBaker.LightmapTriangle> triangles = [];
+        List<LightmapTriangle> triangles = [];
         Vector3f albedo = new(0.5f, 0.5f, 0.5f);
 
         void Quad(Vector3d a, Vector3d b, Vector3d c, Vector3d d)
         {
-            triangles.Add(new LightmapBaker.LightmapTriangle(a, b, c, 0, 0f, 0f, 1f, 0f, 1f, 1f, albedo));
-            triangles.Add(new LightmapBaker.LightmapTriangle(a, c, d, 0, 0f, 0f, 1f, 1f, 0f, 1f, albedo));
+            triangles.Add(new LightmapTriangle(a, b, c, 0, 0f, 0f, 1f, 0f, 1f, 1f, albedo));
+            triangles.Add(new LightmapTriangle(a, c, d, 0, 0f, 0f, 1f, 1f, 0f, 1f, albedo));
         }
 
         const int cells = 12;

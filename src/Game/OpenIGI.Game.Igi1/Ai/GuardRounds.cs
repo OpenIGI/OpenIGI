@@ -89,6 +89,20 @@ public sealed class GuardRounds
         Fired++;
         if (_mission.Player is not { } player)
         {
+            // Another game's player standing in the rig's stead: a round the walk does not march is offered to the level's
+            // bodies, its among them, which take it as the level's player.
+            if (_mission.PlayerStandIn is not null && (shooter is null || !_soldiers.MarchesRounds)
+                && (shooter is null || shooter.Soldier.Team != _soldiers.PlayerTeam))
+            {
+                Vector3d end = new(from.X + ((at.X - from.X) * 4.0), from.Y + ((at.Y - from.Y) * 4.0), from.Z + ((at.Z - from.Z) * 4.0));
+                _mission.Bodies.Shoot(
+                    from,
+                    end,
+                    shooter?.Soldier,
+                    met => new Igi1WeaponHit(met, from, end, weapon.DamageFactor, weapon.Category, shooter, FromPlayer: false).ToShared(),
+                    out _);
+            }
+
             return;
         }
 

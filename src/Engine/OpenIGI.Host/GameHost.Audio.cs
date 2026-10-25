@@ -1,23 +1,16 @@
+using System.Diagnostics;
 using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons.Ballistics;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game;
 using OpenIGI.Host.Audio;
+using OpenIGI.Host.Services;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
-using System.Diagnostics;
-using OpenIGI.Host.Services;
 
 namespace OpenIGI.Host;
 
@@ -107,7 +100,7 @@ public sealed partial class GameHost
         }
 
         // The same blend the presentation uses, so the ear and the eye agree about where the head is.
-        float alpha = RenderCVars.SmoothPresentation.Value
+        float alpha = FrameCVars.SmoothPresentation.Value
             ? _loop.Clock.TickFraction(_loop.Clock.FrameInstantMilliseconds)
             : 1f;
 
@@ -220,7 +213,7 @@ public sealed partial class GameHost
         // No player is the menu, where there is no ear to place the weather around.
         bool raining = AudioCVars.Rain.Value && HostedPlayer is not null && (_rain?.IsWeatherEnabled ?? false);
         float intensity = raining
-            ? (_storm is { Enabled: true } ? RenderCVars.StormIntensity.Value : 1f)
+            ? (_storm is { Enabled: true } ? WeatherCVars.StormIntensity.Value : 1f)
             : 0f;
 
         rain.Update(
@@ -259,7 +252,7 @@ public sealed partial class GameHost
             return;
         }
 
-        float intensity = RenderCVars.ImpactParticles.Value;
+        float intensity = CombatEffectCVars.ImpactParticles.Value;
         if (!(intensity > 0f))
         {
             return;

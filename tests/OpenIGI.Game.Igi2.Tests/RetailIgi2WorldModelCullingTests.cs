@@ -10,6 +10,8 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi2.ViewModel;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -44,6 +46,41 @@ public sealed class RetailIgi2WorldModelCullingTests
 
         renderer.DrawWorld([body with { Tick = 3, Pose = Pose(model, new Vector3f(0, 0, 16)) }], Camera3D.Default, projection);
         Assert.Equal(updates + 1, device.AnimatedMeshUpdates[mesh]);
+    }
+
+    /// <summary>A body drawn for a thing the binoculars marked glows through walls in its colour; an unmarked one does not.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_marked_body_glows_through_walls_and_an_unmarked_one_does_not()
+    {
+        (LoadedMission mission, ResourceRegistry resources, string name, MefModel model) = Mission();
+        using RecordingGraphicsDevice device = new();
+        using Igi2ViewModelRenderer renderer = new(device, resources);
+        Assert.True(renderer.Load(mission));
+        object instance = new();
+        TitleWorldModel[] drawn = [new(name, new Vector3d(0, 409600, 0), Matrix3f.Identity, Pose(model, default), instance, 1)];
+        renderer.DrawWorld(drawn, Camera3D.Default, Matrix4f.CreateProjection(640f, 360f, 640f, 360f, 1280, 720, 0.1f, 1000f));
+
+        renderer.DrawWorldOutlines(drawn, new Dictionary<object, BinocularMarkerColor>(), Camera3D.Default, 8f);
+        Assert.Equal(0, device.OutlineDrawCount + device.SilhouetteDrawCount);
+
+        // The silhouette highlight by default, by the marker's group; the glow in its colour when that is off.
+        renderer.DrawWorldOutlines(drawn, new Dictionary<object, BinocularMarkerColor> { [instance] = BinocularMarkerColor.Hostile }, Camera3D.Default, 8f);
+        Assert.Equal(1, device.SilhouetteDrawCount);
+        Assert.Equal(SilhouetteGroup.Hostile, device.LastSilhouetteGroup);
+
+        HudCVars.BinocularSilhouette.Value = false;
+        try
+        {
+            renderer.DrawWorldOutlines(drawn, new Dictionary<object, BinocularMarkerColor> { [instance] = BinocularMarkerColor.Hostile }, Camera3D.Default, 8f);
+        }
+        finally
+        {
+            HudCVars.BinocularSilhouette.Value = true;
+        }
+
+        Assert.Equal(1, device.OutlineDrawCount);
+        Assert.Equal(BinocularMarking.Glow(BinocularMarkerColor.Hostile), device.LastOutlineColour);
+        Assert.True(device.LastOutlineThroughWalls);
     }
 
     /// <summary>A fresh tick with an identical bone palette draws without skinning or uploading it again.</summary>

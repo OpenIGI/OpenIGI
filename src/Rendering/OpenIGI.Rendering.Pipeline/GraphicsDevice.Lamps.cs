@@ -41,7 +41,7 @@ public sealed partial class GraphicsDevice
     private int LampFrameIndex => RawLighting ? (int)(_frameCounter & 0xFFFFFFUL) : (int)(_frameCounter % 64UL);
 
     /// <summary>Whether the lamp shadows' filters run; the raw trace skips them whatever this says.</summary>
-    private static bool LampFilters => RenderCVars.LampDenoise.Value != 0;
+    private static bool LampFilters => LocalLightCVars.LampDenoise.Value != 0;
 
     /// <inheritdoc/>
     public void SetLampOcclusionField(LampOcclusionField? field) => _lampField = field;
@@ -63,15 +63,15 @@ public sealed partial class GraphicsDevice
     /// </remarks>
     private DeferredLampState LampState() => new(
         _frameCounter,
-        ScreenMarch: RenderCVars.LocalLightShadows.Value != 0,
+        ScreenMarch: LocalLightCVars.LocalLightShadows.Value != 0,
         Traced: WillTraceLamps() || WillMarchLamps(),
-        MaxSourceRadius: RenderCVars.LocalLightSource.Value);
+        MaxSourceRadius: LocalLightCVars.LocalLightSource.Value);
 
     /// <summary>Whether this frame's lamp shadows are traced.</summary>
     private bool WillTraceLamps() =>
-        RenderCVars.LocalLightShadows.Value != 0
-        && RenderCVars.HardwareRayTracing.Value
-        && RenderCVars.TracedLampShadows.Value
+        LocalLightCVars.LocalLightShadows.Value != 0
+        && RayTracingCVars.HardwareRayTracing.Value
+        && RayTracingCVars.TracedLampShadows.Value
         && _shading?.Variant == DeferredLighting.TracedVariant
         && TracedWorld is { IsWorldReady: true, WorldScene: not null };
 
@@ -82,7 +82,7 @@ public sealed partial class GraphicsDevice
     /// fallback at all: the shading read a full visibility, and every lamp lit through every wall in reach.
     /// </remarks>
     private bool WillMarchLamps() =>
-        RenderCVars.LocalLightShadows.Value != 0
+        LocalLightCVars.LocalLightShadows.Value != 0
         && !WillTraceLamps()
         && _lampField is { Levels: > 0 } field
         && _textures.Find(field.Clipmaps) is not null;

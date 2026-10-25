@@ -78,8 +78,8 @@ public sealed partial class GameHost
     /// </remarks>
     private int FrameRateCap(bool menuMode)
     {
-        int cap = _device.LowLatencyUnavailable.Length > 0 ? RenderCVars.FrameLimit.Value : 0;
-        if (menuMode && !RenderCVars.VSync.Value)
+        int cap = _device.LowLatencyUnavailable.Length > 0 ? ReconstructionCVars.FrameLimit.Value : 0;
+        if (menuMode && !FrameCVars.VSync.Value)
         {
             int display = _window.RefreshRate > 0 ? _window.RefreshRate : 60;
             cap = cap > 0 ? Math.Min(cap, display) : display;

@@ -1,7 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline;
-using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -99,6 +99,50 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             "The upper left of the frame is the triangle, so the frame is upside down.");
     }
 
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void A_marked_body_is_filled_and_outlined_over_the_picture_alike_on_every_backend(string backend)
+    {
+        byte[] plain = DrawOn(backend);
+        byte[] marked = DrawOn(backend, silhouette: true);
+        byte[] reference = DrawOn(RhiBackends.Reference, silhouette: true);
+
+        output.WriteLine($"{backend} centre {Describe(plain)} -> {Describe(marked)}");
+
+        // Inside, the faint dark fill: the green drawn there is dimmed.
+        Assert.True(marked[Centre + 1] + 4 < plain[Centre + 1], $"The middle is {Describe(marked)}, not dimmed from {Describe(plain)}.");
+
+        // About the edge, the hostile's red outline: somewhere across the triangle's left side on the middle row is redder than it
+        // was. The side crosses that row at about a third of the way in.
+        int brightest = 0;
+        for (int x = (Size / 4) - 4; x <= (Size / 4) + 8; x++)
+        {
+            int at = (((Size / 2) * Size) + x) * 4;
+            // Bgra: the red is the third byte.
+            int gain = marked[at + 2] - plain[at + 2];
+            brightest = Math.Max(brightest, gain);
+        }
+
+        output.WriteLine($"{backend} outline lifts the edge by {brightest}");
+        Assert.True(brightest > 20, $"The outline lifted the triangle's edge by only {brightest}.");
+
+        // Far from it, nothing: the sky in the corner is as it was.
+        int corner = ((2 * Size) + 2) * 4;
+        for (int c = 0; c < 3; c++)
+        {
+            Assert.InRange(marked[corner + c] - plain[corner + c], -1, 1);
+        }
+
+        // And the backend agrees with the reference about all of it.
+        int worst = 0;
+        for (int i = 0; i < marked.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(marked[i] - reference[i]));
+        }
+
+        Assert.True(worst <= RhiBackends.ColourTolerance(backend), $"{backend} disagrees with {RhiBackends.Reference} by {worst}.");
+    }
+
     /// <summary>Gets each compared backend, once untextured and once textured.</summary>
     public static TheoryData<string, bool> AlbedoCases
     {
@@ -162,6 +206,30 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
         Assert.True(resolved[Centre + 1] > resolved[Centre + 2], "The resolved frame lost the green that was drawn.");
         Assert.True(differing < plain.Length / 20, $"{differing} channels moved: the resolve is not starting from the frame.");
+    }
+
+    [AgreementTheory]
+    [MemberData(nameof(RhiBackends.ComparedWithReference), MemberType = typeof(RhiBackends))]
+    public void Every_backend_runs_a_mods_pass_over_the_finished_picture(string backend)
+    {
+        // The sample mod's greyscale, over the picture as it is shown: the tone map draws into the mods' image, the pass
+        // drains it, and what it wrote is laid onto the frame -- every pixel grey, where the frame without it has the green
+        // triangle and the red quad.
+        PostPassModule[] greyscale = [new("sample.Greyscale", SampleGreyscale.Value, PostPassStage.Display)];
+        byte[] vulkan = DrawOn(RhiBackends.Reference, passes: greyscale);
+        byte[] other = DrawOn(backend, passes: greyscale);
+        byte[] plain = DrawOn(RhiBackends.Reference);
+
+        int worst = 0;
+        for (int i = 0; i < vulkan.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - other[i]));
+        }
+
+        output.WriteLine($"worst difference {worst}; centre {Describe(vulkan)}, without {Describe(plain)}");
+        Assert.True(worst <= RhiBackends.ColourTolerance(backend), $"{backend} disagrees with {RhiBackends.Reference} about the mod's pass by {worst}.");
+        Assert.True(Colourful(plain) > 0, "The frame without the pass has no colour to drain.");
+        Assert.Equal(0, Colourful(vulkan));
     }
 
     [AgreementTheory]
@@ -292,7 +360,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows, bool glass)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows, bool glass, bool silhouette = false)
     {
         device.SetDebugView(view);
 
@@ -410,6 +478,12 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             device.SetMaterialOverride(SurfaceMaterial.Default);
         }
 
+        // The triangle marked for the silhouette highlight, which is laid over the finished picture.
+        if (silhouette)
+        {
+            device.DrawSilhouette(mesh, [new MeshDrawRange(0, 3)], Matrix4f.Identity, SilhouetteGroup.Hostile);
+        }
+
         device.EndPass();
 
         device.EndSceneCapture();
@@ -459,13 +533,24 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         bool temporal = false,
         float? bloom = null,
         bool shadows = false,
-        bool glass = false)
+        bool glass = false,
+        IReadOnlyList<PostPassModule>? passes = null,
+        bool silhouette = false)
     {
         using RhiBackendHost host = RhiBackends.Open(backend, Size);
 
         using (GraphicsDevice device = new(host.Device, new DisplayMode(Size, Size, 32, 60)))
         {
-            DrawFrame(device, view, textured, temporal, bloom, shadows, glass);
+            if (passes is not null)
+            {
+                device.SetPostPasses(passes);
+                foreach (PostPassModule pass in passes)
+                {
+                    device.SetPostPassValues(pass.Name, [1f]);
+                }
+            }
+
+            DrawFrame(device, view, textured, temporal, bloom, shadows, glass, silhouette);
         }
 
         return Read(host.Device, host.Target);
@@ -513,5 +598,37 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
     {
         int at = (((y * Size) + x) * 4);
         return $"b{pixels[at]} g{pixels[at + 1]} r{pixels[at + 2]}";
+    }
+
+    // The sample mod's compiled greyscale, registered once a process as the game registers a mod's module.
+    private static readonly Lazy<ShaderModuleId> SampleGreyscale = new(static () =>
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            string candidate = Path.Combine(directory.FullName, "tests", "OpenIGI.Modding.SampleMod", "shaders", "Generated");
+            if (Directory.Exists(candidate))
+            {
+                return ShaderCatalog.Register(ExternalShaderModule.Read(candidate, "Greyscale"));
+            }
+        }
+
+        throw new DirectoryNotFoundException("The sample mod's compiled shaders are not above the tests.");
+    });
+
+    // How many pixels have colour: channels further apart than a rounding.
+    private static int Colourful(byte[] pixels)
+    {
+        int coloured = 0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            int high = Math.Max(pixels[i], Math.Max(pixels[i + 1], pixels[i + 2]));
+            int low = Math.Min(pixels[i], Math.Min(pixels[i + 1], pixels[i + 2]));
+            if (high - low > 2)
+            {
+                coloured++;
+            }
+        }
+
+        return coloured;
     }
 }

@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -132,7 +133,7 @@ public sealed class RetailIgi2CollisionWorldTests
     {
         Assert.True(PlayerSpawn.TryFindGameplay(Mission1.Value.Root, out PlayerSpawnPoint spawn));
 
-        Igi2Intersection ground = Footing(spawn.Position);
+        WorldIntersection ground = Footing(spawn.Position);
 
         Assert.True(ground.IsHit, "nothing under the spawn.");
         Assert.InRange(ground.Position.Z, spawn.Position.Z - 2048.0, spawn.Position.Z + 2048.0);
@@ -150,15 +151,15 @@ public sealed class RetailIgi2CollisionWorldTests
             surface.Origin.Z + 200000.0);
 
         // From well above, so the roof, if any, is found first; step down until a floor faces up.
-        Igi2Intersection hit = Footing(middle, reach: -400000.0);
+        WorldIntersection hit = Footing(middle, reach: -400000.0);
         Assert.True(hit.IsHit, "nothing under the hangar.");
         Assert.IsType<Igi2CollisionOwner>(hit.HitObject?.Owner);
     }
 
     /// <summary>The two-line query <c>Human_GroundCollision</c> makes: down 40960 for the ground, up 8192 for the roof.</summary>
-    private static Igi2Intersection Footing(Vector3d at, double reach = -40960.0)
+    private static WorldIntersection Footing(Vector3d at, double reach = -40960.0)
     {
-        Igi2LineTrace trace = new(2) { Mesh = 1 };
+        WorldLineTrace trace = new(2) { Mesh = 1 };
         trace.Starts[0] = at;
         trace.Starts[1] = at;
         World.Value.NextZ(trace, [reach, 8192.0], 0xFFFFFFFF);

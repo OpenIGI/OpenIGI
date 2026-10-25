@@ -162,7 +162,9 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Signal &= ~Igi2PlayerSignal.Hit;
+        Matrix3f turnedFrom = Orientation;
         UpdateBody();
+        CarrySpeedThroughTurn(turnedFrom);
         View.UpdateView(Channels, UnfilteredMouse);
         CheckViewCollision();
         if (!IsDisableDeltaTranslationScale)
@@ -263,11 +265,21 @@ public sealed partial class Igi2HumanPlayer
             return;
         }
 
-        // Riding a ladder or a gun: the footing is still looked for, under where it stands, then it is carried along.
+        // Riding a ladder or a gun: the footing is still looked for, under where it stands, then it is carried along; on another
+        // game's ladder, which looks for none, nothing is underfoot.
         if (AttachParent is not null)
         {
-            Vector3d at = Position;
-            GroundCollision(at, ref at, AttachedGroundTolerance);
+            if (AttachParent is Interaction.IIgi2Ladder { KeepsFooting: false })
+            {
+                Signal &= ~Igi2PlayerSignal.Grounded;
+                DropGround();
+            }
+            else
+            {
+                Vector3d at = Position;
+                GroundCollision(at, ref at, AttachedGroundTolerance);
+            }
+
             FollowAttachment();
             return;
         }

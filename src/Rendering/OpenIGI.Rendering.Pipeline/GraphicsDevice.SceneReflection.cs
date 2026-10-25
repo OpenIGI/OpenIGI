@@ -39,8 +39,8 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Whether this frame's reflection traces: the adapter, the switches and a built world.</summary>
     private bool WillTraceReflections() =>
-        RenderCVars.HardwareRayTracing.Value
-        && RenderCVars.TracedReflections.Value
+        RayTracingCVars.HardwareRayTracing.Value
+        && RayTracingCVars.TracedReflections.Value
         && _surfaceCacheBinding.IsPresent
         && TracedWorld is { IsWorldReady: true, WorldScene: not null };
 
@@ -109,8 +109,8 @@ public sealed partial class GraphicsDevice
             ReflectionReachMetres,
             traces,
             TracedReflectionReachMetres,
-            RenderCVars.TracedReflectionClamp.Value,
-            RenderCVars.TracedReflectionMaxRoughness.Value,
+            ReflectionCVars.TracedReflectionClamp.Value,
+            ReflectionCVars.TracedReflectionMaxRoughness.Value,
             complete ? ReflectionCacheLookup.Of(_surfaceCacheBinding) : default,
             _viewModelLensX,
             _viewModelLensY,
@@ -159,7 +159,7 @@ public sealed partial class GraphicsDevice
             && (WillTraceReflections() || _distanceFieldBinding.IsPresent);
         return state with
         {
-            ReflectionCeiling = covers ? Math.Clamp(RenderCVars.TracedReflectionMaxRoughness.Value, 0f, 1f) : 0f,
+            ReflectionCeiling = covers ? Math.Clamp(ReflectionCVars.TracedReflectionMaxRoughness.Value, 0f, 1f) : 0f,
         };
     }
 

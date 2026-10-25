@@ -1,13 +1,13 @@
-﻿using OpenIGI.Game.Ai;
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -191,7 +191,7 @@ public sealed partial class GameHost
         _timeOfDay.BoundSun = preview.Sun is { } previewSun
             ? DayNightBinding.Bind(previewSun, _deferredLighting)
             : null;
-        _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, RenderCVars.TimeOfDay.Value);
+        _timeOfDay.DayNight.ResetForLevel(_timeOfDay.BoundSun, ExposureCVars.TimeOfDay.Value);
 
         // After the reset, which clears it -- the same order the mission path keeps.
         if (preview.Sun is { } nightSun && _deferredLighting is { Night: { } boundNight } authoredNight)

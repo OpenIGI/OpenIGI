@@ -123,8 +123,12 @@ Settings are saved to `settings.cfg` beside the executable if one exists there, 
 - **Content packs.** These are folders of replacement art with a load order, installed and ordered from the
   launcher's Content page. The tools to build one from your own installation, such as an AI-upscaled texture pack,
   are `tools/texture-forge` and `tools/OpenIGI.Tools.ResExtract`.
-- **Code mods.** Mods are C# assemblies written against a versioned API. They can add systems, replace the game's
-  tasks, and use the other game's data. Start one with the template:
+- **Mods.** A mod can ship files that stand in for the game's, whole new missions and campaigns, C# code, and shader
+  passes over the picture, before the tone map or after it. Its code is one `Configure` that says, top to bottom, what
+  it changes through a builder: settings, level systems, task types, script constants, the games' events and HUD
+  overlays. A save records the mods it was made with, and a mod's tests are built with the same SDK
+  against a harness that configures it as the game does. Start one with the template (`--kind code`, `data` or
+  `shader`):
 
   ```sh
   dotnet new install OpenIGI.Modding.Templates
@@ -160,7 +164,7 @@ Nothing under `src/` may reference a concrete backend; the applications wire bac
 Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the determinism rules, the clean-room policy,
 which retail build is the reference, and how changes are tested. In short: open a pull request against `develop`, keep
 the Release build free of warnings, and keep the test suite passing. `tools/install-hooks.sh` installs the same
-checks as git hooks. [`RELEASING.md`](RELEASING.md) describes how releases reach the launcher and the website.
+checks as git hooks.
 
 ## Legal
 

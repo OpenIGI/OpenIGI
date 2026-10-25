@@ -7,9 +7,10 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Qvm;
 using OpenIGI.TestSupport;
 using Xunit;
-using static OpenIGI.TestSupport.QvmExpression;
+using static OpenIGI.Scripting.Qvm.QvmExpression;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
-using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Ai;
 
@@ -66,7 +66,7 @@ public sealed partial class Igi2AiGraph
     /// Gets the graph as ground: what a soldier with a mind stands on (<c>human.c Human_GroundCollision</c> makes the graph the
     /// footing's struck object), which no line meets.
     /// </summary>
-    public IIgi2Collider Ground => _ground ??= new Igi2AiGraphGround(this);
+    public IWorldCollider Ground => _ground ??= new Igi2AiGraphGround(this);
 
     /// <summary>Gets or sets the graph's task id, <c>nGraphID</c>.</summary>
     public int Id { get; set; } = -1;
@@ -327,6 +327,84 @@ public sealed partial class Igi2AiGraph
         }
     }
 
+    /// <summary>The heights above a node its cover is felt for, <c>AIGraph_avNodeCoverHeight</c> (<c>igi2 0x6B077C</c>): 0.3, 0.5, 1.2 and 1.9 metres.</summary>
+    public static readonly float[] CoverHeights = [1228.8f, 2048f, 4915.2f, 7782.4f];
+
+    /// <summary>How far out from a node its cover is felt for, two metres (<c>0x6A6C98</c>).</summary>
+    public const double CoverReach = 8192.0;
+
+    /// <summary>
+    /// What a node's cover is felt against, the groups of <c>AIGraph_DecideCoverItemForNode</c>'s trace: the forest's, every rigid
+    /// object and every spline; not the ground and not a human.
+    /// </summary>
+    public const uint CoverGroups = 0x18000000 | Collision.Igi2CollisionWorld.ForestGroup;
+
+    /// <summary>
+    /// Works the graph's cover out from the world about it, as the client does for a graph flagged to update it
+    /// (<c>AIGraph_UpdateNodeCover</c>, <c>igi2 0x5B7BE0</c> per node): what the level ships is replaced.
+    /// </summary>
+    /// <param name="world">The world the lines meet.</param>
+    /// <remarks>
+    /// <para>
+    /// From each node, raised to each of the four <see cref="CoverHeights"/>, a line runs <see cref="CoverReach"/> out in each of 32
+    /// directions round it, the first due east and the rest turning left; a line that meets something shelters the node from that
+    /// way at that height, a bit of its direction's word, the lowest for the lowest height.
+    /// </para>
+    /// <para>
+    /// A node is cover only where it is sheltered from at least three directions low down (one of the three lower heights) but
+    /// open at the top, so a soldier crouched there hides and stood up sees over: a node walled in to head height is not cover.
+    /// </para>
+    /// </remarks>
+    public void UpdateCover(Collision.IIgi2CollisionQuery world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        _cover.Clear();
+        const int Directions = 32;
+        WorldLineTrace trace = new(CoverHeights.Length * Directions);
+        for (int id = 0; id < MaxNodes; id++)
+        {
+            if (NodeAt(id) is not { } node)
+            {
+                continue;
+            }
+
+            Vector3d at = node.Position;
+            for (int height = 0; height < CoverHeights.Length; height++)
+            {
+                double z = CoverHeights[height] + at.Z;
+                for (int way = 0; way < Directions; way++)
+                {
+                    // The angle as the FPU forms it: the direction's number by a float 2*pi and a float 1/32.
+                    double angle = way * (double)6.2831855f * (double)0.03125f;
+                    int line = (height * Directions) + way;
+                    trace.Starts[line] = new Vector3d(at.X, at.Y, z);
+                    trace.Ends[line] = new Vector3d((Math.Cos(angle) * CoverReach) + at.X, (Math.Sin(angle) * CoverReach) + at.Y, z);
+                }
+            }
+
+            trace.Count = CoverHeights.Length * Directions;
+            world.TraceLines(trace, CoverGroups);
+            int[] circle = new int[Directions];
+            bool sheltered = false;
+            for (int height = 0; height < CoverHeights.Length; height++)
+            {
+                for (int way = 0; way < Directions; way++)
+                {
+                    if (trace.Intersections[(height * Directions) + way].IsHit)
+                    {
+                        circle[way] |= 1 << height;
+                        sheltered = true;
+                    }
+                }
+            }
+
+            if (sheltered && circle.Count(static bits => (bits & 7) != 0 && (bits & 8) == 0) > 2)
+            {
+                _cover.Add(new Igi2AiCoverItem { NodeId = node.Id, CoverCircle = circle });
+            }
+        }
+    }
+
     /// <summary>The resource a graph's cover is read from, <c>MISSION:graphs/graphcover%d.dat</c>.</summary>
     /// <param name="taskId">The graph's task id.</param>
     /// <returns>The resource name.</returns>
@@ -336,13 +414,13 @@ public sealed partial class Igi2AiGraph
 
 /// <summary>A graph as the ground a soldier stands on: it holds the graph and answers no line.</summary>
 /// <param name="graph">The graph.</param>
-internal sealed class Igi2AiGraphGround(Igi2AiGraph graph) : IIgi2Collider
+internal sealed class Igi2AiGraphGround(Igi2AiGraph graph) : IWorldCollider
 {
     /// <inheritdoc/>
     public object Owner => graph;
 
     /// <inheritdoc/>
-    public void NextZ(Igi2LineTrace trace)
+    public void NextZ(WorldLineTrace trace)
     {
     }
 }

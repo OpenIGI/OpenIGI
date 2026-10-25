@@ -4,11 +4,19 @@
   "classifications": [ "OpenIGI", "Mod", "Game" ],
   "identity": "OpenIGI.Modding.Templates.Mod",
   "name": "OpenIGI mod",
-  "description": "A mod for OpenIGI: code built against the modding API, packaged as the launcher installs it.",
+  "description": "A mod for OpenIGI: code written with the modding API's attributes, files that win over the game's, or a pass over the picture, packaged as the launcher installs it.",
   "shortName": "openigi-mod",
   "sourceName": "MyMod",
   "preferNameDirectory": true,
   "tags": { "language": "C#", "type": "project" },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(kind == 'data')", "exclude": [ "MyMod.cs" ] },
+        { "condition": "(kind != 'shader')", "exclude": [ "shaders/**" ] }
+      ]
+    }
+  ],
   "symbols": {
     "modId": {
       "type": "parameter",
@@ -23,6 +31,26 @@
       "description": "Who the launcher credits.",
       "replaces": "AUTHOR",
       "defaultValue": "Your name"
+    },
+    "kind": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "What the mod is made of.",
+      "defaultValue": "code",
+      "choices": [
+        { "choice": "code", "description": "Code, with data/ files beside it." },
+        { "choice": "data", "description": "Files alone: textures, sounds, missions, which win over the game's." },
+        { "choice": "shader", "description": "A pass over the picture, with the settings that switch it on and tune it." }
+      ]
+    },
+    "modSetting": {
+      "type": "generated",
+      "generator": "regex",
+      "replaces": "MOD_SETTING",
+      "parameters": {
+        "source": "modId",
+        "steps": [ { "regex": "[^A-Za-z0-9]", "replacement": "_" } ]
+      }
     },
     "sdkVersion": {
       "type": "parameter",

@@ -19,7 +19,8 @@ public enum DisplayWindowMode
 /// <remarks>
 /// <para>
 /// Applied by the host -- to the window, and through the composition root's choice of device -- and declared
-/// here, beside <see cref="RenderCVars"/>, so every layer that shows or reads them has them registered.
+/// here, beside the renderer's own (<see cref="FrameCVars"/> and its siblings), so every layer that shows or
+/// reads them has them registered.
 /// </para>
 /// <para>
 /// The command line wins over all three for its run, without writing them: <c>OPENIGI_RENDERER</c> over

@@ -55,7 +55,7 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public bool RawLighting =>
-        RenderCVars.RayReconstructionRaw.Value
+        ReconstructionCVars.RayReconstructionRaw.Value
         && _reconstructionPlan.Active == ReconstructionKind.RayReconstruction
         && _rayReconstructionFault.Length == 0
         && TracedWorld is not null;
@@ -143,7 +143,7 @@ public sealed partial class GraphicsDevice
     /// <param name="encoder">The frame's encoder.</param>
     private void ShowRayReconstructionInput(SceneTargetSet scene, IRhiCommandEncoder encoder)
     {
-        int view = RenderCVars.RayReconstructionGuideView.Value;
+        int view = ReconstructionCVars.RayReconstructionGuideView.Value;
         IRhiTexture? shown = view switch
         {
             1 => _diffuseAlbedo,

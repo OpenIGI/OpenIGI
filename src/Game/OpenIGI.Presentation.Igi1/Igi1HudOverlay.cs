@@ -1,8 +1,10 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.World;
-using OpenIGI.Presentation;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Presentation.Hud.Remastered;
+using OpenIGI.Presentation.Igi1.Hud;
+using OpenIGI.Presentation.Igi1.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -15,6 +17,8 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
 {
     private readonly IGraphicsDevice _device = device;
     private readonly Igi1Gameplay _gameplay = gameplay;
+    private readonly HudModel _model = new();
+    private RemasteredHud? _remastered;
 
     /// <inheritdoc/>
     public void DrawWeaponHud(SpriteBatch batch, in MissionHudFrame frame)
@@ -145,7 +149,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
     // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
     // when the arms and the HUD are gone but the last thing the screen showed is still red.
-    float flashStrength = Math.Clamp(RenderCVars.DamageFlash.Value, 0f, 1f);
+    float flashStrength = Math.Clamp(HudCVars.DamageFlash.Value, 0f, 1f);
     if (mission.DamageFlash.IsActive && flashStrength > 0f)
     {
         float flashWidth = frame.Width;
@@ -230,51 +234,33 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         batch.End();
     }
 
-    if (frame.RemasteredOptics
+    // The remastered display, shared with I.G.I. 2's and drawn in Project I.G.I.'s theme, its pictures the status archive's.
+    if (frame.RemasterHud
         && frame.ShowFirstPersonHud
-        && mission.Player is { IsBinocularsOpen: true }
-        && mission.Player.View is { } binocularView
-        && frame.RemasteredHud is { IsReady: true } binocularHud)
+        && mission.Player is { } modernPlayer
+        && !modernPlayer.IsBinocularsOpen
+        && frame.Hud is IHudIconSource icons
+        && (_remastered ??= CreateRemastered()).IsReady)
     {
-        _device.Set2DProjection(frame.Width, frame.Height);
+        Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model, messages: frame.TacticalMessages);
+        _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
-        binocularHud.DrawBinocularOverlay(
-            batch,
-            mission.Player.Yaw,
-            binocularView.TanX,
-            frame.Width,
-            frame.Height,
-            frame.BinocularTargets,
-            frame.BinocularSeconds,
-            frame.BinocularRangeMetres);
+        HudProjector? projector = modernPlayer.View is { } view
+            ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, view.TanX, frame.Width, frame.Height)
+            : null;
+        _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 8f) with
+        {
+            Projector = projector,
+        });
         batch.End();
     }
 
-    if (frame.RemasterHud
-        && frame.ShowFirstPersonHud
-        && mission.Player is { Weapons: { } modernCarried }
-        && !mission.Player.IsBinocularsOpen
-        && frame.RemasteredHud is { IsReady: true } modernHud)
-    {
-        CarriedWeapon? inHand = modernCarried.InHand;
-        _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
-        batch.Begin();
-        modernHud.Draw(
-            batch,
-            new RemasteredHudSnapshot(
-                mission.PlayerHealth.RemainingFraction,
-                mission.Player.Yaw,
-                inHand?.Weapon,
-                inHand?.Gun.RoundsInClip ?? 0,
-                inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
-                modernCarried.State,
-                mission.Player.ActionSprite,
-                mission.Objectives?.Objectives ?? [],
-                mission.Player.IsSniperScoped,
-                frame.WorldInteractionPrompt),
-            frame.Width,
-            frame.Height);
-        batch.End();
     }
+
+    private RemasteredHud CreateRemastered()
+    {
+        RemasteredHud hud = new(_device, NullLogger.Instance);
+        hud.Load();
+        return hud;
     }
 }

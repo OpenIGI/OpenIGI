@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -27,7 +27,7 @@ public abstract partial class Igi2Human
 
     private const float TurnRoomHeight = 819.2000122070312f;
 
-    private readonly Igi2LineTrace _turnRoom = new(MaxTurnRoomLines)
+    private readonly WorldLineTrace _turnRoom = new(MaxTurnRoomLines)
     {
         Mesh = FootingMesh,
         Includes = static owner => !IsSweptThrough(owner),
@@ -141,7 +141,7 @@ public abstract partial class Igi2Human
         Fpu sumX = (Fpu)0f, sumY = (Fpu)0f, sumZ = (Fpu)0f;
         for (int i = 0; i < lines; i++)
         {
-            Igi2Intersection hit = _turnRoom.Intersections[i];
+            WorldIntersection hit = _turnRoom.Intersections[i];
             if (!hit.IsHit || Math.Abs(hit.Normal.Z) >= TurnRoomSteepest)
             {
                 continue;

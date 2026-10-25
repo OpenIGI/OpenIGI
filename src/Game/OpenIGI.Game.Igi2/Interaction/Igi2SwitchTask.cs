@@ -189,12 +189,16 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
         _isLastPressed = _isPressed;
     }
 
+    /// <summary>Gets or sets what else is told as the switch is pressed: another game's trigger it stands for, for one.</summary>
+    public Action? Pressed { get; set; }
+
     /// <inheritdoc/>
     public void Press(int clientId)
     {
         _isPressed = 1;
         _lastPressedTick = _flow?.Tick ?? 0;
         _clientId = clientId;
+        Pressed?.Invoke();
     }
 
     /// <inheritdoc/>

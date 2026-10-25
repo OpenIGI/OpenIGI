@@ -1,30 +1,10 @@
-﻿using OpenIGI.Presentation.Cameras;
-using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
-using OpenIGI.Formats.Ai;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Animation;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Physics;
-using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
-using OpenIGI.Game.World;
-using OpenIGI.Game;
-using OpenIGI.Presentation.Rendering;
-using OpenIGI.Rendering;
-using OpenIGI.Scripting.Qvm;
-using OpenIGI.Scripting.Runtime;
-using OpenIGI.Game.Igi1.Ai;
-using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Igi1.Physics;
-using Group = OpenIGI.Presentation.Igi1.SoldierRenderer.Group;
-using HeldWeapon = OpenIGI.Presentation.Igi1.SoldierRenderer.HeldWeapon;
-using Member = OpenIGI.Presentation.Igi1.SoldierRenderer.Member;
+using OpenIGI.Game.World;
+using OpenIGI.Rendering;
+using Member = OpenIGI.Presentation.Igi1.SoldierMember;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -42,7 +22,7 @@ internal static class SoldierSkinning
     /// The upload moves the mesh's current stream into its previous one before writing this pose, which is the pair the
     /// motion vectors and the between-tick blending read.
     /// </remarks>
-    public static bool Upload(IGraphicsDevice device, SoldierRenderer.Member member, MeshGeometry geometry, MefModel model, BonePose pose)
+    public static bool Upload(IGraphicsDevice device, Member member, MeshGeometry geometry, MefModel model, BonePose pose)
     {
         if (!member.Mesh.IsValid)
         {

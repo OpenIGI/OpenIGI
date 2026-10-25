@@ -1,4 +1,4 @@
-﻿namespace OpenIGI.Shaders;
+namespace OpenIGI.Shaders;
 
 /// <summary>
 /// The shader modules the library carries. One value per <c>.slang</c> source under
@@ -213,4 +213,22 @@ public enum ShaderModuleId
 
     /// <summary>A round's tracer: the original's thin unfogged line, or the remaster's glowing streak.</summary>
     Tracer,
+
+    /// <summary>Post: the finished picture the mods' passes over it left, put where the tone map would have drawn it.</summary>
+    ModDisplay,
+
+    /// <summary>UI: the remastered heads-up display laid over the picture as if projected on a visor.</summary>
+    HudFx,
+
+    /// <summary>A sniper's scope catching the light: a star of streaks added over the picture (<c>Ui/ScopeGlint.slang</c>).</summary>
+    ScopeGlint,
+
+    /// <summary>Post: what the binoculars marked, a fill inside a soft outline laid over the finished picture (<c>Post/Silhouette.slang</c>).</summary>
+    Silhouette,
+
+    /// <summary>
+    /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is
+    /// labelled so; the catalogue gives each one an id of its own as it is registered (<see cref="ShaderCatalog.Register"/>).
+    /// </summary>
+    External,
 }

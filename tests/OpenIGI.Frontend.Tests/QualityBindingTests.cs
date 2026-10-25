@@ -118,7 +118,7 @@ public sealed class QualityBindingTests
     public void Every_shipped_group_names_variables_the_renderer_actually_has()
     {
         CVarRegistry registry = CVarRegistry.Default;
-        _ = OpenIGI.Rendering.RenderCVars.VSync; // force the container's static initialiser
+        _ = OpenIGI.Rendering.FrameCVars.VSync; // force the container's static initialiser
 
         // CreateControl returns null if ANY variable a group names is unregistered, so a single typo in a
         // thirteen-name group does not produce a broken row -- it produces no row at all, silently. This
@@ -153,7 +153,7 @@ public sealed class QualityBindingTests
     public void The_page_is_a_fraction_of_the_variables_it_drives()
     {
         CVarRegistry registry = CVarRegistry.Default;
-        _ = OpenIGI.Rendering.RenderCVars.VSync;
+        _ = OpenIGI.Rendering.FrameCVars.VSync;
 
         int graphicsVariables = 0;
         foreach (ICVar cvar in registry.All.ToList())
@@ -322,7 +322,7 @@ public sealed class QualityBindingTests
     public void Every_shipped_group_can_read_back_every_step_it_writes()
     {
         CVarRegistry registry = CVarRegistry.Default;
-        _ = OpenIGI.Rendering.RenderCVars.VSync;
+        _ = OpenIGI.Rendering.FrameCVars.VSync;
 
         // The one way a hand-written table goes wrong quietly: a value that is in range and applies fine,
         // but whose text does not round-trip through the variable -- "1.50" against "1.5" -- so the row

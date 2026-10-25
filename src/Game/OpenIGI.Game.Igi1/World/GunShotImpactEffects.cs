@@ -1,6 +1,7 @@
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -78,6 +79,14 @@ public static class GunShotImpactEffects
 
     /// <summary>The puff system's pool size — two, because it emits exactly two.</summary>
     public const int PuffCapacity = 2;
+
+    /// <summary>
+    /// How an impact's puff is drawn, as <c>0x438440</c> makes its system: <see cref="PuffSprite"/> at <see cref="PuffSizeInUnits"/>,
+    /// grey, a hundred metres off, faded through its alpha and filtered (<c>0x1080000</c>).
+    /// </summary>
+    public static readonly Particle2DLook PuffLook = new(
+        PuffSprite, IsAnimated: false, Frames: 1, AnimationDelta: 0, new Vector3f(127f, 127f, 127f), PuffSizeInUnits, PuffSizeInUnits,
+        409600f, Particle2DFlags.Filtered | Particle2DFlags.FadesByOpacity | Particle2DFlags.DepthTested);
 
     /// <summary>The puff quad's authored size, in world units.</summary>
     /// <remarks>Four centimetres, before the growth multiplier.</remarks>

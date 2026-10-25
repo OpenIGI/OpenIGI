@@ -2,7 +2,9 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -70,11 +72,11 @@ public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
     /// <summary>Its blast's sound.</summary>
     public const string BlastSound = "explo_proxy";
 
-    private readonly Igi2LineTrace _path = new(1);
+    private readonly WorldLineTrace _path = new(1);
     private readonly Igi2ExplosionWorld _explosions;
     private readonly IIgi2CollisionQuery _collision;
     private readonly IIgi2WeaponOwner? _shooter;
-    private readonly Igi2Particle2DSystem? _trail;
+    private readonly Particle2DSystem? _trail;
     private Vector3f _speed;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ImpactGrenade"/> class: fired, <c>ImpactGrenade_New</c> (<c>igi2 0x4CC940</c>).</summary>
@@ -128,7 +130,7 @@ public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
         _path.Count = 1;
         _path.Includes = Igi2GunShot.WeaponCollisionIncludes(new WeaponCollisionQuery(_shooter, _shooter, 1f));
         _collision.TraceLines(_path, uint.MaxValue);
-        Igi2Intersection hit = _path.Intersections[0];
+        WorldIntersection hit = _path.Intersections[0];
         if (hit.IsHit)
         {
             float reach = ((Fpu)Parameters.Radius * 2048.0).F;

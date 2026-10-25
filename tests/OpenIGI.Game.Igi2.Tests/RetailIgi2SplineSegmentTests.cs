@@ -3,6 +3,7 @@ using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -145,7 +146,7 @@ public sealed class RetailIgi2SplineSegmentTests
 
                 n /= n.Length;
                 Vector3d middle = ((a + b + c) / 3.0) + segment.Position;
-                Igi2LineTrace trace = new(1);
+                WorldLineTrace trace = new(1);
                 trace.Starts[0] = middle + (n * 64.0);
                 trace.Ends[0] = middle - (n * 64.0);
                 Igi2SplineSegmentTrace.Trace(segment, trace);
@@ -184,13 +185,13 @@ public sealed class RetailIgi2SplineSegmentTests
             Vector3f across = new(segment.Orientation[1], segment.Orientation[4], segment.Orientation[7]);
             double height = MeshMiddleZ(segment);
             Vector3d middle = new(segment.Position.X, segment.Position.Y, segment.Position.Z + height);
-            Igi2LineTrace trace = new(1);
+            WorldLineTrace trace = new(1);
             trace.Starts[0] = new Vector3d(middle.X - (across.X * 8192.0), middle.Y - (across.Y * 8192.0), middle.Z);
             trace.Ends[0] = new Vector3d(middle.X + (across.X * 8192.0), middle.Y + (across.Y * 8192.0), middle.Z);
 
             world.TraceLines(trace, Igi2CollisionWorld.SplineGroup);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             if (hit.IsHit)
             {
                 Assert.Same(segment, hit.HitObject);
@@ -211,11 +212,11 @@ public sealed class RetailIgi2SplineSegmentTests
         int struck = 0;
         foreach (Igi2SplineSegment segment in world.Segments)
         {
-            Igi2LineTrace trace = new(1);
+            WorldLineTrace trace = new(1);
             trace.Starts[0] = new Vector3d(segment.Position.X, segment.Position.Y, segment.Position.Z + 40960.0);
             world.NextZ(trace, [-81920.0], Igi2CollisionWorld.SplineGroup);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             if (hit.IsHit && hit.HitObject is Igi2SplineSegment)
             {
                 Assert.InRange(hit.Position.Z, segment.Position.Z - 40960.0, segment.Position.Z + 40960.0);

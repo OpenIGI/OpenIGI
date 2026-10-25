@@ -1,16 +1,15 @@
-using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -52,7 +51,7 @@ public sealed class PlayerCameraHealthTests
         camera.Tick(input, terrain: null);
         input.BeginFrame();
         input.Mouse.SetButton(MouseButton.Left, down: true);
-        Assert.True(PlayerCamera.SampleFrame(input, camera.InputProfile).IsSet(PlayerInputSlot.Fire));
+        Assert.True(PlayerInputSampler.SampleFrame(input, camera.InputProfile).IsSet(PlayerInputSlot.Fire));
         camera.Tick(input, terrain: null);
 
         Assert.Equal(HumanWeaponState.Medipack, camera.Weapons.State);

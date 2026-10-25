@@ -19,6 +19,9 @@ public interface ITitleWorldModels
 
     /// <summary>Gets the marks lying on the ground as of the last tick: shadows and pools of blood.</summary>
     IReadOnlyList<TitleGroundDecal> GroundDecals => [];
+
+    /// <summary>Gets the level's 2-D particles -- blood, dust, smoke -- in the engine both titles share; none when it has none.</summary>
+    OpenIGI.Game.World.Particles.Particle2DModule? Particles => null;
 }
 
 /// <summary>A square laid on the ground, blended over it.</summary>
@@ -42,8 +45,11 @@ public sealed record TitleWorldSprite(string Sprite, Vector3d Position, float Ha
 /// <param name="Position">Where it stands, in world units.</param>
 /// <param name="Orientation">Its orientation, as the world's placements carry theirs.</param>
 /// <param name="Pose">The skeleton a skinned model is posed by, in the model's frame and units; null for a rigid one.</param>
-/// <param name="Instance">Which body a skinned model is, so bodies of one model keep a mesh each; null for a rigid one.</param>
-/// <param name="Tick">The tick a skinned model's pose is for: a body is skinned once a tick.</param>
+/// <param name="Instance">
+/// Which thing the model is, the same from tick to tick: bodies of one model keep a mesh each, and a model named so is drawn
+/// between where it was a tick ago and where it is. Null for a model drawn only where the last tick left it.
+/// </param>
+/// <param name="Tick">The tick the model is for: a body is skinned once a tick, and a named model moves once a tick.</param>
 public sealed record TitleWorldModel(
     string Model,
     Vector3d Position,

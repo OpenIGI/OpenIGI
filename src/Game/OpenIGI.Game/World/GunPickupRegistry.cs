@@ -1,9 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
 
@@ -297,6 +296,26 @@ public sealed class GunPickupRegistry
         return collected ?? [];
     }
 
+    /// <summary>
+    /// Takes a pickup out of the level as collecting it does, into no one's hands: another game's pickup lies in its place, for
+    /// that game's player to take.
+    /// </summary>
+    /// <param name="pickup">The pickup.</param>
+    public void Withdraw(GunPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        if (pickup.IsCollected || !_items.Contains(pickup))
+        {
+            return;
+        }
+
+        pickup.IsCollected = true;
+        if (pickup.Task is { } task)
+        {
+            task.Tree.Delete(task);
+        }
+    }
+
     /// <summary>Creates a runtime pickup when a human drops their gun.</summary>
     /// <remarks>
     /// Gun's drop handler calls <c>GunPickup_Create</c> at <c>0x46C980</c>, passing the gun's weapon id
@@ -315,8 +334,12 @@ public sealed class GunPickupRegistry
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
         pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
         _items.Add(pickup);
+        Spawned?.Invoke(pickup);
         return pickup;
     }
+
+    /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>
+    public event Action<GunPickup>? Spawned;
 
     /// <summary>Advances runtime gun drops; authored level pickups remain fixed in place.</summary>
     public void Tick(RagdollWorld world)

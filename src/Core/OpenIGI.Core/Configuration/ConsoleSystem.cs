@@ -23,6 +23,7 @@ public sealed class ConsoleSystem
     private readonly List<IConsoleOutput> _outputs = [];
     private readonly Dictionary<string, string> _aliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _binds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _kept = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Initialises a new instance of the <see cref="ConsoleSystem"/> class.</summary>
     /// <param name="variables">The variable registry, or <see langword="null"/> for <see cref="CVarRegistry.Default"/>.</param>
@@ -31,6 +32,7 @@ public sealed class ConsoleSystem
     {
         Variables = variables ?? CVarRegistry.Default;
         Commands = commands ?? new CommandRegistry();
+        Variables.Added += AdoptKeptSetting;
     }
 
     /// <summary>Occurs for every line written to the console.</summary>
@@ -71,6 +73,33 @@ public sealed class ConsoleSystem
     /// and calls <see cref="Execute"/> when a bound key goes down.
     /// </remarks>
     public IReadOnlyDictionary<string, string> Binds => _binds;
+
+    /// <summary>Gets the values a settings file gave mods' variables that nothing has declared this run, keyed by name.</summary>
+    /// <remarks>
+    /// A mod switched off declares none of its variables, so its lines would otherwise be dropped as retired settings and lost
+    /// at the next save; they are kept as they were read and written back, until the mod is on again and declares them. A
+    /// variable declared after the settings were read -- a mod's, as its game starts -- takes its kept value then.
+    /// </remarks>
+    public IReadOnlyDictionary<string, string> KeptSettings => _kept;
+
+    /// <summary>Keeps the value a settings file gave a mod's variable that nothing has declared this run.</summary>
+    /// <param name="name">The variable's name.</param>
+    /// <param name="value">The value, as the file wrote it.</param>
+    public void KeepSetting(string name, string value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(value);
+        _kept[name] = value;
+    }
+
+    // A mod's variable declared after the settings were read takes the value they kept for it.
+    private void AdoptKeptSetting(object? sender, CVarAddedEventArgs e)
+    {
+        if (_kept.Remove(e.Variable.Name, out string? value))
+        {
+            e.Variable.TrySetText(value, out _);
+        }
+    }
 
     /// <summary>Adds a sink that receives every line the console writes.</summary>
     /// <param name="output">The sink to add.</param>

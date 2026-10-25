@@ -22,6 +22,11 @@ public static class RemasteredHudPresentation
     public static bool UsesRemasteredOptics(bool tacticalComputerEnabled, bool opticsRendererReady) =>
         tacticalComputerEnabled && opticsRendererReady;
 
+    /// <summary>Whether a title's player's binoculars use the enhanced optics, by the same rule: the setting, and faces to draw them.</summary>
+    /// <remarks>Read by the host, which draws them, and by the title's display, which then leaves its retail overlay out.</remarks>
+    public static bool UsesRemasteredTitleOptics =>
+        UsesRemasteredOptics(OpenIGI.Rendering.HudCVars.TacticalComputer.Value, OpenIGI.Presentation.Text.UiFontLibrary.TypographyAvailable);
+
     /// <summary>Whether the retail weapon layer owns the current binocular presentation.</summary>
     /// <remarks>
     /// The tactical optics switch is independent of the ordinary remastered HUD switch. When the

@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Weapons;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -21,14 +21,14 @@ public sealed class GunShotResolutionTests
     {
         Vector3f wall = new(0f, -1f, 0f);
 
-        Assert.Equal(0f, PlayerCamera.IncidenceRadians(new Vector3d(0, 1, 0), wall), 1e-4f);
+        Assert.Equal(0f, GunShotBallistics.IncidenceRadians(new Vector3d(0, 1, 0), wall), 1e-4f);
         Assert.Equal(
             MathF.PI / 2f,
-            PlayerCamera.IncidenceRadians(new Vector3d(1, 0, 0), wall),
+            GunShotBallistics.IncidenceRadians(new Vector3d(1, 0, 0), wall),
             1e-4f);
         Assert.Equal(
             MathF.PI / 4f,
-            PlayerCamera.IncidenceRadians(new Vector3d(1, 1, 0), wall),
+            GunShotBallistics.IncidenceRadians(new Vector3d(1, 1, 0), wall),
             1e-4f);
     }
 
@@ -41,10 +41,10 @@ public sealed class GunShotResolutionTests
 
         Assert.True(
             GunShotBallistics.DeflectionChance(
-                limit, PlayerCamera.IncidenceRadians(new Vector3d(0, 1, 0), new Vector3f(0f, -1f, 0f))) <= 0f);
+                limit, GunShotBallistics.IncidenceRadians(new Vector3d(0, 1, 0), new Vector3f(0f, -1f, 0f))) <= 0f);
 
         float grazing = GunShotBallistics.DeflectionChance(
-            limit, PlayerCamera.IncidenceRadians(new Vector3d(1, 0.02, 0), new Vector3f(0f, -1f, 0f)));
+            limit, GunShotBallistics.IncidenceRadians(new Vector3d(1, 0.02, 0), new Vector3f(0f, -1f, 0f)));
         Assert.InRange(grazing, 0.9f, 1f);
     }
 
@@ -60,7 +60,7 @@ public sealed class GunShotResolutionTests
     [Fact]
     public void ADeflectedRoundMirrorsAboutTheSurface()
     {
-        Vector3d away = PlayerCamera.Reflect(new Vector3d(1, -1, 0), new Vector3f(0f, 1f, 0f));
+        Vector3d away = PlayerShotResolver.Reflect(new Vector3d(1, -1, 0), new Vector3f(0f, 1f, 0f));
 
         Assert.Equal(1.0 / Math.Sqrt(2.0), away.X, 1e-6);
         Assert.Equal(1.0 / Math.Sqrt(2.0), away.Y, 1e-6);

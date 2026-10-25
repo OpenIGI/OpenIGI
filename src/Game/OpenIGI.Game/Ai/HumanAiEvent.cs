@@ -21,6 +21,10 @@ namespace OpenIGI.Game.Ai;
 /// <param name="Source">The task that caused it, or <see langword="null"/>.</param>
 /// <param name="Subject">The task it is about, or <see langword="null"/>.</param>
 /// <param name="Context">The sending game's own context, whole: a brain of the same game reads it, another game's the fields.</param>
+/// <param name="Direction">
+/// Which way it goes, in world units (I.G.I. 2's <c>tDirection</c>): a gunshot's line of fire, as long as the gun reaches; a
+/// round's flight to where it struck the ground; nought for an event with no way of its own, a landing among them.
+/// </param>
 public readonly record struct HumanAiEvent(
     int Type,
     int Team,
@@ -29,7 +33,8 @@ public readonly record struct HumanAiEvent(
     Vector3d? Position,
     GameTask? Source,
     GameTask? Subject,
-    object? Context);
+    object? Context,
+    Vector3f Direction = default);
 
 /// <summary>A human that takes the engine's AI events and hands them to its brain: a type with a <c>HumanAISendEvent</c> handler.</summary>
 public interface IHumanAiEventTarget

@@ -3,6 +3,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -145,7 +146,7 @@ internal static class Igi2PlayerFakes
 
         public Vector3f? Conveyor { get; set; }
 
-        public Vector3f? PushOnConveyor(IIgi2Collider ground, Igi2Intersection footing) => Conveyor;
+        public Vector3f? PushOnConveyor(IWorldCollider ground, WorldIntersection footing) => Conveyor;
 
         public List<Igi2Human> Humans { get; } = [];
 
@@ -286,7 +287,7 @@ internal static class Igi2PlayerFakes
     /// <summary>A level of flat floors and ceilings, each answering vertical lines as a handler does.</summary>
     internal sealed class FakeCollision : IIgi2CollisionQuery
     {
-        public void TraceLines(Igi2LineTrace trace, uint groups)
+        public void TraceLines(WorldLineTrace trace, uint groups)
         {
             Queries++;
             for (int i = 0; i < trace.Count; i++)
@@ -300,7 +301,7 @@ internal static class Igi2PlayerFakes
                 surface.NextZ(trace);
             }
 
-            foreach (IIgi2Collider other in Others)
+            foreach (IWorldCollider other in Others)
             {
                 other.NextZ(trace);
             }
@@ -309,11 +310,11 @@ internal static class Igi2PlayerFakes
         public List<FakeCollider> Surfaces { get; } = [];
 
         /// <summary>Gets colliders of other shapes, asked after the surfaces.</summary>
-        public List<IIgi2Collider> Others { get; } = [];
+        public List<IWorldCollider> Others { get; } = [];
 
         public int Queries { get; private set; }
 
-        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups)
+        public void NextZ(WorldLineTrace trace, ReadOnlySpan<double> distances, uint groups)
         {
             Queries++;
             for (int i = 0; i < trace.Count; i++)
@@ -329,7 +330,7 @@ internal static class Igi2PlayerFakes
                 surface.NextZ(trace);
             }
 
-            foreach (IIgi2Collider other in Others)
+            foreach (IWorldCollider other in Others)
             {
                 other.NextZ(trace);
             }
@@ -337,7 +338,7 @@ internal static class Igi2PlayerFakes
     }
 
     /// <summary>A horizontal surface at one height that faces up or down, with a material and a light.</summary>
-    internal sealed class FakeCollider(double z, bool facesUp = true, int? material = null, float light = 0f, object? owner = null) : IIgi2Collider
+    internal sealed class FakeCollider(double z, bool facesUp = true, int? material = null, float light = 0f, object? owner = null) : IWorldCollider
     {
         public object Owner => owner ?? this;
 
@@ -345,7 +346,7 @@ internal static class Igi2PlayerFakes
 
         public int Probes { get; private set; }
 
-        public void NextZ(Igi2LineTrace trace)
+        public void NextZ(WorldLineTrace trace)
         {
             Probes++;
             for (int i = 0; i < trace.Count; i++)
@@ -357,7 +358,7 @@ internal static class Igi2PlayerFakes
                 }
 
                 double distance = Math.Abs(from - Z);
-                Igi2Intersection hit = trace.Intersections[i];
+                WorldIntersection hit = trace.Intersections[i];
                 if (hit.IsHit && !(distance < hit.Distance))
                 {
                     continue;
@@ -376,11 +377,11 @@ internal static class Igi2PlayerFakes
     }
 
     /// <summary>An upright wall across the X axis at one X, facing back down the axis, that any line crossing it strikes.</summary>
-    internal sealed class FakeWall(double x) : IIgi2Collider
+    internal sealed class FakeWall(double x) : IWorldCollider
     {
         public object Owner => this;
 
-        public void NextZ(Igi2LineTrace trace)
+        public void NextZ(WorldLineTrace trace)
         {
             for (int i = 0; i < trace.Count; i++)
             {
@@ -393,7 +394,7 @@ internal static class Igi2PlayerFakes
                 double t = (x - from.X) / (to.X - from.X);
                 Vector3d at = new(x, from.Y + ((to.Y - from.Y) * t), from.Z + ((to.Z - from.Z) * t));
                 double distance = (at - from).Length;
-                Igi2Intersection hit = trace.Intersections[i];
+                WorldIntersection hit = trace.Intersections[i];
                 if (hit.IsHit && !(distance < hit.Distance))
                 {
                     continue;

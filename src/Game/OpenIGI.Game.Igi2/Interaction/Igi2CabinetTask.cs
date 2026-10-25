@@ -37,7 +37,7 @@ public interface IIgi2PartMover
 /// either side. <c>Cabinet_ActivateHandler</c>: in use, as of this tick.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2CabinetTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2PartMover
+public sealed partial class Igi2CabinetTask : Igi2Task, IIgi2PlacedTask, IIgi2Cabinet, IIgi2PartMover
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Cabinet";

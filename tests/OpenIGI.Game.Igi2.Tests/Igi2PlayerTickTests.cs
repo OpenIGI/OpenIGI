@@ -10,7 +10,6 @@ namespace OpenIGI.Game.Igi2.Tests;
 /// <summary>The player's tick, <c>HumanPlayer_Update</c> (<c>igi2 0x4A1EC0</c>): the parts in the order they run.</summary>
 public sealed class Igi2PlayerTickTests
 {
-    /// <summary>Standing still on a floor, the player stays put and grounded, and the jump wait counts down.</summary>
     /// <summary>
     /// How well detectors see the player follows the light it stands in, halved, and its stance: four fifths of it crouched, three
     /// fifths lying; a shot that has just lit it shows it fully (<c>HumanPlayer_UpdateVisibilityFactor</c>).
@@ -158,6 +157,7 @@ public sealed class Igi2PlayerTickTests
         Assert.Equal(1, player.MissionKills);
     }
 
+    /// <summary>Standing still on a floor, the player stays put and grounded, and the jump wait counts down.</summary>
     [Fact]
     public void Standing_still_stays_put()
     {

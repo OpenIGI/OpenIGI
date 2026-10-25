@@ -1,12 +1,12 @@
-﻿using OpenIGI.Presentation.Rendering;
+﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
-using OpenIGI.UI;
-using System.Diagnostics;
 
 namespace OpenIGI.Host;
 
@@ -236,7 +236,7 @@ public sealed partial class GameHost
     /// Called twice on the way into a mission -- once when the menu leaves and again when the entry shot
     /// hands over -- which is harmless: clearing an override that is not there does nothing.
     /// </remarks>
-    private static void ApplyGameplayMotionBlur() => RenderCVars.MotionBlur.ClearOverride();
+    private static void ApplyGameplayMotionBlur() => PostCVars.MotionBlur.ClearOverride();
 
     /// <summary>Applies the shot's own smear, from how far it is moving.</summary>
     /// <remarks>
@@ -244,7 +244,7 @@ public sealed partial class GameHost
     /// the preset as Custom for the length of the shot and could be saved as the player's own setting.
     /// </remarks>
     private void ApplyEntryMotionBlur() =>
-        RenderCVars.MotionBlur.Override(Math.Max(RenderCVars.MotionBlur.StoredValue, _entry.MotionBlur));
+        PostCVars.MotionBlur.Override(Math.Max(PostCVars.MotionBlur.StoredValue, _entry.MotionBlur));
 
     /// <summary>How much of the frame's height each cinematic bar takes when fully closed.</summary>
     /// <remarks>

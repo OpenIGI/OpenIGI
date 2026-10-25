@@ -3,9 +3,10 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Scripting;
+using OpenIGI.Scripting.Qvm;
 using OpenIGI.TestSupport;
 using Xunit;
-using static OpenIGI.TestSupport.QvmExpression;
+using static OpenIGI.Scripting.Qvm.QvmExpression;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

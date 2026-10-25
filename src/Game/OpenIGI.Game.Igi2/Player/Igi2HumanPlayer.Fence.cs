@@ -74,7 +74,7 @@ public sealed partial class Igi2HumanPlayer : IIgi2ElectricTarget
     {
         if (IsInitClimbFence)
         {
-            if (ActivatingTarget is not Igi2FenceTask fence)
+            if (ActivatingTarget is not IIgi2Fence fence)
             {
                 IsInitClimbFence = false;
                 return;

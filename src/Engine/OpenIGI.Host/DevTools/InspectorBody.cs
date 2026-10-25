@@ -1,5 +1,6 @@
 using System.Globalization;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Input;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -159,6 +160,43 @@ public sealed class InspectorBody : UiElement
 
     /// <summary>Brings the selected row into view.</summary>
     public void RevealSelection() => _rows.EnsureVisible(_selected);
+
+    /// <summary>Applies a frame's keys while the inspector is the window in front.</summary>
+    /// <param name="keyboard">The frame's keyboard.</param>
+    /// <param name="elapsed">Real seconds since the last call.</param>
+    /// <param name="control">Whether a control key is held.</param>
+    /// <param name="shift">Whether a shift key is held.</param>
+    /// <param name="editor">The typing shared by every panel.</param>
+    /// <param name="close">Closes the inspector and hands the keyboard back to the console.</param>
+    internal void HandleKeys(KeyboardState keyboard, float elapsed, bool control, bool shift, PromptEditor editor, Action close)
+    {
+        if (keyboard.WasPressed(KeyCode.Escape))
+        {
+            close();
+            return;
+        }
+
+        if (editor.Up.Poll(keyboard, KeyCode.Up, elapsed))
+        {
+            SelectedIndex = Math.Max(0, SelectedIndex - 1);
+            RevealSelection();
+        }
+
+        if (editor.Down.Poll(keyboard, KeyCode.Down, elapsed))
+        {
+            SelectedIndex++;
+            RevealSelection();
+        }
+
+        // Return takes the camera to whatever is selected, which is what a reader wants from a list of
+        // things they cannot see; teleporting the player is a cheat and stays behind its command.
+        if (keyboard.WasPressed(KeyCode.Return) && Selected is { } entity)
+        {
+            _inspector?.TryMoveCameraTo(entity.Id);
+        }
+
+        editor.EditText(FilterEdit, keyboard, elapsed, control, shift);
+    }
 
     /// <summary>Gets or sets the generated sprites used for rounded controls.</summary>
     public UiSurfaces? Surfaces { get; set; }

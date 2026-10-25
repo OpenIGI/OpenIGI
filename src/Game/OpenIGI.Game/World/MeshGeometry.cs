@@ -30,7 +30,11 @@ public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, MeshSub
 /// The index into the model's <see cref="OpenIGI.Formats.World.MefModel.LightmapPages"/> of the baked
 /// page this subset samples; zero on models that have none.
 /// </param>
-public readonly record struct MeshSubset(int IndexOffset, int IndexCount, int MaterialSlot, int LightmapPage)
+/// <param name="SkinIndexCount">
+/// How many of the subset's last indices are coincident skins (<see cref="CoincidentSkins"/>): faces a mesh drawn two-sided must
+/// still draw culled, or they fight their opposite face.
+/// </param>
+public readonly record struct MeshSubset(int IndexOffset, int IndexCount, int MaterialSlot, int LightmapPage, int SkinIndexCount = 0)
 {
     /// <summary>Gets a value indicating whether this subset has a material.</summary>
     public bool HasMaterial => MaterialSlot != OpenIGI.Formats.World.MefDrawRecord.NoMaterialSlot;

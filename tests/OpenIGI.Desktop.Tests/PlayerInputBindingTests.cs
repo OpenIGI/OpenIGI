@@ -1,8 +1,8 @@
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -37,7 +37,7 @@ public sealed class PlayerInputBindingTests
         input.Mouse.SetButton(MouseButton.Left, down: true);
         input.Mouse.SetButton(MouseButton.Right, down: true);
 
-        PlayerInputFrame frame = PlayerCamera.SampleFrame(input, profile);
+        PlayerInputFrame frame = PlayerInputSampler.SampleFrame(input, profile);
 
         Assert.True(frame.IsSet(PlayerInputSlot.MoveLeft));
         Assert.True(frame.IsSet(PlayerInputSlot.MoveRight));
@@ -64,9 +64,9 @@ public sealed class PlayerInputBindingTests
         InputState input = new();
         input.BeginFrame();
         input.Keyboard.SetKey(KeyCode.A, down: true);
-        Assert.False(PlayerCamera.SampleFrame(input, profile).IsSet(PlayerInputSlot.MoveLeft));
+        Assert.False(PlayerInputSampler.SampleFrame(input, profile).IsSet(PlayerInputSlot.MoveLeft));
 
         input.Keyboard.SetKey(KeyCode.F, down: true);
-        Assert.True(PlayerCamera.SampleFrame(input, profile).IsSet(PlayerInputSlot.MoveLeft));
+        Assert.True(PlayerInputSampler.SampleFrame(input, profile).IsSet(PlayerInputSlot.MoveLeft));
     }
 }

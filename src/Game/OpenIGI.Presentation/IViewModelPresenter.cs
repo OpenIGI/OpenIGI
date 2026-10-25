@@ -93,17 +93,51 @@ public interface ITitleViewModelPresenter : IDisposable
 /// </remarks>
 public interface ITitleWorldModelPresenter
 {
-    /// <summary>Draws the models.</summary>
+    /// <summary>
+    /// Highlights those of the models drawn last that stand for people the binoculars marked, as the level's own marked soldiers
+    /// are highlighted (<see cref="Rendering.BinocularMarking"/>); a presenter that draws no people draws nothing.
+    /// </summary>
+    /// <param name="models">The models the world draw drew.</param>
+    /// <param name="marked">What was marked, by the instance its body is drawn for, and the class of contact each is.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="radiusPixels">The glow's screen-space radius, where the highlight is a glow.</param>
+    /// <param name="blend">Where between the last two ticks the world draw stood.</param>
+    void DrawWorldOutlines(
+        IReadOnlyList<TitleWorldModel> models, IReadOnlyDictionary<object, BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels, float blend = 1f)
+    {
+    }
+
+    /// <summary>Draws the models, between the last two ticks.</summary>
     /// <param name="models">The models and where they stand.</param>
     /// <param name="camera">Where they are seen from, in metres.</param>
     /// <param name="projection">The world's projection.</param>
-    void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection);
+    /// <param name="blend">
+    /// How far the frame is between the last two ticks: a model the title names by its <see cref="TitleWorldModel.Instance"/>
+    /// is drawn that far from where it was a tick ago to where it is, its pose with it; one draws every model where the last
+    /// tick left it.
+    /// </param>
+    void DrawWorld(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection, float blend = 1f);
 
     /// <summary>Draws camera-facing additive lights against the world's depth.</summary>
     /// <param name="sprites">The title's lights.</param>
     /// <param name="camera">The world camera.</param>
     /// <param name="projection">The world projection.</param>
     void DrawWorldSprites(IReadOnlyList<TitleWorldSprite> sprites, in Camera3D camera, in Matrix4f projection) { }
+
+    /// <summary>Draws the level's 2-D particles over the lit scene, with the title's own sprites.</summary>
+    /// <param name="particles">The level's particles.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    void DrawParticles(OpenIGI.Game.World.Particles.Particle2DModule particles, in Camera3D camera, in Matrix4f projection, float blend) { }
+
+    /// <summary>
+    /// Draws the muzzle flashes of the models the last <see cref="DrawWorld"/> drew, as light over the lit scene: drawn among
+    /// the solid models they land in the G-buffer, where most of each is cut away and the rest is shaded as a wall.
+    /// </summary>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    void DrawWorldMuzzleFlashes(in Camera3D camera, in Matrix4f projection) { }
 
     /// <summary>Draws marks lying on the ground, blended over the world and tested against its depth.</summary>
     /// <param name="decals">The marks.</param>

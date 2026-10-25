@@ -70,7 +70,7 @@ public sealed class ShaderLibraryBuilder
                 string sourcePath = Path.Combine(_projectDirectory, "Source", module.Source.Replace('/', Path.DirectorySeparatorChar));
                 if (!File.Exists(sourcePath))
                 {
-                    throw new ShaderBuildException($"{module.Id}: the source {module.Source} does not exist.");
+                    throw new ShaderBuildException($"{module.Name}: the source {module.Source} does not exist.");
                 }
 
                 // The variants WGSL can express go first, so the ones it cannot -- the ray-tracing forms --
@@ -136,7 +136,7 @@ public sealed class ShaderLibraryBuilder
 
         if (spirv.ReflectionJson is null)
         {
-            throw new ShaderBuildException($"{module.Id}: slangc produced no reflection for variant '{variant.Name}'.");
+            throw new ShaderBuildException($"{module.Name}: slangc produced no reflection for variant '{variant.Name}'.");
         }
 
         ShaderReflection reflection = ReflectionReader.Read(module.Id, variant.Name, spirv.ReflectionJson);
@@ -152,7 +152,7 @@ public sealed class ShaderLibraryBuilder
             ],
         };
 
-        yield return Write($"{module.Id}.{variant.Name}.spv", spirv.Code, checkOnly);
+        yield return Write($"{module.Name}.{variant.Name}.spv", spirv.Code, checkOnly);
 
         // A variant that traces rays has no WGSL form, because WGSL has no ray tracing.
         if (variant.Compiles(ShaderTarget.Wgsl))
@@ -181,7 +181,7 @@ public sealed class ShaderLibraryBuilder
                 WgslBindingShapes.Read(text),
                 module.Id);
 
-            yield return Write($"{module.Id}.{variant.Name}.wgsl", code, checkOnly);
+            yield return Write($"{module.Name}.{variant.Name}.wgsl", code, checkOnly);
 
             foreach (ShaderBinding binding in reflection.Bindings)
             {
@@ -208,7 +208,7 @@ public sealed class ShaderLibraryBuilder
                     sourcePath, SlangTarget.Dxil, variant.Defines, withReflection: true, scratch, entryPoint);
                 if (dxil.ReflectionJson is null)
                 {
-                    throw new ShaderBuildException($"{module.Id}: slangc produced no DXIL reflection for '{variant.Name}'.");
+                    throw new ShaderBuildException($"{module.Name}: slangc produced no DXIL reflection for '{variant.Name}'.");
                 }
 
                 HlslPlacements placed = HlslPlacements.Read(module.Id, dxil.ReflectionJson);
@@ -221,7 +221,7 @@ public sealed class ShaderLibraryBuilder
                     HlslPlacements.RequireSame(module.Id, placements, placed);
                 }
 
-                yield return Write($"{module.Id}.{variant.Name}.{ShaderCatalog.StageName(entryPoint.Stage)}.dxil", dxil.Code, checkOnly);
+                yield return Write($"{module.Name}.{variant.Name}.{ShaderCatalog.StageName(entryPoint.Stage)}.dxil", dxil.Code, checkOnly);
             }
 
             if (placements is not null)
@@ -239,7 +239,7 @@ public sealed class ShaderLibraryBuilder
         byte[] reflectionBytes = Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(reflection, ShaderJsonContext.Default.ShaderReflection));
 
-        yield return Write($"{module.Id}.{variant.Name}.reflection.json", NormaliseNewlines(reflectionBytes), checkOnly);
+        yield return Write($"{module.Name}.{variant.Name}.reflection.json", NormaliseNewlines(reflectionBytes), checkOnly);
     }
 
     /// <summary>

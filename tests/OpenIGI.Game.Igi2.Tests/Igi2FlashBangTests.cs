@@ -2,12 +2,12 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Ai;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Detection;
-using OpenIGI.Game.Igi2.Humans;
-using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Physics;
+using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using Xunit;
 
 namespace OpenIGI.Game.Igi2.Tests;
@@ -110,7 +110,7 @@ public sealed class Igi2FlashBangTests
         Assert.Empty(effects.Sounds);
         Igi2FlashBang flash = Assert.Single(dynamic.Tasks.OfType<Igi2FlashBang>());
         Assert.Equal(0, flash.System!.Count);
-        Assert.Equal(0x1040008, flash.System.Transparency);
+        Assert.Equal(0x1040008, flash.System.Look.Transparency);
         Assert.True(flash.System.IsSelfDestruct);
         dynamic.Run();
         Assert.Equal("explo_flash", Assert.Single(effects.Sounds));
@@ -141,7 +141,7 @@ public sealed class Igi2FlashBangTests
     private sealed class RecordingEffects : IIgi2ExplosionEffects
     {
         public List<string> Sounds { get; } = [];
-        public void BurnMark(Igi2Intersection ground, float radius) { }
+        public void BurnMark(WorldIntersection ground, float radius) { }
         public void Sound(string sound, Vector3d position) => Sounds.Add(sound);
         public void AiEvent(int aiEvent, int flags, Vector3d position, float range, int team = 1) { }
     }
@@ -153,9 +153,9 @@ public sealed class Igi2FlashBangTests
         public Vector3d To { get; private set; }
         public uint Groups { get; private set; }
         public Func<object, bool>? Includes { get; private set; }
-        public void NextZ(Igi2LineTrace trace, ReadOnlySpan<double> distances, uint groups) { }
-        public void TraceLines(Igi2LineTrace trace, uint groups) { }
-        public bool LineOfSight(Igi2LineOfSight sight, uint groups)
+        public void NextZ(WorldLineTrace trace, ReadOnlySpan<double> distances, uint groups) { }
+        public void TraceLines(WorldLineTrace trace, uint groups) { }
+        public bool LineOfSight(WorldLineOfSight sight, uint groups)
         {
             From = sight.Start;
             To = sight.End;

@@ -1,13 +1,11 @@
-using OpenIGI.Audio;
+﻿using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
@@ -15,7 +13,6 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
@@ -26,11 +23,10 @@ using OpenIGI.Host.Menu;
 using OpenIGI.Host.Services;
 using OpenIGI.Host.Titles;
 using OpenIGI.Platform;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
-using OpenIGI.Presentation;
-using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host;
@@ -165,19 +161,6 @@ public sealed partial class GameHost : IDisposable
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
 
-    // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
-    // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
-    private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
-
-    // The same lamps in the storm's frame -- metres from the eye, world axes -- for the drops falling
-    // through their light; how many of them this frame has.
-    private readonly StormLamp[] _stormLamps = new StormLamp[DeferredLocalLight.Maximum];
-    private int _stormLampCount;
-
-    // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
-    // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
-    private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
-
     // The played mission's registries and runtimes, each null until the system that makes it has run.
     // The first game's mission, its world, and the host's side of it.
     private readonly MissionHostServices _missionHost;
@@ -187,122 +170,15 @@ public sealed partial class GameHost : IDisposable
     // The player the host steers and looks through, when the mission has one.
     private IHostedPlayer? HostedPlayer => _hosted.Player;
 
-    // Which lamps hold shadow maps and the surface cache's coarse lamp maps, and drawing them.
-    private readonly LampShadowMaps _lampMaps;
-
     // The console's handle on the content layers.
     private readonly ContentLayerCommands _contentLayers;
 
     // The console's inspector, over what IInspectedWorld shows it of the host.
     private readonly WorldInspector _inspector;
 
-    // The player's flashlight, and what its lens is kept out of.
-    private readonly PlayerFlashlight _flashlight;
-    private Func<DeathCameraVantage.Blocked?>? _flashlightWalls;
-
-    // Where a new level's lamps are ordered from for their coarse maps, nearest first.
-    private Vector3d LampOrderEye => _camera?.Position ?? default;
-
-    // Where everyone who casts in a lamp's map stands, in metres: the player and the living soldiers.
-    private void LampMapPeople(List<Vector3d> people)
-    {
-        if (HostedPlayer is { } player)
-        {
-            people.Add(WorldScene.ToMetres(player.Body.Position));
-        }
-
-        if (_soldiers is { } soldiers)
-        {
-            foreach (HumanOccupant occupant in soldiers.LiveOccupants())
-            {
-                if (!occupant.IsDead)
-                {
-                    people.Add(WorldScene.ToMetres(occupant.Position));
-                }
-            }
-        }
-    }
-    private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
-
-    // The distance field's per-level sizes and ranges, reused frame to frame for LampFieldFor.
-    private readonly float[] _lampFieldVoxels = new float[4];
-    private readonly float[] _lampFieldRanges = new float[4];
-
-    /// <summary>The level's distance field as a lamp-shadow renderer reads it, or null while there is none.</summary>
-    private LampOcclusionField? LampFieldFor(GlobalDistanceField? field)
-    {
-        if (field is null || !field.Clipmaps.IsValid)
-        {
-            return null;
-        }
-
-        GlobalDistanceFieldSettings settings = field.Settings;
-        int levels = Math.Clamp(settings.Levels, 0, Math.Min(4, field.Origins.Count));
-        if (levels <= 0)
-        {
-            return null;
-        }
-
-        for (int level = 0; level < 4; level++)
-        {
-            int from = Math.Min(level, levels - 1);
-            _lampFieldVoxels[level] = settings.VoxelSizeOf(from);
-            _lampFieldRanges[level] = field.RangeOfLevel(from);
-        }
-
-        return new LampOcclusionField(
-            field.Clipmaps,
-            levels,
-            settings.Resolution,
-            field.Origins[0],
-            field.Origins[Math.Min(1, levels - 1)],
-            field.Origins[Math.Min(2, levels - 1)],
-            field.Origins[Math.Min(3, levels - 1)],
-            _lampFieldVoxels,
-            _lampFieldRanges);
-    }
-
-    // The exposure adaptation rate during the warm-up and in steady play. Fast while the GI converges so the
-    // exposure follows it and the picture holds its brightness; slow after, for an unobtrusive eye-adaptation.
-    private const float GiExposureWarmupRate = 0.35f;
-    private const float ExposureSteadyRate = 0.04f;
-
     // --- The loaded world and its renderers ---
-    private Camera3D _inspectorEye = Camera3D.Default;
-    private float _inspectorTangent = 1f;
-    private float _inspectorAspect = 16f / 9f;
     private WorldScene? _scene;
     private IWorldPresenter? _world;
-    // The air the running level is played in, when the title authors one. Null for a game that does
-    // not, which is what keeps Project I.G.I. out of this entirely.
-    private SceneAtmosphere? _atmosphere;
-
-    /// <summary>Gets the air the world wears when the retail fog is on, preferring the level's own.</summary>
-    /// <param name="fromGlobalLight">The fog this band of Project I.G.I.'s <c>GlobalLight</c> publishes.</param>
-    /// <returns>The fog to draw into.</returns>
-    /// <remarks>
-    /// <para>
-    /// <c>GlobalLight</c> is the FIRST game's task, and it is the only thing the frame used to ask. So
-    /// on the vanilla tier -- the one tier that fogs through <see cref="SceneFog"/> rather than through
-    /// the froxel volume -- I.G.I. 2's world was drawn with no fog at all: its own authored air was set
-    /// once when the mission loaded and then overwritten by an empty <c>GlobalLight</c> on the first
-    /// frame, and every frame after.
-    /// </para>
-    /// <para>
-    /// It also hid the ground's per-pass fog colour, which had nothing to tint. That is worth saying
-    /// because the two faults look identical from the outside -- far hills that are not hazed -- and
-    /// fixing either alone leaves the other in place.
-    /// </para>
-    /// <para>
-    /// Project I.G.I. cannot reach the new branch: <c>ITitlePresentationProvider.ReadAtmosphere</c>
-    /// defaults to null and only the sequel answers it, so <see cref="_atmosphere"/> is null for the
-    /// first game and this returns exactly what the frame asked for before.
-    /// </para>
-    /// </remarks>
-    private SceneFog RetailAir(SceneFog fromGlobalLight) =>
-        _atmosphere is { FogDensity: > 0f } authored
-            ? new SceneFog(authored.FogColour, authored.FogDensity)
-            : fromGlobalLight;
 
     private ITerrainPresenter? _terrain;
     private IForestPresenter? _forest;
@@ -314,26 +190,6 @@ public sealed partial class GameHost : IDisposable
     // The level's own GlobalLight keyframe: the fog the ground and the models are drawn into, and the
     // flat light a model with no lightmap wears. Read once per level, used every frame.
     private GlobalLightSettings _globalLight = GlobalLightSettings.None;
-    private RainRenderer? _rain;
-    private StormRenderer? _storm;
-
-    // The least light a rain drop is lit by, as the displayed picture sees it. Rain in an even light is as
-    // bright as what is behind it and all but disappears, and a night lit only by its sky is that light;
-    // the eye adapted to it still sees the rain as a veil. The drop's own grey, its opacity and the thin,
-    // mostly clear streak it is printed with all come on top, so it takes this much for the rain to read:
-    // chosen by eye on mission 3's night, where 2.5 barely showed, 5 reads as rain with the dome and the
-    // hills clear through it, and the level's daytime fill (about 10) was a wall. See
-    // StormRenderer.BuildDrops.
-    private const float RainVeilDisplay = 5f;
-    private SnowRenderer? _snow;
-
-    // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
-    // -- the fog, the falling rain, its splashes and the standing water all ask this -- and it is built
-    // once when the mission loads, out of the geometry itself rather than out of which tasks happen to
-    // be named after buildings.
-    private ShelterHeightField _shelterField = ShelterHeightField.Empty;
-    private TextureHandle _shelterMap = TextureHandle.None;
-    private Vector3d _stormEyeMetres;
     private ShadowCasterPass? _shadowPass;
 
     // Makes the backdrop playable a couple of milliseconds at a time while the menu is idle.
@@ -376,43 +232,10 @@ public sealed partial class GameHost : IDisposable
     // --- The player, the held weapon, the HUD and the soldiers ---
     private IHeldWeaponPresenter? _heldWeapon;
     private IGunPickupPresenter? _gunPickupRenderer;
-    private IHudPresenter? _hud;
-    private IRemasteredHudPresenter? _remasteredHud;
-
-    // The title's mission HUD, made from the title's presentation the first time a frame draws it.
-    private IMissionHudOverlay? _hudOverlay;
-    private IMissionFirstPersonView? _firstPerson;
-    private IMissionWorldView? _worldView;
-    private IMissionViewpoint? _viewpoint;
 
     // The over-the-shoulder camera's and the flashlight's wall cast, cached against the collision it is built from.
     private DebugOverlayRenderer? _debugOverlay;
-    private IMapComputerPresenter? _mapComputer;
-    private MapComputerDeviceRenderer? _mapComputerDevice;
-    private ITacticalComputerPresenter? _tacticalComputer;
     private StatusMessageRenderer? _messages;
-    private readonly MapComputerCamera _computerFlight = new();
-    private readonly BinocularOptics _binocularOptics = new();
-
-    // The interaction marker's own wall clock: which offer is on screen and how far it has faded up.
-    // Kept beside the optics for the same reason -- a fade measured in real seconds cannot live on a
-    // renderer that is only asked to draw.
-    private readonly InteractionPromptAnimation _interactionPrompt = new();
-    private int _lastInteractionPromptMilliseconds;
-    private int _lastBinocularMilliseconds;
-    private int _lastMotionBlurMilliseconds;
-
-    // The performance overlay's managed-allocation sampler. The GPU stage timers see none of this: a frame
-    // that allocates megabytes churns Gen0 and, on the large-object heap, triggers the Gen2 collections that
-    // stall the render thread -- a cost that shows only as a gap between the frame's wall time and the GPU's.
-    private long _perfAllocBytes;
-    private long _perfAllocTicks;
-    private double _perfAllocRate;
-    private long _benchmarkAllocStart;
-    private (int, int, int) _benchmarkGcStart;
-    private IComputerHighlightCatalogue? _computerHighlights;
-    private bool _computerOpen;
-    private bool _computerCamFired;
     private readonly HashSet<int> _deferredCommandsFired = [];
 
     // -missioncycle's bookkeeping: which leg of the abandon/replay cadence has been acted on, and the
@@ -420,38 +243,6 @@ public sealed partial class GameHost : IDisposable
     private long _missionCycleLeg;
     private long _titleCycleLeg;
     private int _missionCycleMission;
-
-    /// <summary>How much longer than the original the remaster holds a status message, in seconds.</summary>
-    private const float RemasteredMessageHoldSeconds = 3f;
-
-    /// <summary>Gets the tactical interface when the preset asks for it and it built its faces.</summary>
-    /// <remarks>
-    /// Read per frame rather than latched at mission bring-up, so <c>r_computer_tactical</c> can be
-    /// thrown from the console between one frame and the next — which is the only practical way to
-    /// compare the redesign against the original it replaces. Both renderers are therefore built for
-    /// every mission; each costs an archive or a cached atlas, and neither is worth a restart.
-    /// </remarks>
-    private ITacticalComputerPresenter? TacticalComputer =>
-        RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
-
-    // The map gate of the level last asked about; rebuilt when another level comes up.
-    private MapComputerGate? _mapGate;
-
-    /// <summary>Whether the level lets the player read the map computer's map right now (<see cref="MapComputerGate"/>).</summary>
-    private bool MapComputerAvailable()
-    {
-        if (_session.LevelRoot is not { } root)
-        {
-            return true;
-        }
-
-        if (_mapGate is null || !ReferenceEquals(_mapGate.LevelRoot, root))
-        {
-            _mapGate = new MapComputerGate(root, _loop.Variables);
-        }
-
-        return _mapGate.MapAvailable;
-    }
 
     private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
@@ -480,6 +271,9 @@ public sealed partial class GameHost : IDisposable
 
     // The missions the retail menus list: the title's table once its scan has succeeded.
     private IMissionCatalogue<MissionDescriptor>? _menuMissions;
+
+    // The campaigns the running title's mods add beside its own, or null for none.
+    private SideCampaignMissionCatalogue? _sideCampaigns;
     private HostFlowHost _flowHost = null!;
     private GameMissionState _missionState = null!;
 
@@ -578,6 +372,8 @@ public sealed partial class GameHost : IDisposable
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);
+        _debugOverlays = new DebugOverlays(device, window, options, logger, new DebugOverlaysHost(this));
+        _outcome = new MissionOutcome(_session, logger, new MissionOutcomeHost(this));
     }
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
@@ -886,7 +682,7 @@ public sealed partial class GameHost : IDisposable
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
             _loop.Clock.UncappedRenders = _options.IsBenchmark
                 || _menuFlow.MenuMode
-                || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
+                || (!_options.Lockstep && FrameCVars.SmoothPresentation.Value);
 
             // The level's own half of the pause, and the reason the frozen picture behind the menu really is
             // frozen: with this set the level task forwards nothing to its subtree, so the scripts, the
@@ -962,129 +758,9 @@ public sealed partial class GameHost : IDisposable
             }
         }
 
-        if (_options.BenchmarkPath is { } benchmarkPath)
-        {
-            IReadOnlyList<RenderStageTiming> gpuStages = _device.StageTimings();
-            FramePerformanceStatistics frame = state.FramePerformance.Statistics();
-            GpuFrameTiming gpu = _device.GpuTiming();
+        WriteBenchmarkSnapshot(state);
 
-            if (_benchmarkAllocStart > 0)
-            {
-                long allocated = GC.GetTotalAllocatedBytes() - _benchmarkAllocStart;
-                int measured = Math.Max(1, frame.SampleCount);
-
-                // Warning, not Information: the shell builds its logger at Warning, so an Information call
-                // here is discarded and the benchmark's allocation report -- the one number that says
-                // whether a stutter is the collector rather than the GPU -- was written to nothing. The
-                // camera log had the same hole for the same reason.
-                _logger.Warning(
-                    "Benchmark",
-                    FormattableString.Invariant(
-                        $"Managed alloc over {measured} measured frames: {allocated / (1024.0 * 1024.0):0.0} MB, {allocated / (double)measured / 1024.0:0.0} KB/frame; gc {GC.CollectionCount(0) - _benchmarkGcStart.Item1}/{GC.CollectionCount(1) - _benchmarkGcStart.Item2}/{GC.CollectionCount(2) - _benchmarkGcStart.Item3}."));
-            }
-            RenderPerformanceSnapshot snapshot = new(
-                GraphicsPresetRegistry.Default.Current.ToString(),
-                _window.Width,
-                _window.Height,
-                _device.VSyncEnabled,
-                frame.FramesPerSecond,
-                frame.AverageMilliseconds,
-                frame.OnePercentLowFramesPerSecond,
-                frame.P95Milliseconds,
-                frame.PeakMilliseconds,
-                frame.SampleCount,
-                gpu.Milliseconds,
-                gpu.P95Milliseconds,
-                _device.GpuMeasuredTiming().Milliseconds,
-                gpuStages.ToArray());
-
-            string? benchmarkDirectory = Path.GetDirectoryName(Path.GetFullPath(benchmarkPath));
-            if (!string.IsNullOrEmpty(benchmarkDirectory))
-            {
-                Directory.CreateDirectory(benchmarkDirectory);
-            }
-
-            string json = System.Text.Json.JsonSerializer.Serialize(snapshot, RenderPerformanceJsonContext.Default.RenderPerformanceSnapshot);
-            File.WriteAllText(benchmarkPath, json);
-            _logger.Information("Perf", $"Wrote benchmark snapshot to {Path.GetFullPath(benchmarkPath)}.");
-        }
-
-        // The measurement, written down. The overlay answers "is it fast right now" for somebody watching
-        // it; this is what a capture run leaves behind, and it is the only form the acceptance criterion
-        // can actually be checked in -- nobody reads an overlay in a thirty-frame headless capture.
-        if (RenderCVars.PerformanceLog.Value)
-        {
-            IReadOnlyList<RenderStageTiming> finalTimings = _device.StageTimings();
-
-            if (finalTimings.Count == 0)
-            {
-                _logger.Information("Perf", "No stage timings were collected; the run was too short to resolve a query.");
-            }
-            else
-            {
-                int over = 0;
-
-                foreach (RenderStageTiming timing in finalTimings)
-                {
-                    if (!timing.Active)
-                    {
-                        _logger.Information("Perf", $"{timing.Stage,-28} off");
-                        continue;
-                    }
-
-                    double? budget = RenderBudget.For(timing.Stage);
-                    bool exceeded = budget is { } allowed && timing.Milliseconds > allowed;
-                    over += exceeded ? 1 : 0;
-
-                    string against = budget is { } allowance
-                        ? FormattableString.Invariant($"  budget {allowance:0.0} ms{(exceeded ? "  OVER" : string.Empty)}")
-                        : "  (unbudgeted)";
-
-                    _logger.Information(
-                        "Perf",
-                        FormattableString.Invariant(
-                            $"{timing.Stage,-28} avg {timing.Milliseconds,6:0.000} ms  p95 {timing.P95Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
-                }
-
-                foreach (RenderPassTiming pass in _device.PassTimings())
-                {
-                    _logger.Information(
-                        "Perf",
-                        FormattableString.Invariant(
-                            $"  pass {pass.Label,-32} avg {pass.Milliseconds,6:0.000} ms  peak {pass.PeakMilliseconds,7:0.000} ms  ran {pass.FramesRun} frame(s)  [{pass.Stage}]"));
-                }
-
-                // The 1% low, taken apart: what each pass cost in the slowest frames, beside its overall average.
-                IReadOnlyList<RenderPassTiming> worst = _device.WorstFramePassTimings(0.01, out int worstFrames, out double worstAverage);
-                if (worstFrames > 0)
-                {
-                    Dictionary<string, double> overall = [];
-                    foreach (RenderPassTiming pass in _device.PassTimings())
-                    {
-                        overall[pass.Label] = pass.Milliseconds;
-                    }
-
-                    _logger.Information(
-                        "Perf",
-                        FormattableString.Invariant($"Slowest 1% ({worstFrames} frame(s)): summed GPU avg {worstAverage:0.000} ms."));
-
-                    foreach (RenderPassTiming pass in worst)
-                    {
-                        double usual = overall.GetValueOrDefault(pass.Label);
-                        _logger.Information(
-                            "Perf",
-                            FormattableString.Invariant(
-                                $"  worst {pass.Label,-32} {pass.Milliseconds,7:0.000} ms  (usually {usual,6:0.000}, {pass.Milliseconds - usual,+7:0.000})  ran in {pass.FramesRun}/{worstFrames}"));
-                    }
-                }
-
-                GpuFrameTiming gpu = _device.GpuTiming();
-                _logger.Information(
-                    "Perf",
-                    FormattableString.Invariant(
-                        $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 60 Hz frame has; {over} stage(s) over budget."));
-            }
-        }
+        LogStageTimingsAtExit();
 
         // A bake still tracing at this point is tracing for a level nobody will see again. The worker is a
         // thread-pool thread and cannot hold the process open, so this is not about shutting down cleanly --
@@ -1165,136 +841,6 @@ public sealed partial class GameHost : IDisposable
         }
     }
 
-    private void ApplyWeatherSettings()
-    {
-        // The campaign screen's choice overrides both the level's own data and the player's
-        // r_weather_kind, and it has to FORCE: eleven of the fourteen retail missions author no weather
-        // at all, so a choice that only asked politely would do nothing in most of the campaign and read
-        // as a broken setting. Default forces nothing and leaves every answer where it was.
-        WeatherKind weatherKind = _conditions.WeatherStyle(RenderCVars.WeatherStyle.Value);
-        bool forceWeather = RenderCVars.WeatherForce.Value || _conditions.ForcesWeather;
-
-        _rain?.ApplySettings(
-            RenderCVars.WeatherEnabled.Value,
-            weatherKind,
-            RenderCVars.WeatherSpeed.Value,
-            forceWeather);
-        _snow?.ApplySettings(
-            RenderCVars.WeatherEnabled.Value,
-            weatherKind,
-            RenderCVars.WeatherSpeed.Value,
-            forceWeather);
-
-        if (_storm is { } storm)
-        {
-            // Resolved after the rain renderer, not before it, so this reads the answer the console just
-            // produced rather than the one from the last time the level was loaded. The level decides
-            // whether it rains at all (unless r_weather_force overrides it); r_storm only decides which
-            // renderer draws it.
-            bool rains = _rain?.IsWeatherEnabled ?? false;
-            storm.Enabled = rains && RenderCVars.Storm.Value;
-            storm.Configure(storm.Settings with
-            {
-                Intensity = RenderCVars.StormIntensity.Value,
-                FallSpeedScale = RenderCVars.WeatherSpeed.Value,
-            });
-
-            // Reported every time rather than only on a change: the case worth seeing is the one where
-            // nothing changed and the storm is still not drawing, and a log that only fires on a
-            // transition is silent for exactly that.
-            _logger.Information(
-                "Storm",
-                FormattableString.Invariant(
-                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={RenderCVars.Storm.Value} r_weather_enabled={RenderCVars.WeatherEnabled.Value} kind={weatherKind} force={forceWeather} campaign={_conditions.Weather}/{_conditions.TimeOfDay} intensity={RenderCVars.StormIntensity.Value}"));
-        }
-    }
-
-    // The camera's projection, in one place: the terrain traversal needs the same field of view the
-    // projection matrix is built from, or it would cull against a frustum the picture does not have.
-    // The far plane is shared with the sky, which sizes its dome from it.
-    //
-    // The field of view is the original's, not a chosen one. HumanView's constructor (0x4643A0) sets
-    // its half-tangent to tan(45 degrees) = 1.0, the camera copies it to HumanCamera+96 and submits it
-    // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
-    // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
-    // vertical one follows from the window's aspect, rather than the other way round.
-    /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
-    /// <param name="eye">Where the camera stands, in world metres.</param>
-    /// <param name="range">Unused by the ranking; see the remarks on why it must not scale it.</param>
-    /// <returns>How many entries of <c>_localLightOrder</c> are valid.</returns>
-    /// <remarks>
-    /// <para>
-    /// A level's lamps outnumber the shader's array several times over, so this is a choice and not a
-    /// truncation. Each fixture is ranked by how far OUTSIDE its own reach the camera stands: a lamp the
-    /// camera is inside ranks negative and always makes the cut, and beyond that a long fluorescent
-    /// batten twenty metres off beats a desk lamp fifteen metres off, which is the right way round
-    /// because reach is what decides whether a lamp can light anything the player can see.
-    /// </para>
-    /// <para>
-    /// The camera's own position rather than the frustum: a lamp behind the player still lights the wall
-    /// in front of them, and culling to what is on screen would switch that light off as they turned.
-    /// </para>
-    /// <para>
-    /// A running insertion into an array of thirty-two rather than a sort of the whole list. The list is
-    /// a few hundred long and this runs every frame; an insertion sort over a fixed, tiny destination is
-    /// linear in the input and allocates nothing, where sorting the input is neither.
-    /// </para>
-    /// </remarks>
-    private int SelectNearestLamps(Vector3d eye, float range)
-    {
-        int kept = 0;
-
-        for (int i = 0; i < _gi.LightFixtures.Count; i++)
-        {
-            LightFixture fixture = _gi.LightFixtures[i];
-
-            // A lamp that has finished going out is not a dim light, it is not a light: passed over here
-            // rather than submitted at zero, because the shader's array is a budget and a dark fixture
-            // holding a slot switches a real one at the end of the corridor off instead.
-            if (_gi.LampSwitchboard is { } board && board.LevelOf(i) <= 0f)
-            {
-                continue;
-            }
-
-            double dx = fixture.Position.X - eye.X;
-            double dy = fixture.Position.Y - eye.Y;
-            double dz = fixture.Position.Z - eye.Z;
-            // The fixture's OWN size, not its size times the reach multiplier. Scaling this by the
-            // multiplier meant raising r_local_light_range -- which people raise to make lamps carry
-            // further -- also multiplied how much a fixture's size counted for a slot, so the big
-            // battens took the budget and the small near fittings went dark EARLIER than before. Reach
-            // decides how far a lamp lights; this decides which lamps are worth submitting, and the two
-            // should not move together.
-            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - fixture.Radius;
-
-            // Nothing to insert: this fixture is further out than every one already held, and the array
-            // is full. The common case by far once the level is more than thirty-two lamps deep.
-            if (kept == _localLightOrder.Length && rank >= _localLightRank[kept - 1])
-            {
-                continue;
-            }
-
-            int at = Math.Min(kept, _localLightOrder.Length - 1);
-
-            while (at > 0 && _localLightRank[at - 1] > rank)
-            {
-                _localLightRank[at] = _localLightRank[at - 1];
-                _localLightOrder[at] = _localLightOrder[at - 1];
-                at--;
-            }
-
-            _localLightRank[at] = rank;
-            _localLightOrder[at] = i;
-
-            if (kept < _localLightOrder.Length)
-            {
-                kept++;
-            }
-        }
-
-        return kept;
-    }
-
     /// <summary>The ray the third-person camera keeps itself out of walls with.</summary>
     /// <returns>The test, or <see langword="null"/> when the level has nothing to be blocked by yet.</returns>
     /// <remarks>
@@ -1310,197 +856,6 @@ public sealed partial class GameHost : IDisposable
     /// </remarks>
     private DeathCameraVantage.Blocked? ThirdPersonWalls() => _mission.Collision.Walls;
 
-    private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
-        2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
-
-    // The angular offset a hand holding a camera would add on a given frame, in radians.
-    //
-    // Modelled on a hand rather than on noise, because the two are not interchangeable for what this
-    // tests. A hand drifts: slow wandering of about a degree with a faster, much smaller tremor riding on
-    // it. Per-frame white noise would instead point somewhere new every frame, which no camera has ever
-    // done and which a temporal filter would rightly treat as unreprojectable and discard -- so it would
-    // measure the filter's give-up path rather than its reprojection.
-    //
-    // Summed sines at frequencies with no common multiple, so the pattern does not repeat over any
-    // capture worth taking, driven off the FRAME INDEX rather than the clock so -lockstep keeps a run
-    // repeatable. Weights sum to one per axis, which is what makes the amplitude mean what it says, and
-    // the two axes carry different frequencies and phases so the motion wanders instead of tracking a
-    // diagonal.
-    private static (float Yaw, float Pitch) HandheldShake(int frame, float degrees)
-    {
-        if (degrees <= 0f)
-        {
-            return (0f, 0f);
-        }
-
-        // Hand tremor is quoted in Hz, so the frequencies below are meaningless without a rate to read
-        // them against. The capture path steps at a fixed sixty under -lockstep.
-        const float FramesPerSecond = 60f;
-        float t = frame / FramesPerSecond;
-        float amplitude = degrees * (MathF.PI / 180f);
-
-        float yaw =
-            (0.60f * MathF.Sin((2f * MathF.PI * 0.37f * t) + 0.0f))
-            + (0.28f * MathF.Sin((2f * MathF.PI * 0.91f * t) + 1.7f))
-            + (0.12f * MathF.Sin((2f * MathF.PI * 7.30f * t) + 4.2f));
-
-        float pitch =
-            (0.55f * MathF.Sin((2f * MathF.PI * 0.29f * t) + 2.4f))
-            + (0.30f * MathF.Sin((2f * MathF.PI * 1.13f * t) + 5.1f))
-            + (0.15f * MathF.Sin((2f * MathF.PI * 6.10f * t) + 0.9f));
-
-        return (amplitude * yaw, amplitude * pitch);
-    }
-
-    // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
-    // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.
-    /// <summary>Names the shadow system actually drawing this frame, for the performance overlay.</summary>
-    /// <returns>The mode, and the keys that move it.</returns>
-    /// <remarks>
-    /// Reads the same three conditions the renderer does, in the same order, rather than reporting a
-    /// cvar: r_rt_shadows means nothing while r_rt is off, r_rt means nothing on a backend that cannot
-    /// trace, and neither means anything with shadows turned off. Reporting the cvar rather than the
-    /// consequence is how someone ends up comparing two shadows they believe came from different systems.
-    /// </remarks>
-    /// <summary>The overlay's line comparing the measured GPU frame against the sum of its stages.</summary>
-    /// <remarks>
-    /// Reports "not measured" rather than a zero on a backend with no frame bracket, because a zero
-    /// difference and an absent measurement mean opposite things and the whole point of the line is that
-    /// it can be believed.
-    /// </remarks>
-    private static string MeasuredFrameLine(IGraphicsDevice device, GpuFrameTiming summed)
-    {
-        GpuFrameTiming measured = device.GpuMeasuredTiming();
-
-        if (measured.Milliseconds <= 0.0)
-        {
-            return FormattableString.Invariant(
-                $"gpu      {summed.Milliseconds:0.00} ms summed   (frame not measured)");
-        }
-
-        return FormattableString.Invariant(
-            $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
-    }
-
-    /// <summary>What the remaster's two asset features are doing, and the keys that move them.</summary>
-    /// <remarks>
-    /// Both are comparison switches, so the thing worth saying is which side of the comparison is on
-    /// screen right now — a frame is worth nothing as evidence if you cannot tell which picture it is.
-    /// Spelled out with the keys for the same reason <see cref="ShadowModeLabel"/> is: the answer is two
-    /// variables deep, and "no overrides present" looks exactly like "overrides turned off" in the picture.
-    /// </remarks>
-    private string TextureModeLabel()
-    {
-        int layers = _overrides.Layers.Count(layer => layer.Enabled && layer.Wins > 0);
-        string upscaled = _overrides.Count == 0
-            ? "original (no content)"
-            : RenderCVars.OverridesEnabled.Value
-                ? $"{_resources.OverriddenCount} override(s) from {layers} layer(s) [F8 for the originals]"
-                : $"original [F8 for the {_overrides.Count} override(s)]";
-
-        // Zero at every preset but high, so "off" here is usually the authored answer rather than a key
-        // somebody pressed -- worth distinguishing, because the maps look identical to absent when the
-        // strength is nothing.
-        string detail = RenderCVars.MaterialDetail.Value <= 0f
-            ? "no detail (r_material_detail is 0)"
-            : RenderCVars.MaterialDetailEnabled.Value
-                ? $"detail {RenderCVars.MaterialDetail.Value:0.##} [F9 off]"
-                : $"detail off [F9 back to {RenderCVars.MaterialDetail.Value:0.##}]";
-
-        return $"{upscaled}, {detail}";
-    }
-
-    private string ShadowModeLabel()
-    {
-        bool enabled = RenderCVars.Shadows.Value > 0
-            && RenderCVars.OffscreenScene.Value
-            && RenderCVars.Deferred.Value;
-
-        if (!enabled)
-        {
-            return "off (r_shadows 0)";
-        }
-
-        if (!_device.Capabilities.SupportsRayQuery)
-        {
-            return FormattableString.Invariant(
-                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value} (no ray tracing on this backend)");
-        }
-
-        if (!RenderCVars.HardwareRayTracing.Value)
-        {
-            return FormattableString.Invariant(
-                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F6 traces everything]");
-        }
-
-        if (!RenderCVars.TracedSunShadows.Value)
-        {
-            return FormattableString.Invariant(
-                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F7 traces the sun; rest of the frame is traced]");
-        }
-
-        return FormattableString.Invariant(
-            $"ray query, sun disc {RenderCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
-    }
-
-    /// <summary>Describes the level's distance field for the backend, relative to the camera.</summary>
-    /// <param name="eye">Where the camera is, which every box is measured from.</param>
-    /// <returns>The clipmaps and their boxes, or nothing when there is no field to march.</returns>
-    /// <remarks>
-    /// CAMERA-RELATIVE, and that is not a convenience. These levels sit tens of kilometres from the world
-    /// origin, where a float has metres of precision left; the march that reads them is a loop of steps a
-    /// fraction of a voxel long, so it has to work in a space centred on the camera. Every other traced
-    /// pass in the renderer already does.
-    /// </remarks>
-    private DistanceFieldBinding DescribeDistanceField(Vector3d eye)
-    {
-        if (_gi.DistanceField is not { } field || !field.Clipmaps.IsValid)
-        {
-            return DistanceFieldBinding.None;
-        }
-
-        GlobalDistanceFieldSettings settings = field.Settings;
-        int levels = Math.Clamp(settings.Levels, 0, DistanceFieldBinding.MaxLevels);
-        if (levels <= 0)
-        {
-            return DistanceFieldBinding.None;
-        }
-
-        Span<DistanceFieldLevel> described = stackalloc DistanceFieldLevel[DistanceFieldBinding.MaxLevels];
-        for (int level = 0; level < levels; level++)
-        {
-            Vector3d corner = field.Origins[level];
-            described[level] = new DistanceFieldLevel(
-                new Vector3f(
-                    (float)(corner.X - eye.X),
-                    (float)(corner.Y - eye.Y),
-                    (float)(corner.Z - eye.Z)),
-                settings.VoxelSizeOf(level),
-                field.RangeOfLevel(level));
-        }
-
-        return new DistanceFieldBinding(
-            field.Clipmaps,
-            levels,
-            settings.Resolution,
-            described[0],
-            described[1],
-            described[2],
-            described[3]);
-    }
-
-    /// <summary>Reports whether the camera has a roof over it, so the frame is drawn as an interior.</summary>
-    /// <param name="position">Where the camera stands, in world metres.</param>
-    /// <remarks>
-    /// This used to be "inside the bounding box of a task named <c>Building_</c>", and that box is not
-    /// the building: one standing at an angle to the world axes fills barely a third of it, so a quarter
-    /// of the ground the test called indoors on mission one has open sky over it. That is what stood the
-    /// fog down and stopped the rain over the middle of an open apron. What decides it now is whether
-    /// anything solid is actually overhead — see <see cref="ShelterHeightField.IsUnderCover"/>, which
-    /// takes a small vote around the eye so a pipe passing over does not read as a ceiling.
-    /// </remarks>
-    private bool IsCameraInsideBuilding(Vector3d position) => _shelterField.IsUnderCover(position);
-
     /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
     /// <remarks>
     /// Both of these screens release the cursor every frame so it can be used, and every camera branch
@@ -1510,10 +865,6 @@ public sealed partial class GameHost : IDisposable
     /// </remarks>
     internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu) =>
         pauseMenu || missionFailedMenu;
-
-    /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
-    internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
-        VerticalFieldOfView(4f / 3f, horizontalTangent);
 
     /// <summary>
     /// Releases the GPU-backed resources the game owns. The window, device and developer console are owned

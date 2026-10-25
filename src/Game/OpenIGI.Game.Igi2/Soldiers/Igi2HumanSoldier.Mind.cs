@@ -118,8 +118,8 @@ public sealed partial class Igi2HumanSoldier
         }
     }
 
-    /// <summary>Lets the weapon's trigger go.</summary>
-    public void ReleaseTrigger() => Weapon.Firing?.ReleaseTriggers();
+    /// <summary>Lets the weapon's trigger go, as a mind waiting out its fire delay does: once, when the weapon is busy.</summary>
+    public void ReleaseTrigger() => Weapon.Firing?.ReleasePrimaryIfBusy();
 
     /// <summary>Kills it where it stands, as a mind with no path to its node does: damage past its maximum.</summary>
     public void KillOutright()

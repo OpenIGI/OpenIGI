@@ -1,4 +1,3 @@
-using System.Reflection;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using Xunit;
@@ -13,22 +12,8 @@ public sealed class HumanBodyCollisionTests
 {
     private static readonly double M = WorldScene.UnitsPerMetre;
 
-    private static ObjectCollisionIndex EmptyIndex()
-    {
-        // The constructor is private; build an index with no placed objects so only the human-body
-        // path is exercised.
-        Type entryType = typeof(ObjectCollisionIndex)
-            .GetNestedType("Entry", BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("Entry not found");
-        Array empty = Array.CreateInstance(entryType, 0);
-        ConstructorInfo ctor = typeof(ObjectCollisionIndex).GetConstructor(
-                BindingFlags.NonPublic | BindingFlags.Instance,
-                binder: null,
-                new[] { entryType.MakeArrayType(), entryType.MakeArrayType() },
-                modifiers: null)
-            ?? throw new InvalidOperationException("constructor not found");
-        return (ObjectCollisionIndex)ctor.Invoke(new object[] { empty, empty });
-    }
+    // An index with no placed objects, so only the human-body path is exercised.
+    private static ObjectCollisionIndex EmptyIndex() => ObjectCollisionIndex.EmptyForTesting();
 
     [Fact]
     public void LivingSoldierBlocksPlayerRay()

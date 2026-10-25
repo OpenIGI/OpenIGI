@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Collision;
@@ -61,7 +62,7 @@ public sealed class Igi2CollisionMesh
 }
 
 /// <summary>A placed solid model, <c>RigidDynCubeObj</c>, as the collision sees it: a pose, a scale, and its meshes.</summary>
-public sealed class Igi2RigidObject : IIgi2Collider
+public sealed class Igi2RigidObject : IWorldCollider, OpenIGI.Game.World.IAttachParent
 {
     private IReadOnlyList<Igi2CollisionMesh?> _meshes;
 
@@ -86,6 +87,13 @@ public sealed class Igi2RigidObject : IIgi2Collider
 
     /// <summary>Gets the orientation, <c>tOrientation</c>: nine floats, row by row, local to world.</summary>
     public float[] Orientation { get; } = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+
+    /// <inheritdoc/>
+    /// <remarks>What rides the solid -- a graph on a train, a human on a lift -- is held in its frame.</remarks>
+    public Vector3d AttachPosition => Position;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<float> AttachOrientation => Orientation;
 
     /// <summary>Gets or sets the scale on each local axis, <c>+0xF8</c>.</summary>
     public Vector3f Scale { get; set; } = new(1f, 1f, 1f);
@@ -129,13 +137,13 @@ public sealed class Igi2RigidObject : IIgi2Collider
     /// <c>RigidDynCubeObj_TraceLinesHandler</c> answers both the line and the ground events
     /// (<c>RigidDynCubeObj_GenericOpen</c>, <c>igi2 0x58E170</c>), so this is <see cref="Igi2RigidTrace"/>.
     /// </remarks>
-    public void NextZ(Igi2LineTrace trace) => Igi2RigidTrace.Trace(this, trace);
+    public void NextZ(WorldLineTrace trace) => Igi2RigidTrace.Trace(this, trace);
 
     /// <summary>
     /// Gets or sets the placing type's own line handler, run after the solid's in a line trace: the base handler first,
     /// then the type's, as <c>QTask_TriggerBaseHandler</c> chains them. <see langword="null"/> for a plain solid.
     /// </summary>
-    public Action<Igi2LineTrace>? Traced { get; set; }
+    public Action<WorldLineTrace>? Traced { get; set; }
 
     /// <inheritdoc/>
     /// <remarks>The placed task, for one whose events a struck solid passes on, as an <c>ExplodeObject</c>'s weapon hits.</remarks>

@@ -44,6 +44,72 @@ public sealed class SharedIncludeTests
             SourcesDefining("float Visibility(float3 world, float3 normal, float3 direction)"));
     }
 
+    /// <summary>The surface's response to a light is written once.</summary>
+    /// <remarks>
+    /// The sun, every lamp and the flashlight are all shaded through it, and the environment's specular
+    /// stand-in is the estimate the reflection pass hands over to; a second copy of either would light one
+    /// source with a different lobe from the rest while each looked right alone.
+    /// </remarks>
+    [Fact]
+    public void One_surface_response_serves_every_light()
+    {
+        Assert.Equal(
+            ["Common/ShadingBrdf.slang"],
+            SourcesDefining("void EvaluateSurface("));
+
+        Assert.Equal(
+            ["Common/ShadingBrdf.slang"],
+            SourcesDefining("float2 SplitSumApprox(float roughness, float cosNV)"));
+    }
+
+    /// <summary>What the lighting pass lifted out of itself is defined in its include and nowhere else.</summary>
+    /// <remarks>
+    /// The sun's cascades, a lamp's unshadowed light and the air in front of a surface each moved into an
+    /// include of their own; one quietly written back into the pass would shadow, light or fog the frame by
+    /// a copy that no longer follows the include.
+    /// </remarks>
+    [Fact]
+    public void The_lighting_pass_reads_its_sun_shadow_lamps_and_air_from_one_place()
+    {
+        Assert.Equal(
+            ["Common/SunShadowCascades.slang"],
+            SourcesDefining("float SunVisibility(float3 viewPos, float3 worldNormal, float2 pixel)"));
+
+        Assert.Equal(
+            ["Common/LampShade.slang"],
+            SourcesDefining("float3 LampShade("));
+
+        Assert.Equal(
+            ["Common/AerialPerspective.slang"],
+            SourcesDefining("float3 AerialPerspective("));
+    }
+
+    /// <summary>The software lamp trace's map lookup and its march are each defined once.</summary>
+    [Fact]
+    public void One_lamp_map_lookup_and_one_lamp_march()
+    {
+        Assert.Equal(
+            ["Common/LampMapVisibility.slang"],
+            SourcesDefining("float LampMapVisibility(int lamp, float3 cameraRelative,"));
+
+        Assert.Equal(
+            ["Common/LampScreenTrace.slang"],
+            SourcesDefining("bool SoftwareBlocked("));
+    }
+
+    /// <summary>The surface cache's probes are read back the way they were gathered, from one definition.</summary>
+    [Fact]
+    public void One_card_probe_grid()
+    {
+        Assert.Equal(
+            ["Common/CardProbes.slang"],
+            SourcesDefining("float3 FilteredProbe(int2 probeCoord, int2 pageMin, int2 pageMax,"));
+
+        Assert.Equal(
+            ["Common/CardDiagnostics.slang"],
+            SourcesDefining("float4 Probed(float3 world, float3 normal, float2 cardUv, int2 texel)"));
+    }
+
     private static IReadOnlyList<string> SourcesDefining(string signature)
     {
         string root = Path.Combine(ShaderRepository.ProjectDirectory, "Source");

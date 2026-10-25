@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.Ai;
 
@@ -401,10 +402,10 @@ public sealed class AlarmSpeakerRegistry
             Add(new AlarmSpeaker(
                 sirenTask,
                 FirstPosition(sirenTask),
-                FirstString(sirenTask, "on expression"),
-                FirstString(sirenTask, "working sound"),
-                FirstString(sirenTask, "explosion sound"),
-                FaultySound: FirstString(sirenTask, "faulty sound")));
+                FirstNonBlankTextNamed(sirenTask, "on expression"),
+                FirstNonBlankTextNamed(sirenTask, "working sound"),
+                FirstNonBlankTextNamed(sirenTask, "explosion sound"),
+                FaultySound: FirstNonBlankTextNamed(sirenTask, "faulty sound")));
         }
         else if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "AlarmLight", StringComparison.Ordinal))
@@ -413,7 +414,7 @@ public sealed class AlarmSpeakerRegistry
             // what they say rather than by a hardcoded position: the expression parameter names
             // itself, and of the two sound parameters the FIRST is the siren -- the second is the
             // report of the speaker being destroyed, which the destruction path will want one day.
-            string expression = FirstString(declared, "expression");
+            string expression = FirstNonBlankTextNamed(declared, "expression");
             (string siren, string destruction) = SoundPair(declared);
 
             Add(new AlarmSpeaker(declared, FirstPosition(declared), expression, siren, destruction));
@@ -437,8 +438,8 @@ public sealed class AlarmSpeakerRegistry
             // ConditionalSound is an audio-only positional emitter. The live retail Mission 1 object
             // commit log contains no loudspeaker or AlarmLight object for these tasks, so there is no
             // collision object to shoot and no destruction effect to synthesize.
-            string condition = FirstString(conditionalSound, "condition");
-            string sound = FirstString(conditionalSound, "sound");
+            string condition = FirstNonBlankTextNamed(conditionalSound, "condition");
+            string sound = FirstNonBlankTextNamed(conditionalSound, "sound");
             if (condition.Length > 0
                 && sound.Contains("alarm", StringComparison.OrdinalIgnoreCase))
             {
@@ -473,22 +474,6 @@ public sealed class AlarmSpeakerRegistry
         }
 
         return default;
-    }
-
-    private static string FirstString(DeclaredTask task, string nameFragment)
-    {
-        IReadOnlyList<TaskParameter> parameters = task.Type.Parameters;
-        for (int i = 0; i < parameters.Count; i++)
-        {
-            if (parameters[i].Name.Contains(nameFragment, StringComparison.OrdinalIgnoreCase)
-                && task.GetValue(i) is string value
-                && !string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return string.Empty;
     }
 
     private static string CameraModelName(DeclaredTask task) =>

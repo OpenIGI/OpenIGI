@@ -26,8 +26,8 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Whether this frame's flashlight shadow is traced against the world rather than marched.</summary>
     private bool WillTraceFlashlight() =>
-        RenderCVars.HardwareRayTracing.Value
-        && RenderCVars.TracedLampShadows.Value
+        RayTracingCVars.HardwareRayTracing.Value
+        && RayTracingCVars.TracedLampShadows.Value
         && TracedWorld is { IsWorldReady: true, WorldScene: not null };
 
     /// <summary>Casts the flashlight's shadow, for the shading to read this same frame.</summary>

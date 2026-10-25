@@ -16,6 +16,11 @@
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The committed inventory of the renderer's console variables, which RenderCVarInventoryTests reads. -->
+  <ItemGroup>
+    <None Update="Baselines\*.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

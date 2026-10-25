@@ -50,7 +50,7 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     private void ClimbWire()
     {
-        if (ActivatingTarget is not Igi2WireTask wire)
+        if (ActivatingTarget is not IIgi2Wire wire)
         {
             IsInitClimbWire = false;
             IsClimbWire = false;
@@ -102,7 +102,7 @@ public sealed partial class Igi2HumanPlayer
     /// </remarks>
     private void SlideWire()
     {
-        if (ActivatingTarget is not Igi2WireTask wire)
+        if (ActivatingTarget is not IIgi2Wire wire)
         {
             IsInitSlideWire = false;
             IsSlideWire = false;
@@ -178,7 +178,7 @@ public sealed partial class Igi2HumanPlayer
     }
 
     /// <summary>Whether the player lets go: a fresh press of activate, within three quarters of a metre of an end, or dead.</summary>
-    private bool WireLetsGo(Igi2WireTask wire)
+    private bool WireLetsGo(IIgi2Wire wire)
     {
         (_, double y, _) = wire.Local(Position);
         bool isAtEnd = ((Fpu)wire.LocalMagicVertex(0).Y + WireEndMargin).Value > y
@@ -192,7 +192,7 @@ public sealed partial class Igi2HumanPlayer
     /// Letting go of a wire: everything locked put back, the wire no longer in use, and the player falling, or dying. The activation's
     /// target is kept, as the original keeps it, so the wire is told it is activated until something else is.
     /// </summary>
-    private void LetGoOfWire(Igi2WireTask wire)
+    private void LetGoOfWire(IIgi2Wire wire)
     {
         IsActivating = false;
         IsCheckActivateButton = true;

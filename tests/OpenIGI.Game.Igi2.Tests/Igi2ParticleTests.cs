@@ -3,6 +3,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
 using Xunit;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -14,7 +15,7 @@ public sealed class Igi2ParticleTests
     public void A_particle_lives_fades_and_its_system_deletes_itself()
     {
         Igi2Particles module = new(new Igi2PlayerFakes.FakeCollision(), new Igi2DynamicTasks());
-        Igi2Particle2DSystem system = module.New("s", false, 0, default, default, 1f, 1f, 0f, 0, 0, 0f, 0f, 4, null);
+        Particle2DSystem system = module.New("s", false, 0, default, default, 1f, 1f, 0f, 0, 0, 0f, 0f, 4, null);
         system.AddParticle(default, new Vector3f(1f, 0f, 0f), intensity: 1f, 0f, 0f, size: 1f, lifeTime: 1, fadeTime: 2);
 
         Assert.True(system.Run());
@@ -39,7 +40,7 @@ public sealed class Igi2ParticleTests
         collision.Surfaces.Add(new Igi2PlayerFakes.FakeCollider(-10.0));
         Igi2Particles module = new(collision, new Igi2DynamicTasks());
         List<Igi2ParticleCollision> struck = [];
-        Igi2Particle2DSystem system = module.New("s", false, 0, default, default, 1f, 1f, 0f, 0, 0, 0f, 0f, 4, struck.Add);
+        Particle2DSystem system = module.New("s", false, 0, default, default, 1f, 1f, 0f, 0, 0, 0f, 0f, 4, struck.Add);
 
         // The first particle takes collision phase 0: its countdown is already out, so it is checked on the first run.
         system.AddParticle(default, new Vector3f(0f, 0f, -20f), 1f, 0f, 0f, 1f, 100, 0);
@@ -58,7 +59,7 @@ public sealed class Igi2ParticleTests
     {
         Igi2Particles module = new(new Igi2PlayerFakes.FakeCollision(), new Igi2DynamicTasks());
         IgiRandom twin = new(unchecked((uint)-624411820), unchecked((uint)-896272554), 430872269u);
-        Igi2Particle2DSystem system = module.New("s", false, 0, default, default, 1f, 1f, 0f, 0, 0, 0f, 0f, 4, null);
+        Particle2DSystem system = module.New("s", false, 0, default, default, 1f, 1f, 0f, 0, 0, 0f, 0f, 4, null);
 
         system.AddConeParticle(default, new Vector3f(0f, 0f, 1f), 0.5f, 100f, 200f, 1f, 0f, 0f, 1f, 10, 0);
 
@@ -99,6 +100,24 @@ public sealed class Igi2ParticleTests
 
         Assert.Equal(twin.NextRaw(), player.Random.NextRaw());
         Assert.Equal(2, dynamic.Tasks.Count);
-        Assert.Equal(Math.Min(20, forward + backward), ((Igi2Particle2DSystem)dynamic.Tasks[1]).Count);
+        Assert.Equal(Math.Min(20, forward + backward), surroundings.Particles.Module.Systems[1].Count);
+    }
+
+    /// <summary>
+    /// The mist is made as <c>igi2 0x4734F0</c> makes it, as Project I.G.I.'s is: faded through its alpha and filtered
+    /// (<c>0x1080000</c>), its sprite's frames played a whole number of ticks each over its fifteen.
+    /// </summary>
+    [Fact]
+    public void A_wounds_mist_fades_by_its_alpha_and_plays_its_frames()
+    {
+        (Igi2HumanPlayer player, _, Igi2PlayerFakes.FakeSurroundings surroundings) = Igi2PlayerFakes.Player();
+        surroundings.Particles = new Igi2Particles(new Igi2PlayerFakes.FakeCollision(), new Igi2DynamicTasks(), static _ => 7);
+        player.CreateFleshEnterEffect(new Vector3f(1f, 0f, 0f), default, player);
+
+        OpenIGI.Game.World.Particles.Particle2DSystem mist = surroundings.Particles.Module.Systems[0];
+        Assert.Equal(Igi2Human.BloodMistSprite, mist.Look.Sprite);
+        Assert.Equal(0x1080000 | 0x40000, mist.Look.Transparency);
+        Assert.Equal(7, mist.Look.Frames);
+        Assert.Equal(2, mist.Look.AnimationDelta);
     }
 }

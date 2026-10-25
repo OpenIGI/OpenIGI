@@ -47,8 +47,8 @@ public sealed partial class GameHost
     /// </remarks>
     private static LowLatencyMode EffectiveLowLatency()
     {
-        LowLatencyMode mode = RenderCVars.LowLatency.Value;
-        return RenderCVars.FrameGeneration.Value != FrameGenerationMode.Off && mode == LowLatencyMode.Off
+        LowLatencyMode mode = ReconstructionCVars.LowLatency.Value;
+        return ReconstructionCVars.FrameGeneration.Value != FrameGenerationMode.Off && mode == LowLatencyMode.Off
             ? LowLatencyMode.On
             : mode;
     }

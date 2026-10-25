@@ -25,7 +25,7 @@ namespace OpenIGI.UI;
 /// recording renderer without a GPU.
 /// </para>
 /// </remarks>
-public sealed class UiPainter
+public sealed partial class UiPainter
 {
     private readonly Stack<UiRect> _clips = new();
     private readonly Stack<float> _opacityStack = new();
@@ -335,8 +335,8 @@ public sealed class UiPainter
             UiVec2 prev = points[(i + n - 1) % n];
             UiVec2 here = points[i];
             UiVec2 next = points[(i + 1) % n];
-            UiVec2 n0 = InwardNormal(prev, here, sign);
-            UiVec2 n1 = InwardNormal(here, next, sign);
+            UiVec2 n0 = UiGeometryEmitter.InwardNormal(prev, here, sign);
+            UiVec2 n1 = UiGeometryEmitter.InwardNormal(here, next, sign);
             float mx = n0.X + n1.X;
             float my = n0.Y + n1.Y;
             float dot = (mx * n1.X) + (my * n1.Y);
@@ -760,7 +760,7 @@ public sealed class UiPainter
     {
         UiRect dest = _transform.Apply(destination);
         UiRect src = source;
-        if (!TryClip(Clip, ref dest, ref src))
+        if (!UiGeometryEmitter.TryClip(Clip, ref dest, ref src))
         {
             return;
         }
@@ -844,7 +844,7 @@ public sealed class UiPainter
             GlyphPlacement placed = run.Current;
             UiRect dest = placed.Destination;
             UiRect source = placed.Source;
-            if (!TryClip(clip, ref dest, ref source))
+            if (!UiGeometryEmitter.TryClip(clip, ref dest, ref source))
             {
                 continue;
             }
@@ -883,58 +883,6 @@ public sealed class UiPainter
         DrawText(font, text, topLeft, sizePx, color);
     }
 
-    /// <summary>Trims a destination rectangle to a clip, adjusting its source rectangle to match.</summary>
-    /// <param name="clip">The clip rectangle.</param>
-    /// <param name="dest">The destination, trimmed in place.</param>
-    /// <param name="source">The source, trimmed in proportion in place.</param>
-    /// <returns><see langword="false"/> when the destination lies wholly outside the clip.</returns>
-    internal static bool TryClip(UiRect clip, ref UiRect dest, ref UiRect source)
-    {
-        if (dest.Width <= 0f || dest.Height <= 0f)
-        {
-            return false;
-        }
-
-        float left = MathF.Max(dest.X, clip.X);
-        float top = MathF.Max(dest.Y, clip.Y);
-        float right = MathF.Min(dest.Right, clip.Right);
-        float bottom = MathF.Min(dest.Bottom, clip.Bottom);
-        if (right <= left || bottom <= top)
-        {
-            return false;
-        }
-
-        // Nothing to trim: leave the source untouched so an unclipped draw is bit-for-bit what it was.
-        if (left == dest.X && top == dest.Y && right == dest.Right && bottom == dest.Bottom)
-        {
-            return true;
-        }
-
-        float uPerPx = source.Width / dest.Width;
-        float vPerPx = source.Height / dest.Height;
-        source = new UiRect(
-            source.X + ((left - dest.X) * uPerPx),
-            source.Y + ((top - dest.Y) * vPerPx),
-            (right - left) * uPerPx,
-            (bottom - top) * vPerPx);
-        dest = UiRect.FromEdges(left, top, right, bottom);
-        return true;
-    }
-
-    private static UiVec2 InwardNormal(UiVec2 from, UiVec2 to, float sign)
-    {
-        float dx = to.X - from.X;
-        float dy = to.Y - from.Y;
-        float length = MathF.Sqrt((dx * dx) + (dy * dy));
-        if (length <= 1e-6f)
-        {
-            return default;
-        }
-
-        // For a clockwise (Y-down) polygon the interior is on the right of each edge: (-dy, dx).
-        return new UiVec2(-dy / length * sign, dx / length * sign);
-    }
-
     private UiVertex Vertex(float x, float y, Bgra32 color) => Vertex(x, y, 0f, 0f, color);
 
     private UiVertex Vertex(float x, float y, float u, float v, Bgra32 color)
@@ -943,72 +891,13 @@ public sealed class UiPainter
         return new UiVertex(p.X, p.Y, u, v, color);
     }
 
-    /// <summary>Clips a device-space convex polygon and emits it as a fan of quads.</summary>
-    private void EmitPolygon(ReadOnlySpan<UiVertex> polygon, UiImage image, UiBlend blend)
-    {
-        UiRect clip = Clip;
-        scoped ReadOnlySpan<UiVertex> visible = polygon;
-        Span<UiVertex> clipped = stackalloc UiVertex[UiGeometry.MaxClippedVertices];
-        if (!UiGeometry.IsInside(polygon, clip))
-        {
-            int count = UiGeometry.ClipPolygon(polygon, clip, clipped);
-            visible = clipped[..count];
-        }
+    /// <summary>Clips a device-space convex polygon to the current clip and emits it as a fan of quads.</summary>
+    private void EmitPolygon(ReadOnlySpan<UiVertex> polygon, UiImage image, UiBlend blend) =>
+        UiGeometryEmitter.EmitPolygon(Renderer, Clip, polygon, image, blend);
 
-        int n = visible.Length;
-        if (n < 3)
-        {
-            return;
-        }
-
-        if (n == 4)
-        {
-            Renderer.DrawQuad(image, visible[0], visible[1], visible[2], visible[3], blend);
-            return;
-        }
-
-        // A fan in pairs of triangles: each quad covers (0, i, i+1, i+2); a leftover triangle repeats its
-        // last corner.
-        for (int i = 1; i < n - 1; i += 2)
-        {
-            UiVertex c = visible[i + 1];
-            UiVertex d = i + 2 < n ? visible[i + 2] : c;
-            Renderer.DrawQuad(image, visible[0], visible[i], c, d, blend);
-        }
-    }
-
-    /// <summary>Adds a one-pixel transparent fringe outside every slanted edge of a device-space polygon.</summary>
-    private void FeatherEdges(ReadOnlySpan<UiVertex> polygon, Bgra32 color, UiBlend blend)
-    {
-        int n = polygon.Length;
-        Span<UiVec2> points = stackalloc UiVec2[n];
-        for (int i = 0; i < n; i++)
-        {
-            points[i] = new UiVec2(polygon[i].X, polygon[i].Y);
-        }
-
-        float sign = UiGeometry.SignedArea2(points) >= 0f ? 1f : -1f;
-        Bgra32 clear = color.WithAlpha(0);
-        Span<UiVertex> quad = stackalloc UiVertex[4];
-        for (int i = 0; i < n; i++)
-        {
-            UiVec2 a = points[i];
-            UiVec2 b = points[(i + 1) % n];
-            if (MathF.Abs(a.X - b.X) < 0.01f || MathF.Abs(a.Y - b.Y) < 0.01f)
-            {
-                continue;
-            }
-
-            UiVec2 inward = InwardNormal(a, b, sign);
-            float ox = -inward.X;
-            float oy = -inward.Y;
-            quad[0] = new UiVertex(a.X, a.Y, 0f, 0f, color);
-            quad[1] = new UiVertex(b.X, b.Y, 0f, 0f, color);
-            quad[2] = new UiVertex(b.X + ox, b.Y + oy, 0f, 0f, clear);
-            quad[3] = new UiVertex(a.X + ox, a.Y + oy, 0f, 0f, clear);
-            EmitPolygon(quad, UiImage.None, blend);
-        }
-    }
+    /// <summary>Feathers a device-space polygon's slanted edges inside the current clip.</summary>
+    private void FeatherEdges(ReadOnlySpan<UiVertex> polygon, Bgra32 color, UiBlend blend) =>
+        UiGeometryEmitter.FeatherEdges(Renderer, Clip, polygon, color, blend);
 
     /// <summary>Fills the part of a rectangle outside an ellipse, for a radial gradient's flat tail.</summary>
     private void FillOutsideEllipse(UiRect rect, UiVec2 center, UiVec2 radius, Bgra32 color, UiBlend blend)

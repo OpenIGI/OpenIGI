@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
-using OpenIGI.Game.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Collision;
 
@@ -34,7 +34,7 @@ public static class Igi2BoneLineOfSight
     /// <summary>Meets one boned object.</summary>
     /// <param name="collider">The object.</param>
     /// <param name="sight">The line of sight.</param>
-    public static void Meet(Igi2BoneCollider collider, Igi2LineOfSight sight)
+    public static void Meet(Igi2BoneCollider collider, WorldLineOfSight sight)
     {
         ArgumentNullException.ThrowIfNull(collider);
         ArgumentNullException.ThrowIfNull(sight);
@@ -88,7 +88,7 @@ public static class Igi2BoneLineOfSight
                 return;
             }
 
-            float transparency = sight.Materials[row]?.QMaterial.Transparency ?? 0f;
+            float transparency = sight.Materials.TransparencyOf(row);
             if (den < 0f)
             {
                 sight.Transparency = ((Fpu)sight.Transparency * transparency).F;

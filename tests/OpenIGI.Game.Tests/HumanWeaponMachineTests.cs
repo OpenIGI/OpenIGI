@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using Xunit;
@@ -115,16 +116,16 @@ public sealed class HumanWeaponMachineTests
     {
         PlayerAction[] declared = Enum.GetValues<PlayerAction>();
 
-        // Twenty-seven rows in the binding table and the remaster's flashlight: twenty-eight bound slots.
-        Assert.Equal(28, declared.Length);
-        Assert.Equal(28, PlayerInputBindings.All.Count);
+        // Twenty-seven rows in the binding table and the remaster's flashlight and weapon wheel: twenty-nine bound slots.
+        Assert.Equal(29, declared.Length);
+        Assert.Equal(29, PlayerInputBindings.All.Count);
 
         foreach (PlayerAction action in declared)
         {
             Assert.True(PlayerInputBindings.TryGetSlot(action, out _), $"{action} is sampled into no slot.");
         }
 
-        Assert.Equal(28, PlayerInputBindings.All.Select(b => b.Slot).Distinct().Count());
+        Assert.Equal(29, PlayerInputBindings.All.Select(b => b.Slot).Distinct().Count());
     }
 
     [Fact]
@@ -142,6 +143,26 @@ public sealed class HumanWeaponMachineTests
             if (action != PlayerAction.Flashlight)
             {
                 Assert.Equal(0, (int)action & 0x10);
+            }
+        }
+    }
+
+    [Fact]
+    public void TheWeaponWheelTakesTheNextBitAndASlotTheOriginalLeavesFree()
+    {
+        // Not retail, as the flashlight: 0x20 is the next bit the binding table leaves free, and slot 36 one the sampler
+        // never writes. Bound to the middle mouse button by default.
+        Assert.Equal(0x20, (int)PlayerAction.WeaponWheel);
+        Assert.True(PlayerInputBindings.TryGetSlot(PlayerAction.WeaponWheel, out PlayerInputSlot slot));
+        Assert.Equal(PlayerInputSlot.WeaponWheel, slot);
+        Assert.Equal(36, (int)slot);
+        Assert.Contains(PlayerProfile.DefaultBindings, b => b.Action == "WeaponWheel" && b.Key == "MOUSE_BUTTON_3");
+
+        foreach (PlayerAction action in Enum.GetValues<PlayerAction>())
+        {
+            if (action != PlayerAction.WeaponWheel)
+            {
+                Assert.Equal(0, (int)action & 0x20);
             }
         }
     }

@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -320,7 +320,7 @@ public sealed class Igi2WaterSplashDrop
 /// One body of water as the level runs it, a <c>Water_t</c>: its layers, the ripples spreading on it, its splashes and its tick,
 /// and the surface lines strike (<c>Water_TraceLinesHandler</c>).
 /// </summary>
-public sealed class Igi2WaterBody : IIgi2Collider
+public sealed class Igi2WaterBody : IWorldCollider
 {
     /// <summary>The ripples a body keeps at once, five; a sixth replaces the oldest.</summary>
     public const int MaxWaves = 5;
@@ -645,7 +645,7 @@ public sealed class Igi2WaterBody : IIgi2Collider
     /// it strikes it nearer than what it held, on the surface material, facing straight up.
     /// </summary>
     /// <param name="trace">The lines.</param>
-    public void TraceLines(Igi2LineTrace trace)
+    public void TraceLines(WorldLineTrace trace)
     {
         ArgumentNullException.ThrowIfNull(trace);
         Vector3d at = _task.Position;
@@ -673,7 +673,7 @@ public sealed class Igi2WaterBody : IIgi2Collider
 
             Fpu dz = (Fpu)hit.Z - start.Z, dy = (Fpu)hit.Y - start.Y, dx = (Fpu)hit.X - start.X;
             double distance = Fpu.Sqrt(((dz * dz) + (dy * dy)) + (dx * dx)).Value;
-            Igi2Intersection record = trace.Intersections[i];
+            WorldIntersection record = trace.Intersections[i];
             if (record.IsHit && !(distance < record.Distance))
             {
                 continue;
@@ -692,7 +692,7 @@ public sealed class Igi2WaterBody : IIgi2Collider
 
     /// <inheritdoc/>
     /// <remarks>Water answers no ground query; only line traces meet it.</remarks>
-    public void NextZ(Igi2LineTrace trace)
+    public void NextZ(WorldLineTrace trace)
     {
     }
 }

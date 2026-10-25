@@ -76,7 +76,7 @@ public readonly record struct TemporalResolveSettings(
     /// <param name="renderWidth">The width the scene is rendered at.</param>
     /// <param name="presentWidth">The width it is presented at.</param>
     /// <returns>One or two history texels per rendered pixel on each axis.</returns>
-    public static int HistoryScaleFor(int renderWidth, int presentWidth) => RenderCVars.UpscaleHistory.Value switch
+    public static int HistoryScaleFor(int renderWidth, int presentWidth) => ReconstructionCVars.UpscaleHistory.Value switch
     {
         1 => 1,
         2 => 2,
@@ -107,10 +107,10 @@ public readonly record struct TemporalResolveSettings(
         return Default with
         {
             Enabled = taa.Accumulates,
-            MaxSamples = RenderCVars.TemporalHistorySamples.Value,
+            MaxSamples = ReconstructionCVars.TemporalHistorySamples.Value,
             Sharpen = taa.MotionSharpening,
             ShadingBlend = guideBlend,
-            ThinRelaxation = RenderCVars.ThinGeometry.Value,
+            ThinRelaxation = ReconstructionCVars.ThinGeometry.Value,
             DebugView = view switch
             {
                 OpenIGI.Rendering.DebugView.Motion => 1f,

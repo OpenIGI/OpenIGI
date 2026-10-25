@@ -3,6 +3,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -262,7 +263,7 @@ public sealed class RetailIgi2DoorTests
         Assert.Equal(-90f, door.MaxAngle);
 
         Igi2TitlePlayer player = RetailIgi2Mission1.Stand(m.Collision!, m.Level, door, door.Position + (ahead * 20000.0), 0f);
-        Igi2LineTrace trace = Through(m.Collision!, door, f, fromAhead: true);
+        WorldLineTrace trace = Through(m.Collision!, door, f, fromAhead: true);
         trace.Evaluator = null;
         m.Collision!.TraceLines(trace, ~Igi2CollisionWorld.TerrainGroup);
         Assert.Equal(0, door.HoldTimer);
@@ -271,7 +272,7 @@ public sealed class RetailIgi2DoorTests
         m.Collision!.TraceLines(trace, ~Igi2CollisionWorld.TerrainGroup);
         Assert.Equal(0, door.HoldTimer);
 
-        Igi2LineTrace behind = Through(m.Collision!, door, f, fromAhead: false);
+        WorldLineTrace behind = Through(m.Collision!, door, f, fromAhead: false);
         behind.Evaluator = player.Human;
         m.Collision!.TraceLines(behind, ~Igi2CollisionWorld.TerrainGroup);
         Assert.Equal(Igi2DoorTask.HoldTicks, door.HoldTimer);
@@ -376,7 +377,7 @@ public sealed class RetailIgi2DoorTests
     }
 
     // A line along the door's own Y that strikes its solid, found by sweeping its face; from its front or from behind.
-    private static Igi2LineTrace Through(Igi2CollisionWorld world, Igi2DoorTask door, float[] f, bool fromAhead)
+    private static WorldLineTrace Through(Igi2CollisionWorld world, Igi2DoorTask door, float[] f, bool fromAhead)
     {
         Igi2RigidObject solid = world.SolidsOf(Igi2DoorTask.TypeName, door.Id)[0];
         Vector3d across = new(f[0], f[3], f[6]), ahead = new(f[1], f[4], f[7]), up = new(f[2], f[5], f[8]);
@@ -388,7 +389,7 @@ public sealed class RetailIgi2DoorTests
                 for (double z = 0.0; z <= 8192.0; z += 512.0)
                 {
                     Vector3d face = door.CurrentPosition + (across * x) + (up * z);
-                    Igi2LineTrace trace = new(1) { Mesh = mesh };
+                    WorldLineTrace trace = new(1) { Mesh = mesh };
                     trace.Starts[0] = face + (ahead * (1024.0 * sign));
                     trace.Ends[0] = face - (ahead * (1024.0 * sign));
                     world.TraceLines(trace, ~Igi2CollisionWorld.TerrainGroup);

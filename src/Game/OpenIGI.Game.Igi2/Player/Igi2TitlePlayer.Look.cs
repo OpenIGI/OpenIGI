@@ -55,9 +55,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerLook
         // and humanview.c HumanView_UpdateView remain unchanged when smoothing is disabled.
         MouseLookSettings settings = MouseLookSettings.FromSensitivity(sensitivity, invertMouse);
         float zoom = MouseLookSettings.ZoomSensitivityScale(Human.View.FieldOfView);
-        // Convert the shared pitch delta to IGI2's vertical input convention (humanview.c HumanView_UpdateView).
+        // I.G.I. 2's pitch, as the shared one, is up positive (humanview.c HumanView_UpdateView); its gamma turns the other way.
         return (((Fpu)gamma - ((Fpu)settings.YawDelta(mouseX) * zoom)).F,
-            Math.Clamp(((Fpu)pitch - ((Fpu)settings.PitchDelta(mouseY) * zoom)).F, -Igi2HumanView.PitchLimit, Igi2HumanView.PitchLimit));
+            Math.Clamp(((Fpu)pitch + ((Fpu)settings.PitchDelta(mouseY) * zoom)).F, -Igi2HumanView.PitchLimit, Igi2HumanView.PitchLimit));
     }
 
     private void WriteSmoothLook()

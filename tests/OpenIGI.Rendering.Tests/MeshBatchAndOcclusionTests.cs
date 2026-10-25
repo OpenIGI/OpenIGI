@@ -1,5 +1,5 @@
-using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Core.Numerics;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -44,7 +44,7 @@ public sealed class MeshBatchAndOcclusionTests
     [Fact]
     public void TerrainOcclusion_DefaultsOffUntilAViewProvesItProfitable()
     {
-        Assert.False(RenderCVars.TerrainOcclusion.DefaultValue);
+        Assert.False(GeometryCVars.TerrainOcclusion.DefaultValue);
     }
 
     /// <summary>Each tier holds more ground than it draws, because a player turns round.</summary>
@@ -63,12 +63,12 @@ public sealed class MeshBatchAndOcclusionTests
     [InlineData(GraphicsPreset.Ultra, 8979)]
     public void TerrainCache_HoldsAWholeTurnAtEveryTierThatDrawsOne(GraphicsPreset preset, int atLeast)
     {
-        _ = RenderCVars.TerrainCache;
+        _ = GeometryCVars.TerrainCache;
 
         GraphicsPresetRegistry.Default.Apply(preset);
 
         Assert.True(
-            RenderCVars.TerrainCache.Value >= atLeast,
-            $"{preset} keeps {RenderCVars.TerrainCache.Value} chunks, under the {atLeast} a turn wants");
+            GeometryCVars.TerrainCache.Value >= atLeast,
+            $"{preset} keeps {GeometryCVars.TerrainCache.Value} chunks, under the {atLeast} a turn wants");
     }
 }

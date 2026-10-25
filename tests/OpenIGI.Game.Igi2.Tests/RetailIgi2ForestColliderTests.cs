@@ -3,6 +3,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -44,11 +45,11 @@ public sealed class RetailIgi2ForestColliderTests
         int struck = 0;
         foreach (Igi2Tree tree in Trees(forest).Take(40))
         {
-            Igi2LineTrace trace = new(1);
+            WorldLineTrace trace = new(1);
             trace.Starts[0] = new Vector3d(tree.Position.X, tree.Position.Y, tree.Position.Z + 200000.0);
             world.NextZ(trace, [-400000.0], Igi2CollisionWorld.ForestGroup | Igi2CollisionWorld.TerrainGroup);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             if (hit.IsHit && hit.HitObject is Igi2ForestCollider)
             {
                 Assert.True(hit.Position.Z > tree.Position.Z, "the tree was struck below its own foot.");
@@ -68,12 +69,12 @@ public sealed class RetailIgi2ForestColliderTests
         foreach (Igi2Tree tree in Trees(forest).Take(40))
         {
             double z = tree.Position.Z + 2048.0;
-            Igi2LineTrace trace = new(1);
+            WorldLineTrace trace = new(1);
             trace.Starts[0] = new Vector3d(tree.Position.X - 4096.0, tree.Position.Y, z);
             trace.Ends[0] = new Vector3d(tree.Position.X + 4096.0, tree.Position.Y, z);
             world.TraceLines(trace, Igi2CollisionWorld.ForestGroup);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             if (hit.IsHit)
             {
                 Assert.IsType<Igi2ForestCollider>(hit.HitObject);

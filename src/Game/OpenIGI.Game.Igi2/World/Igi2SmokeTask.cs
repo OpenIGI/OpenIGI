@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Scripting.Expressions;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -50,7 +51,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     public static readonly int[] FadeModeTransparency = [0x1080000, 0x1000008, 0x1000010];
 
     private LevelExpression? _generate;
-    private Igi2Particle2DSystem? _system;
+    private Particle2DSystem? _system;
     private Vector3d _previous;
     private bool _isPreviousValid;
     private float _count;
@@ -162,7 +163,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     public float DamageRadius { get; set; }
 
     /// <summary>Gets the particle system, once made.</summary>
-    public Igi2Particle2DSystem? System => _system;
+    public Particle2DSystem? System => _system;
 
     /// <summary>Gets or sets the particle module its system is made in.</summary>
     public Igi2Particles? Particles { get; set; }
@@ -214,7 +215,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
             shininess: 0f,
             maxParticles: MaxParticles,
             onCollision: null);
-        _system.Range = ((Fpu)ViewCutoff * 4096.0).F;
+        _system.Look = _system.Look with { Range = ((Fpu)ViewCutoff * 4096.0).F };
         // smoke.c Smoke_UpdateInternalDataHandler: the plume owns its system even between emissions.
         _system.IsSelfDestruct = false;
     }

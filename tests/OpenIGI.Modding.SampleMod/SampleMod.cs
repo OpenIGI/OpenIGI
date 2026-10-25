@@ -1,37 +1,38 @@
-using OpenIGI.Engine.Titles;
+using OpenIGI.Game.Events;
 using OpenIGI.Game.Igi2.Systems;
-using OpenIGI.Game.Level;
 using OpenIGI.Modding;
-
-[assembly: OpenIgiMod(typeof(SampleMod.Sample))]
 
 namespace SampleMod;
 
-/// <summary>Adds a script constant to every game, and a level system to I.G.I. 2's right after its flow.</summary>
+/// <summary>A mod as a mod author writes one: one class, whose Configure says everything it changes.</summary>
 public sealed class Sample : IOpenIgiMod
 {
-    /// <summary>The constant's name.</summary>
+    /// <summary>The name of the script constant the mod adds.</summary>
     public const string AnswerConstant = "SampleMod_Answer";
 
-    /// <summary>The level system's name.</summary>
+    /// <summary>The name of the level system the mod adds.</summary>
     public const string GreetingSystem = "SampleMod.Greeting";
+
+    /// <summary>The answer the level scripts read.</summary>
+    public const int Answer = 42;
+
+    /// <summary>Gets how many levels the mod has seen loaded.</summary>
+    public int LevelsLoaded { get; private set; }
 
     /// <inheritdoc/>
     public void Configure(IModBuilder builder)
     {
-        builder.AddModule(new AnswerModule());
-        builder.EditLevelSystems<Igi2LevelBuild>(systems =>
-            systems.InsertAfter(Igi2LevelSystems.Flow, new LevelSystem<Igi2LevelBuild>(GreetingSystem, static _ => { })));
-    }
+        ArgumentNullException.ThrowIfNull(builder);
 
-    private sealed class AnswerModule : IContentModule
-    {
-        public string Name => "SampleMod.Answer";
+        // The greyscale pass's switch and strength, which its project names as the pass's Toggle and Parameters.
+        builder.Settings.Bool("greyscale", false, "Drains the scene of its colour.");
+        builder.Settings.Float("greyscale_amount", 1f, 0f, 1f, "How much of the scene's colour the greyscale pass drains.");
 
-        public void Register(ContentRegistrationContext context) => context.Natives.RegisterConstant(AnswerConstant, 42);
+        builder.Scripts.Constant(AnswerConstant, Answer);
 
-        public void LoadTables(ContentLoadContext context)
-        {
-        }
+        // Runs as each I.G.I. 2 level comes up, right after its flow.
+        builder.LevelSystems<Igi2LevelBuild>().InsertAfter(Igi2LevelSystems.Flow, GreetingSystem, static _ => { });
+
+        builder.Events.On<LevelLoaded>(_ => LevelsLoaded++);
     }
 }

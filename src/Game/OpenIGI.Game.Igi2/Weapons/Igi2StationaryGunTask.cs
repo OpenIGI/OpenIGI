@@ -7,6 +7,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -68,7 +69,7 @@ public interface IIgi2GunOperator
 /// in radians, to the gun's.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2WeaponOwner, IIgi2AiMountedGun, IIgi2Mover, IIgi2AttachParent
+public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, IIgi2Activatable, IIgi2WeaponOwner, IIgi2AiMountedGun, IIgi2Mover, IAttachParent
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "StationaryGun";

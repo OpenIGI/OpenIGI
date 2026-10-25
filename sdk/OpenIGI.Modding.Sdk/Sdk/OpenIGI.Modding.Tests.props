@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    A mod's tests, built with the same SDK (<ModTests>true</ModTests>): a test project, not a plugin, that builds no mod
+    package of its own. It references OpenIGI.Modding.Testing (OpenIGI.Modding.targets), and each mod it references is
+    installed beside it under mods/<id>/, as the launcher installs one, for ModHarness.Installed to load. The test framework
+    is the project's own: it references xunit and its runner itself.
+
+    Read after the project's own properties and before the .NET SDK's targets, which read what a test project is.
+  -->
+  <PropertyGroup Condition="'$(ModTests)' == 'true'">
+    <EnableDynamicLoading>false</EnableDynamicLoading>
+    <IsTestProject Condition="'$(IsTestProject)' == ''">true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultModItems>false</EnableDefaultModItems>
+  </PropertyGroup>
+
+</Project>

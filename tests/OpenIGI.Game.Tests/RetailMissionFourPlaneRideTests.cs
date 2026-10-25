@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Reflection;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -10,10 +8,8 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Tests;
 
@@ -301,33 +297,18 @@ public sealed class RetailMissionFourPlaneRideTests
         return (runtime, root, mission.Terrain, solids);
     }
 
-    private static void ForceAnimations(CutsceneRuntime runtime)
-    {
-        FieldInfo animField = typeof(CutsceneRuntime).GetField(
-            "_animations", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        foreach (object state in (IList)animField.GetValue(runtime)!)
-        {
-            Type t = state.GetType();
-            t.GetField("<Run>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, "");
-            t.GetField("<InitialRun>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, true);
-            t.GetProperty("IsRun")?.SetValue(state, true);
-        }
-    }
+    private static void ForceAnimations(CutsceneRuntime runtime) => runtime.RunEveryAnimationForTesting();
 
     private static void WritePlaneHold(CutsceneRuntime runtime, int targetId, float thrust)
     {
-        FieldInfo animField = typeof(CutsceneRuntime).GetField(
-            "_animations", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        foreach (object state in (IList)animField.GetValue(runtime)!)
+        foreach (CutsceneAnimationState state in runtime.AnimationsForTesting)
         {
-            Type t = state.GetType();
-            int target = (int)t.GetProperty("TargetId")!.GetValue(state)!;
-            if (target != targetId)
+            if (state.TargetId != targetId)
             {
                 continue;
             }
 
-            AnimDataProgram program = (AnimDataProgram)t.GetProperty("Program")!.GetValue(state)!;
+            AnimDataProgram program = state.Program;
             int budget = program.TotalTicks() + 8;
             for (int tick = 0; !program.HasFinished && tick < budget; tick++)
             {

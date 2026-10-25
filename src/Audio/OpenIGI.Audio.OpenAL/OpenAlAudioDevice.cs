@@ -37,7 +37,7 @@ namespace OpenIGI.Audio.OpenAL;
 /// <see cref="IsAvailable"/> false. Nothing about a missing sound card may stop the game booting.
 /// </para>
 /// </remarks>
-public sealed class OpenAlAudioDevice : IAudioDevice
+public sealed partial class OpenAlAudioDevice : IAudioDevice
 {
     private const string LogCategory = "Audio";
 
@@ -424,6 +424,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     {
         lock (_gate)
         {
+            ReleaseWarpFilter();
             if (_al is { } al)
             {
                 foreach (OpenAlVoice voice in _pool.Voices)
@@ -502,7 +503,8 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             return;
         }
 
-        al.SetSourceProperty(voice.Source, SourceFloat.Pitch, VanillaSpatialiser.ClampPitch(parameters.Pitch));
+        al.SetSourceProperty(voice.Source, SourceFloat.Pitch, VanillaSpatialiser.ClampPitch(WarpedPitch(parameters.Pitch)));
+        ApplyWarpFilter(al, voice.Source);
 
         if (_options.Spatial && parameters.IsPositional)
         {

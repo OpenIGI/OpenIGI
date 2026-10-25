@@ -1,5 +1,4 @@
 using OpenIGI.Core.Configuration;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
@@ -56,7 +55,7 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
     // the GI can carry the outdoor and window fill the flat ambient used to stand in for. Only surfaces
     // that actually see the sky read it, so a sealed interior is unaffected.
     public Vector3f SkyFillColour() =>
-        ((EffectiveSun ?? Sun)?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
+        ((EffectiveSun ?? Sun)?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * SkyCVars.SkyLight.Value;
 
     /// <summary>The sky's light averaged over every direction, as the lighting pass itself has it.</summary>
     /// <returns>
@@ -237,7 +236,7 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
     public float MoonVeil()
     {
         float cover = WeatherCloudCover() * DayNight.Nightfall;
-        return (1f - (0.75f * cover)) * RenderCVars.Moonlight.Value;
+        return (1f - (0.75f * cover)) * SkyCVars.Moonlight.Value;
     }
 
     // How bright the brightest star is drawn, in the lit scene's own units. Relative to the night sky it is
@@ -260,7 +259,7 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
     public float WeatherCloudCover()
     {
         bool falling = host.WeatherFalls;
-        return falling ? Math.Clamp(0.8f + (0.2f * RenderCVars.StormIntensity.Value), 0f, 1f) : 0f;
+        return falling ? Math.Clamp(0.8f + (0.2f * WeatherCVars.StormIntensity.Value), 0f, 1f) : 0f;
     }
 
     /// <summary>What the night sky holds this frame beyond the atmosphere: glow, cover, stars and moon.</summary>
@@ -277,7 +276,7 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
         }
 
         float cover = WeatherCloudCover() * night;
-        bool stars = RenderCVars.Stars.Value;
+        bool stars = SkyCVars.Stars.Value;
 
         Vector3f moon = DayNight.MoonDirection;
         float moonUp = Math.Clamp((moon.Z + 0.02f) / 0.06f, 0f, 1f);
@@ -287,16 +286,16 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
             // Not weighted by the night: the glow is emission, there all day, and only outshone while the
             // sun lights the sky. Faded in with the night, it was missing through the whole of dusk, which
             // left the sky between the sun's last light and full night darker than the night itself.
-            Airglow: RenderCVars.NightAirglow.Value,
+            Airglow: SkyCVars.NightAirglow.Value,
             CloudCover: cover,
             StarRadiance: stars ? StarRadiance * DayNight.StarVisibility : 0f,
             MoonDirection: moon,
-            MoonRadiance: stars ? MoonDiscRadiance * RenderCVars.MoonBrightness.Value * moonUp * night : 0f,
+            MoonRadiance: stars ? MoonDiscRadiance * SkyCVars.MoonBrightness.Value * moonUp * night : 0f,
             Seconds: host.Milliseconds / 1000f);
     }
 
     /// <summary>How much of the night-vision shift a night this deep takes, nought to one.</summary>
-    /// <param name="nightfall">How far into night the sky is (<see cref="RenderCVars.Nightfall"/>).</param>
+    /// <param name="nightfall">How far into night the sky is (<see cref="ExposureCVars.Nightfall"/>).</param>
     /// <returns>Nought through dusk, rising once the sun is some six degrees under, one at full night.</returns>
     public static float NightVisionWeight(float nightfall)
     {

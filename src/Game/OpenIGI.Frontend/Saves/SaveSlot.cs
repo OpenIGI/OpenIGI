@@ -22,4 +22,8 @@ public sealed record SaveSlot(
     int MissionId,
     string MissionName,
     DateTimeOffset SavedAt,
-    string? ScreenshotFile);
+    string? ScreenshotFile)
+{
+    /// <summary>Gets the mods that change play the slot was saved with, or <see langword="null"/> for a slot saved before any were recorded.</summary>
+    public IReadOnlyList<OpenIGI.Core.Content.ModReference>? Mods { get; init; }
+}

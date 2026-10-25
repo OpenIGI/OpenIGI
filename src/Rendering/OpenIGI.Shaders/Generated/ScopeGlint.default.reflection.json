@@ -1,0 +1,42 @@
+{
+  "module": "ScopeGlint",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "vertexMain",
+      "stage": "Vertex",
+      "workgroupSize": null
+    },
+    {
+      "name": "fragmentMain",
+      "stage": "Fragment",
+      "workgroupSize": null
+    }
+  ],
+  "bindings": [],
+  "pushBlock": {
+    "name": "p",
+    "size": 128,
+    "group": 3,
+    "binding": 0,
+    "hlsl": {
+      "class": "ConstantBuffer",
+      "register": 1,
+      "space": 0
+    }
+  },
+  "specializationConstants": [
+    {
+      "name": "cClipYDown",
+      "id": 64,
+      "default": 1,
+      "hlslOffset": 0
+    }
+  ],
+  "globals": null,
+  "hlslConstants": {
+    "class": "ConstantBuffer",
+    "register": 0,
+    "space": 0
+  }
+}

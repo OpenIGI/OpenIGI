@@ -51,6 +51,12 @@ public sealed class AiStationaryGun
     public WeaponType? Weapon { get; private set; }
     public bool IsOccupied => _occupant is not null;
 
+    /// <summary>
+    /// Gets or sets whether another game's gun stands on this one's mount in its stead: this one is then neither drawn nor
+    /// manned, and that game's player and soldiers work the other.
+    /// </summary>
+    public bool IsHandedOver { get; set; }
+
     /// <summary>Gets or sets the stand model's mount point, in its own frame (<c>0x474420</c>'s <c>0x414E20</c>).</summary>
     public Vector3f MountVertex { get; set; }
 
@@ -158,7 +164,7 @@ public sealed class AiStationaryGun
     public bool TryMount(object owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
-        if (_occupant is not null && !ReferenceEquals(_occupant, owner))
+        if (IsHandedOver || (_occupant is not null && !ReferenceEquals(_occupant, owner)))
         {
             return false;
         }

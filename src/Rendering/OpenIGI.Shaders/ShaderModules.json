@@ -526,6 +526,22 @@
     {
       "id": "Tracer",
       "source": "World/Tracer.slang"
+    },
+    {
+      "id": "ModDisplay",
+      "source": "Post/ModDisplay.slang"
+    },
+    {
+      "id": "HudFx",
+      "source": "Ui/HudFx.slang"
+    },
+    {
+      "id": "ScopeGlint",
+      "source": "Ui/ScopeGlint.slang"
+    },
+    {
+      "id": "Silhouette",
+      "source": "Post/Silhouette.slang"
     }
   ]
 }

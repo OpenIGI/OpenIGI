@@ -36,6 +36,7 @@ public sealed class ResourceRegistry
     private readonly List<string> _lastReapplied = [];
     private readonly VirtualFileSystem _fileSystem;
     private readonly IOpenIgiLogger _logger;
+    private ResourceOverrides? _overrides;
 
     /// <summary>Initializes a new instance of the <see cref="ResourceRegistry"/> class.</summary>
     /// <param name="fileSystem">The virtual file system used when a name is not registered.</param>
@@ -55,7 +56,18 @@ public sealed class ResourceRegistry
     /// re-appliable by <see cref="ReapplyOverrides"/> so one dropped in mid-session takes effect without
     /// a restart.
     /// </remarks>
-    public ResourceOverrides? Overrides { get; set; }
+    public ResourceOverrides? Overrides
+    {
+        get => _overrides;
+        set
+        {
+            _overrides = value;
+
+            // The file system reads its loose files through the same layers, so a stand-in reaches the readers that never
+            // come through the registry too.
+            _fileSystem.Overlay = value;
+        }
+    }
 
     /// <summary>Gets the file system resources are read through.</summary>
     public VirtualFileSystem FileSystem => _fileSystem;

@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Hosting;
 /// later one that reads it finds it set; see <see cref="MissionSystemNames"/> for the order.
 /// </para>
 /// <para>
-/// A mod edits these systems by this type (<c>IModBuilder.EditLevelSystems&lt;MissionLevelBuild&gt;</c>): what is here is
+/// A mod edits these systems by this type (<c>IModBuilder.LevelSystems&lt;MissionLevelBuild&gt;()</c>): what is here is
 /// what a system of its own, inserted among the host's by their names, can read and leave.
 /// </para>
 /// </remarks>
@@ -167,4 +167,7 @@ public static class MissionSystemNames
 
     /// <summary>The forest and the water, and the mission reported built.</summary>
     public const string Adornments = "Adornments";
+
+    /// <summary>The game's events: the mission's watch set up, and the level told loaded. The last system, after every mod's.</summary>
+    public const string Events = "Events";
 }

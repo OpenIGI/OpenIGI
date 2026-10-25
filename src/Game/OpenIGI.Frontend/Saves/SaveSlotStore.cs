@@ -92,6 +92,7 @@ public sealed partial class SaveSlotStore
     /// <param name="screenshot">The captured frame, or empty to save without one.</param>
     /// <param name="width">The screenshot width in pixels.</param>
     /// <param name="height">The screenshot height in pixels.</param>
+    /// <param name="mods">The mods that change play the save was made with; none by default.</param>
     /// <returns>The written slot.</returns>
     /// <exception cref="ArgumentException">The screenshot is non-empty but shorter than <paramref name="width"/>×<paramref name="height"/>.</exception>
     public SaveSlot Save(
@@ -102,7 +103,8 @@ public sealed partial class SaveSlotStore
         DateTimeOffset savedAt,
         ReadOnlySpan<Bgra32> screenshot,
         int width,
-        int height)
+        int height,
+        IReadOnlyList<OpenIGI.Core.Content.ModReference>? mods = null)
     {
         System.IO.Directory.CreateDirectory(_directory);
 
@@ -125,7 +127,10 @@ public sealed partial class SaveSlotStore
             PngWriter.Write(Path.Combine(_directory, screenshotFile), screenshot[..(width * height)], width, height);
         }
 
-        var record = new SaveSlot(slot, profileName, missionId, missionName, savedAt, screenshotFile);
+        var record = new SaveSlot(slot, profileName, missionId, missionName, savedAt, screenshotFile)
+        {
+            Mods = mods is { Count: > 0 } ? [.. mods] : null,
+        };
         _slots.RemoveAll(s => s.Slot == slot
             && string.Equals(s.ProfileName, profileName, StringComparison.OrdinalIgnoreCase));
         _slots.Add(record);

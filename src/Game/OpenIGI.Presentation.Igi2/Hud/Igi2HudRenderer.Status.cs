@@ -6,7 +6,9 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
+using OpenIGI.Game.Igi2.Pickups;
 using OpenIGI.Game.Igi2.Player;
+using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi2;
@@ -46,8 +48,9 @@ public sealed partial class Igi2HudRenderer
     {
         Dispose();
         _assets = new Igi2SpriteResources(_device, files, _logger);
-        // statusscreen.c StatusScreen_CreateHandler: persistent weapon/ammo text uses ComputerMenu's font3, not fontmp.
-        if (_assets.Get("font3.fnt") is { IsFont: true } font) { _font = new BitmapTextRenderer(font); }
+        // statusscreen.c StatusScreen_CreateHandler: persistent weapon/ammo text uses ComputerMenu's font3, not fontmp -- and the
+        // computer's font3 is the file font1.fnt (ComputerMenu_LoadComputerMenuResource loads its fonts one and three the other way round).
+        if (_assets.Get("font1.fnt") is { IsFont: true } font) { _font = new BitmapTextRenderer(font); }
         // Upload persistent status art before gameplay draws it.
         string[] names = ["stance_standing.spr", "stance_crouching.spr", "stance_lying.spr", "stance_flying.spr", "stance_running.spr",
             "powerbarbackground.spr", "powerbar.spr", "visibilitymeter.spr", "visibilitybar.spr", "visibilityalert.spr", "progressbar.spr",
@@ -58,6 +61,8 @@ public sealed partial class Igi2HudRenderer
     /// <inheritdoc/>
     public void Dispose()
     {
+        _remastered?.Dispose();
+        _remastered = null;
         _font = null;
         _textFont = null;
         if (_bandStripes != TextureHandle.None) { _device.DestroyTexture(_bandStripes); _bandStripes = TextureHandle.None; }
@@ -67,12 +72,12 @@ public sealed partial class Igi2HudRenderer
         _assets = null;
     }
 
-    private static void DrawEffects(SpriteBatch batch, Igi2HumanPlayer human, int width, int height)
+    private static void DrawEffects(SpriteBatch batch, Igi2HumanPlayer human, int width, int height, bool damage = true)
     {
         if (human.CameraMode != 1) { return; }
         // humanplayer.c HumanPlayer_DrawDamageFlash: four independently fading corner opacities.
         IReadOnlyList<float> flash = human.DamageFlash;
-        if (flash[0] != 0f || flash[1] != 0f || flash[2] != 0f || flash[3] != 0f)
+        if (damage && (flash[0] != 0f || flash[1] != 0f || flash[2] != 0f || flash[3] != 0f))
         {
             Bgra32 Corner(int i) => Bgra32.FromRgba(255, 0, 0, Channel(flash[i]));
             batch.DrawQuad(TextureHandle.None, new Vertex2D(0f, 0f, 0f, 0f, Corner(0)),
@@ -108,7 +113,8 @@ public sealed partial class Igi2HudRenderer
             float visibilityX = x + frame.Width + 5f, visibilityY = y + 10f;
             Sprite(batch, "visibilitymeter.spr", visibilityX, visibilityY, Blue);
             Sprite(batch, "visibilityalert.spr", visibilityX + 10f, y, Blue);
-            float light = Math.Clamp(human.Lightmap, 0f, 1f), brightness = Math.Clamp(light - 0.5f, 0f, 0.5f) * 2f;
+            // The bar is the visibility factor (HumanPlayer_UpdateVisibilityFactor): the light, the stance and the movement, not the light alone.
+            float light = Math.Clamp(human.VisibilityFactor, 0f, 1f), brightness = Math.Clamp(light - 0.5f, 0f, 0.5f) * 2f;
             Bgra32 visibilityColour = Bgra32.FromRgba(Channel((brightness + 1f) * 0.4f), Channel(0.6f - (brightness * 0.4f)), Channel(1f - (brightness * 0.8f)), 255);
             Bar(batch, "visibilitybar.spr", visibilityX + 7f, visibilityY, light, visibilityColour, vertical: true);
             if (_assets.Get(stance) is { } posture)
@@ -171,10 +177,81 @@ public sealed partial class Igi2HudRenderer
             Fill(batch, new RectF(width * 0.3125f, height * 0.8333333f, width * 0.375f, height * 0.01875f),
                 Bgra32.FromRgba(51, 128, 255, 128));
         }
-        IIgi2Activatable? target = human.ActivatingTarget ?? human.EvaluateTarget;
-        if (target is null) { return; }
-        string? icon = InteractionIcon(target);
-        if (icon is not null) { Sprite(batch, icon, (width * 0.5f) - 24f, height - 200f, Blue); }
+        DrawActionMenu(batch, human, height);
+    }
+
+    /// <summary>The action menu's row: <c>ActionMenuScreen_Draw</c>.</summary>
+    /// <remarks>
+    /// What may be done is offered left to right from 175 across and 90 up from the foot, 64 apart, each centred on its place; the first,
+    /// which the activate key takes, behind a box that pulses as the screen's counter runs from -8 to 8 a tick. Nothing is offered
+    /// while the menu is hidden. A thing to work shows its badge (<c>ActionMenuScreen_DrawActionItemHandler</c> and each type's own);
+    /// a swap, the weapon lying there and, ten below, the one given for it under the throw-away badge
+    /// (<c>HumanPlayer_DrawActionItemHandler</c>), both as their pickup sprites.
+    /// </remarks>
+    private void DrawActionMenu(SpriteBatch batch, Igi2HumanPlayer human, float height)
+    {
+        if (human.ActionMenu.NoDrawTimeout != 0)
+        {
+            return;
+        }
+
+        float x = 175f, y = height - 90f;
+        bool first = true;
+        foreach ((object item, object? context) in human.ActionMenu.Items)
+        {
+            float tall;
+            if (item is Igi2GunPickup pickup)
+            {
+                float top = ActionItem(batch, pickup.WeaponType.PickupSprite, null, x, y);
+                tall = top;
+                if (context is Igi2WeaponTypeTask give)
+                {
+                    float below = top > 0f ? top + 10f : 0f;
+                    tall = below + ActionItem(batch, give.PickupSprite, ThrowAwaySprite, x, y + below);
+                }
+            }
+            else if (item is IIgi2Activatable target && InteractionIcon(target) is { } icon)
+            {
+                tall = ActionItem(batch, icon, null, x, y);
+            }
+            else
+            {
+                continue;
+            }
+
+            if (first)
+            {
+                float pulse = Math.Abs(((human.Ticks % 17) + 17) % 17 - 8) * 0.125f;
+                Fill(batch, new RectF(x - 2f - 32f, y - 2f, 68f, tall + 4f),
+                    Bgra32.FromRgba(Channel(0.12f * pulse), Channel(0.28f * pulse), Channel(0.77f * pulse), Channel(pulse)));
+                first = false;
+            }
+
+            x += 64f;
+        }
+    }
+
+    /// <summary>The badge a swap's given weapon is drawn under: the status screen's <c>action_throwaway.spr</c>.</summary>
+    public const string ThrowAwaySprite = "action_throwaway.spr";
+
+    // ActionMenuScreen_DrawActionItem: a sprite, and the overlay under it, centred across on the place; its height, or nought with
+    // nothing to draw.
+    private float ActionItem(SpriteBatch batch, string name, string? overlay, float x, float y)
+    {
+        if (name.Length == 0 || _assets?.Get(name) is not { } sprite)
+        {
+            return 0f;
+        }
+
+        SpriteFrame frame = sprite.Asset.Frames[0];
+        float left = x - (frame.Width / 2);
+        if (overlay is not null)
+        {
+            Sprite(batch, overlay, left, y, Bgra32.White);
+        }
+
+        Sprite(batch, name, left, y, Bgra32.White);
+        return frame.Height;
     }
 
     /// <summary>Resolves the retail action badge for the target the human has actually selected.</summary>
@@ -193,6 +270,7 @@ public sealed partial class Igi2HudRenderer
         { Kind: Igi2ActivateKind.Wire } => "a_wire.spr",
         { Kind: Igi2ActivateKind.Fence } => "a_fence.spr",
         { Kind: Igi2ActivateKind.StationaryGun } => "a_gun.spr",
+        { Kind: Igi2ActivateKind.SilentKill } => "a_silent.spr",
         _ => null,
     };
 
@@ -204,6 +282,25 @@ public sealed partial class Igi2HudRenderer
             if (!slot.IsUsed || slot.Printed <= 0 || slot.Message?.IsCutsceneMessage != title.IsCutscenePlaying) { continue; }
             _font?.DrawCentered(batch, slot.Text.AsSpan(0, Math.Min(slot.Printed, slot.Text.Length)), width * 0.5f * _scale, y * _scale,
                 Bgra32.FromRgba(255, 255, 255, Channel(slot.Fade)), _scale, _scale);
+            y += 28f;
+        }
+
+        // The other game's mission's lines, under the player's own, in the same face.
+        if (title.IsCutscenePlaying)
+        {
+            return;
+        }
+
+        foreach (OpenIGI.Game.World.StatusMessageDisplay line in _missionMessages)
+        {
+            if (line.IsCutscene || line.RevealedCharacters <= 0)
+            {
+                continue;
+            }
+
+            float fade = Math.Clamp((line.DisplayFrame + 1) / OpenIGI.Presentation.Hud.Remastered.HudModel.MissionMessageFadeTicks, 0f, 1f);
+            _font?.DrawCentered(batch, line.Text.AsSpan(0, Math.Min(line.RevealedCharacters, line.Text.Length)), width * 0.5f * _scale, y * _scale,
+                Bgra32.FromRgba(255, 255, 255, Channel(fade)), _scale, _scale);
             y += 28f;
         }
     }

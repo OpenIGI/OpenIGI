@@ -80,7 +80,6 @@ internal static class RetailLevelOneGround
         return _mission;
     }
 
-    /// <summary>Level 1's built scene, for tests that need its placements.</summary>
     /// <summary>The resource registry the level was loaded through.</summary>
     /// <remarks>
     /// The level's own one, not a fresh registry over the game directory. A pack's textures are not files
@@ -95,6 +94,7 @@ internal static class RetailLevelOneGround
         return _resources!;
     }
 
+    /// <summary>Level 1's built scene, for tests that need its placements.</summary>
     public static WorldScene Scene()
     {
         Find();

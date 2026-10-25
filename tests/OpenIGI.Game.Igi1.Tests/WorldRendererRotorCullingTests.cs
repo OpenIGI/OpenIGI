@@ -50,7 +50,7 @@ public sealed class WorldRendererRotorCullingTests
         {
             MeshGeometry geometry = Assert.IsType<MeshGeometry>(
                 MefMeshBuilder.Build(pair.First.Model, (float)(1.0 / WorldScene.UnitsPerMetre)));
-            return geometry.Subsets.Count(subset => subset.IndexCount > 0) * pair.Second.SampleCount;
+            return geometry.Subsets.Sum(DrawCalls) * pair.Second.SampleCount;
         });
         Assert.True(expectedSamples > 0);
 
@@ -110,7 +110,7 @@ public sealed class WorldRendererRotorCullingTests
             edge.Placement.Instance.Name,
             edge.Camera,
             phaseZeroModelView);
-        Assert.True(expectedPhaseZeroDraws >= edge.Geometry.Subsets.Count(subset => subset.IndexCount > 0));
+        Assert.True(expectedPhaseZeroDraws >= edge.Geometry.Subsets.Sum(DrawCalls));
 
         scenario.Renderer.Draw(scenario.Scene, edge.Camera, edge.Projection, rotorsOnly: true);
 
@@ -281,7 +281,7 @@ public sealed class WorldRendererRotorCullingTests
 
             MeshGeometry geometry = Assert.IsType<MeshGeometry>(
                 MefMeshBuilder.Build(placement.Model, (float)(1.0 / WorldScene.UnitsPerMetre)));
-            draws += geometry.Subsets.Count(subset => subset.IndexCount > 0);
+            draws += geometry.Subsets.Sum(DrawCalls);
         }
 
         return draws;
@@ -311,4 +311,8 @@ public sealed class WorldRendererRotorCullingTests
         Camera3D Camera,
         Matrix4f Projection,
         int VisibleSample);
+
+    // The draws a subset takes with culling off: its two-sided part, and its coincident skins culled after it (CoincidentSkins).
+    private static int DrawCalls(MeshSubset subset) =>
+        (subset.IndexCount - subset.SkinIndexCount > 0 ? 1 : 0) + (subset.SkinIndexCount > 0 ? 1 : 0);
 }

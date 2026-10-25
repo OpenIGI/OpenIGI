@@ -1,10 +1,9 @@
 ﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
-using OpenIGI.Host.DevTools;
 using OpenIGI.Input;
-using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.DevTools;
@@ -166,12 +165,12 @@ public sealed class HostConsole : IDisposable
 
         _logger.Information(
             LogCategory,
-            $"Effective settings: r_smooth={Rendering.RenderCVars.SmoothPresentation.Value}, "
-                + $"r_hdr={Rendering.RenderCVars.OffscreenScene.Value}, "
-                + $"r_deferred={Rendering.RenderCVars.Deferred.Value}, "
-                + $"r_taa={Rendering.RenderCVars.TemporalFeedback.Value:0.###}, "
-                + $"r_scale={Rendering.RenderCVars.RenderScale.Value:0.###}, "
-                + $"r_motion_blur={Rendering.RenderCVars.MotionBlur.Value:0.###}.");
+            $"Effective settings: r_smooth={Rendering.FrameCVars.SmoothPresentation.Value}, "
+                + $"r_hdr={Rendering.FrameCVars.OffscreenScene.Value}, "
+                + $"r_deferred={Rendering.LightingCVars.Deferred.Value}, "
+                + $"r_taa={Rendering.ReconstructionCVars.TemporalFeedback.Value:0.###}, "
+                + $"r_scale={Rendering.ReconstructionCVars.RenderScale.Value:0.###}, "
+                + $"r_motion_blur={Rendering.PostCVars.MotionBlur.Value:0.###}.");
 
         System.Variables.AnyChanged += OnVariableChanged;
         GraphicsPresetRegistry.Default.PresetChanged += OnPresetChanged;

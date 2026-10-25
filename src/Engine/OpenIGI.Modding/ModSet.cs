@@ -1,19 +1,11 @@
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Content;
-using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Game.Level;
 
 namespace OpenIGI.Modding;
-
-/// <summary>One mod as found: its manifest, where it lives, and its code when it has any.</summary>
-/// <param name="Manifest">The mod's manifest.</param>
-/// <param name="Directory">The mod's directory.</param>
-/// <param name="Code">The mod's code, or <see langword="null"/> for a mod made of content alone.</param>
-public sealed record InstalledMod(ModManifest Manifest, string Directory, IOpenIgiMod? Code);
 
 /// <summary>The mods a run plays with, in the order they apply: a later mod's changes are made over an earlier one's.</summary>
 /// <remarks>
@@ -23,7 +15,14 @@ public sealed record InstalledMod(ModManifest Manifest, string Directory, IOpenI
 /// </remarks>
 public sealed class ModSet
 {
+    /// <summary>The folder in a mod's directory whose files stand in for the game's own at the same paths.</summary>
+    public const string DataDirectoryName = "data";
+
+    /// <summary>The folder in a mod's directory that holds its compiled shaders.</summary>
+    public const string ShadersDirectoryName = "shaders";
+
     private readonly List<InstalledMod> _mods;
+    private readonly Dictionary<(string Mod, string Title), IReadOnlyDictionary<string, object?>> _properties = [];
 
     /// <summary>Initializes a new instance of the <see cref="ModSet"/> class.</summary>
     /// <param name="mods">The mods, in the order they apply.</param>
@@ -54,6 +53,20 @@ public sealed class ModSet
     /// <summary>Gets the mods, in the order they apply.</summary>
     public IReadOnlyList<InstalledMod> Mods => _mods;
 
+    /// <summary>Gets what a mod's builder kept for a game as <see cref="Extend"/> configured the mod into it.</summary>
+    /// <param name="mod">The mod.</param>
+    /// <param name="title">The game.</param>
+    /// <returns>What it kept, by key; nothing before the game is extended, or for a mod with no code.</returns>
+    /// <remarks>For the assemblies that extend <see cref="IModBuilder"/>: the modding presentation library reads its presenters here.</remarks>
+    public IReadOnlyDictionary<string, object?> PropertiesOf(InstalledMod mod, GameTitle title)
+    {
+        ArgumentNullException.ThrowIfNull(mod);
+        ArgumentNullException.ThrowIfNull(title);
+        return _properties.TryGetValue((mod.Manifest.Id, title.Id), out IReadOnlyDictionary<string, object?>? kept)
+            ? kept
+            : new Dictionary<string, object?>();
+    }
+
     /// <summary>Gets the mods that apply to a game.</summary>
     /// <param name="title">The game.</param>
     /// <returns>The mods, in order.</returns>
@@ -61,66 +74,69 @@ public sealed class ModSet
 
     /// <summary>Gets a game's runtime with the mods that apply to it configured in.</summary>
     /// <param name="runtime">The game's runtime as it ships.</param>
-    /// <returns>The same runtime when no mod with code applies; otherwise one whose modules are the game's and then the mods'.</returns>
+    /// <returns>
+    /// The same runtime when no mod applies; otherwise one whose modules are the game's and then the mods', whose content
+    /// folders are the mods' data, the last mod's first, and whose campaigns are the mods', in their order.
+    /// </returns>
     public IGameTitleRuntime Extend(IGameTitleRuntime runtime)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         List<IContentModule> added = [];
         LevelSystemEdits edits = new();
+        List<TitleContentFolder> folders = [];
+        List<TitleCampaign> campaigns = [];
+        List<ModReference> played = [];
+        List<TitlePostPass> passes = [];
         foreach (InstalledMod mod in For(runtime.Title))
         {
-            mod.Code?.Configure(new Builder(mod, runtime.Title, added, edits));
+            string shaders = Path.Combine(mod.Directory, ShadersDirectoryName);
+            passes.AddRange(mod.Manifest.PostPasses.Select(p => new TitlePostPass($"{mod.Manifest.Id}.{p.Name}", shaders, p.Module, p.Toggle, p.Parameters, p.Stage)));
+
+            if (mod.Manifest.AffectsSimulation)
+            {
+                played.Add(new ModReference(mod.Manifest.Id, mod.Manifest.Version));
+            }
+
+            campaigns.AddRange(mod.Manifest.Campaigns.Select(static c => new TitleCampaign(c.Name, c.Missions)));
+            if (mod.Code is { } code)
+            {
+                ModBuilder builder = new(mod, runtime.Title, added, edits, CVarRegistry.Default);
+                code.Configure(builder);
+                _properties[(mod.Manifest.Id, runtime.Title.Id)] = new Dictionary<string, object?>(builder.Properties, StringComparer.Ordinal);
+            }
+
+            string data = Path.Combine(mod.Directory, DataDirectoryName);
+            if (System.IO.Directory.Exists(data))
+            {
+                folders.Add(new TitleContentFolder($"mod-{mod.Manifest.Id}", mod.Manifest.Name, data));
+            }
         }
 
-        if (added.Count == 0 && edits.Count == 0)
+        if (added.Count == 0 && edits.Count == 0 && folders.Count == 0 && campaigns.Count == 0 && played.Count == 0 && passes.Count == 0)
         {
             return runtime;
         }
 
-        return new ModdedRuntime(runtime, [.. runtime.Modules, .. added, new EditsModule(edits)]);
+        // A later mod's files win over an earlier one's, as its changes are made over the earlier's.
+        folders.Reverse();
+        return new ModdedRuntime(
+            runtime,
+            added.Count == 0 && edits.Count == 0 ? runtime.Modules : [.. runtime.Modules, .. added, new EditsModule(edits)],
+            [.. folders, .. runtime.ContentFolders],
+            [.. runtime.Campaigns, .. campaigns],
+            [.. runtime.Mods, .. played],
+            [.. runtime.PostPasses, .. passes]);
     }
 
-    private sealed class Builder(InstalledMod mod, GameTitle title, List<IContentModule> modules, LevelSystemEdits edits) : IModBuilder
-    {
-        public ModManifest Manifest => mod.Manifest;
-
-        public GameTitle Title => title;
-
-        public string Directory => mod.Directory;
-
-        public IModBuilder AddModule(IContentModule contentModule)
-        {
-            ArgumentNullException.ThrowIfNull(contentModule);
-            modules.Add(contentModule);
-            return this;
-        }
-
-        public IModBuilder MountTitleData(GameTitle other, string deviceName)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-            ArgumentException.ThrowIfNullOrWhiteSpace(deviceName);
-            modules.Add(new MountTitleDataModule(mod.Manifest.Id, other, deviceName.TrimEnd(':')));
-            return this;
-        }
-
-        public IModBuilder ReplaceTask(string typeName, Func<GameTask> factory, ITaskParameterAdapter? adapter = null)
-        {
-            ArgumentException.ThrowIfNullOrEmpty(typeName);
-            ArgumentNullException.ThrowIfNull(factory);
-            modules.Add(new ReplaceTaskModule(mod.Manifest.Id, typeName, factory, adapter));
-            return this;
-        }
-
-        public IModBuilder EditLevelSystems<TBuild>(Action<LevelSystems<TBuild>> edit)
-            where TBuild : LevelBuild
-        {
-            edits.Add(edit);
-            return this;
-        }
-    }
-
-    // A game as it ships, with the mods' modules after its own.
-    private sealed class ModdedRuntime(IGameTitleRuntime inner, IReadOnlyList<IContentModule> modules) : IGameTitleRuntime
+    // A game as it ships, with the mods' modules after its own, their data over its files and their campaigns beside its own.
+    private sealed class ModdedRuntime(
+        IGameTitleRuntime inner,
+        IReadOnlyList<IContentModule> modules,
+        IReadOnlyList<TitleContentFolder> folders,
+        IReadOnlyList<TitleCampaign> campaigns,
+        IReadOnlyList<ModReference> mods,
+        IReadOnlyList<TitlePostPass> postPasses)
+        : IGameTitleRuntime
     {
         public GameTitle Title => inner.Title;
 
@@ -129,50 +145,14 @@ public sealed class ModSet
         public AssetFormatProfile Formats => inner.Formats;
 
         public IReadOnlyList<IContentModule> Modules => modules;
-    }
 
-    // Another game's installation as a device, found through the host's locator when the session loads its tables.
-    private sealed class MountTitleDataModule(string modId, GameTitle other, string deviceName) : IContentModule
-    {
-        public string Name => $"{modId}.Mount.{deviceName}";
+        public IReadOnlyList<TitleContentFolder> ContentFolders => folders;
 
-        public void Register(ContentRegistrationContext context)
-        {
-        }
+        public IReadOnlyList<TitleCampaign> Campaigns => campaigns;
 
-        public void LoadTables(ContentLoadContext context)
-        {
-            if (context.Services.TryGet(out ITitleDataLocator? locator) && locator.TryGetDataRoot(other, out string? root))
-            {
-                context.FileSystem.RegisterDevice(new LocalFileDevice(root, deviceName));
-                return;
-            }
+        public IReadOnlyList<ModReference> Mods => mods;
 
-            context.Logger.Warning("Mods", $"The mod '{modId}' reads {other.DisplayName}'s data, which is not installed; '{deviceName}:' is not mounted.");
-        }
-    }
-
-    // One of the game's task types made by a mod's class, replaced once the game's own modules have registered it.
-    private sealed class ReplaceTaskModule(string modId, string typeName, Func<GameTask> factory, ITaskParameterAdapter? adapter)
-        : IContentModule
-    {
-        public string Name => $"{modId}.Replace.{typeName}";
-
-        public void Register(ContentRegistrationContext context)
-        {
-            if (adapter is null)
-            {
-                context.Types.Replace(typeName, factory);
-            }
-            else
-            {
-                context.Types.Replace(typeName, factory, adapter);
-            }
-        }
-
-        public void LoadTables(ContentLoadContext context)
-        {
-        }
+        public IReadOnlyList<TitlePostPass> PostPasses => postPasses;
     }
 
     // Publishes the mods' level-system edits to every session, the preview's sharing the played one's.

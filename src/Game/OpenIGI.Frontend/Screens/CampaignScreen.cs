@@ -30,6 +30,10 @@ namespace OpenIGI.Frontend.Screens;
 /// preview goes through <see cref="IShellHost.PreviewMission"/>, which the app debounces, so scrubbing
 /// the list does not load fourteen levels.
 /// </para>
+/// <para>
+/// <b>One campaign at a time.</b> The game's own comes first, unlocked as the profile progresses; each campaign a mod adds
+/// follows it, every mission open. With more than one, a cycler over the list switches between them.
+/// </para>
 /// </remarks>
 public sealed class CampaignScreen : ShellScreen
 {
@@ -43,6 +47,8 @@ public sealed class CampaignScreen : ShellScreen
 
     private readonly List<ListCard> _cards = [];
     private readonly TitleReveal _reveal = new();
+    private List<MissionInfo> _missions = [];
+    private int _campaign;
 
     private CampaignHeader? _header;
     private MissionHero? _hero;
@@ -79,8 +85,11 @@ public sealed class CampaignScreen : ShellScreen
     {
         UiTheme theme = Context.Theme;
         _cards.Clear();
+        List<string?> campaigns = Campaigns;
+        _campaign = Math.Clamp(_campaign, 0, Math.Max(0, campaigns.Count - 1));
+        _missions = [.. Context.Missions.Where(mission => campaigns.Count == 0 || mission.Campaign == campaigns[_campaign])];
 
-        if (Context.Missions.Count == 0)
+        if (_missions.Count == 0)
         {
             return new Label(theme.Body, "No missions were found in this installation.", 22f, theme.TextMuted)
             {
@@ -92,7 +101,7 @@ public sealed class CampaignScreen : ShellScreen
         // The first time the page opens it lands on the mission the profile is up to, not on the first.
         if (_selected < 0)
         {
-            _selected = Math.Clamp(Frontier(), 0, Context.Missions.Count - 1);
+            _selected = Math.Clamp(Frontier(), 0, _missions.Count - 1);
             _shown = _selected;
         }
 
@@ -154,16 +163,39 @@ public sealed class CampaignScreen : ShellScreen
         var layout = new Grid();
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
 
-        _header = new CampaignHeader(theme, Context.Missions.Count);
-        layout.Add(_header, 0, 0);
+        // A mod's campaigns beside the game's: one cycler picks which the list shows.
+        List<string?> campaigns = Campaigns;
+        if (campaigns.Count > 1)
+        {
+            var cycler = new OptionCycler(theme, "Campaign", [.. campaigns.Select(CampaignName)], _campaign)
+            {
+                // A cycler fills the height it is given; the conditions' cells are this tall.
+                Height = 96f,
+                ContentWidth = 260f,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0f, 0f, 0f, 16f),
+            };
+            cycler.SelectionChanged += index =>
+            {
+                _campaign = index;
+                _selected = -1;
+                Invalidate();
+            };
+            layout.Add(cycler, 0, 0);
+        }
+
+        string title = IsGameCampaign ? "CAMPAIGN" : CampaignName(campaigns[_campaign]).ToUpperInvariant();
+        _header = new CampaignHeader(theme, _missions.Count, title);
+        layout.Add(_header, 1, 0);
 
         var rows = new StackPanel { Orientation = Orientation.Vertical };
-        for (int i = 0; i < Context.Missions.Count; i++)
+        for (int i = 0; i < _missions.Count; i++)
         {
             int index = i;
-            MissionInfo mission = Context.Missions[i];
+            MissionInfo mission = _missions[i];
             var card = new ListCard(theme, mission.Number.ToString("00", CultureInfo.InvariantCulture), mission.Name)
             {
                 Selected = i == _selected,
@@ -175,7 +207,7 @@ public sealed class CampaignScreen : ShellScreen
 
         var scroll = new ScrollView(theme);
         scroll.SetContent(rows);
-        layout.Add(scroll, 1, 0);
+        layout.Add(scroll, 2, 0);
         return layout;
     }
 
@@ -215,7 +247,7 @@ public sealed class CampaignScreen : ShellScreen
         _play = new PrimaryAction(theme, "Play") { Width = 380f };
         _play.Activated += _ =>
         {
-            MissionInfo mission = Context.Missions[SelectedMission];
+            MissionInfo mission = _missions[SelectedMission];
             Context.Host.StartMission(mission.Id, _difficulty.SelectedIndex);
         };
 
@@ -234,7 +266,7 @@ public sealed class CampaignScreen : ShellScreen
 
     private void Select(int index)
     {
-        if (index < 0 || index >= Context.Missions.Count || index == _selected)
+        if (index < 0 || index >= _missions.Count || index == _selected)
         {
             return;
         }
@@ -261,20 +293,33 @@ public sealed class CampaignScreen : ShellScreen
     // the one being played, and streaming the hovered mission over it would tear down the running mission.
     private void Preview()
     {
-        if (Context.InGame || Context.Missions.Count == 0)
+        if (Context.InGame || _missions.Count == 0)
         {
             return;
         }
 
-        Context.Host.PreviewMission(Context.Missions[SelectedMission].Id);
+        Context.Host.PreviewMission(_missions[SelectedMission].Id);
     }
 
+    // The campaigns the list can show, the game's own (null) first, in the order their missions come.
+    private List<string?> Campaigns => [.. Context.Missions.Select(static mission => mission.Campaign).Distinct()];
+
+    private bool IsGameCampaign => Campaigns is var campaigns && (campaigns.Count == 0 || campaigns[_campaign] is null);
+
+    private static string CampaignName(string? campaign) => campaign ?? "The game";
+
+    // How far the profile is along the game's campaign; a mod's campaign keeps no progress, and starts at its first.
     private int Frontier()
     {
-        int activeMission = Context.Config.Active?.ActiveMission ?? MissionRegistry.FirstMissionId;
-        for (int i = 0; i < Context.Missions.Count; i++)
+        if (!IsGameCampaign)
         {
-            if (Context.Missions[i].Id == activeMission)
+            return 0;
+        }
+
+        int activeMission = Context.Config.Active?.ActiveMission ?? MissionRegistry.FirstMissionId;
+        for (int i = 0; i < _missions.Count; i++)
+        {
+            if (_missions[i].Id == activeMission)
             {
                 return i;
             }
@@ -285,7 +330,7 @@ public sealed class CampaignScreen : ShellScreen
 
     private void Refresh()
     {
-        if (Context.Missions.Count == 0)
+        if (_missions.Count == 0)
         {
             return;
         }
@@ -293,10 +338,10 @@ public sealed class CampaignScreen : ShellScreen
         int frontier = Frontier();
 
         // The unlock-all cheat widens what may be played, not what has been done: the profile's own
-        // progress still decides which missions read as completed.
-        int playable = PlayerCheatOptions.Current.UnlockAllLevels ? Context.Missions.Count - 1 : frontier;
+        // progress still decides which missions read as completed. A mod's campaign is open throughout.
+        int playable = PlayerCheatOptions.Current.UnlockAllLevels || !IsGameCampaign ? _missions.Count - 1 : frontier;
 
-        for (int i = 0; i < _cards.Count && i < Context.Missions.Count; i++)
+        for (int i = 0; i < _cards.Count && i < _missions.Count; i++)
         {
             _cards[i].Tag = StatusOf(i, frontier, playable);
             _cards[i].TagColor = i < frontier ? Context.Theme.TextMuted
@@ -306,17 +351,17 @@ public sealed class CampaignScreen : ShellScreen
 
         _header?.Update(frontier);
 
-        int shown = Math.Clamp(_shown, 0, Context.Missions.Count - 1);
-        MissionInfo mission = Context.Missions[shown];
+        int shown = Math.Clamp(_shown, 0, _missions.Count - 1);
+        MissionInfo mission = _missions[shown];
         _hero?.Show(
-            string.Create(CultureInfo.InvariantCulture, $"MISSION {mission.Number:00} / {Context.Missions.Count:00}"),
+            string.Create(CultureInfo.InvariantCulture, $"MISSION {mission.Number:00} / {_missions.Count:00}"),
             StatusOf(shown, frontier, playable),
             mission.Name,
             mission.Description);
 
         if (_play is not null)
         {
-            MissionInfo selected = Context.Missions[SelectedMission];
+            MissionInfo selected = _missions[SelectedMission];
             _play.IsEnabled = SelectedMission <= playable;
             _play.Subtitle = string.Create(CultureInfo.InvariantCulture, $"MISSION {selected.Number:00} · DEPLOY");
         }
@@ -339,8 +384,8 @@ public sealed class CampaignScreen : ShellScreen
 
     private int DefaultDifficultyIndex() => Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
 
-    /// <summary>The list's heading: OPERATIONS over CAMPAIGN, with how much of it is done and a segment per mission.</summary>
-    private sealed class CampaignHeader(UiTheme theme, int total) : UiElement
+    /// <summary>The list's heading: OPERATIONS over the campaign's name, with how much of it is done and a segment per mission.</summary>
+    private sealed class CampaignHeader(UiTheme theme, int total, string title) : UiElement
     {
         private string _count = string.Empty;
         private int _done;
@@ -360,7 +405,7 @@ public sealed class CampaignScreen : ShellScreen
             KitDraw.Eyebrow(painter, theme, "OPERATIONS", Bounds.TopLeft);
             float titleSize = context.Px(44f);
             var titleBox = new UiRect(Bounds.X, Bounds.Bottom - context.Px(20f) - titleSize, Bounds.Width, titleSize);
-            painter.DrawLabel(theme.Display, "CAMPAIGN", new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, titleSize, titleBox)), titleSize, theme.Text, 0.06f);
+            painter.DrawLabel(theme.Display, title, new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, titleSize, titleBox)), titleSize, theme.Text, 0.06f);
 
             // Right-aligned: the count over the segments, the segments sitting on the title's baseline.
             float segments = KitDraw.SegmentsWidth(context, total, total > 10 ? 14f : 24f, 4f);

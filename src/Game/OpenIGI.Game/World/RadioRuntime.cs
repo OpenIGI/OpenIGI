@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Runtime;
+using static OpenIGI.Game.World.DeclaredTaskValues;
 
 namespace OpenIGI.Game.World;
 
@@ -162,11 +163,11 @@ public sealed class RadioRuntime
         ScriptVarRegistry variables,
         IgiRandom random)
     {
-        string onExpression = Text(task, "On expression");
+        string onExpression = TextOrEmpty(task, "On expression");
         string[] sounds = new string[SoundSlots];
         for (int i = 0; i < SoundSlots; i++)
         {
-            sounds[i] = Text(task, $"Radio sound {i}");
+            sounds[i] = TextOrEmpty(task, $"Radio sound {i}");
         }
 
         string explodedSymbol = $"{task.Name}.isExploded";
@@ -183,9 +184,6 @@ public sealed class RadioRuntime
             () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
             random,
             sounds,
-            Text(task, "Shutdown sound"));
+            TextOrEmpty(task, "Shutdown sound"));
     }
-
-    private static string Text(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? value) && value is string text ? text : string.Empty;
 }

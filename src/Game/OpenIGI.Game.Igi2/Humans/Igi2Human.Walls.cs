@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -54,7 +55,7 @@ public abstract partial class Igi2Human
         "Vehicle", "Car", "Plane", "Train", "Heli", "Missile",
     };
 
-    private readonly Igi2LineTrace _sweep = new(MaxSweepLines) { Mesh = FootingMesh, Includes = static owner => !IsSweptThrough(owner) };
+    private readonly WorldLineTrace _sweep = new(MaxSweepLines) { Mesh = FootingMesh, Includes = static owner => !IsSweptThrough(owner) };
 
     /// <summary>Three heights of eight ring lines and a probe, and the ceiling line.</summary>
     private const int MaxSweepLines = (3 * 9) + 1;
@@ -197,7 +198,7 @@ public abstract partial class Igi2Human
         int wallCount = 0;
         for (int k = n - 1; k >= 0; k--)
         {
-            Igi2Intersection hit = _sweep.Intersections[k];
+            WorldIntersection hit = _sweep.Intersections[k];
             if (!hit.IsHit || !(_sweep.Starts[k].Z < top))
             {
                 continue;

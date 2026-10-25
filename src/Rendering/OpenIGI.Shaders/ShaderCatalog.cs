@@ -31,6 +31,13 @@ public static class ShaderCatalog
     private static readonly ConcurrentDictionary<string, string> WgslCache = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, ShaderReflection> ReflectionCache = new(StringComparer.Ordinal);
 
+    // The modules from outside the library, by the ids they were given: past the library's own, so the two never meet.
+    private static readonly ConcurrentDictionary<ShaderModuleId, ExternalShaderModule> External = new();
+    private static int _externalCount;
+
+    /// <summary>The first id an external module is given; the library's own are all below it.</summary>
+    public const int FirstExternalId = 1 << 20;
+
     /// <summary>Gets the manifest listing every module the library carries.</summary>
     public static ShaderManifest Manifest => ManifestSource.Value;
 
@@ -43,7 +50,27 @@ public static class ShaderCatalog
     /// backend asks this and stands down, rather than being refused halfway through building itself.
     /// </returns>
     public static bool Compiles(ShaderModuleId id, ShaderVariant variant, ShaderTarget target) =>
-        Manifest.Module(id).Variant(variant)?.Compiles(target) ?? false;
+        External.TryGetValue(id, out ExternalShaderModule? external)
+            ? IsDefault(variant) && external.Compiles(target)
+            : Manifest.Module(id).Variant(variant)?.Compiles(target) ?? false;
+
+    /// <summary>Adds a module from outside the library, which is then looked up by the id this returns like any of its own.</summary>
+    /// <param name="module">The module.</param>
+    /// <returns>Its id, at or past <see cref="FirstExternalId"/>.</returns>
+    public static ShaderModuleId Register(ExternalShaderModule module)
+    {
+        ArgumentNullException.ThrowIfNull(module);
+        ShaderModuleId id = (ShaderModuleId)(FirstExternalId + Interlocked.Increment(ref _externalCount) - 1);
+        External[id] = module;
+        return id;
+    }
+
+    /// <summary>Gets a module from outside the library by the id it was given.</summary>
+    /// <param name="id">The id.</param>
+    /// <param name="module">Receives the module.</param>
+    /// <returns>Whether the id is an external module's.</returns>
+    public static bool TryGetExternal(ShaderModuleId id, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ExternalShaderModule? module) =>
+        External.TryGetValue(id, out module);
 
     /// <summary>Gets one variant's SPIR-V, holding every entry point the module declares.</summary>
     /// <param name="id">The module wanted.</param>
@@ -51,7 +78,9 @@ public static class ShaderCatalog
     /// <returns>The SPIR-V words, as bytes.</returns>
     /// <exception cref="InvalidOperationException">The variant was never compiled.</exception>
     public static ReadOnlyMemory<byte> GetSpirv(ShaderModuleId id, ShaderVariant variant) =>
-        SpirvCache.GetOrAdd(ResourceName(id, variant, "spv"), static name => ReadBytes(name));
+        External.TryGetValue(id, out ExternalShaderModule? external)
+            ? external.Spirv ?? throw new InvalidOperationException($"The shader module {external.Name} was not compiled for Vulkan.")
+            : SpirvCache.GetOrAdd(ResourceName(id, variant, "spv"), static name => ReadBytes(name));
 
     /// <summary>Gets the default variant's SPIR-V.</summary>
     /// <param name="id">The module wanted.</param>
@@ -64,7 +93,9 @@ public static class ShaderCatalog
     /// <returns>The WGSL source.</returns>
     /// <exception cref="InvalidOperationException">The variant was never compiled.</exception>
     public static string GetWgsl(ShaderModuleId id, ShaderVariant variant) =>
-        WgslCache.GetOrAdd(ResourceName(id, variant, "wgsl"), static name => Encoding.UTF8.GetString(ReadBytes(name)));
+        External.TryGetValue(id, out ExternalShaderModule? external)
+            ? external.Wgsl ?? throw new InvalidOperationException($"The shader module {external.Name} was not compiled for WebGPU.")
+            : WgslCache.GetOrAdd(ResourceName(id, variant, "wgsl"), static name => Encoding.UTF8.GetString(ReadBytes(name)));
 
     /// <summary>Gets the default variant's WGSL.</summary>
     /// <param name="id">The module wanted.</param>
@@ -77,7 +108,9 @@ public static class ShaderCatalog
     /// <returns>The reflection.</returns>
     /// <exception cref="InvalidOperationException">The variant was never compiled, or its reflection is unreadable.</exception>
     public static ShaderReflection GetReflection(ShaderModuleId id, ShaderVariant variant) =>
-        ReflectionCache.GetOrAdd(ResourceName(id, variant, "reflection.json"), static name =>
+        External.TryGetValue(id, out ExternalShaderModule? external)
+            ? external.Reflection
+            : ReflectionCache.GetOrAdd(ResourceName(id, variant, "reflection.json"), static name =>
             JsonSerializer.Deserialize(ReadBytes(name), ShaderJsonContext.Default.ShaderReflection)
                 ?? throw new InvalidOperationException($"The shader reflection resource {name} is empty."));
 
@@ -109,6 +142,10 @@ public static class ShaderCatalog
         string name = string.IsNullOrEmpty(variant.Name) ? ShaderVariant.DefaultName : variant.Name;
         return $"OpenIGI.Shaders.Generated.{id}.{name}.{extension}";
     }
+
+    // An external module carries its default variant alone.
+    private static bool IsDefault(ShaderVariant variant) =>
+        string.IsNullOrEmpty(variant.Name) || variant.Name == ShaderVariant.DefaultName;
 
     private static ShaderManifest LoadManifest() =>
         JsonSerializer.Deserialize(ReadBytes(ShaderManifest.ResourceName), ShaderJsonContext.Default.ShaderManifest)

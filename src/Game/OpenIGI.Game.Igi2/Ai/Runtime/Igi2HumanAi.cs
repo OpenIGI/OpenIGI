@@ -1,6 +1,5 @@
-using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Soldiers;
 using OpenIGI.Scripting.Qvm;
 
@@ -307,6 +306,10 @@ public sealed partial class Igi2HumanAi : IIgi2SoldierMind
     public void Run(Igi2HumanSoldier soldier)
     {
         ArgumentNullException.ThrowIfNull(soldier);
+
+        // The weapon times its trigger by the game's tick count (Flow_ptFlow->nTicks, read by Weapon_Fire whoever holds the gun):
+        // the soldier's holds as the player's do. The level's tick runs a tick apart as the game's does, which is all a hold reads.
+        soldier.Ticks = World.LevelTick();
         UpdateIdleViewConeRotation();
         FindCurrentSectorFromNodes();
         soldier.Animation.MainTimeStep = Fpu.ToInt32((Fpu)Tweaks[Igi2AiTweakIndex.AnimSpeedFactor] * (double)Animation.Igi2AnimController.TicksPerFrame);

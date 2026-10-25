@@ -30,6 +30,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="inputBindingLabel">The active title's visible control labels.</param>
 /// <param name="resetInputBindings">Restores the active title's control defaults.</param>
 /// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
+/// <param name="playedMods">The mods that change play the running title is played with.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -46,8 +47,12 @@ public sealed class ShellHost(
     Func<OpenIGI.Game.Player.ITitleSaveGames?>? missionSaves = null,
     Func<string, string?>? inputBindingLabel = null,
     Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null,
-    Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null) : IShellHost
+    Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null,
+    Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => playedMods?.Invoke() ?? [];
+
     /// <inheritdoc/>
     public OpenIGI.Game.Player.ITitleSaveGames? MissionSaves => missionSaves?.Invoke();
 

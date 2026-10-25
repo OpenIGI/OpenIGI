@@ -1,9 +1,9 @@
-using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
@@ -102,8 +102,8 @@ public sealed class Igi2AiWorld
     /// <summary>Gets or sets how a patrol command's expression is evaluated, <c>PatrolPathCommand_isExpression</c>.</summary>
     public Func<Igi2PatrolPathCommandTask, bool> EvaluateCommand { get; set; } = static _ => false;
 
-    /// <summary>Gets or sets the doors, which a soldier on its way opens.</summary>
-    public IReadOnlyList<Interaction.Igi2DoorTask> Doors { get; set; } = [];
+    /// <summary>Gets or sets the doors, which a soldier on its way opens: the level's own, and a host's beside them.</summary>
+    public IReadOnlyList<IAiDoor> Doors { get; set; } = [];
 
     /// <summary>Gets or sets the level's mounted guns, by task id, or <see langword="null"/>.</summary>
     public Func<int, IIgi2AiMountedGun?> StationaryGun { get; set; } = static _ => null;
@@ -135,13 +135,13 @@ public sealed class Igi2AiWorld
     /// <summary>The door nearest a point, as each door answers <c>HumanAIFindActivate</c> (<c>Door_AIFindActivateHandler</c>).</summary>
     /// <param name="position">The point.</param>
     /// <returns>The door, or <see langword="null"/>.</returns>
-    public Interaction.Igi2DoorTask? DoorNearest(Vector3d position)
+    public IAiDoor? DoorNearest(Vector3d position)
     {
-        Interaction.Igi2DoorTask? best = null;
+        IAiDoor? best = null;
         double bestSquared = -1.0;
-        foreach (Interaction.Igi2DoorTask door in Doors)
+        foreach (IAiDoor door in Doors)
         {
-            Vector3d at = door.CurrentPosition;
+            Vector3d at = door.DoorPosition;
             double dz = position.Z - at.Z, dy = position.Y - at.Y, dx = position.X - at.X;
             double squared = ((dz * dz) + (dy * dy)) + (dx * dx);
             if (bestSquared < 0.0 || squared < bestSquared)

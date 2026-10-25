@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Expressions;
 
@@ -31,7 +32,7 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// </para>
 /// <para>It is still placed by the world scene, which reads its parameters by name (<see cref="IIgi2PlacedTask"/>).</para>
 /// </remarks>
-public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached
+public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask, IIgi2Mover, IIgi2Attached, IAiDoor
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Door";
@@ -80,7 +81,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     private IReadOnlyList<Igi2RigidObject> _solids = [];
     private bool _started;
     private Igi2Pose? _built;
-    private IIgi2AttachParent? _attachParent;
+    private IAttachParent? _attachParent;
     private readonly float[] _relativeOrientation = new float[9];
     private Vector3f _relativePosition;
 
@@ -338,6 +339,16 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         _isOpenDoorChanged = 1;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Where it is now, which <c>Door_AIFindActivateHandler</c> answers with.</remarks>
+    Vector3d IAiDoor.DoorPosition => CurrentPosition;
+
+    /// <inheritdoc/>
+    int IAiDoor.UseState => Status;
+
+    /// <inheritdoc/>
+    void IAiDoor.OpenForSoldier() => ToggleOpenBySoldier();
+
     /// <summary>Holds the door where it is for some ticks, as a soldier on its way does (<c>Door+0x3A0</c>).</summary>
     /// <param name="ticks">The ticks.</param>
     public void HoldOpen(int ticks) => _holdTimer = ticks;
@@ -514,7 +525,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     // the parent's, the frame as the parent's transpose times its own, the start as the offset turned back into the parent.
     private void AttachToParent()
     {
-        _attachParent = Parent as IIgi2AttachParent;
+        _attachParent = Parent as IAttachParent;
         if (_attachParent is not { } parent)
         {
             return;
@@ -629,7 +640,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
 
     // Door_TraceLinesHandler (igi2 0x536FE0) after the solid's own trace: a human's lines that strike the door from the side
     // it is moving toward hold it. A sliding door is held only closing.
-    private void TraceLines(Igi2RigidObject solid, Igi2LineTrace trace)
+    private void TraceLines(Igi2RigidObject solid, WorldLineTrace trace)
     {
         if (!StopOnCollision || (MaxAngle == 0f && _isOpenDoor != 0) || trace.Evaluator is not Igi2Human)
         {
@@ -639,7 +650,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
         float[] m = _orientation;
         for (int i = 0; i < trace.Count; i++)
         {
-            Igi2Intersection hit = trace.Intersections[i];
+            WorldIntersection hit = trace.Intersections[i];
             if (!hit.IsHit || !ReferenceEquals(hit.HitObject, solid))
             {
                 continue;

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Content;
 using OpenIGI.Core.Titles;
 using OpenIGI.Formats;
 
@@ -34,4 +35,21 @@ public interface IGameTitleRuntime
     /// the original's own start-up order is the specification for it.
     /// </remarks>
     IReadOnlyList<IContentModule> Modules { get; }
+
+    /// <summary>Gets the folders of files that stand in for the title's own while it runs: its mods' data, highest first.</summary>
+    /// <remarks>None for a title as it ships; the host stacks them over the player's packs and the game folder's overrides.</remarks>
+    IReadOnlyList<TitleContentFolder> ContentFolders => [];
+
+    /// <summary>Gets the campaigns beside the title's own: its mods', in their order.</summary>
+    /// <remarks>
+    /// Their missions are the title's like any other, found by its mission scan; they are kept out of its own progression,
+    /// and the menu lists each campaign apart.
+    /// </remarks>
+    IReadOnlyList<TitleCampaign> Campaigns => [];
+
+    /// <summary>Gets the mods the title is played with that change what happens in play, which its saves record.</summary>
+    IReadOnlyList<ModReference> Mods => [];
+
+    /// <summary>Gets the passes the title's mods run over the lit scene before the tone map, in order.</summary>
+    IReadOnlyList<TitlePostPass> PostPasses => [];
 }

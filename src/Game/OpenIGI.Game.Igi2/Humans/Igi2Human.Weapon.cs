@@ -78,6 +78,12 @@ public abstract partial class Igi2Human : IIgi2WeaponOwner
     /// <inheritdoc/>
     public void CountShots(int shots) => MissionShots += shots;
 
+    /// <summary>
+    /// Gets what the human's rounds have done to the soldiers of either game, hit by hit, for the display's marks. <b>Not
+    /// retail</b>; the mission's own score is <see cref="MissionHits"/> and <see cref="MissionKills"/>.
+    /// </summary>
+    public OpenIGI.Game.Player.ShotTally Shots { get; } = new();
+
     /// <summary>Gets the humans of another side the human has killed, <c>tMissionScoreData.nKills</c>.</summary>
     public int MissionKills { get; private set; }
 

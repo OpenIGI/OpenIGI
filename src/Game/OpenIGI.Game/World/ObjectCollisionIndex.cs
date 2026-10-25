@@ -29,21 +29,21 @@ namespace OpenIGI.Game.World;
 /// surfaces; it does more work to do it.
 /// </para>
 /// </remarks>
-public sealed class ObjectCollisionIndex
+public sealed partial class ObjectCollisionIndex
 {
-    private readonly Entry[] _entries;
-    private readonly Entry[] _playerEntries;
-    private readonly Dictionary<GameTask, Entry[]> _entriesByOwner;
-    private readonly Dictionary<WorldPlacement, Entry[]> _entriesByPlacement;
+    private readonly ObjectCollisionEntry[] _entries;
+    private readonly ObjectCollisionEntry[] _playerEntries;
+    private readonly Dictionary<GameTask, ObjectCollisionEntry[]> _entriesByOwner;
+    private readonly Dictionary<WorldPlacement, ObjectCollisionEntry[]> _entriesByPlacement;
 
-    /// <summary>The broad phase for the hot main-thread casts; see <see cref="StaticGrid"/>.</summary>
-    private readonly StaticGrid _defaultGrid;
-    private readonly StaticGrid _playerGrid;
+    /// <summary>The broad phase for the hot main-thread casts; see <see cref="CollisionStaticGrid"/>.</summary>
+    private readonly CollisionStaticGrid _defaultGrid;
+    private readonly CollisionStaticGrid _playerGrid;
 
     /// <summary>Entries that have ever moved, walked linearly because the grid holds their build pose.</summary>
     /// <remarks>Doors, cameras and cutscene vehicles — tens of entries against a level's hundreds.</remarks>
-    private readonly List<Entry> _dynamicDefault = [];
-    private readonly List<Entry> _dynamicPlayer = [];
+    private readonly List<ObjectCollisionEntry> _dynamicDefault = [];
+    private readonly List<ObjectCollisionEntry> _dynamicPlayer = [];
 
     // Living human bodies, re-supplied by the host every frame. They are cast separately from the
     // static mesh entries because a soldier has no collision mesh of its own in the port — the body is
@@ -60,51 +60,55 @@ public sealed class ObjectCollisionIndex
     private readonly Dictionary<GameTask, (Vector3d Min, Vector3d Max)> _sightOpenings = new(
         ReferenceEqualityComparer.Instance);
 
-    private ObjectCollisionIndex(Entry[] entries, Entry[] playerEntries)
+    /// <summary>An index with no placed objects, so a suite exercises only what it adds itself.</summary>
+    /// <returns>The empty index.</returns>
+    internal static ObjectCollisionIndex EmptyForTesting() => new([], []);
+
+    private ObjectCollisionIndex(ObjectCollisionEntry[] entries, ObjectCollisionEntry[] playerEntries)
     {
         _entries = entries;
         _playerEntries = playerEntries;
-        _defaultGrid = new StaticGrid(entries);
-        _playerGrid = new StaticGrid(playerEntries);
-        _entriesByOwner = new Dictionary<GameTask, Entry[]>(ReferenceEqualityComparer.Instance);
-        _entriesByPlacement = new Dictionary<WorldPlacement, Entry[]>(ReferenceEqualityComparer.Instance);
+        _defaultGrid = new CollisionStaticGrid(entries);
+        _playerGrid = new CollisionStaticGrid(playerEntries);
+        _entriesByOwner = new Dictionary<GameTask, ObjectCollisionEntry[]>(ReferenceEqualityComparer.Instance);
+        _entriesByPlacement = new Dictionary<WorldPlacement, ObjectCollisionEntry[]>(ReferenceEqualityComparer.Instance);
 
-        Dictionary<GameTask, List<Entry>> byOwner = new(ReferenceEqualityComparer.Instance);
-        Dictionary<WorldPlacement, List<Entry>> byPlacement = new(ReferenceEqualityComparer.Instance);
-        foreach (Entry entry in entries)
+        Dictionary<GameTask, List<ObjectCollisionEntry>> byOwner = new(ReferenceEqualityComparer.Instance);
+        Dictionary<WorldPlacement, List<ObjectCollisionEntry>> byPlacement = new(ReferenceEqualityComparer.Instance);
+        foreach (ObjectCollisionEntry entry in entries)
         {
             AddEntry(entry, byOwner, byPlacement);
         }
 
-        foreach (Entry entry in playerEntries)
+        foreach (ObjectCollisionEntry entry in playerEntries)
         {
             AddEntry(entry, byOwner, byPlacement);
         }
 
-        foreach ((GameTask owner, List<Entry> owned) in byOwner)
+        foreach ((GameTask owner, List<ObjectCollisionEntry> owned) in byOwner)
         {
             _entriesByOwner.Add(owner, [.. owned]);
         }
 
-        foreach ((WorldPlacement placement, List<Entry> placed) in byPlacement)
+        foreach ((WorldPlacement placement, List<ObjectCollisionEntry> placed) in byPlacement)
         {
             _entriesByPlacement.Add(placement, [.. placed]);
         }
     }
 
     private static void AddEntry(
-        Entry entry,
-        Dictionary<GameTask, List<Entry>> byOwner,
-        Dictionary<WorldPlacement, List<Entry>> byPlacement)
+        ObjectCollisionEntry entry,
+        Dictionary<GameTask, List<ObjectCollisionEntry>> byOwner,
+        Dictionary<WorldPlacement, List<ObjectCollisionEntry>> byPlacement)
     {
-        if (!byOwner.TryGetValue(entry.Owner, out List<Entry>? owned))
+        if (!byOwner.TryGetValue(entry.Owner, out List<ObjectCollisionEntry>? owned))
         {
             owned = [];
             byOwner.Add(entry.Owner, owned);
         }
 
         owned.Add(entry);
-        if (!byPlacement.TryGetValue(entry.Placement, out List<Entry>? placed))
+        if (!byPlacement.TryGetValue(entry.Placement, out List<ObjectCollisionEntry>? placed))
         {
             placed = [];
             byPlacement.Add(entry.Placement, placed);
@@ -116,10 +120,10 @@ public sealed class ObjectCollisionIndex
     /// <summary>Moves a moved entry from the static broad phase to the linear dynamic list.</summary>
     /// <remarks>
     /// The grid buckets an entry where it stood at build time, so the first move retires it from the
-    /// grid for good: its stale buckets are skipped by the walk's <see cref="Entry.IsDynamic"/> check,
+    /// grid for good: its stale buckets are skipped by the walk's <see cref="ObjectCollisionEntry.IsDynamic"/> check,
     /// and the entry is tested linearly with its live transform from here on.
     /// </remarks>
-    private void MarkDynamic(Entry entry)
+    private void MarkDynamic(ObjectCollisionEntry entry)
     {
         if (entry.InDynamicList)
         {
@@ -165,7 +169,7 @@ public sealed class ObjectCollisionIndex
             return;
         }
 
-        if (!_entriesByOwner.TryGetValue(owner, out Entry[]? entries) || entries.Length == 0)
+        if (!_entriesByOwner.TryGetValue(owner, out ObjectCollisionEntry[]? entries) || entries.Length == 0)
         {
             return;
         }
@@ -173,7 +177,7 @@ public sealed class ObjectCollisionIndex
         Vector3d min = new(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
         Vector3d max = new(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity);
         Vector3d displacementUnits = displacementMetres * WorldScene.UnitsPerMetre;
-        foreach (Entry entry in entries)
+        foreach (ObjectCollisionEntry entry in entries)
         {
             (Vector3d lo, Vector3d hi) = entry.ClosedBounds;
             lo += displacementUnits;
@@ -190,7 +194,7 @@ public sealed class ObjectCollisionIndex
             new Vector3d(max.X + pad, max.Y + pad, max.Z + pad));
     }
 
-    private bool PortalIsSightOpening(Vector3d point)
+    internal bool PortalIsSightOpening(Vector3d point)
     {
         foreach ((Vector3d min, Vector3d max) in _sightOpenings.Values)
         {
@@ -218,12 +222,12 @@ public sealed class ObjectCollisionIndex
     public bool UpdateTransform(GameTask owner, Vector3d positionMetres, Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(owner);
-        if (!_entriesByOwner.TryGetValue(owner, out Entry[]? entries))
+        if (!_entriesByOwner.TryGetValue(owner, out ObjectCollisionEntry[]? entries))
         {
             return false;
         }
 
-        foreach (Entry entry in entries)
+        foreach (ObjectCollisionEntry entry in entries)
         {
             entry.UpdateTransform(positionMetres, orientation);
             MarkDynamic(entry);
@@ -254,9 +258,9 @@ public sealed class ObjectCollisionIndex
         Vector3d units = displacementMetres * WorldScene.UnitsPerMetre;
         int updated = 0;
 
-        foreach (Entry[] set in new[] { _entries, _playerEntries })
+        foreach (ObjectCollisionEntry[] set in new[] { _entries, _playerEntries })
         {
-            foreach (Entry entry in set)
+            foreach (ObjectCollisionEntry entry in set)
             {
                 if (skip?.Invoke(entry.Owner) == true)
                 {
@@ -291,9 +295,9 @@ public sealed class ObjectCollisionIndex
     public bool IsPointInTaskVolume(Vector3d position, GameTask ancestor)
     {
         ArgumentNullException.ThrowIfNull(ancestor);
-        foreach (Entry[] set in new[] { _entries, _playerEntries })
+        foreach (ObjectCollisionEntry[] set in new[] { _entries, _playerEntries })
         {
-            foreach (Entry entry in set)
+            foreach (ObjectCollisionEntry entry in set)
             {
                 if (!entry.Owner.IsSelfOrDescendantOf(ancestor)
                     || IsRetired(entry)
@@ -335,13 +339,13 @@ public sealed class ObjectCollisionIndex
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrEmpty(instanceName);
-        if (!_entriesByOwner.TryGetValue(owner, out Entry[]? entries))
+        if (!_entriesByOwner.TryGetValue(owner, out ObjectCollisionEntry[]? entries))
         {
             return false;
         }
 
         bool updated = false;
-        foreach (Entry entry in entries)
+        foreach (ObjectCollisionEntry entry in entries)
         {
             if (!string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase))
             {
@@ -360,12 +364,12 @@ public sealed class ObjectCollisionIndex
     public bool UpdateTransform(WorldPlacement placement, Vector3d positionMetres, Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        if (!_entriesByPlacement.TryGetValue(placement, out Entry[]? entries))
+        if (!_entriesByPlacement.TryGetValue(placement, out ObjectCollisionEntry[]? entries))
         {
             return false;
         }
 
-        foreach (Entry entry in entries)
+        foreach (ObjectCollisionEntry entry in entries)
         {
             entry.UpdateTransform(positionMetres, orientation);
             MarkDynamic(entry);
@@ -387,14 +391,14 @@ public sealed class ObjectCollisionIndex
     public bool TryGetPose(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        if (!_entriesByPlacement.TryGetValue(placement, out Entry[]? entries) || entries.Length == 0)
+        if (!_entriesByPlacement.TryGetValue(placement, out ObjectCollisionEntry[]? entries) || entries.Length == 0)
         {
             positionMetres = default;
             orientation = Matrix3f.Identity;
             return false;
         }
 
-        Entry entry = entries[0];
+        ObjectCollisionEntry entry = entries[0];
         positionMetres = entry.PoseOrigin * (1.0 / WorldScene.UnitsPerMetre);
         orientation = entry.PoseOrientation;
         return true;
@@ -423,7 +427,7 @@ public sealed class ObjectCollisionIndex
         owner = null;
         double bestScore = double.MaxValue;
 
-        foreach (Entry entry in _entries)
+        foreach (ObjectCollisionEntry entry in _entries)
         {
             if (!entry.IsDynamic
                 || IsRetired(entry)
@@ -468,52 +472,13 @@ public sealed class ObjectCollisionIndex
         get
         {
             int total = 0;
-            foreach (Entry entry in _entries)
+            foreach (ObjectCollisionEntry entry in _entries)
             {
                 total += entry.Mesh.Faces.Length;
             }
 
             return total;
         }
-    }
-
-    /// <summary>
-    /// Gets whether a placement is an invisible elevator-shaft collision volume (instance name
-    /// <c>colbox*</c>, task class <c>EditRigidObj</c>). These authored boxes sit at every elevator
-    /// doorway. Retail does not register them for the human trace — the player boards a lift with its
-    /// door open and the door's own leaf provides the closed-state block — so keeping them solid to
-    /// the player blocks boarding (observed as the "can't enter the cab" bug on M3/M8). They remain in
-    /// the default world collision (level zero) so bullets and visibility still respect them.
-    /// </summary>
-    /// <param name="instanceName">The placement's instance name.</param>
-    /// <returns><see langword="true"/> when the object is an elevator-shaft collision volume.</returns>
-    private static bool IsElevatorShaftVolume(string instanceName) =>
-        instanceName.StartsWith("colbox", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Gets whether any placement is owned by a task descended from an <c>Elevator</c> task.
-    /// </summary>
-    /// <remarks>
-    /// The engine excludes elevator-shaft collision boxes from the human trace so the player can board
-    /// a lift, but only on levels that actually contain elevator machinery. Levels without elevators
-    /// (M9/M10) author <c>colbox*</c> objects as ordinary static collision the player must hit, so this
-    /// level-wide check keeps those solid rather than letting the player walk through them.
-    /// </remarks>
-    private static bool HasElevatorTask(List<WorldPlacement> placements)
-    {
-        foreach (WorldPlacement placement in placements)
-        {
-            for (GameTask? current = placement.Owner; current is not null; current = current.Parent)
-            {
-                if (current is DeclaredTask declared
-                    && string.Equals(declared.Type.Name, "Elevator", StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     /// <summary>Builds an index over a scene's placements.</summary>
@@ -540,117 +505,9 @@ public sealed class ObjectCollisionIndex
     {
         ArgumentNullException.ThrowIfNull(placements);
 
-        List<WorldPlacement> all = placements.ToList();
-        bool hasElevator = HasElevatorTask(all);
-
-        List<Entry> entries = [];
-        List<Entry> playerEntries = [];
-        Dictionary<MefModel, (MefCollisionMesh? Default, MefCollisionMesh? Player)> cache = [];
-
-        foreach (WorldPlacement placement in all)
-        {
-            if (!cache.TryGetValue(placement.Model, out var meshes))
-            {
-                meshes = (
-                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? readDefaultMesh, collision)
-                        ? readDefaultMesh
-                        : null,
-                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 1, out MefCollisionMesh? readPlayerMesh, collision)
-                        ? readPlayerMesh
-                        : null);
-                cache[placement.Model] = meshes;
-            }
-
-            Vector3d origin = new(
-                placement.Position.X * WorldScene.UnitsPerMetre,
-                placement.Position.Y * WorldScene.UnitsPerMetre,
-                placement.Position.Z * WorldScene.UnitsPerMetre);
-
-            string describedModel = ModelNameRegistry.DescribeModel(placement.Instance.Name);
-            string label = string.IsNullOrEmpty(placement.TaskName)
-                ? describedModel
-                : $"{describedModel} [{placement.TaskName}]";
-
-            // A spline segment -- a piece of road, rail or bridge -- is not its model where it stands: the original
-            // bends the model's collision along the curve between two waypoints and lays it about their midpoint
-            // (0x4E4530, 0x49A050). The placement only carries the first waypoint and the drawn mesh, so the
-            // collision is built here, bent on each level, exactly as the car's rays meet it. Laying the unbent
-            // model at the first waypoint put the road beside itself: the player walked on the snow under it,
-            // and its footsteps said so.
-            if (TryBendSegment(placement, models, collision, out MefCollisionMesh? bentDefault, out Vector3d bentDefaultOrigin,
-                    out MefCollisionMesh? bentPlayer, out Vector3d bentPlayerOrigin))
-            {
-                if (bentDefault is { Faces.Length: > 0 })
-                {
-                    entries.Add(Entry.Create(
-                        bentDefault, bentDefaultOrigin, Matrix3f.Identity, placement.Instance.Name, label, placement.TaskName,
-                        placement.Owner, placement));
-                }
-
-                if (bentPlayer is { Faces.Length: > 0 })
-                {
-                    playerEntries.Add(Entry.Create(
-                        bentPlayer, bentPlayerOrigin, Matrix3f.Identity, placement.Instance.Name, label, placement.TaskName,
-                        placement.Owner, placement, isPlayerSet: true));
-                }
-
-                continue;
-            }
-
-            // Character HSMC meshes stay at the authored spawn. World traces (AI sight, bullets)
-            // would hit that leftover hull before the live detection mark and treat the player as
-            // cover. Live humans are not static world; skip them on the world index.
-            if (meshes.Default is { Faces.Length: > 0 } defaultMesh
-                && !IsCharacterPlacement(placement))
-            {
-                entries.Add(Entry.Create(
-                    defaultMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
-                    placement.Owner, placement));
-            }
-
-            MefCollisionMesh? playerMesh = meshes.Player;
-            if (playerMesh is { Faces.Length: > 0 } && !(hasElevator && IsElevatorShaftVolume(placement.Instance.Name)))
-            {
-                playerEntries.Add(Entry.Create(
-                    playerMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
-                    placement.Owner, placement, isPlayerSet: true));
-            }
-
-            // The destroyed model's own collision, on the same placement and under the same instance name, so
-            // whatever moves the intact model (a car's pose, a camera head's) moves its wreck with it; it is
-            // solid only once the placement is destroyed (IsRetired).
-            if (placement.DestroyedReplacement is { } wreck && !IsCharacterPlacement(placement))
-            {
-                if (!cache.TryGetValue(wreck.Model, out var wreckMeshes))
-                {
-                    wreckMeshes = (
-                        MefCollisionMesh.TryRead(wreck.Model.Container, meshIndex: 0, out MefCollisionMesh? readWreckDefault, collision)
-                            ? readWreckDefault
-                            : null,
-                        MefCollisionMesh.TryRead(wreck.Model.Container, meshIndex: 1, out MefCollisionMesh? readWreckPlayer, collision)
-                            ? readWreckPlayer
-                            : null);
-                    cache[wreck.Model] = wreckMeshes;
-                }
-
-                string wreckLabel = $"{label} (destroyed: {wreck.Instance.Name})";
-                if (wreckMeshes.Default is { Faces.Length: > 0 } wreckDefault)
-                {
-                    entries.Add(Entry.Create(
-                        wreckDefault, origin, placement.Orientation, placement.Instance.Name, wreckLabel, placement.TaskName,
-                        placement.Owner, placement, isDestroyedModel: true));
-                }
-
-                if (wreckMeshes.Player is { Faces.Length: > 0 } wreckPlayer)
-                {
-                    playerEntries.Add(Entry.Create(
-                        wreckPlayer, origin, placement.Orientation, placement.Instance.Name, wreckLabel, placement.TaskName,
-                        placement.Owner, placement, isPlayerSet: true, isDestroyedModel: true));
-                }
-            }
-        }
-
-        return new ObjectCollisionIndex([.. entries], [.. playerEntries]);
+        (ObjectCollisionEntry[] entries, ObjectCollisionEntry[] playerEntries) =
+            ObjectCollisionIndexBuilder.Build(placements, collision, models);
+        return new ObjectCollisionIndex(entries, playerEntries);
     }
 
     // A spline segment placement's two collision levels, bent between its waypoints, each with the origin its bent
@@ -662,740 +519,11 @@ public sealed class ObjectCollisionIndex
         out MefCollisionMesh? level0,
         out Vector3d origin0,
         out MefCollisionMesh? level1,
-        out Vector3d origin1)
-    {
-        level0 = level1 = null;
-        origin0 = origin1 = default;
-        if (placement.BentGeometry is null
-            || placement.Owner is not DeclaredTask waypoint
-            || !string.Equals(waypoint.Type.Name, WorldScene.SplineWaypointType, StringComparison.Ordinal)
-            || waypoint.Parent is not { } spline)
-        {
-            return false;
-        }
-
-        DeclaredTask? previous = null;
-        foreach (GameTask child in spline.Children)
-        {
-            if (ReferenceEquals(child, waypoint))
-            {
-                break;
-            }
-
-            if (child is DeclaredTask candidate
-                && string.Equals(candidate.Type.Name, WorldScene.SplineWaypointType, StringComparison.Ordinal))
-            {
-                previous = candidate;
-            }
-        }
-
-        if (previous is null)
-        {
-            return false;
-        }
-
-        MefModel placed = placement.Model;
-        Func<string, MefModel?> resolve = models
-            ?? (name => string.Equals(name, placement.Instance.Name, StringComparison.OrdinalIgnoreCase) ? placed : null);
-        Func<string, MefModel?> withPlaced = name => resolve(name)
-            ?? (string.Equals(name, placement.Instance.Name, StringComparison.OrdinalIgnoreCase) ? placed : null);
-
-        bool any = false;
-        for (int level = 0; level < 2; level++)
-        {
-            if (RetailWorldObjects.BuildSegment(previous, waypoint, withPlaced, level, out _) is not { } segment
-                || !MefCollisionMesh.TryRead(placed.Container, level, out MefCollisionMesh? source, collision)
-                || source is null
-                || source.Vertices.Count * 3 != segment.Vertices.Length
-                || source.Spheres.Count * 4 != segment.Spheres.Length)
-            {
-                continue;
-            }
-
-            Vector3f[] vertices = new Vector3f[source.Vertices.Count];
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                vertices[i] = new Vector3f(segment.Vertices[3 * i], segment.Vertices[(3 * i) + 1], segment.Vertices[(3 * i) + 2]);
-            }
-
-            MefCollisionSphere[] spheres = new MefCollisionSphere[source.Spheres.Count];
-            for (int i = 0; i < spheres.Length; i++)
-            {
-                MefCollisionSphere authored = source.Spheres[i];
-                spheres[i] = authored with
-                {
-                    Centre = new Vector3f(segment.Spheres[4 * i], segment.Spheres[(4 * i) + 1], segment.Spheres[(4 * i) + 2]),
-                    Radius = segment.Spheres[(4 * i) + 3],
-                };
-            }
-
-            Vector3d origin = new(segment.Position[0], segment.Position[1], segment.Position[2]);
-            if (level == 0)
-            {
-                level0 = source.WithVertices(vertices, spheres);
-                origin0 = origin;
-            }
-            else
-            {
-                level1 = source.WithVertices(vertices, spheres);
-                origin1 = origin;
-            }
-
-            any = true;
-        }
-
-        return any;
-    }
-
-    private static bool IsCharacterPlacement(WorldPlacement placement)
-    {
-        string? type = placement.Owner.Type.Name;
-        return string.Equals(type, "HumanPlayer", StringComparison.Ordinal)
-            || string.Equals(type, "HumanSoldier", StringComparison.Ordinal)
-            || string.Equals(type, "HumanSoldierFemale", StringComparison.Ordinal);
-    }
-
-    /// <summary>Casts a ray at the placed objects.</summary>
-    /// <param name="origin">Where the ray starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="hit">Receives the nearest contact.</param>
-    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
-    /// <remarks>
-    /// Main thread only, like every live cast here: besides <see cref="_passable"/>, the broad-phase
-    /// grid keeps per-query visit marks. The bake's <see cref="TryCastWithDoorsShut"/> stays off the
-    /// grid for exactly that reason.
-    /// </remarks>
-    public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-        CastIndexed(_entries, _defaultGrid, _dynamicDefault, origin, end, out hit);
-
-    /// <summary>Collects every live solid triangle of the default collision level that touches a box.</summary>
-    /// <param name="min">The box's low corner, in world units.</param>
-    /// <param name="max">The box's high corner.</param>
-    /// <param name="into">Receives the triangles; not cleared first.</param>
-    /// <remarks>
-    /// The same geometry and the same live filters as <see cref="TryCast"/> -- collected pickups,
-    /// destroyed objects, passable owners and dormant containers are absent, doors are where they are
-    /// now, and portal faces are not solid -- so a rigid body rests on exactly what a round would hit.
-    /// </remarks>
-    public void CollectTriangles(Vector3d min, Vector3d max, List<CollisionTriangle> into)
-    {
-        ArgumentNullException.ThrowIfNull(into);
-
-        foreach (Entry entry in _dynamicDefault)
-        {
-            CollectEntry(entry, min, max, into);
-        }
-
-        foreach (int index in _defaultGrid.Oversized)
-        {
-            Entry entry = _entries[index];
-            if (!entry.IsDynamic)
-            {
-                CollectEntry(entry, min, max, into);
-            }
-        }
-
-        _defaultGrid.BeginQuery();
-        int x0 = StaticGrid.CellOf(min.X), x1 = StaticGrid.CellOf(max.X);
-        int y0 = StaticGrid.CellOf(min.Y), y1 = StaticGrid.CellOf(max.Y);
-        for (int x = x0; x <= x1; x++)
-        {
-            for (int y = y0; y <= y1; y++)
-            {
-                if (!_defaultGrid.TryGetCell(x, y, out int[] indices))
-                {
-                    continue;
-                }
-
-                foreach (int index in indices)
-                {
-                    Entry entry = _entries[index];
-                    if (!_defaultGrid.AlreadyVisited(index) && !entry.IsDynamic)
-                    {
-                        CollectEntry(entry, min, max, into);
-                    }
-                }
-            }
-        }
-    }
-
-    private void CollectEntry(Entry entry, Vector3d min, Vector3d max, List<CollisionTriangle> into)
-    {
-        if (GenericPickups?.IsCollected(entry.Owner) == true
-            || IsRetired(entry)
-            || _passable.Contains(entry.Owner)
-            || !ConditionalContainerGate.IsTaskActive(entry.Owner))
-        {
-            return;
-        }
-
-        // Sphere against box: the nearest point of the box to the centre, within the radius.
-        double dx = Math.Max(min.X - entry.Centre.X, Math.Max(0.0, entry.Centre.X - max.X));
-        double dy = Math.Max(min.Y - entry.Centre.Y, Math.Max(0.0, entry.Centre.Y - max.Y));
-        double dz = Math.Max(min.Z - entry.Centre.Z, Math.Max(0.0, entry.Centre.Z - max.Z));
-        if ((dx * dx) + (dy * dy) + (dz * dz) > entry.Radius * entry.Radius)
-        {
-            return;
-        }
-
-        entry.CollectTriangles(min, max, into);
-    }
-
-    /// <summary>Casts against live world collision while excluding one task's attached placements.</summary>
-    /// <remarks>
-    /// A moving vehicle starts its obstacle probe at its front edge. Excluding the vehicle owner keeps
-    /// the probe from immediately striking its own collision mesh while retaining live doors and every
-    /// other placed obstacle.
-    /// </remarks>
-    public bool TryCastIgnoring(
-        GameTask ignoredOwner,
-        Vector3d origin,
-        Vector3d end,
-        out WorldRayHit hit) =>
-        TryCastIgnoring(ignoredOwner, origin, end, out hit, out _, out _);
-
-    /// <summary>Casts while excluding one owner and identifies the blocking task.</summary>
-    public bool TryCastIgnoring(
-        GameTask ignoredOwner,
-        Vector3d origin,
-        Vector3d end,
-        out WorldRayHit hit,
-        out GameTask? hitOwner) =>
-        TryCastIgnoring(ignoredOwner, origin, end, out hit, out hitOwner, out _);
-
-    /// <summary>Casts while excluding one owner and identifies the blocking task and placement label.</summary>
-    /// <remarks>
-    /// Through <see cref="TryTrace"/>, so the exclusion rides the same broad phase and the same
-    /// passable, collected, destroyed and dormant-container filters as every other live cast.
-    /// </remarks>
-    public bool TryCastIgnoring(
-        GameTask ignoredOwner,
-        Vector3d origin,
-        Vector3d end,
-        out WorldRayHit hit,
-        out GameTask? hitOwner,
-        out string hitLabel)
-    {
-        if (TryTrace(new WorldTraceRequest(origin, end, IgnoredOwner: ignoredOwner), out WorldTraceHit trace))
-        {
-            hit = trace.RayHit;
-            hitOwner = trace.Owner;
-            hitLabel = trace.Label;
-            return true;
-        }
-
-        hit = default;
-        hitOwner = null;
-        hitLabel = string.Empty;
-        return false;
-    }
-
-    /// <summary>Replaces the set of living human collision bodies.</summary>
-    /// <param name="bodies">The capsule bodies, in world units, for every solid human.</param>
-    /// <remarks>
-    /// A mission re-supplies this on every tick after the soldiers move. Each body's
-    /// <see cref="RayCapsule"/> test is folded into the player cast below, so the existing human wall
-    /// sweep treats a living soldier as a wall and the player cannot walk through one.
-    /// </remarks>
-    public void SetHumanBodies(IReadOnlyList<HumanBody> bodies)
-    {
-        ArgumentNullException.ThrowIfNull(bodies);
-        if (bodies.Count == 0)
-        {
-            _humanBodies = [];
-            return;
-        }
-
-        HumanBody[] copy = new HumanBody[bodies.Count];
-        for (int i = 0; i < bodies.Count; i++)
-        {
-            copy[i] = bodies[i];
-        }
-
-        _humanBodies = copy;
-    }
-
-    /// <summary>Casts the retail-human object trace, plus every living human body.</summary>
-    /// <remarks>
-    /// IGI1's <c>0x461A70</c> calls <c>0x4CDB20</c> with <c>iMesh = 1</c> at <c>0x461D71</c>.
-    /// Human movement therefore follows collision mesh level one, not the default level-zero geometry
-    /// that visibility and ordinary world traces use. Living human bodies join that trace so a soldier
-    /// presents the same solid wall retail got from its registered mesh.
-    /// </remarks>
-    public bool TryCastForPlayer(Vector3d origin, Vector3d end, out WorldRayHit hit)
-    {
-        bool found = CastIndexed(_playerEntries, _playerGrid, _dynamicPlayer, origin, end, out hit, retailArithmetic: true);
-        if (CastHumanBodies(origin, end, out WorldRayHit body) && (!found || body.Distance < hit.Distance))
-        {
-            hit = body;
-            found = true;
-        }
-
-        return found;
-    }
-
-    private bool CastHumanBodies(Vector3d origin, Vector3d end, out WorldRayHit hit)
-    {
-        hit = default;
-        if (_humanBodies.Length == 0)
-        {
-            return false;
-        }
-
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return false;
-        }
-
-        double nearest = double.MaxValue;
-        Vector3d position = default;
-        Vector3f normal = default;
-        foreach (HumanBody body in _humanBodies)
-        {
-            if (!RayCapsule.Intersect(
-                    origin,
-                    direction,
-                    body.AxisA,
-                    body.AxisB,
-                    body.Radius,
-                    out double t,
-                    out Vector3d capsuleNormal)
-                || t >= nearest)
-            {
-                continue;
-            }
-
-            nearest = t;
-            position = new Vector3d(
-                origin.X + (direction.X * t),
-                origin.Y + (direction.Y * t),
-                origin.Z + (direction.Z * t));
-            normal = new Vector3f((float)capsuleNormal.X, (float)capsuleNormal.Y, (float)capsuleNormal.Z);
-        }
-
-        if (nearest < double.MaxValue)
-        {
-            hit = new WorldRayHit(position, normal, nearest * length, 0);
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Gets whether the human object trace still contains an entry for the named placed instance.
-    /// </summary>
-    /// <remarks>
-    /// Lets tests assert the elevator-shaft <c>colbox*</c> exclusion is scoped to levels that actually
-    /// have elevators: an elevator level must <em>not</em> contain the shaft volumes in its player
-    /// entries, while a level without elevator machinery must still keep its <c>colbox*</c> solid.
-    /// </remarks>
-    public bool ContainsPlayerEntry(string instanceName) =>
-        _playerEntries.Any(entry =>
-            string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>Casts a rich request at the indexed placed objects.</summary>
-    /// <remarks>
-    /// Through the same broad phase as <see cref="TryCast"/>. This walked the flat list, which for the
-    /// storm's ground grid -- a hundred and more vertical probes a tick -- and every shot fired was a
-    /// sphere test against every placed object in the level per ray. Main thread only, like every live
-    /// cast here: the grid keeps per-query visit marks.
-    /// </remarks>
-    public bool TryTrace(in WorldTraceRequest request, out WorldTraceHit hit)
-    {
-        TraceTest test = new(this, request);
-        bool found = WalkIndexed(_entries, _defaultGrid, _dynamicDefault, request.Origin, request.End, ref test);
-        hit = test.Hit;
-        return found;
-    }
-
-    /// <summary>Casts a ray with every door treated as shut, whatever it is doing right now.</summary>
-    /// <param name="origin">Where the ray starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="hit">Receives the nearest contact.</param>
-    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
-    /// <remarks>
-    /// <para>
-    /// For the probe bake, which wants both halves of that sentence. A door standing open when the bake
-    /// runs would be traced as a hole in the wall it is part of, and the field is static, so the hole
-    /// would still be there once the door shut.
-    /// </para>
-    /// <para>
-    /// It is also the only cast safe to run off the main thread. <see cref="TryCast"/> reads
-    /// <see cref="_passable"/>, which <see cref="SetPassable"/> mutates whenever a door moves; this
-    /// touches nothing but the entry array, which never changes after
-    /// <see cref="Build"/>. Ordering the bake before the doors open would answer the first point and
-    /// not the second.
-    /// </para>
-    /// </remarks>
-    public bool TryCastWithDoorsShut(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-        Cast(_entries, origin, end, honourPassable: false, out hit);
-
-    /// <summary>The grid-accelerated cast behind <see cref="TryCast"/> and <see cref="TryCastForPlayer"/>.</summary>
-    /// <remarks>
-    /// The moved entries are tested linearly — there are tens of them — and the static rest through
-    /// the cells the ray actually passes. The filters are exactly <see cref="Cast"/>'s with
-    /// <c>honourPassable</c> true; only the visiting order differs, which the nearest-hit fold makes
-    /// irrelevant.
-    /// </remarks>
-    private bool CastIndexed(
-        Entry[] set,
-        StaticGrid grid,
-        List<Entry> dynamics,
-        Vector3d origin,
-        Vector3d end,
-        out WorldRayHit hit,
-        bool retailArithmetic = false)
-    {
-        RayTest test = new(this) { RetailArithmetic = retailArithmetic, End = end };
-        bool found = WalkIndexed(set, grid, dynamics, origin, end, ref test);
-        hit = test.Hit;
-        return found;
-    }
-
-    /// <summary>The broad-phase walk itself, with the per-entry test supplied by the caller.</summary>
-    /// <remarks>
-    /// A struct visitor rather than a delegate so the two callers -- the legacy ray and the rich
-    /// request -- share one walk without paying an indirect call per entry on the hottest path in the
-    /// game. The visitor owns the hit it accumulates; the walk only needs to know the nearest distance
-    /// so far, to stop at the first cell that starts beyond it.
-    /// </remarks>
-    private static bool WalkIndexed<TTest>(
-        Entry[] set,
-        StaticGrid grid,
-        List<Entry> dynamics,
-        Vector3d origin,
-        Vector3d end,
-        ref TTest test)
-        where TTest : struct, IEntryTest
-    {
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return false;
-        }
-
-        double nearest = double.MaxValue;
-        bool found = false;
-
-        foreach (Entry entry in dynamics)
-        {
-            found |= test.Test(entry, origin, direction, ref nearest);
-        }
-
-        foreach (int index in grid.Oversized)
-        {
-            Entry entry = set[index];
-            if (!entry.IsDynamic)
-            {
-                found |= test.Test(entry, origin, direction, ref nearest);
-            }
-        }
-
-        grid.BeginQuery();
-
-        // A 2D walk over the cells the segment passes (Amanatides & Woo). Two dimensions suffice:
-        // levels extend kilometres across and metres up, and a vertical probe degenerates to a single
-        // cell, which is precisely the ground-snap case this exists for.
-        int cellX = StaticGrid.CellOf(origin.X);
-        int cellY = StaticGrid.CellOf(origin.Y);
-        int endX = StaticGrid.CellOf(end.X);
-        int endY = StaticGrid.CellOf(end.Y);
-
-        int stepX = direction.X > 0.0 ? 1 : direction.X < 0.0 ? -1 : 0;
-        int stepY = direction.Y > 0.0 ? 1 : direction.Y < 0.0 ? -1 : 0;
-
-        double cell = StaticGrid.CellUnits;
-        double tMaxX = stepX == 0
-            ? double.MaxValue
-            : (((cellX + (stepX > 0 ? 1 : 0)) * cell) - origin.X) / direction.X;
-        double tMaxY = stepY == 0
-            ? double.MaxValue
-            : (((cellY + (stepY > 0 ? 1 : 0)) * cell) - origin.Y) / direction.Y;
-        double tDeltaX = stepX == 0 ? double.MaxValue : cell / Math.Abs(direction.X);
-        double tDeltaY = stepY == 0 ? double.MaxValue : cell / Math.Abs(direction.Y);
-
-        // The walk is finite by construction; the guard only insures the arithmetic against a
-        // degenerate ray, and 1 << 14 cells is four times any level's span.
-        for (int guard = 0; guard < (1 << 14); guard++)
-        {
-            if (grid.TryGetCell(cellX, cellY, out int[] indices))
-            {
-                foreach (int index in indices)
-                {
-                    if (grid.AlreadyVisited(index))
-                    {
-                        continue;
-                    }
-
-                    Entry entry = set[index];
-                    if (!entry.IsDynamic)
-                    {
-                        found |= test.Test(entry, origin, direction, ref nearest);
-                    }
-                }
-            }
-
-            if (cellX == endX && cellY == endY)
-            {
-                break;
-            }
-
-            double next = Math.Min(tMaxX, tMaxY);
-
-            // Every cell after this one starts past the segment's end, or past a hit already found —
-            // and cells are visited in ray order, so nothing beyond can beat it. Without the second
-            // test a sight line that meets the nearest wall still walked the ray's whole length, and
-            // without the first a rounding slip at the end cell walked to the guard.
-            if (next >= 1.0 || (found && nearest <= next))
-            {
-                break;
-            }
-
-            if (tMaxX < tMaxY)
-            {
-                cellX += stepX;
-                tMaxX += tDeltaX;
-            }
-            else
-            {
-                cellY += stepY;
-                tMaxY += tDeltaY;
-            }
-        }
-
-        return found;
-    }
-
-    /// <summary>What <see cref="WalkIndexed{TTest}"/> asks of each entry the ray's cells hold.</summary>
-    private interface IEntryTest
-    {
-        /// <returns><see langword="true"/> when the entry is the nearest contact so far.</returns>
-        bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest);
-    }
-
-    /// <summary>The legacy ray's test: <see cref="TestEntry"/>, accumulating a <see cref="WorldRayHit"/>.</summary>
-    private struct RayTest(ObjectCollisionIndex index) : IEntryTest
-    {
-        public WorldRayHit Hit;
-
-        /// <summary>Whether each model is tested with the original's own arithmetic (<see cref="RetailModelRay"/>).</summary>
-        public bool RetailArithmetic;
-
-        /// <summary>The ray's end, which the original's test takes rather than a direction.</summary>
-        public Vector3d End;
-
-        public bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest) =>
-            index.TestEntry(entry, origin, direction, ref nearest, ref Hit, RetailArithmetic ? End : null);
-    }
-
-    /// <summary>The rich request's test: its ignore list and mask on top of the live filter.</summary>
-    private struct TraceTest(ObjectCollisionIndex index, WorldTraceRequest request) : IEntryTest
-    {
-        public WorldTraceHit Hit;
-
-        public bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest)
-        {
-            if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
-                || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
-                || (request.IgnoredPlacement is not null && ReferenceEquals(entry.Placement, request.IgnoredPlacement))
-                || index.GenericPickups?.IsCollected(entry.Owner) == true
-                || index.IsRetired(entry)
-                || index._passable.Contains(entry.Owner)
-                || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
-            {
-                return false;
-            }
-
-            WorldTraceHitKind kind = entry.IsDynamic
-                ? WorldTraceHitKind.DynamicObject
-                : WorldTraceHitKind.StaticObject;
-            WorldTraceMask category = entry.IsDynamic
-                ? WorldTraceMask.DynamicObjects
-                : WorldTraceMask.StaticObjects;
-            bool includePortals = request.TracePortals;
-            if ((request.Mask & category) == 0 || !MeetsSphere(origin, direction, entry.Centre, entry.Radius))
-            {
-                return false;
-            }
-
-            WorldRayHit candidate;
-            if (request.RetailArithmetic && !includePortals && entry.SupportsRetailRay)
-            {
-                if (!entry.TryCastRetail(origin, request.End, ref nearest, out candidate))
-                {
-                    return false;
-                }
-            }
-            else if (!entry.TryCast(
-                origin,
-                direction,
-                ref nearest,
-                useClosedTransform: false,
-                includePortals,
-                portalIsOpening: includePortals ? index.PortalIsSightOpening : null,
-                out candidate))
-            {
-                return false;
-            }
-
-            Hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label, entry.Placement);
-            return true;
-        }
-    }
-
-    /// <summary>One entry's live-cast test: the filter, the sphere, then the triangles.</summary>
-    private bool TestEntry(
-        Entry entry,
-        Vector3d origin,
-        Vector3d direction,
-        ref double nearest,
-        ref WorldRayHit hit,
-        Vector3d? retailEnd = null)
-    {
-        if (GenericPickups?.IsCollected(entry.Owner) == true
-            || IsRetired(entry)
-            || _passable.Contains(entry.Owner)
-            || !ConditionalContainerGate.IsTaskActive(entry.Owner))
-        {
-            return false;
-        }
-
-        if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
-        {
-            return false;
-        }
-
-        WorldRayHit candidate;
-        if (retailEnd is { } end && entry.SupportsRetailRay)
-        {
-            if (!entry.TryCastRetail(origin, end, ref nearest, out candidate))
-            {
-                return false;
-            }
-        }
-        else if (!entry.TryCast(
-            origin,
-            direction,
-            ref nearest,
-            useClosedTransform: false,
-            includePortals: false,
-            portalIsOpening: null,
-            out candidate))
-        {
-            return false;
-        }
-
-        hit = candidate;
-        return true;
-    }
-
-    private bool Cast(Entry[] entries, Vector3d origin, Vector3d end, bool honourPassable, out WorldRayHit hit)
-    {
-        hit = default;
-
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-
-        if (length <= 0.0)
-        {
-            return false;
-        }
-
-        double nearest = double.MaxValue;
-        bool found = false;
-
-        foreach (Entry entry in entries)
-        {
-            if (GenericPickups?.IsCollected(entry.Owner) == true
-                || IsRetired(entry)
-                || (honourPassable
-                    && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
-            {
-                continue;
-            }
-
-            // The root sphere encloses every vertex - checked against all 254 of level 1's meshes - so
-            // a ray that misses it cannot touch a triangle.
-            Vector3d broadCentre = honourPassable ? entry.Centre : entry.ClosedCentre;
-            if (!MeetsSphere(origin, direction, broadCentre, entry.Radius))
-            {
-                continue;
-            }
-
-            if (entry.TryCast(
-                origin,
-                direction,
-                ref nearest,
-                useClosedTransform: !honourPassable,
-                includePortals: false,
-                portalIsOpening: null,
-                out WorldRayHit candidate))
-            {
-                hit = candidate;
-                found = true;
-            }
-        }
-
-        return found;
-    }
-
-    /// <summary>The bounding sphere of one indexed object, in world units.</summary>
-    /// <param name="index">Its position in the index.</param>
-    /// <returns>The sphere's centre and radius.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside the index.</exception>
-    public (Vector3d Centre, double Radius) Bounds(int index)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(index);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _entries.Length);
-
-        Entry entry = _entries[index];
-        return (entry.Centre, entry.Radius);
-    }
-
-    /// <summary>The index of the object with the largest bounding sphere.</summary>
-    /// <returns>Its position in the index, or −1 when nothing is indexed.</returns>
-    /// <remarks>A building rather than a doorknob — the least ambiguous thing to aim a test at.</remarks>
-    public int LargestIndex()
-    {
-        int best = -1;
-        double radius = -1.0;
-
-        for (int i = 0; i < _entries.Length; i++)
-        {
-            if (_entries[i].Radius > radius)
-            {
-                radius = _entries[i].Radius;
-                best = i;
-            }
-        }
-
-        return best;
-    }
-
-    /// <summary>Gets a cast delegate bound to this index.</summary>
-    /// <returns>The delegate the sweep takes.</returns>
-    public WorldRayCast Caster() => TryCast;
-
-    /// <summary>Gets the collision-level-one cast retail player movement uses.</summary>
-    public WorldRayCast PlayerCaster() => TryCastForPlayer;
-
-    /// <summary>Gets the player's collision cast over the registration-time world, including dormant containers.</summary>
-    /// <remarks>
-    /// A mission constructs its player before an opening cutscene hands control to the gameplay
-    /// conditional container. The authored spawn still has to settle onto that container's floor, so
-    /// initial placement uses this immutable, doors-shut view; ordinary movement uses
-    /// <see cref="PlayerCaster"/> and therefore observes live container and door state.
-    /// </remarks>
-    public WorldRayCast PlayerRegistrationCaster() => TryCastForPlayerAtRegistration;
-
-    private bool TryCastForPlayerAtRegistration(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-        Cast(_playerEntries, origin, end, honourPassable: false, out hit);
+        out Vector3d origin1) =>
+        ObjectCollisionIndexBuilder.TryBendSegment(placement, models, collision, out level0, out origin0, out level1, out origin1);
+
+    /// <summary>Whether an owner's collision is switched off by <see cref="SetPassable"/>.</summary>
+    internal bool IsPassable(GameTask owner) => _passable.Contains(owner);
 
     /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
@@ -1410,665 +538,6 @@ public sealed class ObjectCollisionIndex
     /// any placed object (<c>0x4C6940</c>) -- so the wreck blocks where the car did. An ExplodeObject's model swap
     /// (<c>0x481A60</c>) likewise changes what its own object collides with.
     /// </remarks>
-    private bool IsRetired(Entry entry) =>
+    internal bool IsRetired(ObjectCollisionEntry entry) =>
         (Destructibles?.IsDestroyed(entry.Placement) == true) != entry.IsDestroyedModel;
-    /// <summary>Gets the rich trace delegate bound to this index.</summary>
-    public WorldTraceCast Tracer() => TryTrace;
-
-    /// <summary>Gets a cast delegate that treats every door as shut and reads no mutable state.</summary>
-    /// <returns>The delegate the probe bake takes.</returns>
-    /// <remarks>See <see cref="TryCastWithDoorsShut"/> for why the bake wants both properties.</remarks>
-    public WorldRayCast CasterWithDoorsShut() => TryCastWithDoorsShut;
-
-    /// <summary>Casts a ray and names the object it meets — a diagnostic for "what am I walking into".</summary>
-    /// <param name="origin">Where the ray starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="label">Receives the struck object's instance name (and placing task).</param>
-    /// <param name="hit">Receives the nearest contact.</param>
-    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
-    /// <remarks>
-    /// Unlike <see cref="TryCast"/> this reports <i>which</i> placement was hit, so a blocked doorway can
-    /// be traced back to the exact model and task that walled it off. It walks the same flat list.
-    /// </remarks>
-    public bool TryIdentify(Vector3d origin, Vector3d end, out string label, out WorldRayHit hit) =>
-        TryIdentify(origin, end, out label, out _, out hit);
-
-    /// <summary>Casts a ray, names the object it meets, and hands back the placement that was struck.</summary>
-    /// <param name="origin">Where the ray starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="label">Receives the struck object's instance name (and placing task).</param>
-    /// <param name="placement">Receives the struck placement, for a caller that needs more than a name.</param>
-    /// <param name="hit">Receives the nearest contact.</param>
-    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
-    /// <remarks>
-    /// The contact is on the COLLISION mesh, so it carries the game-material row and nothing about what
-    /// is drawn. Handing the placement back is what lets a caller go on to ask the render mesh — see
-    /// <see cref="RenderSurfaceProbe"/>, which needs the model, its pack and its transform, all of which
-    /// live on the placement and none of which a label can carry.
-    /// </remarks>
-    public bool TryIdentify(
-        Vector3d origin,
-        Vector3d end,
-        out string label,
-        out WorldPlacement? placement,
-        out WorldRayHit hit)
-    {
-        hit = default;
-        label = string.Empty;
-        placement = null;
-
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return false;
-        }
-
-        double nearest = double.MaxValue;
-        bool found = false;
-
-        foreach (Entry entry in _entries)
-        {
-            if (IsRetired(entry)
-                || !ConditionalContainerGate.IsTaskActive(entry.Owner))
-            {
-                continue;
-            }
-
-            if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
-            {
-                continue;
-            }
-
-            if (entry.TryCast(
-                origin,
-                direction,
-                ref nearest,
-                useClosedTransform: false,
-                includePortals: false,
-                portalIsOpening: null,
-                out WorldRayHit candidate))
-            {
-                hit = candidate;
-                label = entry.Label;
-                placement = entry.Placement;
-                found = true;
-            }
-        }
-
-        return found;
-    }
-
-    /// <summary>Casts a ray along the human collision trace and names the object it meets.</summary>
-    /// <param name="origin">Where the ray starts, in world units.</param>
-    /// <param name="end">Where it stops.</param>
-    /// <param name="label">Receives the struck object's instance name (and placing task).</param>
-    /// <param name="owner">Receives the struck object's placing task.</param>
-    /// <param name="hit">Receives the nearest contact.</param>
-    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
-    /// <remarks>
-    /// The player trace (collision mesh level one) can contain volumes invisible to the default world
-    /// trace — elevator-shaft boxes, door leaves — so this reports who blocks a human body the way
-    /// <see cref="TryIdentify(Vector3d, Vector3d, out string, out WorldRayHit)"/> reports who blocks a world ray.
-    /// </remarks>
-    public bool TryIdentifyForPlayer(Vector3d origin, Vector3d end, out string label, out GameTask? owner, out WorldRayHit hit)
-    {
-        hit = default;
-        label = string.Empty;
-        owner = null;
-
-        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return false;
-        }
-
-        double nearest = double.MaxValue;
-        bool found = false;
-
-        foreach (Entry entry in _playerEntries)
-        {
-            if (IsRetired(entry)
-                || _passable.Contains(entry.Owner)
-                || !ConditionalContainerGate.IsTaskActive(entry.Owner))
-            {
-                continue;
-            }
-
-            if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
-            {
-                continue;
-            }
-
-            if (entry.TryCast(
-                origin,
-                direction,
-                ref nearest,
-                useClosedTransform: false,
-                includePortals: false,
-                portalIsOpening: null,
-                out WorldRayHit candidate))
-            {
-                hit = candidate;
-                label = entry.Label;
-                owner = entry.Owner;
-                found = true;
-            }
-        }
-
-        return found;
-    }
-
-    private static bool MeetsSphere(Vector3d origin, Vector3d direction, Vector3d centre, double radius)
-    {
-        double ox = origin.X - centre.X;
-        double oy = origin.Y - centre.Y;
-        double oz = origin.Z - centre.Z;
-
-        double a = (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z);
-        double b = 2.0 * ((ox * direction.X) + (oy * direction.Y) + (oz * direction.Z));
-        double c = (ox * ox) + (oy * oy) + (oz * oz) - (radius * radius);
-
-        if (c <= 0.0)
-        {
-            return true;
-        }
-
-        double discriminant = (b * b) - (4.0 * a * c);
-        if (discriminant < 0.0)
-        {
-            return false;
-        }
-
-        // Only the segment counts, not the whole line.
-        double root = Math.Sqrt(discriminant);
-        double t0 = (-b - root) / (2.0 * a);
-        double t1 = (-b + root) / (2.0 * a);
-
-        return (t0 >= 0.0 && t0 <= 1.0) || (t1 >= 0.0 && t1 <= 1.0) || (t0 < 0.0 && t1 > 1.0);
-    }
-
-    /// <summary>The broad phase: a sparse 2D grid over the entries' build-time bounding spheres.</summary>
-    /// <remarks>
-    /// <para>
-    /// The flat scan this replaces touched every placed object's sphere for every ray — the AI's
-    /// lines of sight, every soldier's ground snap, every dropped gun's contact probe, all against
-    /// the whole level. A ray now touches the entries of the cells it passes, which for the vertical
-    /// ground probe is one cell.
-    /// </para>
-    /// <para>
-    /// Two-dimensional on purpose: a level is kilometres across and metres tall, so a Z axis would
-    /// cut nothing while tripling the buckets. An entry whose sphere spans an unreasonable number of
-    /// cells goes to the <see cref="Oversized"/> list and is tested every query instead of being
-    /// written into hundreds of buckets.
-    /// </para>
-    /// </remarks>
-    private sealed class StaticGrid
-    {
-        /// <summary>The cell edge, chosen against typical building footprints.</summary>
-        public static readonly double CellUnits = 32.0 * WorldScene.UnitsPerMetre;
-
-        /// <summary>A sphere spanning more cells than this per axis is not worth bucketing.</summary>
-        private const int OversizedCellSpan = 32;
-
-        private readonly Dictionary<long, int[]> _cells = [];
-        private readonly int[] _stamps;
-        private int _stamp;
-
-        public StaticGrid(Entry[] entries)
-        {
-            _stamps = new int[entries.Length];
-            Dictionary<long, List<int>> cells = [];
-            List<int> oversized = [];
-
-            for (int i = 0; i < entries.Length; i++)
-            {
-                Entry entry = entries[i];
-                int minX = CellOf(entry.Centre.X - entry.Radius);
-                int maxX = CellOf(entry.Centre.X + entry.Radius);
-                int minY = CellOf(entry.Centre.Y - entry.Radius);
-                int maxY = CellOf(entry.Centre.Y + entry.Radius);
-
-                if (maxX - minX >= OversizedCellSpan || maxY - minY >= OversizedCellSpan)
-                {
-                    oversized.Add(i);
-                    continue;
-                }
-
-                for (int x = minX; x <= maxX; x++)
-                {
-                    for (int y = minY; y <= maxY; y++)
-                    {
-                        long key = Key(x, y);
-                        if (!cells.TryGetValue(key, out List<int>? bucket))
-                        {
-                            bucket = [];
-                            cells.Add(key, bucket);
-                        }
-
-                        bucket.Add(i);
-                    }
-                }
-            }
-
-            foreach ((long key, List<int> bucket) in cells)
-            {
-                _cells.Add(key, [.. bucket]);
-            }
-
-            Oversized = [.. oversized];
-        }
-
-        /// <summary>Gets the entries too large to bucket, tested on every query.</summary>
-        public int[] Oversized { get; }
-
-        public static int CellOf(double coordinate) => (int)Math.Floor(coordinate / CellUnits);
-
-        /// <summary>Starts a query, invalidating the previous one's visit marks in O(1).</summary>
-        public void BeginQuery() => _stamp++;
-
-        /// <summary>Marks an entry visited this query; true when it already was.</summary>
-        /// <remarks>
-        /// An entry sits in every cell its sphere touches, so a ray crossing several of them would
-        /// test its triangles once per cell without this.
-        /// </remarks>
-        public bool AlreadyVisited(int index)
-        {
-            if (_stamps[index] == _stamp)
-            {
-                return true;
-            }
-
-            _stamps[index] = _stamp;
-            return false;
-        }
-
-        public bool TryGetCell(int x, int y, out int[] indices) =>
-            _cells.TryGetValue(Key(x, y), out indices!);
-
-        private static long Key(int x, int y) => ((long)x << 32) ^ (uint)y;
-    }
-
-    private sealed class Entry
-    {
-        private readonly Vector3f[] _localVertices;
-        private readonly Vector3d[] _closedVertices;
-        private readonly Vector3f _rootCentre;
-        private readonly Vector3d[] _vertices;
-
-        private Entry(
-            MefCollisionMesh mesh,
-            Vector3f[] localVertices,
-            Vector3d[] vertices,
-            Vector3d centre,
-            double radius,
-            Vector3f rootCentre,
-            string instanceName,
-            string label,
-            string taskName,
-            GameTask owner,
-            WorldPlacement placement,
-            Vector3d origin,
-            Matrix3f orientation)
-        {
-            Mesh = mesh;
-            PoseOrigin = origin;
-            PoseOrientation = orientation;
-            _localVertices = localVertices;
-            _vertices = vertices;
-            _closedVertices = (Vector3d[])vertices.Clone();
-            _rootCentre = rootCentre;
-            Centre = centre;
-            ClosedCentre = centre;
-            Radius = radius;
-            InstanceName = instanceName;
-            Label = label;
-            TaskName = taskName;
-            Owner = owner;
-            Placement = placement;
-            ClosedBounds = BoundsOf(vertices);
-        }
-
-        public MefCollisionMesh Mesh { get; }
-
-        public Vector3d Centre { get; private set; }
-
-        public Vector3d ClosedCentre { get; private set; }
-
-        public double Radius { get; }
-
-        public string InstanceName { get; }
-
-        public string Label { get; }
-
-        public string TaskName { get; }
-
-        public GameTask Owner { get; }
-
-        public WorldPlacement Placement { get; }
-
-        public bool IsDynamic { get; private set; }
-
-        /// <summary>Gets where the mesh's origin sits now, in world units.</summary>
-        public Vector3d PoseOrigin { get; private set; }
-
-        /// <summary>Gets the mesh's current local-to-world orientation.</summary>
-        public Matrix3f PoseOrientation { get; private set; }
-
-        public (Vector3d Min, Vector3d Max) ClosedBounds { get; }
-
-        /// <summary>Gets whether this entry belongs to the human (level-one) trace set.</summary>
-        public bool IsPlayerSet { get; init; }
-
-        /// <summary>Gets whether this entry is the placement's destroyed model, solid only once it is destroyed.</summary>
-        public bool IsDestroyedModel { get; init; }
-
-        /// <summary>Gets or sets whether the entry has been moved to its set's dynamic list.</summary>
-        public bool InDynamicList { get; set; }
-
-        /// <summary>
-        /// Gets whether the original's placed-model ray (<c>0x4C1840</c>) tests this entry: every model but a bent
-        /// spline segment, which the original tests with a routine of its own (<c>0x4E16E0</c>).
-        /// </summary>
-        public bool SupportsRetailRay => Placement.BentGeometry is null && Mesh.Faces.Length > 0;
-
-        private RetailRayModel? _retailRay;
-
-        /// <summary>Casts a ray at this model with the original's own arithmetic (<see cref="RetailModelRay"/>).</summary>
-        /// <param name="origin">The ray start, in world units.</param>
-        /// <param name="end">The ray end.</param>
-        /// <param name="nearest">The nearest hit so far as a fraction of the ray; a hit must be nearer to count.</param>
-        /// <param name="hit">Receives the contact, reported as <see cref="TryCast"/> reports one.</param>
-        /// <returns>Whether this model was struck nearer than <paramref name="nearest"/>.</returns>
-        /// <remarks>
-        /// The original transforms the ray into the model's frame, rounds it to single precision and accepts a face
-        /// up to and including the ray's end (<c>t ≤ 1</c> as a float). A human's wall sweep ends its re-cast
-        /// exactly on the wall it has just slid off, so that boundary decides whether a slide into a corner is
-        /// accepted or refused: the original's test meets the wall, the sweep slides again and again, and after
-        /// ten casts it refuses the move (<c>0x461A70</c>). The double-precision test here stopped a hair short.
-        /// </remarks>
-        public bool TryCastRetail(Vector3d origin, Vector3d end, ref double nearest, out WorldRayHit hit)
-        {
-            hit = default;
-            Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
-            double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-            if (length <= 0.0)
-            {
-                return false;
-            }
-
-            _retailRay ??= new RetailRayModel(Owner, new RetailRayMesh(Mesh), Placement.Model.NativeMarkerBound);
-            _retailRay.Position[0] = PoseOrigin.X;
-            _retailRay.Position[1] = PoseOrigin.Y;
-            _retailRay.Position[2] = PoseOrigin.Z;
-            PoseOrientation.CopyTo(_retailRay.M);
-
-            RetailRayResult result = new() { Point = end };
-            RetailModelRay.Cast(_retailRay, origin, end, ref result);
-            if (!result.Hit)
-            {
-                return false;
-            }
-
-            double t = result.Distance / length;
-            if (t >= nearest)
-            {
-                return false;
-            }
-
-            nearest = t;
-
-            // The original's face normal is the opposite of RayTriangle's, and it is not unit length. Reported as
-            // TryCast reports one: unit, turned to face the ray, with the back face that a probe leaves by marked.
-            Vector3d normal = new(result.NormalX, result.NormalY, result.NormalZ);
-            double normalLength = Math.Sqrt((normal.X * normal.X) + (normal.Y * normal.Y) + (normal.Z * normal.Z));
-            if (normalLength > 0.0)
-            {
-                normal /= normalLength;
-            }
-
-            if ((normal.X * direction.X) + (normal.Y * direction.Y) + (normal.Z * direction.Z) > 0.0)
-            {
-                normal = new Vector3d(-normal.X, -normal.Y, -normal.Z);
-            }
-
-            hit = new WorldRayHit(
-                result.Point,
-                new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
-                result.Distance,
-                result.Material,
-                !result.HasFrontMaterial);
-            return true;
-        }
-
-        public static Entry Create(
-            MefCollisionMesh mesh,
-            Vector3d origin,
-            Matrix3f orientation,
-            string instanceName,
-            string label,
-            string taskName,
-            GameTask owner,
-            WorldPlacement placement,
-            bool isPlayerSet = false,
-            bool isDestroyedModel = false)
-        {
-            // Local-to-world is the COLUMN-vector product M·v — the renderer's `uModelView * v`, and
-            // the convention the original itself uses for a placement's Real32x9 (it reads elements
-            // [0],[3],[6], the first column, as the local X axis in world space). Matrix3f.Transform
-            // is the row-vector product v·M, the inverse rotation: using it here spun every rotated
-            // object's collision the wrong way round its origin, so fences could be walked through
-            // and doorways sat behind solid wall. The transpose makes Transform compute M·v.
-            Matrix3f rotation = orientation.Transposed();
-
-            // The vertices are placed once at build time. A level's collision geometry does not move,
-            // and transforming a ray into every model's own frame instead would cost more than it saves.
-            Vector3f[] localVertices = new Vector3f[mesh.Vertices.Count];
-            Vector3d[] vertices = new Vector3d[mesh.Vertices.Count];
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                localVertices[i] = mesh.Vertices[i];
-                Vector3f local = rotation.Transform(localVertices[i]);
-                vertices[i] = new Vector3d(origin.X + local.X, origin.Y + local.Y, origin.Z + local.Z);
-            }
-
-            Vector3d centre = origin;
-            double radius = 0.0;
-            Vector3f rootCentre = default;
-
-            if (mesh.Spheres.Count > 0)
-            {
-                MefCollisionSphere root = mesh.Spheres[0];
-                rootCentre = root.Centre;
-                Vector3f placed = rotation.Transform(root.Centre);
-                centre = new Vector3d(origin.X + placed.X, origin.Y + placed.Y, origin.Z + placed.Z);
-                radius = root.Radius;
-            }
-            else
-            {
-                foreach (Vector3d vertex in vertices)
-                {
-                    double dx = vertex.X - centre.X;
-                    double dy = vertex.Y - centre.Y;
-                    double dz = vertex.Z - centre.Z;
-                    radius = Math.Max(radius, Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)));
-                }
-            }
-
-            return new Entry(
-                mesh, localVertices, vertices, centre, radius, rootCentre, instanceName, label, taskName, owner,
-                placement, origin, orientation)
-            {
-                IsPlayerSet = isPlayerSet,
-                IsDestroyedModel = isDestroyedModel,
-            };
-        }
-
-        public void UpdateTransform(Vector3d positionMetres, Matrix3f orientation)
-        {
-            Vector3d origin = new(
-                positionMetres.X * WorldScene.UnitsPerMetre,
-                positionMetres.Y * WorldScene.UnitsPerMetre,
-                positionMetres.Z * WorldScene.UnitsPerMetre);
-            Matrix3f rotation = orientation.Transposed();
-
-            // This entry is single-thread-owned during live simulation. Reuse its transformed storage:
-            // doors, trains and cutscene objects can move every tick, and allocating one array per pose
-            // creates a GC feedback loop precisely while their animations are playing.
-            Vector3d[] vertices = _vertices;
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                Vector3f placed = rotation.Transform(_localVertices[i]);
-                vertices[i] = new Vector3d(origin.X + placed.X, origin.Y + placed.Y, origin.Z + placed.Z);
-            }
-
-            Vector3f centre = rotation.Transform(_rootCentre);
-            Centre = new Vector3d(origin.X + centre.X, origin.Y + centre.Y, origin.Z + centre.Z);
-            PoseOrigin = origin;
-            PoseOrientation = orientation;
-            IsDynamic = true;
-        }
-
-        public void Translate(Vector3d displacementUnits)
-        {
-            for (int i = 0; i < _vertices.Length; i++)
-            {
-                _vertices[i] += displacementUnits;
-                _closedVertices[i] += displacementUnits;
-            }
-
-            Centre += displacementUnits;
-            ClosedCentre += displacementUnits;
-            PoseOrigin += displacementUnits;
-            IsDynamic = true;
-        }
-
-        private static (Vector3d Min, Vector3d Max) BoundsOf(Vector3d[] vertices)
-        {
-            Vector3d min = new(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
-            Vector3d max = new(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity);
-            foreach (Vector3d vertex in vertices)
-            {
-                min = new(Math.Min(min.X, vertex.X), Math.Min(min.Y, vertex.Y), Math.Min(min.Z, vertex.Z));
-                max = new(Math.Max(max.X, vertex.X), Math.Max(max.Y, vertex.Y), Math.Max(max.Z, vertex.Z));
-            }
-
-            return (min, max);
-        }
-
-        public void CollectTriangles(Vector3d min, Vector3d max, List<CollisionTriangle> into)
-        {
-            foreach (MefCollisionFace face in Mesh.Faces)
-            {
-                if (Mesh.IsPortal(face.Material))
-                {
-                    continue;
-                }
-
-                CollisionTriangle triangle = new(_vertices[face.I0], _vertices[face.I1], _vertices[face.I2]);
-                if (triangle.Overlaps(min, max))
-                {
-                    into.Add(triangle);
-                }
-            }
-        }
-
-        public bool TryCast(
-            Vector3d origin,
-            Vector3d direction,
-            ref double nearest,
-            bool useClosedTransform,
-            bool includePortals,
-            Func<Vector3d, bool>? portalIsOpening,
-            out WorldRayHit hit)
-        {
-            hit = default;
-            bool found = false;
-            Vector3d[] vertices = useClosedTransform ? _closedVertices : _vertices;
-
-            foreach (MefCollisionFace face in Mesh.Faces)
-            {
-                // Portal polygons are visibility boundaries, not solid building geometry. Generic
-                // doorway/window portals stay clear for sight, while a Door task may opt its own
-                // portal faces into the cast so the authored closed/open state remains effective.
-                if (Mesh.IsPortal(face.Material))
-                {
-                    if (!includePortals)
-                    {
-                        continue;
-                    }
-
-                    Vector3d a0 = vertices[face.I0];
-                    Vector3d b0 = vertices[face.I1];
-                    Vector3d c0 = vertices[face.I2];
-                    Vector3d mid = new(
-                        (a0.X + b0.X + c0.X) / 3.0,
-                        (a0.Y + b0.Y + c0.Y) / 3.0,
-                        (a0.Z + b0.Z + c0.Z) / 3.0);
-                    if (portalIsOpening?.Invoke(mid) == true)
-                    {
-                        continue;
-                    }
-                }
-
-                Vector3d a = vertices[face.I0];
-                Vector3d b = vertices[face.I1];
-                Vector3d c = vertices[face.I2];
-
-                if (!RayTriangle.Intersect(origin, direction, a, b, c, out double t) || t >= nearest)
-                {
-                    continue;
-                }
-
-                Vector3d normal = RayTriangle.Normal(a, b, c);
-                if (normal is { X: 0.0, Y: 0.0, Z: 0.0 })
-                {
-                    continue;
-                }
-
-                // Face the ray. The winding of a collision mesh is not established, and a normal
-                // pointing away would push the body the wrong side of the wall.
-                //
-                // The sign before that flip is not noise: it is the front/back test the original's
-                // surface routine reports as its entry and exit rows (0x4CD300 sets them as the two
-                // halves of one condition, so exactly one is ever set). A round leaving a surface it
-                // had entered crosses a back face, and the shot resolution neither sounds nor marks
-                // that crossing the way it does an entry.
-                double facing = (normal.X * direction.X) + (normal.Y * direction.Y) + (normal.Z * direction.Z);
-                bool towardsTheRay = facing > 0.0;
-                if (towardsTheRay)
-                {
-                    normal = new Vector3d(-normal.X, -normal.Y, -normal.Z);
-                }
-
-                // Which side that is was measured, not assumed. Fanning 64 rays in from outside the
-                // geometry around the level-one doorway, ALL 64 first crossings have a positive facing,
-                // so these meshes wind their normals INTO the solid and a positive facing is the face a
-                // round enters by. The flip above is independent of that: it only turns the reported
-                // normal to oppose the ray so a decal sits proud of the surface.
-                bool leaving = !towardsTheRay;
-
-                nearest = t;
-                found = true;
-
-                double length = Math.Sqrt(
-                    (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-
-                hit = new WorldRayHit(
-                    new Vector3d(
-                        origin.X + (direction.X * t),
-                        origin.Y + (direction.Y * t),
-                        origin.Z + (direction.Z * t)),
-                    new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
-                    t * length,
-                    // Report the global game-material row, not the per-mesh face index, so callers can
-                    // name the surface (glass, fence, concrete) against the shared material table.
-                    Mesh.GlobalMaterial(face.Material),
-                    leaving);
-            }
-
-            return found;
-        }
-    }
 }

@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -28,20 +29,20 @@ public sealed class RetailIgi2RigidTraceTests
             for (int f = 0; f < mesh.Faces.Length; f += Math.Max(1, mesh.Faces.Length / 8))
             {
                 MefCollisionFace face = mesh.Faces[f];
-                if (mesh.IsPortal(face.Material) || mesh.MaterialRow(face.Material) == Igi2LineTrace.AirMaterial)
+                if (mesh.IsPortal(face.Material) || mesh.MaterialRow(face.Material) == WorldLineTrace.AirMaterial)
                 {
                     continue;
                 }
 
                 (Vector3d start, Vector3d end) = Through(mesh, face);
-                Igi2LineTrace trace = new(1);
+                WorldLineTrace trace = new(1);
                 trace.Starts[0] = start;
                 trace.Ends[0] = end;
 
                 Igi2RigidTrace.Trace(model, trace);
                 double? expected = Nearest(mesh, start, end);
 
-                Igi2Intersection hit = trace.Intersections[0];
+                WorldIntersection hit = trace.Intersections[0];
                 Assert.True(expected is not null, $"{name} face {f}: the reference finds nothing.");
                 Assert.True(hit.IsHit, $"{name} face {f}: the line through the face's centre struck nothing.");
                 Assert.InRange(hit.Distance, expected!.Value - 0.5, expected.Value + 41.0);
@@ -62,10 +63,10 @@ public sealed class RetailIgi2RigidTraceTests
         MefCollisionFace face = mesh.Faces[0];
         (Vector3d start, Vector3d end) = Through(mesh, face);
 
-        Igi2LineTrace trace = new(1);
+        WorldLineTrace trace = new(1);
         trace.Starts[0] = start;
         trace.Ends[0] = end;
-        Igi2Intersection earlier = trace.Intersections[0];
+        WorldIntersection earlier = trace.Intersections[0];
         earlier.IsHit = true;
         earlier.Distance = 1.0;
         earlier.Position = start;
@@ -87,7 +88,7 @@ public sealed class RetailIgi2RigidTraceTests
         MefCollisionFace face = mesh.Faces[0];
         (Vector3d start, Vector3d end) = Through(mesh, face);
 
-        Igi2LineTrace trace = new(1) { IgnoreMaterial = mesh.MaterialRow(face.Material) };
+        WorldLineTrace trace = new(1) { IgnoreMaterial = mesh.MaterialRow(face.Material) };
         trace.Starts[0] = start;
         trace.Ends[0] = end;
 
@@ -104,7 +105,7 @@ public sealed class RetailIgi2RigidTraceTests
         Igi2RigidObject model = Place(name, mesh);
         (Vector3d start, Vector3d end) = Through(mesh, mesh.Faces[0]);
 
-        Igi2LineTrace trace = new(1) { Includes = static owner => owner is not string };
+        WorldLineTrace trace = new(1) { Includes = static owner => owner is not string };
         trace.Starts[0] = start;
         trace.Ends[0] = end;
 
@@ -188,7 +189,7 @@ public sealed class RetailIgi2RigidTraceTests
         double? best = null;
         foreach (MefCollisionFace face in mesh.Faces)
         {
-            if (mesh.IsPortal(face.Material) || mesh.MaterialRow(face.Material) == Igi2LineTrace.AirMaterial)
+            if (mesh.IsPortal(face.Material) || mesh.MaterialRow(face.Material) == WorldLineTrace.AirMaterial)
             {
                 continue;
             }

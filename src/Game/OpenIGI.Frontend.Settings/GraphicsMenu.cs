@@ -452,6 +452,48 @@ public static class GraphicsMenu
             "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "
                 + "the original's."),
         new GraphicsSetting(
+            "r_hud_density",
+            "HUD Density",
+            "How much of the remastered HUD stays up. Contextual dims the weapon and inventory until something "
+                + "about them changes; Minimal shows only what is urgent; Full keeps everything on screen."),
+        new GraphicsSetting(
+            "r_hud_fx",
+            "HUD Visor Effects",
+            "Projects the remastered HUD as if on a visor: a slight bend, colour fringing, scanlines, a glow on "
+                + "bright figures, a flicker as it appears, and a shake and a red wash at the corners when you are hit."),
+        new GraphicsSetting(
+            "r_hud_fx_intensity",
+            "HUD Visor Strength",
+            "How strongly the visor effects above are applied."),
+        new GraphicsSetting(
+            "r_hud_sway",
+            "HUD Sway",
+            "Lets the HUD trail your view by a few pixels as you turn, then settle, as a helmet's display would."),
+        new GraphicsSetting(
+            "r_hud_threat",
+            "Alert Status",
+            "Says at the top of the screen how far the soldiers are onto you: searching, suspicious, alarm or detected."),
+        new GraphicsSetting(
+            "r_crosshair",
+            "Crosshair",
+            "A clean crosshair shaped to the weapon in hand: it opens as you fire, turns red over an enemy, in place of the original's."),
+        new GraphicsSetting(
+            "r_hit_markers",
+            "Hit Markers",
+            "A mark on the crosshair when a round hits, and a red cross when it kills; larger for a headshot."),
+        new GraphicsSetting(
+            "r_hit_sounds",
+            "Hit Sounds",
+            "A short tick when a round hits and a deeper one when it kills."),
+        new GraphicsSetting(
+            "r_scope_glint",
+            "Scope Glint",
+            "A sniper who has you in his sights shows the glint of his scope, a flash of light where he is."),
+        new GraphicsSetting(
+            "r_world_objective",
+            "Projected Objective",
+            "Projects the objective you are working on onto its place in the level, so you read it where it is."),
+        new GraphicsSetting(
             "r_interaction_prompt",
             "Interaction Markers",
             "Marks a door, ladder or terminal you can use with a badge on the object itself, showing the "
@@ -476,6 +518,11 @@ public static class GraphicsMenu
             "Highlight Spotted Enemies",
             "Outlines soldiers seen through the binoculars, so a distant figure against a hillside can be "
                 + "picked out."),
+        new GraphicsSetting(
+            "r_binocular_silhouette",
+            "Silhouette Highlight",
+            "Draws that highlight as a soft outline over a faint fill, red for enemies, seen through walls "
+                + "and fading towards the edges of the view. Off, it is a coloured glow."),
         new GraphicsSetting(
             "r_world_briefing",
             "Posted Briefing",
@@ -633,7 +680,7 @@ public static class GraphicsMenu
 
         // What enters the traced world, which is a correctness control rather than a quality dial: the
         // defaults are what make a reflection the same in two sessions, and a player has no way to judge
-        // a radius by looking. See RenderCVars.TracedWorldRadius.
+        // a radius by looking. See RayTracingCVars.TracedWorldRadius.
         "r_rt_world_radius",
         "r_rt_world_angle",
 

@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
@@ -22,15 +22,6 @@ public interface IImpactEffectPresenter : IDisposable
 
     /// <summary>Gets whether the three retail sprites all resolved.</summary>
     bool SpritesAvailable { get; }
-
-    /// <summary>Gets how many dust quads the last draw emitted.</summary>
-    int LastPuffQuads { get; }
-
-    /// <summary>Gets how many blood-mist quads the last draw emitted.</summary>
-    int LastMistQuads { get; }
-
-    /// <summary>Gets how many blood-droplet quads the last draw emitted.</summary>
-    int LastDropletQuads { get; }
 
     /// <summary>Binds the impact chip models out of a mission's packs.</summary>
     /// <param name="mission">The loaded mission whose common pack owns them.</param>

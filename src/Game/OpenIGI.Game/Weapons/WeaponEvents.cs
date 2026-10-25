@@ -41,6 +41,10 @@ public interface IWeaponCollisionTarget
 /// not multiplied by the zone it lands on, and a death is told by it.
 /// </param>
 /// <param name="Bone">The struck human's bone, the intersection's sector, or -1 for none: the zone the hit lands on.</param>
+/// <param name="Credit">
+/// The tally of the player who fired it, which a soldier of either game counts its hit and its kill on; <see langword="null"/>
+/// for a round no player fired. <b>Not retail</b>: the display's hit and kill marks.
+/// </param>
 public readonly record struct WeaponHit(
     Vector3d Position,
     Vector3f Normal,
@@ -49,7 +53,8 @@ public readonly record struct WeaponHit(
     object? Shooter,
     object? Context,
     WeaponCategory Category = WeaponCategory.Gun,
-    int Bone = -1);
+    int Bone = -1,
+    Player.ShotTally? Credit = null);
 
 /// <summary>An object that answers a bullet striking it: a type with a <c>WeaponHit</c> handler.</summary>
 public interface IWeaponHitTarget

@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -17,7 +18,7 @@ public sealed partial class Igi2HumanPlayer
 
     private static readonly double[] ViewProbeDistances = [-4096.0, 4096.0];
 
-    private readonly Igi2LineTrace _viewProbe = new(2) { Mesh = 1 };
+    private readonly WorldLineTrace _viewProbe = new(2) { Mesh = 1 };
 
     /// <summary>
     /// Keeps a lying player from looking into the ground or the roof: <c>humanplayer.c HumanPlayer_CheckViewCollision</c>
@@ -63,7 +64,7 @@ public sealed partial class Igi2HumanPlayer
         }
 
         Vector3f ahead = new(aheadX, aheadY, aheadZ);
-        Igi2Intersection below = _viewProbe.Intersections[0];
+        WorldIntersection below = _viewProbe.Intersections[0];
         if (below.IsHit && below.Normal.Z > 0f)
         {
             float slope = -Igi2Pose.Acos(Cosine(below, view, ahead));
@@ -75,7 +76,7 @@ public sealed partial class Igi2HumanPlayer
             }
         }
 
-        Igi2Intersection above = _viewProbe.Intersections[1];
+        WorldIntersection above = _viewProbe.Intersections[1];
         if (!above.IsHit)
         {
             return;
@@ -97,7 +98,7 @@ public sealed partial class Igi2HumanPlayer
     }
 
     /// <summary>The cosine between the body's forward axis and the line from the eyes to a hit, both made unit first.</summary>
-    private static float Cosine(Igi2Intersection hit, Igi2HumanView view, Vector3f ahead)
+    private static float Cosine(WorldIntersection hit, Igi2HumanView view, Vector3f ahead)
     {
         Vector3d eyes = view.Position;
         Fpu x = (Fpu)hit.Position.X - eyes.X;

@@ -1,20 +1,16 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.World;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Presentation.Tests;
 
@@ -27,24 +23,24 @@ public sealed class ImpactParticleRendererTests
         Vector3d b = new(1d, 0d, 0d);
         Vector3d c = new(0d, 1d, 0d);
 
-        Assert.True(ImpactParticleRenderer.PassesRetailGlassFaceFilter(new Vector3d(0d, 0d, -1d), a, b, c));
-        Assert.False(ImpactParticleRenderer.PassesRetailGlassFaceFilter(new Vector3d(0d, 0d, 1d), a, b, c));
-        Assert.False(ImpactParticleRenderer.PassesRetailGlassFaceFilter(Vector3d.Zero, a, b, c));
-        Assert.False(ImpactParticleRenderer.PassesRetailGlassFaceFilter(new Vector3d(0d, 0d, -1d), a, a, c));
+        Assert.True(GlassShatterBuilder.PassesRetailGlassFaceFilter(new Vector3d(0d, 0d, -1d), a, b, c));
+        Assert.False(GlassShatterBuilder.PassesRetailGlassFaceFilter(new Vector3d(0d, 0d, 1d), a, b, c));
+        Assert.False(GlassShatterBuilder.PassesRetailGlassFaceFilter(Vector3d.Zero, a, b, c));
+        Assert.False(GlassShatterBuilder.PassesRetailGlassFaceFilter(new Vector3d(0d, 0d, -1d), a, a, c));
     }
 
     [Fact]
     public void RetailGlassEdgeDistanceClampsToTheFiniteCollisionEdge()
     {
-        Assert.Equal(0d, ImpactParticleRenderer.NormalizedGlassEdgeDistance(
+        Assert.Equal(0d, GlassShatterBuilder.NormalizedGlassEdgeDistance(
             new Vector3d(0.5d, 0d, 0d), Vector3d.Zero, new Vector3d(1d, 0d, 0d)), 12);
         Assert.InRange(
-            ImpactParticleRenderer.NormalizedGlassEdgeDistance(
+            GlassShatterBuilder.NormalizedGlassEdgeDistance(
                 new Vector3d(2d, 0d, 0d), Vector3d.Zero, new Vector3d(1d, 0d, 0d)),
             (1d / 5120d) - 1e-10,
             (1d / 5120d) + 1e-10);
         Assert.InRange(
-            ImpactParticleRenderer.NormalizedGlassEdgeDistance(
+            GlassShatterBuilder.NormalizedGlassEdgeDistance(
                 new Vector3d(0d, 0d, 1d), Vector3d.Zero, Vector3d.Zero),
             (1d / 5120d) - 1e-10,
             (1d / 5120d) + 1e-10);
@@ -53,7 +49,7 @@ public sealed class ImpactParticleRendererTests
     [Fact]
     public void RetailExplosionMotionUsesAuthoredDragAndScaleGravity()
     {
-        (Vector3d position, Vector3f velocity) = ImpactParticleRenderer.AdvanceRetailExplosionMotion(
+        (Vector3d position, Vector3f velocity) = RetailExplosionEffects.AdvanceRetailExplosionMotion(
             Vector3d.Zero,
             Vector3f.Zero,
             gravityScale: 0.9f);
@@ -168,9 +164,9 @@ public sealed class ImpactParticleRendererTests
     [Fact]
     public void FireBallFacesTheEyeAndGrowsTowardIt()
     {
-        Matrix3f young = ImpactParticleRenderer.FacingEye(
+        Matrix3f young = RetailExplosionEffects.FacingEye(
             Vector3d.Zero, new Vector3d(10d, 0d, 0d), across: 1f, depth: 0.01f);
-        Matrix3f old = ImpactParticleRenderer.FacingEye(
+        Matrix3f old = RetailExplosionEffects.FacingEye(
             Vector3d.Zero, new Vector3d(10d, 0d, 0d), across: 1f, depth: 1f);
 
         // The dome's own axis (its third row) points at the eye and carries the depth.

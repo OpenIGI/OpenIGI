@@ -3,6 +3,8 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Detection;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
+using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -19,7 +21,7 @@ public readonly record struct Igi2FlashBangHit(Vector3d Position, float Range, i
 public sealed class Igi2FlashBang(Igi2ExplosionWorld world, Vector3d position) : IIgi2DynamicTask
 {
     /// <summary>Gets its three-particle puff, <c>flashbang.c FlashBang_CreateHandler</c>.</summary>
-    public Igi2Particle2DSystem? System { get; private set; }
+    public Particle2DSystem? System { get; private set; }
 
     /// <summary>Creates the particle child after the flash task has joined the dynamic list.</summary>
     internal void Prepare()
@@ -54,7 +56,7 @@ public sealed partial class Igi2ExplosionWorld
     public Igi2DetectionWorld? FlashSight { get; set; }
 
     /// <inheritdoc/>
-    public void FlashBang(Vector3d position, Igi2Intersection ground, int team)
+    public void FlashBang(Vector3d position, WorldIntersection ground, int team)
     {
         // flashbang.c FlashBang_New: every human receives the event, even outside the range or on the thrower's team.
         Igi2FlashBang flash = new(this, position);

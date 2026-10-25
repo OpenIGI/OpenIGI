@@ -1,15 +1,11 @@
-using OpenIGI.Game.Hosting;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats.World;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Formats.World;
+using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
-using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -513,16 +509,21 @@ public sealed class Igi1PlayerSetup(
 
         // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
         // about a metre over the feet standing and half that crouched -- not the eye.
-        runtime.VehicleCombatTarget = () => !mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(
+        // The rig, or another game's player standing in its stead: where its feet are and whether it keeps low.
+        (Vector3d Feet, bool Low)? Target() =>
+            mission.IsPlayerDead || mission.PlayerHealth.IsDead ? null
+            : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
+            : (player.Body.Position, player.Body.IsCrouched);
+        runtime.VehicleCombatTarget = () => Target() is { } aim
+            ? aim.Feet + new Vector3d(
                 0d,
                 0d,
-                player.Body.IsCrouched ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
+                aim.Low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits)
             : null;
         // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
         // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
-        runtime.VehicleSightTarget = () => !mission.PlayerHealth.IsDead
-            ? player.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(player.Body.IsCrouched))
+        runtime.VehicleSightTarget = () => Target() is { } seen
+            ? seen.Feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(seen.Low))
             : null;
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             mission.Trace is null
@@ -639,7 +640,7 @@ public sealed class Igi1PlayerSetup(
                 mission.PlayerTask,
                 stopDistance,
                 alreadyHeard,
-                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true).ToShared(),
+                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true, candidate.Shots).ToShared(),
                 out hit);
         candidate.HumanProbes = guards.Simulation.Probe();
         HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();
@@ -658,7 +659,12 @@ public sealed class Igi1PlayerSetup(
 
             return found;
         };
-        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(impact, candidate.Body.Position);
+        // A round's impact, which another game's humans tell from a landing by its flight from the eye.
+        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(
+            impact,
+            candidate.Body.Position,
+            flight: new Vector3f(
+                (float)(impact.X - candidate.Body.Eye.X), (float)(impact.Y - candidate.Body.Eye.Y), (float)(impact.Z - candidate.Body.Eye.Z)));
         candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
             noise, candidate.Body.Position, candidate.Body.Position);
 

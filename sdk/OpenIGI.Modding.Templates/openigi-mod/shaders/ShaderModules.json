@@ -1,0 +1,10 @@
+{
+  "slangVersion": "SLANG_VERSION",
+  "dxcVersion": "DXC_VERSION",
+  "modules": [
+    {
+      "id": "Vignette",
+      "source": "Vignette.slang"
+    }
+  ]
+}

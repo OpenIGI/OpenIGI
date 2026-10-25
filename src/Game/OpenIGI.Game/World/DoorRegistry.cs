@@ -30,7 +30,7 @@ public sealed record PlacedDoor(
     DoorState State,
     string OpenSound = "",
     string CloseSound = "",
-    string MoveSound = "")
+    string MoveSound = "") : IAiDoor
 {
     private static readonly float DegreesToRadians = BitConverter.Int32BitsToSingle(0x3C8EFA35);
 
@@ -47,6 +47,17 @@ public sealed record PlacedDoor(
     private bool _hasPrevious;
     private float _poseSlide;
     private float _poseAngle;
+
+    /// <inheritdoc/>
+    /// <remarks>Its authored start, which the walker's query measures from (<see cref="DoorRegistry.Nearest"/>).</remarks>
+    Vector3d IAiDoor.DoorPosition => Position;
+
+    /// <inheritdoc/>
+    int IAiDoor.UseState => State.UseState;
+
+    /// <inheritdoc/>
+    /// <remarks>The walker's open (<c>sub_447DA0</c>'s command): the latch set.</remarks>
+    void IAiDoor.OpenForSoldier() => State.CommandOpen();
 
     /// <summary>
     /// Gets or sets the door's expressions and lock, run by its own update between its children and its motion; <see langword="null"/>
@@ -531,7 +542,7 @@ public sealed class DoorRegistry
     /// declarations use — and they hold a <b>definition</b> name, not a bank key.
     /// </remarks>
     private static string ReadSound(DeclaredTask declared, string parameter) =>
-        declared.TryGetValue(parameter, out object? value) && value is string name ? name : string.Empty;
+        DeclaredTaskValues.TextOrEmpty(declared, parameter);
 
     /// <summary>Sets where a door's sounds are reported, or <see langword="null"/> to make them silent.</summary>
     /// <param name="sink">Called during <see cref="Tick(PlacedDoor)"/> for each moment a door makes a noise.</param>

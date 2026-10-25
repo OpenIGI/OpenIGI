@@ -49,7 +49,7 @@ public readonly record struct SpriteStrip(TextureHandle Texture, SpriteStripFram
                 return Empty;
             }
 
-            if (IresArchive.Read(fileSystem.ReadAllBytes(archive)).FindBody(spriteName) is not { } entry)
+            if (fileSystem.ReadArchive(archive).FindBody(spriteName) is not { } entry)
             {
                 return Empty;
             }

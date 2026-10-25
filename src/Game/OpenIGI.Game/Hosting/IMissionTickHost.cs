@@ -65,8 +65,11 @@ public interface IMissionTickHost
     /// <summary>Plays and shows what the player's rounds struck, and lays the rockets' trails.</summary>
     void PresentPlayerImpacts();
 
-    /// <summary>Steps the world's effects on under the death camera.</summary>
-    void StepEffectsAfterDeath();
+    /// <summary>
+    /// Steps the world's effects on a tick no player's own update steps them: under the death camera, or while another game's
+    /// player stands in for the mission's.
+    /// </summary>
+    void StepWorldEffects();
 
     /// <summary>Steps the screen's own effects: the damage wash, the flashbang's white-out and the HUD.</summary>
     void StepScreen();

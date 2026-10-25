@@ -1,5 +1,4 @@
 ﻿using System.Collections.Concurrent;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
@@ -22,7 +21,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <para>
 /// None of it needs the device, and every texture is independent of every other, so it belongs where the
 /// rest of a backdrop is built: on a worker, ahead of the frame that wants it. The render thread's
-/// <c>WorldRenderer.GetTexture</c> then finds the image already decoded and does nothing but
+/// <c>WorldTextureCache.GetTexture</c> then finds the image already decoded and does nothing but
 /// create and upload.
 /// </para>
 /// <para>
@@ -266,7 +265,7 @@ public sealed class TextureDecodeCache
 
             TextureImage image = asset.Diffuse;
 
-            // The same sequence WorldRenderer.GetTexture ran inline, in the same order and for the same
+            // The same sequence WorldTextureCache.GetTexture ran inline, in the same order and for the same
             // reasons -- classify the cut-out from level zero before the alpha is touched, widen it,
             // then build or rebuild the chain and correct its coverage. See that method for why each
             // step is here; this is a move, not a change.

@@ -36,6 +36,14 @@ public interface ITitleAudio
     /// <param name="bankKey">The sound's name in the bank.</param>
     /// <returns>Its length, or nought for a sound the bank does not hold.</returns>
     double SampleSeconds(string bankKey) => 0.0;
+
+    /// <summary>
+    /// Whether a name the title's own definitions lack can still be heard, borrowed from another game's bank that defines it:
+    /// I.G.I. 2's clips name Project I.G.I.'s reload clicks and ship two of them. A mixer with no other bank borrows nothing.
+    /// </summary>
+    /// <param name="definition">The definition's name.</param>
+    /// <returns>Whether <see cref="Play"/> would sound it.</returns>
+    bool CanBorrow(string definition) => false;
 }
 
 /// <summary>

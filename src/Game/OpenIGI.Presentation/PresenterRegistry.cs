@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Presentation.Hud;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation;
@@ -36,10 +37,39 @@ public interface ITaskPresenter : IDisposable
     void Draw(in Camera3D camera, in Matrix4f projection, float blend);
 
     /// <summary>
+    /// Draws the muzzle flashes of what the last <see cref="Draw"/> drew, as light over the lit scene; a presenter whose
+    /// models fire nothing draws nothing.
+    /// </summary>
+    /// <param name="camera">The camera the frame is drawn from.</param>
+    /// <param name="projection">The frame's projection.</param>
+    void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
+    {
+    }
+
+    /// <summary>Draws the 2-D particles -- blood, dust, smoke -- of what the presenter stands in the level, over the lit scene.</summary>
+    /// <param name="camera">The camera the frame is drawn from.</param>
+    /// <param name="projection">The frame's projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    void DrawParticles(in Camera3D camera, in Matrix4f projection, float blend)
+    {
+    }
+
+    /// <summary>
     /// Gets a value indicating whether the task casts a shadow: <see cref="Draw"/> is called for the sun's cascades and the lamps'
     /// shadow maps as well, inside each pass, as a level's own characters are.
     /// </summary>
     bool CastsShadow => false;
+
+    /// <summary>
+    /// Glows through walls those of its models that stand for things the binoculars marked, as the level's own marked soldiers
+    /// glow; a presenter that draws no such things draws nothing.
+    /// </summary>
+    /// <param name="marked">What was marked, and the class of contact each is.</param>
+    /// <param name="camera">The eye.</param>
+    /// <param name="radiusPixels">The glow's screen-space radius, where the highlight is a glow.</param>
+    void DrawOutlines(IReadOnlyDictionary<object, OpenIGI.Game.Player.BinocularMarkerColor> marked, in Camera3D camera, float radiusPixels)
+    {
+    }
 }
 
 /// <summary>The presenters a title draws with, keyed by what each is made from and the interface it is used through.</summary>
@@ -60,6 +90,7 @@ public sealed class PresenterRegistry
     private readonly Dictionary<(Type Request, Type Presenter), Delegate> _factories = [];
     private readonly Dictionary<Type, Func<GameTask, TaskPresenterRequest, ITaskPresenter?>> _taskFactories = [];
     private readonly List<Func<TaskPresenterRequest, ITaskPresenter?>> _levelFactories = [];
+    private readonly List<Func<TaskPresenterRequest, IHudOverlay?>> _hudFactories = [];
 
     /// <summary>Gets how many task types have a presenter of their own.</summary>
     public int TaskTypeCount => _taskFactories.Count;
@@ -129,6 +160,37 @@ public sealed class PresenterRegistry
         ArgumentNullException.ThrowIfNull(factory);
         _taskFactories[typeof(TTask)] = (task, request) => factory((TTask)task, request);
         return this;
+    }
+
+    /// <summary>Gets how many HUD overlays are registered.</summary>
+    public int HudOverlayCount => _hudFactories.Count;
+
+    /// <summary>Adds an overlay drawn over the player's view in every level, after those already added.</summary>
+    /// <param name="factory">Makes the overlay for a level, or answers <see langword="null"/> for a level it has nothing for.</param>
+    /// <returns>This registry.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    public PresenterRegistry ForHud(Func<TaskPresenterRequest, IHudOverlay?> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _hudFactories.Add(factory);
+        return this;
+    }
+
+    /// <summary>Makes the HUD overlays for a level, in the order they were added.</summary>
+    /// <param name="request">What they are made from.</param>
+    /// <returns>The overlays; one whose factory answered <see langword="null"/> is left out.</returns>
+    public IReadOnlyList<IHudOverlay> CreateHudOverlays(in TaskPresenterRequest request)
+    {
+        List<IHudOverlay> made = [];
+        foreach (Func<TaskPresenterRequest, IHudOverlay?> factory in _hudFactories)
+        {
+            if (factory(request) is { } overlay)
+            {
+                made.Add(overlay);
+            }
+        }
+
+        return made;
     }
 
     /// <summary>Registers what draws something of the level as a whole, made once for each level, drawn with the tasks' presenters.</summary>

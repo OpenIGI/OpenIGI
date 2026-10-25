@@ -29,7 +29,7 @@ public sealed class StormDropSheetTests
     [Fact]
     public void DropSheet_StacksTheTwoStripsIntoOneImage()
     {
-        (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
+        (Bgra32[] pixels, int width, int height, float splitV) = PrecipitationSpriteSheets.BuildDropSheet();
 
         Assert.Equal(width * height, pixels.Length);
 
@@ -47,7 +47,7 @@ public sealed class StormDropSheetTests
     [Fact]
     public void DropSheet_CarriesTheShapeInAlphaAndLeavesTheColourWhite()
     {
-        (Bgra32[] pixels, _, _, _) = StormRenderer.BuildDropSheet();
+        (Bgra32[] pixels, _, _, _) = PrecipitationSpriteSheets.BuildDropSheet();
 
         // A quad whose colour is not white tints the drops before the vertex colour ever gets to, and a
         // quad whose RGB is not opaque white stamps its rectangle into the scene's alpha channel.
@@ -65,7 +65,7 @@ public sealed class StormDropSheetTests
     [Fact]
     public void DropSheet_HoldsTenStreaksInEachStrip()
     {
-        (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
+        (Bgra32[] pixels, int width, int height, float splitV) = PrecipitationSpriteSheets.BuildDropSheet();
         int split = (int)MathF.Round(splitV * height);
 
         for (int cell = 0; cell < StormRenderer.SheetCells; cell++)
@@ -84,7 +84,7 @@ public sealed class StormDropSheetTests
     {
         // What makes the ten addressable: a sharp streak is painted well inside its cell, so sampling
         // one cell never picks up the streak next door however the filter spreads.
-        (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
+        (Bgra32[] pixels, int width, int height, float splitV) = PrecipitationSpriteSheets.BuildDropSheet();
         int split = (int)MathF.Round(splitV * height);
 
         for (int cell = 0; cell < StormRenderer.SheetCells; cell++)
@@ -103,7 +103,7 @@ public sealed class StormDropSheetTests
         // The two strips are told apart by nothing but their order, and getting them the wrong way round
         // draws blurred blobs at distance and hairlines against the lens — which reads as a tuning
         // problem for as long as it takes to suspect the sheet.
-        (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
+        (Bgra32[] pixels, int width, int height, float splitV) = PrecipitationSpriteSheets.BuildDropSheet();
         int split = (int)MathF.Round(splitV * height);
 
         float sharp = 0f;
@@ -126,7 +126,7 @@ public sealed class StormDropSheetTests
     {
         // Nothing stops a bilinear tap straddling the join; what stops it mattering is that both strips
         // are painted short of their edges, so the rows either side of it are empty.
-        (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
+        (Bgra32[] pixels, int width, int height, float splitV) = PrecipitationSpriteSheets.BuildDropSheet();
         int split = (int)MathF.Round(splitV * height);
 
         Assert.Equal(0, Peak(pixels, width, 0, width, split - 1, split));
@@ -188,7 +188,7 @@ public sealed class StormSplashSheetTests
         Assert.Equal(7, StormRenderer.SplashRows);
         Assert.Equal(6, StormRenderer.SplashBlobRow);
 
-        (Bgra32[] pixels, int width, int height) = StormRenderer.BuildSplashSheet();
+        (Bgra32[] pixels, int width, int height) = PrecipitationSpriteSheets.BuildSplashSheet();
         Assert.Equal(width * height, pixels.Length);
 
         // Square cells, which is what a 4x2 read of the shipped 512x256 gives and what an 8x4 read
@@ -199,7 +199,7 @@ public sealed class StormSplashSheetTests
     [Fact]
     public void SplashSheet_UnpacksThreeDifferentAnimationsFromTheThreeChannels()
     {
-        (Bgra32[] pixels, int width, int height) = StormRenderer.BuildSplashSheet();
+        (Bgra32[] pixels, int width, int height) = PrecipitationSpriteSheets.BuildSplashSheet();
         int cell = height / StormRenderer.SplashRows;
 
         // The mean alpha of each variant's own pair of strips. The three channels of the shipped image
@@ -269,7 +269,7 @@ public sealed class StormSplashSizeTests
         PrecipitationSettings settings = new();
 
         // The renderer draws the quad at +/- radius, over the band the spawn gives it.
-        float smallest = settings.SplashRadiusMetres * StormRenderer.SmallestCrownShare * 2f;
+        float smallest = settings.SplashRadiusMetres * PrecipitationSimulation.SmallestCrownShare * 2f;
         float largest = settings.SplashRadiusMetres * 2f;
 
         Assert.InRange(smallest, 0.018f, 0.032f);
@@ -279,8 +279,8 @@ public sealed class StormSplashSizeTests
     [Fact]
     public void SplashColumn_FlipsHorizontallyWhenAsked()
     {
-        (float u0, float u1) = StormRenderer.SplashColumnUv(1, flip: false);
-        (float f0, float f1) = StormRenderer.SplashColumnUv(1, flip: true);
+        (float u0, float u1) = PrecipitationSpriteSheets.SplashColumnUv(1, flip: false);
+        (float f0, float f1) = PrecipitationSpriteSheets.SplashColumnUv(1, flip: true);
 
         // The same cell, read the other way round: a mirrored splash, not a different one.
         Assert.Equal(u0, f1, 6);
@@ -294,7 +294,7 @@ public sealed class StormSplashSizeTests
     {
         for (int column = 0; column < StormRenderer.SplashColumns; column++)
         {
-            (float u0, float u1) = StormRenderer.SplashColumnUv(column, flip: false);
+            (float u0, float u1) = PrecipitationSpriteSheets.SplashColumnUv(column, flip: false);
             Assert.Equal(column / (float)StormRenderer.SplashColumns, u0, 6);
             Assert.Equal((column + 1) / (float)StormRenderer.SplashColumns, u1, 6);
         }
@@ -316,7 +316,7 @@ public sealed class StormSheetTextureTests
     [Fact]
     public void SheetTexture_AsksForALevelThatCanBeUploaded()
     {
-        TextureDescription description = StormRenderer.SheetTexture(512, 1024);
+        TextureDescription description = PrecipitationSpriteSheets.SheetTexture(512, 1024);
 
         Assert.True(description.MipLevels >= 1, "a sheet must have at least one mip level");
 
@@ -334,7 +334,7 @@ public sealed class StormSheetTextureTests
     [InlineData(512, 512)]
     public void SheetTexture_DescribesTheSheetItWasGiven(int width, int height)
     {
-        TextureDescription description = StormRenderer.SheetTexture(width, height);
+        TextureDescription description = PrecipitationSpriteSheets.SheetTexture(width, height);
 
         Assert.Equal(width, description.Width);
         Assert.Equal(height, description.Height);

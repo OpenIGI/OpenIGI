@@ -66,6 +66,17 @@ public sealed class GuestTitle
         fileSystem.RegisterDevice(new LocalFileDevice(dataRoot));
         FileSystemConfig.LoadOrDefault(Path.Combine(dataRoot, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(fileSystem);
         ResourceRegistry resources = new(fileSystem);
+
+        // The game's own text, as the host registers a playing title's (its layout's string archives), so what a guest shows reads
+        // in its own words.
+        foreach (string archive in runtime.Layout.StringArchives)
+        {
+            if (fileSystem.Exists(archive))
+            {
+                resources.Register(archive, fileSystem.ReadAllBytes(archive));
+            }
+        }
+
         GameLoop loop = new(new ManualTimeSource(), logger: log, structuralTypes: runtime.Layout.StructuralTaskTypes);
         TitleSession session = TitleSession.Start(runtime.Modules, loop, fileSystem, resources, log);
         return new GuestTitle(runtime, loop, fileSystem, resources, session);

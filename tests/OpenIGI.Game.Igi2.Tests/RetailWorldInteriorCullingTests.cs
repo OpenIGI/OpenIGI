@@ -14,7 +14,6 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
-using OpenIGI.Game.Igi1.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -53,10 +52,10 @@ public sealed class RetailWorldInteriorCullingTests
             WorldScene.ToMetres(new Vector3d(241637, 1545436, 894629)),
             Camera3D.LookRotation(45.4f * MathF.PI / 180f, -1.2f * MathF.PI / 180f));
         Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI / 2f, 16f / 9f, 0.05f, 1000f);
-        int saved = RenderCVars.WorldCull.Value;
+        int saved = GeometryCVars.WorldCull.Value;
         try
         {
-            RenderCVars.WorldCull.Value = 1;
+            GeometryCVars.WorldCull.Value = 1;
             renderer.Draw(scene, camera, projection);
             RecordingGraphicsDevice.MeshDrawCall[] caveDraws = device.MeshDraws
                 .Where(draw => caveMeshes.Contains(draw.Mesh.Id)).ToArray();
@@ -64,14 +63,14 @@ public sealed class RetailWorldInteriorCullingTests
             Assert.All(caveDraws, draw => Assert.Equal(CullMode.None, draw.CullMode));
 
             device.MeshDraws.Clear();
-            RenderCVars.WorldCull.Value = 0;
+            GeometryCVars.WorldCull.Value = 0;
             renderer.Draw(scene, camera, projection);
             Assert.Equal(caveDraws.Sum(draw => draw.IndexCount), device.MeshDraws
                 .Where(draw => caveMeshes.Contains(draw.Mesh.Id)).Sum(draw => draw.IndexCount));
         }
         finally
         {
-            RenderCVars.WorldCull.Value = saved;
+            GeometryCVars.WorldCull.Value = saved;
         }
     }
 
@@ -98,18 +97,18 @@ public sealed class RetailWorldInteriorCullingTests
         Assert.False(MissingNormals(sector));
         WorldPlacement prop = scene.Placements.First(p => !p.Model.IsSector &&
             p.Model.Vertices.Length > 0 && !MissingNormals(p) && MefMeshBuilder.Build(p.Model) is not null);
-        int saved = RenderCVars.WorldCull.Value;
+        int saved = GeometryCVars.WorldCull.Value;
         try
         {
-            RenderCVars.WorldCull.Value = 1;
+            GeometryCVars.WorldCull.Value = 1;
             AssertCull(sector, CullMode.None);
             AssertCull(prop, CullMode.CounterClockwise);
-            RenderCVars.WorldCull.Value = 0;
+            GeometryCVars.WorldCull.Value = 0;
             AssertCull(prop, CullMode.None);
         }
         finally
         {
-            RenderCVars.WorldCull.Value = saved;
+            GeometryCVars.WorldCull.Value = saved;
         }
 
         void AssertCull(WorldPlacement placement, CullMode expected)

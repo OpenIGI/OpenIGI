@@ -2,5 +2,5 @@ using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("OpenIGI.Game.Tests")]
 
-// Project I.G.I.'s gameplay grew inside this project and moved out to its own; it still reads the helpers
-// it was written against from here.
+// The scenario harness reads a mission's cutscene state through the runtime's own testing accessors.
+[assembly: InternalsVisibleTo("OpenIGI.Desktop.Tests")]

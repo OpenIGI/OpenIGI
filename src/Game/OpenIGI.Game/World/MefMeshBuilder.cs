@@ -22,6 +22,9 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public static class MefMeshBuilder
 {
+    /// <summary>How far apart two faces' planes may be and still be one sheet's two faces, in model units: an eighth of a millimetre.</summary>
+    private const float SkinPlaneToleranceUnits = 0.5f;
+
     /// <summary>Flattens a model's vertices and draw records into device-ready buffers.</summary>
     /// <param name="model">The model to convert.</param>
     /// <param name="scale">
@@ -76,7 +79,10 @@ public static class MefMeshBuilder
         }
 
         RepairWinding(vertices, indices);
-        return new MeshGeometry(vertices, indices, [.. subsets]);
+
+        // Wound to their normals, a sheet's two faces now face apart, and the faces that coincide can be drawn culled.
+        MeshSubset[] partitioned = CoincidentSkins.Partition(vertices, indices, subsets, SkinPlaneToleranceUnits * scale);
+        return new MeshGeometry(vertices, indices, partitioned);
     }
 
     /// <summary>Makes every triangle wind to agree with its vertices' own normals, so a front face exists.</summary>

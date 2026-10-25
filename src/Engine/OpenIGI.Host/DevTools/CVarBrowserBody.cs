@@ -1,5 +1,6 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Input;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -233,6 +234,77 @@ public sealed class CVarBrowserBody : UiElement
 
     /// <summary>Brings the selected row into view.</summary>
     public void RevealSelection() => _rows.EnsureVisible(_selected);
+
+    /// <summary>Applies a frame's keys while the browser is the window in front.</summary>
+    /// <param name="keyboard">The frame's keyboard.</param>
+    /// <param name="elapsed">Real seconds since the last call.</param>
+    /// <param name="control">Whether a control key is held.</param>
+    /// <param name="shift">Whether a shift key is held.</param>
+    /// <param name="editor">The typing shared by every panel.</param>
+    /// <param name="close">Closes the browser and hands the keyboard back to the console.</param>
+    /// <remarks>
+    /// Escape backs out one step at a time: out of an edit first, and only then out of the browser.
+    /// </remarks>
+    internal void HandleKeys(KeyboardState keyboard, float elapsed, bool control, bool shift, PromptEditor editor, Action close)
+    {
+        if (IsEditing)
+        {
+            if (keyboard.WasPressed(KeyCode.Escape))
+            {
+                CancelEdit();
+                return;
+            }
+
+            if (keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter))
+            {
+                CommitEdit();
+                return;
+            }
+
+            editor.EditText(ValueEdit, keyboard, elapsed, control, shift);
+            return;
+        }
+
+        if (keyboard.WasPressed(KeyCode.Escape))
+        {
+            close();
+            return;
+        }
+
+        if (editor.Up.Poll(keyboard, KeyCode.Up, elapsed))
+        {
+            SelectedIndex = Math.Max(0, SelectedIndex - 1);
+            RevealSelection();
+        }
+
+        if (editor.Down.Poll(keyboard, KeyCode.Down, elapsed))
+        {
+            SelectedIndex++;
+            RevealSelection();
+        }
+
+        if (keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter))
+        {
+            if (!CycleSelected())
+            {
+                BeginEdit();
+            }
+
+            editor.ResetBlink();
+            return;
+        }
+
+        if (control && keyboard.WasPressed(KeyCode.R))
+        {
+            ResetSelected();
+            return;
+        }
+
+        if (editor.EditText(FilterEdit, keyboard, elapsed, control, shift))
+        {
+            ApplyFilter();
+        }
+    }
 
     private float HeaderHeight => _theme.ControlHeight + (_theme.Unit * 4f) + _theme.RowHeight;
 

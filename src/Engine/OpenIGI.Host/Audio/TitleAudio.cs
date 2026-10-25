@@ -12,7 +12,8 @@ namespace OpenIGI.Host.Audio;
 /// </remarks>
 /// <param name="sounds">The mixer.</param>
 /// <param name="bank">The bank the mission's sounds are mounted into.</param>
-internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank) : ITitleAudio
+/// <param name="borrowFrom">The host's own sounds, to play a name the title's banks never define; <see langword="null"/> for none.</param>
+internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank, Func<SoundSystem?>? borrowFrom = null) : ITitleAudio
 {
     /// <inheritdoc/>
     public void UseDefinitions(ISoundDefinitionLookup definitions, IReadOnlyList<string> bankDirectories)
@@ -34,8 +35,28 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank) : ITitleAud
     public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null)
     {
         AudioVoiceHandle voice = sounds.PlayDefinition(definition, positionInUnits, looping: looping);
-        return voice == AudioVoiceHandle.None ? null : new Voice(sounds, definition, voice, looping) { Position = positionInUnits };
+        if (voice != AudioVoiceHandle.None)
+        {
+            return new Voice(sounds, definition, voice, looping) { Position = positionInUnits };
+        }
+
+        // A name the title's own banks never define, borrowed from the host's where it does: I.G.I. 2's clips name their
+        // reload clicks after Project I.G.I.'s and ship next to none of them.
+        if (borrowFrom?.Invoke() is { } host && !ReferenceEquals(host, sounds))
+        {
+            AudioVoiceHandle borrowed = host.PlayDefinition(definition, positionInUnits, looping: looping);
+            if (borrowed != AudioVoiceHandle.None)
+            {
+                return new Voice(host, definition, borrowed, looping) { Position = positionInUnits };
+            }
+        }
+
+        return null;
     }
+
+    /// <inheritdoc/>
+    public bool CanBorrow(string definition) =>
+        borrowFrom?.Invoke() is { Definitions: { } theirs } host && !ReferenceEquals(host, sounds) && theirs.TryResolve(definition, out _);
 
     /// <inheritdoc/>
     public double SampleSeconds(string bankKey)

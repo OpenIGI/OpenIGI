@@ -1,6 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering.Rhi;
+﻿using OpenIGI.Rendering.Rhi;
 
 namespace OpenIGI.Rendering.Pipeline;
 
@@ -46,7 +44,7 @@ public sealed partial class GraphicsDevice
     /// direct path never tone-maps: what it draws is what is shown.
     /// </remarks>
     public float SceneExposure => _capturing
-        ? MathF.Max(RenderCVars.EffectiveExposure * (_autoExposure?.Adapted ?? 1f), 1e-3f)
+        ? MathF.Max(ExposureCVars.EffectiveExposure * (_autoExposure?.Adapted ?? 1f), 1e-3f)
         : 1f;
 
     /// <inheritdoc/>

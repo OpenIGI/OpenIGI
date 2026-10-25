@@ -1,17 +1,15 @@
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Frontend;
-using OpenIGI.Game.Ai;
-using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
-using OpenIGI.UI;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Host;
@@ -222,7 +220,7 @@ public sealed partial class GameHost
 
         // The briefing posted at the start: it arrives once the player has the level, stays a few
         // seconds, and goes.
-        if (RenderCVars.WorldBriefing.Value && _session.Mission is not null && HostedPlayer is not null
+        if (HudCVars.WorldBriefing.Value && _session.Mission is not null && HostedPlayer is not null
             && !PresentationHoldsLevel && !_loadSequence.IsActive)
         {
             PostBriefing();
@@ -608,7 +606,7 @@ public sealed partial class GameHost
         _warmUpFramesDrawn = 0;
         _lastWarmUpMilliseconds = _loop.TimeSource.Milliseconds;
 
-        _warmUp = new MissionWarmUpGate(RenderCVars.MissionWarmUp.Value);
+        _warmUp = new MissionWarmUpGate(FrameCVars.MissionWarmUp.Value);
         _warmUp.Begin();
 
         // The last run's notice goes with the last run: a restart within its few seconds must not carry
@@ -627,7 +625,7 @@ public sealed partial class GameHost
 
         _logger.Information(
             "Mission",
-            $"Holding the level until its lighting is built and settled ({RenderCVars.MissionWarmUp.Value} "
+            $"Holding the level until its lighting is built and settled ({FrameCVars.MissionWarmUp.Value} "
             + "frame(s) once it is), so what appears is what it will look like.");
     }
 

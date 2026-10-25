@@ -20,6 +20,7 @@ public sealed class MissionSavesScreen : ShellScreen
     private readonly List<SlotTile> _tiles = [];
     private Label? _left;
     private Label? _message;
+    private int _confirmed = -1;
 
     /// <summary>Initializes a new instance of the <see cref="MissionSavesScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -111,6 +112,16 @@ public sealed class MissionSavesScreen : ShellScreen
             return;
         }
 
+        // A save made with mods that change play, some of them off now, loads only once the player has been told and
+        // chooses it again: the level it holds may need what they added.
+        if (_saves.Slots.FirstOrDefault(s => s.Slot == slot).MissingMods is { Count: > 0 } missing && _confirmed != slot)
+        {
+            _confirmed = slot;
+            SetMessage($"Saved with mods that are off: {string.Join(", ", missing)}. Choose it again to load it anyway.");
+            return;
+        }
+
+        _confirmed = -1;
         if (_saves.Load(slot))
         {
             Context.Host.ResumeMission();

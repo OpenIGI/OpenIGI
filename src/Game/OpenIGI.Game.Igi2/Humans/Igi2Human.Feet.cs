@@ -52,6 +52,57 @@ public abstract partial class Igi2Human
     /// <exception cref="EngineFatalException">The id is defined for the human's type but not one it knows.</exception>
     protected bool TriggerHumanType(in Igi2AnimationTrigger trigger, Igi2AnimTriggers? triggers)
     {
+        if (TriggerAnimSound(trigger, triggers))
+        {
+            return true;
+        }
+
+        return TriggerOwnType(trigger, triggers);
+    }
+
+    /// <summary>
+    /// A trigger defined for the anim-sound type, <c>AnimSound_TriggerAnimTriggerHandler</c>: the reload's clicks and the like,
+    /// baked into the clips. <c>AnimTrigger_Trigger</c> sends a trigger to its type's handler, not to the object the clip plays
+    /// on, so whichever human's clip fires one, the sound plays.
+    /// </summary>
+    /// <param name="trigger">The trigger.</param>
+    /// <param name="triggers">The session's trigger types.</param>
+    /// <returns>Whether the trigger was an anim sound's, so it is answered.</returns>
+    /// <remarks>
+    /// The type names the sound and whether it is attached: attached, it plays from the human -- the view for a first-person
+    /// clip -- and moves with it; loose, it is left where the human stands as it fires.
+    /// </remarks>
+    protected bool TriggerAnimSound(in Igi2AnimationTrigger trigger, Igi2AnimTriggers? triggers)
+    {
+        if (triggers is null || !triggers.TryGet(trigger.TriggerId, out Igi2AnimTriggerType type)
+            || !triggers.IsAnsweredBy(type, AnimSoundTriggerTaskType) || type.Parameters.Count == 0)
+        {
+            return false;
+        }
+
+        string name = type.Parameters[0].ToString().Trim('"');
+        if (name.Length > 0)
+        {
+            bool attached = type.Parameters.Count > 1 && type.Parameters[1].Integer != 0;
+            if (attached)
+            {
+                Surroundings.PlaySound(name);
+            }
+            else
+            {
+                Surroundings.PlaySoundAt(name, Position);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>The task type the anim sounds are defined for.</summary>
+    protected const string AnimSoundTriggerTaskType = "AnimSound";
+
+    // The human's own triggers: its feet and its dead body.
+    private bool TriggerOwnType(in Igi2AnimationTrigger trigger, Igi2AnimTriggers? triggers)
+    {
         if (triggers is null || !triggers.TryGet(trigger.TriggerId, out Igi2AnimTriggerType type) || !triggers.IsAnsweredBy(type, HumanTriggerTaskType))
         {
             return false;

@@ -1,8 +1,10 @@
 using OpenIGI.Core.Content;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
+using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
+using OpenIGI.Game.Events;
 using OpenIGI.Game.Igi2;
 using OpenIGI.Game.Igi2.Systems;
 using OpenIGI.Game.Level;
@@ -74,6 +76,61 @@ public sealed class ModLoadingTests : IDisposable
     }
 
     [Fact]
+    public void A_mod_hears_the_events_it_subscribes_to()
+    {
+        InstallSample("sample", """{ "id": "sample", "name": "Sample", "version": "1.0", "apiVersion": 1, "assembly": "SampleMod.dll" }""");
+        ModSet mods = ModLoader.Load(_mods);
+        IGameTitleRuntime modded = mods.Extend(new Igi2Runtime());
+        NativeRegistry natives = new();
+        ServiceCatalog services = new();
+        ContentRegistrationContext registration = new(
+            new TaskTypeRegistry(), natives, new ScriptVarRegistry(natives), services, NullLogger.Instance);
+        foreach (IContentModule module in modded.Modules.Skip(new Igi2Runtime().Modules.Count))
+        {
+            module.Register(registration);
+        }
+
+        Assert.True(services.TryGet(out GameEvents? events));
+        events.Raise(new LevelLoaded(GameTitle.Igi2, 1));
+        events.Raise(new LevelLoaded(GameTitle.Igi2, 2));
+
+        object code = Assert.Single(mods.Mods).Code!;
+        Assert.Equal(2, code.GetType().GetProperty("LevelsLoaded")!.GetValue(code));
+    }
+
+    [Fact]
+    public void A_mod_is_given_the_session_once_its_tables_are_loaded()
+    {
+        LoadedMod loaded = new();
+        ModSet mods = new([new InstalledMod(new ModManifest("loaded", "Loaded", "1.0", ModApi.Version, []), "mod-dir", loaded)]);
+        IContentModule module = mods.Extend(new Igi2Runtime()).Modules.Single(static m => m.Name == "Mod.loaded");
+        Engine.Vfs.VirtualFileSystem fileSystem = new();
+        ServiceCatalog services = new();
+        services.Provide(new GameEvents());
+        NativeRegistry natives = new();
+        module.LoadTables(new ContentLoadContext(
+            fileSystem, new Engine.Resources.ResourceRegistry(fileSystem), natives, new TaskTree(new TaskTypeRegistry()), services, NullLogger.Instance));
+
+        Assert.NotNull(loaded.Context);
+        Assert.Equal("mod-dir", loaded.Context.Directory);
+        Assert.Same(fileSystem, loaded.Context.FileSystem);
+        Assert.Same(services.Require<GameEvents>(), loaded.Context.Events);
+    }
+
+    [Fact]
+    public void A_mods_own_task_type_is_registered_under_its_name()
+    {
+        ModSet mods = new([new InstalledMod(new ModManifest("adds", "Adds", "1.0", ModApi.Version, []), string.Empty, new AddsTaskMod())]);
+        TaskTypeRegistry types = new();
+        NativeRegistry natives = new();
+        ContentRegistrationContext registration = new(types, natives, new ScriptVarRegistry(natives), new ServiceCatalog(), NullLogger.Instance);
+        mods.Extend(new Igi2Runtime()).Modules.Single(static m => m.Name == "Mod.adds").Register(registration);
+
+        TaskTree tree = new(types);
+        Assert.IsType<StandInSoldier>(tree.New(tree.Root, types.Get("ModSoldier")));
+    }
+
+    [Fact]
     public void A_mods_task_replacement_takes_the_games_type_once_the_game_has_registered_it()
     {
         Adapter adapter = new();
@@ -101,7 +158,7 @@ public sealed class ModLoadingTests : IDisposable
         File.WriteAllText(Path.Combine(installed, GameTitle.Igi2.SignatureFile), string.Empty);
         File.WriteAllText(Path.Combine(installed, "probe.txt"), "from the other game");
         ModSet mods = new([new InstalledMod(new ModManifest("mount", "Mount", "1.0", ModApi.Version, []), string.Empty, new MountMod())]);
-        IContentModule mount = mods.Extend(new Igi2Runtime()).Modules.Single(static m => m.Name == "mount.Mount.OTHER");
+        IContentModule mount = mods.Extend(new Igi2Runtime()).Modules.Single(static m => m.Name == "Mod.mount");
 
         Engine.Vfs.VirtualFileSystem found = Load(mount, new Locator(installed));
         Engine.Vfs.VirtualFileSystem missing = Load(mount, new Locator(null));
@@ -146,13 +203,17 @@ public sealed class ModLoadingTests : IDisposable
         Write("e-duplicate", """{ "id": "GOOD", "name": "Again", "version": "1", "apiVersion": 1 }""");
         Directory.CreateDirectory(Path.Combine(_mods, "f-no-manifest"));
 
+        // An assembly with no public class that is a mod: there is nothing to make.
+        string noMod = Write("g-no-mod-class", """{ "id": "nomod", "name": "No mod", "version": "1", "apiVersion": 1, "assembly": "xunit.assert.dll" }""");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "xunit.assert.dll"), Path.Combine(noMod, "xunit.assert.dll"));
+
         ModSet mods = ModLoader.Load(_mods);
 
         Assert.Equal(["good"], mods.Mods.Select(static m => m.Manifest.Id));
     }
 
     [Fact]
-    public void A_content_only_mod_has_no_code_and_changes_no_runtime()
+    public void A_content_only_mod_without_data_has_no_code_and_changes_no_runtime()
     {
         Write("textures", """{ "id": "textures", "name": "Textures", "version": "2", "apiVersion": 1, "affectsSimulation": false }""");
 
@@ -163,6 +224,35 @@ public sealed class ModLoadingTests : IDisposable
         Assert.False(mod.Manifest.AffectsSimulation);
         Igi2Runtime runtime = new();
         Assert.Same(runtime, mods.Extend(runtime));
+    }
+
+    [Fact]
+    public void A_mods_campaigns_are_the_runtimes_beside_the_games_own()
+    {
+        Write("nightfall", """{ "id": "nightfall", "name": "Nightfall", "version": "1", "apiVersion": 1, "campaigns": [ { "name": "Nightfall", "missions": [ 901, 902 ] }, { "name": "", "missions": [ 1 ] } ] }""");
+
+        IGameTitleRuntime modded = ModLoader.Load(_mods).Extend(new Igi2Runtime());
+
+        TitleCampaign campaign = Assert.Single(modded.Campaigns);
+        Assert.Equal("Nightfall", campaign.Name);
+        Assert.Equal([901, 902], campaign.Missions);
+    }
+
+    [Fact]
+    public void A_content_only_mods_data_stands_in_for_the_games_files_the_later_mod_first()
+    {
+        string earlier = Write("earlier", """{ "id": "earlier", "name": "Earlier", "version": "1", "apiVersion": 1 }""");
+        string later = Write("later", """{ "id": "later", "name": "Later", "version": "1", "apiVersion": 1 }""");
+        Directory.CreateDirectory(Path.Combine(earlier, ModSet.DataDirectoryName));
+        Directory.CreateDirectory(Path.Combine(later, ModSet.DataDirectoryName));
+        ModSet mods = new(ModLoader.Load(_mods).Mods.OrderBy(static m => m.Manifest.Id == "later"));
+        Igi2Runtime runtime = new();
+
+        IGameTitleRuntime modded = mods.Extend(runtime);
+
+        Assert.Equal(runtime.Modules, modded.Modules);
+        Assert.Equal(["mod-later", "mod-earlier"], modded.ContentFolders.Select(static f => f.Id));
+        Assert.Equal(Path.Combine(later, ModSet.DataDirectoryName), modded.ContentFolders[0].Root);
     }
 
     [Fact]
@@ -252,14 +342,33 @@ public sealed class ModLoadingTests : IDisposable
         string package = Path.Combine(AppContext.BaseDirectory, "SampleMod");
 
         Assert.Equal(
-            ["SampleMod.deps.json", "SampleMod.dll", "SampleMod.pdb", ModManifest.FileName],
+            [
+                "Greyscale.default.compute.dxil",
+                "Greyscale.default.reflection.json",
+                "Greyscale.default.spv",
+                "Greyscale.default.wgsl",
+                "SampleMod.deps.json",
+                "SampleMod.dll",
+                "SampleMod.pdb",
+                ModManifest.FileName,
+            ],
             Directory.EnumerateFiles(package, "*", SearchOption.AllDirectories).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.True(File.Exists(Path.Combine(package, ModSet.ShadersDirectoryName, "Greyscale.default.spv")));
         CopyDirectory(package, Path.Combine(_mods, "sample"));
 
-        InstalledMod mod = Assert.Single(ModLoader.Load(_mods).Mods);
+        ModSet mods = ModLoader.Load(_mods);
+        InstalledMod mod = Assert.Single(mods.Mods);
         Assert.Equal("sample", mod.Manifest.Id);
         Assert.Empty(mod.Manifest.Titles);
         Assert.NotNull(mod.Code);
+
+        // Its pass, with the settings the manifest names, read from the folder the package holds its shaders in.
+        TitlePostPass pass = Assert.Single(mods.Extend(new Igi2Runtime()).PostPasses);
+        Assert.Equal("sample.Greyscale", pass.Name);
+        Assert.Equal("mod_sample_greyscale", pass.Toggle);
+        Assert.Equal(["mod_sample_greyscale_amount"], pass.Parameters);
+        Assert.Equal(Core.Graphics.PostPassStage.Scene, pass.Stage);
+        Assert.True(OpenIGI.Shaders.ExternalShaderModule.Read(pass.ShadersDirectory, pass.Module).Compiles(OpenIGI.Shaders.ShaderTarget.Spirv));
     }
 
     // The sample's package under another manifest.
@@ -319,7 +428,19 @@ public sealed class ModLoadingTests : IDisposable
 
     private sealed class StandInMod(ITaskParameterAdapter adapter) : IOpenIgiMod
     {
-        public void Configure(IModBuilder builder) => builder.ReplaceTask("HumanSoldier", static () => new StandInSoldier(), adapter);
+        public void Configure(IModBuilder builder) => builder.Tasks.Replace<StandInSoldier>("HumanSoldier", adapter);
+    }
+
+    private sealed class LoadedMod : IOpenIgiMod
+    {
+        public IModContext? Context { get; private set; }
+
+        public void Configure(IModBuilder builder) => builder.OnStarted(context => Context = context);
+    }
+
+    private sealed class AddsTaskMod : IOpenIgiMod
+    {
+        public void Configure(IModBuilder builder) => builder.Tasks.Add<StandInSoldier>("ModSoldier");
     }
 
     private string Write(string directory, string manifest)

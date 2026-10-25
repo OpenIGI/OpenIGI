@@ -1,5 +1,5 @@
-using OpenIGI.Game.Ai;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Ai;
 using OpenIGI.Host.Menu;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Rhi;
@@ -82,7 +82,7 @@ internal sealed class MenuBackdrop(IGraphicsDevice device, IOpenIgiLogger logger
 
     /// <summary>
     /// Gets whether the level on screen is the menu's backdrop and is to be drawn without the preset's expensive parts.
-    /// See <see cref="RenderCVars.MenuBackdropLite"/>.
+    /// See <see cref="FrameCVars.MenuBackdropLite"/>.
     /// </summary>
     /// <param name="missionActive">Whether a mission is being played.</param>
     /// <returns><see langword="true"/> for the lite profile.</returns>
@@ -91,7 +91,7 @@ internal sealed class MenuBackdrop(IGraphicsDevice device, IOpenIgiLogger logger
     /// loads cold, so Play turns this off on the same frame the level becomes the mission.
     /// </remarks>
     public bool IsLite(bool missionActive) =>
-        RenderCVars.MenuBackdropLite.Value && !missionActive && Preview is not null;
+        FrameCVars.MenuBackdropLite.Value && !missionActive && Preview is not null;
 
     /// <summary>Applies or clears the lite profile to match <see cref="IsLite"/>. Cheap; call freely.</summary>
     /// <param name="missionActive">Whether a mission is being played.</param>
@@ -133,31 +133,31 @@ internal sealed class MenuBackdrop(IGraphicsDevice device, IOpenIgiLogger logger
         _liteApplied = lite;
         if (lite)
         {
-            RenderCVars.Lighting.Override(LightingModel.Baked);
-            RenderCVars.SurfaceCache.Override(false);
-            RenderCVars.DistanceFields.Override(false);
-            RenderCVars.Shadows.Override(0);
-            RenderCVars.LocalLightShadows.Override(0);
-            RenderCVars.TracedSunShadows.Override(false);
-            RenderCVars.TracedLampShadows.Override(false);
-            RenderCVars.TracedReflections.Override(false);
-            RenderCVars.Reflections.Override(0);
-            RenderCVars.ScreenGather.Override(0f);
-            RenderCVars.RadianceCache.Override(0);
+            LightingCVars.Lighting.Override(LightingModel.Baked);
+            SurfaceCacheCVars.SurfaceCache.Override(false);
+            RayTracingCVars.DistanceFields.Override(false);
+            ShadowCVars.Shadows.Override(0);
+            LocalLightCVars.LocalLightShadows.Override(0);
+            RayTracingCVars.TracedSunShadows.Override(false);
+            RayTracingCVars.TracedLampShadows.Override(false);
+            RayTracingCVars.TracedReflections.Override(false);
+            ReflectionCVars.Reflections.Override(0);
+            ScreenGatherCVars.ScreenGather.Override(0f);
+            ScreenGatherCVars.RadianceCache.Override(0);
         }
         else
         {
-            RenderCVars.Lighting.ClearOverride();
-            RenderCVars.SurfaceCache.ClearOverride();
-            RenderCVars.DistanceFields.ClearOverride();
-            RenderCVars.Shadows.ClearOverride();
-            RenderCVars.LocalLightShadows.ClearOverride();
-            RenderCVars.TracedSunShadows.ClearOverride();
-            RenderCVars.TracedLampShadows.ClearOverride();
-            RenderCVars.TracedReflections.ClearOverride();
-            RenderCVars.Reflections.ClearOverride();
-            RenderCVars.ScreenGather.ClearOverride();
-            RenderCVars.RadianceCache.ClearOverride();
+            LightingCVars.Lighting.ClearOverride();
+            SurfaceCacheCVars.SurfaceCache.ClearOverride();
+            RayTracingCVars.DistanceFields.ClearOverride();
+            ShadowCVars.Shadows.ClearOverride();
+            LocalLightCVars.LocalLightShadows.ClearOverride();
+            RayTracingCVars.TracedSunShadows.ClearOverride();
+            RayTracingCVars.TracedLampShadows.ClearOverride();
+            RayTracingCVars.TracedReflections.ClearOverride();
+            ReflectionCVars.Reflections.ClearOverride();
+            ScreenGatherCVars.ScreenGather.ClearOverride();
+            ScreenGatherCVars.RadianceCache.ClearOverride();
         }
 
         logger.Information(

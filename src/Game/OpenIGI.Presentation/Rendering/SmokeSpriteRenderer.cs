@@ -301,7 +301,7 @@ public sealed class SmokeSpriteRenderer : IDisposable
         Vector3f centreF = new((float)centre.X, (float)centre.Y, (float)centre.Z);
         Vector3f normal = new((float)toEye.X, (float)toEye.Y, (float)toEye.Z);
 
-        if (!IsFinite(centreF) || !IsFinite(right) || !IsFinite(up) || !IsFinite(normal))
+        if (!FiniteChecks.IsFinite(centreF) || !FiniteChecks.IsFinite(right) || !FiniteChecks.IsFinite(up) || !FiniteChecks.IsFinite(normal))
         {
             return used;
         }
@@ -337,7 +337,7 @@ public sealed class SmokeSpriteRenderer : IDisposable
                 return false;
             }
 
-            IresArchive archive = IresArchive.Read(_fileSystem.ReadAllBytes(_spriteArchive));
+            IresArchive archive = _fileSystem.ReadArchive(_spriteArchive);
             IresEntry? entry = archive.FindBody(SpriteName);
             if (entry is null)
             {
@@ -363,9 +363,6 @@ public sealed class SmokeSpriteRenderer : IDisposable
             return false;
         }
     }
-
-    private static bool IsFinite(Vector3f v) =>
-        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
 
     private struct Puff
     {

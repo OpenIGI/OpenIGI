@@ -1,8 +1,8 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using Xunit;
-using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -22,7 +22,7 @@ public sealed class PlayerCameraInteractionTests
             Position = new Vector3d(12345.0, -67890.0, 24680.0),
         };
 
-        PlayerCamera.RestoreBodyAfterInteraction(body, type, terrain: null!);
+        PlayerInteractionDriver.RestoreBodyAfterInteraction(body, type, terrain: null!);
 
         Assert.Equal(new Vector3d(12345.0, -67890.0, 24680.0), body.Position);
     }
@@ -38,7 +38,7 @@ public sealed class PlayerCameraInteractionTests
             Position = new Vector3d(12345.0, -67890.0, 24680.0),
         };
 
-        PlayerCamera.SnapBodyForInteraction(body, type, terrain: null!);
+        PlayerInteractionDriver.SnapBodyForInteraction(body, type, terrain: null!);
 
         Assert.Equal(new Vector3d(12345.0, -67890.0, 24680.0), body.Position);
     }
@@ -62,7 +62,7 @@ public sealed class PlayerCameraInteractionTests
             },
         };
 
-        PlayerCamera.SnapBodyForInteraction(
+        PlayerInteractionDriver.SnapBodyForInteraction(
             body,
             InteractionActivateType.Terminal,
             terrain: null,

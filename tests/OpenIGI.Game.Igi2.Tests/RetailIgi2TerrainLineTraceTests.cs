@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.TestSupport;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
@@ -21,10 +22,10 @@ public sealed class RetailIgi2TerrainLineTraceTests
         int struck = 0;
         foreach (Vector3d at in Points(surface))
         {
-            Igi2LineTrace trace = Line(new Vector3d(at.X, at.Y, at.Z + 8192.0), new Vector3d(at.X, at.Y, at.Z - 8192.0));
+            WorldLineTrace trace = Line(new Vector3d(at.X, at.Y, at.Z + 8192.0), new Vector3d(at.X, at.Y, at.Z - 8192.0));
             collider.TraceLines(trace);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             Assert.True(hit.IsHit, $"the line down at {at} missed.");
             Assert.Same(collider, hit.HitObject);
             AssertOnGround(surface, hit);
@@ -47,10 +48,10 @@ public sealed class RetailIgi2TerrainLineTraceTests
         {
             Vector3d start = new(at.X - 12000.0, at.Y + 7000.0, at.Z + 16384.0);
             Vector3d end = new(at.X + 3000.0, at.Y - 1750.0, at.Z - 4096.0);
-            Igi2LineTrace trace = Line(start, end);
+            WorldLineTrace trace = Line(start, end);
             collider.TraceLines(trace);
 
-            Igi2Intersection hit = trace.Intersections[0];
+            WorldIntersection hit = trace.Intersections[0];
             if (!hit.IsHit)
             {
                 continue;
@@ -73,7 +74,7 @@ public sealed class RetailIgi2TerrainLineTraceTests
         Igi2CollisionWorld world = new([], collider);
         Vector3d at = Points(surface).First();
         Vector3d start = new(at.X, at.Y, at.Z + 8192.0), end = new(at.X, at.Y, at.Z - 8192.0);
-        Igi2LineTrace trace = Line(start, end);
+        WorldLineTrace trace = Line(start, end);
         collider.TraceLines(trace);
 
         Assert.True(world.Cast(start, end, out Game.World.WorldRayHit hit));
@@ -89,7 +90,7 @@ public sealed class RetailIgi2TerrainLineTraceTests
         Igi2TerrainSurface surface = Mission1.Value;
         Igi2TerrainCollider collider = new(surface, "terrain");
         Vector3d at = Points(surface).First();
-        Igi2LineTrace trace = Line(new Vector3d(at.X - 8192.0, at.Y, at.Z + 409600.0), new Vector3d(at.X + 8192.0, at.Y, at.Z + 409600.0));
+        WorldLineTrace trace = Line(new Vector3d(at.X - 8192.0, at.Y, at.Z + 409600.0), new Vector3d(at.X + 8192.0, at.Y, at.Z + 409600.0));
 
         collider.TraceLines(trace);
 
@@ -103,7 +104,7 @@ public sealed class RetailIgi2TerrainLineTraceTests
         Igi2TerrainSurface surface = Mission1.Value;
         Igi2CollisionWorld world = new([], new Igi2TerrainCollider(surface, "terrain"));
         Vector3d at = Points(surface).First();
-        Igi2LineTrace trace = Line(new Vector3d(at.X, at.Y, at.Z + 4096.0), new Vector3d(at.X, at.Y, at.Z - 4096.0));
+        WorldLineTrace trace = Line(new Vector3d(at.X, at.Y, at.Z + 4096.0), new Vector3d(at.X, at.Y, at.Z - 4096.0));
 
         world.TraceLines(trace, 0xFFFFFFFF);
         Assert.True(trace.Intersections[0].IsHit);
@@ -113,7 +114,7 @@ public sealed class RetailIgi2TerrainLineTraceTests
     }
 
     /// <summary>The hit lies over a cell whose corner heights bracket it.</summary>
-    private static void AssertOnGround(Igi2TerrainSurface surface, Igi2Intersection hit)
+    private static void AssertOnGround(Igi2TerrainSurface surface, WorldIntersection hit)
     {
         Vector3d origin = surface.Origin;
         Assert.True(Igi2TerrainVertex.TrySample(surface.Tiles, ((Fpu)hit.Position.X - origin.X).F, ((Fpu)hit.Position.Y - origin.Y).F, out Igi2TerrainSample sample));
@@ -156,9 +157,9 @@ public sealed class RetailIgi2TerrainLineTraceTests
         }
     }
 
-    private static Igi2LineTrace Line(Vector3d start, Vector3d end)
+    private static WorldLineTrace Line(Vector3d start, Vector3d end)
     {
-        Igi2LineTrace trace = new(1);
+        WorldLineTrace trace = new(1);
         trace.Starts[0] = start;
         trace.Ends[0] = end;
         return trace;

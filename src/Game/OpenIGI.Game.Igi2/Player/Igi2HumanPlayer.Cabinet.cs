@@ -31,7 +31,7 @@ public sealed partial class Igi2HumanPlayer
     // runs on from wherever an earlier timed action left it -- and the view held still.
     private void EnterActivateCabinet()
     {
-        if (ActivatingTarget is not Igi2CabinetTask cabinet)
+        if (ActivatingTarget is not IIgi2Cabinet cabinet)
         {
             return;
         }
@@ -72,7 +72,7 @@ public sealed partial class Igi2HumanPlayer
     // HumanPlayer_RunStateActivateCabinet: the start clip gives way to the loop, and the loop to the end clip as the time left comes to
     // the end clip's length; the drawer follows the clip's triggers; letting go after the first twenty ticks, a hit or death cuts the
     // search short and shuts the drawer; held to its end, the cabinet is searched. Either way the player stands up again, or is hit.
-    private void RunActivateCabinet(Igi2CabinetTask cabinet)
+    private void RunActivateCabinet(IIgi2Cabinet cabinet)
     {
         bool isCut = false;
         MoveOnGround(0f, GroundAcceleration, 0f, GroundAcceleration);

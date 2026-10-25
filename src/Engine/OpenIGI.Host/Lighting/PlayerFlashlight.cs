@@ -3,7 +3,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Host.Audio;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.Lighting;
@@ -58,7 +57,7 @@ internal sealed class PlayerFlashlight
 
     /// <summary>Gets whether the renderer can light with a flashlight at all this frame.</summary>
     public static bool FlashlightAvailable =>
-        RenderCVars.Flashlight.Value && RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value;
+        FlashlightCVars.Flashlight.Value && FrameCVars.OffscreenScene.Value && LightingCVars.Deferred.Value;
 
     /// <summary>Registers the console's handle on the flashlight.</summary>
     /// <param name="console">The console to register with.</param>
@@ -86,7 +85,7 @@ internal sealed class PlayerFlashlight
 
                 if (on != _flashlightRig.IsOn)
                 {
-                    _flashlightRig.ContactWear = RenderCVars.FlashlightWear.Value;
+                    _flashlightRig.ContactWear = FlashlightCVars.FlashlightWear.Value;
                     _flashlightRig.Toggle();
                 }
 
@@ -118,7 +117,7 @@ internal sealed class PlayerFlashlight
     /// <returns>Whether it is now on.</returns>
     public bool Toggle()
     {
-        _flashlightRig.ContactWear = RenderCVars.FlashlightWear.Value;
+        _flashlightRig.ContactWear = FlashlightCVars.FlashlightWear.Value;
         return _flashlightRig.Toggle();
     }
 
@@ -220,8 +219,8 @@ internal sealed class PlayerFlashlight
             up,
             moved,
             pace,
-            RenderCVars.FlashlightLag.Value,
-            RenderCVars.FlashlightSway.Value);
+            FlashlightCVars.FlashlightLag.Value,
+            FlashlightCVars.FlashlightSway.Value);
 
         if (_flashlightRig.Level <= 0f)
         {
@@ -235,9 +234,9 @@ internal sealed class PlayerFlashlight
         Vector3f axisView = worldToView.Transform(_flashlightRig.Aim);
         Vector3f upView = worldToView.Transform(up);
 
-        Vector3f colour = ColourTemperature.ToLinearRgb(RenderCVars.FlashlightKelvin.Value);
-        float intensity = RenderCVars.FlashlightIntensity.Value * _flashlightRig.Level;
-        float outer = RenderCVars.FlashlightOuter.Value;
+        Vector3f colour = ColourTemperature.ToLinearRgb(FlashlightCVars.FlashlightKelvin.Value);
+        float intensity = FlashlightCVars.FlashlightIntensity.Value * _flashlightRig.Level;
+        float outer = FlashlightCVars.FlashlightOuter.Value;
 
         // What reaches the hands and the gun: a sliver the reflector leaks onto the hand holding it, and the
         // spot the beam lights on whatever it is pointed at, sent back. The spot's area grows as the square
@@ -248,7 +247,7 @@ internal sealed class PlayerFlashlight
         float bounce = _flashlightWallMetres < (float)FlashlightProbeMetres
             ? FlashlightBounceAlbedo * spread * spread / (wall * wall)
             : 0f;
-        Vector3f rigFill = colour * (intensity * (FlashlightLeak + bounce) * RenderCVars.FlashlightRig.Value);
+        Vector3f rigFill = colour * (intensity * (FlashlightLeak + bounce) * FlashlightCVars.FlashlightRig.Value);
 
         _device.SetFlashlight(new FlashlightLight(
             lensView,
@@ -256,21 +255,21 @@ internal sealed class PlayerFlashlight
             upView,
             colour,
             intensity,
-            RenderCVars.FlashlightRange.Value,
-            RenderCVars.FlashlightInner.Value,
+            FlashlightCVars.FlashlightRange.Value,
+            FlashlightCVars.FlashlightInner.Value,
             outer,
-            RenderCVars.FlashlightSpill.Value,
-            RenderCVars.FlashlightSpillLevel.Value,
-            RenderCVars.FlashlightLens.Value,
+            FlashlightCVars.FlashlightSpill.Value,
+            FlashlightCVars.FlashlightSpillLevel.Value,
+            FlashlightCVars.FlashlightLens.Value,
             NearCore: 0.3f,
 
             // Past the lens is the hand, the gun and -- in third person, where they are drawn -- the body.
             Clearance: thirdPerson ? 0.35f : 0.12f,
-            Shadows: RenderCVars.FlashlightShadows.Value != 0,
-            Volumetric: RenderCVars.FlashlightFog.Value,
-            Dust: RenderCVars.FlashlightDust.Value,
+            Shadows: FlashlightCVars.FlashlightShadows.Value != 0,
+            Volumetric: FlashlightCVars.FlashlightFog.Value,
+            Dust: FlashlightCVars.FlashlightDust.Value,
             RigFill: thirdPerson ? Vector3f.Zero : rigFill,
-            Throw: RenderCVars.FlashlightThrow.Value));
+            Throw: FlashlightCVars.FlashlightThrow.Value));
     }
 
     private static Vector3d ToDouble(Vector3f v) => new(v.X, v.Y, v.Z);

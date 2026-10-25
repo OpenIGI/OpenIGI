@@ -1,0 +1,6 @@
+<Project>
+
+  <!-- The SDK's targets from where its props found them: the checkout's when the game is built from one (see Sdk.props). -->
+  <Import Project="$(_OpenIgiSdkDirectory)OpenIGI.Modding.Sdk.targets" />
+
+</Project>
