@@ -310,6 +310,27 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         PositionWeapon();
     }
 
+    /// <summary>Who works the gun a solid belongs to, among some guns: what a line of sight asks of a gun it meets.</summary>
+    /// <param name="guns">The level's mounted guns.</param>
+    /// <returns>The lookup, answering <see langword="null"/> for a solid of no gun, or of a gun nobody works.</returns>
+    public static Func<object, object?> OperatorsOf(IEnumerable<Igi2StationaryGunTask> guns)
+    {
+        ArgumentNullException.ThrowIfNull(guns);
+
+        // Read on first use: a level's guns are all made before anything looks, not always before this is handed out.
+        Dictionary<int, Igi2StationaryGunTask>? byId = null;
+        return owner =>
+        {
+            if (owner is not Igi2CollisionOwner { TypeName: TypeName } solid)
+            {
+                return null;
+            }
+
+            byId ??= guns.ToDictionary(static gun => gun.Id);
+            return byId.TryGetValue(solid.LevelId, out Igi2StationaryGunTask? gun) ? gun.Operator : null;
+        };
+    }
+
     /// <summary>Gives it the solids its holder was built as, which turn with it.</summary>
     /// <param name="solids">Its solids, as <see cref="Igi2CollisionWorld.SolidsOf"/> gives them.</param>
     public void Bind(IReadOnlyList<Igi2RigidObject> solids) => _solids = solids ?? throw new ArgumentNullException(nameof(solids));

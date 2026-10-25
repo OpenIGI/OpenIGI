@@ -57,6 +57,7 @@ internal static class Igi2VehicleSystems
         }
 
         player.StationaryGuns = b.Guns;
+        b.SessionAi?.Detection?.GunOperatorOf = Igi2StationaryGunTask.OperatorsOf(b.Guns);
     }
 
     /// <summary>Automatic guns watch from their muzzles and turn their heads and barrels towards what they see.</summary>

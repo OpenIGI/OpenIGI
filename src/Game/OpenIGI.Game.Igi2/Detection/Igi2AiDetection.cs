@@ -184,6 +184,13 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     public Func<object, bool> SightIncludes { get; set; } =
         static owner => owner is not Igi2CollisionOwner { GlassKey: not null };
 
+    /// <summary>Gets or sets who is working the mounted gun a solid belongs to, or <see langword="null"/> for none.</summary>
+    /// <remarks>
+    /// <c>StationaryGun_AILineOfSightHandler</c> (<c>igi2 0x4577E0</c>): a gun stands aside for a line from or to the one working
+    /// it -- a gunner sees past it and is seen behind it -- and stops any other.
+    /// </remarks>
+    public Func<object, object?>? GunOperatorOf { get; set; }
+
     /// <summary>Takes the next of the four ticks a new detector runs on, <c>AIDetection_nDisplaceTick</c>.</summary>
     /// <returns>Its tick, nought to three.</returns>
     internal int TakeDisplaceTick()
@@ -282,9 +289,12 @@ public sealed class Igi2DetectionWorld(IIgi2SightQuery? sight, Igi2GameMaterials
     private Func<object, bool> Through(object? viewer, object? target)
     {
         Func<object, bool> includes = SightIncludes;
+        Func<object, object?>? gunner = GunOperatorOf;
         return viewer is null && target is null
             ? includes
-            : owner => !ReferenceEquals(owner, viewer) && !ReferenceEquals(owner, target) && includes(owner);
+            : owner => !ReferenceEquals(owner, viewer) && !ReferenceEquals(owner, target)
+                && !(gunner?.Invoke(owner) is { } user && (ReferenceEquals(user, viewer) || ReferenceEquals(user, target)))
+                && includes(owner);
     }
 }
 

@@ -510,6 +510,7 @@ public sealed class Igi2GuestLevel
         {
             FlowTicks = ticks,
             LevelTick = ticks,
+            GunOperatorOf = Weapons.Igi2StationaryGunTask.OperatorsOf(_guns),
         };
         // The host's doors and switches, which the level's own player uses as I.G.I. 2's player uses its own.
         if (_player is { } user)
