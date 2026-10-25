@@ -632,7 +632,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
         if (_terrain.Lightmaps is { } pages && index >= 0 && index < pages.Pages.Count && !pages.Pages[index].IsEmpty)
         {
             TerrainLightmapPage page = pages.Pages[index];
-            IReadOnlyList<Bgra32> ramp = _surface.Lights.Ramp;
+            ReadOnlySpan<Bgra32> ramp = _surface.Lights.Ramp;
             ReadOnlySpan<byte> texels = page.Texels.Span;
             var pixels = new Bgra32[page.Size * page.Size];
             for (int i = 0; i < pixels.Length; i++)

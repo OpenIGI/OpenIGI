@@ -72,7 +72,7 @@ public sealed class TerrainLightBindingTests
         Assert.True(DirectionalLightSettings.TryRead(data.Root, out DirectionalLightSettings sun));
         Vector3f ambient = TerrainLightBindings.TerrainAmbient(data.Root);
         Assert.NotEqual(default, ambient);
-        Assert.Equal(TerrainLightBindings.RampFrom(sun.Colour, ambient), bindings.Ramp);
+        Assert.Equal(TerrainLightBindings.RampFrom(sun.Colour, ambient), bindings.Ramp.ToArray());
 
         // The ground warms as it brightens: the sun is warmer than the sky's ambient.
         Bgra32 lit = bindings.Ramp[160];

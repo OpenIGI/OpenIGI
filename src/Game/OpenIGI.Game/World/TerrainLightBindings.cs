@@ -55,13 +55,14 @@ public sealed class TerrainLightBindings
     private static readonly TerrainLightBindings Empty = new([], 0, PlaceholderRamp());
 
     private readonly Entry[] _entries;
+    private readonly Bgra32[] _ramp;
 
     private TerrainLightBindings(Entry[] entries, int skipped, Bgra32[] ramp)
     {
         _entries = entries;
         Entries = new ReadOnlyCollection<Entry>(entries);
         Skipped = skipped;
-        Ramp = ramp;
+        _ramp = ramp;
     }
 
     /// <summary>Gets the bindings, innermost (deepest level) first.</summary>
@@ -71,7 +72,11 @@ public sealed class TerrainLightBindings
     public int Skipped { get; }
 
     /// <summary>Gets the 256 colours a page's texels index, as the level's light makes them.</summary>
-    public IReadOnlyList<Bgra32> Ramp { get; }
+    /// <remarks>
+    /// A span, not a list: it is read once per texel, and the browser build's ahead-of-time compiled code traps
+    /// ("function signature mismatch") calling a struct list's indexer through its interface.
+    /// </remarks>
+    public ReadOnlySpan<Bgra32> Ramp => _ramp;
 
     /// <summary>Gets a value indicating whether any binding exists.</summary>
     public bool IsEmpty => _entries.Length == 0;
