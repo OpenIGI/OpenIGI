@@ -164,7 +164,7 @@ Nothing under `src/` may reference a concrete backend; the applications wire bac
 Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the determinism rules, the clean-room policy,
 which retail build is the reference, and how changes are tested. In short: open a pull request against `develop`, keep
 the Release build free of warnings, and keep the test suite passing. `tools/install-hooks.sh` installs the same
-checks as git hooks. [`RELEASING.md`](RELEASING.md) describes how releases reach the launcher and the website.
+checks as git hooks.
 
 ## Legal
 

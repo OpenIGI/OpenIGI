@@ -83,7 +83,6 @@ gamedata/
 *.md
 !/README.md
 !/CONTRIBUTING.md
-!/RELEASING.md
 !src/Core/OpenIGI.Generators/AnalyzerReleases.*.md
 !.github/**/*.md
 # What a mod's author reads: the modding guide, and the mods index's own pages.
