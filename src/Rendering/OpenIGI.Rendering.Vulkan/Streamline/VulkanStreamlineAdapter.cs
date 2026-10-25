@@ -44,7 +44,7 @@ internal sealed class VulkanStreamlineAdapter : IStreamlineGraphicsAdapter
     }
 
     /// <inheritdoc/>
-    public void ExternalBarrier(IRhiCommandEncoder encoder) => ((VulkanRhiCommandEncoder)encoder).ExternalBarrier();
+    public void ExternalBarrier(IRhiCommandEncoder encoder, string label) => ((VulkanRhiCommandEncoder)encoder).ExternalBarrier(label);
 
     /// <inheritdoc/>
     public void RebuildSwapchain(Action between) => _device.RebuildSwapchain(between);

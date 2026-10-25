@@ -376,6 +376,11 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         VulkanRhiAccelerationStructures structures = _device.VulkanAccelerationStructures
             ?? throw new NotSupportedException("This device builds no acceleration structures.");
 
+        // Named as a pass is: a build writes through the addresses it is handed, and a lost device inside one
+        // otherwise reported whichever pass came before it.
+        _device.Device.Checkpoint(
+            _command,
+            VulkanCheckpointMarkers.Label(topLevel is null ? "acceleration structure builds" : "acceleration structure builds, top level"));
         VulkanRhiTimestamps.Begin(_vk, _command, timestamps);
         structures.RecordBuilds(_command, bottomLevel, topLevel);
         VulkanRhiTimestamps.End(_vk, _command, timestamps);
@@ -384,12 +389,16 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     /// <summary>A full barrier around work recorded into this command buffer by something outside the RHI.</summary>
     /// <remarks>
     /// Streamline records its evaluations straight into <see cref="Command"/>. Before, so it sees what the
-    /// passes wrote; after, so the passes see what it wrote. The same barrier a pass boundary costs.
+    /// passes wrote; after, so the passes see what it wrote. The same barrier a pass boundary costs. And a
+    /// checkpoint, as a pass begins with: what Streamline records carries none of the backend's own, and a
+    /// device lost inside it reported the pass before it.
     /// </remarks>
-    internal void ExternalBarrier()
+    /// <param name="label">What follows, as a lost device's checkpoints name it.</param>
+    internal void ExternalBarrier(string label)
     {
         ThrowIfFinished();
         Barrier();
+        _device.Device.Checkpoint(_command, VulkanCheckpointMarkers.Label(label));
     }
 
     /// <summary>Makes everything written so far visible to everything that follows.</summary>

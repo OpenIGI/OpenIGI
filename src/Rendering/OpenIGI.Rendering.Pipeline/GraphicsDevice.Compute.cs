@@ -489,6 +489,10 @@ public sealed partial class GraphicsDevice
         return views;
     }
 
+    // The traced world's cut-out test, as Common/CutoutHit.slang names its inputs.
+    private const string CutoutRecordsUniform = "uCutoutRecords";
+    private const string CutoutMasksTexture = "uCutoutMasks";
+
     /// <summary>Points each of the module's slots at what the seam has bound to it.</summary>
     /// <param name="kernel">The kernel about to be dispatched.</param>
     /// <param name="slot">Which of its parameter buffers this dispatch writes.</param>
@@ -499,10 +503,27 @@ public sealed partial class GraphicsDevice
             .Where(binding => binding.Kind == ShaderBindingKind.StorageTexture)
             .Select(binding => BoundImage(kernel, binding))];
 
+        // A kernel that traces tests cut-out surfaces against the world's masks, through the records naming each
+        // surface's layer: both the device's own, as the traced passes it records itself are handed them. The
+        // game never sets either, and left alone the address read nought -- every window cut into a wall and
+        // every fence solid to the surface cache's light -- while the masks' slot took whatever flat texture
+        // last stood on its unit, a view the array the shader declares cannot be.
+        bool traces = TracedWorld is not null
+            && kernel.Reflection.Bindings.Any(static binding => binding.Kind == ShaderBindingKind.AccelerationStructure);
+        if (traces)
+        {
+            ulong records = TracedWorld!.HitRecordHandle;
+            kernel.Set(CutoutRecordsUniform, MemoryMarshal.AsBytes(new ReadOnlySpan<ulong>(in records)));
+        }
+
         foreach (ShaderBinding binding in kernel.Reflection.Bindings)
         {
             switch (binding.Kind)
             {
+                case ShaderBindingKind.Texture when traces && binding.Name == CutoutMasksTexture:
+                    kernel.Pass.Bind(binding.Name, TracedWorld!.CutoutMasks);
+                    break;
+
                 case ShaderBindingKind.StorageTexture:
                     kernel.Pass.Bind(binding.Name, BoundImage(kernel, binding).View);
                     break;

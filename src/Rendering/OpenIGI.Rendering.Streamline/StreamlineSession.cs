@@ -521,13 +521,13 @@ internal sealed unsafe class StreamlineSession : IRhiStreamline, IDisposable
 
         uint id = Feature(feature);
         // Everything written so far must be visible to Streamline, and everything it writes to what follows.
-        _adapter.ExternalBarrier(encoder);
+        _adapter.ExternalBarrier(encoder, $"streamline {feature}");
 
         SlViewportHandle handle = SlViewportHandle.For((uint)viewport);
         nint input = (nint)(&handle);
         SlResult result = _runtime.Api.EvaluateFeature(id, _runtime.CurrentFrame, &input, 1, _adapter.CommandList(encoder));
 
-        _adapter.ExternalBarrier(encoder);
+        _adapter.ExternalBarrier(encoder, $"after streamline {feature}");
 
         if (result != SlResult.Ok)
         {
