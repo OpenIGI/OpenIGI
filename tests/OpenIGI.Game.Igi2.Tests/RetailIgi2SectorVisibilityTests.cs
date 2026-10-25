@@ -82,7 +82,7 @@ public sealed class RetailIgi2SectorVisibilityTests
 
     /// <summary>
     /// From inside the office with every opening shut, nothing outside is drawn: not the fence, not the other buildings, not the
-    /// ground -- only the room the camera stands in.
+    /// ground -- only the room the camera stands in, and its building's shell behind the walls, which closes the seams.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void From_inside_with_no_opening_the_outside_is_not_drawn()
@@ -97,7 +97,7 @@ public sealed class RetailIgi2SectorVisibilityTests
         Assert.False(visibility.IsOutsideVisible);
         Assert.False(visibility.IsVisible(m.Fence));
         Assert.True(visibility.IsVisible(m.KeyOf(m.OfficeRoom)));
-        Assert.False(visibility.IsVisible(m.KeyOf(m.Graph.Objects[m.OfficeRoom.ObjectIndex].Shell)));
+        Assert.True(visibility.IsVisible(m.KeyOf(m.Graph.Objects[m.OfficeRoom.ObjectIndex].Shell)));
         Assert.All(
             Igi2SectorVisibility.KeysOf(m.Scene).Where(k => k.Kind == Igi2VisibilityKind.Shell && k.LevelId != OfficeLevelId),
             k => Assert.False(visibility.IsVisible(k)));

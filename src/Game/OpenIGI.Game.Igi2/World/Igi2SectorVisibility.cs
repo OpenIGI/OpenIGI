@@ -48,6 +48,7 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
     private readonly IReadOnlyList<SectorScreenRect>?[] _reached;
     private IReadOnlyList<SectorScreenRect>? _outsideWindows;
     private bool _outsideUnbounded = true;
+    private int _eyeShell = -1;
     private SectorScreenProjection _projection;
     private Camera3D _eye = Camera3D.Default;
 
@@ -157,6 +158,7 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
         Frame++;
         Array.Clear(_reached);
         _outsideWindows = null;
+        _eyeShell = -1;
         ReachedCount = 0;
 
         Igi2Sector? room = _locator.SectorAt(eye.Position);
@@ -170,6 +172,7 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
             Store(_culling.Visit(eye, projection, room.Index, _isPortalOpen));
             Igi2Sector shell = _graph.Objects[room.ObjectIndex].Shell;
             _outsideWindows = _reached[shell.Index];
+            _eyeShell = shell.Index;
         }
 
         IReadOnlyList<SectorScreenRect>? starts = _outsideUnbounded ? [projection.DisplayArea] : _outsideWindows;
@@ -300,8 +303,10 @@ public sealed class Igi2SectorVisibility : IPlacementVisibility
                 }
 
                 // A building drawn from outside is requested from its shell whatever its portals show, so its shell -- and
-                // its glass and ladders with it -- stands whenever the outside does.
-                return key.Kind == Igi2VisibilityKind.Shell && _outsideUnbounded;
+                // its glass and ladders with it -- stands whenever the outside does. The camera's own building keeps its
+                // shell unreached: it is the far side of every room's walls, hidden by them but for the sub-pixel seams
+                // between a room and what it carries, which a temporal resolve turns into lines of sky.
+                return key.Kind == Igi2VisibilityKind.Shell && (_outsideUnbounded || resolved.Sector == _eyeShell);
 
             default:
                 if (resolved.Sector >= 0)

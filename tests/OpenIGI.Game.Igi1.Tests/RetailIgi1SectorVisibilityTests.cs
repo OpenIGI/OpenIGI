@@ -65,6 +65,9 @@ public sealed class RetailIgi1SectorVisibilityTests
 
         // The office's own room, and what it carries, are drawn.
         Assert.Contains(m.Scene.Placements, p => p.Owner.Name == "Building_1118" && p.IsAttached && m.Visibility.IsVisible(p));
+
+        // So is its shell, which the walk never reached: it stands behind the walls to close the seams between them.
+        Assert.Contains(m.Scene.Placements, p => p.Owner.Name == "Building_1118" && !p.IsAttached && m.Visibility.IsVisible(p));
     }
 
     /// <summary>The room that cannot see out from the reported spot cannot from anywhere in it: turning the camera changes nothing.</summary>

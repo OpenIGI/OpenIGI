@@ -253,9 +253,11 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
                 return true;
             }
 
-            // A building's shell stands whenever the building is drawn from outside; only the camera's own building and the
-            // ones beyond its sphere can leave it out.
-            return sector.IsShell && !IsGated(sector.Building);
+            // A building's shell stands whenever the building is drawn from outside; only the ones beyond the camera's sphere
+            // leave it out. The camera's own building keeps it too, though DrawSector (0x4DD5D0) draws only what the walk
+            // reached: the shell is the far side of every room's walls, hidden by them but for the sub-pixel seams between
+            // a room and what it carries, which a temporal resolve turns into lines of sky. Nothing else is seen through it.
+            return sector.IsShell && (ReferenceEquals(sector.Building, _inside) || !IsGated(sector.Building));
         }
 
         if (_inside is null || !_owners.TryGetValue(placement.Owner, out Owner owner) || !IsOutside(owner))

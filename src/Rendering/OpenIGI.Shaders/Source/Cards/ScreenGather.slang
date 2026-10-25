@@ -135,6 +135,16 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
 #if OPENIGI_GATHER_PIXEL
     float2 jitter = WhiteNoise3(pixel, uint(uFrame), 0x61u).xy;
+
+    // And the point it fires from, moved anywhere within a float's step at the level's own coordinates. The
+    // structure was built where the world is, tens of kilometres out in some levels, where one step is
+    // millimetres; a ray's answer turns on which way its origin rounds, and a pixel that fires from the same
+    // point every frame keeps the same rounding for ever. Ray reconstruction takes a bias that never changes
+    // for detail and holds it: it drew bands of light across a plain wall, shaped like wood grain, wherever
+    // the rounding swept along it. The probes never showed it, because they move every frame.
+    float3 magnitude = abs(uTraceOrigin + world);
+    float step = max(max(magnitude.x, magnitude.y), magnitude.z) * 2.4e-7;
+    world += (WhiteNoise3(pixel, uint(uFrame), 0x33u) - 0.5) * max(step, 1e-4);
 #else
     float2 jitter = float2(0.5, 0.5);
 #endif
