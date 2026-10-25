@@ -32,6 +32,14 @@ public sealed class DynamicTasks
         _tasks.Add(task);
     }
 
+    /// <summary>Reports whether a task is still among them.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> while it has not deleted itself.</returns>
+    public bool Contains(IDynamicTask task) => _tasks.Contains(task);
+
+    /// <summary>Drops every task, as a level that ends does.</summary>
+    public void Clear() => _tasks.Clear();
+
     /// <summary>A tick of every task, in order.</summary>
     public void Run()
     {

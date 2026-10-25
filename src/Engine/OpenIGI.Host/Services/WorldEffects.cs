@@ -56,10 +56,6 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // returns at the count check.
         Particles?.Dispose();
         Particles = new ImpactParticleRenderer(device, resources, fileSystem, MissionLoader.CommonSpritesArchive);
-        if (!Particles.Load(mission))
-        {
-            logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
-        }
 
         // The original's own impact effects: concrete1.spr dust, the material's own chip model, and blood1/blood2
         // for a body. The runtime keeps the motion; this only draws it. Without it the blood is still thrown and

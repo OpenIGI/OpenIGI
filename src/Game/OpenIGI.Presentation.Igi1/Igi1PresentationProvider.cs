@@ -29,7 +29,10 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
                 new Igi1RetailMenus(request))
             .Add<MissionEffectsRequest, IMissionImpactView>(static (in MissionEffectsRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay
-                    ? new Igi1ImpactView(new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem), gameplay)
+                    ? new Igi1ImpactView(
+                        new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem),
+                        new RetailExplosionEffects(request.Device, request.Resources),
+                        gameplay)
                     : null)
             .Add<MissionPresentationRequest, IMissionHudOverlay>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1HudOverlay(request.Device, gameplay) : null)

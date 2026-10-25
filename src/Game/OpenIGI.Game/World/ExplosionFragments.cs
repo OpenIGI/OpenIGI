@@ -41,6 +41,7 @@ public sealed class ExplosionFragments(string model, int lifetime, float gravity
     {
         ArgumentNullException.ThrowIfNull(fragment);
         fragment.Lifetime = Lifetime;
+        fragment.PreviousPosition = fragment.Position;
         _fragments.Add(fragment);
     }
 
@@ -61,6 +62,7 @@ public sealed class ExplosionFragments(string model, int lifetime, float gravity
             Vector3f v = f.Velocity;
             float vx = (air * v.X).F, vy = (air * v.Y).F, vz = ((air * v.Z) - gravity).F;
             f.Velocity = new Vector3f(vx, vy, vz);
+            f.PreviousPosition = f.Position;
             f.Position = new Vector3d(((Fpu)vx + f.Position.X).Value, ((Fpu)vy + f.Position.Y).Value, ((Fpu)vz + f.Position.Z).Value);
             float[] o = f.Orientation;
             float[] turned = new float[9];

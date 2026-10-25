@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World.Particles;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
 
 namespace OpenIGI.Game.World;
@@ -13,6 +14,7 @@ public sealed class ExplosionSmoke : IDynamicTask
     private readonly IgiRandom _random;
     private readonly List<ExplosionSmokePuff> _puffs = [];
     private bool _isBlack;
+    private Particle2DSystem? _black;
 
     /// <summary>Initializes a new instance of the <see cref="ExplosionSmoke"/> class.</summary>
     /// <param name="random">The run stream.</param>
@@ -46,6 +48,10 @@ public sealed class ExplosionSmoke : IDynamicTask
     /// <summary>Gets the black puff's brightness, set each tick once it has started.</summary>
     public float BlackIntensity { get; private set; }
 
+    /// <summary>Gets what makes a puff's particle system, when the title draws its smoke; <see langword="null"/> keeps only the record.</summary>
+    /// <remarks>The black puff's system is the one whose particles take <see cref="BlackIntensity"/> each tick (<c>Particle2D_SetLevel</c>).</remarks>
+    public Func<ExplosionSmokePuff, Particle2DSystem?>? Emit { get; init; }
+
     /// <inheritdoc/>
     /// <remarks>
     /// On its first tick the white puff starts: it lives a tenth of the smoke's life, fades over four fifths to all of it at
@@ -67,13 +73,17 @@ public sealed class ExplosionSmoke : IDynamicTask
             int partFade = Fpu.ToInt32(fade);
             float sizeDelta = ((Fpu)1f / (double)total).F;
             float intensity = ((Draw() + 1f) * 0.1f).F;
-            _puffs.Add(Puff(0x1000008, sizeDelta, partLife, partFade, intensity));
+            ExplosionSmokePuff white = Puff(0x1000008, sizeDelta, partLife, partFade, intensity);
+            _puffs.Add(white);
+            _ = Emit?.Invoke(white);
         }
 
         if (Lifetime == Fpu.ToInt32((Fpu)0.9f * (double)total))
         {
             float sizeDelta = ((Fpu)1f / (double)total).F;
-            _puffs.Add(Puff(0x1000010, sizeDelta, total, 0, 0.001f));
+            ExplosionSmokePuff black = Puff(0x1000010, sizeDelta, total, 0, 0.001f);
+            _puffs.Add(black);
+            _black = Emit?.Invoke(black);
             _isBlack = true;
         }
 
@@ -83,6 +93,7 @@ public sealed class ExplosionSmoke : IDynamicTask
             Fpu half = whole * 0.5f;
             Fpu share = life.Value <= half.Value ? life / half : (Fpu)1f - ((life - half) / ((whole * 0.9f) - half));
             BlackIntensity = (share * 0.3f).F;
+            _black?.SetLevel(BlackIntensity);
         }
 
         Lifetime--;

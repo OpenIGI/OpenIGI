@@ -67,7 +67,6 @@ public sealed class ImpactParticleRenderer : IDisposable
     private readonly IgiRandom _random = new();
     private readonly ImpactParticle[] _particles = new ImpactParticle[MaximumParticles];
     private readonly ParticleQuadBuilder _quads = new();
-    private readonly RetailExplosionEffects _explosions;
     private int _count;
     private int _lastUsed;
     private MeshHandle _mesh = MeshHandle.None;
@@ -103,12 +102,6 @@ public sealed class ImpactParticleRenderer : IDisposable
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
-        _explosions = new RetailExplosionEffects(
-            device,
-            resources,
-            _random,
-            (positionUnits, velocity, sizeMetres, lifeTicks) =>
-                EmitRetailSprite(positionUnits, velocity, sizeMetres, lifeTicks, smoke: true));
         _retailFireballFrames = [];
         _retailSmokeFrames = [];
         if (fileSystem is not null && spriteArchive is not null)
@@ -133,34 +126,6 @@ public sealed class ImpactParticleRenderer : IDisposable
 
     /// <summary>Gets the decoded retail smoke frame count, for parity diagnostics and tests.</summary>
     internal int RetailSmokeFrameCount => _retailSmokeFrames.Length;
-
-    /// <summary>Gets whether the IGI1 common pack supplied the native <c>1009_01_1</c> fragment model.</summary>
-    public bool UsesRetailExplosionModel => _explosions.UsesRetailExplosionModel;
-
-    /// <summary>Gets whether the common pack supplied the native 1006 FireBall model.</summary>
-    internal bool UsesRetailFireballModel => _explosions.UsesRetailFireballModel;
-
-    /// <summary>Gets how many animation frames the FireBall's texture has, for parity tests.</summary>
-    internal int RetailFireballModelFrameCount => _explosions.RetailFireballModelFrameCount;
-
-    /// <summary>Gets the blend the FireBall model's face group asks for.</summary>
-    internal BlendMode RetailFireballBlend => _explosions.RetailFireballBlend;
-
-    /// <summary>Gets the blend the fragment model's face group asks for.</summary>
-    internal BlendMode RetailFragmentBlend => _explosions.RetailFragmentBlend;
-
-    /// <summary>
-    /// Binds the IGI1 authored fireball model and its common-pack material.
-    /// </summary>
-    /// <param name="mission">The loaded IGI1 mission whose common pack owns the effect.</param>
-    /// <returns><see langword="true"/> when <c>1009_01_1</c> and its texture resolved.</returns>
-    public bool Load(LoadedMission mission)
-    {
-        ArgumentNullException.ThrowIfNull(mission);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        return _explosions.Load(mission);
-    }
 
     /// <summary>Maps a struck material's name onto a burst kind.</summary>
     /// <param name="materialName">The game material's name, or empty when none resolved.</param>
@@ -238,155 +203,6 @@ public sealed class ImpactParticleRenderer : IDisposable
         {
             EmitDust(positionUnits, normal, kind);
         }
-    }
-
-    /// <summary>Spawns the retail Explosion0 fireball, fragments and smoke column.</summary>
-    /// <param name="positionUnits">The blast's centre, in world units.</param>
-    /// <param name="intensity">The particle-count scale; one is the authored look.</param>
-    /// <param name="fireballScale">The authored <c>Explosion fireballs</c> value.</param>
-    /// <param name="fragments">The authored <c>Explosion fragments</c> count.</param>
-    /// <param name="includeSmoke">Whether the native <c>ExplosionSmoke</c> child is present.</param>
-    /// <remarks>
-    /// With the retail models bound this is one <see cref="SpawnRetailExplosion(Vector3d, RetailExplosionShape)"/>
-    /// FireBall a metre of range per unit of <paramref name="fireballScale"/>; callers that know their
-    /// <c>Explosion0</c> arguments call that directly. The procedural burst is kept for installations
-    /// where the retail effect models cannot be resolved.
-    /// </remarks>
-    public void SpawnExplosion(
-        Vector3d positionUnits,
-        float intensity,
-        float fireballScale = 1f,
-        int fragments = 0,
-        bool includeSmoke = true)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (!(intensity > 0f))
-        {
-            return;
-        }
-
-        if (UsesRetailExplosionModel && UsesRetailFireballModel)
-        {
-            float authoredScale = fireballScale > 0f ? fireballScale : 1f;
-            SpawnRetailExplosion(
-                positionUnits,
-                new RetailExplosionShape(
-                    FullRangeUnits: authoredScale * UnitsPerMetre,
-                    Fireballs: 1,
-                    Fragments: Math.Max(0, fragments)),
-                includeSmoke);
-            return;
-        }
-
-        float scale = Math.Clamp(fireballScale, 0.25f, 2f);
-        int embers = Math.Max(1, (int)MathF.Round(18f * Math.Min(intensity, 2f) * scale));
-        int fragmentCount = fragments > 0
-            ? Math.Max(1, (int)MathF.Round(fragments * Math.Min(intensity, 2f)))
-            : Math.Max(4, (int)MathF.Round(8f * Math.Min(intensity, 2f)));
-        int smoke = includeSmoke ? (int)(14 * Math.Min(intensity, 2f)) : 0;
-        Vector3f up = new(0f, 0f, 1f);
-
-        for (int i = 0; i < embers; i++)
-        {
-            float speed = (6f + ((float)_random.NextDouble() * 16f)) * UnitsPerMetre / 30f;
-            Vector3f direction = ScatterAround(up * 0.35f, spread: 1f);
-            float heat = 0.6f + ((float)_random.NextDouble() * 0.4f);
-
-            Emit(new ImpactParticle
-            {
-                Position = positionUnits,
-                PreviousPosition = positionUnits,
-                Velocity = direction * speed,
-                LifeTicks = 12 + (int)_random.NextBounded(17),
-                Size = 0.06f + ((float)_random.NextDouble() * 0.06f),
-                Growth = 0f,
-                GravityScale = 1f,
-                Drag = 0.95f,
-                Red = 1f,
-                Green = 0.55f * heat + 0.2f,
-                Blue = 0.15f * heat,
-                IsSpark = true,
-            });
-        }
-
-        for (int i = 0; i < fragmentCount; i++)
-        {
-            float speed = (8f + ((float)_random.NextDouble() * 14f)) * UnitsPerMetre / 30f;
-            Vector3f direction = ScatterAround(up * 0.15f, spread: 1.1f);
-
-            Emit(new ImpactParticle
-            {
-                Position = positionUnits,
-                PreviousPosition = positionUnits,
-                Velocity = direction * speed,
-                LifeTicks = 16 + (int)_random.NextBounded(18),
-                Size = 0.035f + ((float)_random.NextDouble() * 0.045f),
-                Growth = 0f,
-                GravityScale = 1.25f,
-                Drag = 0.965f,
-                Red = 1f,
-                Green = 0.68f + ((float)_random.NextDouble() * 0.2f),
-                Blue = 0.28f,
-                IsSpark = true,
-            });
-        }
-
-        for (int i = 0; i < smoke; i++)
-        {
-            float speed = (1f + ((float)_random.NextDouble() * 3f)) * UnitsPerMetre / 30f;
-            Vector3f direction = ScatterAround(up, spread: 0.8f);
-            float shade = 0.5f + ((float)_random.NextDouble() * 0.5f);
-
-            Emit(new ImpactParticle
-            {
-                Position = positionUnits,
-                PreviousPosition = positionUnits,
-                Velocity = direction * speed,
-                LifeTicks = 35 + (int)_random.NextBounded(31),
-                Size = 0.35f + ((float)_random.NextDouble() * 0.3f),
-                Growth = 0.02f + ((float)_random.NextDouble() * 0.015f),
-                GravityScale = -0.04f,
-                Drag = 0.92f,
-                Red = 0.16f * shade,
-                Green = 0.15f * shade,
-                Blue = 0.14f * shade,
-                IsSpark = false,
-            });
-        }
-    }
-
-    /// <summary>Spawns one retail <c>Explosion0</c>: its FireBalls, its smoke and its flying fragments.</summary>
-    /// <param name="positionUnits">The blast's centre, in world units.</param>
-    /// <param name="shape">The caller's <c>Explosion0</c> arguments.</param>
-    /// <remarks>
-    /// <para>
-    /// This is <c>FUN_0047F200</c> as the destructible objects reach it through <c>FUN_00480FE0</c>
-    /// (the camera lens <c>0x441770</c>, the alarm light <c>0x43A5F0</c>, <c>ExplodeMagicObj</c>
-    /// <c>0x43C0B0</c>, <c>ExplodeObject</c> <c>0x481A60</c>). The flame is <c>1006_01_1</c> FireBalls
-    /// sized by the full damage range; the debris is <c>1009_01_1</c>, a small rock, thrown as
-    /// separate pieces a tenth of its size. No sprite is drawn over the blast: <c>fireball.spr</c> only
-    /// ever trails a fragment spawned with a trail, and none of these callers ask for one.
-    /// </para>
-    /// <para>
-    /// Retail creates <c>ExplosionSmoke</c> whenever the blast has a FireBall; the smoke here stays the
-    /// port's two-puff approximation of that particle system.
-    /// </para>
-    /// </remarks>
-    public void SpawnRetailExplosion(Vector3d positionUnits, RetailExplosionShape shape) =>
-        SpawnRetailExplosion(positionUnits, shape, includeSmoke: shape.Fireballs > 0);
-
-    private void SpawnRetailExplosion(Vector3d positionUnits, RetailExplosionShape shape, bool includeSmoke)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (!UsesRetailExplosionModel || !UsesRetailFireballModel)
-        {
-            SpawnExplosion(positionUnits, 1f, shape.FullRangeUnits / UnitsPerMetre, shape.Fragments, includeSmoke);
-            return;
-        }
-
-        _explosions.Spawn(positionUnits, shape, includeSmoke);
     }
 
     /// <summary>Lays one soft puff of a launcher rocket's smoke trail.</summary>
@@ -492,8 +308,6 @@ public sealed class ImpactParticleRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _explosions.Tick();
-
         for (int i = _count - 1; i >= 0; i--)
         {
             ref ImpactParticle p = ref _particles[i];
@@ -533,13 +347,6 @@ public sealed class ImpactParticleRenderer : IDisposable
     public void Draw(in Camera3D camera, in Matrix4f projection, float alpha)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (_count == 0 && !_explosions.HasDrawable)
-        {
-            return;
-        }
-
-        _explosions.Draw(camera, projection, alpha);
 
         if (_count == 0)
         {
@@ -723,7 +530,6 @@ public sealed class ImpactParticleRenderer : IDisposable
     public void Clear()
     {
         _count = 0;
-        _explosions.Clear();
     }
 
     /// <inheritdoc/>
@@ -771,8 +577,6 @@ public sealed class ImpactParticleRenderer : IDisposable
             _device.DestroyTexture(_glassTexture);
             _glassTexture = TextureHandle.None;
         }
-
-        _explosions.Release();
     }
 
     private void EmitSpark(Vector3d positionUnits, Vector3f normal, ImpactSurfaceKind kind)

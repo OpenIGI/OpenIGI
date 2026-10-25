@@ -8,7 +8,7 @@ namespace OpenIGI.Game.World;
 /// <param name="DamageFactor">The blast's damage factor.</param>
 /// <param name="RadiusUnits">The full-damage radius.</param>
 /// <param name="FalloffUnits">How far past the radius the damage takes to reach nothing.</param>
-/// <param name="FullRangeUnits">The fireball's full range (the scorch size).</param>
+/// <param name="BurnUnits">The burn it hands <c>Explosion0</c>, which a car's blast lays on nothing; the blast's size is <paramref name="RadiusUnits"/>.</param>
 /// <param name="Fragments">How many fragments it throws.</param>
 /// <param name="Fireballs">How many fireballs it shows.</param>
 public sealed record VehicleBlast(
@@ -17,7 +17,7 @@ public sealed record VehicleBlast(
     float DamageFactor,
     float RadiusUnits,
     float FalloffUnits,
-    float FullRangeUnits,
+    float BurnUnits,
     int Fragments,
     int Fireballs)
 {
