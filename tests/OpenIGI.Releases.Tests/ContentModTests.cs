@@ -11,7 +11,7 @@ public sealed class ContentModTests : IDisposable
           "id": "armoured-guards", "name": "Armoured guards", "version": "1.2.0", "apiVersion": 1,
           "summary": "Guards in armour.", "authors": ["Someone"], "license": "MIT", "titles": ["IGI1"],
           "requiresTitleData": ["igi2"], "dependencies": { "library": ">=2.0" }, "assembly": "Guards.dll",
-          "minGameVersion": "0.9.0"
+          "minGameVersion": "0.9.0", "experimental": true
         }
         """;
 
@@ -43,12 +43,14 @@ public sealed class ContentModTests : IDisposable
         Assert.Equal(["Someone"], mod.Authors);
         Assert.Equal(["igi2"], mod.RequiresTitleData!);
         Assert.Equal(">=2.0", mod.Dependencies!["library"]);
+        Assert.True(mod.Experimental);
 
         ContentPack listing = ReleaseJson.ReadContent(ReleaseJson.Write(manifest)).Listing;
         Assert.Equal(ContentKind.Mod, listing.Kind);
         Assert.True(listing.IsFor("igi1"));
         Assert.False(listing.IsFor("igi2"));
         Assert.Equal("0123abcd", listing.Mod!.Commit);
+        Assert.True(listing.Mod.Experimental);
     }
 
     [Fact]
@@ -85,6 +87,7 @@ public sealed class ContentModTests : IDisposable
         ContentManifest manifest = ContentPublish.Chunk(_folder, details, _cache, DateTimeOffset.UnixEpoch).Manifest;
         Assert.Equal(ModPacks.AnyGame, manifest.Game);
         Assert.False(manifest.Mod!.RunsCode);
+        Assert.False(manifest.Mod.Experimental);
         Assert.Null(manifest.Mod.Source);
         Assert.True(manifest.Listing.IsFor("igi1") && manifest.Listing.IsFor("igi2"));
 

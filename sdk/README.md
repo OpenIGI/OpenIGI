@@ -34,6 +34,7 @@ The project is the mod's properties and nothing else:
     <ModTitles>igi1</ModTitles>                      <!-- the games it is for: igi1, igi2, or both; empty for every game -->
     <ModRequiresTitleData></ModRequiresTitleData>    <!-- other games whose installed data it reads -->
     <ModAffectsSimulation>true</ModAffectsSimulation><!-- whether it changes what happens in play, not only how it looks -->
+    <ModExperimental>false</ModExperimental>          <!-- true marks it EXPERIMENTAL in the launcher: not ready to rely on -->
   </PropertyGroup>
   <ItemGroup>
     <ModDependency Include="other-mod" Version=">=1.2" />

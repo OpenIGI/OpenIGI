@@ -18,6 +18,7 @@
     <ModHomepage Condition="'$(ModHomepage)' == ''">$(PackageProjectUrl)</ModHomepage>
     <ModMinGameVersion Condition="'$(ModMinGameVersion)' == ''">$(OpenIgiSdkVersion)</ModMinGameVersion>
     <ModAffectsSimulation Condition="'$(ModAffectsSimulation)' == ''">true</ModAffectsSimulation>
+    <ModExperimental Condition="'$(ModExperimental)' == ''">false</ModExperimental>
 
     <_ModHandWrittenManifest>$(MSBuildProjectDirectory)\mod.json</_ModHandWrittenManifest>
   </PropertyGroup>
@@ -78,6 +79,7 @@
       <ApiVersion ParameterType="System.String" Required="true" />
       <Assembly ParameterType="System.String" />
       <AffectsSimulation ParameterType="System.String" />
+      <Experimental ParameterType="System.String" />
       <Summary ParameterType="System.String" />
       <Authors ParameterType="System.String" />
       <License ParameterType="System.String" />
@@ -203,6 +205,7 @@
             json.Append("  \"postPasses\": [").Append(string.Join(", ", passes)).Append("],\n");
         }
 
+        if (string.Equals(Experimental, "true", StringComparison.OrdinalIgnoreCase)) { json.Append("  \"experimental\": true,\n"); }
         json.Append("  \"affectsSimulation\": ").Append(string.Equals(AffectsSimulation, "false", StringComparison.OrdinalIgnoreCase) ? "false" : "true").Append("\n");
         json.Append("}\n");
 
@@ -242,6 +245,7 @@
         ApiVersion="$(OpenIgiModApiVersion)"
         Assembly="$(_ModAssemblyFile)"
         AffectsSimulation="$(ModAffectsSimulation)"
+        Experimental="$(ModExperimental)"
         Summary="$(ModSummary)"
         Authors="$(Authors)"
         License="$(ModLicense)"

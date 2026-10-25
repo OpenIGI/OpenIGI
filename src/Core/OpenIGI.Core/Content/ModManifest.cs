@@ -68,6 +68,9 @@ public sealed record ModManifest(
     /// <summary>Gets the oldest game build the mod works with, or <see langword="null"/>; the launcher checks it.</summary>
     public string? MinGameVersion { get; init; }
 
+    /// <summary>Gets whether the mod's author says it is not ready to be relied on yet; the launcher marks it so.</summary>
+    public bool Experimental { get; init; }
+
     /// <summary>Gets whether the mod has code, which runs with the game's own rights.</summary>
     public bool RunsCode => Assembly is { Length: > 0 };
 
