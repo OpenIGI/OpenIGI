@@ -151,6 +151,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
                     {
                         Effects = explosions,
                         Explosions = explosions,
+                        MissileSounds = sounds,
                     };
                     if (request.Services.TryGet(out OpenIGI.Game.Weapons.MissileRandom? missileStream))
                     {

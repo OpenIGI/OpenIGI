@@ -37,6 +37,9 @@ public sealed class RetailIgi2MissileTests
         launcher.LaunchMissile(new Igi2ProjectileLaunch(weapons.FireTaskTypes.Missile, above, down, default, 30f, 0f, 0, rpg, null), fire);
 
         Igi2Missile missile = Assert.IsType<Igi2Missile>(Assert.Single(dynamic.Tasks));
+
+        // Its type names the sound it flies with (Missile_InitSound plays it as the missile is made).
+        Assert.NotEmpty(missile.Type.Sound);
         int ticks = 0;
         while (missile.Run())
         {

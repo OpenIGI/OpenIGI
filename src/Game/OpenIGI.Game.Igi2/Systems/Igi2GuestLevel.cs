@@ -414,6 +414,7 @@ public sealed class Igi2GuestLevel
             {
                 Effects = explosions,
                 Explosions = explosions,
+                MissileSounds = _sounds,
             };
             if (services.TryGet(out MissileRandom? missileStream))
             {

@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <remarks>Every voice the mission holds is held here, so the host only opens the device and places the ear.</remarks>
 /// <param name="mission">The mission whose things make the sounds, and whose stream picks among them.</param>
 /// <param name="host">Where they play.</param>
-public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
+public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
@@ -873,6 +873,7 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
         StopBinocularTransitionSound();
         StopLadderSlideSound();
         StopGrenadeCook();
+        StopMissileSounds();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
         {

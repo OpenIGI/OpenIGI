@@ -379,6 +379,9 @@ public sealed class Igi2Grenades(
     /// <summary>The missile a launcher fires when its fire type names none.</summary>
     public const string DefaultMissileModel = "110_02_1";
 
+    /// <summary>Gets or sets the level's sounds, which a missile flies with.</summary>
+    public Audio.Igi2Sounds? MissileSounds { get; set; }
+
     /// <summary>Gets or sets the missiles' own stream.</summary>
     public IgiRandom MissileStream { get; set; } = new MissileRandom().Random;
 
@@ -410,7 +413,9 @@ public sealed class Igi2Grenades(
             return;
         }
 
-        Dynamic.Add(new Igi2Missile(launch, model, type, missile, models(model), World, explosions, MissileStream, LevelTick));
+        Igi2Missile flying = new(launch, model, type, missile, models(model), World, explosions, MissileStream, LevelTick);
+        flying.StartSound(MissileSounds);
+        Dynamic.Add(flying);
     }
 
     /// <inheritdoc/>
