@@ -165,6 +165,28 @@ public sealed class HeldGun
         return taken;
     }
 
+    /// <summary>Puts one shell in the magazine, when it has room and the pool has one (<c>0x472AE0</c>'s stage 2).</summary>
+    /// <param name="pool">What the owner is carrying.</param>
+    /// <returns>How many rounds the magazine still had room for before this one: 0 when it was full.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pool"/> is <see langword="null"/>.</exception>
+    public int LoadShell(AmmoPool pool)
+    {
+        ArgumentNullException.ThrowIfNull(pool);
+        if (Ammo is null)
+        {
+            return 0;
+        }
+
+        State.EnsureLoaded(Weapon);
+        int need = Weapon.RoundsPerClip - State.RoundsInClip;
+        if (need > 0 && pool.Take(Ammo.AmmoId, 1) == 1)
+        {
+            State.RoundsInClip++;
+        }
+
+        return Math.Max(0, need);
+    }
+
     /// <summary>Sends the gun one tick's trigger message.</summary>
     /// <param name="triggerHeld">Whether the human asked for a round this tick.</param>
     /// <param name="origin">The muzzle, in engine units.</param>

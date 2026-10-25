@@ -49,6 +49,15 @@ public static class WeaponAnimationTable
     /// <summary>The blend the standing and moving actions ease in over, in seconds.</summary>
     public const float DefaultBlendSeconds = 0.40000001f;
 
+    /// <summary>The SPAS-12 reload's opening clip, a number <c>0x472AE0</c> carries itself (<c>0x3D</c>).</summary>
+    public const int ShellReloadOpenClip = 0x3D;
+
+    /// <summary>The clip one shell goes in with (<c>0x3E</c>).</summary>
+    public const int ShellReloadInsertClip = 0x3E;
+
+    /// <summary>The reload's closing clip (<c>0x3F</c>).</summary>
+    public const int ShellReloadCloseClip = 0x3F;
+
     /// <summary>Picks the animations an action plays on a weapon.</summary>
     /// <param name="weapon">The weapon being held.</param>
     /// <param name="action">What the human is doing.</param>
@@ -114,6 +123,16 @@ public static class WeaponAnimationTable
                     true,
                     immediate,
                     immediate),
+
+            // 0x472AE0 plays its three clips by number on the view rig alone (0x489F20), leaving the torso as it was.
+            WeaponAction.ShellReloadOpen =>
+                new(ShellReloadOpenClip, -1, false, false, eased, immediate),
+
+            WeaponAction.ShellReloadInsert =>
+                new(ShellReloadInsertClip, -1, false, false, immediate, immediate),
+
+            WeaponAction.ShellReloadClose =>
+                new(ShellReloadCloseClip, -1, false, false, immediate, immediate),
 
             // Standing again, but snapped rather than eased on the full-body track.
             WeaponAction.StandImmediate =>

@@ -163,6 +163,92 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(50 - 17, weapons.Ammunition.Count(NineMillimetre.AmmoId));
     }
 
+    private static readonly AmmoType TwelveGauge = new() { AmmoId = 5, ScriptId = "AMMO_ID_12", CalibreId = 12 };
+
+    private static WeaponType Spas12 => new()
+    {
+        WeaponId = 8,
+        ScriptId = "WEAPON_ID_SPAS12",
+        Category = WeaponCategory.Gun,
+        CalibreId = 12,
+        RoundsPerMinute = 50,
+        RoundsPerClip = 7,
+        MaximumRoundsPerBurst = 1,
+        BulletsPerRound = 12,
+        StandAnimation = 58,
+        FireAnimation1 = 60,
+        FireAnimation2 = -1,
+        FireAnimation3 = -1,
+        ReloadAnimation = 61,
+        Weapon = new WeaponTaskBinding("TASKTYPE_GUNSPAS12", 0, [], string.Empty, 0),
+    };
+
+    [Fact]
+    public void TheSpasLoadsAShellAClipUntilTheTubeIsFull()
+    {
+        // 0x472AE0: open (61), a shell in at the end of every insert clip (62), then close (63).
+        PlayerWeapons weapons = new([8]);
+        weapons.Carry(Spas12, TwelveGauge);
+        weapons.Ammunition.Add(TwelveGauge.AmmoId, 10);
+        Equip(weapons, clipEnded: false);
+        CarriedWeapon held = weapons.InHand!.Value;
+        held.Gun.State.RoundsInClip = 4;
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.Reload));
+        Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+        Assert.Equal(WeaponAction.ShellReloadOpen, weapons.RequestedAction);
+        Assert.Equal(new WeaponAnimations(61, -1, false, false, WeaponAnimationTable.DefaultBlendSeconds, 0f),
+            WeaponAnimationTable.Select(held.Weapon, WeaponAction.ShellReloadOpen));
+
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(WeaponAction.ShellReloadInsert, weapons.RequestedAction);
+        Assert.Equal(4, held.Gun.RoundsInClip);
+
+        for (int shell = 5; shell <= 6; shell++)
+        {
+            Tick(weapons, input, Frame(), clipEnded: true);
+            Assert.Equal(shell, held.Gun.RoundsInClip);
+            Assert.Equal(WeaponAction.ShellReloadInsert, weapons.RequestedAction);
+        }
+
+        // The seventh fills the tube, and the gun closes.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(7, held.Gun.RoundsInClip);
+        Assert.Equal(WeaponAction.ShellReloadClose, weapons.RequestedAction);
+        Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Assert.Equal(10 - 3, weapons.Ammunition.Count(TwelveGauge.AmmoId));
+        Assert.Equal(0, held.Gun.State.ReloadStage);
+    }
+
+    [Fact]
+    public void TheSpasClosesWhenThePocketRunsDry()
+    {
+        PlayerWeapons weapons = new([8]);
+        weapons.Carry(Spas12, TwelveGauge);
+        weapons.Ammunition.Add(TwelveGauge.AmmoId, 2);
+        Equip(weapons, clipEnded: false);
+        CarriedWeapon held = weapons.InHand!.Value;
+        held.Gun.State.RoundsInClip = 0;
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame());
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(2, held.Gun.RoundsInClip);
+
+        // The tube has room but the pocket is empty: the insert clip that was playing ends, and the gun closes.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(WeaponAction.ShellReloadClose, weapons.RequestedAction);
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Assert.Equal(2, held.Gun.RoundsInClip);
+    }
+
     [Fact]
     public void M16A2ReloadLeavesTheGunAttachedWhileTheRetailViewClipPlays()
     {

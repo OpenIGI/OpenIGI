@@ -403,6 +403,13 @@ public sealed class Igi1PlayerSetup(
             // list starts with the knife.
             candidate.UseWeaponCycle(config.WeaponCycle);
 
+            // 0x410370 caps the new player's ammunition at DefineHumanPlayerAmmoLimit's figures before anything is put in
+            // its pockets, so every pickup after is held to them.
+            foreach ((int ammoId, int limit) in config.AmmoLimits)
+            {
+                candidate.Weapons?.Ammunition.SetLimit(ammoId, limit);
+            }
+
             // And the nine categories the number keys select — 0x411000 reads exactly this table.
             candidate.Weapons?.UseCategories(config.Categories);
         }
