@@ -89,8 +89,13 @@ jobs:
             git merge --abort; exit 0; }
           git push origin develop
 
+  # A called workflow gets no more than its caller grants, and the release trades an OIDC token for its nuget.org key.
   release:
     needs: cut
+    permissions:
+      contents: write
+      packages: read
+      id-token: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.cut.outputs.tag }}
