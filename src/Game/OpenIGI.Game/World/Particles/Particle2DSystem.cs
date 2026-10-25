@@ -79,6 +79,16 @@ public sealed class Particle2DSystem
     /// <summary>Gets or sets what its particles meet, or <see langword="null"/> when they pass through.</summary>
     public IParticleCollider? Collider { get; set; }
 
+    /// <summary>Sets every live particle's intensity, Project I.G.I.'s <c>Particle2D_SetLevel</c> (<c>0x4FE5E0</c>).</summary>
+    /// <param name="level">The intensity.</param>
+    public void SetLevel(float level)
+    {
+        for (int i = 0; i < Count; i++)
+        {
+            _slots[i].Intensity = level;
+        }
+    }
+
     /// <summary>Adds a particle, unless the system is full, <c>Particle2DDynCubeObj_AddParticle</c>.</summary>
     /// <param name="position">Where it starts.</param>
     /// <param name="speed">Its speed, per tick.</param>

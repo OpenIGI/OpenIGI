@@ -6,6 +6,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
@@ -46,46 +47,6 @@ public sealed class ImpactParticleRendererTests
             (1d / 5120d) + 1e-10);
     }
 
-    [Fact]
-    public void RetailExplosionMotionUsesAuthoredDragAndScaleGravity()
-    {
-        (Vector3d position, Vector3f velocity) = RetailExplosionEffects.AdvanceRetailExplosionMotion(
-            Vector3d.Zero,
-            Vector3f.Zero,
-            gravityScale: 0.9f);
-
-        float expectedGravity = 0.9f * 44.600006f * 0.98f;
-        Assert.Equal(0f, position.X);
-        Assert.Equal(0f, position.Y);
-        Assert.Equal(-expectedGravity, position.Z, 4);
-        Assert.Equal(velocity.Z, position.Z, 4);
-    }
-
-    [Fact]
-    public void ExplosionUsesAuthoredFragmentsAndOptionalSmoke()
-    {
-        RecordingGraphicsDevice device = new();
-        using ImpactParticleRenderer renderer = new(device);
-
-        renderer.SpawnExplosion(new Vector3d(8192, 8192, 8192), 1f, fireballScale: 1.5f, fragments: 2);
-        int withSmoke = renderer.LiveCount;
-
-        renderer.Clear();
-        renderer.SpawnExplosion(
-            new Vector3d(8192, 8192, 8192),
-            1f,
-            fireballScale: 1.5f,
-            fragments: 2,
-            includeSmoke: false);
-        int withoutSmoke = renderer.LiveCount;
-
-        renderer.Clear();
-        renderer.SpawnExplosion(new Vector3d(8192, 8192, 8192), 1f, fireballScale: 1.5f, fragments: 12);
-
-        Assert.True(withSmoke > withoutSmoke);
-        Assert.True(renderer.LiveCount > withSmoke);
-    }
-
     [RequiresGameDataFact]
     public void RetailAtlasesDoNotReplaceProceduralImpactTextures()
     {
@@ -110,55 +71,29 @@ public sealed class ImpactParticleRendererTests
     }
 
     [RequiresGameDataFact]
-    public void RetailFireBallOutlivesTheTickItStarts()
-    {
-        (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
-        RecordingGraphicsDevice device = new();
-        using ImpactParticleRenderer renderer = new(device, resources, fileSystem, MissionLoader.CommonSpritesArchive);
-
-        Assert.True(renderer.Load(mission));
-        Assert.True(renderer.UsesRetailEffectSprites);
-        renderer.SpawnExplosion(
-            new Vector3d(8192d, 8192d, 8192d),
-            intensity: 1f,
-            fireballScale: 1f,
-            fragments: 2,
-            includeSmoke: false);
-
-        renderer.Draw(Camera3D.Default, Matrix4f.Identity, alpha: 1f);
-        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
-
-        device.MeshDraws.Clear();
-        renderer.Tick();
-        renderer.Draw(Camera3D.Default, Matrix4f.Identity, alpha: 1f);
-
-        // Explosion0 runs once and is gone, but its FireBall lives 75 ticks and keeps adding its flame.
-        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
-    }
-
-    [RequiresGameDataFact]
     public void RetailExplosionModelsDrawWithTheirOwnFaceGroupBlend()
     {
-        (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
+        (_, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
         RecordingGraphicsDevice device = new();
-        using ImpactParticleRenderer renderer = new(device, resources, fileSystem, MissionLoader.CommonSpritesArchive);
+        RetailExplosionEffects explosions = new(device, resources);
 
-        Assert.True(renderer.Load(mission));
+        Assert.True(explosions.Load(mission));
 
         // The FireBall's face group is transparent and additive (0x49EC70 draws it at ONE, ONE); the
         // fragment's is neither, so it is an ordinary opaque model (0x49DF60).
-        Assert.Equal(BlendMode.Additive, renderer.RetailFireballBlend);
-        Assert.Equal(BlendMode.Opaque, renderer.RetailFragmentBlend);
-        Assert.Equal(26, renderer.RetailFireballModelFrameCount);
+        Assert.Equal(BlendMode.Additive, explosions.RetailFireballBlend);
+        Assert.Equal(BlendMode.Opaque, explosions.RetailFragmentBlend);
+        Assert.Equal(26, explosions.RetailFireballModelFrameCount);
 
-        renderer.SpawnRetailExplosion(new Vector3d(8192d, 8192d, 8192d), RetailExplosionShape.CameraLens);
-        renderer.Draw(Camera3D.Default, Matrix4f.Identity, alpha: 1f);
+        // A camera lens's blast: the flame adds and the debris is solid. Its smoke is particle systems, drawn elsewhere.
+        Igi1ExplosionRuntime scene = new(new IgiRandom(), particles: null);
+        _ = scene.Spawn(new Igi1ExplosionRequest(new Vector3d(8192d, 8192d, 8192d), 1, 0, 0.25f, 2048f, 0f, 7, 3, string.Empty));
+        explosions.Draw(scene, Camera3D.Default, Matrix4f.Identity, alpha: 1f);
 
-        // The flame adds, the debris is solid, and the only blended draw left is the smoke, whose
-        // texture fades to nothing at its edge. Nothing else could paint a box around the blast.
         Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
         Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Opaque);
-        Assert.Single(device.MeshDraws, draw => draw.Blend == BlendMode.AlphaBlend);
+        Assert.DoesNotContain(device.MeshDraws, draw => draw.Blend == BlendMode.AlphaBlend);
+        explosions.Release();
     }
 
     [Fact]

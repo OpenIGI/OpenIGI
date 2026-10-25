@@ -126,7 +126,7 @@ internal sealed class DestructibleVehicleBlasts
                 DamageFactor: 1f,
                 RadiusUnits: bound * 0.25f,
                 FalloffUnits: bound * 0.05f,
-                FullRangeUnits: bound * 0.005f,
+                BurnUnits: bound * 0.005f,
                 Fragments: 3,
                 Fireballs: 1));
             return;
@@ -142,7 +142,7 @@ internal sealed class DestructibleVehicleBlasts
                 DamageFactor: 1f,
                 RadiusUnits: 12288f,
                 FalloffUnits: 3072f,
-                FullRangeUnits: 3072f,
+                BurnUnits: 3072f,
                 Fragments: 3,
                 Fireballs: 2)
             {

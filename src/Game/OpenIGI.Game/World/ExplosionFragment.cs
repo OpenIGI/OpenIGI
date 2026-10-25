@@ -8,6 +8,9 @@ public sealed class ExplosionFragment
     /// <summary>Gets or sets where it is.</summary>
     public Vector3d Position { get; set; }
 
+    /// <summary>Gets or sets where it was a tick ago, for a frame drawn between the two.</summary>
+    public Vector3d PreviousPosition { get; set; }
+
     /// <summary>Gets or sets its velocity, units a tick.</summary>
     public Vector3f Velocity { get; set; }
 

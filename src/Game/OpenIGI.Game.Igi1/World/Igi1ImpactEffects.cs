@@ -30,6 +30,12 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// <summary>Gets the effects as they move: the dust and chips, and the blood.</summary>
     public ImpactEffectRuntime Runtime { get; } = new();
 
+    /// <summary>Gets the level's explosions as the simulation runs them, on the engine's own stream.</summary>
+    /// <remarks>Their smoke is made in <see cref="Runtime"/>'s particle module, so the one particle drawer shows it.</remarks>
+    public Igi1ExplosionRuntime Explosions => _explosions ??= new(mission.SoundRandom, Runtime.Particles);
+
+    private Igi1ExplosionRuntime? _explosions;
+
     // What a droplet or a dust puff stops against.
     private WorldRayCast? Walls => mission.EffectWalls ?? mission.Player?.Body.Walls;
 
@@ -38,6 +44,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     public void Reset(int mistFrames)
     {
         Runtime.Clear();
+        Explosions.Clear();
         Runtime.SetMistFrameCount(mistFrames);
     }
 
@@ -131,6 +138,8 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// </remarks>
     public void Tick()
     {
+        // The explosions first: the particle systems their smoke made run after them, as tasks made later do.
+        Explosions.Tick();
         if (mission.Player is null)
         {
             return;
