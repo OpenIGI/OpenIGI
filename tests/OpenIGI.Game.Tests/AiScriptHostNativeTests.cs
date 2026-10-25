@@ -119,22 +119,25 @@ public sealed class AiScriptHostNativeTests
     }
 
     /// <summary>
-    /// <c>IsEventBehind</c> answers <c>forward · (enemy − self) &lt; 0</c> against the enemy captured this
-    /// tick, and <see langword="false"/> before any tick has run.
+    /// <c>IsEventBehind</c> (<c>0x44E860</c>) walks every record queued for the event being handled and answers yes
+    /// when any lies behind the eye's forward plane; an empty queue, or no dispatch, answers no.
     /// </summary>
     [RequiresGameDataFact]
-    public void IsEnemyBehindTestsTheFacingPlane()
+    public void IsEventBehindTestsEveryQueuedEventAgainstTheFacingPlane()
     {
         Igi1HumanAi soldier = Soldier();
-        Assert.False(soldier.IsEnemyBehind()); // no enemy known yet
+        Assert.False(soldier.IsEventBehind());
+        Assert.False(soldier.IsEventBehind(AiEvent.TakingDamage));
 
-        // Facing 0 points +Y. Put the enemy far behind (-Y) and far enough not to be detected in a tick.
+        // Facing 0 looks along +Y.
         Core.Numerics.Vector3d p = soldier.Position;
-        soldier.Tick(1, new Core.Numerics.Vector3d(p.X, p.Y - (2000 * 4096.0), p.Z), rootMotionThisTick: 0.0);
-        Assert.True(soldier.IsEnemyBehind());
+        Core.Numerics.Vector3d ahead = new(p.X, p.Y + (20 * 4096.0), p.Z);
+        Core.Numerics.Vector3d behind = new(p.X, p.Y - (20 * 4096.0), p.Z);
+        Assert.True(soldier.ReceiveDamage(ahead, attacker: 7));
+        Assert.False(soldier.IsEventBehind(AiEvent.TakingDamage));
 
-        soldier.Tick(2, new Core.Numerics.Vector3d(p.X, p.Y + (2000 * 4096.0), p.Z), rootMotionThisTick: 0.0);
-        Assert.False(soldier.IsEnemyBehind());
+        Assert.True(soldier.ReceiveDamage(behind, attacker: 8));
+        Assert.True(soldier.IsEventBehind(AiEvent.TakingDamage));
     }
 
     /// <summary>
@@ -232,7 +235,8 @@ public sealed class AiScriptHostNativeTests
         // queue and ends. The engagement begins one tick later, when that COMBAT event dispatches and
         // the archetype's COMBAT branch runs AIAction_Combat.
         Assert.Contains(soldier.LastActions, action => action.Name == "AIAction_SetCombat");
-        Assert.Equal(10 * 4096.0, soldier.LastEventDistance, precision: 3);
+        // 0x44E930 measures from the AI's eye.
+        Assert.Equal(Vector3d.Distance(soldier.EyePosition(), shot), soldier.LastEventDistance, precision: 3);
         Assert.NotEqual(AiSoldierActivity.Engaging, soldier.Activity);
 
         soldier.Tick(3, enemyFarAway, rootMotionThisTick: 0.0);

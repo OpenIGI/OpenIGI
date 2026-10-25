@@ -303,16 +303,17 @@ public sealed partial class Igi1HumanAi
     {
         // What sub_44D850 reads mid-dispatch: the current event's own position, off the queue head.
         AiEventRecord? current = Events.HeadOf(type);
+        _currentEventType = type;
         _currentEventPosition = current?.Position;
         _currentEventSource = current?.Source ?? 0;
         _currentEventSubject = current?.Subject ?? 0;
 
-        // AIFunction_GetEventDistance (0x44E930) measures the CURRENT queue record from the AI at
-        // dispatch time. Keeping the value written when an event was posted let a later visibility
-        // sweep or alert overwrite a queued gunshot's distance before guard.qvm saw it.
+        // AIFunction_GetEventDistance (0x44E930) measures the CURRENT queue record from the AI's eye
+        // (HumanAI+0x38) at dispatch time. Keeping the value written when an event was posted let a later
+        // visibility sweep or alert overwrite a queued gunshot's distance before guard.qvm saw it.
         if (_currentEventPosition is { } eventPosition)
         {
-            LastEventDistance = Vector3d.Distance(Position, eventPosition);
+            LastEventDistance = Vector3d.Distance(EyePosition(), eventPosition);
         }
 
         Dispatched?.Invoke(type, slot);
@@ -323,6 +324,7 @@ public sealed partial class Igi1HumanAi
             ApplyActions(_host.Produced);
         }
 
+        _currentEventType = null;
         _currentEventPosition = null;
         _currentEventSource = 0;
         _currentEventSubject = 0;

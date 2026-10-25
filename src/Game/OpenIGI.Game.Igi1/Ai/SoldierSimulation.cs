@@ -37,9 +37,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
     /// <summary>The damage factor a knife stab carries into a soldier with no fight on (<c>0x46DFB0</c>: <c>0x447A0000</c>).</summary>
     public const float KnifeUnawareDamageFactor = 1000f;
 
-    /// <summary>HumanAI+15680: how long a generated guard's body stays after its death clip, in ticks.</summary>
+    /// <summary>HumanAI+15680: how long a dead body stays after its death clip before it may leave the world, in ticks.</summary>
     /// <remarks>The constructor (<c>0x44F060</c>) writes 300 and nothing else in the image writes it.</remarks>
-    public const int GeneratedBodyLingerTicks = 300;
+    public const int GeneratedBodyLingerTicks = Igi1HumanAi.BodyStayTicks;
 
     private const string LogCategory = SoldierContext.LogCategory;
 
@@ -76,8 +76,6 @@ public sealed partial class SoldierSimulation : IHumanEvents
     private readonly SoldierPlayerBody _playerBody = new();
 
     private readonly HashSet<SoldierView> _combatClipMissing = [];
-
-    private readonly Dictionary<SoldierView, int> _lastCombatState = [];
 
     private readonly HashSet<GameTask> _unwalkedSoldiers = new(ReferenceEqualityComparer.Instance);
 
@@ -253,17 +251,6 @@ public sealed partial class SoldierSimulation : IHumanEvents
             return;
         }
 
-        // Fallback for headless environments or missing animation clips: if event 1052 could not
-        // be evaluated, deliver any pending strike immediately so damage is not dropped.
-        if (_combatClipMissing.Contains(view) || view.Bones.SourceOf(0) is null)
-        {
-            if (brain.ConsumeMeleeStrike(out float meleeDamage) && brain.TargetIsPlayer && brain.PlayerIsEnemy)
-            {
-                ScriptSound?.Invoke("gunpunch_01", brain.Position, false);
-                MeleeStrikeSink?.Invoke(brain.Position, meleeDamage);
-            }
-        }
-
         if (member is not null && collectDiagnostics && brain.Arm == AiCombatArm.Gunner)
         {
             _diagnostics.ReportGunner(brain, ScriptVariables);
@@ -279,7 +266,8 @@ public sealed partial class SoldierSimulation : IHumanEvents
             member.FiredThisTick = false;
         }
 
-        int? combatState = TickBody(view, brain, feet, collectDiagnostics);
+        int? combatState = TickBody(view, brain, collectDiagnostics);
+        ReleaseOnClipEvents(view, brain, member, clipBefore, combatState);
         SoldierClipSelection.Play(view, brain, combatState, _combatClipMissing);
         SoldierClipSelection.StepBody(view, brain, clipBefore, animationBefore, travel, lateral);
         FireAndSound(view, brain, member, aimFeet, aimCrouching);
@@ -550,8 +538,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         }
 
         // Simulated corpses advance on the tick, alongside the rigs they replaced -- and only until they
-        // settle, because nothing in this game ever removes a body and a corpse that kept stepping would
-        // be a cost paid for the rest of the mission.
+        // settle, or until their HumanAI takes them out of the world (Igi1HumanAi.TickDeadAi).
     }
 
     /// <summary>After the corpses moved: the dropped weapons, and the poses of the bodies no brain drives.</summary>
@@ -718,17 +705,57 @@ public sealed partial class SoldierSimulation : IHumanEvents
         {
             ScriptSound?.Invoke("gunpunch_01", view.Position, false);
         }
+    }
 
-        // Melee strike connects at the swing's impact frame (event 1052, time 1280.0 in 001.iff).
-        // If a strike is pending against the player, deliver it at this exact moment.
-        if (bone0.CrossedEvent(1052)
-            && brain.ConsumeMeleeStrike(out float strikeDamage)
-            && brain.PlayerIsEnemy
-            && brain.TargetIsPlayer)
+    // The throw (state 8, 0x45B2F0) and close-combat (state 9, 0x45B530) states act on their clip's own event: the grenade
+    // leaves the hand on event 11 and the blow lands on event 12, each once a state entry and only on the clip the body
+    // is playing. The states run after the AI, so their draws follow its.
+    private void ReleaseOnClipEvents(
+        SoldierView view, Igi1HumanAi brain, SoldierAgent? member, BoneClip? clip, int? combatState)
+    {
+        if (combatState is not { } state)
         {
-            MeleeStrikeSink?.Invoke(brain.Position, strikeDamage);
+            _releasedThisEntry.Remove(view);
+            return;
+        }
+
+        if (_releasedState.TryGetValue(view, out int latched) && latched != state)
+        {
+            _releasedThisEntry.Remove(view);
+        }
+
+        _releasedState[view] = state;
+        if (clip is null || _releasedThisEntry.Contains(view) || !ReferenceEquals(clip, view.Bones.SourceOf(0)))
+        {
+            return;
+        }
+
+        if (state == brain.SoldierClass.GrenadeThrowState
+            && brain.Target is not null
+            && clip.CrossedEvent(ThrowReleaseEvent)
+            && Grenades is { } lobbed)
+        {
+            _releasedThisEntry.Add(view);
+            Vector3d hand = SoldierContext.OccupantOrigin(view) + (member?.ThrowOffset ?? member?.GunOffset ?? default);
+            _fire.ThrowAiGrenade(brain, hand, lobbed);
+        }
+        else if (state == HumanSoldierStates.CloseCombatState && clip.CrossedEvent(CloseCombatHitEvent))
+        {
+            _releasedThisEntry.Add(view);
+            if (brain.StrikeCloseCombat(out float damage) && brain.TargetIsPlayer && brain.PlayerIsEnemy)
+            {
+                MeleeStrikeSink?.Invoke(brain.Position, damage);
+            }
         }
     }
+
+    // The clip events the throw and close-combat states act on (HumanAnimEvent.sound 0xB and 0xC).
+    private const int ThrowReleaseEvent = 11;
+    private const int CloseCombatHitEvent = 12;
+
+    // The soldiers whose throw or blow has gone this state entry, and the state they were last in.
+    private readonly HashSet<SoldierView> _releasedThisEntry = [];
+    private readonly Dictionary<SoldierView, int> _releasedState = [];
 
     // A staged actor's authored clip carries it: on the vehicle it rides, or by the clip's own vertical delta.
     private void RideStagedGround(SoldierView view, Igi1HumanAi brain, SoldierAgent member)
@@ -788,10 +815,16 @@ public sealed partial class SoldierSimulation : IHumanEvents
             brain.Kill();
         }
 
-        brain.TickDeadAi();
+        SoldierAgent? corpse = _context.FindAgent(view);
+        if (brain.TickDeadAi(corpse?.DrawnLastRender ?? false, _generators.IsGenerated(view)))
+        {
+            // 0x44F410 unregisters the body (0x4609A0) and the Human's own update no longer runs.
+            _context.RemoveBody(view);
+            return;
+        }
+
         brain.TickDeadBody(view.RootMotion(), view.Bones.SourceOf(0)?.EndedThisTick ?? false);
         view.PlaceAt(brain.Position, view.Orientation);
-        SoldierAgent? corpse = _context.FindAgent(view);
         if (corpse is not null)
         {
             corpse.FiredThisTick = false;
@@ -826,7 +859,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
     }
 
     // The body machine's tick, and what its state lets go of: the grenade, the detection shout and the alert.
-    private int? TickBody(SoldierView view, Igi1HumanAi brain, Vector3d feet, bool collectDiagnostics)
+    private int? TickBody(SoldierView view, Igi1HumanAi brain, bool collectDiagnostics)
     {
         // The body machine consumes this tick's AI channel writes before the weapon consumes the
         // body's forwarded trigger. Running it after FireIfAsked let a round leave while the body
@@ -844,21 +877,6 @@ public sealed partial class SoldierSimulation : IHumanEvents
                 || (brain.Body is HumanSoldierBodyMachine && HumanSoldierStates.IsBodyOwned(bodyState))))
         {
             combatState = bodyState;
-        }
-
-        // The grenade leaves the hand when the throw state ENDS -- the clip has swung. The
-        // decision to throw was the combat arm's own (the retail probability, distance band and
-        // has-grenade tests in AiPatrolCombat); this is only the release.
-        int previousCombatState = _lastCombatState.TryGetValue(view, out int rememberedState)
-            ? rememberedState
-            : -1;
-        _lastCombatState[view] = combatState ?? -1;
-        if (brain.SoldierClass.GrenadeThrowState is { } grenadeState
-            && previousCombatState == grenadeState
-            && (combatState ?? -1) != grenadeState
-            && Grenades is { } lobbed)
-        {
-            _fire.ThrowAiGrenade(brain, feet, lobbed);
         }
 
         // sub_48A920, IGI.exe: detected_01..06, once per combat-action argument block. The

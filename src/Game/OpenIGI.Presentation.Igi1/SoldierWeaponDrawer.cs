@@ -73,9 +73,9 @@ internal sealed class SoldierWeaponDrawer(
                     continue;
                 }
 
-                // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
-                // vanishing was only ever the port having no death animation to play. Each soldier
-                // carries its own skinned mesh, so a corpse is posed by its own death clip.
+                // A dead soldier keeps being drawn until its HumanAI takes the body out of the world, ten
+                // seconds after it lands and only once no render drew it (0x44F410). Each soldier carries its
+                // own skinned mesh, so a corpse is posed by its own death clip.
                 if (!member.HasFrameState)
                 {
                     _frames.ResolveFrameState(member, 1f, smooth: false);
@@ -125,6 +125,10 @@ internal sealed class SoldierWeaponDrawer(
             _device.SetDrawClip(null);
         }
     }
+
+    /// <summary>Whether the sector cull lets a soldier be drawn from the frame's eye, or there is no cull.</summary>
+    public bool IsSectorVisible(SoldierGroup group, SoldierMember member) =>
+        Visibility is not { } cull || IsDrawn(cull, group, member);
 
     // The soldier's own position is what the inside sphere is measured to; its exclusion sphere is its mesh's render sphere,
     // moved by the root bone and turned by the body, as a bone object is excluded.

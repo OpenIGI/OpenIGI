@@ -451,9 +451,11 @@ public sealed partial class Igi1HumanAi
     // The position of the event the script is being dispatched for -- what sub_44D850 copies out of
     // the queue head (record +16) for AIAction_LookAtEvent / AIAction_MoveToEvent.
     private Vector3d? _currentEventPosition;
+
+    // The event type being dispatched -- the queue the natives' gAIEventList points at -- or none outside a dispatch.
+    private AiEvent? _currentEventType;
     private int _currentEventSource;
     private int _currentEventSubject;
-    private Vector3d? _playerEventSourcePosition;
     private Action<int>? _responseRouter;
 
     /// <summary>Gets or sets the renderer-local identity stored in inter-soldier event source fields.</summary>
@@ -583,11 +585,11 @@ public sealed partial class Igi1HumanAi
     // The idle-animation table -- AIFunction_{SetAnimationInterval, AddAnimationEntry,
     // GetAnimationToPlay} (0x44EAF0 / 0x44EBB0 / 0x44ECB0). ai+15112 (ids, stride 16), +15120
     // (weights, double), +15204 (count, cap 5), +15192/+15196 interval min/random in ticks, +15200
-    // the next-play deadline.
+    // the countdown to the next play (-1 before the script arms it).
     private readonly List<(int Id, double Weight)> _animationEntries = [];
     private int _animationMinTicks;
     private int _animationRandomTicks;
-    private int _nextAnimationTick = -1;
+    private int _animationCountdown = -1;
     private bool _scriptedAnimation;
     private int _lastTick;
 
@@ -651,8 +653,28 @@ public sealed partial class Igi1HumanAi
     {
         _animationMinTicks = (int)(minimumSeconds * 30.0);
         _animationRandomTicks = (int)(randomSeconds * 30.0);
-        _nextAnimationTick = _lastTick + _animationMinTicks
-            + NextBounded(_animationRandomTicks);
+        _animationCountdown = NextBounded(_animationRandomTicks) + _animationMinTicks;
+    }
+
+    // 0x44F410, for a living AI with an armed countdown and at least one entry (+15204): at nought it posts
+    // AIEVENT_ANIMATION and re-arms from the interval, otherwise it counts one down -- so the gap is the drawn count
+    // plus one tick, and the count stands still on a tick the AI does not run.
+    private void TickIdleAnimation()
+    {
+        if (_animationCountdown < 0 || _animationEntries.Count == 0)
+        {
+            return;
+        }
+
+        if (_animationCountdown == 0)
+        {
+            Events.Post(AiEventRecord.Simple(AiEvent.Animation), owner: 0, worldTests: null);
+            _animationCountdown = NextBounded(_animationRandomTicks) + _animationMinTicks;
+        }
+        else
+        {
+            _animationCountdown--;
+        }
     }
 
     /// <summary>Adds an idle animation — <c>AIFunction_AddAnimationEntry</c> (<c>0x44EBB0</c>), capped at five.</summary>

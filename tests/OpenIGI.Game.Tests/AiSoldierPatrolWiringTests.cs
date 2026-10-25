@@ -92,8 +92,11 @@ public sealed class AiSoldierPatrolWiringTests : AiSoldierCombatWiringFixture
         }
 
         Assert.NotNull(unreachable);
+
+        // A unit off the centre, so the soldier stands inside its node (0x4F9A40 rejects a zero offset).
+        Vector3d start = unreachable.Value.From.Position;
         Igi1HumanAi soldier = new(
-            graph, unreachable.Value.From.Position, facing: 0f, phase: 0, seed: 1);
+            graph, new Vector3d(start.X + 1.0, start.Y, start.Z), facing: 0f, phase: 0, seed: 1);
 
         Assert.False(soldier.GoTo(unreachable.Value.To.Id));
         Assert.Equal(unreachable.Value.To.Id, soldier.DestinationNode);

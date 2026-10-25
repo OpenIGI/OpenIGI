@@ -438,6 +438,12 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
             Vector3f hand = toWorld.Transform(pose.Positions[HumanAttachPoints.ThirdPersonWeapon]);
             member.GunOffset = new Vector3d(hand.X, hand.Y, hand.Z);
         }
+
+        if (HumanAttachPoints.AiThrow < pose.BoneCount)
+        {
+            Vector3f thrown = toWorld.Transform(pose.Positions[HumanAttachPoints.AiThrow]);
+            member.ThrowOffset = new Vector3d(thrown.X, thrown.Y, thrown.Z);
+        }
     }
 
     /// <summary>The eye matrix a palette rebuilt now would hold: the body's matrix times the eye bone's posed rotation.</summary>

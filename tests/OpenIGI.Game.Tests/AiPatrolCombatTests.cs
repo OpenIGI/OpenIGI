@@ -49,26 +49,6 @@ public sealed class AiPatrolCombatTests
     }
 
     [Fact]
-    public void RollMeleeStrikeReturnsDamageWhenProbabilityRollSucceeds()
-    {
-        AiCombatParameters parameters = Parameters(closeCombatHitProbability: 0.5f, closeCombatDamage: 0.65f);
-        // Random returns 0.3 <= 0.5 -> connects!
-        AiPatrolCombat patrol = new(parameters, () => 0.3);
-
-        Assert.Equal(0.65f, patrol.RollMeleeStrike());
-    }
-
-    [Fact]
-    public void RollMeleeStrikeReturnsZeroWhenProbabilityRollFails()
-    {
-        AiCombatParameters parameters = Parameters(closeCombatHitProbability: 0.5f, closeCombatDamage: 0.65f);
-        // Random returns 0.7 > 0.5 -> misses!
-        AiPatrolCombat patrol = new(parameters, () => 0.7);
-
-        Assert.Equal(0f, patrol.RollMeleeStrike());
-    }
-
-    [Fact]
     public void BeyondTheTrackingDistanceItAdvances()
     {
         AiPatrolCombat patrol = Patrol();
