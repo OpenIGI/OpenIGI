@@ -622,6 +622,49 @@ public sealed class Igi1Blasts(
             $"{item.TypeName} at {item.PositionUnits} exploded: radius={radius}, falloff={falloff}, damage={damageFactor}.");
     }
 
+    /// <summary>
+    /// Breaks a pane a thrown or moving body strikes (<c>Glass_Touch</c>, <c>0x449CB0</c>): its damage made up to its strength,
+    /// shattered from where the body is, the body let through.
+    /// </summary>
+    /// <param name="pane">The pane the body's ray found.</param>
+    /// <param name="from">Where the body is.</param>
+    /// <returns>Whether it broke.</returns>
+    public bool TouchGlass(RetailGlassPane pane, Vector3d from)
+    {
+        ArgumentNullException.ThrowIfNull(pane);
+        if (mission.Destructibles is not { } destructibles)
+        {
+            return false;
+        }
+
+        // The pane's state is the destructible standing where it hangs.
+        DestructibleObject? glass = null;
+        double nearest = 64.0 * 64.0;
+        foreach (DestructibleObject item in destructibles.Objects)
+        {
+            if (item.Kind != DestructibleObjectKind.Glass || item.IsDestroyed)
+            {
+                continue;
+            }
+
+            double d = (item.PositionUnits - pane.PositionUnits).LengthSquared;
+            if (d < nearest)
+            {
+                nearest = d;
+                glass = item;
+            }
+        }
+
+        if (glass is null || destructibles.TryDestroy(glass.Owner, glass.Placement, float.MaxValue) is not { } broken)
+        {
+            return false;
+        }
+
+        pane.IsBroken = true;
+        HandleDestructibleImpact(broken, from);
+        return true;
+    }
+
     /// <summary>Runs the level's minefields a tick (<c>0x43ABC0</c>): each that has waited and whose condition holds goes off.</summary>
     public void TickMineFields()
     {

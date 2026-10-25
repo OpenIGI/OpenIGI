@@ -538,9 +538,13 @@ public sealed class Igi1MissionSetup(
                 RetailWorldObjects.Build(
                     levelRoot,
                     carModels,
-                    name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
+                    name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null,
+                    definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) == "TASKTYPE_GLASS"),
                 cutscenes.RetailVehicleModels,
-                static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task));
+                static owner => owner is RetailGlassPane pane
+                    ? !pane.IsBroken && ConditionalContainerGate.IsTaskActive(pane.Owner)
+                    : owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task),
+                (pane, from) => mission.TouchGlass?.Invoke(pane, from) == true);
             cutscenes.ConfigureRetailCars(
                 mission.RetailWorld,
                 carModels,

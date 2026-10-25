@@ -34,6 +34,9 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the guards' rounds this mission, once the brains are animated.</summary>
     public GuardRounds? GuardRounds { get; set; }
 
+    /// <summary>Gets or sets what breaks a pane a grenade, a missile or a car strikes, answering whether it broke.</summary>
+    public Func<RetailGlassPane, Vector3d, bool>? TouchGlass { get; set; }
+
     /// <summary>Gets or sets the level's minefields.</summary>
     public IReadOnlyList<Igi1MineField> MineFields { get; set; } = [];
 
