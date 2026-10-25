@@ -335,6 +335,13 @@ internal sealed partial class LauncherModel
         }
 
         _availableMods.AddRange(_packs.Where(p => p.Pack.Kind == ContentKind.Mod && p.Installed is null && p.Pack.IsFor(title.Id)));
+
+        // Said before it is installed too, so a player knows which other game it needs before downloading it.
+        foreach (ContentEntry available in _availableMods)
+        {
+            available.NeedsGame = MissingGame(available.Pack);
+        }
+
         if (!Settings.ModOrder.TryGetValue(title.Id, out List<ContentOrderEntry>? order))
         {
             return;

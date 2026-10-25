@@ -356,7 +356,7 @@ internal sealed class ContentRow : Grid, IReorderItem
             return ("OFF · THE GAME STARTS WITHOUT IT", ContentInk.Caption);
         }
 
-        if (item is not null && entry.NeedsGame is { } game)
+        if (entry.NeedsGame is { } game)
         {
             return ($"READS {game.ToUpperInvariant()}'S DATA · SET ITS FOLDER IN SETTINGS", ContentInk.Conflict);
         }

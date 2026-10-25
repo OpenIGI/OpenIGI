@@ -12,7 +12,8 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Launcher.Pages;
 
 /// <summary>
-/// The first-run guide: where the player's own copy of the game is, then which channel to install from.
+/// The first-run guide: where the player's own copy of the game is, and of I.G.I. 2 if they have it, then which channel
+/// to install from.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,7 +24,8 @@ namespace OpenIGI.Launcher.Pages;
 /// <para>
 /// The search runs off the frame (<see cref="GameFinder"/>): Steam's libraries, GOG's installs and the usual
 /// folders. What it finds is offered to pick from; Browse and a typed path are always there too, and a folder
-/// counts only when the game's own signature file is in it. Either step can be left: Skip and Later finish the
+/// counts only when the game's own signature file is in it. I.G.I. 2 is asked for alongside and is optional: only mods
+/// that read its data need it, and Settings keeps the same folder. Either step can be left: Skip and Later finish the
 /// guide without changing anything a player has not chosen, and Back (Escape) steps back or skips.
 /// </para>
 /// </remarks>
@@ -36,12 +38,16 @@ internal sealed class OnboardingScreen : Screen
     private readonly LauncherModel _model;
     private readonly ILauncherWindow _window;
     private readonly Task<IReadOnlyList<string>> _search;
+    private readonly Task<IReadOnlyList<string>> _sequelSearch;
 
     private SectionDeck? _deck;
     private StackPanel? _found;
     private Paragraph? _searching;
     private TextRow? _folderRow;
     private Text? _verdict;
+    private TextRow? _sequelRow;
+    private Text? _sequelVerdict;
+    private bool _sequelListed;
     private Button? _continue;
     private Dropdown? _channel;
     private Paragraph? _channelNote;
@@ -64,12 +70,17 @@ internal sealed class OnboardingScreen : Screen
         _model = model;
         _window = window;
         _search = Task.Run(() => GameFinder.Find(GameTitle.Igi1));
+        _sequelSearch = Task.Run(() => GameFinder.Find(GameTitle.Igi2));
         Name = nameof(OnboardingScreen);
     }
 
     private string Folder => (_folderRow?.Text ?? string.Empty).Trim().Trim('"');
 
     private bool FolderValid => GameStarter.IsInstallation(GameTitle.Igi1, Folder);
+
+    private string SequelFolder => (_sequelRow?.Text ?? string.Empty).Trim().Trim('"');
+
+    private bool SequelValid => GameStarter.IsInstallation(GameTitle.Igi2, SequelFolder);
 
     /// <inheritdoc/>
     protected override Control? InitialFocus => _continue;
@@ -132,6 +143,18 @@ internal sealed class OnboardingScreen : Screen
             _listed = true;
             ListFound(_search.IsCompletedSuccessfully ? _search.Result : []);
         }
+
+        // I.G.I. 2 is offered as found, never chosen over what the player typed.
+        if (!_sequelListed && _sequelSearch.IsCompleted)
+        {
+            _sequelListed = true;
+            if (_sequelRow is not null && SequelFolder.Length == 0 && _sequelSearch.IsCompletedSuccessfully && _sequelSearch.Result.Count > 0)
+            {
+                _sequelRow.Text = _sequelSearch.Result[0];
+            }
+
+            Refresh();
+        }
     }
 
     private StackPanel BuildFindStep()
@@ -148,6 +171,15 @@ internal sealed class OnboardingScreen : Screen
             browse: current => _window.PickFolder($"Choose the folder holding {GameTitle.Igi1.SignatureFile}", current));
         _folderRow.TextChanged += _ => Refresh();
         _verdict = new Text(_theme.Mono, string.Empty, 13f, _theme.TextMuted, 0.12f, uppercase: true);
+
+        _sequelRow = new TextRow(
+            _rowTheme,
+            "I.G.I. 2 folder (optional)",
+            string.Empty,
+            "Choose the folder holding " + GameTitle.Igi2.SignatureFile,
+            browse: current => _window.PickFolder($"Choose the folder holding {GameTitle.Igi2.SignatureFile}", current));
+        _sequelRow.TextChanged += _ => Refresh();
+        _sequelVerdict = new Text(_theme.Mono, string.Empty, 13f, _theme.TextMuted, 0.12f, uppercase: true);
 
         _continue = new Button(_theme, "Continue") { Accent = ButtonAccent.Solid, TextSize = 17f, Padding = new Thickness(26f, 12f) };
         _continue.Activated += _ => ShowStep(1);
@@ -170,6 +202,13 @@ internal sealed class OnboardingScreen : Screen
         step.AddChild(_found);
         step.AddChild(_folderRow);
         step.AddChild(_verdict);
+        step.AddChild(new Paragraph(
+            _theme.Body,
+            "Have I.G.I. 2 too? Some mods use its soldiers and data. It is optional, and you can add it later in Settings.",
+            15f,
+            _theme.TextMuted));
+        step.AddChild(_sequelRow);
+        step.AddChild(_sequelVerdict);
         step.AddChild(buttons);
         return step;
     }
@@ -276,6 +315,15 @@ internal sealed class OnboardingScreen : Screen
             _verdict.Color = valid ? _theme.Success : _theme.TextMuted;
         }
 
+        if (_sequelVerdict is not null)
+        {
+            bool sequel = SequelValid;
+            _sequelVerdict.Value = SequelFolder.Length == 0 ? string.Empty
+                : sequel ? "◆ I.G.I. 2 found"
+                : $"No {GameTitle.Igi2.SignatureFile} in that folder";
+            _sequelVerdict.Color = sequel ? _theme.Success : _theme.TextMuted;
+        }
+
         if (_continue is not null)
         {
             _continue.IsEnabled = valid;
@@ -331,6 +379,10 @@ internal sealed class OnboardingScreen : Screen
 
         _done = true;
         ReleaseChannel channel = _channel?.SelectedIndex == 1 ? ReleaseChannel.Beta : ReleaseChannel.Stable;
-        _model.CompleteOnboarding(keepFolder && FolderValid ? Folder : null, keepFolder ? channel : _model.Settings.Channel, install);
+        _model.CompleteOnboarding(
+            keepFolder && FolderValid ? Folder : null,
+            keepFolder && SequelValid ? SequelFolder : null,
+            keepFolder ? channel : _model.Settings.Channel,
+            install);
     }
 }
