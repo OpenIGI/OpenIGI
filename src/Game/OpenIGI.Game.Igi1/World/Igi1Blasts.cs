@@ -622,6 +622,87 @@ public sealed class Igi1Blasts(
             $"{item.TypeName} at {item.PositionUnits} exploded: radius={radius}, falloff={falloff}, damage={damageFactor}.");
     }
 
+    /// <summary>Runs the level's minefields a tick (<c>0x43ABC0</c>): each that has waited and whose condition holds goes off.</summary>
+    public void TickMineFields()
+    {
+        foreach (Igi1MineField field in mission.MineFields)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(field.Task)
+                || !field.Pause.Due(() => field.Condition.Length != 0
+                    && mission.MineFieldExpressions?.EvaluateCondition(field.Condition, emptyValue: false, field.Task) == true))
+            {
+                continue;
+            }
+
+            ExplodeMineField(field);
+
+            // 0x43ABC0 waits its seconds between blasts; "explode once" (-1) waits for ever.
+            field.Pause.Ticks = (int)(field.WaitSeconds * 30f);
+        }
+    }
+
+    // MineField_Explode (0x43AC40): an Explosion0 at its target, dropped to the ground beneath it (0x4149B0), that throws its
+    // own fragments and FireBalls and sends no AI event.
+    private void ExplodeMineField(Igi1MineField field)
+    {
+        if (MineFieldTarget(field.TargetId) is not { } found)
+        {
+            return;
+        }
+
+        (Vector3d at, GameTask? target) = found;
+
+        if (field.SnapsToGround && mission.Trace is { } trace)
+        {
+            at = DropToGround(trace, at, target);
+        }
+
+        float radius = field.RadiusUnits;
+        float falloff = field.FalloffUnits;
+        float damage = field.Damage;
+        impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+            at,
+            1,
+            field.DelayTicks,
+            damage,
+            radius,
+            falloff,
+            field.Fragments,
+            field.Fireballs,
+            field.Sound,
+            () => Explode(at, radius, falloff, damage, WeaponCategory.ProximityMine)));
+    }
+
+    // What task a minefield goes off at: the player, task 0, where its body is; any other where the task stands.
+    private (Vector3d At, GameTask? Task)? MineFieldTarget(int id)
+    {
+        if (id == 0)
+        {
+            return mission.Player is { } player ? (player.Body.Position, null) : null;
+        }
+
+        return mission.LevelRoot?.Tree.FromId(id) is DeclaredTask task
+            && task.TryGetValue("Position", out object? raw)
+            && raw is Vector3d position
+                ? (position, task)
+                : null;
+    }
+
+    // 0x4149B0: straight down 400 m for the ground, else straight up, past the target itself; nothing found leaves it.
+    private static Vector3d DropToGround(WorldTraceCast trace, Vector3d at, GameTask? target)
+    {
+        const double reach = 1638400.0;
+        foreach (double dz in new[] { -reach, reach })
+        {
+            if (trace(new WorldTraceRequest(at, at + new Vector3d(0.0, 0.0, dz), WorldTraceMask.World, IgnoredOwner: target), out WorldTraceHit hit))
+            {
+                return new Vector3d(at.X, at.Y, hit.Position.Z);
+            }
+        }
+
+        return at;
+    }
+
     /// <summary>Steps the destructibles a tick: their fuses, the blasts that went off, the cars that left the world, and the generators they settle.</summary>
     public void TickDestructibles()
     {

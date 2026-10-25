@@ -34,6 +34,12 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the guards' rounds this mission, once the brains are animated.</summary>
     public GuardRounds? GuardRounds { get; set; }
 
+    /// <summary>Gets or sets the level's minefields.</summary>
+    public IReadOnlyList<Igi1MineField> MineFields { get; set; } = [];
+
+    /// <summary>Gets or sets what the minefields' conditions are read through.</summary>
+    public LevelExpressionRuntime? MineFieldExpressions { get; set; }
+
     /// <summary>Gets or sets the soldiers' simulation: their brains, bodies and rounds, or <see langword="null"/> before a level has any.</summary>
     public SoldierSimulation? Soldiers { get; set; }
 

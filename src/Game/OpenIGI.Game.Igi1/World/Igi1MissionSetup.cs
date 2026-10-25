@@ -470,6 +470,10 @@ public sealed class Igi1MissionSetup(
 
         // The level's alarm speakers, for the sirens: each follows its own expression over
         // the same live variables the controls export through.
+        // The minefields, which blast at their target while their condition holds.
+        mission.MineFields = Igi1MineFields.Build(levelRoot);
+        mission.MineFieldExpressions = new LevelExpressionRuntime(host.Game.Variables);
+
         mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
             levelRoot,
             host.Game.Variables,

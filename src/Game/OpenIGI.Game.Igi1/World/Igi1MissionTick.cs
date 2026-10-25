@@ -901,6 +901,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // The alarm speakers, following their own level expressions -- the siren the
             // room hears when a guard reaches a switch.
             blasts.TickDestructibles();
+            blasts.TickMineFields();
             audio.SoundAlarms();
             mission.AlarmSpeakers?.RunLights();
 

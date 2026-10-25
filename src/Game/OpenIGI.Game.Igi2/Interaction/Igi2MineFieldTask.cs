@@ -85,7 +85,9 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
     public bool SnapToGround { get; set; } = true;
 
     /// <summary>Gets the ticks before it may explode again, <c>nDelayBetweenExplosions</c>.</summary>
-    public int Pause { get; private set; }
+    public int Pause { get => _pause.Ticks; private set => _pause.Ticks = value; }
+
+    private readonly OpenIGI.Game.World.MineFieldPause _pause = new();
 
     /// <summary>Gets or sets the blasts it sets off.</summary>
     [LevelService]
@@ -101,19 +103,11 @@ public sealed partial class Igi2MineFieldTask : Igi2Task
     public override void Run(Igi2LevelRun level)
     {
         ArgumentNullException.ThrowIfNull(level);
-        if (Pause == -1)
-        {
-            return;
-        }
-
-        if (Pause != 0)
-        {
-            Pause--;
-            return;
-        }
-
-        _explode ??= Igi2LevelExpressions.Create(ExplodeExpression, Name, level.Natives);
-        if (!_explode.IsEmpty && level.Evaluate(_explode) != 0.0)
+        if (_pause.Due(() =>
+            {
+                _explode ??= Igi2LevelExpressions.Create(ExplodeExpression, Name, level.Natives);
+                return !_explode.IsEmpty && level.Evaluate(_explode) != 0.0;
+            }))
         {
             Explode();
             Pause = Fpu.ToInt32((Fpu)DelayBetween * 30.0);
