@@ -517,5 +517,11 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
     }
 
     /// <inheritdoc/>
+    protected override bool IsAirborne(int state) => state == AirborneState;
+
+    /// <inheritdoc/>
+    protected override bool KeepsStride(int left, int entered) => HumanSoldierStates.KeepsStridePhase(left, entered);
+
+    /// <inheritdoc/>
     public override string ToString() => $"soldier body in state {State}";
 }

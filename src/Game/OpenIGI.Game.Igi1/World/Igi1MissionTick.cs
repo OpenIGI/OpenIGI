@@ -833,6 +833,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             elevators.ApplyCollision(elevatorSolids, elevator);
         }
 
+        // The soldiers grounded on a graph authored in the cab ride it with their graph (0x4F9770, 0x460CF0).
+        mission.Soldiers?.CarryOnPlatform(elevator.Task, elevator.State.Position - elevator.State.PreviousPosition);
+
         if (host.PlayerMode && mission.Player is { } passenger
             && ElevatorRegistry.TryGetPassengerDisplacement(elevator, passenger.Body.Position, mission.Solids, out Vector3d displacement))
         {

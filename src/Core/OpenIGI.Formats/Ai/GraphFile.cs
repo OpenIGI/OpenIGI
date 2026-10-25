@@ -199,6 +199,26 @@ public sealed class GraphFile
             X87.Add(X87.Add(X87.Multiply(m[row + 2], z), X87.Multiply(m[row + 1], y)), X87.Multiply(m[row], x));
     }
 
+    /// <summary>Carries the nodes with their parent object as it moves without turning -- a lift's cab.</summary>
+    /// <param name="displacement">How far the parent moved, in engine units.</param>
+    /// <remarks>
+    /// <c>0x4F9770</c> reads the parent's frame as it stands every time a node is asked for, so a graph authored in a lift
+    /// rides it; moving the placed nodes by the cab's own step is the same, for a cab that only slides.
+    /// </remarks>
+    public void MoveParent(Vector3d displacement)
+    {
+        if (!InParentFrame || displacement == Vector3d.Zero)
+        {
+            return;
+        }
+
+        ParentPosition += displacement;
+        foreach (GraphNode node in Nodes)
+        {
+            node.Position += displacement;
+        }
+    }
+
     /// <summary>Gets whether the graph lives in a placed model's frame (the AIGraph's <c>+100</c>).</summary>
     /// <remarks>A human grounded on such a graph is parented to that model (<c>0x462390</c> calls <c>0x463310</c>).</remarks>
     public bool InParentFrame { get; private set; }

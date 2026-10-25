@@ -189,4 +189,16 @@ public sealed class MeleeStrikeTests
 
         Assert.Equal(8, eventFiredTick);
     }
+
+    /// <summary>A soldier's blow on another soldier lands on its back from behind, on its front otherwise (<c>0x45A5E0</c>).</summary>
+    [Fact]
+    public void ASoldiersBlowOnAnotherLandsFrontOrBackByWhereItCameFrom()
+    {
+        // Facing zero looks along +Y.
+        Matrix3f facing = Matrix3f.FromEngineEulerAngles(0f, 0f, 0f);
+        Vector3d struck = new(0.0, 0.0, 0.0);
+
+        Assert.Equal(HumanDamage.RearZone, SoldierDamage.PunchZone(facing, struck, new Vector3d(0.0, -4096.0, 0.0)));
+        Assert.Equal(HumanDamage.FrontZone, SoldierDamage.PunchZone(facing, struck, new Vector3d(0.0, 4096.0, 0.0)));
+    }
 }
