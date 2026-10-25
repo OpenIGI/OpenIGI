@@ -56,10 +56,10 @@ internal static class SettingsPage
 
         columns.Add(
             Column(
-                // One folder row per released game; I.G.I. 2's appears when it is playable.
+                // One folder row per game. A game not yet playable is optional: only mods that read its data need it.
                 Group(theme, "Game files", [.. model.Games
-                    .Where(static g => g.Released && g.Retail is not null)
-                    .Select(g => (UiElement)GameFolder(theme, model, window, g.Retail!, $"{g.Title} folder"))]),
+                    .Where(static g => g.Retail is not null)
+                    .Select(g => (UiElement)GameFolder(theme, model, window, g.Retail!, g.Title, optional: !g.Released))]),
                 Group(theme, "Game launch", LaunchArguments(theme, model), MinimizeOnLaunch(theme, model))));
 
         var scroll = new ScrollView(theme);
@@ -76,17 +76,19 @@ internal static class SettingsPage
 
     // OpenIGI ships none of the original game; this is where the player's own copy is. The hint says at once
     // whether the folder typed is one, by the same file the game itself checks for.
-    private static TextRow GameFolder(UiTheme theme, LauncherModel model, ILauncherWindow window, GameTitle title, string caption)
+    private static TextRow GameFolder(UiTheme theme, LauncherModel model, ILauncherWindow window, GameTitle title, string name, bool optional)
     {
         string chosen = model.Settings.GameFolders.GetValueOrDefault(title.Id) ?? GameStarter.Locate(title, null) ?? string.Empty;
         var row = new TextRow(
             theme,
-            caption,
+            optional ? $"{name} folder (optional)" : $"{name} folder",
             chosen,
             "Choose the folder holding " + title.SignatureFile,
             browse: current => window.PickFolder($"Choose the folder holding {title.SignatureFile}", current));
         void Describe(string text) => row.Hint = text.Length == 0
-            ? $"Your own copy of the game: the folder holding {title.SignatureFile}"
+            ? optional
+                ? $"Only for mods that use {name}'s data: your own copy, the folder holding {title.SignatureFile}"
+                : $"Your own copy of the game: the folder holding {title.SignatureFile}"
             : GameStarter.IsInstallation(title, text) ? "Found" : $"No {title.SignatureFile} in that folder";
 
         Describe(chosen);

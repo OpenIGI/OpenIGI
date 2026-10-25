@@ -344,9 +344,10 @@ internal sealed partial class LauncherModel : IDisposable
 
     /// <summary>Finishes the first-run guide: keeps the folder and channel chosen, and starts the install if asked.</summary>
     /// <param name="gameFolder">The original game's folder, or <see langword="null"/> when the player skipped it.</param>
+    /// <param name="sequelFolder">I.G.I. 2's folder, for mods that read its data, or <see langword="null"/> when not given.</param>
     /// <param name="channel">The update channel chosen.</param>
     /// <param name="install">Whether to start downloading the build now.</param>
-    public void CompleteOnboarding(string? gameFolder, ReleaseChannel channel, bool install)
+    public void CompleteOnboarding(string? gameFolder, string? sequelFolder, ReleaseChannel channel, bool install)
     {
         ChangeSettings(s =>
         {
@@ -355,6 +356,11 @@ internal sealed partial class LauncherModel : IDisposable
             if (!string.IsNullOrWhiteSpace(gameFolder))
             {
                 s.GameFolders[GameTitle.Igi1.Id] = gameFolder;
+            }
+
+            if (!string.IsNullOrWhiteSpace(sequelFolder))
+            {
+                s.GameFolders[GameTitle.Igi2.Id] = sequelFolder;
             }
         });
 
