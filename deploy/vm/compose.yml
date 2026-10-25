@@ -33,7 +33,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       Releases__Root: /srv/dl/releases
-      Releases__DownloadUrl: https://dl.openigi.com/releases/{folder}/{name}
+      Releases__DownloadUrl: https://github.com/OpenIGI/OpenIGI/releases/download/{tag}/{name}
       Content__Root: /srv/dl/content
       Content__ChunkUrl: https://dl.openigi.com/content/chunks/{h2}/{hash}.br
       Content__ThumbnailUrl: https://dl.openigi.com/content/{pack}/{name}
