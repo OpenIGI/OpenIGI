@@ -219,10 +219,13 @@ internal sealed partial class LauncherModel : IDisposable
 
     public int UpdatesAvailable => Games.Any(static g => g.State == GameState.UpdateAvailable) ? 1 : 0;
 
+    // Under a megabyte in kilobytes, so a small mod reads "140 KB" rather than "0 MB".
     public static string FormatSize(double megabytes) =>
         megabytes >= 1000
             ? (megabytes / 1000).ToString("0.0", CultureInfo.InvariantCulture) + " GB"
-            : Math.Round(megabytes).ToString(CultureInfo.InvariantCulture) + " MB";
+            : Math.Round(megabytes * 1000) < 1000
+                ? Math.Round(megabytes * 1000).ToString(CultureInfo.InvariantCulture) + " KB"
+                : Math.Round(megabytes).ToString(CultureInfo.InvariantCulture) + " MB";
 
     /// <summary>Asks the update service again as soon as the spacing between checks allows.</summary>
     public void CheckSoon() => _schedule.Soon(DateTime.UtcNow);
