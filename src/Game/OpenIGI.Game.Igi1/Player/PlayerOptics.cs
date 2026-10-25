@@ -74,7 +74,9 @@ internal sealed class PlayerOptics
                     input.IsSet(PlayerInputSlot.ZoomIn),
                     input.IsSet(PlayerInputSlot.ZoomOut),
                     view.TanX,
-                    view.ViewModelTanX)
+                    view.ViewModelTanX,
+                    input.Current.IsSet(PlayerInputSlot.AlternateFire),
+                    input.Previous.IsSet(PlayerInputSlot.AlternateFire))
                 : _sightZoom.Tick(
                     heldWeapon,
                     input.IsRisingEdge(PlayerInputSlot.AlternateFire),

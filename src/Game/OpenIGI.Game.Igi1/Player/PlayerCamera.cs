@@ -137,9 +137,6 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets whether binoculars closed on the last simulation tick.</summary>
     public bool BinocularsClosedThisTick => _optics.Binoculars.ClosedThisTick;
 
-    /// <summary>Gets whether the binocular zoom target changed on the last simulation tick.</summary>
-    public bool BinocularZoomTargetChangedThisTick => _optics.Binoculars.ZoomTargetChangedThisTick;
-
     /// <summary>Gets whether a held zoom key moved the binocular magnification on the last tick.</summary>
     public bool BinocularZoomSteppingThisTick => _optics.Binoculars.ZoomSteppingThisTick;
 
