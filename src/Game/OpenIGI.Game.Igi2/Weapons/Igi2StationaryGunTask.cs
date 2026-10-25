@@ -86,10 +86,10 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
     /// <summary>The bit of <see cref="LimitFlags"/> set when the turn was held at a limit.</summary>
     public const int TurnLimited = 2;
 
-    private float[] _paramFrame = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _modelFrame = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _lastModelFrame = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _gunFrame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _paramFrame = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _modelFrame = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _lastModelFrame = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _gunFrame = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _mount;
     private float _tilt;
     private float _turn;
@@ -272,7 +272,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         ArgumentNullException.ThrowIfNull(weapons);
         ArgumentNullException.ThrowIfNull(models);
         Models = models;
-        _paramFrame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        _paramFrame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         _modelFrame = [.. _paramFrame];
         _lastModelFrame = [.. _paramFrame];
         (_tilt, _turn, _finalTilt, _finalTurn, _tiltOffset, _turnOffset) = (0f, 0f, 0f, 0f, 0f, 0f);
@@ -495,7 +495,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
             float far = (float)player.Random.NextDouble();
             float round = ((Fpu)(float)player.Random.NextDouble() * 6.2831854820251465).F;
             float spread = ((Fpu)_precision * DegreesToRadians * far).F;
-            float[] n = Igi2Pose.Rotation(spread, round, 0f);
+            float[] n = EngineEuler.Rotation(spread, round, 0f);
             float[] turned = new float[9];
             for (int c = 0; c < 3; c++)
             {
@@ -644,7 +644,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         }
 
         float[] p = _paramFrame;
-        float[] r = Igi2Pose.Rotation(0f, 0f, _finalTurn);
+        float[] r = EngineEuler.Rotation(0f, 0f, _finalTurn);
         _modelFrame =
         [
             Sum(p[0], r[0], r[6], p[2], r[3], p[1]), Sum(p[1], r[4], p[0], r[1], r[7], p[2]), Sum(p[1], r[5], p[0], r[2], r[8], p[2]),
@@ -656,7 +656,7 @@ public sealed partial class Igi2StationaryGunTask : Igi2Task, IIgi2PlacedTask, I
         int vertex = holder is { } h && h.TryGetMagicVertex(1, out _) ? 1 : 0;
         _mount = Igi2MagicVertex.Position(holder, vertex, _modelFrame, Position);
 
-        float[] g = Igi2Pose.Rotation(_finalTilt, 0f, _finalTurn);
+        float[] g = EngineEuler.Rotation(_finalTilt, 0f, _finalTurn);
         _gunFrame =
         [
             Sum(g[6], p[2], p[0], g[0], g[3], p[1]), Sum(p[0], g[1], p[1], g[4], g[7], p[2]), Sum(p[0], g[2], p[1], g[5], g[8], p[2]),

@@ -9,6 +9,7 @@ using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -93,7 +94,7 @@ public sealed class Igi2FlashBangTests
     public void Flash_puff_draws_nine_run_values_and_sounds_once()
     {
         Query query = new();
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         IgiRandom random = new(123u), reference = new(123u);
         RecordingEffects effects = new();
         var (player, _, _) = Igi2PlayerFakes.OnFloor();

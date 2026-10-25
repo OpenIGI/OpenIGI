@@ -7,6 +7,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Physics;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -27,7 +28,7 @@ public sealed class RetailIgi2MissileTests
         Igi2WeaponTypeTask rpg = weapons.Tables.WeaponTypes.Single(static t => t.WeaponId == "WEAPON_ID_RPG7");
         GameTask fire = Enumerable.Range(0, Igi2WeaponTypeTask.FireTypeSlots).Select(rpg.FireType).OfType<GameTask>().First();
 
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2ExplosionWorld explosions = new(new IgiRandom(0x1234567u), m.Collision!, m.Materials, dynamic);
         Igi2PhysicsWorld world = new(m.Collision!, m.Materials);
         Igi2Grenades launcher = new(session.Require<PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic) { Explosions = explosions };

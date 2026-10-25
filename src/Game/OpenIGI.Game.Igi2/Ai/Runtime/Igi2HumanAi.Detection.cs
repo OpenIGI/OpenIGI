@@ -237,7 +237,7 @@ public sealed partial class Igi2HumanAi
 
         DetectionView.Position = Soldier.CheapHeadBonePosition();
         float[] o = Soldier.OrientationRows;
-        float[] d = Igi2Pose.Rotation(ViewConeRotation.Alpha, 0f, ViewConeRotation.Gamma);
+        float[] d = EngineEuler.Rotation(ViewConeRotation.Alpha, 0f, ViewConeRotation.Gamma);
         float[] n = new float[9];
         for (int i = 0; i < 3; i++)
         {

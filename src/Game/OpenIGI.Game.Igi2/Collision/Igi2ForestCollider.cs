@@ -120,7 +120,7 @@ public sealed class Igi2ForestCollider : IWorldCollider
             int tree = index.Nodes[node].Tree;
             Igi2Tree source = stand.Trees[index.TreeOf(node)];
             scales[tree] = source.Scale;
-            orientations[tree] = Igi2Pose.Rotation(source.Angles.X, source.Angles.Y, source.Angles.Z);
+            orientations[tree] = EngineEuler.Rotation(source.Angles.X, source.Angles.Y, source.Angles.Z);
         }
 
         Igi2CollisionOwner owner = new(ForestTypeName, stand.TaskId, stand.Model, 0);

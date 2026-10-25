@@ -51,7 +51,7 @@ public sealed partial class Igi2CabinetTask : Igi2Task, IIgi2PlacedTask, IIgi2Ca
     /// <summary>How far its drawer moves a tick, the original's constant, which brings it out or in at once.</summary>
     public const float DrawerSpeed = 671088.625f;
 
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private bool _isSnapOpen;
     private bool _isSnapClosed;
     private bool _isDrawerMoving;

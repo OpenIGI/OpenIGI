@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.World.Particles;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -24,7 +25,7 @@ public sealed class Igi2Particles
     /// <param name="collision">The level's collision, which particles are traced against.</param>
     /// <param name="dynamic">The level's dynamic tasks, under which each system runs.</param>
     /// <param name="spriteFrames">How many frames a sprite has, by name; one each when omitted.</param>
-    public Igi2Particles(IIgi2CollisionQuery collision, Igi2DynamicTasks dynamic, Func<string, int>? spriteFrames = null)
+    public Igi2Particles(IIgi2CollisionQuery collision, DynamicTasks dynamic, Func<string, int>? spriteFrames = null)
     {
         Collision = collision ?? throw new ArgumentNullException(nameof(collision));
         Dynamic = dynamic ?? throw new ArgumentNullException(nameof(dynamic));
@@ -42,7 +43,7 @@ public sealed class Igi2Particles
     public IIgi2CollisionQuery Collision { get; }
 
     /// <summary>Gets the level's dynamic tasks.</summary>
-    public Igi2DynamicTasks Dynamic { get; }
+    public DynamicTasks Dynamic { get; }
 
     /// <summary>Makes a particle system under the level's dynamic task, <c>Particle2DDynCubeObj_New</c>.</summary>
     /// <param name="sprite">The sprite its particles draw with.</param>
@@ -91,7 +92,7 @@ public sealed class Igi2Particles
     }
 
     // A system as one of the level's dynamic tasks.
-    private sealed class Running(Particle2DSystem system) : IIgi2DynamicTask
+    private sealed class Running(Particle2DSystem system) : IDynamicTask
     {
         public bool Run() => system.Run();
     }

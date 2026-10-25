@@ -11,6 +11,7 @@ using OpenIGI.TestSupport;
 using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
 using OpenIGI.Presentation.Igi2.ViewModel;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -76,7 +77,7 @@ public sealed class RetailIgi2SecurityCameraTests
 
         Igi2RigidObject lens = m.Collision!.SolidsOf(Igi2SecurityCameraTask.TypeName, Sweeper).Single(static s => s.Owner is Igi2CollisionOwner { Depth: 1 });
         float turn = (((Fpu)camera.LensGamma + camera.HolderGamma) + camera.CameraGamma).F;
-        Assert.Equal(Igi2Pose.Rotation(camera.LensAlpha, 0f, turn), lens.Orientation);
+        Assert.Equal(EngineEuler.Rotation(camera.LensAlpha, 0f, turn), lens.Orientation);
 
         (Igi2DrawableSceneResult built, Engine.Resources.ResourceRegistry resources) = Igi2LevelScene.Build(m.Level);
         Game.World.WorldPlacement head = built.Scene.Placements.Single(p => p.LevelId == Sweeper && p.Instance.Name == camera.CameraModel);
@@ -161,7 +162,7 @@ public sealed class RetailIgi2SecurityCameraTests
     public void A_shot_lens_destroys_its_camera()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2ExplosionWorld blasts = new(new IgiRandom(0x1234567u), m.Collision!, m.Materials, dynamic);
         Igi2SecurityCameraTask gate = Arm(m, null).Single(static c => c.Id == MainGate);
         gate.Explosions = blasts;

@@ -114,7 +114,7 @@ public sealed class Igi2Soldiers
             soldier.Create();
             soldier.BoneHierarchy = task.BoneHierarchy;
             soldier.StandAnimation = task.StandAnimation;
-            float[] facing = Igi2Pose.Rotation(0f, 0f, task.Gamma);
+            float[] facing = EngineEuler.Rotation(0f, 0f, task.Gamma);
             soldier.Orientation = new Matrix3f(
                 facing[0], facing[1], facing[2],
                 facing[3], facing[4], facing[5],

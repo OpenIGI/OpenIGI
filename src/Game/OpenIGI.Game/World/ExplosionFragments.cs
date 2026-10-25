@@ -1,17 +1,18 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.World;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
-namespace OpenIGI.Game.Igi2.Weapons;
+namespace OpenIGI.Game.World;
 
 /// <summary>
-/// The fragments an explosion throws, <c>SimpointObjContainer</c> (<c>SimpointObjContainer_RunHandler</c>, <c>igi2 0x5B6080</c>):
-/// they fall and slow, and turn together at a spin that dies away; none of it touches anything.
+/// The fragments an explosion throws, <c>SimpointObjContainer</c>: they fall and slow, and turn together at a spin that dies
+/// away; none of it touches anything. Both titles run it alike (Project I.G.I.'s <c>0x5035B0</c>; I.G.I. 2's
+/// <c>SimpointObjContainer_RunHandler</c>, <c>igi2 0x5B6080</c>).
 /// </summary>
 /// <param name="model">The fragments' model.</param>
 /// <param name="lifetime">The ticks each lives.</param>
 /// <param name="gravityScale">What the gravity is scaled by: the explosion's full range over 4551.</param>
 /// <param name="spin">The spin about each axis, radians a tick.</param>
-public sealed class Igi2FragmentContainer(string model, int lifetime, float gravityScale, Vector3f spin) : IIgi2DynamicTask
+public sealed class ExplosionFragments(string model, int lifetime, float gravityScale, Vector3f spin) : IDynamicTask
 {
     /// <summary>What a fragment's velocity keeps each tick, <c>0x3F7AE148</c>.</summary>
     public const float AirResistance = 0.98f;
@@ -19,7 +20,7 @@ public sealed class Igi2FragmentContainer(string model, int lifetime, float grav
     /// <summary>The fragments' gravity before the explosion's scale, <c>0x4232674F</c>.</summary>
     public const float Gravity = 44.600887f;
 
-    private readonly List<Igi2Fragment> _fragments = [];
+    private readonly List<ExplosionFragment> _fragments = [];
     private Vector3f _spin = spin;
 
     /// <summary>Gets the fragments' model.</summary>
@@ -29,14 +30,14 @@ public sealed class Igi2FragmentContainer(string model, int lifetime, float grav
     public int Lifetime { get; } = lifetime;
 
     /// <summary>Gets the fragments still flying.</summary>
-    public IReadOnlyList<Igi2Fragment> Flying => _fragments;
+    public IReadOnlyList<ExplosionFragment> Flying => _fragments;
 
     /// <summary>Gets or sets a value indicating whether the fragments have been thrown; an emptied container that has is gone.</summary>
     public bool IsStarted { get; set; }
 
     /// <summary>Adds a fragment, <c>SimpointObjContainer_Add</c> (<c>igi2 0x5B68E0</c>).</summary>
     /// <param name="fragment">The fragment.</param>
-    public void Add(Igi2Fragment fragment)
+    public void Add(ExplosionFragment fragment)
     {
         ArgumentNullException.ThrowIfNull(fragment);
         fragment.Lifetime = Lifetime;
@@ -54,8 +55,8 @@ public sealed class Igi2FragmentContainer(string model, int lifetime, float grav
         Fpu air = AirResistance;
         float gravity = (((Fpu)gravityScale * Gravity) * air).F;
         _spin = new Vector3f(((Fpu)_spin.X * 0.99f).F, ((Fpu)_spin.Y * 0.99f).F, ((Fpu)_spin.Z * 0.99f).F);
-        float[] turn = Igi2Pose.Rotation(_spin.X, _spin.Y, _spin.Z);
-        foreach (Igi2Fragment f in _fragments)
+        float[] turn = EngineEuler.Rotation(_spin.X, _spin.Y, _spin.Z);
+        foreach (ExplosionFragment f in _fragments)
         {
             Vector3f v = f.Velocity;
             float vx = (air * v.X).F, vy = (air * v.Y).F, vz = ((air * v.Z) - gravity).F;
@@ -77,7 +78,7 @@ public sealed class Igi2FragmentContainer(string model, int lifetime, float grav
         // SimpointObj_RunHandler (igi2 0x5B66E0): each counts its life down, and is gone once it has none.
         for (int i = _fragments.Count - 1; i >= 0; i--)
         {
-            Igi2Fragment f = _fragments[i];
+            ExplosionFragment f = _fragments[i];
             if (f.Lifetime > 0)
             {
                 f.Lifetime--;

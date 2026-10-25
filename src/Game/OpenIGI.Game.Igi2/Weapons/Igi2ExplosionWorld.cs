@@ -3,6 +3,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -14,7 +15,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <param name="collision">The collision a blast is traced through to a target.</param>
 /// <param name="materials">The level's materials, whose penetration a blast loses through each face.</param>
 /// <param name="dynamic">The level's dynamic tasks.</param>
-public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery collision, Igi2GameMaterials materials, Igi2DynamicTasks dynamic)
+public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery collision, Igi2GameMaterials materials, DynamicTasks dynamic)
     : IIgi2GrenadeEffects
 {
     /// <summary>The query groups a blast is traced against: the ground, the splines, the solid objects and the forests.</summary>
@@ -33,7 +34,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     public IgiRandom Random { get; } = random;
 
     /// <summary>Gets the level's dynamic tasks.</summary>
-    public Igi2DynamicTasks Dynamic { get; } = dynamic;
+    public DynamicTasks Dynamic { get; } = dynamic;
 
     /// <summary>Gets or sets every human registered in the level, <c>Human_ptQTaskList</c>.</summary>
     public IReadOnlyList<Humans.Igi2Human> Humans { get; set; } = [];
@@ -230,7 +231,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
         }
 
         (float a, float b, float c) = spin ?? ((Draw() * 0.6283185f).F, (Draw() * 0.6283185f).F, (Draw() * 0.6283185f).F);
-        Igi2FragmentContainer fragments = new(
+        ExplosionFragments fragments = new(
             request.FragmentModel,
             15,
             ((Fpu)request.FullRange * 0.00021972656f).F,
@@ -367,10 +368,10 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
 
         float radius = reach.F;
         Vector3d at = r.Position;
-        Igi2FireBall? first = null;
+        ExplosionFireBall? first = null;
         if (r.FireballCount != 0)
         {
-            first = new Igi2FireBall(at, radius, 30, 24, 0, 30);
+            first = new ExplosionFireBall(at, radius, 30, 24, 0, 30);
             Dynamic.Add(first);
         }
 
@@ -386,7 +387,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             int delay = Fpu.ToInt32((r6 * 6f) + (((Fpu)(double)(i + 1) / (double)r.FireballCount) * 30f));
             int fade = Fpu.ToInt32((Fpu)0.9f * (double)life);
             float size = (((r1 * 0.25f) + 0.5f) * radius).F;
-            Dynamic.Add(new Igi2FireBall(placed, size, life, fade, delay, life));
+            Dynamic.Add(new ExplosionFireBall(placed, size, life, fade, delay, life));
         }
 
         int smokeLife = r.FireballCount > 1
@@ -394,7 +395,7 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
             : 60;
         if (r.FireballCount != 0)
         {
-            Dynamic.Add(new Igi2ExplosionSmoke(Random, at, (reach * 0.8999999761581421).F, smokeLife));
+            Dynamic.Add(new ExplosionSmoke(Random, at, (reach * 0.8999999761581421).F, smokeLife));
         }
 
         if (r.FragmentCount != 0)
@@ -457,16 +458,16 @@ public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQ
     /// A fragment, <c>Explosion0_FragmentNew</c> (<c>igi2 0x508D40</c>): turned at random by up to a hundredth of a turn about each
     /// axis, scaled by its radius over 2048. This build throws every fragment without a trail.
     /// </summary>
-    private Igi2Fragment NewFragment(Vector3d position, Vector3f velocity, float radius)
+    private ExplosionFragment NewFragment(Vector3d position, Vector3f velocity, float radius)
     {
         float gamma = (Draw() * 0.031415928f).F;
         float beta = (Draw() * 0.031415928f).F;
         float alpha = (Draw() * 0.031415928f).F;
-        return new Igi2Fragment
+        return new ExplosionFragment
         {
             Position = position,
             Velocity = velocity,
-            Orientation = Igi2Pose.Rotation(alpha, beta, gamma),
+            Orientation = EngineEuler.Rotation(alpha, beta, gamma),
             Scale = ((Fpu)radius * 0.00048828125f).F,
         };
     }

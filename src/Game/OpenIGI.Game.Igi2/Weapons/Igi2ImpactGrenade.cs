@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World.Particles;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -61,7 +62,7 @@ public readonly record struct Igi2ImpactGrenadeParameters(string Model, float Da
 /// and AI event 20 heard 75 metres off; and it is gone. Otherwise its trail takes a puff, three draws of the run stream.
 /// </para>
 /// </remarks>
-public sealed class Igi2ImpactGrenade : IIgi2DynamicTask
+public sealed class Igi2ImpactGrenade : IDynamicTask
 {
     /// <summary>A metre a second, in units a tick.</summary>
     public const double MetresPerSecond = 136.53334045410156;

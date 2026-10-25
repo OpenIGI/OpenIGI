@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// The root is the <c>Level</c> (<c>Level_LevelRunHandler</c>, <c>0x543400</c>), which runs its children and then counts
 /// the tick. Its <c>Static</c> child does nothing (<c>Level_StaticRunHandler</c>, <c>0x5434A0</c>); its <c>Dynamic</c> child
 /// (<c>Level_DynamicRunHandler</c>, <c>0x5435F0</c>) runs the level's own objects, then what has been added after them —
-/// grenades, explosions and what they leave (<see cref="World.Igi2DynamicTasks"/>) — then the delayed pass
+/// grenades, explosions and what they leave (<see cref="OpenIGI.Game.World.DynamicTasks"/>) — then the delayed pass
 /// (<c>RunDelayed_Run</c>, <c>0x58FDB0</c>).
 /// </para>
 /// <para>
@@ -60,7 +60,7 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
     public Igi2ScriptFunctions Functions { get; }
 
     /// <summary>Gets or sets what runs after the level's own objects under <c>Dynamic</c>, or <see langword="null"/>.</summary>
-    public World.Igi2DynamicTasks? Dynamic { get; set; }
+    public OpenIGI.Game.World.DynamicTasks? Dynamic { get; set; }
 
     /// <summary>Gets a value indicating whether a cutscene ran this tick, <c>CutScene_isRunning</c>.</summary>
     public bool IsCutsceneRunning { get; private set; }

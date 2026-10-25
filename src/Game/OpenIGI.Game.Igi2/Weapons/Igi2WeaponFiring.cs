@@ -701,7 +701,7 @@ public sealed class Igi2WeaponFiring
             this,
             Owner,
             position,
-            Igi2Pose.Rotation(direction.Alpha, direction.Beta, direction.Gamma),
+            EngineEuler.Rotation(direction.Alpha, direction.Beta, direction.Gamma),
             Owner?.AccumulatedSpeed ?? default,
             heldTime,
             parameters,

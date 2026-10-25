@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -142,7 +143,7 @@ public sealed class RetailIgi2WaterModuleTests
         (Igi2CollisionWorld world, _, Igi2WaterBody body) = Build();
         Weapons.Igi2WeaponTables tables = Igi2Session.Start().Require<Weapons.Igi2HumanWeapons>().Tables;
         Weapons.Igi2WeaponTypeTask gun = tables.WeaponTypes.First(static t => t.WeaponId != Pickups.Igi2GunPickup.FlatWeaponId && t.FixedModel.Length > 0);
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Pickups.Igi2PickupList pickups = new([], new BlindSight(), new Igi2GameMaterials())
         {
             Collision = world,

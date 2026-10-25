@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using Xunit;
 using OpenIGI.Game.World.Particles;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -72,7 +73,7 @@ public sealed class Igi2SmokeGrenadeTests
     public void Smoke_uses_retail_plume_parameters_without_run_stream_draws()
     {
         EmptyWorld query = new();
-        Igi2DynamicTasks tasks = new();
+        DynamicTasks tasks = new();
         IgiRandom random = new(123u), reference = new(123u);
         Igi2ExplosionWorld world = new(random, query, new Igi2GameMaterials(), tasks)
         {

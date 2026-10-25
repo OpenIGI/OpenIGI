@@ -1,9 +1,9 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi2.Weapons;
+namespace OpenIGI.Game.World;
 
 /// <summary>One fragment an explosion throws, <c>Fragment</c>: a point that flies, turning, for the container's lifetime.</summary>
-public sealed class Igi2Fragment
+public sealed class ExplosionFragment
 {
     /// <summary>Gets or sets where it is.</summary>
     public Vector3d Position { get; set; }

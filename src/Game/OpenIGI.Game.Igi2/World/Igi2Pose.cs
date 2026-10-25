@@ -46,32 +46,7 @@ public sealed class Igi2Pose
     /// </para>
     /// </remarks>
     public static Igi2Pose FromAngles(Vector3d position, Vector3f angles) =>
-        new(position, Rotation(angles.X, angles.Y, angles.Z));
-
-    /// <summary>The rotation three angles describe, <c>Real32x9_Create</c> (<c>igi2 0x562A60</c>): see <see cref="FromAngles"/>.</summary>
-    /// <param name="alpha">The turn about X, in radians.</param>
-    /// <param name="beta">The turn about Y.</param>
-    /// <param name="gamma">The turn about Z.</param>
-    /// <returns>The nine floats, row by row.</returns>
-    public static float[] Rotation(float alpha, float beta, float gamma)
-    {
-        Fpu sinGamma = Fpu.Sin(gamma), cosGamma = Fpu.Cos(gamma);
-        float sinBeta = Fpu.Sin(beta).F, cosBeta = Fpu.Cos(beta).F;
-
-        // Gamma times beta.
-        float p00 = (cosBeta * cosGamma).F, p01 = (-sinGamma).F, p02 = ((Fpu)sinBeta * cosGamma).F;
-        float p10 = (cosBeta * sinGamma).F, p11 = cosGamma.F, p12 = ((Fpu)sinBeta * sinGamma).F;
-        float p20 = -sinBeta, p22 = cosBeta;
-
-        // Then alpha.
-        Fpu sinAlpha = Fpu.Sin(alpha), cosAlpha = Fpu.Cos(alpha);
-        return
-        [
-            p00, ((cosAlpha * p01) + (sinAlpha * p02)).F, ((cosAlpha * p02) + (-sinAlpha * p01)).F,
-            p10, ((cosAlpha * p11) + (sinAlpha * p12)).F, ((cosAlpha * p12) + (-sinAlpha * p11)).F,
-            p20, (sinAlpha * p22).F, (cosAlpha * p22).F,
-        ];
-    }
+        new(position, EngineEuler.Rotation(angles.X, angles.Y, angles.Z));
 
     /// <summary>A pose whose orientation its type's handler builds as a matrix rather than from three angles.</summary>
     /// <param name="position">The position, in world units.</param>
@@ -177,7 +152,7 @@ public sealed class Igi2Pose
 
     /// <summary>
     /// The three angles an orientation stands at, <c>Real32x9_GetAngles</c> (<c>igi2 0x562D60</c>): the inverse of
-    /// <see cref="Rotation"/>.
+    /// <see cref="EngineEuler.Rotation"/>.
     /// </summary>
     /// <param name="m">The orientation, row by row.</param>
     /// <returns>Alpha, beta and gamma, each in radians from zero to a whole turn.</returns>

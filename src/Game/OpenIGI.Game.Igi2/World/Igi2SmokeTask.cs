@@ -185,7 +185,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     public void Prepare()
     {
         Stream?.Reseed();
-        float[] turn = Igi2Pose.Rotation(Alpha, 0f, Gamma);
+        float[] turn = EngineEuler.Rotation(Alpha, 0f, Gamma);
         _direction = new Vector3f(turn[2], turn[5], turn[8]);
         if (Sprite == 0 && !DoDamage)
         {

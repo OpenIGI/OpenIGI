@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -33,7 +34,7 @@ public sealed class RetailIgi2ImpactGrenadeTests
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
         Assert.True(PlayerSpawn.TryFindGameplay(m.Level.Root, out PlayerSpawnPoint spawn));
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2ExplosionWorld explosions = new(new IgiRandom(0x1234567u), m.Collision!, m.Materials, dynamic);
         Igi2HumanWeapons weapons = Igi2Session.Start().Require<Igi2HumanWeapons>();
         Igi2WeaponTypeTask m16 = weapons.Tables.WeaponTypes.Single(static t => t.WeaponId == "WEAPON_ID_M16A2");

@@ -31,7 +31,7 @@ public sealed class RetailIgi2SplineSegmentTests
     [Fact]
     public void The_inverse_of_a_turn_transposed_is_the_turn()
     {
-        float[] turn = Igi2Pose.Rotation(0.3f, -0.2f, 1.1f);
+        float[] turn = EngineEuler.Rotation(0.3f, -0.2f, 1.1f);
 
         float[] result = Igi2Pose.InverseTranspose(turn);
 

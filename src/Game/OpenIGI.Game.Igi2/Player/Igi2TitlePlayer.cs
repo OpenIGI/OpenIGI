@@ -148,7 +148,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public Weapons.Igi2ExplosionWorld? Explosions { get; set; }
 
     /// <summary>Gets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>: the grenades, explosions and what they leave.</summary>
-    public World.Igi2DynamicTasks Dynamic { get; } = new();
+    public OpenIGI.Game.World.DynamicTasks Dynamic { get; } = new();
 
     /// <summary>Gets or sets the level's soldiers, or <see langword="null"/> before the level made them.</summary>
     public Soldiers.Igi2Soldiers? Soldiers { get; set; }
@@ -533,7 +533,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         // Human_UpdateInternalDataHandler (igi2 0x4FF2F0): the level's Gamma is the heading and the ideal heading
         // both, and the body stands upright turned by it.
-        float[] facing = Igi2Pose.Rotation(0f, 0f, gamma);
+        float[] facing = EngineEuler.Rotation(0f, 0f, gamma);
         human.Orientation = new Matrix3f(
             facing[0], facing[1], facing[2],
             facing[3], facing[4], facing[5],

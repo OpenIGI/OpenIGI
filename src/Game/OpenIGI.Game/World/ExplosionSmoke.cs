@@ -1,24 +1,25 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.World;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
-namespace OpenIGI.Game.Igi2.Weapons;
+namespace OpenIGI.Game.World;
 
 /// <summary>
-/// An explosion's smoke, <c>ExplosionSmoke</c> (<c>Explosion0_SmokeRunHandler</c>, <c>igi2 0x5095C0</c>): a white puff when it
-/// starts and a black one late in its life.
+/// An explosion's smoke, <c>ExplosionSmoke</c>: a white puff when it starts and a black one late in its life. Both titles run
+/// it alike (Project I.G.I.'s <c>0x480420</c> and <c>0x47EAD0</c>; I.G.I. 2's <c>Explosion0_SmokeRunHandler</c>,
+/// <c>igi2 0x5095C0</c>).
 /// </summary>
-public sealed class Igi2ExplosionSmoke : IIgi2DynamicTask
+public sealed class ExplosionSmoke : IDynamicTask
 {
     private readonly IgiRandom _random;
-    private readonly List<Igi2SmokePuff> _puffs = [];
+    private readonly List<ExplosionSmokePuff> _puffs = [];
     private bool _isBlack;
 
-    /// <summary>Initializes a new instance of the <see cref="Igi2ExplosionSmoke"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="ExplosionSmoke"/> class.</summary>
     /// <param name="random">The run stream.</param>
     /// <param name="position">Where.</param>
     /// <param name="radius">How big, <c>vRadius</c>.</param>
     /// <param name="lifetime">The ticks it lives.</param>
-    public Igi2ExplosionSmoke(IgiRandom random, Vector3d position, float radius, int lifetime)
+    public ExplosionSmoke(IgiRandom random, Vector3d position, float radius, int lifetime)
     {
         _random = random;
         Position = position;
@@ -40,7 +41,7 @@ public sealed class Igi2ExplosionSmoke : IIgi2DynamicTask
     public int Lifetime { get; private set; }
 
     /// <summary>Gets the puffs it has started.</summary>
-    public IReadOnlyList<Igi2SmokePuff> Puffs => _puffs;
+    public IReadOnlyList<ExplosionSmokePuff> Puffs => _puffs;
 
     /// <summary>Gets the black puff's brightness, set each tick once it has started.</summary>
     public float BlackIntensity { get; private set; }
@@ -91,10 +92,10 @@ public sealed class Igi2ExplosionSmoke : IIgi2DynamicTask
     private Fpu Draw() => _random.NextDouble();
 
     /// <summary><c>Explosion0_AddSmoke</c>: a particle at the smoke, turned at random and turning at random.</summary>
-    private Igi2SmokePuff Puff(int flags, float sizeDelta, int lifetime, int fadetime, float intensity)
+    private ExplosionSmokePuff Puff(int flags, float sizeDelta, int lifetime, int fadetime, float intensity)
     {
         float rotation = (Draw() * 6.2831855f).F;
         float rotationDelta = (((Fpu)0.5 - Draw()) * 0.018849557f).F;
-        return new Igi2SmokePuff(flags, Position, Radius, sizeDelta, lifetime, fadetime, intensity, rotation, rotationDelta);
+        return new ExplosionSmokePuff(flags, Position, Radius, sizeDelta, lifetime, fadetime, intensity, rotation, rotationDelta);
     }
 }

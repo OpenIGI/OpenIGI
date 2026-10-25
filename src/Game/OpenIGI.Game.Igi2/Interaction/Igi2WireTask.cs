@@ -35,7 +35,7 @@ public sealed partial class Igi2WireTask : Igi2Task, IIgi2PlacedTask, IIgi2Wire
 
     private LevelExpression? _useable;
     private WireTransform _transform;
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private byte _isInUse;
     private byte _isLastInUse;
 

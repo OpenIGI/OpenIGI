@@ -277,7 +277,7 @@ public sealed class Igi2StateReader
     public float[] Real9()
     {
         float alpha = Real(), beta = Real(), gamma = Real();
-        return World.Igi2Pose.Rotation(alpha, beta, gamma);
+        return EngineEuler.Rotation(alpha, beta, gamma);
     }
 
     /// <summary>Reads a quaternion and its operation count.</summary>

@@ -31,7 +31,7 @@ public sealed class Igi2HumanEyesTests
         player.UpdateViewBody();
 
         Assert.Equal(new Vector3d(Feet.X, Feet.Y, eyes), player.View.Position);
-        float[] expected = Igi2Pose.Rotation(0.25f, 0f, 0.5f);
+        float[] expected = EngineEuler.Rotation(0.25f, 0f, 0.5f);
         Assert.Equal(expected[0], player.View.Orientation.M11);
         Assert.Equal(expected[5], player.View.Orientation.M23);
         Assert.Equal(expected[7], player.View.Orientation.M32);

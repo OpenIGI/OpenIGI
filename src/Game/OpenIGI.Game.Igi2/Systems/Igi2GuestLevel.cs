@@ -398,7 +398,7 @@ public sealed class Igi2GuestLevel
         }
         Igi2GameMaterials materials = services.Require<Igi2GameMaterials>();
         Igi2AiWorld levelAi = services.Require<Igi2AiWorld>();
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
 
         // The level's world as I.G.I. 2 brings its own up (Igi2Gameplay.CreatePlayer): the blasts and what flies through
         // them, the pickups a soldier drops, and the casings its weapon throws.

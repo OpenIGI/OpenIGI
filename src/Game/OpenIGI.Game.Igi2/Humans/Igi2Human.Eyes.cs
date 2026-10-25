@@ -74,7 +74,7 @@ public abstract partial class Igi2Human
             gamma = (Shake(view.ShakeAngle, view.ShakeFactor) + gamma).F;
         }
 
-        float[] o = Igi2Pose.Rotation(alpha, beta, gamma);
+        float[] o = EngineEuler.Rotation(alpha, beta, gamma);
         view.Orientation = new Matrix3f(o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8]);
         Vector3d eyes = EyesAt(Position, Pose);
 
@@ -119,7 +119,7 @@ public abstract partial class Igi2Human
             return;
         }
 
-        float[] turn = Igi2Pose.Rotation(view.ObjectPitch, 0f, view.ObjectYaw);
+        float[] turn = EngineEuler.Rotation(view.ObjectPitch, 0f, view.ObjectYaw);
         Matrix3f placed = ObjectFrame(o, turn);
         if (updateAnimation)
         {

@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Scripting.Expressions;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Interaction;
 
@@ -95,7 +96,7 @@ public sealed class Igi2Explosive
 
     private readonly IIgi2ExplosiveParameters _parameters;
     private readonly GameTask _owner;
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private byte _isExploded;
     private byte _isExplode;
     private float _damage;
@@ -156,7 +157,7 @@ public sealed class Igi2Explosive
     {
         Model = _parameters.Model;
         Vector3f angles = _parameters.Orientation;
-        _frame = frame is null ? Igi2Pose.Rotation(angles.X, angles.Y, angles.Z) : [.. frame];
+        _frame = frame is null ? EngineEuler.Rotation(angles.X, angles.Y, angles.Z) : [.. frame];
         _isExplode = 0;
         _isExploded = 0;
         _damage = 0f;

@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -106,7 +107,7 @@ public sealed class Igi2NoGrenadeEffects : IIgi2GrenadeEffects
 }
 
 /// <summary>A thrown grenade in flight, <c>Grenade_s</c>: a physics object with a fuse.</summary>
-public sealed class Igi2Grenade : IIgi2DynamicTask
+public sealed class Igi2Grenade : IDynamicTask
 {
     /// <summary>The gravity a grenade falls by, <c>Grenade_Move</c> (<c>igi2 0x483FE0</c>): units a tick squared.</summary>
     public const float Gravity = 44.600887f;
@@ -349,7 +350,7 @@ public sealed class Igi2Grenades(
     PhysicsObjectTypes types,
     Func<string, MefModel?> models,
     Igi2PhysicsWorld world,
-    Igi2DynamicTasks dynamic,
+    DynamicTasks dynamic,
     IOpenIgiLogger? logger = null) : IIgi2GrenadeWorld
 {
     /// <summary>The weapon tag that names a grenade's model, <c>ProjectileModel</c>.</summary>
@@ -361,7 +362,7 @@ public sealed class Igi2Grenades(
     public Igi2PhysicsWorld World { get; } = world;
 
     /// <summary>Gets the level's dynamic tasks the grenades run in.</summary>
-    public Igi2DynamicTasks Dynamic { get; } = dynamic;
+    public DynamicTasks Dynamic { get; } = dynamic;
 
     /// <summary>Gets the grenades in flight, in the order they were thrown.</summary>
     public IEnumerable<Igi2Grenade> Flying => Dynamic.Tasks.OfType<Igi2Grenade>();

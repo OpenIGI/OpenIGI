@@ -84,8 +84,8 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
     private readonly float _betaSpeed;
     private readonly Igi2WeaponFiring _firing;
     private Igi2Pose? _base;
-    private float[] _headFrame = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _barrelFrame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _headFrame = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _barrelFrame = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _barrelPosition;
     private float _tilt;
     private float _turn;
@@ -443,8 +443,8 @@ public sealed class Igi2AiStationaryGun : IIgi2WeaponOwner
         }
 
         float[] b = _base.ToArray();
-        _headFrame = Multiply(b, Igi2Pose.Rotation(0f, 0f, _turn));
-        _barrelFrame = Multiply(b, Igi2Pose.Rotation(_tilt, 0f, _turn));
+        _headFrame = Multiply(b, EngineEuler.Rotation(0f, 0f, _turn));
+        _barrelFrame = Multiply(b, EngineEuler.Rotation(_tilt, 0f, _turn));
         _barrelPosition = Igi2MagicVertex.Position(_headModel is null ? null : _models(_headModel), 0, _headFrame, _base.Position);
     }
 

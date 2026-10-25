@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Pickups;
 
@@ -59,7 +60,7 @@ public sealed class Igi2PickupList
     /// Gets or sets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>, which a pickup made at run time is run in; or
     /// <see langword="null"/> to leave it to <see cref="Run"/>.
     /// </summary>
-    public World.Igi2DynamicTasks? Dynamic { get; set; }
+    public OpenIGI.Game.World.DynamicTasks? Dynamic { get; set; }
 
     /// <summary>
     /// One pickup's run handler, <c>GunPickup_RunHandler</c> (<c>igi2 0x46A760</c>): it falls if it is falling, and if it was taken it
@@ -178,7 +179,7 @@ public sealed class Igi2PickupList
     }
 
     // A pickup made at run time, run in the level's dynamic tasks.
-    private sealed class Driver(Igi2PickupList list, Igi2GunPickup pickup) : World.IIgi2DynamicTask
+    private sealed class Driver(Igi2PickupList list, Igi2GunPickup pickup) : OpenIGI.Game.World.IDynamicTask
     {
         public bool Run() => list.Step(pickup);
     }

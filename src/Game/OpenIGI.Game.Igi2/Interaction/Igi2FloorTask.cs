@@ -26,12 +26,12 @@ public sealed partial class Igi2FloorTask : Igi2Task
     public Vector3f Orientation { get; set; }
 
     /// <summary>Gets which way the lift faces at this floor, row by row.</summary>
-    public float[] Frame { get; private set; } = Igi2Pose.Rotation(0f, 0f, 0f);
+    public float[] Frame { get; private set; } = EngineEuler.Rotation(0f, 0f, 0f);
 
     /// <inheritdoc/>
     protected override void OnParsed()
     {
-        Frame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        Frame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         for (GameTask? up = Parent; up is not null; up = up.Parent)
         {
             if (up is Igi2LiftTask lift)

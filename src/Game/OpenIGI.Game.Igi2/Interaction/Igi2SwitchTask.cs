@@ -300,5 +300,5 @@ public sealed partial class Igi2SwitchTask : Igi2Task, IIgi2Pressable, IIgi2Plac
         _started = true;
     }
 
-    private float[] Frame() => Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+    private float[] Frame() => EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
 }
