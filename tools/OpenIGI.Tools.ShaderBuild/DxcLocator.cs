@@ -92,13 +92,14 @@ public static partial class DxcLocator
         string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
         process.WaitForExit();
 
-        // "dxcompiler.dll: 1.9(5512-01b62ad4)(1.9.2609.5) - 1.9.2609.5 (01b62ad47)": the last full version.
-        Match match = FullVersion().Match(output);
-        return match.Success
-            ? match.Groups["version"].Value
+        // The last full version: Windows says "dxcompiler.dll: 1.9(5512-01b62ad4)(1.9.2609.5) - 1.9.2609.5 (01b62ad47)",
+        // Linux only "libdxcompiler.so: 1.9(5512-01b62ad4)(1.9.2609.5)".
+        MatchCollection matches = FullVersion().Matches(output);
+        return matches.Count > 0
+            ? matches[^1].Groups["version"].Value
             : throw new ShaderBuildException($"{executable} --version said nothing a version could be read from: {output.Trim()}");
     }
 
-    [GeneratedRegex(@"- (?<version>\d+\.\d+\.\d+(\.\d+)?)")]
+    [GeneratedRegex(@"(?:- |\()(?<version>\d+\.\d+\.\d+(\.\d+)?)")]
     private static partial Regex FullVersion();
 }

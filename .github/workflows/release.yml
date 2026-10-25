@@ -215,9 +215,10 @@ jobs:
             exit 0
           fi
           rm -rf artifacts/nuget
-          tools/release/pack-modding-sdk.sh "$VERSION" artifacts/nuget
-          dotnet nuget push "artifacts/nuget/*.nupkg" --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json --skip-duplicate \
+          # Through bash, so a script checked out without its executable bit still runs.
+          { bash tools/release/pack-modding-sdk.sh "$VERSION" artifacts/nuget \
+            && dotnet nuget push "artifacts/nuget/*.nupkg" --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json --skip-duplicate; } \
             || echo "::warning::The modding SDK did not publish."
 
       # ssh reads ~/.ssh from the account's home in the password database, not from $HOME, and inside a job
