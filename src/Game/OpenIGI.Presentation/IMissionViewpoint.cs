@@ -26,7 +26,7 @@ public readonly record struct ViewpointFrame(
     bool ThirdPersonAllowed,
     bool Paused,
     int NowMilliseconds,
-    DeathCameraVantage.Blocked? Walls);
+    WorldWalls.Blocked? Walls);
 
 /// <summary>
 /// A title's own player's viewpoint: the eye it looks through, and the cameras that take it -- the one that watches the body

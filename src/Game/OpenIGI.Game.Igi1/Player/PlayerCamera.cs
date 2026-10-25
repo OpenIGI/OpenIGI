@@ -618,8 +618,17 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public float InteractionFacing => _interaction.Facing;
 
     /// <inheritdoc cref="PlayerInteractionDriver.ApplyRootMotion"/>
-    public void ApplyInteractionRootMotion(Vector3d rootDelta, bool clipEnded = false) =>
-        _interaction.ApplyRootMotion(rootDelta, clipEnded);
+    public void ApplyInteractionRootMotion(Vector3d rootDelta, bool clipEnded = false, float? stepEventTime = null) =>
+        _interaction.ApplyRootMotion(rootDelta, clipEnded, stepEventTime);
+
+    /// <inheritdoc cref="PlayerInteractionDriver.IsOnLevelWire"/>
+    public bool IsOnLevelWire => _interaction.IsOnLevelWire;
+
+    /// <inheritdoc cref="PlayerInteractionDriver.WireDragDirection"/>
+    public int WireDragDirection => _interaction.WireDragDirection;
+
+    /// <inheritdoc cref="PlayerInteractionDriver.TakeWireDragSound"/>
+    public string? TakeWireDragSound() => _interaction.TakeWireDragSound();
 
     /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
     public bool InteractionAnimationLoops => _interaction.AnimationLoops;

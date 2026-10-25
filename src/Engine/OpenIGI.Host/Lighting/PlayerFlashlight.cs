@@ -146,7 +146,7 @@ internal sealed class PlayerFlashlight
         in Camera3D eye,
         bool thirdPerson,
         int nowMilliseconds,
-        Func<DeathCameraVantage.Blocked?> walls)
+        Func<WorldWalls.Blocked?> walls)
     {
         _flashlightShown = shown;
 
@@ -184,7 +184,7 @@ internal sealed class PlayerFlashlight
 
         // What the crosshair is on, and how far: the beam converges there, and a near wall throws the beam
         // back onto the hands. The lens is also kept out of any wall the body is pressed against.
-        DeathCameraVantage.Blocked? blocked = walls();
+        WorldWalls.Blocked? blocked = walls();
         float hit = (float)FlashlightProbeMetres;
         if (blocked is not null)
         {

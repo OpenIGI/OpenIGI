@@ -292,13 +292,21 @@ public sealed class WorldInteraction
         return Vector3d.Lerp(Anchor, End, Math.Clamp(along, margin, 1.0 - margin));
     }
 
+    /// <summary>How far below a sloped wire the zip-line hangs its rider — <c>sub_411F20</c>'s 3686.4.</summary>
+    public const double ZiplineDrop = 3686.4;
+
+    /// <summary>How far below a level wire the hand-over-hand rider hangs — <c>sub_411AE0</c>'s 2150.4.</summary>
+    public const double WireDragDrop = 2150.4;
+
     /// <summary>Gets the human task position whose animation places its hands on the cable.</summary>
+    /// <param name="from">The position projected onto the cable.</param>
+    /// <param name="drop">How far below the cable the task hangs: <see cref="ZiplineDrop"/> or <see cref="WireDragDrop"/>.</param>
     /// <remarks>
-    /// IGI1 <c>sub_411F20</c> subtracts 3686.4 along column 2 of the frame built by
+    /// IGI1 <c>sub_411F20</c> and <c>sub_411AE0</c> subtract the drop along column 2 of the frame built by
     /// <c>sub_43F820</c>/<c>sub_414A60</c>. That column is cable-relative up, not world Z; on a slope
     /// it deliberately contains a horizontal component.
     /// </remarks>
-    public Vector3d WireBodyPoint(Vector3d from)
+    public Vector3d WireBodyPoint(Vector3d from, double drop = ZiplineDrop)
     {
         Vector3d segment = End - Anchor;
         if (Type != InteractionActivateType.Wire || segment.LengthSquared == 0.0)
@@ -308,7 +316,7 @@ public sealed class WorldInteraction
 
         Vector3d up = WireTransform.CableUp(segment.Normalized());
 
-        return WireMountPoint(from) - (up * 3686.4);
+        return WireMountPoint(from) - (up * drop);
     }
 
     /// <summary>Gets the exact root placement and gamma of a retail self-driving interaction state.</summary>

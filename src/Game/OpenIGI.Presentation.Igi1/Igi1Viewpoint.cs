@@ -7,6 +7,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Igi1.Cameras;
 
 namespace OpenIGI.Presentation.Igi1;
 
@@ -18,8 +19,15 @@ namespace OpenIGI.Presentation.Igi1;
 internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
 {
     private readonly ThirdPersonCamera _thirdPerson = new();
-    private DeathCamera _death = new();
-    private InteractionCamera _interaction = new();
+    private Igi1HumanCamera _death = new();
+    private Igi1HumanCamera _interaction = new();
+    private Vector3d _interactionFeet;
+
+    // Where the orbit looks: the body's eye (HumanCamera's info.pos, HumanView_GetEye), standing over its feet.
+    private static Vector3d EyeOver(Vector3d feet) => new(feet.X, feet.Y, feet.Z + PlayerBody.StandingEyeHeight);
+
+    // A corpse's feet under the centre the death camera follows.
+    private static Vector3d FeetUnder(Vector3d centre) => new(centre.X, centre.Y, centre.Z - (PlayerBody.StandingEyeHeight * 0.5));
     private int _thirdPersonMilliseconds;
 
     /// <inheritdoc/>
@@ -124,14 +132,17 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public void ControlInteractionView(float deltaX, float deltaY) => _interaction.Control(deltaX, deltaY);
 
     /// <inheritdoc/>
-    public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls) =>
-        _interaction.Begin(feet, facing, walls is null ? null : Blocked(walls));
+    public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls)
+    {
+        _interactionFeet = feet;
+        _interaction.Begin(EyeOver(feet), feet, facing, walls, death: false);
+    }
 
     /// <inheritdoc/>
-    public void FollowInteractionView(Vector3d feet) => _interaction.Follow(feet);
+    public void FollowInteractionView(Vector3d feet) => _interactionFeet = feet;
 
     /// <inheritdoc/>
-    public void TickInteractionView() => _interaction.Tick();
+    public void TickInteractionView() => _interaction.Tick(EyeOver(_interactionFeet), _interactionFeet);
 
     /// <inheritdoc/>
     public void ResetInteractionView() => _interaction.Reset();
@@ -140,11 +151,15 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public void BeginDeathView(Vector3d position, float facing, WorldRayCast walls)
     {
         ArgumentNullException.ThrowIfNull(walls);
-        _death.Begin(position, facing, Blocked(walls));
+        _death.Begin(EyeOver(position), position, facing, walls, death: true);
     }
 
     /// <inheritdoc/>
-    public void FollowDeathView(Vector3d centre) => _death.Follow(centre);
+    public void FollowDeathView(Vector3d centre)
+    {
+        Vector3d feet = FeetUnder(centre);
+        _death.Tick(EyeOver(feet), feet);
+    }
 
     /// <inheritdoc/>
     public void ResetDeathView() => _death.Reset();
@@ -255,14 +270,6 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
 
         return eye;
     }
-
-    private static DeathCameraVantage.Blocked Blocked(WorldRayCast walls) =>
-        (Vector3d from, Vector3d to, out Vector3d hit) =>
-        {
-            bool blocked = walls(from, to, out WorldRayHit wall);
-            hit = blocked ? wall.Position : default;
-            return blocked;
-        };
 
     /// <summary>Hands the player the ray their crosshair sits on.</summary>
     /// <remarks>

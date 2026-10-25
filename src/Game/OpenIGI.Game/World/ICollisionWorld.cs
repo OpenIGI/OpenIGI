@@ -113,7 +113,7 @@ public sealed class LevelCollision : ICollisionWorld
     public WorldRayCast? DropletWalls { get; }
 
     /// <summary>Gets whether a camera between two points is blocked, and where: made once, as a camera asks it every frame.</summary>
-    public DeathCameraVantage.Blocked? Walls { get; }
+    public WorldWalls.Blocked? Walls { get; }
 
     /// <summary>
     /// Gets daylight's line through the level, as the lighting bakes cast it: every door shut, glass and chain-link passed, and the
