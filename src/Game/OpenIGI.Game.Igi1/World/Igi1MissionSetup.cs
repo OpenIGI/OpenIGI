@@ -468,12 +468,17 @@ public sealed class Igi1MissionSetup(
             host.Game.Variables);
         host.EndStage("animating the soldiers' brains");
 
-        // The level's alarm speakers, for the sirens: each follows its own expression over
-        // the same live variables the controls export through.
         // The minefields, which blast at their target while their condition holds.
         mission.MineFields = Igi1MineFields.Build(levelRoot);
         mission.MineFieldExpressions = new LevelExpressionRuntime(host.Game.Variables);
 
+        // The Smoke tasks' plumes, in the impact effects' particle module so the one particle drawer shows them.
+        mission.SmokePlumes = Igi1SmokePlumes.Build(levelRoot, host.Game.Variables);
+        mission.SmokePlumes.Expressions = mission.MineFieldExpressions;
+        mission.SmokePlumes.Bind(impacts.Runtime.Particles);
+
+        // The level's alarm speakers, for the sirens: each follows its own expression over
+        // the same live variables the controls export through.
         mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
             levelRoot,
             host.Game.Variables,

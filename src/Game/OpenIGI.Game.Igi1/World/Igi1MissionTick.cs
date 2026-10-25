@@ -902,6 +902,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // room hears when a guard reaches a switch.
             blasts.TickDestructibles();
             blasts.TickMineFields();
+            mission.SmokePlumes?.Tick();
             audio.SoundAlarms();
             mission.AlarmSpeakers?.RunLights();
 
