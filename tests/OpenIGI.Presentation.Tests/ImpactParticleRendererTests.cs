@@ -79,19 +79,16 @@ public sealed class ImpactParticleRendererTests
 
         Assert.True(explosions.Load(mission));
 
-        // The FireBall's face group is transparent and additive (0x49EC70 draws it at ONE, ONE); the
-        // fragment's is neither, so it is an ordinary opaque model (0x49DF60).
+        // The FireBall's face group is transparent and additive (0x49EC70 draws it at ONE, ONE).
         Assert.Equal(BlendMode.Additive, explosions.RetailFireballBlend);
-        Assert.Equal(BlendMode.Opaque, explosions.RetailFragmentBlend);
         Assert.Equal(26, explosions.RetailFireballModelFrameCount);
 
-        // A camera lens's blast: the flame adds and the debris is solid. Its smoke is particle systems, drawn elsewhere.
+        // A camera lens's blast: the flame adds. Its pieces are drawn with a round's chips, its smoke as particle systems.
         Igi1ExplosionRuntime scene = new(new IgiRandom(), particles: null);
         _ = scene.Spawn(new Igi1ExplosionRequest(new Vector3d(8192d, 8192d, 8192d), 1, 0, 0.25f, 2048f, 0f, 7, 3, string.Empty));
         explosions.Draw(scene, Camera3D.Default, Matrix4f.Identity, alpha: 1f);
 
         Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
-        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Opaque);
         Assert.DoesNotContain(device.MeshDraws, draw => draw.Blend == BlendMode.AlphaBlend);
         explosions.Release();
     }

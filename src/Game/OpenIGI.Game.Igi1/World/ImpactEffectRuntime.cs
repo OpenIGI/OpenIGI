@@ -60,7 +60,6 @@ public sealed class ImpactEffectRuntime
     private GameMaterialRegistry? _materials;
     private readonly Dictionary<object, Particle2DBleeding> _blood = [];
     private readonly List<object> _idleBodies = [];
-    private readonly List<ImpactFragment> _fragments = [];
     private readonly List<PendingChips> _pendingChips = [];
     private int _mistFrameCount = 1;
 
@@ -70,6 +69,7 @@ public sealed class ImpactEffectRuntime
     {
         _random = random ?? new IgiRandom();
         _landing = new DropletLanding(this);
+        Explosions = new Igi1ExplosionRuntime(_random, Particles);
     }
 
     /// <summary>
@@ -94,7 +94,11 @@ public sealed class ImpactEffectRuntime
     {
         ArgumentNullException.ThrowIfNull(random);
         _random = random;
+        Explosions.UseRandom(random);
     }
+
+    /// <summary>Gets the level's explosions -- a round's chips among them, each an <c>Explosion0</c> of no FireBalls.</summary>
+    public Igi1ExplosionRuntime Explosions { get; }
 
     /// <summary>Gets how many dust particles the world's impacts have in the air.</summary>
     public int PuffCount
@@ -111,8 +115,8 @@ public sealed class ImpactEffectRuntime
         }
     }
 
-    /// <summary>Gets the chips in the air.</summary>
-    public IReadOnlyList<ImpactFragment> Fragments => _fragments;
+    /// <summary>Gets how many fragments are in the air, a round's chips and a blast's pieces alike.</summary>
+    public int FragmentCount => Explosions.FragmentGroups.Sum(group => group.Flying.Count);
 
     /// <summary>Gets the bodies currently bleeding, and their systems.</summary>
     public IReadOnlyDictionary<object, Particle2DBleeding> Blood => _blood;
@@ -136,7 +140,7 @@ public sealed class ImpactEffectRuntime
     public void Clear()
     {
         Particles.Clear();
-        _fragments.Clear();
+        Explosions.Clear();
         _pendingChips.Clear();
         _blood.Clear();
     }
@@ -253,38 +257,7 @@ public sealed class ImpactEffectRuntime
     {
         foreach (PendingChips chips in _pendingChips)
         {
-            for (int i = 0; i < chips.Count; i++)
-            {
-                Vector3f velocity = GunShotImpactEffects.FragmentLaunch(chips.Direction, _random);
-                _ = _random.NextDouble();
-
-                // 0x47F0D5: three draws, handed to the Euler builder last first.
-                float first = _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians;
-                float second = _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians;
-                float third = _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians;
-                if (!chips.Visible)
-                {
-                    continue;
-                }
-
-                if (_fragments.Count >= FragmentCapacity)
-                {
-                    _fragments.RemoveAt(0);
-                }
-
-                Matrix3f orientation = Matrix3f.FromEngineEulerAngles(third, second, first);
-                _fragments.Add(new ImpactFragment
-                {
-                    Position = chips.Position,
-                    PreviousPosition = chips.Position,
-                    Velocity = velocity,
-                    Orientation = orientation,
-                    PreviousOrientation = orientation,
-                    AngularVelocity = chips.Tumble,
-                    LifeTicks = GunShotImpactEffects.FragmentLifeTicks,
-                    Model = chips.Model,
-                });
-            }
+            ThrowChips(chips);
         }
 
         _pendingChips.Clear();
@@ -333,7 +306,6 @@ public sealed class ImpactEffectRuntime
         _marks = marks;
         _materials = materials;
         Particles.RunAll();
-        TickFragments();
 
         if (_blood.Count == 0)
         {
@@ -379,73 +351,30 @@ public sealed class ImpactEffectRuntime
             _random.NextSingle() * GunShotImpactEffects.FragmentTumbleRadians,
             _random.NextSingle() * GunShotImpactEffects.FragmentTumbleRadians,
             _random.NextSingle() * GunShotImpactEffects.FragmentTumbleRadians);
-
-        for (int i = 0; i < count; i++)
-        {
-            if (_fragments.Count >= FragmentCapacity)
-            {
-                _fragments.RemoveAt(0);
-            }
-
-            Vector3f velocity = GunShotImpactEffects.FragmentLaunch(direction, _random);
-
-            // 0x47F0D5: each chip is placed with its own small turn.
-            Matrix3f orientation = Matrix3f.FromEngineEulerAngles(
-                _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians,
-                _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians,
-                _random.NextSingle() * GunShotImpactEffects.FragmentPlacementRadians);
-
-            _fragments.Add(new ImpactFragment
-            {
-                Position = position,
-                PreviousPosition = position,
-                Velocity = velocity,
-                Orientation = orientation,
-                PreviousOrientation = orientation,
-                AngularVelocity = tumble,
-                LifeTicks = GunShotImpactEffects.FragmentLifeTicks,
-                Model = model,
-            });
-        }
+        ThrowChips(new PendingChips(position, direction, model, count, tumble, model.Length > 0));
     }
 
-    // 0x5035B0, for the one container shape the impact effect builds: drag on the velocity, a fraction
-    // of gravity, and an angular velocity that damps by a hundredth every tick.
-    private void TickFragments()
-    {
-        for (int i = 0; i < _fragments.Count;)
-        {
-            ImpactFragment fragment = _fragments[i];
-            fragment.LifeTicks--;
-            if (fragment.LifeTicks <= 0)
-            {
-                _fragments.RemoveAt(i);
-                continue;
-            }
-
-            fragment.PreviousPosition = fragment.Position;
-            fragment.PreviousOrientation = fragment.Orientation;
-
-            fragment.Velocity = new Vector3f(
-                fragment.Velocity.X * GunShotImpactEffects.FragmentDrag,
-                fragment.Velocity.Y * GunShotImpactEffects.FragmentDrag,
-                (fragment.Velocity.Z * GunShotImpactEffects.FragmentDrag)
-                    - GunShotImpactEffects.FragmentGravityPerTick);
-            fragment.Position = new Vector3d(
-                fragment.Position.X + fragment.Velocity.X,
-                fragment.Position.Y + fragment.Velocity.Y,
-                fragment.Position.Z + fragment.Velocity.Z);
-
-            fragment.AngularVelocity *= GunShotImpactEffects.FragmentAngularDrag;
-            fragment.Orientation = Matrix3f.FromEngineEulerAngles(
-                fragment.AngularVelocity.X,
-                fragment.AngularVelocity.Y,
-                fragment.AngularVelocity.Z) * fragment.Orientation;
-
-            _fragments[i] = fragment;
-            i++;
-        }
-    }
+    // 0x438440's Explosion_New: no damage, a 2048 size (so the chips fall at 0.45 of the blast gravity), no FireBalls, the
+    // chips thrown about the round's line in a 30-degree cone at 340 to 680 a tick -- an Explosion0 like any blast's.
+    private void ThrowChips(in PendingChips chips) =>
+        Explosions.Throw(
+            new Igi1ExplosionRequest(
+                chips.Position,
+                Count: 1,
+                Period: 0,
+                Damage: 0f,
+                FullRange: GunShotImpactEffects.ChipExplosionSize,
+                FalloffRange: 0f,
+                Fragments: chips.Count,
+                Fireballs: 0,
+                Sound: string.Empty,
+                Cone: GunShotImpactEffects.FragmentConeRadians,
+                MinSpeed: GunShotImpactEffects.FragmentSpeedMinimum,
+                MaxSpeed: GunShotImpactEffects.FragmentSpeedMaximum,
+                Model: chips.Model,
+                ShowsFragments: chips.Visible),
+            chips.Direction,
+            chips.Tumble);
 
     // A body's blood, kept across its wounds; the shared routine makes each system anew once the last has burnt out.
     private Particle2DBleeding BleedingOf(object owner)

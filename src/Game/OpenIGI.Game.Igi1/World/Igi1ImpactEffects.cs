@@ -30,11 +30,12 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// <summary>Gets the effects as they move: the dust and chips, and the blood.</summary>
     public ImpactEffectRuntime Runtime { get; } = new();
 
-    /// <summary>Gets the level's explosions as the simulation runs them, on the engine's own stream.</summary>
-    /// <remarks>Their smoke is made in <see cref="Runtime"/>'s particle module, so the one particle drawer shows it.</remarks>
-    public Igi1ExplosionRuntime Explosions => _explosions ??= new(mission.SoundRandom, Runtime.Particles);
-
-    private Igi1ExplosionRuntime? _explosions;
+    /// <summary>Gets the level's explosions as the simulation runs them, a round's chips among them.</summary>
+    /// <remarks>
+    /// They are <see cref="Runtime"/>'s: their smoke is made in its particle module, so the one particle drawer shows it, and
+    /// they draw from whatever stream it is handed (<see cref="ImpactEffectRuntime.UseRandom"/>).
+    /// </remarks>
+    public Igi1ExplosionRuntime Explosions => Runtime.Explosions;
 
     // What a droplet or a dust puff stops against.
     private WorldRayCast? Walls => mission.EffectWalls ?? mission.Player?.Body.Walls;
@@ -44,7 +45,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     public void Reset(int mistFrames)
     {
         Runtime.Clear();
-        Explosions.Clear();
+        Runtime.UseRandom(mission.SoundRandom);
         Runtime.SetMistFrameCount(mistFrames);
     }
 
@@ -263,7 +264,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                 string where = FormattableString.Invariant($"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
                 string report =
                     $"{material.Name} at {where}: {Runtime.PuffCount} dust quad(s), "
-                        + $"{Runtime.Fragments.Count} chip(s) of {material.Entry.Model}.";
+                        + $"{Runtime.FragmentCount} chip(s) of {material.Entry.Model}.";
                 context.Print(report);
                 logger.Information("Impact", report);
             });

@@ -16,6 +16,11 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="Sound">The sound it goes off with; empty for none.</param>
 /// <param name="Blast">What its blast does as it goes off, when its damage is not nothing.</param>
 /// <param name="SoundPriority">The voice priority its sound plays at.</param>
+/// <param name="Cone">The cone its fragments leave in, radians: a right angle for a blast, 30 degrees for a round's chips.</param>
+/// <param name="MinSpeed">The slowest a fragment leaves, units a tick.</param>
+/// <param name="MaxSpeed">The fastest.</param>
+/// <param name="Model">The fragments' model: <c>1009_01_1</c> for a blast, the struck material's chip for a round.</param>
+/// <param name="ShowsFragments">Whether its fragments are kept to be drawn; their draws are made either way.</param>
 public sealed record Igi1ExplosionRequest(
     Vector3d Position,
     int Count,
@@ -27,7 +32,12 @@ public sealed record Igi1ExplosionRequest(
     int Fireballs,
     string Sound,
     Action? Blast = null,
-    int SoundPriority = 90);
+    int SoundPriority = 90,
+    float Cone = 1.5707964f,
+    float MinSpeed = 272f,
+    float MaxSpeed = 1360f,
+    string Model = Igi1ExplosionRuntime.FragmentModel,
+    bool ShowsFragments = true);
 
 /// <summary>Project I.G.I.'s <c>Explosion0</c>: what it is and the fragments it throws, going off through <c>0x47F200</c>.</summary>
 public sealed class Igi1Explosion : Explosion0
@@ -69,8 +79,8 @@ public sealed class Igi1Explosion : Explosion0
 /// fragments fly for 45 ticks.
 /// </para>
 /// <para>
-/// A fragment leaves along the blast's axis tipped by a draw of the cone (<see cref="FragmentDirection"/>), not as the
-/// sequel throws it. The smoke's two puffs are particle systems of <c>smoke2.spr</c> on the impact effects' module, so the
+/// A fragment leaves along the blast's axis tipped by a draw of the cone (<see cref="GunShotImpactEffects.LaunchDirection"/>),
+/// not as the sequel throws it. A round's chips are explosions too, of no FireBalls (<see cref="Throw"/>). The smoke's two puffs are particle systems of <c>smoke2.spr</c> on the impact effects' module, so the
 /// one particle drawer shows them.
 /// </para>
 /// </remarks>
@@ -101,11 +111,6 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     private const float FragmentScale = 0.00048828125f;
     private const float TumbleRange = 0.03141593f;
 
-    // 0x480FE0: the cone and the fragments' speeds.
-    private const float Cone = 1.5707964f;
-    private const float MinSpeed = 272f;
-    private const float MaxSpeed = 1360f;
-
     // 0x47EAD0: the smoke rises at 2.23 a tick, a grey of 12.7.
     private const float SmokeRise = 2.23f;
     private const float SmokeColour = 12.7f;
@@ -126,7 +131,15 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     }
 
     /// <summary>Gets the stream explosions draw from.</summary>
-    public IgiRandom Random { get; }
+    public IgiRandom Random { get; private set; }
+
+    /// <summary>Draws from the level's one stream from now on, as every retail effect does.</summary>
+    /// <param name="random">The level stream.</param>
+    public void UseRandom(IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        Random = random;
+    }
 
     /// <summary>Gets the particle module the smoke is made in.</summary>
     public Particle2DModule? Particles { get; }
@@ -155,16 +168,30 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
             Random.NextSingle() - 0.5f,
             Random.NextSingle() - 0.5f,
             Random.NextSingle() - 0.3f);
+        Vector3f spin = new(
+            Random.NextSingle() * SpinRange,
+            Random.NextSingle() * SpinRange,
+            Random.NextSingle() * SpinRange);
+        return Throw(request, axis, spin);
+    }
+
+    /// <summary>
+    /// Starts an explosion thrown about a given axis, its container already turning at a drawn spin -- <c>Explosion_New</c>
+    /// (<c>0x4810A0</c>), as a round's impact calls it with the chips' tumble it drew (<c>0x481250</c>).
+    /// </summary>
+    /// <param name="request">The explosion.</param>
+    /// <param name="axis">The axis its fragments are thrown about; normalised here when it is anything.</param>
+    /// <param name="spin">The container's spin about each axis.</param>
+    /// <returns>The explosion; one that went off on its first run and has no more to do is already gone.</returns>
+    public Igi1Explosion Throw(Igi1ExplosionRequest request, Vector3f axis, Vector3f spin)
+    {
+        ArgumentNullException.ThrowIfNull(request);
         if (axis.X != 0f || axis.Y != 0f || axis.Z != 0f)
         {
             axis = axis.Normalized();
         }
 
-        Vector3f spin = new(
-            Random.NextSingle() * SpinRange,
-            Random.NextSingle() * SpinRange,
-            Random.NextSingle() * SpinRange);
-        ExplosionFragments fragments = new(FragmentModel, FragmentTicks, request.FullRange * GravityPerRange, spin);
+        ExplosionFragments fragments = new(request.Model, FragmentTicks, request.FullRange * GravityPerRange, spin);
         Igi1Explosion explosion = new(this, request, axis, fragments);
         _fragmentGroups.Add(fragments);
         _tasks.Add(fragments);
@@ -190,28 +217,6 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
         _tasks.Clear();
         _fireBalls.Clear();
         _fragmentGroups.Clear();
-    }
-
-    /// <summary>The way one fragment leaves the blast (<c>0x47F200</c>).</summary>
-    /// <param name="axis">The blast's axis.</param>
-    /// <param name="around">The turn about the axis, in radians.</param>
-    /// <param name="off">The tip away from the axis, in radians.</param>
-    /// <returns>The unit direction.</returns>
-    /// <remarks>
-    /// A frame is stood on the axis (<c>0x4B4010</c>: a level side, the axis, and the third square to both), turned by
-    /// <paramref name="around"/> about the axis and tipped <paramref name="off"/> away from it; the fragment leaves along
-    /// the tipped axis. The first turn is a draw over half a turn only, so every fragment of a blast flies to the same side
-    /// of it, at any angle from straight along the axis to the cone's edge.
-    /// </remarks>
-    public static Vector3f FragmentDirection(Vector3f axis, float around, float off)
-    {
-        Vector3f d = axis.Normalized();
-        Vector3f level = d.X == 0f && d.Y == 0f ? new Vector3f(0f, 1f, 0f) : new Vector3f(d.Y, -d.X, 0f).Normalized();
-        Vector3f side = Vector3f.Cross(level, d);
-        Vector3f other = Vector3f.Cross(d, side).Normalized();
-        side = side.Normalized();
-        float tip = MathF.Sin(off);
-        return (side * (MathF.Sin(around) * tip)) - (other * (MathF.Cos(around) * tip)) + (d * MathF.Cos(off));
     }
 
     // 0x47F200: the FireBalls, the smoke, the fragments, the sound, then the blast.
@@ -271,16 +276,21 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
         {
             for (int i = 0; i < r.Fragments; i++)
             {
-                float speed = (Random.NextSingle() * (MaxSpeed - MinSpeed)) + MinSpeed;
+                float speed = (Random.NextSingle() * (r.MaxSpeed - r.MinSpeed)) + r.MinSpeed;
                 float around = Random.NextSingle() * MathF.PI;
-                float off = Random.NextSingle() * Cone;
-                Vector3f direction = FragmentDirection(explosion.Direction, around, off);
+                float off = Random.NextSingle() * r.Cone;
+                Vector3f direction = GunShotImpactEffects.LaunchDirection(explosion.Direction, around, off);
                 _ = Random.NextSingle();
 
                 // 0x47F0D0: the piece's own small turn, drawn about Z, then Y, then X.
                 float az = Random.NextSingle() * TumbleRange;
                 float ay = Random.NextSingle() * TumbleRange;
                 float ax = Random.NextSingle() * TumbleRange;
+                if (!r.ShowsFragments)
+                {
+                    continue;
+                }
+
                 explosion.Fragments.Add(new ExplosionFragment
                 {
                     Position = at,

@@ -18,7 +18,7 @@ public sealed class RetailExplosionFragmentTests
         Vector3f axis = new Vector3f(0.3f, -0.2f, 0.6f).Normalized();
         for (float around = 0f; around <= MathF.PI; around += 0.25f)
         {
-            Vector3f direction = Igi1ExplosionRuntime.FragmentDirection(axis, around, off);
+            Vector3f direction = GunShotImpactEffects.LaunchDirection(axis, around, off);
             Assert.Equal(1f, direction.Length, 4);
             Assert.Equal(MathF.Cos(off), Vector3f.Dot(direction, axis), 4);
         }
@@ -33,7 +33,7 @@ public sealed class RetailExplosionFragmentTests
         Vector3f side = Vector3f.Cross(level, axis);
         for (float around = 0.05f; around < MathF.PI; around += 0.1f)
         {
-            Vector3f direction = Igi1ExplosionRuntime.FragmentDirection(axis, around, 1f);
+            Vector3f direction = GunShotImpactEffects.LaunchDirection(axis, around, 1f);
             Assert.True(Vector3f.Dot(direction, side) > 0f);
         }
     }

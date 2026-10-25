@@ -5,38 +5,6 @@ using OpenIGI.Game.World.Particles;
 
 namespace OpenIGI.Game.Igi1.World;
 
-/// <summary>One chip of surface a round knocked loose.</summary>
-/// <remarks>
-/// A <c>Fragment</c> (<c>0x480312</c>) is a real model, not a sprite: the impact effect names it and
-/// <c>0x47F0D0</c> puts one instance of it into a <c>SimpointObjContainer</c> that owns its motion.
-/// </remarks>
-public struct ImpactFragment
-{
-    /// <summary>Where it is, in world units.</summary>
-    public Vector3d Position { get; set; }
-
-    /// <summary>Where it was at the end of the previous tick, for interpolated drawing.</summary>
-    public Vector3d PreviousPosition { get; set; }
-
-    /// <summary>How far it moves each tick, in world units.</summary>
-    public Vector3f Velocity { get; set; }
-
-    /// <summary>Its orientation.</summary>
-    public Matrix3f Orientation { get; set; }
-
-    /// <summary>The orientation it had at the end of the previous tick.</summary>
-    public Matrix3f PreviousOrientation { get; set; }
-
-    /// <summary>How far it turns each tick, as X/Y/Z radians.</summary>
-    public Vector3f AngularVelocity { get; set; }
-
-    /// <summary>Ticks left before it is removed.</summary>
-    public int LifeTicks { get; set; }
-
-    /// <summary>The model it is drawn with, as the struck material's effect block names it.</summary>
-    public string Model { get; set; }
-}
-
 /// <summary>
 /// What the <c>GunShotEffect</c> class (<c>0x438440</c>) does to a surface a round struck.
 /// </summary>
@@ -197,6 +165,10 @@ public static class GunShotImpactEffects
     /// <remarks><c>0x3D009BC9</c> — 1.8°, drawn one-sided on each axis.</remarks>
     public const float FragmentPlacementRadians = 0.031415928f;
 
+    /// <summary>The size a round's chips are thrown with, as an explosion's: 2048, so they fall at 0.45 of the blast gravity.</summary>
+    /// <remarks><c>0x438440</c> hands <c>Explosion_New</c> this size and no damage.</remarks>
+    public const float ChipExplosionSize = 2048f;
+
     /// <summary>How large a chip's model is drawn.</summary>
     /// <remarks><c>0x47F146</c>: <c>204.8 × 0.00048828125</c>, which is exactly a tenth.</remarks>
     public const float FragmentModelScale = 0.1f;
@@ -279,7 +251,19 @@ public static class GunShotImpactEffects
         ArgumentNullException.ThrowIfNull(random);
 
         float speed = FragmentSpeed(random.NextSingle());
+        float roll = random.NextSingle() * MathF.PI;
+        float pitch = random.NextSingle() * FragmentConeRadians;
+        return LaunchDirection(direction, roll, pitch) * speed;
+    }
 
+    /// <summary>The way a fragment leaves an explosion, every <c>Explosion0</c>'s (<c>0x47F200</c>), chips and blasts alike.</summary>
+    /// <param name="direction">The explosion's axis.</param>
+    /// <param name="roll">The turn about the axis, in radians: a draw over half a turn.</param>
+    /// <param name="pitch">The tip away from the axis, in radians: a draw over the cone.</param>
+    /// <returns>The unit direction.</returns>
+    /// <remarks>See <see cref="FragmentLaunch"/> for the frame <c>0x4B4010</c> stands on the axis.</remarks>
+    public static Vector3f LaunchDirection(Vector3f direction, float roll, float pitch)
+    {
         Vector3f axis = direction.ReciprocalNormalizedOr(Vector3f.UnitZ);
         Vector3f helper = axis.X == 0f && axis.Y == 0f
             ? new Vector3f(0f, 1f, 0f)
@@ -287,8 +271,6 @@ public static class GunShotImpactEffects
         Vector3f u = (Vector3f.Cross(helper, axis)).ReciprocalNormalizedOr(Vector3f.UnitZ);
         Vector3f w = (Vector3f.Cross(axis, u)).ReciprocalNormalizedOr(Vector3f.UnitZ);
 
-        float roll = random.NextSingle() * MathF.PI;
-        float pitch = random.NextSingle() * FragmentConeRadians;
         float rollSin = MathF.Sin(roll);
         float rollCos = MathF.Cos(roll);
         float pitchSin = MathF.Sin(pitch);
@@ -299,7 +281,7 @@ public static class GunShotImpactEffects
             (axis.Y * pitchCos) + (pitchSin * ((rollSin * u.Y) - (rollCos * w.Y))),
             (axis.Z * pitchCos) + (pitchSin * ((rollSin * u.Z) - (rollCos * w.Z))))).ReciprocalNormalizedOr(Vector3f.UnitZ);
 
-        return launch * speed;
+        return launch;
     }
 
     /// <summary>Draws one chip's launch speed.</summary>
