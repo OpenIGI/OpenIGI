@@ -5,7 +5,7 @@ using OpenIGI.Game.Weapons;
 namespace OpenIGI.Game.World;
 
 /// <summary>A live vehicle's sound inputs this tick: its engine sound set and the parameters its sounds read.</summary>
-/// <param name="Vehicle">The Car or Heli task.</param>
+/// <param name="Vehicle">The Car, Heli, Plane or Train task.</param>
 /// <param name="SoundSet">
 /// The set it instantiates: a car's record <c>+610</c> (<see cref="CarPhysicsDefinition.EngineSoundSet"/>), a
 /// helicopter's hardcoded <c>helicopter_1</c> (<c>0x4316D0</c>).
