@@ -223,9 +223,6 @@ launcher installs one. The package holds:
   that skip without it (`[RequiresGameDataFact]`, `[RequiresTitleDataFact("igi2")]`), and recording graphics and audio
   devices.
 
-[OpenIGI/igi2-soldiers](https://github.com/OpenIGI/igi2-soldiers) is a full example in a repository of its own: Project
-I.G.I.'s missions with I.G.I. 2's soldiers.
-
 ## What the loader does
 
 - **Which mods:** the ones the launcher's profile (`OPENIGI_MOD_PROFILE`) switches on for the game being played, in
@@ -277,4 +274,4 @@ outside the index.
 The SDK packages are made by `tools/release/pack-modding-sdk.sh <version>`. A game release pushes them to nuget.org
 through Trusted Publishing, once the repository's `NUGET_USER` variable names the nuget.org profile whose policy
 trusts `release.yml`. Until a version is on nuget.org, a mod's repository can pack it from a checkout into a local
-folder its `nuget.config` names, as igi2-soldiers does.
+folder its `nuget.config` names.
