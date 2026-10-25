@@ -1,16 +1,18 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Igi2.World;
 
-namespace OpenIGI.Game.Igi2.Weapons;
+namespace OpenIGI.Game.World;
 
-/// <summary>An explosion's fireball, <c>FireBall</c> (<c>Explosion0_FireBallRunHandler</c>, <c>igi2 0x5098B0</c>): a model that waits, then shows its life out.</summary>
+/// <summary>
+/// An explosion's fireball, <c>FireBall</c>: a model that waits, then shows its life out (Project I.G.I.'s <c>0x4806E0</c>;
+/// I.G.I. 2's <c>Explosion0_FireBallRunHandler</c>, <c>igi2 0x5098B0</c>).
+/// </summary>
 /// <param name="position">Where it is.</param>
 /// <param name="size">How big, <c>vRadius</c>.</param>
 /// <param name="lifetime">The ticks it shows.</param>
 /// <param name="fadeout">The ticks it fades over.</param>
 /// <param name="delay">The ticks before it shows.</param>
 /// <param name="animationDuration">The ticks its animation runs.</param>
-public sealed class Igi2FireBall(Vector3d position, float size, int lifetime, int fadeout, int delay, int animationDuration) : IIgi2DynamicTask
+public sealed class ExplosionFireBall(Vector3d position, float size, int lifetime, int fadeout, int delay, int animationDuration) : IDynamicTask
 {
     /// <summary>The fireball's model, <c>1006_01_1</c>.</summary>
     public const string Model = "1006_01_1";

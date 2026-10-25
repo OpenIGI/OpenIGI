@@ -31,9 +31,9 @@ public sealed partial class Igi2EditRigidObjTask
     public const string TypeName = "EditRigidObj";
 
     private Vector3d _position;
-    private float[] _orientation = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _orientation = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _lastPosition;
-    private float[] _lastOrientation = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _lastOrientation = EngineEuler.Rotation(0f, 0f, 0f);
     private int _movedTick = int.MinValue;
     private Igi2Pose? _built;
     private IReadOnlyList<Igi2RigidObject> _solids = [];
@@ -163,7 +163,7 @@ public sealed partial class Igi2EditRigidObjTask
     protected override void OnParsed()
     {
         Vector3f angles = Orientation;
-        _orientation = Igi2Pose.Rotation(angles.X, angles.Y, angles.Z);
+        _orientation = EngineEuler.Rotation(angles.X, angles.Y, angles.Z);
         _position = Position;
         _lastPosition = _position;
         _lastOrientation = [.. _orientation];

@@ -27,7 +27,7 @@ public sealed partial class Igi2SplinePathNodeTask : Igi2Task, Flow.IIgi2CameraT
     /// <summary>How many lengths it measures its segment in, one per tenth of the way.</summary>
     public const int Tenths = 10;
 
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _tangent;
     private readonly float[] _lengthPerTenth = new float[Tenths];
 
@@ -181,7 +181,7 @@ public sealed partial class Igi2SplinePathNodeTask : Igi2Task, Flow.IIgi2CameraT
     protected override void OnParsed()
     {
         Vector3f angles = Orientation;
-        _frame = Igi2Pose.Rotation(angles.X, angles.Y, angles.Z);
+        _frame = EngineEuler.Rotation(angles.X, angles.Y, angles.Z);
         _tangent = AuthoredTangent;
         if (Speed <= 0f)
         {

@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World.Particles;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -28,7 +29,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// with is the presentation's.
 /// </para>
 /// </remarks>
-public sealed class Igi2Missile : IIgi2DynamicTask
+public sealed class Igi2Missile : IDynamicTask
 {
     /// <summary>The gravity a missile falls by, a tick squared.</summary>
     public const float Gravity = 44.600887298583984f;
@@ -373,7 +374,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         float alpha = (((Fpu)0.5 - first) * 0.10000000149011612).F;
         float beta = (((Fpu)0.699999988079071 - second) * 0.10000000149011612).F;
         float gamma = (((Fpu)0.30000001192092896 - third) * 0.10000000149011612).F;
-        float[] r = Igi2Pose.Rotation(alpha, beta, gamma);
+        float[] r = EngineEuler.Rotation(alpha, beta, gamma);
         float[] turned = new float[9];
         for (int row = 0; row < 3; row++)
         {

@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -49,7 +50,7 @@ public sealed class RetailIgi2ExplodeObjectTests
     public void Enough_bullets_explode_a_barrel_the_next_tick()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        (Igi2ExplodeObjectTask barrel, Igi2DynamicTasks dynamic) = Arm(m, Barrel);
+        (Igi2ExplodeObjectTask barrel, DynamicTasks dynamic) = Arm(m, Barrel);
         Igi2RigidObject solid = m.Collision!.SolidsOf(Igi2ExplodeObjectTask.TypeName, Barrel)[0];
         Assert.Same(barrel, solid.Handler);
 
@@ -84,7 +85,7 @@ public sealed class RetailIgi2ExplodeObjectTests
     public void A_blast_sets_a_barrel_off_after_its_delay()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        (Igi2ExplodeObjectTask barrel, Igi2DynamicTasks dynamic) = Arm(m, SameModel);
+        (Igi2ExplodeObjectTask barrel, DynamicTasks dynamic) = Arm(m, SameModel);
         Igi2ExplosionWorld blasts = barrel.Explosive.Explosions!;
 
         Igi2ExplosionHit hit = new(blasts, barrel.Position, -1, 2f, 8192f, 6144f, 90, null, null, Igi2ExplosionFalloff.Linear);
@@ -106,10 +107,10 @@ public sealed class RetailIgi2ExplodeObjectTests
         Assert.Single(dynamic.Tasks.OfType<Igi2Explosion>());
     }
 
-    private static (Igi2ExplodeObjectTask Barrel, Igi2DynamicTasks Dynamic) Arm(RetailIgi2Mission1 m, int id)
+    private static (Igi2ExplodeObjectTask Barrel, DynamicTasks Dynamic) Arm(RetailIgi2Mission1 m, int id)
     {
         Igi2ExplodeObjectTask barrel = m.Tree.OfType<Igi2ExplodeObjectTask>().Single(b => b.Id == id);
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2ExplosionWorld blasts = new(new IgiRandom(0x1234567u), m.Collision!, m.Materials, dynamic);
         barrel.Explosive.Models = m.Level.ModelFor;
         barrel.Explosive.Explosions = blasts;

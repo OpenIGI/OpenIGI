@@ -41,7 +41,7 @@ public sealed partial class Igi2ConveyorBeltTask : Igi2Task, IIgi2PlacedTask
     // Metres a second made units a tick, 4096 / 30: the float 0x43088889.
     private const float UnitsPerTick = 136.53334f;
 
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
 
     /// <summary>Gets or sets where it stands.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -145,7 +145,7 @@ public sealed partial class Igi2ConveyorBeltTask : Igi2Task, IIgi2PlacedTask
     }
 
     /// <inheritdoc/>
-    protected override void OnParsed() => _frame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+    protected override void OnParsed() => _frame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
 
     // Below the least the least, above the most the most, else the value as given, each evaluated afresh as the original does.
     private static float Limit(Igi2ScriptCall call, int index)

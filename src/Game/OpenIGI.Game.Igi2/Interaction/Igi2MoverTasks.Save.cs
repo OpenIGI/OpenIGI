@@ -87,7 +87,7 @@ public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
         writer.Real64x3(_startPosition);
         writer.Real64x3(_stopPosition);
         writer.Real64x3(_lastPosition);
-        writer.Real9(Igi2Pose.Rotation(StartOrientation.X, StartOrientation.Y, StartOrientation.Z));
+        writer.Real9(EngineEuler.Rotation(StartOrientation.X, StartOrientation.Y, StartOrientation.Z));
         writer.Real9(_startOrientation);
         writer.Real9(_stopOrientation);
         writer.Real9(_lastOrientation);

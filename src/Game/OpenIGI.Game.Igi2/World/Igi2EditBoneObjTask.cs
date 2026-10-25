@@ -191,7 +191,7 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask
         source.Interpolate(_bones, Igi2AnimController.EveryBone);
         Igi2BoneMath.UpdateHierarchy(rig, _bones, null);
         BonePose pose = _bones.ToPose(rig.Parents);
-        float[] turn = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        float[] turn = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         Matrix3f frame = new(turn[0], turn[1], turn[2], turn[3], turn[4], turn[5], turn[6], turn[7], turn[8]);
         List<TitleWorldModel> models = [new TitleWorldModel(WornModel, Position, frame, pose, this, tick)];
         if (_current.Clip is { } clip)

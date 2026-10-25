@@ -133,7 +133,7 @@ public sealed class RetailIgi2FirstPersonTests
     [Fact]
     public void The_sun_turns_into_a_models_frame_by_the_transpose()
     {
-        float[] o = World.Igi2Pose.Rotation(0.3f, 0f, 2.1f);
+        float[] o = EngineEuler.Rotation(0.3f, 0f, 2.1f);
         Matrix3f orientation = new(o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8]);
         Vector3f local = new(0.6f, -0.8f, 0f);
 

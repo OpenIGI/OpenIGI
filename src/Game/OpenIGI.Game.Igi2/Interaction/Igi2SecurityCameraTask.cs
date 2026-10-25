@@ -74,7 +74,7 @@ public sealed partial class Igi2SecurityCameraTask
 
     private readonly Lens _lens = new();
     private LevelExpression? _on;
-    private float[] _holderFrame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _holderFrame = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _position;
     private float _radius = 1f;
     private byte _isOn;
@@ -310,7 +310,7 @@ public sealed partial class Igi2SecurityCameraTask
         _lens.Position = Igi2MagicVertex.Position(Models?.Invoke(HolderModel), 0, _holderFrame, HolderPosition);
         CameraAlpha = LimitAngle(CameraAlpha);
         _lens.Alpha = CameraAlpha;
-        _lens.Frame = Igi2Pose.Rotation(_lens.Alpha, 0f, ((Fpu)HolderGamma + CameraGamma).F);
+        _lens.Frame = EngineEuler.Rotation(_lens.Alpha, 0f, ((Fpu)HolderGamma + CameraGamma).F);
         _lens.View.Position = Igi2MagicVertex.Position(Models?.Invoke(_lens.Model ?? CameraModel), 1, _lens.Frame, _lens.Position);
         _lens.View.Orientation = _lens.Frame;
         _lens.View.ConeAlpha = ((Fpu)(double)(ViewconeAlpha / 2) * 0.017453292).Value;
@@ -542,7 +542,7 @@ public sealed partial class Igi2SecurityCameraTask
                 Igi2ExplosionFalloff.Linear);
         }
 
-        lens.Frame = Igi2Pose.Rotation(lens.Alpha, 0f, (((Fpu)lens.Gamma + HolderGamma) + CameraGamma).F);
+        lens.Frame = EngineEuler.Rotation(lens.Alpha, 0f, (((Fpu)lens.Gamma + HolderGamma) + CameraGamma).F);
 
         // The lens's solid turns with it.
         foreach (Igi2RigidObject solid in _solids)
@@ -779,7 +779,7 @@ public sealed partial class Igi2SecurityCameraTask
     {
         public Vector3d Position { get; set; }
 
-        public float[] Frame { get; set; } = Igi2Pose.Rotation(0f, 0f, 0f);
+        public float[] Frame { get; set; } = EngineEuler.Rotation(0f, 0f, 0f);
 
         public string? Model { get; set; }
 

@@ -81,7 +81,7 @@ public abstract partial class Igi2Human
     /// <summary>The orientation from the angles, tilted onto the ground when lying or dead (<c>Human_UpdateBody</c>'s end).</summary>
     private void BuildOrientation(bool turnsOnPlatform)
     {
-        float[] orientation = Igi2Pose.Rotation(Alpha, Beta, Gamma);
+        float[] orientation = EngineEuler.Rotation(Alpha, Beta, Gamma);
         if (IsDead || Pose == Igi2HumanPose.LyingFlat)
         {
             TiltOntoGround(orientation);
@@ -112,7 +112,7 @@ public abstract partial class Igi2Human
         Fpu inverse = (Fpu)1f / up;
         float roll = Fpu.Atan2((Fpu)across * inverse, 1.0).F;
         float pitch = (-Fpu.Atan2(ahead * inverse, 1.0)).F;
-        float[] t = Igi2Pose.Rotation(pitch, roll, 0f);
+        float[] t = EngineEuler.Rotation(pitch, roll, 0f);
         float[] r = new float[9];
         for (int c = 0; c < 3; c++)
         {

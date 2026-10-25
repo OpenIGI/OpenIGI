@@ -1,8 +1,8 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi2.Weapons;
+namespace OpenIGI.Game.World;
 
-/// <summary>A puff of smoke particles an explosion's smoke starts, <c>Explosion0_AddSmoke</c> (<c>igi2 0x508610</c>).</summary>
+/// <summary>A puff of smoke particles an explosion's smoke starts, <c>Explosion0_AddSmoke</c> (<c>igi2 0x508610</c>; Project I.G.I.'s <c>0x47EAD0</c>).</summary>
 /// <param name="Flags">The particle system's graphics flags.</param>
 /// <param name="Position">Where.</param>
 /// <param name="Size">How big.</param>
@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <param name="Intensity">How bright.</param>
 /// <param name="Rotation">Its turn.</param>
 /// <param name="RotationDelta">How fast it turns.</param>
-public sealed record Igi2SmokePuff(
+public sealed record ExplosionSmokePuff(
     int Flags,
     Vector3d Position,
     float Size,

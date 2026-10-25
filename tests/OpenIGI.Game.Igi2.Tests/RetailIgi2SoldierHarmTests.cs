@@ -279,7 +279,7 @@ public sealed class RetailIgi2SoldierHarmTests
         (RetailIgi2Mission1 m, Igi2Soldiers soldiers) = Spawn();
         Igi2HumanSoldier body = Soldier(m, Target);
         Stand(body);
-        Igi2ExplosionWorld world = new(new IgiRandom(), m.Collision!, m.Materials, new World.Igi2DynamicTasks());
+        Igi2ExplosionWorld world = new(new IgiRandom(), m.Collision!, m.Materials, new OpenIGI.Game.World.DynamicTasks());
         Vector3d near = new(body.Position.X + 4096.0, body.Position.Y, body.Position.Z + 4096.0);
         Igi2ExplosionHit Blast(Vector3d at, float damage, IIgi2WeaponOwner? owner, int team) =>
             new(world, at, team, damage, 2048f, 8192f, Igi2ExplosionWorld.ShakeTime, null, owner, Igi2ExplosionFalloff.Linear);
@@ -519,7 +519,7 @@ public sealed class RetailIgi2SoldierHarmTests
         (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(packs, resources);
         Igi2Grenades grenades = new(
-            m.Services!.Require<OpenIGI.Game.Physics.PhysicsObjectTypes>(), m.Level.ModelFor, new Physics.Igi2PhysicsWorld(m.Collision!, m.Materials), new World.Igi2DynamicTasks());
+            m.Services!.Require<OpenIGI.Game.Physics.PhysicsObjectTypes>(), m.Level.ModelFor, new Physics.Igi2PhysicsWorld(m.Collision!, m.Materials), new OpenIGI.Game.World.DynamicTasks());
         Igi2Gameplay.SpawnSoldiers(
             m.Tree[0], m.Services!, m.Collision!, clips, m.Level.ModelFor, m.Services!.Require<Igi2PlayerTuning>(), m.Sounds, new IgiRandom(),
             Game.Ai.AiDifficulty.Normal, grenades: grenades);

@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.World.Particles;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -18,7 +19,7 @@ public readonly record struct Igi2FlashBangHit(Vector3d Position, float Range, i
 /// <summary>The one-tick puff and sound of <c>flashbang.c FlashBang_RunHandler</c>.</summary>
 /// <param name="world">The effects and run stream.</param>
 /// <param name="position">Where it went off.</param>
-public sealed class Igi2FlashBang(Igi2ExplosionWorld world, Vector3d position) : IIgi2DynamicTask
+public sealed class Igi2FlashBang(Igi2ExplosionWorld world, Vector3d position) : IDynamicTask
 {
     /// <summary>Gets its three-particle puff, <c>flashbang.c FlashBang_CreateHandler</c>.</summary>
     public Particle2DSystem? System { get; private set; }

@@ -33,7 +33,7 @@ public abstract partial class Igi2Human
     /// <param name="gamma">The heading off the body's the step is taken at.</param>
     protected void StepOnGround(float speed, float gamma)
     {
-        float[] r = Igi2Pose.Rotation(0f, 0f, gamma);
+        float[] r = EngineEuler.Rotation(0f, 0f, gamma);
         Fpu a = (((Fpu)r[2] + r[0]) * 0f) + ((Fpu)r[1] * speed);
         Fpu b = (((Fpu)r[5] + r[3]) * 0f) + ((Fpu)r[4] * speed);
         Fpu c = (((Fpu)r[8] + r[6]) * 0f) + ((Fpu)r[7] * speed);

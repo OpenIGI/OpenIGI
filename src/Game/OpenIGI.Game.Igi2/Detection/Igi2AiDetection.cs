@@ -76,7 +76,7 @@ public sealed class Igi2DetectionView
     public Vector3d Position { get; set; }
 
     /// <summary>Gets or sets its frame, row by row, <c>tViewOrientation</c>.</summary>
-    public float[] Orientation { get; set; } = Igi2Pose.Rotation(0f, 0f, 0f);
+    public float[] Orientation { get; set; } = EngineEuler.Rotation(0f, 0f, 0f);
 
     /// <summary>Gets or sets its cone's half angle up and down, <c>vViewConeAlpha</c>.</summary>
     public double ConeAlpha { get; set; }

@@ -1,5 +1,6 @@
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Player;
 
@@ -38,7 +39,7 @@ public sealed partial class Igi2TitlePlayer
     }
 
     // A line said at run time, run among the level's dynamic tasks until it has been shown.
-    private sealed class SaidLine(Igi2StatusMessageTask message, Func<int> clock) : IIgi2DynamicTask
+    private sealed class SaidLine(Igi2StatusMessageTask message, Func<int> clock) : IDynamicTask
     {
         public bool Run() => message.Step(clock(), static () => false) != StatusMessageStep.Done;
     }
