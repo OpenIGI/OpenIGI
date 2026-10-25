@@ -118,10 +118,22 @@ public static class FootstepSounds
     {
         ArgumentNullException.ThrowIfNull(material);
 
-        slot = Cycle[((cursor % Cycle.Length) + Cycle.Length) % Cycle.Length];
-        cursor = (cursor + 1) % Cycle.Length;
+        slot = NextSlot(Cycle, ref cursor);
 
         return slot < material.WalkSounds.Count ? material.WalkSounds[slot] : string.Empty;
+    }
+
+    /// <summary>Takes the next of a material's sounds from a title's step order, and moves the walker on through it.</summary>
+    /// <param name="order">The title's order: Project I.G.I.'s twelve (<see cref="Cycle"/>), I.G.I. 2's thirty-one
+    /// (<c>Human_anFeetSoundSequence</c>).</param>
+    /// <param name="cursor">The walker's place in the order; moved on by one, round again at the end.</param>
+    /// <returns>The sound's place among the material's.</returns>
+    /// <remarks>Both titles step the same way, each walker with a cursor of its own; only the order differs.</remarks>
+    public static int NextSlot(ReadOnlySpan<int> order, ref int cursor)
+    {
+        int slot = order[((cursor % order.Length) + order.Length) % order.Length];
+        cursor = (cursor + 1) % order.Length;
+        return slot;
     }
 
     /// <summary>The wet layer a step lays over its own sound while the level's weather is on.</summary>
