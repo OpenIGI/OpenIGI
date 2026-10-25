@@ -26,7 +26,7 @@ public sealed partial class GameHost
 
     // The player's flashlight, and what its lens is kept out of.
     private readonly PlayerFlashlight _flashlight;
-    private Func<DeathCameraVantage.Blocked?>? _flashlightWalls;
+    private Func<WorldWalls.Blocked?>? _flashlightWalls;
 
     // Where a new level's lamps are ordered from for their coarse maps, nearest first.
     private Vector3d LampOrderEye => _camera?.Position ?? default;

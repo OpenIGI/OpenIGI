@@ -854,7 +854,7 @@ public sealed partial class GameHost : IDisposable
     /// The level's collision makes it once (<see cref="LevelCollision.Walls"/>), as it is asked every frame.
     /// </para>
     /// </remarks>
-    private DeathCameraVantage.Blocked? ThirdPersonWalls() => _mission.Collision.Walls;
+    private WorldWalls.Blocked? ThirdPersonWalls() => _mission.Collision.Walls;
 
     /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
     /// <remarks>

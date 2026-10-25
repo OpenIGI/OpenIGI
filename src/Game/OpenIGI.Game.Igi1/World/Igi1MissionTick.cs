@@ -294,9 +294,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // A simulated corpse decides for itself where it ends up, so the death camera has to
         // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
         // you were shot frames the whole of it.
-        if (mission.IsPlayerDead && soldiers?.PlayerRagdollCentre is { } corpseCentre)
+        // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick: the body's
+        // own eye height over where it fell when nothing simulates the corpse.
+        if (mission.IsPlayerDead && mission.Player is { } fallen)
         {
-            host.FollowCorpse(corpseCentre);
+            Vector3d feet = fallen.Body.Position;
+            host.FollowCorpse(soldiers?.PlayerRagdollCentre
+                ?? new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
         }
 
         TickClimbsAndInteractions();
@@ -461,12 +465,22 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
             else if (soldiers is not null)
             {
+                // State 42 plays its drag clip only while a step is under way (0x40DDA0).
+                if (interacting.IsOnLevelWire)
+                {
+                    mission.Soldiers?.SetPlayerLadderPlaybackDirection(interacting.WireDragDirection);
+                    if (interacting.TakeWireDragSound() is { } dragSound)
+                    {
+                        audio.PlayLadderStepSound(dragSound, interacting.InteractionFeet);
+                    }
+                }
+
                 soldiers.AdvancePlayerLadderAnimation(
                     interacting.InteractionFacing,
                     out Vector3d interactionRootDelta,
-                    out _,
+                    out float? interactionStepTime,
                     out bool interactionClipEnded);
-                interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded);
+                interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded, interactionStepTime);
                 soldiers.PlacePlayerBodyClimbing(
                     interacting.InteractionFeet, interacting.InteractionFacing);
             }
