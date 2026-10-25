@@ -339,6 +339,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _context.Sight = sight is null ? null : WorldTrace.AsRayCast(sight, WorldTraceMask.World);
+        _context.SightTrace = sight;
         _sight.SightTraceForTesting = sight;
         Brains.Clear();
         _rounds.Clear();

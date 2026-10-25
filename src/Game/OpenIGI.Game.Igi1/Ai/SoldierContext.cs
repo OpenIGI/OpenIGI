@@ -94,6 +94,12 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Gets or sets the cast a sight line is tested with.</summary>
     public WorldRayCast? Sight { get; set; }
 
+    /// <summary>Gets or sets the world trace the detection ray (<c>0x489B20</c>) is cast through, which reports what it met.</summary>
+    public WorldTraceCast? SightTrace { get; set; }
+
+    /// <summary>Gets or sets the level's live StationaryGun tasks.</summary>
+    public WorldInteractionRegistry? Interactions { get; set; }
+
     /// <summary>Gets or sets the placed-object collision index.</summary>
     public ObjectCollisionIndex? Solids { get; set; }
 
@@ -365,6 +371,23 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         double origin = feet.Z + view.RootSample.Z;
         return new Vector3d(feet.X, feet.Y, origin + (brain.Body.CrouchByte ? 1433.6 : 2867.24));
     }
+
+    /// <summary>
+    /// Whether a stationary gun the detection ray meets stands aside for it (<c>0x4752B0</c>): it does when the one looking,
+    /// or the one looked at, is on it -- so a gunner sees past his own gun and is seen behind it. To any other pair of
+    /// humans it is as solid as a wall.
+    /// </summary>
+    /// <param name="owner">The task whose collision the ray met.</param>
+    /// <param name="looker">The human looking: a soldier's id, or <see cref="AiDetectionCandidate.PlayerId"/>.</param>
+    /// <param name="seen">The human looked at, the same way.</param>
+    public bool GunStandsAside(GameTask owner, int looker, int seen) =>
+        Interactions?.FindStationaryGun(owner.Id) is { Occupant: { } user }
+        && (IsOn(user, owner.Id, looker) || IsOn(user, owner.Id, seen));
+
+    // Whether a human is the one on a gun: the player through its use of the gun, a soldier through its brain.
+    private bool IsOn(object user, int gunTaskId, int human) => human == AiDetectionCandidate.PlayerId
+        ? Interactions?.IsPlayerOnStationaryGun(gunTaskId) == true
+        : Brains.Any(pair => pair.Key.Soldier.Id == human && ReferenceEquals(pair.Value, user));
 
     /// <summary>Gets a soldier's damage state, creating it on the first hit.</summary>
     public HumanHealth HealthOf(SoldierView soldier)

@@ -405,14 +405,15 @@ public sealed partial class SoldierSimulation
         int simulationTick = int.MinValue) =>
         _binoculars.BinocularTargets(camera, horizontalTangent, screenWidth, screenHeight, tick, maxDetectionMetres, simulationTick);
 
-    /// <inheritdoc cref="SoldierSightQueries.HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask)"/>
+    /// <inheritdoc cref="SoldierSightQueries.HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask, Func{GameTask, bool})"/>
     public static bool HasLineOfSight(
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
         double objectTolerance,
-        GameTask? ignoredOwner = null) =>
-        SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner);
+        GameTask? ignoredOwner = null,
+        Func<GameTask, bool>? standsAside = null) =>
+        SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner, standsAside);
 
     /// <inheritdoc cref="SoldierBodyQueries.MapContacts"/>
     public IReadOnlyList<Vector3d> MapContacts() => _bodies.MapContacts();

@@ -343,7 +343,8 @@ public sealed partial class Igi1HumanAi
                             node.Position.Y,
                             node.Position.Z + FreePositionRayHeightOf(_graph)),
                         // 0x48B6E0 aims the can-shoot ray at 0x451380's point, the target's origin raised.
-                        LiveTargetNodePoint() ?? AimPointOf(enemy))),
+                        LiveTargetNodePoint() ?? AimPointOf(enemy),
+                        seen: null)),
                 occupancy: claim ? _occupancy : null,
                 claimant: claim ? this : null,
                 claimedPosition: claim ? position => _combatFreePosition = position : null);

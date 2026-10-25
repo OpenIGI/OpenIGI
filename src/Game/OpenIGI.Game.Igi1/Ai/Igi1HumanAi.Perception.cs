@@ -65,8 +65,12 @@ public sealed partial class Igi1HumanAi
     /// <summary>Tests whether the line between two world points is clear enough to see along.</summary>
     /// <param name="from">The eye.</param>
     /// <param name="to">The target.</param>
+    /// <param name="seen">
+    /// The human looked at, when this is the detection ray (<c>0x489B20</c>), whose objects are asked whether they stand in
+    /// the way of these two; <see langword="null"/> for any other ray.
+    /// </param>
     /// <returns><see langword="true"/> when the target can be seen.</returns>
-    public delegate bool LineOfSight(Vector3d from, Vector3d to);
+    public delegate bool LineOfSight(Vector3d from, Vector3d to, int? seen);
 
     /// <summary>Returns whether a world hit leaves the target visible.</summary>
     /// <param name="targetDistance">The distance from the observer to the target.</param>
@@ -737,7 +741,7 @@ public sealed partial class Igi1HumanAi
     {
         AiEyeSnapshot snapshot = Vision.Capture(EyePosition(), EyeOrientation(), Alerted);
         bool inCone = snapshot.IsVisible(enemyEye);
-        bool clear = _sight is null || _sight(EyePosition(), enemyEye);
+        bool clear = _sight is null || _sight(EyePosition(), enemyEye, _targetId);
         return (Vector3d.Distance(Position, enemyEye), inCone, clear, Alerted, TargetSlot.IsVisible);
     }
 
@@ -789,7 +793,7 @@ public sealed partial class Igi1HumanAi
                 () =>
                 {
                     SightCast?.Invoke(eye, mark, looked);
-                    return _sight is null || _sight(eye, mark);
+                    return _sight is null || _sight(eye, mark, looked);
                 },
                 Vector3d.Distance(eye, mark));
         }

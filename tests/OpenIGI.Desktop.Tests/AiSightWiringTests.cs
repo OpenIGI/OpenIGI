@@ -1,4 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Flow;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Time;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Igi1;
@@ -48,5 +51,25 @@ public sealed class AiSightWiringTests
         };
 
         Assert.Equal(seen, SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
+    }
+
+    [Fact]
+    public void AGunStandsAsideOnlyWhenItSaysSo()
+    {
+        // 0x4752B0: the stand right in front of a gunner's eye is no cover between him and the one he looks at, but the
+        // same stand hides anyone behind it from a pair it has no part in.
+        GameLoop loop = new(new ManualTimeSource());
+        GameTask gun = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            bool atStand = request.Origin.Y < 500.0;
+            hit = atStand ? new WorldTraceHit(default, default, 400.0, 0.04, Material: 0, WorldTraceHitKind.StaticObject, gun) : default;
+            return atStand;
+        };
+
+        Assert.False(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance));
+        Assert.False(SoldierSimulation.HasLineOfSight(trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance, standsAside: _ => false));
+        Assert.True(SoldierSimulation.HasLineOfSight(
+            trace, Eye, Mark, Igi1HumanAi.SightObstructionTolerance, standsAside: owner => ReferenceEquals(owner, gun)));
     }
 }

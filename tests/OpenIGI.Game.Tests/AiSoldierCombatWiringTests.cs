@@ -52,7 +52,7 @@ public sealed class AiSoldierCombatWiringTests : AiSoldierCombatWiringFixture
     public void ALateWorldBlockerStillOccludesTheTarget()
     {
         Igi1HumanAi soldier = Soldier(out Vector3d position);
-        soldier.SetLineOfSight((from, to) =>
+        soldier.SetLineOfSight((from, to, _) =>
         {
             double dx = to.X - from.X;
             double dy = to.Y - from.Y;

@@ -68,7 +68,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>Whether the eye can see a point along a plain cast, any contact blocking.</summary>
     /// <remarks>
     /// The binocular overlay's rule: the retail detector culls by sector/portal visibility, which
-    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask)"/>.
+    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask, Func{GameTask, bool})"/>.
     /// </remarks>
     public static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to)
     {
@@ -109,13 +109,18 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// </para>
     /// </remarks>
     /// <param name="ignoredOwner">The viewer itself, when it has a body the ray would otherwise meet -- a vehicle.</param>
+    /// <param name="standsAside">
+    /// Whether an object the ray meets answers the detection ray that it is not in the way: a stationary gun does, for
+    /// a ray from or to the human on it (<c>0x4752B0</c>).
+    /// </param>
     /// <returns><see langword="true"/> when the line is clear.</returns>
     public static bool HasLineOfSight(
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
         double objectTolerance,
-        GameTask? ignoredOwner = null)
+        GameTask? ignoredOwner = null,
+        Func<GameTask, bool>? standsAside = null)
     {
         ArgumentNullException.ThrowIfNull(trace);
 
@@ -133,7 +138,8 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
                 return true;
             }
 
-            bool transparent = GameMaterial.IsSightTransparent(hit.Material);
+            bool transparent = GameMaterial.IsSightTransparent(hit.Material)
+                || (standsAside is not null && hit.Owner is { } owner && standsAside(owner));
             if (!transparent || step == SightSkipLimit)
             {
                 // The traversal budget is a safety bound, not evidence that the remainder is clear: past

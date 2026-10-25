@@ -103,7 +103,8 @@ public sealed partial class Igi1HumanAi
                 bool full = _occupancy?.IsFull(_graph, id) ?? false;
                 bool shoot = node is not null && (_sight is null || _sight(
                     new Vector3d(node.Position.X, node.Position.Y, node.Position.Z + FreePositionRayHeightOf(_graph)),
-                    AimPointOf(enemy)));
+                    AimPointOf(enemy),
+                    seen: null));
                 bool route = AiFreePosition.ShortensTheRoute(_graph, id, CurrentNode, targetNode);
                 return $"{id}:{(full ? "F" : "")}{(shoot ? "s" : "")}{(route ? "r" : "")}";
             }));

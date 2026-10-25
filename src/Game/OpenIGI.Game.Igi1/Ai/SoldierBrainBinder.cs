@@ -42,7 +42,7 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
     public Action<int>? TaskActivator { get; set; }
 
     /// <summary>Gets or sets the level's live StationaryGun tasks, which gunner AIs are connected to.</summary>
-    public WorldInteractionRegistry? Interactions { get; set; }
+    public WorldInteractionRegistry? Interactions { get => _context.Interactions; set => _context.Interactions = value; }
 
     /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
     public void ActivateTask(int taskId) => _activatedTasks.Add(taskId);
@@ -217,7 +217,13 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                     // blind to a player immediately outside, even though the remainder of the ray was clear.
                     // Step past retail Glass/Water/Fence/Ladder faces, while an ordinary wall or physical
                     // closed-door leaf remains cover.
-                    brain.SetLineOfSight((from, to) => SoldierSightQueries.HasLineOfSight(sight, from, to, Igi1HumanAi.SightObstructionTolerance));
+                    int looker = view.Soldier.Id;
+                    brain.SetLineOfSight((from, to, seen) => SoldierSightQueries.HasLineOfSight(
+                        sight,
+                        from,
+                        to,
+                        Igi1HumanAi.SightObstructionTolerance,
+                        standsAside: seen is { } looked ? owner => _context.GunStandsAside(owner, looker, looked) : null));
                 }
 
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
@@ -297,11 +303,6 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
     /// <summary>The authored heading a soldier was placed with.</summary>
     private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
 
-    /// <summary>A level task's position by id — what the activate walk aims at.</summary>
-    /// <param name="task">The subtree to search.</param>
-    /// <param name="id">The task id the script named.</param>
-    /// <param name="position">Receives the task position when present.</param>
-    /// <returns>The position, or default when the id names nothing with one.</returns>
     private static bool TryGetTaskPosition(GameTask task, int id, out Vector3d position)
     {
         if (task.Id == id)
