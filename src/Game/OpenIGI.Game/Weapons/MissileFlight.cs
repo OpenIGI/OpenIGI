@@ -251,10 +251,11 @@ public static class MissileExplosion
     /// <remarks><c>7168</c> — 1.75 metres, from the missile impact callback.</remarks>
     public const float FalloffUnits = 7168f;
 
-    /// <summary>How many bursts the explosion fires.</summary>
-    /// <remarks>Ten, against a grenade's one.</remarks>
-    public const int BurstCount = 10;
+    /// <summary>How many fragments the explosion throws.</summary>
+    /// <remarks>Ten, against a grenade's three (<c>0x428390</c>).</remarks>
+    public const int Fragments = 10;
 
-    /// <summary>The maximum random delay between bursts, in ticks.</summary>
-    public const int BurstDelayTicks = 5;
+    /// <summary>How many FireBalls the explosion lights.</summary>
+    /// <remarks>Five, against a grenade's one (<c>0x428390</c>).</remarks>
+    public const int Fireballs = 5;
 }

@@ -142,48 +142,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // The rocket's smoke trail and the blast's grey column, under the fireball.
         _smoke?.Draw(eye, projection, blend);
 
-        // The retail fireball, over the scene as light: grenade, missile and shot-out-device blasts drawn from the
-        // real fireball.spr sprite.
+        // The rocket nozzle's glow, over the scene as light.
         _explosions?.Draw(eye, projection, blend);
-    }
-
-    /// <summary>Shows one blast's fireball: the real retail explosion when its texture is loaded.</summary>
-    /// <param name="positionUnits">The blast centre, in world units.</param>
-    /// <param name="intensity">The size and count scale; one is the grenade/missile fireball.</param>
-    /// <remarks>
-    /// The retail <c>1009_01_1</c> fireball is shared by every blast in the level. It is drawn from the model's own real
-    /// texture when the mounted packs hold it; a mission without it falls back to the procedural burst so a blast is never
-    /// invisible.
-    /// </remarks>
-    public void SpawnBlast(Vector3d positionUnits, float intensity)
-    {
-        // The pale grey puff a blast leaves, the retail ExplosionSmoke task's smoke2.spr. A few small translucent
-        // puffs, not a screen-filling tower -- the size is fixed, not scaled by the particle cvar.
-        if (_smoke is not null && _smoke.IsAvailable)
-        {
-            const int puffs = 3;
-            for (int i = 0; i < puffs; i++)
-            {
-                Vector3f drift = new(
-                    ((float)random.NextDouble() - 0.5f) * 140f,
-                    ((float)random.NextDouble() - 0.5f) * 140f,
-                    ((float)random.NextDouble() * 60f) + 20f);
-                _smoke.SpawnPuff(
-                    positionUnits,
-                    drift,
-                    sizeMetres: 1.0f + ((float)random.NextDouble() * 0.4f),
-                    growthMetresPerTick: 0.03f,
-                    lifeTicks: 28 + (int)random.NextBounded(14),
-                    darkness: 0.45f);
-            }
-        }
-
-        if (_explosions is not null && _explosions.Spawn(positionUnits, intensity))
-        {
-            return;
-        }
-
-        Particles?.SpawnExplosion(positionUnits, intensity);
     }
 
     /// <summary>Shows the flashbang's world smoke residue without drawing a screen whiteout.</summary>

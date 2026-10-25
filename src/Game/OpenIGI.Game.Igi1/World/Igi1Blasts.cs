@@ -27,6 +27,17 @@ namespace OpenIGI.Game.Igi1.World;
 public sealed class Igi1Blasts(
     MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
 {
+    // The FireBalls and fragments a grenade (0x476AC0) and an M203 round (0x476340) hand Explosion0.
+    private const int GrenadeFireballs = 1;
+    private const int GrenadeFragments = 3;
+
+    // How far below a grenade and a missile the line runs that finds what their blast scorches.
+    private const double GrenadeScorchDropInUnits = 2048.0;
+    private const double MissileScorchDropInUnits = 12288.0;
+
+    // The flashbang's decal half-width (0x47E9A0's 2048).
+    private const float FlashScorchHalfWidthInUnits = 2048f;
+
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;
 
@@ -67,6 +78,9 @@ public sealed class Igi1Blasts(
                 // whiteout fields from the player's eye. That handler does not perform a wall trace.
                 host.PlayDefinition("explo_flash", blast.Position, 90);
                 host.FlashbangSmoke(blast.Position);
+
+                // 0x47E9A0 burns the same burn1.tex, 2048 wide, on what the grenade's line found 2048 below.
+                impacts.ScorchBelow(blast.Position, GrenadeScorchDropInUnits, FlashScorchHalfWidthInUnits);
                 float eyeDistance = (float)(mission.Player.EyeUnits - blast.Position).Length;
                 (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
                 // 0x00413090 writes the player fields only when one of its two distance tests passes.
@@ -79,9 +93,11 @@ public sealed class Igi1Blasts(
                 continue;
             }
 
-            // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
+            // The frag (type 0, 0x476AC0): an Explosion0 of one FireBall and three fragments at the configured radius,
+            // explo_02_m, and the scorch on whatever lies 2048 below.
             host.PlayDefinition("explo_02_m", blast.Position, 90);
-            host.Fireball(blast.Position);
+            host.Explosion(blast.Position, blast.RadiusUnits, GrenadeFireballs, GrenadeFragments);
+            impacts.ScorchBelow(blast.Position, GrenadeScorchDropInUnits, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
 
             // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
             // Do not post it again here: leaving a second record behind makes a guard react twice to
@@ -117,9 +133,10 @@ public sealed class Igi1Blasts(
 
         // The missile's own impact (0x428390, at 0x42854D) sets off an Explosion0 with explo_03_l -- the launcher's
         // rocket and a vehicle's alike, since both are the same Missile task.
+        // Five FireBalls and ten fragments at 10240, and the scorch on whatever lies 12288 below.
         host.PlayDefinition("explo_03_l", blast.Position, 90);
-        host.Fireball(blast.Position);
-        impacts.Scorch(blast.Position, blast.Normal, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
+        host.Explosion(blast.Position, MissileExplosion.RadiusUnits, MissileExplosion.Fireballs, MissileExplosion.Fragments);
+        impacts.ScorchBelow(blast.Position, MissileScorchDropInUnits, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
 
         // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
         // which is what lets a LAW rocket -- and nothing else -- blow a car up.
@@ -411,7 +428,7 @@ public sealed class Igi1Blasts(
             // hand-grenade fireball. The distinct sound/effect is audible proof that the M203 task
             // reached its own detonation path.
             host.PlayDefinition("explo_proxy", blast.Position, 90);
-            host.Fireball(blast.Position);
+            host.Explosion(blast.Position, blast.RadiusUnits, GrenadeFireballs, GrenadeFragments);
             impacts.Scorch(blast.Position, blast.Normal, Igi1ImpactEffects.M203ScorchHalfWidthInUnits);
             Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Gun);
         }
