@@ -85,10 +85,10 @@ public sealed class HumanUpperBodyTests
         SoldierView view = View();
         view.PlayStateAnimation(StandAnimationId, loops: true);
         view.PlayUpperBodyAnimation(AimAnimationId, loops: true);
-        view.AimAlong(0.6f);
+        view.LookAlong(0.6f);
 
         Assert.NotSame(view.Bones.EffectiveSourceOf(0), view.Bones.EffectiveSourceOf(HumanUpperBody.Bone));
-        Assert.NotNull(view.Bones.BendOf(HumanUpperBody.Bone));
+        Assert.Equal(0.6f, view.LookPitch);
 
         Assert.True(view.StartLadderAnimation(LadderAnimationId, loops: true));
 
@@ -96,8 +96,7 @@ public sealed class HumanUpperBodyTests
         Assert.Same(
             view.Bones.EffectiveSourceOf(0),
             view.Bones.EffectiveSourceOf(HumanUpperBody.Bone));
-        Assert.Null(view.Bones.BendOf(HumanUpperBody.Bone));
-        Assert.Null(view.Bones.BendOf(HumanUpperBody.NeckBone));
+        Assert.Equal(0f, view.LookPitch);
     }
 
     /// <summary>A fall is a full-body clip too: a corpse does not go down holding a rifle stance.</summary>
@@ -107,7 +106,7 @@ public sealed class HumanUpperBodyTests
         SoldierView view = View();
         view.PlayStateAnimation(StandAnimationId, loops: true);
         view.PlayUpperBodyAnimation(AimAnimationId, loops: true);
-        view.AimAlong(-0.5f);
+        view.LookAlong(-0.5f);
 
         view.Kill(DeathAnimationId);
 
@@ -115,7 +114,7 @@ public sealed class HumanUpperBodyTests
         Assert.Same(
             view.Bones.EffectiveSourceOf(0),
             view.Bones.EffectiveSourceOf(HumanUpperBody.Bone));
-        Assert.Null(view.Bones.BendOf(HumanUpperBody.NeckBone));
+        Assert.Equal(0f, view.LookPitch);
         Assert.Equal(DeathAnimationId, view.CurrentAnimation);
     }
 
@@ -136,7 +135,7 @@ public sealed class HumanUpperBodyTests
         float headY = level.Positions[5].Y;
         float footZ = level.Positions[27].Z;
 
-        view.AimAlong(0.6f);
+        view.LookAlong(0.6f);
         BonePose up = view.UnrotatedPose();
 
         Assert.True(up.Positions[22].Z > weaponZ, "aiming up did not raise the weapon.");
@@ -144,7 +143,7 @@ public sealed class HumanUpperBodyTests
         Assert.True(up.Positions[5].Y < headY, "a head tipped back should move behind the neck.");
         Assert.Equal(footZ, up.Positions[27].Z, 3);
 
-        view.AimAlong(-0.6f);
+        view.LookAlong(-0.6f);
         BonePose down = view.UnrotatedPose();
 
         Assert.True(down.Positions[22].Z < weaponZ, "aiming down did not lower the weapon.");
@@ -152,48 +151,51 @@ public sealed class HumanUpperBodyTests
         Assert.Equal(footZ, down.Positions[27].Z, 3);
     }
 
-    /// <summary>The head moves further than the chest does, which is what reads as looking rather than bowing.</summary>
+    /// <summary>Up to 55° the chest takes the whole look and carries the head with it (<c>0x489F70</c>).</summary>
     [Fact]
-    public void TheHeadTurnsFurtherThanTheChestCarriesIt()
+    public void WithinTheLimitTheChestTakesTheWholeLook()
     {
         SoldierView view = View();
         view.PlayStateAnimation(StandAnimationId, loops: true);
-        view.AimAlong(0.6f);
+        view.LookAlong(0.6f);
 
-        Matrix3f chest = view.UnrotatedPose().Rotations[HumanUpperBody.Bone];
-        Matrix3f head = view.UnrotatedPose().Rotations[HumanUpperBody.NeckBone];
-
-        Assert.True(
-            PitchOf(head) > PitchOf(chest),
-            $"the head should end up above the chest's own pitch: {PitchOf(head)} against {PitchOf(chest)}.");
+        BonePose pose = view.UnrotatedPose();
+        Assert.Equal(0.6f, PitchOf(pose.Rotations[HumanUpperBody.Bone]), 4);
+        Assert.Equal(0.6f, PitchOf(pose.Rotations[HumanUpperBody.NeckBone]), 4);
     }
 
-    /// <summary>
-    /// A player looking almost straight up does not fold their character in half.
-    /// </summary>
-    /// <remarks>
-    /// <c>PlayerBody.PitchLimit</c> is 89°, which no spine reaches. Both bends cap, and what is left over
-    /// is simply not expressed rather than being handed to a joint that cannot take it.
-    /// </remarks>
+    /// <summary>Past 55° the chest stops and the neck takes the rest, so the head ends up looking where the view does.</summary>
     [Fact]
-    public void AnExtremeAimIsCappedRatherThanApplied()
+    public void PastTheLimitTheNeckTakesTheRest()
     {
-        SoldierView capped = View();
-        capped.PlayStateAnimation(StandAnimationId, loops: true);
-        capped.AimAlong(PlayerBody.PitchLimit);
+        SoldierView view = View();
+        view.PlayStateAnimation(StandAnimationId, loops: true);
+        view.LookAlong(1.4f);
 
-        SoldierView atLimit = View();
-        atLimit.PlayStateAnimation(StandAnimationId, loops: true);
-        atLimit.AimAlong(
-            HumanUpperBody.ChestLimitRadians / HumanUpperBody.ChestShare);
+        BonePose pose = view.UnrotatedPose();
+        Assert.Equal(HumanUpperBody.LookLimitRadians, PitchOf(pose.Rotations[HumanUpperBody.Bone]), 4);
+        Assert.Equal(1.4f, PitchOf(pose.Rotations[HumanUpperBody.NeckBone]), 4);
+    }
 
-        float chest = PitchOf(capped.UnrotatedPose().Rotations[HumanUpperBody.Bone]);
+    /// <summary>The look turns the pose built under the body's heading the same way, about the body's own side.</summary>
+    [Fact]
+    public void TheLookTurnsAboutTheBodysOwnSide()
+    {
+        SoldierView view = View();
+        view.PlayStateAnimation(StandAnimationId, loops: true);
+        Matrix3f heading = Matrix3f.FromEngineEulerAngles(0f, 0f, 1.1f);
+        view.PlaceAt(default, heading);
+        view.LookAlong(0.7f);
 
-        Assert.Equal(HumanUpperBody.ChestLimitRadians, chest, 3);
-        Assert.Equal(
-            PitchOf(atLimit.UnrotatedPose().Rotations[HumanUpperBody.Bone]),
-            chest,
-            3);
+        BonePose local = view.UnrotatedPose();
+        BonePose world = view.Pose();
+        for (int bone = 0; bone < local.BoneCount; bone++)
+        {
+            Vector3f expected = heading.Transposed().Transform(local.Positions[bone]);
+            Assert.Equal(expected.X, world.Positions[bone].X, 0.01);
+            Assert.Equal(expected.Y, world.Positions[bone].Y, 0.01);
+            Assert.Equal(expected.Z, world.Positions[bone].Z, 0.01);
+        }
     }
 
     /// <summary>Aiming level is the pose the rig would have had with no bend at all.</summary>
@@ -204,14 +206,14 @@ public sealed class HumanUpperBodyTests
         view.PlayStateAnimation(StandAnimationId, loops: true);
         Vector3f before = view.UnrotatedPose().Positions[22];
 
-        view.AimAlong(0.5f);
-        view.AimAlong(0f);
+        view.LookAlong(0.5f);
+        view.LookAlong(0f);
         Vector3f after = view.UnrotatedPose().Positions[22];
 
         Assert.Equal(before.X, after.X, 4);
         Assert.Equal(before.Y, after.Y, 4);
         Assert.Equal(before.Z, after.Z, 4);
-        Assert.Null(view.Bones.BendOf(HumanUpperBody.Bone));
+        Assert.Equal(0f, view.LookPitch);
     }
 
     // The pose's 3x3 is applied as M * v, so its third ROW is where the bone's own +Z ended up and its

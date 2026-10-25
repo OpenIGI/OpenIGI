@@ -69,9 +69,9 @@ public sealed class FootstepSoundRulesTests
     }
 
     [Fact]
-    public void ACrouchedStepKeepsTwoThirdsOfItsVolume()
+    public void ACrouchedStepKeepsSixtySixHundredthsOfItsVolume()
     {
-        Assert.Equal(0.6666667f, FootstepSounds.CrouchedVolumeScale, 1e-6f);
+        Assert.Equal(0.66f, FootstepSounds.CrouchedVolumeScale, 1e-6f);
     }
 
     [Fact]

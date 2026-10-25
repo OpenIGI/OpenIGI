@@ -39,25 +39,7 @@ public static class HumanUpperBody
     /// </remarks>
     public const int NeckBone = 4;
 
-    /// <summary>How much of the aim pitch the chest takes.</summary>
-    /// <remarks>
-    /// <b>Not retail.</b> IGI1 never bends a body to an aim — see <see cref="SoldierView.AimAlong"/> for
-    /// why that is a measurement rather than an omission. The division between chest and neck is a
-    /// remaster choice; it sums to one so the rig ends up looking where its owner is.
-    /// </remarks>
-    public const float ChestShare = 0.55f;
-
-    /// <summary>How much of the aim pitch the neck takes.</summary>
-    public const float HeadShare = 0.45f;
-
-    /// <summary>The most the chest will bend, in radians — 40°.</summary>
-    /// <remarks>
-    /// The player may look nearly straight up (<c>PlayerBody.PitchLimit</c> is 89°). A spine turned that
-    /// far is a bow, not an aim, so the two caps together express about 70° of it and drop the rest —
-    /// which is roughly what a person aiming a rifle upward actually does with their back and neck.
-    /// </remarks>
-    public const float ChestLimitRadians = 0.6981317f;
-
-    /// <summary>The most the neck will bend, in radians — 35°.</summary>
-    public const float HeadLimitRadians = 0.61086524f;
+    /// <summary>The most of a look <see cref="Bone"/> takes before the rest goes to <see cref="NeckBone"/> — 55°.</summary>
+    /// <remarks><c>Human_ApplyLook</c> (<c>0x489F70</c>) clamps to this float, <c>0x3F75BE0C</c>.</remarks>
+    public const float LookLimitRadians = 0.9599311351776123f;
 }
