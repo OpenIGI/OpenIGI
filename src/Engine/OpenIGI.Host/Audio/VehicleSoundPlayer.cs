@@ -33,9 +33,9 @@ internal sealed class VehicleSoundPlayer
 
     private readonly SoundSystem _sounds;
     private readonly Random _random;
-    private readonly Dictionary<GameTask, EngineSet> _engines = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<object, EngineSet> _engines = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(GameTask Vehicle, int Index), GunVoices> _guns = [];
-    private readonly HashSet<GameTask> _seenEngines = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<object> _seenEngines = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<(GameTask Vehicle, int Index)> _seenGuns = [];
 
     /// <summary>Initializes a new instance of the <see cref="VehicleSoundPlayer"/> class.</summary>
@@ -66,18 +66,19 @@ internal sealed class VehicleSoundPlayer
                 continue;
             }
 
-            if (!_engines.TryGetValue(vehicle.Vehicle, out EngineSet? set))
+            object key = vehicle.Key ?? vehicle.Vehicle;
+            if (!_engines.TryGetValue(key, out EngineSet? set))
             {
                 set = EngineSet.Create(_sounds, vehicle.SoundSet);
-                _engines[vehicle.Vehicle] = set;
+                _engines[key] = set;
             }
 
-            _seenEngines.Add(vehicle.Vehicle);
+            _seenEngines.Add(key);
             set.Tick(_sounds, vehicle, listenerUnits);
         }
 
         // A vehicle that went out of the world, blew up, or turned its "Play sound" off loses its set at once.
-        foreach (GameTask gone in _engines.Keys.Where(vehicle => !_seenEngines.Contains(vehicle)).ToArray())
+        foreach (object gone in _engines.Keys.Where(vehicle => !_seenEngines.Contains(vehicle)).ToArray())
         {
             _engines[gone].Stop(_sounds);
             _engines.Remove(gone);

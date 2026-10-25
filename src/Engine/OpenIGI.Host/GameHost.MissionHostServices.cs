@@ -61,7 +61,7 @@ public sealed partial class GameHost
 
             host._vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
             host._vehicleSounds.Tick(
-                cutscenes.VehicleSoundSources(),
+                cutscenes.VehicleSoundSources().Concat(host._mission.RotatingObjects?.SoundSources() ?? []),
                 cutscenes.VehicleGunSounds(),
                 host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
         }

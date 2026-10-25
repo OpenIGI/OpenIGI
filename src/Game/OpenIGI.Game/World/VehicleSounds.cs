@@ -15,6 +15,7 @@ namespace OpenIGI.Game.World;
 /// <param name="Running">Parameter 1: 1 while parameter 0 is above 0.01, else 0.</param>
 /// <param name="Speed">Parameter 2: a car's speed times 0.001, at most 1 (<c>Car_Tick</c> at <c>0x42EDF5</c>).</param>
 /// <param name="SoundOn">Its "Play sound" expression: the set is deleted while it reads 0 (<c>0x42E320</c>, <c>0x4316D0</c>).</param>
+/// <param name="Key">What the set belongs to when that is not the task itself: one turning part of several a task carries.</param>
 public readonly record struct VehicleSoundSource(
     GameTask Vehicle,
     string SoundSet,
@@ -22,7 +23,8 @@ public readonly record struct VehicleSoundSource(
     float Throttle,
     float Running,
     float Speed,
-    bool SoundOn);
+    bool SoundOn,
+    object? Key = null);
 
 /// <summary>One vehicle gun's sound inputs at the end of a tick.</summary>
 /// <param name="Vehicle">The vehicle carrying it.</param>
