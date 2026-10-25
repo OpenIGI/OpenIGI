@@ -219,6 +219,11 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         {
             (Vector3d at, Matrix3f orientation) = Placed(wanted, between);
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(at), orientation);
+            if (wanted.Scale != 1f)
+            {
+                modelView = modelView.WithAxesScaled(wanted.Scale);
+            }
+
             if (_models(wanted.Model) is not { } model || !WorldModelVisible(wanted, model, modelView, frustum))
             {
                 continue;
@@ -597,6 +602,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _spriteResources?.Dispose();
         _spriteResources = null;
         ReleaseParticles();
+        ReleaseExplosions();
         foreach (Part? part in _parts.Values.Concat(_bodies.Values))
         {
             if (part is { Mesh.IsValid: true })

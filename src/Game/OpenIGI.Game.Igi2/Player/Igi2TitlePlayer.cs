@@ -147,6 +147,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the explosions the level's blasts go off in, or <see langword="null"/> for none.</summary>
     public Weapons.Igi2ExplosionWorld? Explosions { get; set; }
 
+    /// <inheritdoc/>
+    OpenIGI.Game.World.IExplosionScene? ITitleWorldModels.Explosions => Explosions;
+
     /// <summary>Gets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>: the grenades, explosions and what they leave.</summary>
     public OpenIGI.Game.World.DynamicTasks Dynamic { get; } = new();
 
@@ -486,7 +489,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
             ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
         IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
-        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings];
+
+        // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
+        IEnumerable<TitleWorldModel> pieces = Explosions is { } explosions ? ExplosionPieceModels.Of(explosions, _ticks) : [];
+        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces];
     }
 
     /// <summary>Makes the player at its spawn, as <c>HumanPlayer_CreateHandler</c> does, over a collision world.</summary>

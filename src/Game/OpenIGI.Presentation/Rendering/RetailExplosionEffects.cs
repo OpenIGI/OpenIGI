@@ -30,6 +30,7 @@ public sealed class RetailExplosionEffects
     private MeshHandle _retailFireballMesh = MeshHandle.None;
     private TextureHandle[] _retailFireballFrameTextures = [];
     private BlendMode _retailFireballBlend = BlendMode.Additive;
+    private bool _ownsFireballTextures = true;
 
     /// <summary>Initializes the drawer over a device and the bound resources.</summary>
     /// <param name="device">The device the models upload to and draw with.</param>
@@ -56,6 +57,7 @@ public sealed class RetailExplosionEffects
     public bool Load(LoadedMission mission)
     {
         ReleaseRetailFireballModel();
+        _ownsFireballTextures = true;
         if (_resources is null)
         {
             return false;
@@ -91,6 +93,23 @@ public sealed class RetailExplosionEffects
             }
         }
 
+        return UsesRetailFireballModel;
+    }
+
+    /// <summary>Takes a FireBall model a title built from its own packs, whose frames the title keeps and frees.</summary>
+    /// <param name="geometry">The <c>1006_01_1</c> model, in metres.</param>
+    /// <param name="frames">Its animated texture's frames, in order.</param>
+    /// <param name="blend">The blend its face group asks for (<see cref="BlendOf"/>).</param>
+    /// <returns><see langword="true"/> when there is something to draw.</returns>
+    public bool UseFireBall(MeshGeometry geometry, TextureHandle[] frames, BlendMode blend)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(frames);
+        ReleaseRetailFireballModel();
+        _ownsFireballTextures = false;
+        _retailFireballGeometry = geometry;
+        _retailFireballFrameTextures = [.. frames.Where(static frame => frame.IsValid)];
+        _retailFireballBlend = blend;
         return UsesRetailFireballModel;
     }
 
@@ -231,7 +250,7 @@ public sealed class RetailExplosionEffects
 
         foreach (TextureHandle frame in _retailFireballFrameTextures)
         {
-            if (frame.IsValid)
+            if (frame.IsValid && _ownsFireballTextures)
             {
                 _device.DestroyTexture(frame);
             }
@@ -247,22 +266,29 @@ public sealed class RetailExplosionEffects
     /// numbered run the texture archive carries after it, which <c>Mesh3D_SetAnimTextureFrame</c> steps.
     /// A name that does not end in a three-digit frame number is a single still frame.
     /// </remarks>
-    private TextureHandle[] LoadRetailAnimationFrames(string firstFrame)
+    private TextureHandle[] LoadRetailAnimationFrames(string firstFrame) =>
+        AnimationFrames(firstFrame, name => SpriteStrip.LoadTexture(_device, _resources, name));
+
+    /// <summary>Loads an animated texture's frames, <c>name000</c> onwards, until one is missing, through a title's loader.</summary>
+    /// <param name="firstFrame">The name the model's material carries, its first frame.</param>
+    /// <param name="load">Loads one frame by name, <see cref="TextureHandle.None"/> when there is none.</param>
+    /// <returns>The frames; one for a name without a frame number.</returns>
+    public static TextureHandle[] AnimationFrames(string firstFrame, Func<string, TextureHandle> load)
     {
-        List<TextureHandle> frames = [];
-        int digits = firstFrame.Length >= 3 && firstFrame[^3..].All(char.IsAsciiDigit) ? 3 : 0;
-        if (digits == 0)
+        ArgumentNullException.ThrowIfNull(firstFrame);
+        ArgumentNullException.ThrowIfNull(load);
+        if (firstFrame.Length < 3 || !firstFrame[^3..].All(char.IsAsciiDigit))
         {
-            TextureHandle still = SpriteStrip.LoadTexture(_device, _resources, firstFrame);
+            TextureHandle still = load(firstFrame);
             return still.IsValid ? [still] : [];
         }
 
+        List<TextureHandle> frames = [];
         string stem = firstFrame[..^3];
         int first = int.Parse(firstFrame[^3..], System.Globalization.CultureInfo.InvariantCulture);
         for (int frame = first; frame < 1000; frame++)
         {
-            TextureHandle texture = SpriteStrip.LoadTexture(_device, _resources, 
-                stem + frame.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
+            TextureHandle texture = load(stem + frame.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
             if (!texture.IsValid)
             {
                 break;
@@ -279,7 +305,7 @@ public sealed class RetailExplosionEffects
     /// <c>0x49DF60</c> draws a group opaque and lit unless it is flagged transparent, in which case
     /// <c>0x49EC70</c> adds it (<c>ONE, ONE</c>) when additive and alpha-blends it otherwise.
     /// </remarks>
-    private static BlendMode BlendOf(MefModel model)
+    public static BlendMode BlendOf(MefModel model)
     {
         if (model.DrawRecords.Any(record => record.IsAdditive))
         {

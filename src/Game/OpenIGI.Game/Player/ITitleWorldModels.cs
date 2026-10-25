@@ -28,6 +28,9 @@ public interface ITitleWorldModels
 
     /// <summary>Gets the level's 2-D particles -- blood, dust, smoke -- in the engine both titles share; none when it has none.</summary>
     OpenIGI.Game.World.Particles.Particle2DModule? Particles => null;
+
+    /// <summary>Gets the level's explosions, whose FireBalls are drawn over the lit picture; none when it has none.</summary>
+    OpenIGI.Game.World.IExplosionScene? Explosions => null;
 }
 
 /// <summary>A square laid on the ground, blended over it.</summary>
@@ -64,8 +67,40 @@ public sealed record TitleWorldModel(
     object? Instance = null,
     long Tick = 0)
 {
+    /// <summary>Gets how large the model is drawn: 1 for its own size, a tenth for a blast's thrown pieces.</summary>
+    public float Scale { get; init; } = 1f;
+
     /// <summary>Gets the flashes at a rigid model's muzzle, its third magic vertex, or <see langword="null"/> for none.</summary>
     public IReadOnlyList<TitleMuzzleFlash>? MuzzleFlashes { get; init; }
+}
+
+/// <summary>An explosion's thrown pieces as models in the world, for a title that draws them among its own.</summary>
+public static class ExplosionPieceModels
+{
+    /// <summary>Every piece in flight: its container's model, at the size it was given, moving between ticks.</summary>
+    /// <param name="scene">The title's explosions.</param>
+    /// <param name="tick">The tick the pieces are for.</param>
+    /// <returns>The models.</returns>
+    public static IEnumerable<TitleWorldModel> Of(OpenIGI.Game.World.IExplosionScene scene, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        foreach (OpenIGI.Game.World.ExplosionFragments group in scene.FragmentGroups)
+        {
+            foreach (OpenIGI.Game.World.ExplosionFragment piece in group.Flying)
+            {
+                float[] o = piece.Orientation;
+                yield return new TitleWorldModel(
+                    group.Model,
+                    piece.Position,
+                    new Matrix3f(o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8]),
+                    Instance: piece,
+                    Tick: tick)
+                {
+                    Scale = piece.Scale,
+                };
+            }
+        }
+    }
 }
 
 /// <summary>

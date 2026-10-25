@@ -131,6 +131,13 @@ public interface ITitleWorldModelPresenter
     /// <param name="blend">How far the frame is between the last two ticks.</param>
     void DrawParticles(OpenIGI.Game.World.Particles.Particle2DModule particles, in Camera3D camera, in Matrix4f projection, float blend) { }
 
+    /// <summary>Draws the level's explosions' FireBalls over the lit scene, with the title's own model of one.</summary>
+    /// <param name="explosions">The level's explosions.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    void DrawExplosions(OpenIGI.Game.World.IExplosionScene explosions, in Camera3D camera, in Matrix4f projection, float blend) { }
+
     /// <summary>
     /// Draws the muzzle flashes of the models the last <see cref="DrawWorld"/> drew, as light over the lit scene: drawn among
     /// the solid models they land in the G-buffer, where most of each is cut away and the rest is shaded as a wall.

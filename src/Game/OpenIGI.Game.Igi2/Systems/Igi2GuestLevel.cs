@@ -642,6 +642,7 @@ public sealed class Igi2GuestLevel
         {
             Pickups = pickups,
             Grenades = grenades,
+            Explosions = explosions,
             Particles = particles.Module,
             Casings = casings,
             Alarms = [.. _alarms],

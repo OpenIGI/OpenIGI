@@ -16,8 +16,14 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// <param name="materials">The level's materials, whose penetration a blast loses through each face.</param>
 /// <param name="dynamic">The level's dynamic tasks.</param>
 public sealed partial class Igi2ExplosionWorld(IgiRandom random, IIgi2CollisionQuery collision, Igi2GameMaterials materials, DynamicTasks dynamic)
-    : IIgi2GrenadeEffects
+    : IIgi2GrenadeEffects, IExplosionScene
 {
+    /// <inheritdoc/>
+    public IReadOnlyList<ExplosionFireBall> FireBalls => [.. Dynamic.Tasks.OfType<ExplosionFireBall>()];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<ExplosionFragments> FragmentGroups => [.. Dynamic.Tasks.OfType<ExplosionFragments>()];
+
     /// <summary>The query groups a blast is traced against: the ground, the splines, the solid objects and the forests.</summary>
     public const uint BlastGroups = 0x98000000 | Igi2CollisionWorld.ForestGroup;
 

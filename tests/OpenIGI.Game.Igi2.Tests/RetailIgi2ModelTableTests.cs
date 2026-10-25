@@ -203,6 +203,19 @@ public sealed class RetailIgi2ModelTableTests
         }
     }
 
+    /// <summary>The global pack carries Explosion0's FireBall, whose material names the first frame of an animated texture.</summary>
+    /// <remarks><c>Explosion0_FireBallNew</c> asks for <c>1006_01_1</c> and aborts without it; the shared drawer steps the numbered run.</remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_global_pack_carries_the_fireball()
+    {
+        string root = GameDataSource.Igi2.RequireRoot();
+        Igi2ModelTable table = Igi2ModelTable.Create([MtpPack.Read(File.ReadAllBytes(Path.Combine(root, "COMMON", "common.mtp")))]);
+
+        Assert.True(table.TryResolveMesh(OpenIGI.Game.World.ExplosionFireBall.Model, out _));
+        Assert.True(table.TryResolveTexture(OpenIGI.Game.World.ExplosionFireBall.Model, 0, out string? first), "The FireBall names no texture.");
+        Assert.Matches("[0-9]{3}$", first!);
+    }
+
     /// <summary>
     /// A name the common pack contributes resolves against the common pack's own mesh list.
     /// </summary>

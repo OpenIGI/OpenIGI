@@ -192,7 +192,7 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
         Matrix4f rigid = camera.CreateModelView(
             position / WorldScene.UnitsPerMetre,
             Matrix3f.FromRows(new Vector3f(o[0], o[1], o[2]), new Vector3f(o[3], o[4], o[5]), new Vector3f(o[6], o[7], o[8])));
-        Matrix4f modelView = ScaleModelView(rigid, fragment.Scale);
+        Matrix4f modelView = rigid.WithAxesScaled(fragment.Scale);
         foreach (MeshSubset subset in model.Geometry.Subsets)
         {
             if (subset.IndexCount == 0)
@@ -234,12 +234,6 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
 
         _fragmentModels.Clear();
     }
-
-    private static Matrix4f ScaleModelView(in Matrix4f rigid, float scale) => new(
-        rigid.M11 * scale, rigid.M12 * scale, rigid.M13 * scale, rigid.M14,
-        rigid.M21 * scale, rigid.M22 * scale, rigid.M23 * scale, rigid.M24,
-        rigid.M31 * scale, rigid.M32 * scale, rigid.M33 * scale, rigid.M34,
-        rigid.M41, rigid.M42, rigid.M43, rigid.M44);
 
     private static Bgra32 Tint(float r, float g, float b, float a) => new(
         (byte)Math.Clamp(r * 255f, 0f, 255f),

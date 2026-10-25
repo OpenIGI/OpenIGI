@@ -440,6 +440,12 @@ public sealed partial class GameHost
     /// <param name="blend">How far the frame is between the last two ticks.</param>
     private void DrawTitleParticles(in Camera3D eye, in Matrix4f projection, float blend)
     {
+        // Explosion0's FireBalls first, so its smoke lies over its fire.
+        if (_titleFeatures?.WorldModels?.Explosions is { } explosions && TitleWorldModelPresenter is { } burning)
+        {
+            burning.DrawExplosions(explosions, eye, projection, blend);
+        }
+
         if (_titleFeatures?.WorldModels?.Particles is { } particles && TitleWorldModelPresenter is { } models)
         {
             models.DrawParticles(particles, eye, projection, blend);
