@@ -247,7 +247,8 @@ public sealed class AiScriptHost
                 return QvmValue.Zero;
 
             case "AIFunction_GetRandomValue":
-                return QvmValue.FromSingle(_random.NextSingle() * Math.Max(0f, call.GetSingle(0)));
+                // 0x44E000: the level stream's draw times the float maximum, whatever its sign.
+                return QvmValue.FromSingle((float)(_random.NextDouble() * call.GetSingle(0)));
 
             case "AIFunction_SetViewLength" when ai is not null:
                 ai.Vision.Primary = ai.Vision.Primary.WithLengthInMetres(call.GetSingle(0));
@@ -299,7 +300,7 @@ public sealed class AiScriptHost
                 return QvmValue.FromSingle((float)ai.LastEventDistance);
 
             case "AIFunction_IsEventBehind" when ai is not null:
-                return QvmValue.FromInt32(ai.IsEnemyBehind() ? 1 : 0);
+                return QvmValue.FromInt32(ai.IsEventBehind() ? 1 : 0);
 
             case "AIFunction_GetAlarmControlStatus" when ai is not null:
                 // 0x44E4F0 resolves HumanAI+15044 and calls AlarmControl_IsOn. Alerted is not a

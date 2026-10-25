@@ -20,6 +20,14 @@ public sealed class SoldierAgent(SoldierView view, Vector3d position)
     /// <summary>Whether the last frame's main view drew this soldier -- retail's cue to re-skin it.</summary>
     public bool InView { get; set; }
 
+    /// <summary>
+    /// Whether the last rendered frame drew this soldier at all: Human+0x7C4 holding that render's number, which
+    /// <c>Human_DrawHandler</c> (<c>0x45F280</c>) stamps when the sector cull reaches the body and its frustum sphere
+    /// (<c>0x4D06C0</c>) passes. A dead body that was not drawn may leave the world (<c>0x44F410</c>).
+    /// </summary>
+    /// <remarks>Unlike <see cref="InView"/> it has no LOD range: a body far off is still drawn.</remarks>
+    public bool DrawnLastRender { get; set; }
+
     /// <summary>The eye orientation from the last frame that drew this soldier, or none yet.</summary>
     public Matrix3f? EyeOrientation { get; set; }
 
@@ -28,6 +36,12 @@ public sealed class SoldierAgent(SoldierView view, Vector3d position)
 
     /// <summary>Gets or sets the held gun's offset from the origin in the palette as last built: where the gun (gun+32) hangs.</summary>
     public Vector3d GunOffset { get; set; }
+
+    /// <summary>
+    /// Gets or sets bone 16's offset from the origin in the palette as last built — <c>HumanMotion+0x858</c>, where a thrown
+    /// grenade leaves the hand (<c>0x45B2F0</c>) — or none before a rebuild.
+    /// </summary>
+    public Vector3d? ThrowOffset { get; set; }
 
     /// <summary>Gets or sets the origin (Human+32) as the last tick left it, before this tick's clips moved the root.</summary>
     public Vector3d OriginBeforeTick { get; set; }

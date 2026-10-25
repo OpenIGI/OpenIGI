@@ -30,6 +30,15 @@ public abstract class HumanTask
     /// </remarks>
     public IHumanBodyState? Body { get; set; }
 
+    /// <summary>Gets or sets whether the human's body has been taken out of the world while its containers stay open.</summary>
+    /// <remarks>
+    /// <c>Human_DeactivateHandler</c> (<c>0x4609A0</c>) clears <c>+3318</c> and takes the body out of the world's cubes; a
+    /// dead soldier's HumanAI does it once the body has lain long enough out of sight (<c>0x44F410</c>), and a generator's
+    /// clone puts its task back (<c>0x460950</c>). <see cref="World.ConditionalContainerGate.IsTaskActive"/> reads it, so
+    /// every walk, draw, hit test and detector that asks whether the human is live leaves it out.
+    /// </remarks>
+    public bool IsOutOfWorld { get; set; }
+
     /// <summary>
     /// Gets or sets the game whose body stands for the human when it is not the game whose level it is in, or
     /// <see langword="null"/> when the level's own game drives it.

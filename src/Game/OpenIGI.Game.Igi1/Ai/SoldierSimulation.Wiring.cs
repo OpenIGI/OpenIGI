@@ -197,8 +197,8 @@ public sealed partial class SoldierSimulation
         set => _generators.SpawnedBody = value;
     }
 
-    /// <inheritdoc cref="GuardGeneratorSpawner.BodyRemoved"/>
-    internal Action<SoldierAgent>? BodyRemoved { get => _generators.BodyRemoved; set => _generators.BodyRemoved = value; }
+    /// <inheritdoc cref="SoldierContext.BodyRemoved"/>
+    internal Action<SoldierAgent>? BodyRemoved { get => _context.BodyRemoved; set => _context.BodyRemoved = value; }
 
     /// <inheritdoc cref="SoldierNoiseBroadcaster.Humans"/>
     internal List<IHumanAiEventTarget> Humans => _noise.Humans;

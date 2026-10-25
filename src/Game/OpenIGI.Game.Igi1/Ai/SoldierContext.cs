@@ -288,6 +288,37 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         return null;
     }
 
+    /// <summary>Gets or sets what is told when a dead body leaves the world, for whoever draws it.</summary>
+    public Action<SoldierAgent>? BodyRemoved { get; set; }
+
+    /// <summary>Gets each body that has left the world, by its soldier, with the roster group it was drawn in.</summary>
+    /// <remarks>A generator clones its replacement from what is kept here; the brain stays until then.</remarks>
+    public Dictionary<SoldierView, (SoldierAgent Agent, SoldierModelGroup Group)> GoneBodies { get; } = [];
+
+    /// <summary>Takes a dead body out of the world, as <c>Human_DeactivateHandler</c> (<c>0x4609A0</c>) does.</summary>
+    /// <param name="view">The soldier whose body leaves.</param>
+    /// <remarks>
+    /// Every draw, shadow, hit test and sweep walks the roster, so leaving it is leaving the world: retail clears the
+    /// Human's in-world byte (+3318) and takes its bone object out of the world's cubes.
+    /// </remarks>
+    public void RemoveBody(SoldierView view)
+    {
+        if (FindAgent(view) is not { } agent || FindRoster(view) is not { } group)
+        {
+            return;
+        }
+
+        group.Remove(agent);
+        if (Brains.TryGetValue(view, out Igi1HumanAi? brain))
+        {
+            BrainsByRuntimeId.Remove(brain.RuntimeId);
+        }
+
+        view.Soldier.IsOutOfWorld = true;
+        GoneBodies[view] = (agent, group);
+        BodyRemoved?.Invoke(agent);
+    }
+
     /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
     /// <param name="view">The soldier.</param>
     /// <returns>The task, or <see langword="null"/>.</returns>

@@ -587,10 +587,14 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         {
             foreach (SoldierMember member in group.Soldiers)
             {
-                member.Agent.InView = ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier)
+                // Human_DrawHandler (0x45F280) is reached past the sector cull, and stamps the render only when the frustum
+                // sphere lets the body through; the eye is refreshed only within the LOD range on top of that.
+                member.Agent.DrawnLastRender = ConditionalContainerGate.IsTaskActive(member.Agent.View.Soldier)
                     && member.HasFrameState
-                    && Vector3d.Distance(member.DrawnWhere, camera.Position) <= EyeRefreshDistanceMetres
+                    && _drawer.IsSectorVisible(group, member)
                     && frustum.SphereVisible(camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation), test);
+                member.Agent.InView = member.Agent.DrawnLastRender
+                    && Vector3d.Distance(member.DrawnWhere, camera.Position) <= EyeRefreshDistanceMetres;
             }
         }
     }

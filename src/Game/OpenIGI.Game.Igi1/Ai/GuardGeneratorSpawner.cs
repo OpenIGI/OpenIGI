@@ -30,11 +30,6 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
     // The generators whose template another game drives.
     private readonly List<GuardGeneratorTask> _drivenGenerators = [];
 
-    // The tick a generator's dead guard finished its death clip on (Human+828, 0x45C740), and the body its HumanAI has since
-    // taken out of the world.
-    private readonly Dictionary<GuardGeneratorTask, int> _generatedDeathEnded = [];
-    private readonly Dictionary<GuardGeneratorTask, (SoldierAgent Agent, SoldierModelGroup Group)> _generatedBodyGone = [];
-
     /// <summary>Gets each generator this game drives, by the soldier it owns now.</summary>
     public Dictionary<GuardGeneratorTask, SoldierView> GuardGenerators { get; } = [];
 
@@ -46,9 +41,6 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
 
     /// <summary>Gets or sets what prepares a generator's replacement guard to be drawn, and says whether it could.</summary>
     public Func<GuardGeneratorTask, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody { get; set; }
-
-    /// <summary>Gets or sets what is told when a generated guard's body leaves the world, for whoever draws it.</summary>
-    public Action<SoldierAgent>? BodyRemoved { get; set; }
 
     /// <summary>Connects each retail GuardGenerator to the one authored soldier subtree it owns.</summary>
     public void PrepareGuardGenerators(GameTask? levelRoot)
@@ -118,48 +110,29 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
         // must leave the generator eligible to retry on the next tick.
         GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
 
-        // A REPLACEMENT WAITS FOR THE BODY TO LEAVE, and the body leaves ten seconds after it lands. The generator replaces
-        // its guard only once he is dead (Human+3317) AND out of the world (+3318 clear, 0x463190), deleting the body as it
-        // clones (0x487EE0 -> 0x4015F0, 0x488000). What takes him out is his own HumanAI (0x44F410): once his death clip has
-        // run (+828, which 0x45C740 sets on the tick after the clip ends) it counts AI+15680 -- 300, written only by the
-        // constructor -- down past nought, and then, because his parent is a GuardGenerator (0x488610), unregisters him
-        // (0x4609A0). So: clip ends on tick E, the countdown runs E+1..E+301, the body goes on E+302 whether the generator is
-        // on or spent, and the replacement comes on E+303. Probed on mission 9's generator 700.
-        if (decision == GuardSpawnDecision.FirstSpawn || !view.IsDead)
+        // A REPLACEMENT WAITS FOR THE BODY TO LEAVE. The generator replaces its guard only once he is dead (Human+3317) AND
+        // out of the world (+3318 clear, 0x463190), deleting the body as it clones (0x487EE0 -> 0x4015F0, 0x488000). What
+        // takes him out is his own HumanAI (Igi1HumanAi.TickDeadAi): a generator's body goes the tick its stay runs out,
+        // in sight or not. Clip ends on tick E, the body goes on E+302, and -- the generator updating before its child --
+        // the replacement comes on E+303. Probed on mission 9's generator 700.
+        if (decision == GuardSpawnDecision.FirstSpawn
+            || !view.IsDead
+            || !_context.GoneBodies.TryGetValue(view, out (SoldierAgent Agent, SoldierModelGroup Group) body))
         {
             return;
         }
 
-        // This runs before the soldier's own tick, so a clip that ended is the last tick's.
-        if (!_generatedDeathEnded.ContainsKey(generator) && view.ClipEndedThisTick)
-        {
-            _generatedDeathEnded[generator] = _context.TickCount - 1;
-        }
-
-        if (!_generatedDeathEnded.TryGetValue(generator, out int ended))
-        {
-            return;
-        }
-
-        if (!_generatedBodyGone.ContainsKey(generator)
-            && _context.TickCount >= ended + SoldierSimulation.GeneratedBodyLingerTicks + 2
-            && RemoveGeneratedBody(view) is { } removed)
-        {
-            _generatedBodyGone[generator] = removed;
-        }
-
-        if (_generatedBodyGone.TryGetValue(generator, out (SoldierAgent Agent, SoldierModelGroup Group) body)
-            && _context.TickCount >= ended + SoldierSimulation.GeneratedBodyLingerTicks + 3
-            && isOn
+        if (isOn
             && generator.SpawnCount < generator.MaxSpawns
             && SpawnGeneratedGuard(generator, view, body.Agent, body.Group) is { } fresh)
         {
             _ = generator.Advance(isOn: true, childIsDead: true);
             GuardGenerators[generator] = fresh;
-            _generatedDeathEnded.Remove(generator);
-            _generatedBodyGone.Remove(generator);
         }
     }
+
+    /// <summary>Whether a soldier is a generator's: its body leaves the world in sight or not (<c>0x488610</c> parent test).</summary>
+    public bool IsGenerated(SoldierView view) => GuardGenerators.ContainsValue(view);
 
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)
     {
@@ -210,6 +183,9 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
 
         group.Add(freshAgent);
 
+        // The clone's task is the one the body left; putting it in the world sets +3318 again (0x460950).
+        deadView.Soldier.IsOutOfWorld = false;
+
         if (_context.DetectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale))
         {
             _context.DetectorMarkerScaleMetres[freshView] = markerScale;
@@ -236,6 +212,7 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
         // 0x487EE0 deletes the dead child (0x4015F0) as it clones the next; its body has already left the world. The task it
         // stood for is the replacement's, so the human list keeps it.
         _context.Brains.Remove(deadView);
+        _context.GoneBodies.Remove(deadView);
         _context.Health.Remove(deadView);
         _context.Combat.Remove(deadView);
         _context.DetectorMarkerScaleMetres.Remove(deadView);
@@ -245,28 +222,5 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
             $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
                 + $"{freshView.Soldier.Name} cloned at its authored position.");
         return freshView;
-    }
-
-    /// <summary>Takes a generated guard's body out of the world, as his HumanAI's unregister does.</summary>
-    /// <remarks>
-    /// Every draw, shadow, hit test and sweep walks the roster, so leaving it is leaving the world. The brain stays until the
-    /// replacement is cloned from it.
-    /// </remarks>
-    private (SoldierAgent Agent, SoldierModelGroup Group)? RemoveGeneratedBody(SoldierView view)
-    {
-        if (_context.FindAgent(view) is not { } agent
-            || _context.Roster.FirstOrDefault(candidate => candidate.Agents.Contains(agent)) is not { } group)
-        {
-            return null;
-        }
-
-        group.Remove(agent);
-        if (_context.Brains.TryGetValue(view, out Igi1HumanAi? brain))
-        {
-            _context.BrainsByRuntimeId.Remove(brain.RuntimeId);
-        }
-
-        BodyRemoved?.Invoke(agent);
-        return (agent, group);
     }
 }

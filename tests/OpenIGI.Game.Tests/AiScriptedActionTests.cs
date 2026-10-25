@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
@@ -34,10 +34,11 @@ public sealed class AiScriptedActionTests
                 return id == 20;
             },
             _ => { });
+        // A three-round burst weapon: 0x48B9C0 sets the burst to its own length, drawing nothing from it.
         soldier.SetCombat(
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
-            () => new AiCombatWeaponState(clip, 30, 1, WeaponCategory.Gun));
+            () => new AiCombatWeaponState(clip, 30, 3, WeaponCategory.Gun));
 
         soldier.ApplyActions([
             new AiProducedAction(
@@ -48,23 +49,24 @@ public sealed class AiScriptedActionTests
         ]);
 
         Vector3d irrelevantEnemy = new(position.X, position.Y - 100_000, position.Z);
-        soldier.Tick(1, irrelevantEnemy, 0.0, enemyAlive: false);
-
-        Assert.Equal(AiSoldierActivity.FiringAtTask, soldier.Activity);
-        Assert.True(soldier.Combat.PullTrigger);
-        Assert.Equal(target, soldier.Combat.TurnTo);
-
-        // The body/weapon consumes the round; the AI notices the clip delta on the next tick and waits
-        // the action's 0.5 seconds before starting another one-round burst.
-        clip--;
-        for (int tick = 2; tick <= 16; tick++)
+        List<int> pulls = [];
+        for (int tick = 1; tick <= 30; tick++)
         {
             soldier.Tick(tick, irrelevantEnemy, 0.0, enemyAlive: false);
-            Assert.False(soldier.Combat.PullTrigger);
+            Assert.Equal(AiSoldierActivity.FiringAtTask, soldier.Activity);
+            if (soldier.Combat.PullTrigger)
+            {
+                pulls.Add(tick);
+                clip--;
+            }
         }
 
-        soldier.Tick(17, irrelevantEnemy, 0.0, enemyAlive: false);
-        Assert.True(soldier.Combat.PullTrigger);
+        // The first pull waits for the turn down onto the target. 0x48D8E0 counts a round only once the clip shows it
+        // gone, so a burst of three pulls four times; its end arms the action's half-second wait (15 ticks), run down to
+        // -1 before the next burst fires: 18 ticks from the burst's last pull to the next one's first.
+        Assert.True(pulls.Count >= 5);
+        Assert.Equal([pulls[0], pulls[0] + 1, pulls[0] + 2, pulls[0] + 3], pulls.Take(4));
+        Assert.Equal(pulls[3] + 18, pulls[4]);
     }
 
     [Fact]

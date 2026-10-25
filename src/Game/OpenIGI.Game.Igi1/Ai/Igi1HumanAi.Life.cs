@@ -125,21 +125,62 @@ public sealed partial class Igi1HumanAi
     /// A dead soldier's HumanAI tick, before its body's: once the death clip has run (Human+828, set by
     /// <c>0x45C740</c> the tick after the clip ends), <c>0x44F410</c> lets go of the alarm panel's claim handles and
     /// its node cell, so a guard shot on its way to the alarm leaves it for the next one only once the body lies still.
+    /// It then counts the body's stay down, and says when the body leaves the world.
     /// </summary>
-    public void TickDeadAi()
+    /// <param name="drawnLastRender">
+    /// Whether the last rendered frame drew the body: <c>Human_DrawHandler</c> (<c>0x45F280</c>) stamps Human+0x7C4 with
+    /// the render count when its frustum sphere (<c>0x4D06C0</c>) lets the body through, and the render count goes up
+    /// after the draw, so "drawn by the last render" is retail's <c>renders - stamp &lt;= 1</c>. A body never drawn
+    /// (stamp −1) counts as not drawn.
+    /// </param>
+    /// <param name="generated">Whether the soldier is a <c>GuardGenerator</c>'s, whose body leaves in sight or not.</param>
+    /// <returns>Whether the body leaves the world on this tick (<c>0x4609A0</c>).</returns>
+    /// <remarks>
+    /// HumanAI+0x3E10 starts at 300 (<c>0x44F060</c>, its only writer besides the countdown) and runs down one a tick
+    /// from the first tick the dead Human is settled, past nought: clip ends on tick E, the count runs E+1..E+301, and
+    /// from E+302 the body leaves on the first tick the last render did not draw it -- a corpse in view stays, one out
+    /// of view goes. Every soldier's body does this, not only a generator's; a generator's goes on E+302 regardless.
+    /// </remarks>
+    public bool TickDeadAi(bool drawnLastRender, bool generated)
     {
-        if (Activity != AiSoldierActivity.Dead || !_deathClipEnded || _deadClaimsReleased)
+        if (Activity != AiSoldierActivity.Dead || !_deathClipEnded || HasLeftWorld)
         {
-            return;
+            return false;
         }
 
-        _deadClaimsReleased = true;
-        ReleaseActivateClaims();
-        _occupancy?.ReleaseDead(this);
+        if (!_deadClaimsReleased)
+        {
+            _deadClaimsReleased = true;
+            ReleaseActivateClaims();
+            _occupancy?.ReleaseDead(this);
+        }
+
+        if (_bodyStayTicks >= 0)
+        {
+            _bodyStayTicks--;
+            return false;
+        }
+
+        if (generated || !drawnLastRender)
+        {
+            HasLeftWorld = true;
+            return true;
+        }
+
+        return false;
     }
+
+    /// <summary>Gets whether the dead body has left the world (<c>0x4609A0</c> cleared Human+3318): nothing ticks, draws or meets it.</summary>
+    public bool HasLeftWorld { get; private set; }
 
     // Whether TickDeadAi has let go of the dead soldier's claims.
     private bool _deadClaimsReleased;
+
+    // HumanAI+0x3E10: how many more ticks the settled body stays before it may leave the world.
+    private int _bodyStayTicks = BodyStayTicks;
+
+    /// <summary>HumanAI+0x3E10's start: the ticks a settled body stays before it may leave the world (<c>0x44F060</c> writes 300).</summary>
+    public const int BodyStayTicks = 300;
 
     /// <summary>
     /// Steps a dead body for one tick — the death state's per-tick (<c>0x45C700</c>) joined to the soldier
@@ -370,14 +411,6 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.
-        if (_nextAnimationTick >= 0 && tick >= _nextAnimationTick)
-        {
-            Events.Post(AiEventRecord.Simple(AiEvent.Animation), owner: 0, worldTests: null);
-            _nextAnimationTick = tick + _animationMinTicks
-                + NextBounded(_animationRandomTicks);
-        }
-
         // The detection scan (0x489750) runs on the soldier's phase tick: it registers each human by the
         // mode-6 rule -- other side and alive into the enemy list, own side and dead into the fallen-friend
         // list -- unregisters the rest, and sweeps every registered slot through the cone and then the
@@ -439,6 +472,9 @@ public sealed partial class Igi1HumanAi
         {
             Events.Post(AiEventRecord.Simple(AiEvent.AlarmOff), owner: 0, worldTests: null);
         }
+
+        // The idle-animation countdown (ai+15200), after the alarm as 0x44F410 has it.
+        TickIdleAnimation();
 
         // 0x44F410 recomputes the alert latch from scratch every tick from two causes only: the alarm, or a
         // combat record (+15016) whose target the detection scan still registers (0x489BE0 tests the slot's

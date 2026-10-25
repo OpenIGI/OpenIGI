@@ -83,30 +83,34 @@ public sealed partial class Igi1HumanAi
     /// <returns><see langword="true"/> when a surface was found.</returns>
     public delegate bool GroundQuery(double x, double y, double z, out double groundZ);
 
-    /// <summary>Whether the enemy is behind the soldier — <c>AIFunction_IsEventBehind</c> (<c>0x44E860</c>).</summary>
-    /// <returns><see langword="true"/> when the enemy is behind the facing plane.</returns>
+    /// <summary>Whether an event being handled lies behind the soldier — <c>AIFunction_IsEventBehind</c> (<c>0x44E860</c>).</summary>
+    /// <returns>The answer for the event type being dispatched; <see langword="false"/> outside a dispatch.</returns>
+    public bool IsEventBehind() => _currentEventType is { } type && IsEventBehind(type);
+
+    /// <summary>Whether any queued event of a type lies behind the soldier's eye — <c>0x44E860</c>.</summary>
+    /// <param name="type">The event type whose queue is walked.</param>
+    /// <returns><see langword="true"/> when one does.</returns>
     /// <remarks>
-    /// <para>
-    /// The test is <c>forward · (subject − self) &lt; 0</c>, forward being the facing's <c>+Y</c> axis. The
-    /// original walks the current event queue and answers for the events it holds; the port has one subject
-    /// of interest, the enemy captured this tick, and answers against it — a recorded narrowing. With no
-    /// enemy known yet the answer is <see langword="false"/> (treated as in front), matching the original's
-    /// empty-queue return.
-    /// </para>
+    /// Every record in the queue is tested, from the eye (<c>HumanAI+0x38</c>) along the view's forward axis
+    /// (<c>view[1]</c>, <c>view[4]</c>, <c>view[7]</c>), pitch included: one behind the plane answers yes. An empty
+    /// queue answers no.
     /// </remarks>
-    public bool IsEnemyBehind()
+    public bool IsEventBehind(AiEvent type)
     {
-        Vector3d? point = _currentEventPosition ?? (HasTarget ? TargetMark : null);
-        if (point is not { } eventOrEnemy)
+        Vector3d eye = EyePosition();
+        Vector3f forward = EyeOrientation().Column2;
+        foreach (AiEventRecord record in Events.RecordsOf(type))
         {
-            return false;
+            double dx = record.Position.X - eye.X;
+            double dy = record.Position.Y - eye.Y;
+            double dz = record.Position.Z - eye.Z;
+            if (!((forward.Z * dz) + (forward.X * dx) + (forward.Y * dy) >= 0.0))
+            {
+                return true;
+            }
         }
 
-        double dx = eventOrEnemy.X - Position.X;
-        double dy = eventOrEnemy.Y - Position.Y;
-        double forwardX = -Math.Sin(Facing);
-        double forwardY = Math.Cos(Facing);
-        return ((forwardX * dx) + (forwardY * dy)) < 0.0;
+        return false;
     }
 
     /// <summary>Delivers a gunshot the soldier might hear — posts <see cref="AiEvent.Gunshot"/> if it is in earshot.</summary>
@@ -188,7 +192,6 @@ public sealed partial class Igi1HumanAi
         }
 
         LastEventDistance = distance;
-        _playerEventSourcePosition = shotPosition;
 
         RefreshBelievedTarget(shooter);
 
@@ -261,20 +264,23 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        LastEventDistance = distance;
-        _playerEventSourcePosition = explosionPosition;
+        if (!Events.Post(
+                new AiEventRecord(
+                    AiEvent.Explosion,
+                    -1,
+                    AiEventFilter.InRange,
+                    (float)rangeInUnits,
+                    explosionPosition,
+                    -1,
+                    0),
+                owner: RuntimeId,
+                worldTests: null))
+        {
+            return false;
+        }
 
-        return Events.Post(
-            new AiEventRecord(
-                AiEvent.Explosion,
-                -1,
-                AiEventFilter.InRange,
-                (float)rangeInUnits,
-                explosionPosition,
-                -1,
-                0),
-            owner: RuntimeId,
-            worldTests: null);
+        LastEventDistance = distance;
+        return true;
     }
 
     /// <summary>
@@ -323,16 +329,18 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        LastEventDistance = distance;
-        _playerEventSourcePosition = shooterPosition;
-        RefreshBelievedTarget(source);
-
         // -1 is the renderer's player-originator sentinel. The event position is the actual nearest point
         // on the round, while BeginFallFlat resolves the source separately to the player's live position.
-        Events.Post(
-            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, closest, source, source),
-            owner: RuntimeId,
-            worldTests: null);
+        if (!Events.Post(
+                new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, closest, source, source),
+                owner: RuntimeId,
+                worldTests: null))
+        {
+            return false;
+        }
+
+        LastEventDistance = distance;
+        RefreshBelievedTarget(source);
         return true;
     }
 
@@ -359,13 +367,16 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (!Events.Post(
+                new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, point, source, source),
+                owner: RuntimeId,
+                worldTests: null))
+        {
+            return false;
+        }
+
         LastEventDistance = distance;
-        _playerEventSourcePosition = shooterPosition;
         RefreshBelievedTarget(source);
-        Events.Post(
-            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, point, source, source),
-            owner: RuntimeId,
-            worldTests: null);
         return true;
     }
 
@@ -449,21 +460,23 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        LastEventDistance = distance;
-        _playerEventSourcePosition = source;
-        RefreshBelievedTarget();
+        if (!Events.Post(
+                new AiEventRecord(
+                    type,
+                    -1,
+                    AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide,
+                    (float)radiusInUnits,
+                    position,
+                    -1,
+                    -1),
+                owner: RuntimeId,
+                worldTests: null))
+        {
+            return false;
+        }
 
-        Events.Post(
-            new AiEventRecord(
-                type,
-                -1,
-                AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide,
-                (float)radiusInUnits,
-                position,
-                -1,
-                -1),
-            owner: RuntimeId,
-            worldTests: null);
+        LastEventDistance = distance;
+        RefreshBelievedTarget();
         return true;
     }
 
@@ -483,19 +496,23 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (!Events.Post(
+                new AiEventRecord(
+                    AiEvent.GrenadeThrown,
+                    -1,
+                    AiEventFilter.InView,
+                    -1.0f,
+                    grenadePosition,
+                    0,
+                    0),
+                owner: RuntimeId,
+                worldTests: null))
+        {
+            return false;
+        }
+
         LastEventDistance = Vector3d.Distance(Position, grenadePosition);
-        _playerEventSourcePosition = grenadePosition;
-        return Events.Post(
-            new AiEventRecord(
-                AiEvent.GrenadeThrown,
-                -1,
-                AiEventFilter.InView,
-                -1.0f,
-                grenadePosition,
-                0,
-                0),
-            owner: RuntimeId,
-            worldTests: null);
+        return true;
     }
 
     /// <summary>The retail grenade-land event radius: five metres, or 20480 engine units.</summary>
@@ -520,25 +537,24 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        LastEventDistance = distance;
-        _playerEventSourcePosition = grenadePosition;
-        bool posted = Events.Post(
-            new AiEventRecord(
-                AiEvent.GrenadeLand,
-                -1,
-                AiEventFilter.InRange,
-                (float)radiusInUnits,
-                grenadePosition,
-                0,
-                0),
-            owner: RuntimeId,
-            worldTests: null);
-        if (posted)
+        if (!Events.Post(
+                new AiEventRecord(
+                    AiEvent.GrenadeLand,
+                    -1,
+                    AiEventFilter.InRange,
+                    (float)radiusInUnits,
+                    grenadePosition,
+                    0,
+                    0),
+                owner: RuntimeId,
+                worldTests: null))
         {
-            RefreshBelievedTarget();
+            return false;
         }
 
-        return posted;
+        LastEventDistance = distance;
+        RefreshBelievedTarget();
+        return true;
     }
 
     /// <summary>The native flashbang AI event radius: ten metres, or 40960 engine units.</summary>
@@ -564,19 +580,23 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (!Events.Post(
+                new AiEventRecord(
+                    AiEvent.Flashbang,
+                    -1,
+                    AiEventFilter.InView | AiEventFilter.InRange,
+                    (float)radiusInUnits,
+                    grenadePosition,
+                    0,
+                    0),
+                owner: RuntimeId,
+                worldTests: null))
+        {
+            return false;
+        }
+
         LastEventDistance = distance;
-        _playerEventSourcePosition = grenadePosition;
-        return Events.Post(
-            new AiEventRecord(
-                AiEvent.Flashbang,
-                -1,
-                AiEventFilter.InView | AiEventFilter.InRange,
-                (float)radiusInUnits,
-                grenadePosition,
-                0,
-                0),
-            owner: RuntimeId,
-            worldTests: null);
+        return true;
     }
 
     /// <summary>Posts the type-15 event a non-lethal hit delivers to a HumanAI.</summary>
@@ -608,7 +628,6 @@ public sealed partial class Igi1HumanAi
         }
 
         LastEventDistance = Vector3d.Distance(Position, attackerPosition);
-        _playerEventSourcePosition = attackerPosition;
         RefreshBelievedTarget(attacker);
         return true;
     }

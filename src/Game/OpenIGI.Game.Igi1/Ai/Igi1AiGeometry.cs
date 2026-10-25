@@ -15,12 +15,18 @@ internal static class Igi1AiGeometry
     /// <param name="node">The graph node and its authored heading.</param>
     /// <param name="devianceMetres">The extra half-extent supplied by the caller.</param>
     /// <returns><see langword="true"/> when the point lies in the rotated XY square.</returns>
+    /// <remarks>A point exactly over the centre is outside: <c>sub_4F9A40</c> returns 0 for a zero offset (<c>0x4B3320</c>).</remarks>
     public static bool IsInsideNodeBox(Vector3d position, GraphNode node, double devianceMetres)
     {
         ArgumentNullException.ThrowIfNull(node);
 
         double dx = position.X - node.Position.X;
         double dy = position.Y - node.Position.Y;
+        if (dx == 0.0 && dy == 0.0)
+        {
+            return false;
+        }
+
         double sin = Math.Sin(node.Gamma);
         double cos = Math.Cos(node.Gamma);
         double localX = (cos * dx) + (sin * dy);

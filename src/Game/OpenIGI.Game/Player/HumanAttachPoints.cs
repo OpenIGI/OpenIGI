@@ -66,6 +66,12 @@ public static class HumanAttachPoints
     /// </remarks>
     public const int AiEye = 5;
 
+    /// <summary>The body-rig bone a soldier's grenade leaves from.</summary>
+    /// <remarks>
+    /// IGI1 <c>0x45B2F0</c> reads the throw point at <c>HumanMotion+0x858</c>: palette entry 16 with the 132-byte stride.
+    /// </remarks>
+    public const int AiThrow = 16;
+
     /// <summary>A second attachment on the view rig, from <c>0x4601A0</c> — palette <c>+6888</c>.</summary>
     /// <remarks>
     /// <para>
