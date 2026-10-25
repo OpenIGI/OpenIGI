@@ -150,6 +150,50 @@ public sealed class BonePose
     // translation. Matrix3f.Transform is the engine's other convention, v * M (the columns), which is
     // the inverse rotation; using it here would place every bone by the transpose of the rotation its
     // own matrix applies.
+    /// <summary>Turns a bone and everything below it about the bone's own joint — <c>Bone_Rotate</c> (<c>0x4D7070</c>).</summary>
+    /// <param name="bone">The bone whose joint the turn is about.</param>
+    /// <param name="axis">The turn's unit axis, in the pose's own frame.</param>
+    /// <param name="angle">The turn, in radians.</param>
+    /// <returns>The turned pose; this one when the turn is nothing or the bone is not in the rig.</returns>
+    /// <remarks>
+    /// The original multiplies the turn onto the left of every world rotation in the subtree and re-seats each child on
+    /// its parent's turned frame, which is the subtree turned rigidly about the bone's position; the bone itself does not
+    /// move. The turn's quaternion is made the way <c>Quat_SetAxisAngle</c> (<c>0x4B4660</c>) makes it.
+    /// </remarks>
+    public BonePose TurnSubtree(int bone, Vector3f axis, float angle)
+    {
+        if (angle == 0f || (uint)bone >= (uint)_rotations.Length)
+        {
+            return this;
+        }
+
+        float half = angle * 0.5f;
+        float sin = MathF.Sin(half);
+        Matrix3f turn = ToMatrix(new Quaternion32(axis.X * sin, axis.Y * sin, axis.Z * sin, MathF.Cos(half)));
+
+        Matrix3f[] rotations = (Matrix3f[])_rotations.Clone();
+        Vector3f[] positions = (Vector3f[])_positions.Clone();
+        bool[] turned = new bool[rotations.Length];
+        Vector3f joint = _positions[bone];
+        turned[bone] = true;
+        rotations[bone] = turn * rotations[bone];
+        for (int i = bone + 1; i < rotations.Length; i++)
+        {
+            int parent = _parents[i];
+            if (parent == BoneSkeleton.NoParent || !turned[parent])
+            {
+                continue;
+            }
+
+            turned[i] = true;
+            rotations[i] = turn * rotations[i];
+            Vector3f offset = new(positions[i].X - joint.X, positions[i].Y - joint.Y, positions[i].Z - joint.Z);
+            positions[i] = Add(Rotate(turn, offset), joint);
+        }
+
+        return new BonePose(rotations, positions, _parents);
+    }
+
     private static Vector3f Rotate(Matrix3f m, Vector3f v) => new(
         (m.M11 * v.X) + (m.M12 * v.Y) + (m.M13 * v.Z),
         (m.M21 * v.X) + (m.M22 * v.Y) + (m.M23 * v.Z),

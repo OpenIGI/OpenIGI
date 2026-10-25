@@ -285,10 +285,13 @@ public sealed partial class SoldierSimulation : IHumanEvents
             && (clipNow.UpcomingEvent(FootstepSounds.EventId)
                 || (!ReferenceEquals(clipNow, clipBefore) && clipNow.HasEventAtCurrentTime(FootstepSounds.EventId))))
         {
-            _footsteps.ReportFootstep(view);
+            _footsteps.ReportFootstep(view, brain.Body.CrouchByte);
         }
 
         view.PlaceAt(brain.Position, brain.Orientation);
+
+        // The body turns to look along the view's pitch, recoil and all (0x489F70), while its machine leaves the look on.
+        view.LookAlong(brain.Body.LooksAlongView ? brain.ViewPitch + brain.RecoilPitch : 0f);
     }
 
     /// <summary>Gives every soldier an AI that patrols the level's nav graph and reacts to the player.</summary>

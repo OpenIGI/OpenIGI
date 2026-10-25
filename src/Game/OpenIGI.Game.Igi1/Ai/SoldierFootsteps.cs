@@ -38,7 +38,9 @@ internal sealed class SoldierFootsteps(SoldierContext context)
     /// the body — the original probes separately, from 0.05 m above the ground point to 0.5 m below it,
     /// which is short enough not to punch through a floor into whatever is beneath it.
     /// </remarks>
-    public void ReportFootstep(SoldierView view)
+    /// <param name="view">The soldier.</param>
+    /// <param name="crouched">The soldier's crouch byte, which keeps the step at <see cref="FootstepSounds.CrouchedVolumeScale"/> (<c>0x45A7F0</c>).</param>
+    public void ReportFootstep(SoldierView view, bool crouched)
     {
         if (FootstepSound is not { } footstepSound || Materials is not { } materials || _context.Cast is not { } cast)
         {
@@ -80,13 +82,14 @@ internal sealed class SoldierFootsteps(SoldierContext context)
 
         if (sound.Length > 0)
         {
-            // 0x463920 is one handler for every human, so a guard walking in the rain lays down the
-            // same wet layer the player does. The slot is what names it.
+            // 0x45A7F0, the soldier's own step: the same twelve-step table, wet layer and pitch as the player's
+            // 0x463920, and no hearing event.
             footstepSound(new Footstep(
                 sound,
                 where,
                 FootstepSounds.HearingRadiusInUnits(material),
-                slot));
+                slot,
+                crouched ? FootstepSounds.CrouchedVolumeScale : 1f));
         }
     }
 }

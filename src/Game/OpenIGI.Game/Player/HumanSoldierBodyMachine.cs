@@ -494,6 +494,17 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
             _proneFlinchTicks = 0;
         }
 
+        // The look: off on the flinches, the deaths and the scripted clip (0x45C2E0, 0x45C330, 0x45C440, 0x45C5A0,
+        // 0x45C650, 0x45C750 and the pistol's), back on when a flinch or the clip plays out (0x4592F0, 0x45C370, 0x45C7E0).
+        if (state is FlinchState or ProneFlinchState or DeathState or KneelDeathState or ProneDeathState or ScriptedAnimationState)
+        {
+            LooksAlongView = false;
+        }
+        else if ((PreviousState, state) is (FlinchState, StandState) or (ProneFlinchState, ProneState) or (ScriptedAnimationState, StandState))
+        {
+            LooksAlongView = true;
+        }
+
         // The entries in off_53EC10 each write Human+829: these set it, these clear it, the rest leave it.
         if (state is 4 or 5 or 6 or 18 or 19 or 20 or 21 or 25)
         {

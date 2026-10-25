@@ -120,6 +120,23 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
         _ => State,
     };
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The look goes off on the flinch, the death and the scripted clip (<c>0x4545E0</c>, <c>0x4546C0</c>, <c>0x4547F0</c>)
+    /// and comes back when the flinch or the clip plays out to standing (<c>0x454630</c>, <c>0x454880</c>).
+    /// </remarks>
+    protected override void OnEntered(int state)
+    {
+        if (state is FlinchState or DeathState or ScriptedAnimationState)
+        {
+            LooksAlongView = false;
+        }
+        else if ((PreviousState, state) is (FlinchState, StandState) or (ScriptedAnimationState, StandState))
+        {
+            LooksAlongView = true;
+        }
+    }
+
     /// <summary>The flag word <c>0x454BA0</c> packs, decoded.</summary>
     private readonly record struct Signals(
         bool AnimationDone,

@@ -145,8 +145,8 @@ public static class FootstepSounds
     /// <summary>How much of its volume a crouched step keeps.</summary>
     /// <remarks>
     /// <para>
-    /// <c>0.6666667</c>. The handler tests <c>Human+829</c> — the crouch byte — and, when it is set,
-    /// sends the started voice a two-float message, <c>-1.0</c> and <c>0.6666667</c>
+    /// <c>0.66</c> (<c>0x3F28F5C3</c>, in both <c>0x45A7F0</c> and <c>0x463920</c>). The handler tests <c>Human+829</c> —
+    /// the crouch byte — and, when it is set, sends the started voice a two-float message, <c>-1.0</c> and <c>0.66</c>
     /// (<c>0x4E6C60</c>). The second is the volume the voice keeps; the <c>-1.0</c> reads as "leave the
     /// other alone", which is how the same message is used elsewhere, though that half is inference
     /// rather than something traced to a handler.
@@ -156,7 +156,7 @@ public static class FootstepSounds
     /// the ear and completely silent to a guard.
     /// </para>
     /// </remarks>
-    public const float CrouchedVolumeScale = 0.6666667f;
+    public const float CrouchedVolumeScale = 0.66f;
 
     /// <summary>Reports whether a material names anything to walk on.</summary>
     /// <param name="material">The material a probe struck.</param>

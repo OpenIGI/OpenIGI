@@ -349,7 +349,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
             }
         }
 
-        view.AimAlong(pose.AimPitch);
+        view.LookAlong(pose.AimPitch);
         view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
 
         // The mesh is uploaded from the model's REST geometry and holds no pose until something puts one

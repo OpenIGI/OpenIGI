@@ -349,4 +349,30 @@ public sealed class HumanSoldierBodyMachineTests
         Assert.Equal(56, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.FiringState)); // 6 -> fire
         Assert.Equal(55, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ReloadState)); // 12 -> recover
     }
+
+    /// <summary>
+    /// The look goes off for a flinch and comes back when it plays out to standing (<c>0x45C2E0</c>, <c>0x4592F0</c>),
+    /// but a flinch that ends in a fall leaves it off.
+    /// </summary>
+    [Fact]
+    public void AFlinchTurnsTheLookOffUntilItPlaysOut()
+    {
+        HumanSoldierBodyMachine body = new();
+        Assert.True(body.LooksAlongView);
+
+        body.Tick(Grounded() | HumanSoldierBodyMachine.Signal.Flinch);
+        Assert.Equal(HumanSoldierStates.FlinchState, body.State);
+        Assert.False(body.LooksAlongView);
+
+        body.Tick(Grounded(animDone: true));
+        Assert.Equal(HumanSoldierStates.StandState, body.State);
+        Assert.True(body.LooksAlongView);
+
+        body.Tick(Grounded() | HumanSoldierBodyMachine.Signal.Flinch);
+        body.Tick(HumanSoldierBodyMachine.Signal.None);
+        Assert.Equal(HumanSoldierStates.AirborneState, body.State);
+        body.Tick(Grounded());
+        Assert.Equal(HumanSoldierStates.StandState, body.State);
+        Assert.False(body.LooksAlongView);
+    }
 }

@@ -393,13 +393,13 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
 
         // The wet layer is played AS WELL AS the material's own sound, never instead of it. Its gate
         // is 0x416FB0, a single global byte -- the level's weather flag rather than a shelter test --
-        // which is what the rain ambience already reads through the RainEffect task.
+        // which is what the rain ambience already reads through the RainEffect task. Only the material's
+        // voice is quietened for a crouch (0x463920, 0x45A7F0): the wet one keeps its full volume.
         if (host.IsRaining)
         {
             host.SoundOutput.PlayDefinition(
                 FootstepSounds.RainSoundName(step.CycleSlot),
                 step.PositionInUnits,
-                gain: step.VolumeScale,
                 pitch: pitch,
                 priority: 40);
         }
