@@ -84,6 +84,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
     private bool _alarmWasOn;
 
     private GameTask? _levelRoot;
+    private IReadOnlyDictionary<int, GraphFile>? _graphs;
 
     // The level walk this renderer's tasks update from, once AttachTo has put them in it; null when standalone.
     private LevelUpdateWalker? _walker;
@@ -104,6 +105,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _staging = new SoldierCutsceneStaging(_context);
         _footsteps = new SoldierFootsteps(_context);
         _damage = new SoldierDamage(_context, _footsteps, scriptSound);
+        _footsteps.LandSound = (sound, at) => scriptSound(sound, at, false);
         _rounds = new SoldierGunShotRounds(_context, _sight, _noise);
         _fire = new SoldierWeaponFire(_context, _rounds, _noise);
         _generators = new GuardGeneratorSpawner(_context, _sight, Enlist);
@@ -288,6 +290,11 @@ public sealed partial class SoldierSimulation : IHumanEvents
             _footsteps.ReportFootstep(view, brain.Body.CrouchByte);
         }
 
+        if (brain.Body.LandedThisTick)
+        {
+            _footsteps.ReportLanding(view);
+        }
+
         view.PlaceAt(brain.Position, brain.Orientation);
 
         // The body turns to look along the view's pitch, recoil and all (0x489F70), while its machine leaves the look on.
@@ -346,6 +353,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _brains.ClearActivations();
         _context.PlayerTarget = new AiCombatTarget("HumanPlayer");
         _levelRoot = levelRoot;
+        _graphs = graphs;
         IReadOnlyDictionary<GameTask, int> visionPhases = levelRoot is null
             ? new Dictionary<GameTask, int>()
             : AiVisionPhases.Assign(levelRoot).Phases;
@@ -745,11 +753,77 @@ public sealed partial class SoldierSimulation : IHumanEvents
         else if (state == HumanSoldierStates.CloseCombatState && clip.CrossedEvent(CloseCombatHitEvent))
         {
             _releasedThisEntry.Add(view);
-            if (brain.StrikeCloseCombat(out float damage) && brain.TargetIsPlayer && brain.PlayerIsEnemy)
+            // 0x45B530 hands the blow to whatever the soldier is fighting, by its punch handler: the player's, or another
+            // soldier's.
+            if (brain.StrikeCloseCombat(out float damage))
             {
-                MeleeStrikeSink?.Invoke(brain.Position, damage);
+                if (brain.TargetIsPlayer)
+                {
+                    if (brain.PlayerIsEnemy)
+                    {
+                        MeleeStrikeSink?.Invoke(brain.Position, damage);
+                    }
+                }
+                else if (SoldierById(brain.TargetId) is { } struck)
+                {
+                    _damage.TakePunch(struck, view, damage);
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Carries what rides a lift's cab as it moves: the graphs authored in its frame (<c>0x4F9770</c>) and the soldiers
+    /// grounded on them, whom <c>0x462390</c> parents to it (<c>Human_UpdatePlatformMove</c>, <c>0x460CF0</c>).
+    /// </summary>
+    /// <param name="cab">The lift.</param>
+    /// <param name="displacement">How far its cab moved this tick, in engine units.</param>
+    public void CarryOnPlatform(GameTask cab, Vector3d displacement)
+    {
+        ArgumentNullException.ThrowIfNull(cab);
+        if (displacement == Vector3d.Zero || _levelRoot is null || _graphs is null)
+        {
+            return;
+        }
+
+        foreach ((int id, GraphFile graph) in _graphs)
+        {
+            if (graph.InParentFrame && ReferenceEquals(_levelRoot.Tree.FromId(id)?.Parent, cab))
+            {
+                graph.MoveParent(displacement);
+            }
+        }
+
+        foreach (SoldierModelGroup group in Roster)
+        {
+            foreach (SoldierAgent member in group.Agents)
+            {
+                SoldierView view = member.View;
+                if (Brains.TryGetValue(view, out Igi1HumanAi? brain)
+                    && SoldierContext.FindMind(view) is { GraphId: > 0 } mind
+                    && ReferenceEquals(_levelRoot.Tree.FromId(mind.GraphId)?.Parent, cab))
+                {
+                    brain.SeparateTo(brain.Position + displacement);
+                    view.PlaceAt(brain.Position, view.Orientation);
+                }
+            }
+        }
+    }
+
+    private SoldierView? SoldierById(int id)
+    {
+        foreach (SoldierModelGroup group in Roster)
+        {
+            foreach (SoldierAgent member in group.Agents)
+            {
+                if (member.View.Soldier.Id == id)
+                {
+                    return member.View;
+                }
+            }
+        }
+
+        return null;
     }
 
     // The clip events the throw and close-combat states act on (HumanAnimEvent.sound 0xB and 0xC).

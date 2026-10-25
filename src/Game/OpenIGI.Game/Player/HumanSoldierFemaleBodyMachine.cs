@@ -137,6 +137,14 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
         }
     }
 
+    /// <inheritdoc/>
+    protected override bool IsAirborne(int state) => state == AirborneState;
+
+    /// <inheritdoc/>
+    /// <remarks>The walk and the run each keep the other's stride (<c>0x453C40</c>, <c>0x453DE0</c>).</remarks>
+    protected override bool KeepsStride(int left, int entered) =>
+        (left, entered) is (WalkState, RunState) or (RunState, WalkState);
+
     /// <summary>The flag word <c>0x454BA0</c> packs, decoded.</summary>
     private readonly record struct Signals(
         bool AnimationDone,

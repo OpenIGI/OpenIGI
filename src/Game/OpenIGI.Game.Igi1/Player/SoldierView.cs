@@ -108,11 +108,27 @@ public sealed class SoldierView
     /// <summary>Switches the rig to a walk cycle, or back to standing.</summary>
     /// <param name="walking">Whether the soldier is moving.</param>
     /// <param name="walkAnimation">The walk clip's id, from the locomotion table's forward state.</param>
+    /// <param name="keepPhase">Whether a new clip starts at the old one's phase, as a change of gait does.</param>
     /// <returns><see langword="true"/> when the requested clip resolved in this soldier's set.</returns>
-    public bool SetMoving(bool walking, int walkAnimation)
+    public bool SetMoving(bool walking, int walkAnimation, bool keepPhase = false)
     {
         int wanted = walking ? walkAnimation : StandAnimation;
-        return PlayStateAnimation(wanted, loops: true);
+
+        // 0x4D6520 and 0x4D65B0: the old clip's time over its length, then the new clip's length times that.
+        float? phase = keepPhase && wanted != CurrentAnimation && _bones.SourceOf(0) is { Animation.Duration: > 0f } old
+            ? old.Time / old.Animation.Duration
+            : null;
+        if (!PlayStateAnimation(wanted, loops: true))
+        {
+            return false;
+        }
+
+        if (phase is { } carried && _bones.SourceOf(0) is { } started)
+        {
+            started.SetTime(started.Animation.Duration * carried);
+        }
+
+        return true;
     }
 
     /// <summary>Plays the clip selected by a HumanSoldier state with that table entry's loop mode.</summary>

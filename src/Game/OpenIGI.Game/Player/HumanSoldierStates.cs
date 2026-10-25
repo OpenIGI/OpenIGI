@@ -257,6 +257,25 @@ public static class HumanSoldierStates
     /// <summary>Playing the clip the AI named in slot 23 (<c>0x45C750</c>).</summary>
     public const int ScriptedAnimationState = 35;
 
+    /// <summary>Whether a gait the body enters keeps the stride of the gait it came from.</summary>
+    /// <param name="from">The state the body left.</param>
+    /// <param name="to">The state it entered.</param>
+    /// <returns><see langword="true"/> when the new clip starts at the old one's phase.</returns>
+    /// <remarks>
+    /// The four gaits' entries (<c>0x45A9E0</c>, <c>0x45AA60</c>, <c>0x45ACA0</c>, <c>0x45AF60</c>, and the pistol soldier's)
+    /// carry the walk cycle's phase over from a neighbouring gait, so a change of pace does not restart the stride: the slow
+    /// walk from the forward gaits and the tense run, the tense run from the three walks, the forward gait from the slow walk,
+    /// the fast gait and the tense run, and the fast gait from the slow walk and the forward gait.
+    /// </remarks>
+    public static bool KeepsStridePhase(int from, int to) => to switch
+    {
+        WalkState => from is ForwardState or FastForwardState or RunState,
+        RunState => from is WalkState or ForwardState or FastForwardState,
+        ForwardState => from is WalkState or FastForwardState or RunState,
+        FastForwardState => from is WalkState or ForwardState,
+        _ => false,
+    };
+
     /// <summary>Whether a state's clip is the body's alone: every state but standing, the gaits, the patrol's kneel and its
     /// way down and up, the play-animation state and the emplacement.</summary>
     /// <param name="state">The state.</param>
