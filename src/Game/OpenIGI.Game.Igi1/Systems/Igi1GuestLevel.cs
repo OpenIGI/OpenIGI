@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -93,6 +94,68 @@ public sealed class Igi1GuestLevel
         }
 
         return body;
+    }
+
+    /// <summary>
+    /// Stands Project I.G.I.'s player in the host's level in its own player's stead, as the game's own mission stands it
+    /// (<see cref="Igi1PlayerSetup"/>): the rig moving through the host's world and tuned by <c>humanplayer.qvm</c>, its view rig and
+    /// what it carries, its life, and the host's player task standing for it -- the level's AI, detectors and scripts find it
+    /// there, and the host's rounds and blasts strike it there.
+    /// </summary>
+    /// <param name="world">The host's world, which the player's grenades and view model meet, and which it stands in.</param>
+    /// <param name="start">Who the player is.</param>
+    /// <returns>The player, which the host ticks as its title player.</returns>
+    public Igi1TitlePlayer AddPlayer(IHostCollisionWorld world, Igi1GuestPlayerStart start)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(start);
+        IOpenIgiLogger log = start.Surroundings.Logger;
+        PlayerSpawnPoint spawn = PlayerSpawn.Of(start.Task);
+
+        // Its grenades and view model meet the host's world; its view model's forward sweep meets the ground alone.
+        WorldTraceCast trace = world.Trace;
+        WorldTraceCast ground = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+            world.Trace(request with { Mask = WorldTraceMask.Terrain }, out hit);
+        Igi1PlayerAnimations animations = _content.PlayerAnimations;
+        PlayerCamera rig = Igi1PlayerRig.Build(
+            new Igi1PlayerWorld(start.Solids, world.Cast, trace, ground, start.Ladders), animations.Body, log);
+        rig.UseMaterials(_content.Arsenal.Materials);
+
+        Igi1PlayerLife life = new();
+        int difficulty = (int)start.Difficulty;
+        life.Reset(difficulty);
+        try
+        {
+            if (Igi1PlayerRig.Tune(rig, _loop, _content.Guest.Resources, log) is { } tuning)
+            {
+                life.Tune(tuning, difficulty);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
+        {
+            log.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
+        }
+
+        Igi1HumanPlayer human = new(rig, life, start.Surroundings);
+        rig.UseHealth(life.Health);
+        rig.Body.SetFallImpactSink(human.Land);
+        if (animations.ViewRig is { } viewRig)
+        {
+            rig.UseViewRig(viewRig);
+        }
+
+        Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
+        rig.PlaceAt(world.Ground, spawn, start.Solids.PlayerRegistrationCaster());
+
+        // The host's player task stands for it: its body is the rig, its events the player's, and it is the human the host's
+        // world, AI and scripts meet.
+        HumanPlayerTask task = start.Task;
+        task.Driver = Core.Titles.GameTitle.Igi1;
+        task.Body = new Igi1PlayerBody(() => rig, task);
+        task.Events = human;
+        task.StandIn = task;
+        world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
+        return new Igi1TitlePlayer(human, world.Ground);
     }
 
     /// <summary>

@@ -89,6 +89,17 @@ public sealed class PlayerLoadout
     /// </remarks>
     public IReadOnlyList<LoadoutAmmo> Ammunition { get; }
 
+    /// <summary>A loadout given in code rather than declared by a level: what another game's level hands the player.</summary>
+    /// <param name="weapons">The weapons, in the order the player is given them.</param>
+    /// <param name="ammunition">The ammunition blocks.</param>
+    /// <returns>The loadout.</returns>
+    public static PlayerLoadout Of(IEnumerable<LoadoutWeapon> weapons, IEnumerable<LoadoutAmmo> ammunition)
+    {
+        ArgumentNullException.ThrowIfNull(weapons);
+        ArgumentNullException.ThrowIfNull(ammunition);
+        return new PlayerLoadout([.. weapons], [.. ammunition]);
+    }
+
     /// <summary>Reads the loadout a level declares for its player.</summary>
     /// <param name="root">The level's task tree.</param>
     /// <param name="loadout">Receives the loadout when the level declares a player.</param>

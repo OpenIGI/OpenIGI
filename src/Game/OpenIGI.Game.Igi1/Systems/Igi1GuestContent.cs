@@ -4,6 +4,7 @@ using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Formats;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.World;
 
@@ -26,8 +27,14 @@ public sealed class Igi1GuestContent
     /// <summary>The directory sound banks are mounted from.</summary>
     public const string SoundDirectory = MissionLoader.CommonSoundDirectory;
 
-    private Igi1GuestContent(GuestTitle guest, LoadedMission mission, Igi1Arsenal arsenal, SoundDefinitionRegistry sounds)
+    private Igi1PlayerAnimations? _playerAnimations;
+    private readonly string _dataRoot;
+    private readonly IOpenIgiLogger _logger;
+
+    private Igi1GuestContent(string dataRoot, IOpenIgiLogger logger, GuestTitle guest, LoadedMission mission, Igi1Arsenal arsenal, SoundDefinitionRegistry sounds)
     {
+        _dataRoot = dataRoot;
+        _logger = logger;
         Guest = guest;
         Mission = mission;
         Arsenal = arsenal;
@@ -45,6 +52,9 @@ public sealed class Igi1GuestContent
 
     /// <summary>Gets the weapon, ammunition and material tables.</summary>
     public Igi1Arsenal Arsenal { get; }
+
+    /// <summary>Gets the player's two animation sets, the body's and the first-person rig's, read on first use.</summary>
+    public Igi1PlayerAnimations PlayerAnimations => _playerAnimations ??= Igi1PlayerAnimations.Read(_dataRoot, _logger);
 
     /// <summary>Gets the sound definitions the game's common sounds are named by.</summary>
     public SoundDefinitionRegistry SoundDefinitions { get; }
@@ -99,7 +109,7 @@ public sealed class Igi1GuestContent
         SoundDefinitionRegistry sounds = new(log);
         sounds.Register(guest.Loop.Natives);
         sounds.Load(guest.Resources, guest.Loop.Natives, SoundDefinitionRegistry.CommonScriptResource);
-        Igi1GuestContent content = new(guest, mission, arsenal, sounds);
+        Igi1GuestContent content = new(dataRoot, log, guest, mission, arsenal, sounds);
         guest.FileSystem.RegisterDevice(content.Scripts);
         return content;
     }

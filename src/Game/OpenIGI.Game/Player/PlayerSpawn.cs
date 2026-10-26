@@ -67,8 +67,17 @@ public static class PlayerSpawn
             return false;
         }
 
-        spawn = new PlayerSpawnPoint(player.SpawnPosition, player.SpawnGamma, player.PlayerModel, player.PlayerTeam);
+        spawn = Of(player);
         return true;
+    }
+
+    /// <summary>Where a player task stands its player: its position, its facing, its model and its team.</summary>
+    /// <param name="player">The player task.</param>
+    /// <returns>The spawn.</returns>
+    public static PlayerSpawnPoint Of(HumanPlayerTask player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        return new PlayerSpawnPoint(player.SpawnPosition, player.SpawnGamma, player.PlayerModel, player.PlayerTeam);
     }
 
     /// <summary>Finds the mission's gameplay player task: script id zero, or the first player the level declares.</summary>
