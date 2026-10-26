@@ -11,6 +11,8 @@ public sealed class Igi1SmokePlume
     private readonly SmokePlumeEmitter<X87> _emitter = new();
     private Vector3d _lastPosition;
     private bool _moved;
+    private GameTask? _carrier;
+    private Vector3d _local;
 
     internal Igi1SmokePlume(DeclaredTask task)
     {
@@ -45,8 +47,40 @@ public sealed class Igi1SmokePlume
     /// <summary>Gets the task.</summary>
     public DeclaredTask Task { get; }
 
-    /// <summary>Gets the disc's centre, world units.</summary>
-    public Vector3d Position { get; }
+    /// <summary>Gets the disc's centre, world units: where the level put it, or where its carrier has taken it.</summary>
+    public Vector3d Position { get; private set; }
+
+    /// <summary>
+    /// Keeps the disc where its carrier -- the nearest ancestor that moves, a train's car or a vehicle -- has taken it,
+    /// <c>Smoke_UpdateLocal</c> (<c>0x438240</c>) and <c>Smoke_Move</c> (<c>0x437AD0</c>).
+    /// </summary>
+    /// <param name="pose">The pose of a task that moves, in world units, or <see langword="null"/> for one that does not.</param>
+    /// <remarks>
+    /// The first time a carrier answers, the disc's offset from it is turned into the carrier's own frame; from then on the
+    /// disc is the carrier's position plus that offset turned back by its rotation, so a smoke a level hangs off a train rides
+    /// along with it.
+    /// </remarks>
+    public void Follow(Func<GameTask, (Vector3d Position, Matrix3f Orientation)?> pose)
+    {
+        ArgumentNullException.ThrowIfNull(pose);
+        if (_carrier is null)
+        {
+            for (GameTask? ancestor = Task.Parent; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (pose(ancestor) is { } first)
+                {
+                    _carrier = ancestor;
+                    _local = first.Orientation.Transform(Position - first.Position);
+                    break;
+                }
+            }
+        }
+
+        if (_carrier is not null && pose(_carrier) is { } now)
+        {
+            Position = now.Position + now.Orientation.Transposed().Transform(_local);
+        }
+    }
 
     /// <summary>Gets the plume's axis.</summary>
     public Vector3f Direction { get; }
@@ -243,6 +277,9 @@ public sealed class Igi1SmokePlumes
         Random.Seed(unchecked((uint)-923067897), 971667286u, 2146516173u);
     }
 
+    /// <summary>Gets or sets the pose of a task that moves, in world units, which a plume hanging off one follows.</summary>
+    public Func<GameTask, (Vector3d Position, Matrix3f Orientation)?>? CarrierPose { get; set; }
+
     /// <summary>Runs every plume in the world a tick.</summary>
     public void Tick()
     {
@@ -256,6 +293,11 @@ public sealed class Igi1SmokePlumes
             if (plume.System is not { } system || !module.Systems.Contains(system))
             {
                 plume.Bind(module);
+            }
+
+            if (CarrierPose is { } pose)
+            {
+                plume.Follow(pose);
             }
 
             if (ConditionalContainerGate.IsTaskActive(plume.Task))

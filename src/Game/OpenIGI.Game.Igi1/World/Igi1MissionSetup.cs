@@ -478,6 +478,11 @@ public sealed class Igi1MissionSetup(
         mission.SmokePlumes.Expressions = mission.MineFieldExpressions;
         mission.SmokePlumes.Bind(impacts.Runtime.Particles);
 
+        // A smoke a level hangs off a train or a vehicle rides along with it (0x437AD0).
+        mission.SmokePlumes.CarrierPose = task => mission.Cutscenes?.TryGetDrawTransform(task, out Vector3d at, out Matrix3f turn) == true
+            ? (at * WorldScene.UnitsPerMetre, turn)
+            : null;
+
         // The level's alarm speakers, for the sirens: each follows its own expression over
         // the same live variables the controls export through.
         mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
