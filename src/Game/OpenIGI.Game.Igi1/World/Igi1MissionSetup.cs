@@ -19,7 +19,6 @@ namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Brings up Project I.G.I.'s cutscene runtime and objective runtime for a loaded level.</summary>
 /// <param name="mission">The mission's world, which keeps them.</param>
-/// <param name="harm">What a guard's round does to the player.</param>
 /// <param name="blasts">What a guard's round does to a speaker or a destructible.</param>
 /// <param name="sounds">The soldiers' cries and the sound of a guard's round landing.</param>
 /// <param name="audio">Where the doors, lifts and soldiers send their sounds.</param>
@@ -27,7 +26,6 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="host">What plays and shows them.</param>
 public sealed class Igi1MissionSetup(
     MissionWorld mission,
-    Igi1PlayerHarm harm,
     Igi1Blasts blasts,
     Igi1HumanSounds sounds,
     Igi1MissionAudio audio,
@@ -337,7 +335,7 @@ public sealed class Igi1MissionSetup(
             // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
             soldiers.SetHitSound((prefix, variants, position) => sounds.PlayHit(prefix, variants, position));
             soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(mission.SoundRandom));
-            soldiers.SetMeleeStrikeSink(harm.StrikePlayer);
+            soldiers.SetMeleeStrikeSink((attacker, damage) => mission.Human?.Strike(attacker, damage));
             soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerLife.DeltaTranslationScale);
 
             // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
@@ -493,7 +491,7 @@ public sealed class Igi1MissionSetup(
         host.Logger.Information("Ai", $"{mission.AlarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
         // A guard's round: it raised the trigger, the weapon's cadence let one out, and GuardRounds makes it a cast.
-        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, harm, blasts, sounds, impacts, host, host.Logger);
+        mission.GuardRounds = new GuardRounds(soldiers, worldTrace, mission, blasts, sounds, impacts, host, host.Logger);
         soldiers.SetRoundHandler(mission.GuardRounds.Resolve);
 
         // The soldiers' guns march their rounds through the same world the soldiers see.

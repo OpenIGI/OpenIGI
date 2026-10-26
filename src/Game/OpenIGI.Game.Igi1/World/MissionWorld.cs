@@ -86,8 +86,8 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the level's player task, which the rounds and blasts that reach the player are sent to.</summary>
     public HumanPlayerTask? PlayerTask { get; set; }
 
-    /// <summary>Gets or sets the player's own hit handlers, which its task is given when the player is stood in the level.</summary>
-    public Igi1PlayerEvents? PlayerEvents { get; set; }
+    /// <summary>Gets or sets the mission's player: its rig, its life, and what hurts it -- its task's events.</summary>
+    public Igi1HumanPlayer? Human { get; set; }
 
     /// <summary>Clears the grenades, missiles and launcher rounds in flight, as <c>Game_CutsceneDelete</c> does.</summary>
     public void ClearTransientProjectiles()
@@ -170,7 +170,11 @@ public sealed class MissionWorld : MissionState
     }
 
     /// <inheritdoc/>
-    public override void ForgetPlayer() => Player = null;
+    public override void ForgetPlayer()
+    {
+        Player = null;
+        Human = null;
+    }
 
     /// <summary>Takes the level's soldiers as the frame draws them, and the simulation they carry.</summary>
     /// <param name="bodies">The soldiers, or <see langword="null"/> to drop them.</param>

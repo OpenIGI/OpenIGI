@@ -22,7 +22,6 @@ public sealed class GuardRounds
     private readonly SoldierSimulation _soldiers;
     private readonly WorldTraceCast _trace;
     private readonly MissionWorld _mission;
-    private readonly Igi1PlayerHarm _harm;
     private readonly Igi1Blasts _blasts;
     private readonly Igi1HumanSounds _sounds;
     private readonly Igi1ImpactEffects _impacts;
@@ -33,8 +32,7 @@ public sealed class GuardRounds
     /// <param name="soldiers">The soldiers, who fire the rounds and may take the ones that pass the player.</param>
     /// <param name="trace">Where the world stops a round.</param>
     /// <param name="mission">The mission's world: the player, its health and the shot stream.</param>
-    /// <param name="harm">What a hit does to the player.</param>
-    /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
+        /// <param name="blasts">What a round's contact does to a speaker or a destructible.</param>
     /// <param name="sounds">The sound of the hits.</param>
     /// <param name="impacts">The material's own effects where a marched round lands.</param>
     /// <param name="host">The burst of the hits.</param>
@@ -43,7 +41,6 @@ public sealed class GuardRounds
         SoldierSimulation soldiers,
         WorldTraceCast trace,
         MissionWorld mission,
-        Igi1PlayerHarm harm,
         Igi1Blasts blasts,
         Igi1HumanSounds sounds,
         Igi1ImpactEffects impacts,
@@ -52,7 +49,6 @@ public sealed class GuardRounds
     {
         _impacts = impacts ?? throw new ArgumentNullException(nameof(impacts));
         _mission = mission ?? throw new ArgumentNullException(nameof(mission));
-        _harm = harm ?? throw new ArgumentNullException(nameof(harm));
         _blasts = blasts ?? throw new ArgumentNullException(nameof(blasts));
         _sounds = sounds ?? throw new ArgumentNullException(nameof(sounds));
         _soldiers = soldiers ?? throw new ArgumentNullException(nameof(soldiers));
@@ -470,7 +466,7 @@ public sealed class GuardRounds
         else
         {
             // A level that declares no HumanPlayer still has the player the opening camera stood.
-            _mission.PlayerEvents?.TakeRound(round);
+            _mission.Human?.TakeRound(round);
         }
 
         _logger.Information(

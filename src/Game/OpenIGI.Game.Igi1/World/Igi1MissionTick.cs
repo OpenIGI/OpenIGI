@@ -16,11 +16,10 @@ namespace OpenIGI.Game.Igi1.World;
 /// the soldiers, in the order the port runs them each tick.
 /// </summary>
 /// <param name="mission">The mission's world.</param>
-/// <param name="harm">What a vehicle that runs the player down does to them.</param>
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
+public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
 {
     private bool _reportedShot;
     private int _reportedHumanHits;
@@ -616,7 +615,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
                 ? metres * WorldScene.UnitsPerMetre
                 : origin;
-            harm.BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+            mission.Human?.Die(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
         }
     }
 

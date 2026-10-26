@@ -20,12 +20,11 @@ namespace OpenIGI.Game.Igi1.World;
 /// message to everything in its reach (<c>0x47F200</c>).
 /// </summary>
 /// <param name="mission">The mission's world.</param>
-/// <param name="harm">What a blast does to the player when it kills.</param>
 /// <param name="audio">The sirens and cameras a blast silences.</param>
 /// <param name="impacts">The scorch a rocket or a launcher round burns.</param>
 /// <param name="host">What shows and plays them.</param>
 public sealed class Igi1Blasts(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
+    MissionWorld mission, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
 {
     // The FireBalls and fragments a grenade (0x476AC0) and an M203 round (0x476340) hand Explosion0.
     private const int GrenadeFireballs = 1;
@@ -37,13 +36,6 @@ public sealed class Igi1Blasts(
 
     // The flashbang's decal half-width (0x47E9A0's 2048).
     private const float FlashScorchHalfWidthInUnits = 2048f;
-
-    // 0x412990's shove, units a tick into the body's slide -- 758.51849.
-    private const float BlastShoveUnitsPerTick = 758.51849f;
-
-    // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
-    private const int ExplosionShakeTicks = 90;
-
 
     // Where each task stands in the order the level made them, for the explosion list.
     private readonly Dictionary<GameTask, long> _joinOrder = [];
@@ -325,95 +317,9 @@ public sealed class Igi1Blasts(
         }
         else
         {
-            BlastPlayer(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
+            mission.Human?.Blast(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
         }
     }
-
-    /// <summary>A blast's share of the player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death.</summary>
-    /// <param name="position">The blast's centre, in units.</param>
-    /// <param name="radiusUnits">The full-damage radius, in units.</param>
-    /// <param name="falloffUnits">The falloff beyond it, in units.</param>
-    /// <param name="damageFactor">The blast's damage.</param>
-    /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
-    public void BlastPlayer(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
-    {
-        if (mission.Player is null || mission.PlayerLife.Health.IsDead)
-        {
-            return;
-        }
-
-        ReachPlayerWithBlast(position, radiusUnits, falloffUnits);
-        float dose = ExplosionDamage.Dose(
-            (float)(mission.Player.Body.Position - position).Length,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-            radiusUnits,
-            falloffUnits,
-            damageFactor);
-        if (dose > 0f)
-        {
-            mission.PlayerLife.Health.Apply(ExplosionDamage.Zone, dose);
-            FlashPlayerForBlast();
-
-            // A blast that zeroes the health kills exactly the way a bullet does -- without this the player stood at
-            // zero for ever.
-            if (mission.PlayerLife.Health.IsDead)
-            {
-                harm.BeginPlayerDeath(position, ExplosionDamage.Zone, -1, killedBy);
-            }
-        }
-    }
-
-    /// <summary>What any blast does to the player before its damage is counted — the head of <c>0x412990</c>.</summary>
-    /// <param name="blastPosition">The blast's centre, in units.</param>
-    /// <param name="radiusUnits">The blast radius, in units.</param>
-    /// <param name="falloffUnits">The blast's falloff, in units.</param>
-    /// <remarks>
-    /// <para>
-    /// Explosion0 (<c>0x47F200</c>) hands its message to every human with no range test of its own, and the
-    /// player's handler acts on distance from the eye before, and whatever, the dose: inside one and a half
-    /// times radius plus falloff the body is shoved away from the blast by 758.5 units a tick (into the same
-    /// slide the bullet shove uses), and the view shakes by <c>k</c> of a hit's shake — all of it inside three
-    /// radii, fading to nothing at nine — for the explosion's 90 ticks.
-    /// </para>
-    /// <para>
-    /// The same handler raises <c>Human+3528</c> within 25 m, which plays the <c>earcandy</c> loop; no shipped
-    /// sound set defines it, so the original is silent there too.
-    /// </para>
-    /// </remarks>
-    private void ReachPlayerWithBlast(Vector3d blastPosition, float radiusUnits, float falloffUnits)
-    {
-        if (mission.Player is null || mission.PlayerLife.Health.IsDead || radiusUnits <= 0f)
-        {
-            return;
-        }
-
-        Vector3d away = mission.Player.EyeUnits - blastPosition;
-        double distance = away.Length;
-        if (distance < (radiusUnits + falloffUnits) * 1.5 && distance > 0.0)
-        {
-            mission.Player.Body.AddHitShove(
-                (float)(away.X / distance * BlastShoveUnitsPerTick),
-                (float)(away.Y / distance * BlastShoveUnitsPerTick));
-        }
-
-        double beyond = distance - (radiusUnits * 3.0);
-        double share = beyond < 0.0 ? 1.0 : 1.0 - (beyond / (radiusUnits * 6.0));
-        if (share > 0.0)
-        {
-            mission.Player.InstallViewShake(
-                (float)(HumanViewShake.HitPositionUnits * share),
-                (float)(HumanViewShake.HitAngleRadians * share),
-                ExplosionShakeTicks);
-        }
-    }
-
-    /// <summary>The flash a damaging blast raises — <c>0x412990</c>'s four independent corner draws.</summary>
-    private void FlashPlayerForBlast() =>
-        mission.PlayerLife.DamageFlash.HitEveryCorner(
-            mission.SoundRandom.NextSingle(),
-            mission.SoundRandom.NextSingle(),
-            mission.SoundRandom.NextSingle(),
-            mission.SoundRandom.NextSingle());
 
     /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
     public void ResolveM203Detonations()

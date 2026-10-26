@@ -22,13 +22,12 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
         Audio = new Igi1MissionAudio(World, host);
         Impacts = new Igi1ImpactEffects(World, host);
         Impacts.Explosions.Sound = (sound, at, priority) => host.PlayDefinition(sound, at, priority);
-        Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
-        Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
+        PlayerSurroundings = new Igi1MissionPlayerSurroundings(World, Sounds, Audio, host);
+        Blasts = new Igi1Blasts(World, Audio, Impacts, host);
         World.TouchGlass = Blasts.TouchGlass;
         World.RoundContact = Blasts.ApplyRoundContact;
-        World.PlayerEvents = new Igi1PlayerEvents(World, Harm, Blasts, Sounds);
-        Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, Impacts, host);
-        Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
+        Setup = new Igi1MissionSetup(World, Blasts, Sounds, Audio, Impacts, host);
+        Tick = new Igi1MissionTick(World, Blasts, Audio, host);
         ComputerWorld = new OpenIGI.Game.Igi1.Computer.Igi1ComputerWorld(World, Audio);
         World.Computer = new OpenIGI.Game.Igi1.Computer.Igi1Computer(ComputerWorld);
     }
@@ -42,8 +41,8 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
     /// <inheritdoc/>
     public ShotTally? PlayerShots => World.Player?.Shots;
 
-    /// <summary>Gets what hurts the player and how it dies.</summary>
-    public Igi1PlayerHarm Harm { get; }
+    /// <summary>Gets what the mission's player is hurt and dies in.</summary>
+    public Igi1MissionPlayerSurroundings PlayerSurroundings { get; }
 
     /// <summary>Gets the humans' cries and the sounds of rounds landing.</summary>
     public Igi1HumanSounds Sounds { get; }
@@ -94,5 +93,5 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>
-    public Igi1PlayerSetup NewPlayerSetup() => new(World, Harm, Audio, Sounds, _host);
+    public Igi1PlayerSetup NewPlayerSetup() => new(World, PlayerSurroundings, Audio, Sounds, _host);
 }

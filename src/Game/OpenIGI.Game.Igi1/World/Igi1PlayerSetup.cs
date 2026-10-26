@@ -18,12 +18,12 @@ namespace OpenIGI.Game.Igi1.World;
 /// material tables, the guns lying in the level, and <c>humanplayer.qvm</c>'s tuning.
 /// </summary>
 /// <param name="mission">The mission's world, which keeps the tables and the player's health.</param>
-/// <param name="harm">What a fall and a powered fence do to the player.</param>
+/// <param name="surroundings">What the player is hurt and dies in.</param>
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="sounds">The clatter of a dropped gun landing.</param>
 /// <param name="host">What shows and plays it.</param>
 public sealed class Igi1PlayerSetup(
-    MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
+    MissionWorld mission, IIgi1PlayerSurroundings surroundings, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     public WeaponTypeRegistry Weapons { get; private set; } = null!;
@@ -116,8 +116,8 @@ public sealed class Igi1PlayerSetup(
             mission.PlayerTask = PlayerSpawn.FindGameplayTask(levelRoot);
             if (mission.PlayerTask is { } task)
             {
-                task.Events = mission.PlayerEvents;
-                task.Body = new Igi1PlayerBody(mission);
+                task.Events = mission.Human;
+                task.Body = new Igi1PlayerBody(() => mission.Player, task);
             }
         }
 
@@ -165,6 +165,8 @@ public sealed class Igi1PlayerSetup(
         PlayerCamera candidate = Igi1PlayerRig.Build(
             Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), host.ReadSharedAnimations(), host.Logger);
         Candidate = candidate;
+        Igi1HumanPlayer human = new(candidate, mission.PlayerLife, surroundings);
+        mission.Human = human;
 
         // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
         // cars do; it leaves the hand facing the way it was thrown (0x414A60).
@@ -187,7 +189,7 @@ public sealed class Igi1PlayerSetup(
         {
             candidate.UseInteractions(interactions);
             candidate.TaskActivated += id => mission.Soldiers?.ActivateTask(id);
-            candidate.ElectrifiedFenceTouched += fence => harm.ResolvePlayerElectricFence(candidate, fence);
+            candidate.ElectrifiedFenceTouched += human.Shock;
             candidate.UnarmedStationaryGun += gun => host.Logger.Warning(
                 "Player",
                 $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
@@ -323,7 +325,7 @@ public sealed class Igi1PlayerSetup(
         // accumulator the HUD, guard hits and death state already share. The sink crosses the
         // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
         candidate.UseHealth(mission.PlayerLife.Health);
-        candidate.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(candidate, impact));
+        candidate.Body.SetFallImpactSink(impact => mission.Human?.Land(impact));
     }
 
     /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
