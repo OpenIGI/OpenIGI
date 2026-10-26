@@ -884,13 +884,14 @@ public sealed partial class GameHost : IDisposable
 
         _sky?.Dispose();
         _rain?.Dispose();
-        DisposeRetailWeather();
         _storm?.Dispose();
         _terrain?.Dispose();
         _forest?.Dispose();
         _forest = null;
         _water?.Dispose();
         _water = null;
+        _retailWeather?.Dispose();
+        _retailWeather = null;
         _world?.Dispose();
         _soldiers?.Dispose();
         _menuBackdrop.Dispose();

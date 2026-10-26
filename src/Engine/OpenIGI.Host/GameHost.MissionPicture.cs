@@ -328,6 +328,10 @@ public sealed partial class GameHost
 
         _water?.Dispose();
         _water = _presentation.Presenters.Create<ScenePresentationRequest, IWaterPresenter>(adornments);
+
+        // The level's weather as its original draws it, for the original's look.
+        _retailWeather?.Dispose();
+        _retailWeather = _presentation.Presenters.Create<ScenePresentationRequest, IWeatherPresenter>(adornments);
         MakeTaskPresenters(levelRoot);
 
         // The menus are done; without closing their screens the last one would keep drawing over the world.

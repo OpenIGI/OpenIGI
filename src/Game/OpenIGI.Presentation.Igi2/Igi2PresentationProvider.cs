@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Formats;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;
@@ -55,6 +56,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             .Add<GroundPresentationRequest, ITerrainPresenter>(CreateGround)
             .Add<ScenePresentationRequest, IForestPresenter>(CreateForest)
             .Add<ScenePresentationRequest, IWaterPresenter>(CreateWater)
+            .Add<ScenePresentationRequest, IWeatherPresenter>(CreateWeather)
 
             // The remastered computer is both games' own: the shared display, fed whichever mission's objectives there are.
             .Add<MapComputerPresentationRequest, ITacticalComputerPresenter>(static (in MapComputerPresentationRequest request) =>
@@ -289,6 +291,57 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// culled every frame.
     /// </para>
     /// </remarks>
+    /// <summary>A level's weather as I.G.I. 2 runs it, from its <see cref="Igi2RainEffectTask"/>.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>RainEffect_UpdateInternalDataHandler</c> makes a <c>Rain</c> of the task's kind, traces, colour, alpha and density;
+    /// <c>RainEffect_RunHandler</c> tells it each tick whether it falls. Rain is <c>drop.tga</c>, a loose file beside the common
+    /// textures, and snow <c>snow.tex</c> in their archive.
+    /// </para>
+    /// <para>
+    /// <c>Rain_Open</c> scatters the copies a drop is drawn at for each layer of its density: a hundred and twenty-eight offsets of up
+    /// to 2048 units each way, three draws of the weather's stream apiece (the first along, the second up, the third across), the
+    /// stream the weather then runs on.
+    /// </para>
+    /// </remarks>
+    private static IWeatherPresenter? CreateWeather(in ScenePresentationRequest request)
+    {
+        if (request.LevelRoot.Descendants().OfType<Igi2RainEffectTask>().FirstOrDefault() is not { } task)
+        {
+            return null;
+        }
+
+        const string Archive = "LOCAL:common/textures/textures.res";
+        ResourceRegistry resources = new(request.Resources.FileSystem);
+        if (request.Resources.FileSystem.Exists(Archive))
+        {
+            resources.Register(Archive, request.Resources.FileSystem.ReadAllBytes(Archive));
+        }
+
+        TextureHandle texture = new Igi2TextureLoader(request.Device, resources, request.Logger)
+            .Resolve(task.IsRain ? $"LOCAL:common/textures/{Igi2RainEffectTask.RainTexture}" : $"LOCAL:common/textures/{Igi2RainEffectTask.SnowTexture}");
+
+        IgiRandom random = IgiRandom.Seeded();
+        Vector3f[] offsets = new Vector3f[128];
+        for (int i = 0; i < offsets.Length; i++)
+        {
+            float y = Scatter(random), z = Scatter(random), x = Scatter(random);
+            offsets[i] = new Vector3f(x, y, z);
+        }
+
+        static float Scatter(IgiRandom random) => (float)((((ushort)random.NextRaw() * IgiRandom.Scale) - 0.5) * 4096.0);
+
+        // Rain_SetAlpha and Rain_SetRGB hold each to between nought and one; the four pack into the drops' colour.
+        static byte Channel(float value) => (byte)(int)(Math.Clamp(value, 0f, 1f) * 255f);
+        RetailWeatherSettings settings = new(
+            task.IsRain,
+            task.TracelineStart,
+            task.TracelineEnd,
+            new Bgra32(Channel(task.Colour.Z), Channel(task.Colour.Y), Channel(task.Colour.X), Channel(task.Alpha)),
+            () => task.IsActive);
+        return new RetailWeather(request.Device, PrecipitationStyle.Igi2, settings, texture, random, offsets[..task.Layers]);
+    }
+
     private IForestPresenter? CreateForest(in ScenePresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);

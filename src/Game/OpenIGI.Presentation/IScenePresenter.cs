@@ -109,3 +109,20 @@ public interface IWaterPresenter : IDisposable
     /// <param name="frame">The frame to draw for.</param>
     void Draw(in WaterFrame frame);
 }
+
+/// <summary>What one frame needs in order to draw a level's weather.</summary>
+/// <param name="Camera">Where the weather is seen from.</param>
+/// <param name="Projection">The view-to-clip transform.</param>
+/// <param name="ViewportHeight">The picture's height in pixels.</param>
+/// <param name="Ground">What the weather stops on: the terrain and what stands on it.</param>
+/// <param name="Tick">The game's tick, which the weather runs on.</param>
+public readonly record struct WeatherFrame(Camera3D Camera, Matrix4f Projection, int ViewportHeight, Game.World.WorldRayCast? Ground, long Tick);
+
+/// <summary>A level's weather as its title's original draws it, which the original's look draws in place of the remastered weather.</summary>
+/// <remarks>A title or level without weather returns no presenter.</remarks>
+public interface IWeatherPresenter : IDisposable
+{
+    /// <summary>Runs the weather up to the frame's tick and draws it.</summary>
+    /// <param name="frame">The frame.</param>
+    void Draw(in WeatherFrame frame);
+}

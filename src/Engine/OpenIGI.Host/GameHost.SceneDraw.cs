@@ -498,8 +498,7 @@ public sealed partial class GameHost
         else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
         {
             // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
-            TickRetailWeather();
-            retailWeather.Draw(eye, projection, _window.Height, _mission.EffectWalls);
+            retailWeather.Draw(new WeatherFrame(eye, projection, _window.Height, _mission.EffectWalls, _loop.Clock.TickCount));
         }
         else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
         {

@@ -58,7 +58,8 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MapComputerPresentationRequest, IMapComputerPresenter>(CreateMapComputer)
             .Add<MapComputerPresentationRequest, ITacticalComputerPresenter>(CreateTacticalComputer)
             .Add<ComputerHighlightRequest, IComputerHighlightCatalogue>(CreateComputerHighlights)
-            .Add<TerrainPresentationRequest, ITerrainPresenter>(CreateTerrain);
+            .Add<TerrainPresentationRequest, ITerrainPresenter>(CreateTerrain)
+            .Add<ScenePresentationRequest, IWeatherPresenter>(CreateWeather);
 
     /// <inheritdoc/>
     public PresenterRegistry Presenters { get; }
@@ -191,6 +192,17 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         static float Real(DeclaredTask task, string name) =>
             task.TryGetValue(name, out object? value) ? Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture) : 0f;
     }
+
+    /// <summary>A level's weather as Project I.G.I. runs it, from its <c>RainEffect</c>.</summary>
+    /// <remarks>Its flakes are <c>snow.tex</c> (<c>RainEffect_Init</c>, <c>0x436780</c>).</remarks>
+    private static IWeatherPresenter? CreateWeather(in ScenePresentationRequest request) =>
+        RainRenderer.FindRainEffect(request.LevelRoot) is { } task
+            ? new RetailWeather(
+                request.Device,
+                PrecipitationStyle.Igi1,
+                RetailWeather.ReadIgi1(task),
+                RetailWeather.LoadTexture(request.Device, request.Resources, "LOCAL:common/textures/snow.tex", LoadedPack.TextureResourceName("snow")))
+            : null;
 
     /// <inheritdoc/>
     private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>

@@ -595,7 +595,6 @@ public sealed partial class GameHost
         _sky = null;
         _rain?.Dispose();
         _rain = null;
-        DisposeRetailWeather();
         _storm?.Dispose();
         _storm = null;
         _snow?.Dispose();
