@@ -100,7 +100,12 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         }
 
         Igi2TextureLoader textures = new(request.Device, request.Resources, request.Logger);
-        return new Igi2SkyPresenter(request.Device, sky, textures.Resolve, request.Logger);
+        // The dome turns to its Dirlight, the one the level makes (SkyDome_ptDirlight).
+        Igi2DirlightTask? sun = request.LevelRoot.Descendants().OfType<Igi2DirlightTask>().FirstOrDefault();
+        return new Igi2SkyPresenter(request.Device, sky, textures.Resolve, request.Logger)
+        {
+            TowardsSun = sun is null ? null : () => sun.Direction,
+        };
     }
 
     /// <inheritdoc/>

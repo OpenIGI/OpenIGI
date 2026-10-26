@@ -186,4 +186,20 @@ public sealed class RetailIgi2SkyPresenterTests
             }
         }
     }
+
+    [Fact]
+    public void The_dome_turns_to_its_sun_as_the_originals_world_matrix_does()
+    {
+        // SkyDome_Draw: angle atan2(x, y) + pi/2, and the row-vector world matrix [c -s; s c] carries (x, y) to (x c + y s, -x s + y c).
+        OpenIGI.Core.Numerics.Vector3f sun = new(0.6f, 0.7f, 0.2f);
+        float angle = MathF.Atan2(sun.X, sun.Y) + (MathF.PI / 2f);
+        float c = MathF.Cos(angle), s = MathF.Sin(angle);
+        OpenIGI.Core.Graphics.Camera3D eye = new(OpenIGI.Core.Numerics.Vector3d.Zero, OpenIGI.Core.Numerics.Matrix3f.Identity);
+        OpenIGI.Core.Numerics.Matrix4f view = eye.CreateModelView(OpenIGI.Core.Numerics.Vector3d.Zero, OpenIGI.Presentation.Igi2.World.Igi2SkyPresenter.DomeOrientation(sun));
+
+        OpenIGI.Core.Numerics.Vector3f moved = view.TransformPoint(new OpenIGI.Core.Numerics.Vector3f(3f, 5f, 2f));
+        Assert.Equal((3f * c) + (5f * s), moved.X, 4);
+        Assert.Equal((-3f * s) + (5f * c), moved.Y, 4);
+        Assert.Equal(2f, moved.Z, 4);
+    }
 }
