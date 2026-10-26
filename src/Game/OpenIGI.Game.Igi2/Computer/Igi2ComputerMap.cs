@@ -90,10 +90,13 @@ public sealed class Igi2ComputerMap
     public float FieldOfView { get; private set; } = 1f;
 
     /// <summary>Gets the picture's noise, <c>vNoise</c>.</summary>
-    public float Noise { get; private set; } = 1f;
+    public float Noise => _noise.Level;
 
     /// <summary>Gets the ticks until the noise flares again, <c>nNoiseTimer</c>.</summary>
-    public int NoiseTimer { get; private set; } = 60;
+    public int NoiseTimer => _noise.Timer;
+
+    // The interference, as both games run it.
+    private readonly OpenIGI.Game.Computer.ComputerMapNoise<Fpu> _noise = new();
 
     /// <summary>Gets what the camera follows, or <see langword="null"/>, <c>ptFollowQTaskRef</c>.</summary>
     public IIgi2CameraTarget? Following { get; private set; }
@@ -136,8 +139,7 @@ public sealed class Igi2ComputerMap
         ArgumentNullException.ThrowIfNull(display);
         _isEntering = true;
         FieldOfView = (float)Math.Tan(ZoomLevels[Math.Clamp(ZoomLevel, 0, 3)]);
-        Noise = 1f;
-        NoiseTimer = 60;
+        _noise.Reset();
         _zoomInClick = 0;
         _zoomOutClick = 0;
         Following = null;
@@ -179,18 +181,24 @@ public sealed class Igi2ComputerMap
             Position = Back(ground);
         }
 
-        ClipToLimit(display.Computer.Limit);
-        if (NoiseTimer != 0)
+        if (display.Computer.Limit is { } limit)
         {
-            NoiseTimer--;
-        }
-        else if (random is not null)
-        {
-            Noise = (0.1f + ((Fpu)random.NextSingle() * 0.4000000059604645)).F;
-            NoiseTimer = 15 + (int)(random.NextRaw() % 75u);
+            Position = limit.Limit.Clamp<Fpu>(Position);
         }
 
-        Noise = ((Fpu)Noise - 0.03333333507180214).F;
+        if (random is not null)
+        {
+            _noise.Run(random);
+        }
+        else if (NoiseTimer != 0)
+        {
+            _noise.Timer--;
+            _noise.Level = ((Fpu)Noise - 0.03333333507180214).F;
+        }
+        else
+        {
+            _noise.Level = ((Fpu)Noise - 0.03333333507180214).F;
+        }
 
         // ComputerMap_DrawHandler: while dragged, the pointer is put back on the ground point it took hold of.
         if (display.IsPointerLocked && Project(LockPosition, display.Width, display.Height) is { } held)
@@ -230,41 +238,15 @@ public sealed class Igi2ComputerMap
         }
     }
 
-    // ComputerMap_ClipCameraPosAgainstLimit: inside the square of the limit's size about its centre.
-    private void ClipToLimit(Igi2DefineComputerLimitTask? limit)
-    {
-        if (limit is null)
-        {
-            return;
-        }
-
-        double size = ((Fpu)limit.QuadrantSize * 0.5 * 4096.0).Value;
-        double dx = Position.X - limit.Position.X, dy = Position.Y - limit.Position.Y;
-        dx = Math.Clamp(dx, -size, size);
-        dy = Math.Clamp(dy, -size, size);
-        Position = new Vector3d(dx + limit.Position.X, dy + limit.Position.Y, Position.Z);
-    }
-
     // ComputerMap_CheckCameraPosAgainstLimit.
-    private static bool InsideLimit(Igi2DefineComputerLimitTask? limit, Vector3d at)
-    {
-        if (limit is null)
-        {
-            return true;
-        }
-
-        double size = ((Fpu)limit.QuadrantSize * 0.5 * 4096.0).Value;
-        double dx = at.X - limit.Position.X, dy = at.Y - limit.Position.Y;
-        return !(dx < -size || dx > size || dy < -size || dy > size);
-    }
+    private static bool InsideLimit(Igi2DefineComputerLimitTask? limit, Vector3d at) => limit?.Limit.Contains<Fpu>(at) ?? true;
 
     // ComputerMap_PlayZoomSound: the noise flares and the zoom whirs, two draws from the run stream.
     private void PlayZoomSound(Igi2ComputerDisplay display, IgiRandom? random)
     {
         if (random is not null)
         {
-            Noise = (((Fpu)random.NextDouble() * 0.05000000074505806) + 0.949999988079071).F;
-            NoiseTimer = (int)(random.NextRaw() % 75u) + 15;
+            _noise.Flare(random);
         }
 
         display.PlaySound?.Invoke("mapcomp_03");

@@ -1,21 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Computer;
 
 namespace OpenIGI.Game.Igi2.Computer;
-
-/// <summary>How the computer measures its text: the fonts the presentation loaded.</summary>
-public interface IIgi2ComputerFonts
-{
-    /// <summary>The width of a string in a font, in the screen's pixels, <c>Font_GetStringWidth</c>.</summary>
-    /// <param name="font">The font's file name.</param>
-    /// <param name="text">The string.</param>
-    /// <returns>Its width.</returns>
-    int StringWidth(string font, string text);
-
-    /// <summary>The height of a line of a font.</summary>
-    /// <param name="font">The font's file name.</param>
-    /// <returns>Its height.</returns>
-    int LineHeight(string font);
-}
 
 /// <summary>The keys and buttons the open computer reads, as the player's tick passes them.</summary>
 /// <param name="LookX">The look channel across, which moves the pointer.</param>
@@ -112,7 +98,7 @@ public sealed partial class Igi2ComputerDisplay
     public float Height { get; set; } = 480f;
 
     /// <summary>Gets or sets the fonts the text is measured in, or <see langword="null"/> to measure eight pixels a letter.</summary>
-    public IIgi2ComputerFonts? Fonts { get; set; }
+    public IComputerFonts? Fonts { get; set; }
 
     /// <summary>Gets or sets the localised text of a key, or <see langword="null"/> to show keys as they are.</summary>
     public Func<string, string>? Strings { get; set; }
@@ -738,42 +724,23 @@ public sealed partial class Igi2ComputerDisplay
         return Print(x, y, text, font, colour, lineWidth, words);
     }
 
-    // ComputerObjectives_Print: word by word, each word with the space after it, a word that does not fit on what is left of
-    // the line (400 pixels on the objectives screen) starting the next; the Y under the last line.
+    // ComputerObjectives_Print: the text set over lines as both games set it (400 pixels on the objectives screen); the Y under
+    // the last line.
     private int Print(int x, int y, string text, string font, Igi2ComputerColour colour, int lineWidth = 400, List<Igi2ComputerObjectiveLine>? words = null)
     {
         words ??= _objectiveLines;
-        int lineHeight = LineHeight(font);
-        int printX = x, left = lineWidth;
-        int index = 0;
-        while (true)
+        _words.Clear();
+        int under = ComputerTextWrap.Wrap(Fonts ?? ComputerTextWrap.Estimated, x, y, text, font, lineWidth, _words);
+        foreach (ComputerWord word in _words)
         {
-            int space = text.IndexOf(' ', index);
-            bool complete = space < 0;
-            string word = complete ? text[index..] : text[index..(space + 1)];
-            index = complete ? text.Length : space + 1;
-            int width = StringWidth(font, word);
-            if (left <= width)
-            {
-                printX = x;
-                y += lineHeight;
-                left = lineWidth - width;
-            }
-            else
-            {
-                left -= width;
-            }
-
-            words.Add(new Igi2ComputerObjectiveLine(word, font, printX, y, colour));
-            printX += width;
-            if (complete)
-            {
-                break;
-            }
+            words.Add(new Igi2ComputerObjectiveLine(word.Text, font, word.X, word.Y, colour));
         }
 
-        return y + lineHeight;
+        return under;
     }
+
+    // The words of the last print, before they take their font and colour.
+    private readonly List<ComputerWord> _words = [];
 
     private int StringWidth(string font, string text) => Fonts?.StringWidth(font, text) ?? (text.Length * 8);
 
