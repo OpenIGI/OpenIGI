@@ -709,7 +709,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
             {
                 if (bone0.CrossedEvent(trigger.EventId))
                 {
-                    ScriptSound?.Invoke(trigger.Resource, view.Position, false);
+                    ScriptSound?.Invoke(trigger.Resource, view.Position, trigger.Attached);
                 }
             }
         }
