@@ -34,7 +34,7 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierSightQueries.RestEyeOrientation"/>
     internal static readonly Matrix3f RestEyeOrientation = SoldierSightQueries.RestEyeOrientation;
 
-    internal Action<string, Vector3d, bool>? ScriptSound;
+    internal Action<string, Vector3d, Func<Vector3d>?>? ScriptSound;
 
     internal Action<int, bool, WeaponType?, Vector3d>? WeaponSound;
 
@@ -353,8 +353,11 @@ public sealed partial class SoldierSimulation
     /// <summary>Supplies the authored animation triggers from <c>animtrigger/animtrigger.qvm</c>.</summary>
     public void SetAnimationTriggers(AnimTriggerRegistry? triggers) => AnimationTriggers = triggers;
 
-    /// <summary>Plays a definition requested by <c>AIAction_PlaySound</c>.</summary>
-    public void SetScriptSound(Action<string, Vector3d, bool>? report) => ScriptSound = report;
+    /// <summary>
+    /// Plays a definition requested by <c>AIAction_PlaySound</c> or an animation trigger, at a point, and following the soldier
+    /// while it plays when the sound is attached to them.
+    /// </summary>
+    public void SetScriptSound(Action<string, Vector3d, Func<Vector3d>?>? report) => ScriptSound = report;
 
     /// <summary>Reports every AI weapon tick, including quiet ticks needed to end automatic loops.</summary>
     public void SetWeaponSound(Action<int, bool, WeaponType?, Vector3d>? report) => WeaponSound = report;

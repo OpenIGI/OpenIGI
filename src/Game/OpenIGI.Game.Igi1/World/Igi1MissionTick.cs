@@ -824,6 +824,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     {
         elevators.TickElevator(elevator);
         audio.UpdateElevatorSoundPositions();
+        audio.UpdateScriptSoundPositions();
 
         // A staged soldier standing in a car rides it through the cutscene runtime's attachments, so the runtime is
         // told where the car now is.

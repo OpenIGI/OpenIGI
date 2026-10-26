@@ -97,7 +97,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _context = new SoldierContext(_logger);
 
         // The parts play a script's sound through whatever sink is set when it plays, not the one set when they were made.
-        Action<string, Vector3d, bool> scriptSound = (name, at, attached) => ScriptSound?.Invoke(name, at, attached);
+        Action<string, Vector3d, Func<Vector3d>?> scriptSound = (name, at, follow) => ScriptSound?.Invoke(name, at, follow);
         _noise = new SoldierNoiseBroadcaster(_context);
         _sight = new SoldierSightQueries(_context, scriptSound);
         _binoculars = new SoldierBinocularScan(_context);
@@ -105,7 +105,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _staging = new SoldierCutsceneStaging(_context);
         _footsteps = new SoldierFootsteps(_context);
         _damage = new SoldierDamage(_context, _footsteps, scriptSound);
-        _footsteps.LandSound = (sound, at) => scriptSound(sound, at, false);
+        _footsteps.LandSound = (sound, at) => scriptSound(sound, at, null);
         _rounds = new SoldierGunShotRounds(_context, _sight, _noise);
         _fire = new SoldierWeaponFire(_context, _rounds, _noise);
         _generators = new GuardGeneratorSpawner(_context, _sight, Enlist);
@@ -709,13 +709,13 @@ public sealed partial class SoldierSimulation : IHumanEvents
             {
                 if (bone0.CrossedEvent(trigger.EventId))
                 {
-                    ScriptSound?.Invoke(trigger.Resource, view.Position, trigger.Attached);
+                    ScriptSound?.Invoke(trigger.Resource, view.Position, trigger.Attached ? () => view.Position : null);
                 }
             }
         }
         else if (bone0.CrossedEvent(1052))
         {
-            ScriptSound?.Invoke("gunpunch_01", view.Position, false);
+            ScriptSound?.Invoke("gunpunch_01", view.Position, null);
         }
     }
 
@@ -963,7 +963,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
             && (LastDetectionShoutTick == -1 || TickCount - LastDetectionShoutTick > 90))
         {
             int variant = checked((int)AiRandom.NextBounded(6) + 1);
-            ScriptSound?.Invoke($"detected_{variant:00}", brain.Position, true);
+            ScriptSound?.Invoke($"detected_{variant:00}", brain.Position, () => brain.Position);
             LastDetectionShoutTick = TickCount;
         }
 

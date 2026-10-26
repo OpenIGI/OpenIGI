@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="context">The soldiers, their brains, health and combat rows.</param>
 /// <param name="footsteps">The soldiers' steps, whose cursor a dying soldier gives up.</param>
 /// <param name="scriptSound">Plays a definition at a position, attached or not.</param>
-internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps footsteps, Action<string, Vector3d, bool> scriptSound)
+internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps footsteps, Action<string, Vector3d, Func<Vector3d>?> scriptSound)
 {
     // The blade's own sound, which 0x45D3C0 adds to the grunt when a knife lands.
     private const string KnifeStabSound = "stab_01";
@@ -30,7 +30,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
     private readonly SoldierFootsteps _footsteps = footsteps;
 
-    private readonly Action<string, Vector3d, bool> _scriptSound = scriptSound;
+    private readonly Action<string, Vector3d, Func<Vector3d>?> _scriptSound = scriptSound;
 
     private readonly Dictionary<SoldierView, HumanRecoil> _recoil = [];
 
@@ -344,7 +344,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                 ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
                 if (round.Category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
                 {
-                    _scriptSound(KnifeStabSound, struckView.Position, true);
+                    _scriptSound(KnifeStabSound, struckView.Position, () => struckView.Position);
                 }
             }
         }

@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// </remarks>
 /// <param name="context">The soldiers and their brains.</param>
 /// <param name="scriptSound">Plays a definition a brain's script asks for, at a position.</param>
-internal sealed class SoldierSightQueries(SoldierContext context, Action<string, Vector3d, bool> scriptSound)
+internal sealed class SoldierSightQueries(SoldierContext context, Action<string, Vector3d, Func<Vector3d>?> scriptSound)
 {
     /// <summary>The soldier model's <c>MESH+0x78</c> bound, <c>Human+160</c>, when the model's own is not to hand.</summary>
     public const float DefaultHumanBoundMetres = 0.94f;
@@ -54,7 +54,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
 
     private readonly SoldierContext _context = context;
 
-    private readonly Action<string, Vector3d, bool> _scriptSound = scriptSound;
+    private readonly Action<string, Vector3d, Func<Vector3d>?> _scriptSound = scriptSound;
 
     // One combat-target record per opposing soldier, created lazily as each is first engaged. The
     // friendly-vs-guard gate fight needs a real enemy record to aim at and fight, not just the player:
@@ -234,7 +234,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <param name="view">Its body.</param>
     public void BindViewTracking(Igi1HumanAi brain, SoldierView view)
     {
-        brain.SetScriptSound((name, attached) => _scriptSound(name, view.Position, attached));
+        brain.SetScriptSound((name, attached) => _scriptSound(name, view.Position, attached ? () => view.Position : null));
 
         // A new human's palette is built once, at its creation, from its authored heading (0x463220 sets the facing
         // and rebuilds it through 0x4D38C0): the eye of a soldier nobody has drawn or looked past is the rest eye

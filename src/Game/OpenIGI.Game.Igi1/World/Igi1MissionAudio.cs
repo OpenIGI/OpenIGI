@@ -940,11 +940,4 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             host.SoundOutput?.Stop(motor);
         }
     }
-
-    /// <summary>Plays a sound a soldier's script asks for (<c>AIAction_PlaySound</c>).</summary>
-    /// <param name="name">The definition.</param>
-    /// <param name="position">Where, in world units.</param>
-    /// <param name="attached">Whether it follows the soldier.</param>
-    public void PlayScriptSound(string name, Vector3d position, bool attached) =>
-        host.SoundOutput?.PlayDefinition(name, position, priority: 200);
 }
