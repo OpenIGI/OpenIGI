@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Formats;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.World;
 
@@ -48,6 +49,12 @@ public sealed class Igi1GuestContent
     /// <summary>Gets the sound definitions the game's common sounds are named by.</summary>
     public SoundDefinitionRegistry SoundDefinitions { get; }
 
+    /// <summary>
+    /// Gets the scripts written for the soldiers, which their minds read through the session's <c>MISSION:</c>
+    /// (<see cref="AiScriptDevice"/>).
+    /// </summary>
+    public AiScriptDevice Scripts { get; } = new();
+
     /// <summary>Gets the directories the definitions play from.</summary>
     public IReadOnlyList<string> SoundBanks { get; } = [SoundDirectory];
 
@@ -92,7 +99,9 @@ public sealed class Igi1GuestContent
         SoundDefinitionRegistry sounds = new(log);
         sounds.Register(guest.Loop.Natives);
         sounds.Load(guest.Resources, guest.Loop.Natives, SoundDefinitionRegistry.CommonScriptResource);
-        return new Igi1GuestContent(guest, mission, arsenal, sounds);
+        Igi1GuestContent content = new(guest, mission, arsenal, sounds);
+        guest.FileSystem.RegisterDevice(content.Scripts);
+        return content;
     }
 
     // The level packs that name a body still wanted, in the levels' order, until none is.
