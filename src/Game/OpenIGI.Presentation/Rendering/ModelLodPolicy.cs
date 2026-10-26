@@ -16,6 +16,7 @@ namespace OpenIGI.Presentation.Rendering;
 public sealed class ModelLodPolicy
 {
     private readonly ModelLodSettings _settings;
+    private readonly ModelLodSettings _bones;
     private readonly IReadOnlyDictionary<string, float[]> _distances;
     private readonly Dictionary<WorldPlacement, Chain> _chains = new(ReferenceEqualityComparer.Instance);
 
@@ -23,16 +24,51 @@ public sealed class ModelLodPolicy
     /// <param name="settings">The level's settings for rigid models.</param>
     /// <param name="distances">The models' own distances by their first level's name, world units.</param>
     /// <param name="scale">The detail scale, <c>gLodScale</c>.</param>
-    public ModelLodPolicy(in ModelLodSettings settings, IReadOnlyDictionary<string, float[]> distances, float scale = 1f)
+    /// <param name="bones">The level's settings for skinned models; none leaves them whole.</param>
+    public ModelLodPolicy(in ModelLodSettings settings, IReadOnlyDictionary<string, float[]> distances, float scale = 1f, ModelLodSettings? bones = null)
     {
         ArgumentNullException.ThrowIfNull(distances);
         _settings = settings;
+        _bones = bones ?? default;
+        HasBoneSettings = bones is not null;
         _distances = distances;
         Scale = scale;
     }
 
     /// <summary>Gets the detail scale.</summary>
     public float Scale { get; }
+
+    /// <summary>Gets a value indicating whether skinned models give up detail too.</summary>
+    public bool HasBoneSettings { get; }
+
+    /// <summary>Picks the level a skinned model is drawn at from a view, <c>0x4CFF70</c>.</summary>
+    /// <param name="name">The first level's instance name, which the model's own distances are kept by.</param>
+    /// <param name="first">The first level's model.</param>
+    /// <param name="triangles">Each level's triangle count, the first level's first.</param>
+    /// <param name="positionMetres">Where the body's origin is drawn this frame, metres.</param>
+    /// <param name="camera">The view.</param>
+    /// <param name="fieldOfView">The view's horizontal half-angle tangent.</param>
+    /// <returns>The level, or <c>-1</c> when it is beyond its cutoff.</returns>
+    /// <remarks>
+    /// Against a rigid model's pick, the radius is the body's own (<c>MESH+0x78</c>, which the body keeps from its model) rather
+    /// than the render sphere's, the detail scale is not applied, and the level's settings are the ones for bone objects.
+    /// </remarks>
+    public int SelectBone(string name, MefModel first, ReadOnlySpan<int> triangles, Vector3d positionMetres, in Camera3D camera, float fieldOfView)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        if (!HasBoneSettings)
+        {
+            return 0;
+        }
+
+        Vector3f centre = first.RenderSphereCentre;
+        Vector3d eye = WorldScene.ToUnits(camera.Position);
+        Vector3d at = WorldScene.ToUnits(positionMetres);
+        Matrix3f o = camera.Orientation;
+        double depth = (o.M31 * (at.X - eye.X + centre.X)) + (o.M32 * (at.Y - eye.Y + centre.Y)) + (o.M33 * (at.Z - eye.Z + centre.Z));
+        float[] distances = _distances.TryGetValue(name, out float[]? own) ? own : [];
+        return ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0, fieldOfView, _bones, triangles, distances);
+    }
 
     /// <summary>Picks the level a placement is drawn at from a view.</summary>
     /// <param name="placement">The placement, as authored.</param>

@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -246,7 +247,15 @@ public sealed partial class GameHost
         {
             _soldiers?.Dispose();
             _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierBodies>(
-                new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps, () => _world?.Shading.Sun));
+                new SoldierPresentationRequest(
+                    _device,
+                    _resources,
+                    _logger,
+                    _mission.MagicObjects,
+                    _detailMaps,
+                    () => _world?.Shading.Sun,
+                    // The original's levels of detail, on its own look only, as the world's models give theirs up.
+                    () => GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null));
             _mission.AdoptSoldiers(_soldiers);
             _soldiers?.Load(
                 loaded,

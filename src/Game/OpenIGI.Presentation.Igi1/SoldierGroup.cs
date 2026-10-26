@@ -27,6 +27,12 @@ internal sealed class SoldierGroup(SoldierModelGroup roster, MeshGeometry geomet
 
     public LoadedPack? Pack { get; } = pack;
 
+    /// <summary>Gets or sets the model's lower levels of detail, the second level first.</summary>
+    public IReadOnlyList<SoldierLevel> Lower { get; set; } = [];
+
+    /// <summary>Gets or sets each level's triangle count, the first level's first.</summary>
+    public int[] Triangles { get; set; } = [];
+
     private readonly List<SoldierMember> _soldiers = [];
 
     /// <summary>The soldiers the group draws, in the order the roster holds their agents; joined through <see cref="Add"/>.</summary>

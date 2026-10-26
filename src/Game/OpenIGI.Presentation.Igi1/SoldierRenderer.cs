@@ -93,6 +93,16 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         set => _drawer.Sun = value;
     }
 
+    /// <summary>
+    /// Gets or sets where the level's detail settings are read from: the original draws a distant soldier from its model's lower
+    /// levels (<c>0x49F700</c>), and past its cutoff not at all. None draws every body whole.
+    /// </summary>
+    public Func<ModelLodPolicy?>? Lod
+    {
+        get => _drawer.Lod;
+        set => _drawer.Lod = value;
+    }
+
     /// <inheritdoc/>
     /// <remarks>Project I.G.I.'s sector cull gates each soldier as <c>QCube_CallHandlers</c> gates every queued object.</remarks>
     public IPlacementVisibility? Visibility
@@ -202,6 +212,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                     {
                         _device.DestroyMesh(corpse.Mesh);
                     }
+
+                    SoldierLevelOfDetail.Drop(_device, corpse);
 
                     Count--;
                     return;
@@ -774,6 +786,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                 {
                     _device.DestroyMesh(member.Mesh);
                 }
+
+                SoldierLevelOfDetail.Drop(_device, member);
             }
         }
 
@@ -882,13 +896,11 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
 
                 // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
                 // upload to settle both interpolation streams, then no more skinning or driver traffic.
-                if (!member.PoseUploads.ShouldUpload(drawn))
+                bool posed = member.PoseUploads.ShouldUpload(drawn)
+                    && SoldierSkinning.Upload(_device, member, group.Geometry, group.Body.Model, drawn);
+                if (!posed)
                 {
-                    continue;
-                }
-
-                if (!SoldierSkinning.Upload(_device, member, group.Geometry, group.Body.Model, drawn))
-                {
+                    FollowLevel(group, member, posed: false);
                     continue;
                 }
 
@@ -908,6 +920,8 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
                     member.PreviousSkinnedPose = member.SkinnedPose;
                     member.SkinnedPose = drawn;
                 }
+
+                FollowLevel(group, member, posed: true);
             }
         }
 
@@ -916,6 +930,16 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         // 30 Hz simulation and however fast the display runs.
         _frames.CaptureTickStates();
     }
+
+    // Poses a soldier's lower level for the eye it was last drawn from, or frees it once the body is drawn whole again.
+    private void FollowLevel(SoldierGroup group, SoldierMember member, bool posed)
+    {
+        int level = _drawer.Lod?.Invoke() is { HasBoneSettings: true } lod && _drawer.LastEye is { } eye
+            ? SoldierLevelOfDetail.Select(lod, group, member, eye, _drawer.LastFieldOfView)
+            : 0;
+        SoldierLevelOfDetail.Follow(_device, group, member, level, posed);
+    }
+
     // A model texture just uploaded gets the detail map derived from it, keyed by its name and its override's stamp.
     private void AttachDetail(string name, TextureHandle handle, TextureImage image) =>
         DetailMaps?.Attach(

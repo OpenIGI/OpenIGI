@@ -88,7 +88,11 @@ internal sealed class SoldierMeshBuilder(
         }
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        return new Group(new SoldierModelGroup(new SoldierBodyModel(model, lowest)), geometry, mesh, instance, pack);
+        return new Group(new SoldierModelGroup(new SoldierBodyModel(model, lowest)), geometry, mesh, instance, pack)
+        {
+            Lower = SoldierLevelOfDetail.FindLower(mission, modelName, model, out int[] triangles),
+            Triangles = triangles,
+        };
     }
 
     /// <summary>Makes a soldier's own drawing: its first skin, uploaded to both of its GPU streams.</summary>

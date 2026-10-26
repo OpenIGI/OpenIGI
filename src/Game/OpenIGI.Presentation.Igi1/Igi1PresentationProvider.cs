@@ -43,7 +43,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay) : null)
             .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
-                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps, Sun = request.Sun })
+                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps, Sun = request.Sun, Lod = request.Lod })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<ViewModelPresentationRequest, IViewModelPresenter>(CreateViewModel)
@@ -162,7 +162,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The level's <c>LODSettings</c> for rigid models (<c>0x4EDAA0</c>: percentages times 0.02, the ideal radius in
+    /// The level's <c>LODSettings</c> for rigid and bone models (<c>0x4EDAA0</c>: percentages times 0.02, the ideal radius in
     /// metres) and the game's own per-model distances, which <c>LOCAL:lod.qsc</c> makes as <c>ModelLODSettings</c>
     /// (<c>0x4EDB60</c>: made ascending, in metres).
     /// </remarks>
@@ -181,7 +181,12 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             Real(lod, "Cutoff distance, relative to object radius (Rigid Objects)") * ModelLodSettings.Percent,
             Real(lod, "Degree to which radius affects LOD"),
             Real(lod, "Ideal radius") * 4096f);
-        return new ModelLodPolicy(settings, Igi1ModelLodTable.Read(resources));
+        ModelLodSettings bones = settings with
+        {
+            Detail = Real(lod, "Distance to first switch, relative to object radius (Bone Objects)") * ModelLodSettings.Percent,
+            Cull = Real(lod, "Cutoff distance, relative to object radius (Bone Objects)") * ModelLodSettings.Percent,
+        };
+        return new ModelLodPolicy(settings, Igi1ModelLodTable.Read(resources), bones: bones);
 
         static float Real(DeclaredTask task, string name) =>
             task.TryGetValue(name, out object? value) ? Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture) : 0f;
