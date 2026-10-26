@@ -159,38 +159,12 @@ public sealed class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(missionText);
-        PlayerCamera candidate = new(host.Logger);
+        // 000.iff, kept so the player's third-person body can be built from the same set it walks on (HumanPlayerBody: the body
+        // is skeleton 0, and this is skeleton 0's set). Read once for the session rather than per mission: it lives under common/,
+        // so it is the same 1.5 MB of IFF for all fourteen. The walls are the index built for the soldiers' ground probe.
+        PlayerCamera candidate = Igi1PlayerRig.Build(
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), host.ReadSharedAnimations(), host.Logger);
         Candidate = candidate;
-
-        // 000.iff, kept so the player's third-person body can be built from the same set it walks on
-        // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
-        // animation's own root motion, so without it the player can stand and fall but not walk.
-        //
-        // Read once for the session rather than per mission: it lives under common/, so it is the
-        // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
-        // a mission started was most of that step's cost.
-        BoneAnimationSet? playerBodySet = host.ReadSharedAnimations();
-        if (playerBodySet is not null)
-        {
-            candidate.UseAnimations(playerBodySet);
-        }
-
-        // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
-        // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
-        // The index is the one built above for the soldiers' ground probe.
-        candidate.UseWalls(solids);
-        host.Logger.Information(
-            "Player",
-            $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
-
-        // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
-        // ground query, but a grenade has no such query and would fall through the world.
-        candidate.GrenadeWalls = host.Terrain is { } grenadeGround
-            ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
-            : solids.Caster();
-        candidate.GrenadeTrace = host.Terrain is { } grenadeTraceGround
-            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
-            : solids.Tracer();
 
         // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
         // cars do; it leaves the hand facing the way it was thrown (0x414A60).
@@ -209,20 +183,6 @@ public sealed class Igi1PlayerSetup(
                     velocity)
                 : null;
 
-        // The view model's forward sweep, which wants a ray through the terrain rather than the
-        // height under a point. Null for a title whose ground nothing can trace yet, and the
-        // pullback then meets placed objects only.
-        candidate.TerrainTrace = host.Terrain is { } viewModelGround
-            ? TerrainRayTrace.Caster(viewModelGround)
-            : null;
-
-        // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
-        // W/S up and down, E held to slide).
-        if (host.Scene is not null)
-        {
-            candidate.UseLadders(host.Scene.Ladders);
-            host.Logger.Information("Player", $"{host.Scene.Ladders.Count} ladder(s) to climb.");
-        }
         if (mission.Interactions is { } interactions)
         {
             candidate.UseInteractions(interactions);
@@ -343,26 +303,10 @@ public sealed class Igi1PlayerSetup(
     public void Configure(PlayerCamera candidate)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
-        // is what says how high a jump goes and how far a step travels.
         try
         {
-            HumanPlayerConfig config = new();
-            config.Register(host.Game.Natives);
-            config.Load(host.Resources, host.Game.Natives);
-
-            if (config.PlaceholderIds.Count > 0)
+            if (Igi1PlayerRig.Tune(candidate, host.Game, host.Resources, host.Logger) is { } tuning)
             {
-                host.Logger.Warning(
-                    "Player",
-                    $"humanplayer.qvm left {config.PlaceholderIds.Count} id(s) unresolved; the weapon "
-                        + "cycle may name weapons that do not exist.");
-            }
-
-            if (config.Parameters is { } tuning)
-            {
-                candidate.UseParameters(tuning);
-
                 // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
                 mission.PlayerDeltaTranslationScale = tuning.DeltaTranslationScale;
 
@@ -379,26 +323,6 @@ public sealed class Igi1PlayerSetup(
                     DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
                 };
             }
-            else
-            {
-                host.Logger.Warning("Player", "humanplayer.qvm published no parameters; using the retail defaults.");
-            }
-
-            // The same script says which weapon starts in hand, and it is not a guess any more:
-            // 0x40F760's cycle index begins at -1, so the first update lands on entry 0 of
-            // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
-            // list starts with the knife.
-            candidate.UseWeaponCycle(config.WeaponCycle);
-
-            // 0x410370 caps the new player's ammunition at DefineHumanPlayerAmmoLimit's figures before anything is put in
-            // its pockets, so every pickup after is held to them.
-            foreach ((int ammoId, int limit) in config.AmmoLimits)
-            {
-                candidate.Weapons?.Ammunition.SetLimit(ammoId, limit);
-            }
-
-            // And the nine categories the number keys select — 0x411000 reads exactly this table.
-            candidate.Weapons?.UseCategories(config.Categories);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
         {
@@ -572,49 +496,8 @@ public sealed class Igi1PlayerSetup(
     /// Which weapon ends up in hand is not decided here: the weapon cycle's index starts at -1, and the first tick lands on
     /// entry 0 of <c>DefineHumanPlayerWeaponCycle</c> and steps on until it finds one that is carried.
     /// </remarks>
-    public bool Carry(PlayerCamera candidate, PlayerLoadout loadout, WeaponTypeRegistry roster, AmmoTypeRegistry ammunition)
-    {
-        ArgumentNullException.ThrowIfNull(candidate);
-        ArgumentNullException.ThrowIfNull(loadout);
-        ArgumentNullException.ThrowIfNull(roster);
-        ArgumentNullException.ThrowIfNull(ammunition);
-
-        if (candidate.View is null || loadout.Weapons.Count == 0)
-        {
-            return false;
-        }
-
-        foreach (LoadoutWeapon declared in loadout.Weapons)
-        {
-            if (!roster.TryGetByScriptId(declared.WeaponId, out WeaponType weapon))
-            {
-                host.Logger.Warning("Weapon", $"{declared.WeaponId} is not in the roster; it is not carried.");
-                continue;
-            }
-
-            // A weapon finds its ammunition by naming a Calibre ID, and -1 -- the knife's -- names
-            // none at all, which is exactly why a knife never runs out.
-            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-            candidate.Carry(weapon, hasAmmo ? ammo : null);
-        }
-
-        foreach (LoadoutAmmo declared in loadout.Ammunition)
-        {
-            AmmoType? pool = ammunition.Types.FirstOrDefault(a =>
-                string.Equals(a.ScriptId, declared.AmmoId, StringComparison.Ordinal));
-
-            if (pool is not null)
-            {
-                candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
-                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
-                {
-                    candidate.Weapons?.SetM203Ammunition(pool);
-                }
-            }
-        }
-
-        return true;
-    }
+    public bool Carry(PlayerCamera candidate, PlayerLoadout loadout, WeaponTypeRegistry roster, AmmoTypeRegistry ammunition) =>
+        Igi1PlayerRig.Carry(candidate, loadout, roster, ammunition, host.Logger);
 
     /// <summary>Offers the player's rounds, blasts, noise and grenades to the soldiers, which own their own health.</summary>
     /// <param name="candidate">The player's rig.</param>
