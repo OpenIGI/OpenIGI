@@ -482,7 +482,6 @@ public sealed partial class GameHost
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
             _shellBodyFont = state.ShellTypography.Body;
-            _shellHeadingFont = state.ShellTypography.Display;
             _shellType = state.ShellTypography;
 
             // The real DefineMission data, resolved to display strings through the language table, in the

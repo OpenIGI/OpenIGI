@@ -190,7 +190,6 @@ r_weather_speed	1	archive
 r_wetness	1	archive
 r_white_point	1.1	archive
 r_window_mode	borderless	archive
-r_world_briefing	1	archive
 r_world_cull	0	archive
 r_world_objective	1	archive
 r_world_occlusion	1	archive

@@ -49,29 +49,6 @@ public sealed partial class GameHost
     /// <summary>What the load gate last said it was waiting for, so it is reported once rather than every frame.</summary>
     private string? _loadGateWaitingFor;
 
-    /// <summary>The briefing, posted on the nearest surface at the start. See r_world_briefing.</summary>
-    private WorldTitleRenderer? _briefingPost;
-    private bool _briefingPosted;
-    private int _lastBriefingMilliseconds;
-
-    /// <summary>How far from the start a surface is looked for to post the briefing on, in metres.</summary>
-    private const double BriefingPostReachMetres = 30.0;
-
-    /// <summary>How far off the surface the briefing stands, in metres, so it never fights the paint.</summary>
-    private const double BriefingPostStandOffMetres = 0.08;
-
-    /// <summary>Above this a standing surface is a building rather than a fence, in metres over the eye.</summary>
-    private const double FenceTopAboveEyeMetres = 2.2;
-
-    /// <summary>How long the notice stays, once it has arrived, before it burns away, in seconds.</summary>
-    private const float BriefingHoldSeconds = 5f;
-
-    /// <summary>How long the notice takes to burn away, in seconds.</summary>
-    private const float BriefingBurnSeconds = 1.6f;
-
-    /// <summary>How long a notice nobody has looked at is kept before it burns anyway, in seconds.</summary>
-    private const float BriefingUnseenPatienceSeconds = 90f;
-
     /// <summary>The mission being loaded, for the card.</summary>
     private MissionDescriptor? _loadingMission;
     private MissionInfo? _loadingInfo;
@@ -117,17 +94,6 @@ public sealed partial class GameHost
         IsWarmingUp
         || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
         || _entry.IsCameraActive;
-
-    /// <summary>How long the player has had the level, with no intro playing, in seconds.</summary>
-    private float _controlSeconds;
-
-    /// <summary>How long the level must have been the player's before the briefing is posted, in seconds.</summary>
-    /// <remarks>
-    /// An authored intro takes a tick or two to put its first frame up after the level is released, and
-    /// a notice posted in that gap would stand in the player's view for a moment and then be cut away
-    /// from. Waiting this long is what tells an intro that is about to start from no intro at all.
-    /// </remarks>
-    private const float BriefingControlSeconds = 1.5f;
 
     /// <summary>Whether a loading screen may be drawn at all this run.</summary>
     /// <remarks>
@@ -181,79 +147,6 @@ public sealed partial class GameHost
         if (_loadSequence.WantsLivePicture)
         {
             _menuFlow.HoldFrame(_window.Width, _window.Height);
-        }
-    }
-
-    /// <summary>The briefing's first paragraph, on one line, cut to what a caption can carry.</summary>
-    private static string BriefingParagraph(string text)
-    {
-        string paragraph = text.Replace("\r", string.Empty).Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(p => p.Trim().Length > 0)?.Replace('\n', ' ').Trim() ?? text;
-        return paragraph.Length > 260 ? paragraph[..257].TrimEnd() + "…" : paragraph;
-    }
-
-    /// <summary>The briefing entire, as paragraphs on one line each.</summary>
-    private static IEnumerable<string> BriefingParagraphs(string text) =>
-        text.Replace("\r", string.Empty)
-            .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
-            .Select(p => p.Replace('\n', ' ').Trim())
-            .Where(p => p.Length > 0);
-
-    /// <summary>Draws the briefing standing in the level, over everything but the console.</summary>
-    /// <param name="batch">The 2D batch, not begun.</param>
-    private void DrawWorldTitle(SpriteBatch batch)
-    {
-        if (!ShowsLoadingPanel)
-        {
-            return;
-        }
-
-        // How long the level has been the player's: reset by anything that takes it from them.
-        bool playerHasLevel = !PresentationHoldsLevel && !_loadSequence.IsActive && _mission.CutsceneFrameShown is null;
-        _controlSeconds = playerHasLevel ? _controlSeconds + (1f / 60f) : 0f;
-
-        // An intro that starts AFTER the notice went up takes it down again, to be posted fresh when the
-        // intro lets go: a level's intro can begin a second or two into play, and a notice that ran its
-        // few seconds behind the intro's camera was one nobody saw.
-        if (_mission.CutsceneFrameShown is not null && _briefingPost is { HasTitle: true } hidden)
-        {
-            hidden.Clear();
-            _briefingPosted = false;
-        }
-
-        // The briefing posted at the start: it arrives once the player has the level, stays a few
-        // seconds, and goes.
-        if (HudCVars.WorldBriefing.Value && _session.Mission is not null && HostedPlayer is not null
-            && !PresentationHoldsLevel && !_loadSequence.IsActive)
-        {
-            PostBriefing();
-            if (_briefingPost is { HasTitle: true } post)
-            {
-                int now = _loop.TimeSource.Milliseconds;
-                float elapsed = Math.Clamp((now - _lastBriefingMilliseconds) / 1000f, 0f, 0.1f);
-                _lastBriefingMilliseconds = now;
-                post.Update(elapsed);
-
-                // The hold counts from when the notice was first in the frame, so a player who turns to
-                // it later still gets their five seconds -- up to a patience, after which it goes anyway.
-                float burnStart = post.Seen
-                    ? MathF.Max(post.ArrivalSeconds, post.SeenAtAge) + BriefingHoldSeconds
-                    : post.ArrivalSeconds + BriefingUnseenPatienceSeconds;
-                post.Dissolve = Math.Clamp((post.Age - burnStart) / BriefingBurnSeconds, 0f, 1f);
-                if (post.Age > burnStart + BriefingBurnSeconds + 0.5f)
-                {
-                    post.Clear();
-                }
-                else
-                {
-                    _device.BeginStageTiming(RenderStage.UserInterface);
-                    _device.Set2DProjection(_window.Width, _window.Height);
-                    batch.Begin();
-                    post.Draw(batch, _inspectorEye, _inspectorTangent, _inspectorAspect, _window.Width, _window.Height);
-                    batch.End();
-                    _device.EndStageTiming();
-                }
-            }
         }
     }
 
@@ -374,205 +267,6 @@ public sealed partial class GameHost
     }
 
     /// <summary>
-    /// Posts the briefing on the nearest vertical surface at the player's start, once per level: the
-    /// fence beside the start, a wall, the side of a crate.
-    /// </summary>
-    /// <remarks>
-    /// Rays are cast level from the eye, a full turn, against the level's collision; the nearest hit on a
-    /// surface that stands up (a fence or a wall, not a floor or a roof) is the post, with a fence
-    /// preferred to a wall and a surface ahead preferred to one beside. The notice stands a few
-    /// centimetres off it along its normal and faces out, so the player reads it from the open side.
-    /// With nothing in reach it stands in the air ahead, where it can at least be read.
-    /// </remarks>
-    private void PostBriefing()
-    {
-        if (_briefingPosted || HostedPlayer is not { } standing || _shellHeadingFont is not { } face)
-        {
-            return;
-        }
-
-        // Not before the player has had the level for a moment: the notice arrives once the picture has
-        // cleared and the authored intro, if there is one, has let go -- so its own arrival is what they
-        // first see, and it is never cut away from.
-        if (_controlSeconds < BriefingControlSeconds || !_playerMode)
-        {
-            return;
-        }
-
-        _briefingPosted = true;
-        _briefingPost ??= new WorldTitleRenderer(face);
-
-        Camera3D eye = standing.Camera;
-        float yaw = standing.Body.Yaw;
-        Vector3d anchor;
-        string where;
-
-        if (TryFindBriefingSurface(standing.EyeUnits, yaw, out Vector3d surfaceMetres, out Vector3f normal, out string surfaceLabel))
-        {
-            anchor = new Vector3d(
-                surfaceMetres.X + (normal.X * BriefingPostStandOffMetres),
-                surfaceMetres.Y + (normal.Y * BriefingPostStandOffMetres),
-                eye.Position.Z + 0.35);
-
-            // A reader stands on the open side and looks INTO the surface, so the notice faces along the
-            // normal and is read by someone whose heading is the normal reversed.
-            yaw = MathF.Atan2(-normal.X, -normal.Y);
-            where = FormattableString.Invariant($"on '{surfaceLabel}', {Vector3d.Distance(eye.Position, surfaceMetres):F1} m from the start");
-        }
-        else
-        {
-            var forward = new Vector3d(Math.Sin(yaw), Math.Cos(yaw), 0.0);
-            anchor = new Vector3d(
-                eye.Position.X + (forward.X * 6.0),
-                eye.Position.Y + (forward.Y * 6.0),
-                eye.Position.Z - 0.1);
-            where = "in the air six metres ahead, with no surface in reach";
-        }
-
-        // The notice: the mission's number and name, then the briefing entire, wrapped to a notice's width.
-        const float bodyHeight = 0.3f;
-        const float noticeWidthMetres = 7.5f;
-        float metresPerPixel = bodyHeight / face.BasePixelHeight;
-
-        var lines = new List<WorldTitleRenderer.Line>();
-        if (_loadingInfo is { } info)
-        {
-            lines.Add(new WorldTitleRenderer.Line(FormattableString.Invariant($"MISSION {info.Number:00}"), 0.34f, CardAccent, 0f));
-            lines.Add(new WorldTitleRenderer.Line(info.Name.ToUpperInvariant(), 1.05f, CardWhite, 0.08f));
-
-            bool first = true;
-            int count = 0;
-            foreach (string paragraph in BriefingParagraphs(info.Description))
-            {
-                string wrapped = face.WrapText(paragraph, face.BasePixelHeight, noticeWidthMetres / metresPerPixel);
-                bool firstLine = true;
-                foreach (string line in wrapped.Split('\n'))
-                {
-                    lines.Add(new WorldTitleRenderer.Line(
-                        line.ToUpperInvariant(), bodyHeight, CardMuted, first ? 0.4f : firstLine ? 0.22f : 0.08f));
-                    first = false;
-                    firstLine = false;
-                    if (++count == 10)
-                    {
-                        break;
-                    }
-                }
-
-                if (count >= 10)
-                {
-                    break;
-                }
-            }
-        }
-        else
-        {
-            lines.Add(new WorldTitleRenderer.Line("PROJECT I.G.I.", 1.05f, CardWhite, 0f));
-        }
-
-        _briefingPost.Lay(lines, anchor, yaw, upright: true);
-        _lastBriefingMilliseconds = _loop.TimeSource.Milliseconds;
-        _briefingPost.ReliefLayers = 3;
-        _briefingPost.ReliefStepMetres = 0.02f;
-
-        _logger.Information(
-            "Mission",
-            FormattableString.Invariant(
-                $"Posted the briefing {where}, at ({anchor.X:F1}, {anchor.Y:F1}, {anchor.Z:F1}) m facing heading {yaw:F2}; r_world_briefing 0 hides it."));
-    }
-
-    /// <summary>Finds the nearest standing surface around the start to post on.</summary>
-    /// <param name="eyeUnits">The player's eye, in engine units, which is what the collision index takes.</param>
-    /// <param name="heading">The way the player faces, so a surface in front is preferred.</param>
-    /// <param name="surfaceMetres">Receives where the surface was hit, in metres.</param>
-    /// <param name="normal">Receives the surface's outward normal, pointing back towards the start.</param>
-    /// <param name="label">Receives what was hit and why it was chosen, for the log.</param>
-    private bool TryFindBriefingSurface(
-        Vector3d eyeUnits, float heading, out Vector3d surfaceMetres, out Vector3f normal, out string label)
-    {
-        surfaceMetres = default;
-        normal = default;
-        label = string.Empty;
-        if (_mission.Solids is not { } solids)
-        {
-            return false;
-        }
-
-        // What the player is facing when they get the level: a notice behind them is one they never see.
-        var facing = new Vector3d(Math.Sin(heading), Math.Cos(heading), 0.0);
-
-        const int rays = 36;
-        const double unitsPerMetre = WorldScene.UnitsPerMetre;
-        double reach = BriefingPostReachMetres * unitsPerMetre;
-
-        // A fence is preferred over a wall, and a surface in front of the player over one beside or
-        // behind them; within a tier the nearest wins. A fence is known by its name when the level gave
-        // it one, and otherwise by its height: a standing surface that is not there any more a couple
-        // of metres above the eye is a fence, a crate or a low wall, not a building.
-        int bestTier = -1;
-        double bestDistance = double.MaxValue;
-
-        for (int i = 0; i < rays; i++)
-        {
-            double angle = i * (2.0 * Math.PI / rays);
-            var end = new Vector3d(
-                eyeUnits.X + (Math.Sin(angle) * reach),
-                eyeUnits.Y + (Math.Cos(angle) * reach),
-                eyeUnits.Z);
-
-            if (!solids.TryIdentify(eyeUnits, end, out string hitLabel, out WorldRayHit hit))
-            {
-                continue;
-            }
-
-            // Standing surfaces only, and not so close the notice would be in the player's face.
-            if (MathF.Abs(hit.Normal.Z) > 0.45f || hit.Distance < 1.2 * unitsPerMetre)
-            {
-                continue;
-            }
-
-            // The normal must face the start, or the notice would be posted on the far side.
-            Vector3f n = hit.Normal;
-            float towards = (float)((eyeUnits.X - hit.Position.X) * n.X + (eyeUnits.Y - hit.Position.Y) * n.Y);
-            if (towards < 0f)
-            {
-                n = new Vector3f(-n.X, -n.Y, -n.Z);
-            }
-
-            bool namedFence = hitLabel.Contains("fence", StringComparison.OrdinalIgnoreCase)
-                || hitLabel.Contains("wire", StringComparison.OrdinalIgnoreCase)
-                || hitLabel.Contains("gate", StringComparison.OrdinalIgnoreCase)
-                || hitLabel.Contains("barrier", StringComparison.OrdinalIgnoreCase)
-                || hitLabel.Contains("rail", StringComparison.OrdinalIgnoreCase);
-
-            // The same ray, a couple of metres higher: a fence is not there, a building still is.
-            var highOrigin = new Vector3d(eyeUnits.X, eyeUnits.Y, eyeUnits.Z + (FenceTopAboveEyeMetres * unitsPerMetre));
-            var highEnd = new Vector3d(end.X, end.Y, highOrigin.Z);
-            bool lowSurface = !solids.TryCast(highOrigin, highEnd, out WorldRayHit above)
-                || above.Distance > hit.Distance + (1.5 * unitsPerMetre);
-
-            // In front: within sixty degrees of where the player faces.
-            double along = (Math.Sin(angle) * facing.X) + (Math.Cos(angle) * facing.Y);
-            bool ahead = along > 0.5;
-
-            bool fenceLike = namedFence || lowSurface;
-            int tier = (fenceLike ? 2 : 0) + (ahead ? 1 : 0);
-            if (tier < bestTier || (tier == bestTier && hit.Distance >= bestDistance))
-            {
-                continue;
-            }
-
-            bestTier = tier;
-            bestDistance = hit.Distance;
-            surfaceMetres = new Vector3d(hit.Position.X / unitsPerMetre, hit.Position.Y / unitsPerMetre, hit.Position.Z / unitsPerMetre);
-            normal = n;
-            label = FormattableString.Invariant(
-                $"{(hitLabel.Length > 0 ? hitLabel : "an unnamed surface")}{(fenceLike ? ", fence-like" : ", wall-like")}{(ahead ? ", ahead" : ", to the side")}");
-        }
-
-        return bestTier >= 0;
-    }
-
-    /// <summary>
     /// Starts holding a level back, from before its load begins until the picture it will be shown with is
     /// final.
     /// </summary>
@@ -612,12 +306,6 @@ public sealed partial class GameHost
         _warmUp = new MissionWarmUpGate(FrameCVars.MissionWarmUp.Value);
         _warmUp.Begin();
 
-        // The last run's notice goes with the last run: a restart within its few seconds must not carry
-        // it through the load, nor post it again on the moment the level was last held for.
-        _briefingPosted = false;
-        _briefingPost?.Clear();
-        _controlSeconds = 0f;
-
         // A level started with nothing on screen -- the command line's -mission -- has no picture to
         // hold and no interface to leave, so the sequence opens straight onto the card over its own
         // surface. Never under the entry shot, which is the cover for that route.
@@ -646,8 +334,6 @@ public sealed partial class GameHost
         _warmUp.Cancel();
         _loadSequence.Cancel();
         _pendingLoad = null;
-        _briefingPost?.Clear();
-        _controlSeconds = 0f;
     }
 
     /// <summary>Reports one more stage of the blocking load finished, and shows it.</summary>
@@ -852,8 +538,7 @@ public sealed partial class GameHost
             painter.DrawLabel(type.Mono, "DEPLOYING", new UiVec2(ruleX + (64f * scale), kickerTop), kickerSize, CardMuted, 0.28f);
         }
 
-        // The name and the briefing are on the card only until the level is up; from then on they stand
-        // in the level itself, under the shot -- see WorldTitleRenderer.
+        // The name and the briefing are on the card only until the level is up.
         if (!_loadSequence.LiveScene)
         {
             string title = (_loadingInfo?.Name

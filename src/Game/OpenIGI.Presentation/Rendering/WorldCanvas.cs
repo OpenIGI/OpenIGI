@@ -13,9 +13,8 @@ namespace OpenIGI.Presentation.Rendering;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The technique <c>WorldTitleRenderer</c> sets the mission briefing in: there is no third
-/// dimension in the sprite path, so a plane in the world is drawn by putting its corners where the
-/// camera says they are and letting the batch interpolate between them. What that buys over an overlay
+/// There is no third dimension in the sprite path, so a plane in the world is drawn by putting its
+/// corners where the camera says they are and letting the batch interpolate between them. What that buys over an overlay
 /// is everything perspective does — the surface shrinks as the player backs away from it, foreshortens
 /// as they look down on it, and slides across the object it belongs to as they walk past, because it
 /// is a thing in the level rather than a label about one.
