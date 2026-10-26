@@ -116,6 +116,18 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     private const float SmokeColour = 12.7f;
     private const float SmokeDepth = 819200f;
 
+    // A flashbang's smoke (0x47E790, 0x47E820): its grey, its size, its growth and room, its rise (4096000 by 9.259259e-6), its
+    // spin, and how long a puff lives and fades.
+    private const float FlashColour = 127f;
+    private const float FlashSize = 2457.6f;
+    private const float FlashGrowth = 0.014583333f;
+    private const int FlashCapacity = 20;
+    private const double FlashRise = 4096000.0 * 9.259259e-06;
+    private const double FlashSpread = 0.043633234;
+    private const double FlashSpreadBase = 0.020362176;
+    private const int FlashLife = 90;
+    private const int FlashFade = 30;
+
     private readonly DynamicTasks _tasks = new();
     private readonly List<ExplosionFireBall> _fireBalls = [];
     private readonly List<ExplosionFragments> _fragmentGroups = [];
@@ -319,6 +331,49 @@ public sealed class Igi1ExplosionRuntime : IExplosionScene
     {
         _fireBalls.Add(fireBall);
         _tasks.Add(fireBall);
+    }
+
+    /// <summary>The sprite a flashbang's smoke is drawn with, <c>FlashBang_Init</c> (<c>0x47E700</c>).</summary>
+    public const string FlashSprite = "smoke1.spr";
+
+    /// <summary>
+    /// A flashbang's smoke: one particle system, <c>FlashBang_Create</c> (<c>0x47E790</c>), and the three grey puffs
+    /// <c>FlashBang_Run</c> (<c>0x47E820</c>) lets into it, each from three of the level's draws.
+    /// </summary>
+    /// <param name="at">Where it went off, in world units.</param>
+    /// <remarks>
+    /// The system draws <see cref="FlashSprite"/> grey at 127, 2457.6 units across, filtered and added, out to 819200 units,
+    /// growing by 0.0146 a tick and holding twenty. A puff rises at one and a half to three times 37.9 units a tick, at a level of a
+    /// quarter to a half, spinning by up to 0.0436 either side of 0.0204 a tick, and lives ninety ticks before fading over thirty.
+    /// The draws are taken whether or not anything is drawn.
+    /// </remarks>
+    public void Flash(Vector3d at)
+    {
+        Particle2DSystem? system = Particles is { } module
+            ? module.New(
+                new Particle2DLook(
+                    FlashSprite,
+                    IsAnimated: false,
+                    Frames: module.FramesOf(FlashSprite),
+                    AnimationDelta: 0,
+                    new Vector3f(FlashColour, FlashColour, FlashColour),
+                    FlashSize,
+                    FlashSize,
+                    SmokeDepth,
+                    Particle2DFlags.Filtered | Particle2DFlags.Additive | Particle2DFlags.DepthTested),
+                Vector3f.Zero,
+                FlashGrowth,
+                FlashCapacity,
+                collider: null)
+            : null;
+        for (int n = 0; n < 3; n++)
+        {
+            float rise = (float)((Random.NextDouble() + 1.0) * 1.5 * FlashRise);
+            float level = (float)((Random.NextDouble() + 1.0) * 0.25);
+            double spread = Random.NextDouble() - 0.5;
+            float spin = (float)(((spread + spread) * FlashSpread) + FlashSpreadBase);
+            system?.AddParticle(at, new Vector3f(0f, 0f, rise), level, spin, 0f, 1f, FlashLife, FlashFade);
+        }
     }
 
     // 0x47EAD0: a puff is a particle system of its own, of one particle, rising at 2.23 a tick.

@@ -142,39 +142,6 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _explosions?.Draw(eye, projection, blend);
     }
 
-    /// <summary>Shows the flashbang's world smoke residue without drawing a screen whiteout.</summary>
-    /// <param name="positionUnits">Where it went off, in world units.</param>
-    /// <remarks>
-    /// The native flash task registers <c>ExplosionSmoke</c> and uses <c>smoke2.spr</c>. Keep the smoke in the scene so it
-    /// is occluded and distance-faded like the retail effect; the separate player handler owns the distance-based whiteout.
-    /// </remarks>
-    public void SpawnFlashbangSmoke(Vector3d positionUnits)
-    {
-        if (_smoke is not null && _smoke.IsAvailable)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                Vector3f drift = new(
-                    ((float)random.NextDouble() - 0.5f) * 90f,
-                    ((float)random.NextDouble() - 0.5f) * 90f,
-                    18f + ((float)random.NextDouble() * 35f));
-                _smoke.SpawnPuff(
-                    positionUnits,
-                    drift,
-                    sizeMetres: 0.65f + ((float)random.NextDouble() * 0.2f),
-                    growthMetresPerTick: 0.025f,
-                    lifeTicks: 34 + (int)random.NextBounded(12),
-                    darkness: 0.2f);
-            }
-
-            return;
-        }
-
-        // Keep the effect visible on a mission whose common sprite archive is incomplete. This is a world particle
-        // fallback, never the old full-screen flash.
-        Particles?.SpawnRocketSmoke(positionUnits, Vector3f.Zero, intensity: 1f);
-    }
-
     /// <summary>Lays the exhaust glow and smoke trail for every rocket still in the air.</summary>
     /// <param name="simulations">The rockets: the player's launcher's and the vehicles'.</param>
     /// <remarks>

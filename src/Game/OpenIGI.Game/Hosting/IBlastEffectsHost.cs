@@ -25,10 +25,6 @@ public interface IBlastEffectsHost
     /// <param name="priority">Its priority.</param>
     void PlayDefinition(string name, Vector3d positionInUnits, int priority);
 
-    /// <summary>Spawns the smoke a flashbang leaves.</summary>
-    /// <param name="positionInUnits">Where it went off.</param>
-    void FlashbangSmoke(Vector3d positionInUnits);
-
     /// <summary>Shatters a pane into its shards.</summary>
     /// <param name="placement">The pane.</param>
     /// <param name="atUnits">Where it was struck.</param>

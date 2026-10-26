@@ -73,11 +73,11 @@ public sealed class Igi1Blasts(
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
                 // 0x00476AC0's type-1 branch spawns only the flash (0x0047E9A0) and plays explo_flash
-                // (0x0047E820) -- no fireball and no explo_02_m. The world residue is a smoke task
-                // (smoke2.spr), while the player handler at 0x00413090 writes the distance-based
-                // whiteout fields from the player's eye. That handler does not perform a wall trace.
+                // (0x0047E820) -- no fireball and no explo_02_m. The world residue is three puffs of smoke1.spr
+                // (0x47E820), while the player handler at 0x00413090 writes the distance-based whiteout
+                // fields from the player's eye. That handler does not perform a wall trace.
                 host.PlayDefinition("explo_flash", blast.Position, 90);
-                host.FlashbangSmoke(blast.Position);
+                impacts.Explosions.Flash(blast.Position);
 
                 // 0x47E9A0 burns the same burn1.tex, 2048 wide, on what the grenade's line found 2048 below.
                 impacts.ScorchBelow(blast.Position, GrenadeScorchDropInUnits, FlashScorchHalfWidthInUnits);

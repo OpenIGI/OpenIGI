@@ -11,6 +11,37 @@ public sealed class Igi1ExplosionRuntimeTests
 {
     private static readonly Vector3d At = new(8192.0, 8192.0, 8192.0);
 
+    /// <summary>
+    /// A flashbang leaves three grey puffs of <c>smoke1.spr</c> in one system (<c>0x47E790</c>, <c>0x47E820</c>), three of the level's
+    /// draws each, rising at 57 to 114 units a tick at a level of a quarter to a half.
+    /// </summary>
+    [Fact]
+    public void AFlashbangLeavesThreePuffsOfItsOwnSmoke()
+    {
+        IgiRandom level = new();
+        IgiRandom twin = new();
+        Particle2DModule particles = new();
+        Igi1ExplosionRuntime runtime = new(level, particles);
+
+        runtime.Flash(At);
+
+        Particle2DSystem system = Assert.Single(particles.Systems);
+        Assert.Equal(Igi1ExplosionRuntime.FlashSprite, system.Look.Sprite);
+        Assert.Equal(3, system.Particles.Count);
+        Assert.All(system.Particles, puff =>
+        {
+            Assert.InRange(puff.Speed.Z, 56.8f, 113.8f);
+            Assert.InRange(puff.Intensity, 0.25f, 0.5f);
+        });
+
+        for (int i = 0; i < 9; i++)
+        {
+            twin.NextRaw();
+        }
+
+        Assert.Equal(twin.NextRaw(), level.NextRaw());
+    }
+
     /// <summary>A grenade's blast goes off as it is set: one FireBall of 75 ticks, three fragments, its sound and its blast.</summary>
     [Fact]
     public void AGrenadesBlastGoesOffAsItIsSet()

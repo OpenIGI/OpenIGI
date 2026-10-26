@@ -222,9 +222,6 @@ public sealed partial class GameHost
         public void PlayDefinition(string name, Vector3d positionInUnits, int priority) =>
             host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
 
-        public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
-
-
         public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
             host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
     }
