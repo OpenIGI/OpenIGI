@@ -34,7 +34,25 @@ public sealed class RetailIgi1SectorVisibilityTests
     // The fence's own origin, beside the office.
     private static readonly Vector3d FenceOrigin = new(24588444, -55901136, 174412480);
 
-    private static readonly Lazy<Setup> Mission1 = new(Load);
+    private static readonly Lazy<Setup> Mission1 = new(() => Load(1));
+
+    private static readonly Lazy<Setup> Mission3 = new(() => Load(3));
+
+    /// <summary>
+    /// On mission 3's ramp down into <c>Building_3083</c>'s tunnel the eye stands in the tunnel room, as the original's locate
+    /// (logged at <c>0x4DBCC0</c>) says: the shell's walking level has a floor 3.7 cm above the tunnel's there, and a locate that
+    /// met it put the eye on the shell, both of whose portals face away, so the tunnel and the rooms beyond it were never drawn.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void On_the_tunnel_ramp_the_eye_stands_in_the_tunnel()
+    {
+        Setup m = Mission3.Value;
+        Vector3d eye = new(23779577, -55268579, 174398817 + 6000);
+        m.Visibility.Decide(new Camera3D(eye, Camera3D.LookRotation(-91.2f * MathF.PI / 180f, -6.9f * MathF.PI / 180f)), Projection());
+
+        Assert.StartsWith("sector: Building_3083 room", m.Visibility.DescribeView(), StringComparison.Ordinal);
+        Assert.Contains(m.Scene.Placements, p => p.Owner.Name == "Building_3083" && p.Instance.Name == "424_02_1" && m.Visibility.IsVisible(p));
+    }
 
     /// <summary>Mission 1 places 26 buildings, 21 rooms among them.</summary>
     [RequiresGameDataFact]
@@ -203,7 +221,7 @@ public sealed class RetailIgi1SectorVisibilityTests
 
     private static SectorScreenProjection Projection() => SectorScreenProjection.ForView(1.25f, 0.7f);
 
-    private static Setup Load()
+    private static Setup Load(int missionId)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -219,16 +237,16 @@ public sealed class RetailIgi1SectorVisibilityTests
         magic.Register(loop.Natives);
         magic.Load(resources, loop.Natives);
         LoadedMission mission = new MissionLoader(
-            missions, fileSystem, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+            missions, fileSystem, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(missionId);
         WorldScene scene = WorldScene.Build(mission, root, magic);
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(
             scene.Placements, AssetFormatProfile.Igi1.Collision, name => mission.TryGetModel(name, out MefModel? model) ? model : null);
         Igi1SectorVisibility visibility = Igi1SectorVisibility.Build(scene, mission.TryGetModel, magic, solids)
-            ?? throw new InvalidOperationException("Mission 1 places no building.");
-        WorldPlacement fence = scene.Placements.Single(static p =>
+            ?? throw new InvalidOperationException($"Mission {missionId} places no building.");
+        WorldPlacement? fence = scene.Placements.SingleOrDefault(static p =>
             string.Equals(p.Instance.Name, "303_01_1", StringComparison.OrdinalIgnoreCase)
             && (WorldScene.ToUnits(p.Position) - FenceOrigin).LengthSquared < 1.0);
-        return new Setup(root, scene, visibility, fence);
+        return new Setup(root, scene, visibility, fence!);
     }
 
     private sealed record Setup(LevelTask Root, WorldScene Scene, Igi1SectorVisibility Visibility, WorldPlacement Fence);

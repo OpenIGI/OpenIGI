@@ -58,7 +58,10 @@ public sealed partial class ObjectCollisionIndex
 
             foreach (ObjectCollisionEntry entry in entries)
             {
-                if (MeetsSphere(origin, direction, entry.Centre, entry.Radius)
+                // The default level alone (the query's mesh 0, SectorObject_LocateHandler 0x4DBCC0): the walking level can hold a floor
+                // the default level does not, and a ray meeting it named the shell where the original names the room below.
+                if (!entry.IsPlayerSet
+                    && MeetsSphere(origin, direction, entry.Centre, entry.Radius)
                     && entry.TryCast(
                         origin,
                         direction,
