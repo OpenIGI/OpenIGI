@@ -246,7 +246,7 @@ public sealed partial class GameHost
         {
             _soldiers?.Dispose();
             _soldiers = _presentation.Presenters.Create<SoldierPresentationRequest, ISoldierBodies>(
-                new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps));
+                new SoldierPresentationRequest(_device, _resources, _logger, _mission.MagicObjects, _detailMaps, () => _world?.Shading.Sun));
             _mission.AdoptSoldiers(_soldiers);
             _soldiers?.Load(
                 loaded,

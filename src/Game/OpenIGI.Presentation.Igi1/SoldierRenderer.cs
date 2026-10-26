@@ -83,6 +83,16 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
     /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
     public MaterialDetailPack? DetailMaps { get; set; }
 
+    /// <summary>
+    /// Gets or sets where the level's fixed-function light is read from: the original draws a soldier's body (<c>0x49F700</c>)
+    /// and the gun in its hand (<c>0x49DF60</c>) through the lit state, the object ambient plus the Dirlight.
+    /// </summary>
+    public Func<FixedFunctionSun?>? Sun
+    {
+        get => _drawer.Sun;
+        set => _drawer.Sun = value;
+    }
+
     /// <inheritdoc/>
     /// <remarks>Project I.G.I.'s sector cull gates each soldier as <c>QCube_CallHandlers</c> gates every queued object.</remarks>
     public IPlacementVisibility? Visibility

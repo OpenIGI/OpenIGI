@@ -29,6 +29,14 @@ internal sealed class SoldierWeaponDrawer(
     IOpenIgiLogger logger)
 {
     private readonly List<SoldierGroup> _groups = groups;
+
+    /// <summary>Gets or sets where the level's light is read from, or none to draw at the textures.</summary>
+    public Func<FixedFunctionSun?>? Sun { get; set; }
+
+    // The light in a model's own frame: the orientation takes the model to the world as M * v, so its transpose (the
+    // row-vector Transform) takes the world's light back.
+    private void LightModel(Matrix3f orientation) =>
+        _device.SetVertexSun(Sun?.Invoke() is { } sun ? orientation.Transform(sun.Direction) : Vector3f.Zero);
     private readonly IGraphicsDevice _device = device;
     private readonly SoldierArmoury _armoury = armoury;
     private readonly SoldierFrameInterpolator _frames = frames;
@@ -113,7 +121,9 @@ internal sealed class SoldierWeaponDrawer(
                     NoHistory = member.NoHistoryThisFrame,
                 });
 
+                LightModel(member.DrawnOrientation);
                 DrawSubsets(group, member, modelView);
+                _device.SetVertexSun(Vector3f.Zero);
 
                 _device.SetMaterialOverride(SurfaceMaterial.Default);
                 _device.ClearPoseInterpolation();
@@ -320,6 +330,7 @@ internal sealed class SoldierWeaponDrawer(
 
         if (weapon.Presentation is { } presentation)
         {
+            presentation.Sun = Sun?.Invoke();
             // Body only: the muzzle flame is LIGHT, and drawing it here put it into the deferred
             // G-buffer to be shaded like scenery -- a one-frame dark square at the muzzle. It is
             // drawn by DrawMuzzleFlashes instead, in the forward pass, like the player's own.
@@ -343,6 +354,7 @@ internal sealed class SoldierWeaponDrawer(
     private void DrawRigidWeapon(SoldierHeldWeapon weapon, Vector3d originMetres, Matrix3f rotation, in Camera3D camera)
     {
         Matrix4f modelView = camera.CreateModelView(originMetres, rotation);
+        LightModel(rotation);
 
         foreach (MeshSubset subset in weapon.Geometry.Subsets)
         {
@@ -370,6 +382,7 @@ internal sealed class SoldierWeaponDrawer(
                 BlendMode.Opaque);
         }
 
+        _device.SetVertexSun(Vector3f.Zero);
     }
 
     // Every textured subset of a body's own mesh, opaque, through the material the caller set.
