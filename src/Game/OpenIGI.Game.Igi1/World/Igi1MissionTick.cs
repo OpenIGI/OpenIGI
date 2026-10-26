@@ -63,6 +63,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
+
         // A level with no player task in its walk updates the player after the walk instead.
         if (!mission.PlayerInWalk)
         {
@@ -77,6 +78,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         else if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.PlayerStandIn is { } standIn)
         {
             ResolveStandInTick(standIn);
+        }
+        else
+        {
+            // A cut-scene or the free camera: nobody's update steps the world's effects, yet in the original they are tasks
+            // that run whatever is watching. An explosion under a cut-scene burns and smokes, and a chimney keeps smoking.
+            host.StepWorldEffects();
+            mission.SmokePlumes?.Tick();
         }
 
         // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
