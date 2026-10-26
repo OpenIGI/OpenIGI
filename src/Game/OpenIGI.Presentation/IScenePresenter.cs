@@ -23,6 +23,7 @@ namespace OpenIGI.Presentation;
 /// instance that uses the mesh, and only the packs know which instance that is.
 /// </param>
 /// <param name="Logger">Where load diagnostics go.</param>
+/// <param name="Services">The session's services, which hold the title's graphics options when it keeps them.</param>
 /// <remarks>
 /// <para>
 /// <b>The model lookup is the whole reason this is a separate request.</b> A ground reads its own height
@@ -44,12 +45,14 @@ public readonly record struct ScenePresentationRequest(
     ResourceRegistry Resources,
     Func<string, MefModel?> Models,
     Func<string, int, string?> MaterialTextures,
-    IOpenIgiLogger Logger);
+    IOpenIgiLogger Logger,
+    Engine.Titles.IServiceCatalog? Services = null);
 
 /// <summary>What one frame needs in order to draw a title's foliage.</summary>
 /// <param name="Camera">Where the trees are seen from.</param>
 /// <param name="HorizontalHalfTangent">The tangent of half the horizontal field of view.</param>
 /// <param name="VerticalHalfTangent">The tangent of half the vertical field of view.</param>
+/// <param name="RetailLook">Whether the trees are drawn with the original's states, the original's look's way.</param>
 /// <remarks>
 /// Half-tangents rather than an angle and an aspect ratio, because that is the form the culling wants:
 /// the planes a forest tests its stands against are built straight out of them, and converting an angle
@@ -58,7 +61,8 @@ public readonly record struct ScenePresentationRequest(
 public readonly record struct ForestFrame(
     Camera3D Camera,
     float HorizontalHalfTangent,
-    float VerticalHalfTangent);
+    float VerticalHalfTangent,
+    bool RetailLook = false);
 
 /// <summary>What one frame needs in order to draw a title's water.</summary>
 /// <param name="Camera">Where the water is seen from.</param>

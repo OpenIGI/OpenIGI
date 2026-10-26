@@ -299,6 +299,10 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         Igi2TextureLoader textures = new(request.Device, request.Resources, request.Logger);
         Func<string, int, string?> materials = request.MaterialTextures;
 
+        // ForestRender_isAlphaBlend is the graphics options' high-quality forests (Config_SetGameToCurrentPerformanceLevel).
+        Game.Igi2.Config.Igi2GameConfig? config = request.Services is { } services && services.TryGet(out Game.Igi2.Config.Igi2GameConfig? found)
+            ? found
+            : null;
         return new Igi2ForestPresenter(
             request.Device,
             forest,
@@ -306,7 +310,10 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             (model, slot) => materials(model, slot) is { } name
                 ? textures.Resolve(Igi2ModelTable.TextureResourceName(name))
                 : TextureHandle.None,
-            request.Logger);
+            request.Logger)
+        {
+            HighQualityForests = () => config?.Gfx.HighQualityForests ?? true,
+        };
     }
 
     /// <inheritdoc/>

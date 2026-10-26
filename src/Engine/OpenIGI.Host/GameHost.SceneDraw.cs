@@ -171,10 +171,26 @@ public sealed partial class GameHost
         // rather than the angle, because the cull's planes are built straight out of them.
         if (outsideVisible)
         {
+            // The original fogs its trees in the objects' colour at four fifths of the ground's density
+            // (ForestRender_SetGenericState_*), on its own look.
+            bool retailForest = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            if (retailForest && retailFog && _forest is not null)
+            {
+                _device.SetFog(RetailAir(_globalLight.ObjectFog) with
+                {
+                    DensityPerMetre = RetailAir(_globalLight.TerrainFog).DensityPerMetre * 0.8f,
+                });
+            }
+
             _forest?.Draw(new ForestFrame(
                 eye,
                 MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
-                MathF.Tan(verticalFieldOfView * 0.5f)));
+                MathF.Tan(verticalFieldOfView * 0.5f),
+                retailForest));
+            if (retailForest && retailFog && _forest is not null)
+            {
+                _device.SetFog(RetailAir(_globalLight.ObjectFog));
+            }
         }
 
         if (outsideClip is not null)

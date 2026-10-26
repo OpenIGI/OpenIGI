@@ -320,7 +320,8 @@ public sealed partial class GameHost
             _resources,
             name => loaded.TryGetModel(name, out MefModel? model) ? model : null,
             (name, slot) => loaded.TryGetTextureName(name, slot, out string texture) ? texture : null,
-            _logger);
+            _logger,
+            _title?.Services);
 
         _forest?.Dispose();
         _forest = _presentation.Presenters.Create<ScenePresentationRequest, IForestPresenter>(adornments);

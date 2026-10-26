@@ -45,9 +45,16 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// <c>ForestRender_SetStates_Foliage</c> (<c>0x57BDF0</c>) sets <c>D3DRS_ALPHAREF</c> to this. It does
     /// so on the branch its mode word takes the value 1 on, which is the lightmap draw; the two generic
     /// state blocks it otherwise selects between (<c>0x57C770</c> alpha test, <c>0x57C900</c> alpha blend)
-    /// set neither the reference nor the test themselves.
+    /// set neither the reference nor the test themselves. The port's own looks keep it for the view.
     /// </remarks>
     public const byte FoliageAlphaReference = 32;
+
+    /// <summary>The cut the original's view draws trunks and foliage at: alpha over 64, the shared alpha-test state's.</summary>
+    /// <remarks><c>Direct3DRender_SetBlendStateAlphaTest</c>: <c>ALPHAREF</c> 64, <c>GREATER</c>; the device keeps at least its reference.</remarks>
+    public const byte RetailAlphaReference = 65;
+
+    /// <summary>The cut the original's sorted foliage blends over: alpha over one (<c>Direct3DRender_SetBlendStateTransparent</c>).</summary>
+    public const byte RetailBlendedAlphaReference = 2;
 
     /// <summary>The face-group flag bit that marks the group as foliage rather than trunk.</summary>
     /// <remarks><c>ForestRender_CreateBSPModel</c> tests <c>*groupByte0 &amp; 2</c> and takes the first hit.</remarks>
@@ -173,12 +180,21 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// </remarks>
     public bool SortedFoliage { get; set; }
 
+    /// <summary>Gets or sets whether the graphics options ask for high-quality forests, which the original's look sorts by.</summary>
+    public Func<bool>? HighQualityForests { get; set; }
+
     /// <inheritdoc/>
     public string Summary => ToString();
 
     /// <inheritdoc/>
-    public void Draw(in ForestFrame frame) =>
+    public void Draw(in ForestFrame frame)
+    {
+        _retailLook = frame.RetailLook;
         Draw(frame.Camera, frame.HorizontalHalfTangent, frame.VerticalHalfTangent);
+    }
+
+    // Whether this frame draws the trees with the original's states.
+    private bool _retailLook;
 
     /// <summary>Draws every tree the stand's index and the view distance keep.</summary>
     /// <param name="camera">Where the world is seen from.</param>
@@ -247,7 +263,26 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         _device.SetCullMode(CullMode.CounterClockwise);
 
         // The trunks cut out at whatever the frame is set to; a trunk texture is opaque, so the value
-        // does not reach them either way.
+        // does not reach them either way. The original's look cuts both at the shared alpha-test state's 64, and sorts and
+        // blends the foliage when the options ask for high-quality forests.
+        if (_retailLook)
+        {
+            _device.SetAlphaReference(RetailAlphaReference);
+            Issue(camera, static s => s.Trunk, BlendMode.Opaque, doubled: false);
+            if (HighQualityForests?.Invoke() != true)
+            {
+                Issue(camera, static s => s.Foliage, BlendMode.Opaque, doubled: true);
+                _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+                return;
+            }
+
+            _visible.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
+            _device.SetAlphaReference(RetailBlendedAlphaReference);
+            Issue(camera, static s => s.Foliage, BlendMode.AlphaBlend, doubled: true);
+            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+            return;
+        }
+
         Issue(camera, static s => s.Trunk, BlendMode.Opaque, doubled: false);
         if (!SortedFoliage)
         {
