@@ -131,6 +131,8 @@ public sealed class SecurityCamera
         double gamma = (IntWidening(task, "Viewcone Gamma (d)", 90) / 2.0) * Math.PI / 180.0;
         double length = RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * WorldScene.UnitsPerMetre;
         _viewCone = new AiSnapshotCone(alpha, gamma, length);
+        ViewconeAngle = IntWidening(task, "Viewcone Gamma (d)", 90) * DegreesToRadians;
+        ViewconeLength = ((X87)RealFromFloatOrDouble(task, "Viewcone length (m)", 10f) * 4096f).Value;
 
         CurrentAlpha = _cameraAlpha;
         _previousAlpha = CurrentAlpha;
@@ -142,6 +144,12 @@ public sealed class SecurityCamera
 
     /// <summary>Gets the task owning this camera.</summary>
     public DeclaredTask Task { get; }
+
+    /// <summary>Gets the whole angle its view spans across, radians, as the map computer fans it (<c>0x442DD0</c>).</summary>
+    public float ViewconeAngle { get; }
+
+    /// <summary>Gets how far it sees, world units.</summary>
+    public double ViewconeLength { get; }
 
     /// <summary>Gets the level expression that powers the camera.</summary>
     public string OnExpression { get; }

@@ -65,6 +65,9 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
     public PlayerCamera? Player { get; set; }
 
+    /// <summary>Gets or sets the computer the player carries, the original's own.</summary>
+    public OpenIGI.Game.Igi1.Computer.Igi1Computer? Computer { get; set; }
+
     /// <summary>Gets or sets the title's human AI table.</summary>
     public HumanAiConfigRegistry? AiConfig { get; set; }
 

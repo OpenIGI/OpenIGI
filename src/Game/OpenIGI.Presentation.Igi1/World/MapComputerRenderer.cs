@@ -5,83 +5,85 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
+using OpenIGI.Game.Computer;
+using OpenIGI.Game.Igi1.Computer;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
-using OpenIGI.Input;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
-/// <summary>Draws IGI1's C-key SIMOTECH map computer, objectives and event log.</summary>
-internal sealed class MapComputerRenderer : IMapComputerPresenter
+/// <summary>
+/// Draws Project I.G.I.'s computer as the original does, from the state the mission's tick leaves in <see cref="Igi1Computer"/>:
+/// the map's own view of the level, the screens' layers either side of the device model, and the pointer.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The original draws the device in the player's view and the screens over it, each layer at its own depth, so the casing hides
+/// whatever lies behind its plane. In painter's order that is two passes: <see cref="DrawBehindDevice"/> -- the green
+/// multiply over the map (<c>0x46AE30</c>, flags <c>0xC0040000</c>, <c>ZERO, SRCCOLOR</c>) or a page's black, the marks, the
+/// interference and the boot box -- before the device, and <see cref="DrawInFrontOfDevice"/> -- the controls, the pages' text
+/// and the pointer, nearer the eye than the casing -- after it.
+/// </para>
+/// <para>
+/// Everything is laid out at the display size <see cref="Igi1Computer"/> was opened with and magnified by the interface's
+/// whole-number scale, the one divergence the interface makes everywhere.
+/// </para>
+/// </remarks>
+internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComputerFonts
 {
-    public const string Archive = "COMPUTER:computer.res";
     public const string LocalArchive = "LOCAL:computer/computer.res";
-    public const string ComputerStringsArchive = "LOCAL:language/english/computer.res";
-    public const string ObjectiveStringsArchive = "LOCAL:language/english/objectives.res";
-    public const string MessageStringsArchive = "LOCAL:language/english/messages.res";
 
-    // 0x53F750: the four values selected by the retail map's +/- callbacks.
-    private static readonly float[] MapFieldsOfView =
-        [0.7853982f, 0.3272492f, 0.1396263f, 0.009599311f];
-
-    private static readonly Bgra32 ScreenBlack = new(2, 10, 3, 255);
-    private static readonly Bgra32 ScreenGreen = new(15, 150, 29, 255);
-    private static readonly Bgra32 ScreenBright = new(33, 225, 64, 255);
-    private static readonly Bgra32 ScreenRed = new(35, 45, 220, 255);
-    private const float PageLinkScaleMultiplier = 2f;
-    private const float PageLinkHitHeight = 14f;
-
-    private readonly IGraphicsDevice _device;
-    private readonly ResourceRegistry _resources;
     private readonly IOpenIgiLogger _logger;
-    private readonly Func<string, string> _resolveText;
+    private readonly Igi1Gameplay? _game;
     private readonly RetailUiResources _uiResources;
+    private readonly List<ComputerWord> _labelWords = [];
+
+    // LineFilter's own stream (0x4A2CD0 draws from gFilterRandom, never the game's).
+    private readonly IgiRandom _filterRandom = IgiRandom.Seeded();
     private IresArchive? _archive;
-    private Page _page;
-    // Retail opens on its useful mission-overview scale; the widest level is reached with minus.
-    private int _zoom = 1;
-    private Vector3d _centreUnits;
-    private Vector3d _playerUnits;
-    private bool _hasCentre;
-    private float _mouseX;
-    private float _mouseY;
-    private bool _mapDragActive;
+    private float _scale = 1f;
     private bool _disposed;
 
-    public MapComputerRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger logger,
-        Func<string, string> resolveText)
+    public MapComputerRenderer(IGraphicsDevice device, IOpenIgiLogger logger, IMissionGameplay? gameplay)
     {
-        _device = device;
-        _resources = resources;
         _logger = logger;
-        _resolveText = resolveText;
+        _game = gameplay as Igi1Gameplay;
         _uiResources = new RetailUiResources(device, new RetailUiResourceOptions { LogCategory = "Computer" }, logger);
     }
 
-    public bool IsReady => _archive is not null;
+    public bool IsReady => _archive is not null && Computer is not null;
 
-    /// <summary>Whether the live overhead world pass, rather than a text page, should be drawn.</summary>
-    public bool ShowsMap => _page == Page.Map;
+    /// <inheritdoc/>
+    public bool ShowsMap => Computer is { IsOpen: true, Screen: ComputerMap };
+
+    /// <inheritdoc/>
+    public bool ShowsDevice => Computer is { IsOpen: true, ShowsDevice: true };
 
     /// <inheritdoc/>
     public bool MapAvailable { get; set; } = true;
+
+    private Igi1Computer? Computer => _game?.World.Computer;
 
     public bool Load(VirtualFileSystem fileSystem)
     {
         try
         {
-            // The retail installation ships this at LOCAL:computer/computer.res. COMPUTER: is an
-            // optional script alias, but probing an absent VFS device is fatal.
-            string? name = fileSystem.Exists(LocalArchive) ? LocalArchive : null;
-            if (name is null)
+            if (!fileSystem.Exists(LocalArchive))
             {
-                _logger.Warning("Computer", $"No map-computer archive at {Archive} or {LocalArchive}.");
+                _logger.Warning("Computer", $"No map-computer archive at {LocalArchive}.");
                 return false;
             }
 
-            _archive = fileSystem.ReadArchive(name);
+            _archive = fileSystem.ReadArchive(LocalArchive);
             _uiResources.SetArchives(_archive);
+            if (_game is not null)
+            {
+                _game.ComputerWorld.Fonts = this;
+                _game.ComputerWorld.SpriteSizes = SpriteSize;
+            }
+
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -91,449 +93,90 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         }
     }
 
-    /// <summary>Starts a new computer session centred on Jones, as 0x469740 does.</summary>
-    public void Open(Vector3d playerUnits)
+    /// <inheritdoc/>
+    public int StringWidth(string font, string text) => Font(font) is { } bitmap ? (int)bitmap.Measure(text).Width : text.Length * 8;
+
+    /// <inheritdoc/>
+    public int LineHeight(string font) => Font(font)?.LineHeight ?? 16;
+
+    /// <summary>The map's own camera, as the last tick set it (<c>0x46A0D0</c>): straight down over the level, across the whole display.</summary>
+    public MapSceneView SceneView(int screenWidth, int screenHeight)
     {
-        _playerUnits = playerUnits;
-        _centreUnits = playerUnits;
-        _hasCentre = true;
-        _page = MapAvailable ? Page.Map : Page.Objectives;
+        ComputerMap? map = Computer?.Screen as ComputerMap;
+        Vector3d at = WorldScene.ToMetres(map?.CameraPosition ?? default);
+        float fov = map?.CameraFieldOfView ?? 1f;
+
+        // The camera's aspect is one: the tangent across is the field of view, the one down the display's share of it.
+        float vertical = 2f * MathF.Atan(fov * screenHeight / Math.Max(1, screenWidth));
+        Camera3D camera = new(at, Camera3D.LookRotation(0f, -MathF.PI * 0.5f));
+        return new MapSceneView(camera, vertical, new Viewport(0, 0, screenWidth, screenHeight));
     }
 
-    /// <summary>Handles page links plus direct mouse pan and zoom on the map.</summary>
-    public void Update(InputState input, int screenWidth, int screenHeight)
+    /// <inheritdoc/>
+    public void DrawBehindDevice(SpriteBatch batch, int screenWidth, int screenHeight)
     {
-        _mouseX = input.Mouse.X;
-        _mouseY = input.Mouse.Y;
-
-        bool leftPressed = input.Mouse.WasPressed(MouseButton.Left);
-        bool middlePressed = input.Mouse.WasPressed(MouseButton.Middle);
-        bool leftDown = input.Mouse.IsDown(MouseButton.Left);
-        bool middleDown = input.Mouse.IsDown(MouseButton.Middle);
-        Viewport device = DeviceViewportFor(screenWidth, screenHeight);
-        float linkScale = PageLinkScale(device);
-        float linkX = device.X + device.Width * 0.1f;
-        float logY = LogLinkY(device);
-        float objectivesY = ObjectivesLinkY(device);
-        bool pageLinkPressed = false;
-        if (!MapAvailable && _page == Page.Map)
+        ArgumentNullException.ThrowIfNull(batch);
+        if (Computer is not { IsOpen: true } computer)
         {
-            _page = Page.Objectives;
-        }
-
-        if (leftPressed)
-        {
-            if (LinkTarget(Page.Objectives) is { } objectivesTarget
-                && HitTextLink(linkX, objectivesY, 175f * linkScale, PageLinkHitHeight * linkScale))
-            {
-                _page = objectivesTarget;
-                pageLinkPressed = true;
-            }
-            else if (LinkTarget(Page.Log) is { } logTarget
-                && HitTextLink(linkX, logY, 100f * linkScale, PageLinkHitHeight * linkScale))
-            {
-                _page = logTarget;
-                pageLinkPressed = true;
-            }
-        }
-
-        if (_page != Page.Map)
-        {
-            _mapDragActive = false;
             return;
         }
 
-        Viewport map = ScreenViewport(screenWidth, screenHeight);
-        if (!leftDown && !middleDown)
+        _scale = Math.Max(1f, MathF.Floor(screenWidth / Math.Max(1f, computer.Width)));
+        if (computer.Screen is ComputerMap map)
         {
-            _mapDragActive = false;
+            // 0x46AE30: the picture multiplied by (0, 127, 0) of 128 -- what was drawn of the level, in its green alone.
+            batch.FillRect(new RectF(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgba(0, 253, 0, 255), BlendMode.Modulate);
+            DrawMarks(batch, computer, map);
+            DrawNoise(batch, map.Noise, screenWidth, screenHeight);
+            DrawStartup(batch, computer, map.Startup);
         }
-        else if (!_mapDragActive
-            && (leftPressed || middlePressed)
-            && Hit(map.X, map.Y, map.Width, map.Height)
-            && (!pageLinkPressed || middlePressed))
+        else
         {
-            _mapDragActive = true;
-        }
-
-        if (_mapDragActive)
-        {
-            PanByDrag(input.Mouse.DeltaX, input.Mouse.DeltaY, map);
-        }
-
-        if (Hit(map.X, map.Y, map.Width, map.Height) && input.Mouse.WheelDelta != 0f)
-        {
-            _zoom = Math.Clamp(_zoom + (input.Mouse.WheelDelta > 0f ? 1 : -1), 0, 3);
+            // 0x469110 and 0x468BC0: a page is black behind the device.
+            batch.FillRect(new RectF(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgba(0, 0, 0, 255));
         }
     }
 
-    /// <summary>Builds the retail vertical map camera and its inset CRT viewport.</summary>
-    public MapSceneView SceneView(Vector3d playerUnits, int screenWidth, int screenHeight)
-    {
-        _playerUnits = playerUnits;
-        if (!_hasCentre)
-        {
-            _centreUnits = playerUnits;
-            _hasCentre = true;
-        }
-
-        Viewport viewport = ScreenViewport(screenWidth, screenHeight);
-        Vector3d centreMetres = WorldScene.ToMetres(_centreUnits);
-        // The map owns a genuine second 3D view in retail. Looking straight down keeps terrain,
-        // buildings and moving units live instead of replacing them with a fabricated grid.
-        Camera3D camera = new(
-            new Vector3d(centreMetres.X, centreMetres.Y, centreMetres.Z + 900.0),
-            Camera3D.LookRotation(0f, -MathF.PI * 0.5f));
-        return new MapSceneView(camera, MapFieldsOfView[_zoom], viewport);
-    }
-
-    public void Draw(
-        SpriteBatch batch,
-        MissionObjectiveRuntime runtime,
-        Vector3d player,
-        IReadOnlyList<Vector3d> guards,
-        IEnumerable<ComputerMapHighlight> highlights,
-        int screenWidth,
-        int screenHeight)
+    /// <inheritdoc/>
+    public void DrawInFrontOfDevice(SpriteBatch batch, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(runtime);
-        _playerUnits = player;
-
-        switch (_page)
+        if (Computer is not { IsOpen: true } computer)
         {
-            case Page.Map:
-                DrawMapGlass(batch, runtime, player, guards, highlights, screenWidth, screenHeight);
-                break;
-            case Page.Objectives:
-                DrawTextScreen(batch, screenWidth, screenHeight);
-                DrawObjectives(batch, runtime, screenWidth, screenHeight);
-                break;
-            case Page.Log:
-                DrawTextScreen(batch, screenWidth, screenHeight);
-                DrawLog(batch, runtime, screenWidth, screenHeight);
-                break;
+            return;
         }
 
-        DrawPageLinks(batch, screenWidth, screenHeight);
-        DrawPointer(batch);
+        if (computer.Screen is ComputerPage page)
+        {
+            DrawPage(batch, page);
+        }
+
+        foreach (ComputerItem item in computer.Panel.Items)
+        {
+            DrawItem(batch, item);
+        }
+
+        // 0x46AE30: the pointer centred on its point, hidden while the sphere drags.
+        if (!computer.IsDragging && Frame("pointer.spr", 0) is { } pointer)
+        {
+            float x = computer.PointerX - (pointer.Sprite.Width * 0.5f), y = computer.PointerY - (pointer.Sprite.Height * 0.5f);
+            DrawFrame(batch, pointer, x, y, Unmodified);
+        }
     }
 
     /// <summary>Draws the mission-failed menu reached after retail's 151-tick LevelFlow grace period.</summary>
     public void DrawMissionFailed(SpriteBatch batch, int screenWidth, int screenHeight)
     {
-        batch.FillRect(new RectF(0, 0, screenWidth, screenHeight), new Bgra32(0, 0, 0, 205));
+        ArgumentNullException.ThrowIfNull(batch);
+        Bgra32 red = Bgra32.FromRgba(220, 45, 35, 255), bright = Bgra32.FromRgba(64, 225, 33, 255);
+        batch.FillRect(new RectF(0, 0, screenWidth, screenHeight), Bgra32.FromRgba(0, 0, 0, 205));
         float left = (screenWidth - 440f) * 0.5f;
         float top = (screenHeight - 150f) * 0.5f;
-        batch.FillRect(new RectF(left, top, 440, 150), new Bgra32(15, 29, 21, 255));
-        DrawText(batch, "font3.fnt", "MISSION FAILED", left + 105, top + 28, 1f, ScreenRed);
-        DrawText(batch, "font3.fnt", "ENTER: RESTART MISSION", left + 78, top + 82, 0.65f, ScreenBright);
-        DrawText(batch, "font3.fnt", "ESC: END MISSION", left + 110, top + 112, 0.65f, ScreenBright);
+        batch.FillRect(new RectF(left, top, 440, 150), Bgra32.FromRgba(21, 29, 15, 255));
+        Font("font3.fnt")?.Draw(batch, "MISSION FAILED", left + 105, top + 28, red);
+        Font("font3.fnt")?.Draw(batch, "ENTER: RESTART MISSION", left + 78, top + 82, bright, 0.65f, 0.65f);
+        Font("font3.fnt")?.Draw(batch, "ESC: END MISSION", left + 110, top + 112, bright, 0.65f, 0.65f);
     }
-
-    private void DrawMapGlass(SpriteBatch batch, MissionObjectiveRuntime runtime, Vector3d player,
-        IReadOnlyList<Vector3d> guards, IEnumerable<ComputerMapHighlight> highlights, int width, int height)
-    {
-        Viewport screen = ScreenViewport(width, height);
-        // The live world pass is converted to green phosphor in the resolve shader. Keep only this
-        // faint tube reflection here; an opaque tint makes terrain and architecture disappear.
-        batch.FillRect(new RectF(screen.X, screen.Y, screen.Width, screen.Height), new Bgra32(0, 18, 0, 18));
-
-        // The mission scripts own these labels and their linked world positions. Retail only exposes
-        // them once the user has zoomed past the widest overview, where the text would overlap badly.
-        if (_zoom >= 1)
-        {
-            float uiScale = ComputerUiScale(DeviceViewportFor(width, height));
-            List<ComputerMapHighlight> candidates = highlights
-                .GroupBy(highlight => highlight.TitleResource, StringComparer.OrdinalIgnoreCase)
-                .OrderBy(group => group.Count())
-                .SelectMany(group => group)
-                .ToList();
-            List<(float X, float Y)> occupied = [];
-            foreach (ComputerMapHighlight highlight in candidates)
-            {
-                if (!TryProject(highlight.Position, screen, out float x, out float y))
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(highlight.Sprite))
-                {
-                    DrawIcon(batch, highlight.Sprite, x, y);
-                }
-                bool labelClear = occupied.All(point =>
-                    MathF.Abs(point.X - x) > 115f * uiScale || MathF.Abs(point.Y - y) > 24f * uiScale);
-                if (labelClear && !string.IsNullOrWhiteSpace(highlight.TitleResource))
-                {
-                    DrawText(batch, "font4.fnt", ComputerString(highlight.TitleResource),
-                        x + 6f * uiScale, y - 8f * uiScale, uiScale, ScreenRed);
-                    occupied.Add((x, y));
-                }
-            }
-        }
-
-        foreach (Vector3d guard in guards)
-        {
-            if (TryProject(guard, screen, out float x, out float y))
-            {
-                DrawIcon(batch, "h_guard.spr", x, y, ScreenRed);
-            }
-        }
-
-        foreach (MissionObjective objective in runtime.Objectives)
-        {
-            if (objective.Position is not { } position || objective.State == MissionObjectiveState.Failed)
-            {
-                continue;
-            }
-            if (TryProject(position, screen, out float x, out float y))
-            {
-                DrawIcon(batch, objective.State == MissionObjectiveState.Complete
-                    ? "objective_2.spr" : "objective_1.spr", x, y);
-            }
-        }
-
-        if (TryProject(player, screen, out float px, out float py))
-        {
-            DrawIcon(batch, "h_player.spr", px, py);
-        }
-
-        DrawScanlines(batch, screen);
-    }
-
-    private static void DrawTextScreen(SpriteBatch batch, int width, int height)
-    {
-        Viewport screen = ScreenViewport(width, height);
-        batch.FillRect(new RectF(screen.X, screen.Y, screen.Width, screen.Height), ScreenBlack);
-        DrawScanlines(batch, screen);
-    }
-
-    private void DrawObjectives(SpriteBatch batch, MissionObjectiveRuntime runtime, int width, int height)
-    {
-        Viewport device = DeviceViewportFor(width, height);
-        float scale = ComputerUiScale(device);
-        float x = device.X + device.Width * 0.1f;
-        float y = device.Y + device.Height * 0.1f;
-        for (int i = 0; i < runtime.Objectives.Count; i++)
-        {
-            MissionObjective objective = runtime.Objectives[i];
-            string state = ComputerString(objective.State.ToString().ToUpperInvariant());
-            DrawText(batch, "font3.fnt", $"{ComputerString("OBJECTIVE")} {i + 1}: {state}", x, y, scale, ScreenBright);
-            y += FontLineHeight("font3.fnt") * scale;
-            y += DrawWrappedText(batch, "font4.fnt", ComputerString(objective.TextResource), x, y, scale, ScreenBright, 400f * scale);
-            y += 8f * scale;
-        }
-    }
-
-    private void DrawLog(SpriteBatch batch, MissionObjectiveRuntime runtime, int width, int height)
-    {
-        Viewport device = DeviceViewportFor(width, height);
-        float scale = ComputerUiScale(device);
-        float x = device.X + device.Width * 0.15f;
-        float y = device.Y + device.Height * 0.1f;
-        foreach (MissionComputerLogEntry entry in runtime.Log.TakeLast(15).Reverse())
-        {
-            y += DrawWrappedText(batch, "font1.fnt", ComputerString(entry.TextResource), x, y, scale, ScreenBright, 400f * scale);
-            batch.FillRect(new RectF(x, y + 5f * scale, 100f * scale, Math.Max(1f, scale)), new Bgra32(48, 96, 48, 255));
-            y += 16f * scale;
-        }
-    }
-
-    private void DrawPageLinks(SpriteBatch batch, int width, int height)
-    {
-        Viewport device = DeviceViewportFor(width, height);
-        float scale = PageLinkScale(device);
-        float x = device.X + device.Width * 0.1f;
-        float logY = LogLinkY(device);
-        float objectivesY = ObjectivesLinkY(device);
-        if (LinkTarget(Page.Log) is { } first)
-        {
-            DrawBoldText(batch, "font3.fnt", ComputerString(first == Page.Map ? "MAP" : "LOG"), x, logY, scale,
-                HitTextLink(x, logY, 100f * scale, PageLinkHitHeight * scale) ? ScreenBright : ScreenGreen);
-        }
-
-        if (LinkTarget(Page.Objectives) is { } second)
-        {
-            DrawBoldText(batch, "font3.fnt", ComputerString(second == Page.Map ? "MAP" : "OBJECTIVES"), x, objectivesY, scale,
-                HitTextLink(x, objectivesY, 175f * scale, PageLinkHitHeight * scale) ? ScreenBright : ScreenGreen);
-        }
-    }
-
-    /// <summary>Where a page's link leads from the current page: back to the map from that page itself.</summary>
-    /// <remarks>Nothing when that is the map and the level has not given the player the device.</remarks>
-    private Page? LinkTarget(Page link)
-    {
-        Page target = _page == link ? Page.Map : link;
-        return target == Page.Map && !MapAvailable ? null : target;
-    }
-
-    private void DrawPointer(SpriteBatch batch) => DrawSprite(batch, "pointer.spr", _mouseX, _mouseY);
-
-    private static void DrawScanlines(SpriteBatch batch, Viewport screen)
-    {
-        Bgra32 line = new(0, 0, 0, 18);
-        for (int y = screen.Y + 1; y < screen.Y + screen.Height; y += 3)
-        {
-            batch.FillRect(new RectF(screen.X, y, screen.Width, 1), line);
-        }
-    }
-
-    private void PanByDrag(float deltaX, float deltaY, Viewport viewport)
-    {
-        if (deltaX == 0f && deltaY == 0f)
-        {
-            return;
-        }
-
-        // Keep the drag conversion in the same units and projection as TryProject: moving the
-        // pointer moves the map under it, rather than applying a frame-rate-dependent nudge.
-        double altitudeUnits = 900.0 * 4096.0;
-        double halfHeight = altitudeUnits * Math.Tan(MapFieldsOfView[_zoom] * 0.5);
-        double halfWidth = halfHeight * viewport.Width / Math.Max(1.0, viewport.Height);
-        double unitsPerPixelX = 2.0 * halfWidth / Math.Max(1, viewport.Width);
-        double unitsPerPixelY = 2.0 * halfHeight / Math.Max(1, viewport.Height);
-        _centreUnits = new Vector3d(
-            _centreUnits.X - deltaX * unitsPerPixelX,
-            _centreUnits.Y + deltaY * unitsPerPixelY,
-            _centreUnits.Z);
-    }
-
-    private bool TryProject(Vector3d worldUnits, Viewport viewport, out float x, out float y)
-    {
-        double altitudeUnits = 900.0 * 4096.0;
-        double halfHeight = altitudeUnits * Math.Tan(MapFieldsOfView[_zoom] * 0.5);
-        double halfWidth = halfHeight * viewport.Width / Math.Max(1.0, viewport.Height);
-        x = viewport.X + viewport.Width * 0.5f
-            + (float)((worldUnits.X - _centreUnits.X) / (2.0 * halfWidth) * viewport.Width);
-        y = viewport.Y + viewport.Height * 0.5f
-            - (float)((worldUnits.Y - _centreUnits.Y) / (2.0 * halfHeight) * viewport.Height);
-        return x >= viewport.X && x <= viewport.X + viewport.Width
-            && y >= viewport.Y && y <= viewport.Y + viewport.Height;
-    }
-
-    private void DrawIcon(SpriteBatch batch, string name, float centreX, float centreY, Bgra32? colour = null)
-    {
-        if (Sprite(name) is not { } sprite || sprite.Asset.Frames.Count == 0)
-        {
-            return;
-        }
-        SpriteFrame frame = sprite.Asset.Frames[0];
-        sprite.DrawFrame(batch, frame, centreX - frame.Width * 0.5f, centreY - frame.Height * 0.5f,
-            1f, 1f, colour ?? BitmapTextRenderer.NeutralColor);
-    }
-
-    private void DrawSprite(SpriteBatch batch, string name, float x, float y, Bgra32? colour = null, float scale = 1f)
-    {
-        if (Sprite(name) is { Asset.Frames.Count: > 0 } sprite)
-        {
-            sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, scale, scale,
-                colour ?? BitmapTextRenderer.NeutralColor);
-        }
-    }
-
-    private string ComputerString(string key)
-    {
-        if (_resources.TryGetEntry(key, out ResourceEntry? entry))
-        {
-            ReadOnlySpan<byte> bytes = entry.Data.Span;
-            int terminator = bytes.IndexOf((byte)0);
-            return System.Text.Encoding.Latin1.GetString(terminator < 0 ? bytes : bytes[..terminator]);
-        }
-        return _resolveText(key);
-    }
-
-    private float DrawWrappedText(SpriteBatch batch, string fontName, string text, float x, float y,
-        float scale, Bgra32 colour, float maxWidth)
-    {
-        if (Font(fontName) is not { } font || string.IsNullOrWhiteSpace(text))
-        {
-            return 0f;
-        }
-        float start = y;
-        string line = string.Empty;
-        foreach (string word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            string candidate = line.Length == 0 ? word : $"{line} {word}";
-            if (line.Length > 0 && font.Measure(candidate, scale, scale).Width > maxWidth)
-            {
-                font.Draw(batch, line, x, y, colour, scale, scale);
-                y += font.LineHeight * scale;
-                line = word;
-            }
-            else
-            {
-                line = candidate;
-            }
-        }
-        if (line.Length > 0)
-        {
-            font.Draw(batch, line, x, y, colour, scale, scale);
-            y += font.LineHeight * scale;
-        }
-        return y - start;
-    }
-
-    private void DrawText(SpriteBatch batch, string fontName, string text, float x, float y, float scale, Bgra32 colour)
-    {
-        if (Font(fontName) is { } font && !string.IsNullOrEmpty(text))
-        {
-            font.Draw(batch, text, x, y, colour, scale, scale);
-        }
-    }
-
-    private void DrawBoldText(SpriteBatch batch, string fontName, string text, float x, float y, float scale, Bgra32 colour)
-    {
-        DrawText(batch, fontName, text, x, y, scale, colour);
-        float stroke = MathF.Max(1f, scale * 0.5f);
-        DrawText(batch, fontName, text, x + stroke, y, scale, colour);
-        DrawText(batch, fontName, text, x, y + stroke, scale, colour);
-    }
-
-    private float FontLineHeight(string name) => Font(name)?.LineHeight ?? 12f;
-
-    private BitmapTextRenderer? Font(string name) => _uiResources.Font(name);
-
-    private SpriteResource? Sprite(string name) => _uiResources.Sprite(name);
-
-    private bool HitTextLink(float x, float y, float width, float height) => Hit(x, y, width, height);
-    private bool Hit(float x, float y, float width, float height) =>
-        _mouseX >= x && _mouseX <= x + width && _mouseY >= y && _mouseY <= y + height;
-
-    /// <summary>Gets the centred 4:3 presentation occupied by the retail handheld computer.</summary>
-    public Viewport DeviceViewport(int width, int height) => DeviceViewportFor(width, height);
-
-    /// <summary>The same, without needing an instance, for this class's own layout maths.</summary>
-    internal static Viewport DeviceViewportFor(int width, int height)
-    {
-        int displayWidth = Math.Max(1, width);
-        int displayHeight = Math.Max(1, height);
-        int deviceHeight = Math.Min(displayHeight, (int)MathF.Round(displayWidth * 0.75f));
-        int deviceWidth = Math.Min(displayWidth, (int)MathF.Round(deviceHeight * (4f / 3f)));
-        return new Viewport(
-            (displayWidth - deviceWidth) / 2,
-            (displayHeight - deviceHeight) / 2,
-            deviceWidth,
-            deviceHeight);
-    }
-
-    private static Viewport ScreenViewport(int width, int height)
-    {
-        Viewport device = DeviceViewportFor(width, height);
-        return new Viewport(
-            device.X + Math.Max(1, (int)(device.Width * 0.045f)),
-            device.Y + Math.Max(1, (int)(device.Height * 0.0525f)),
-            Math.Max(1, (int)(device.Width * 0.91f)),
-            Math.Max(1, (int)(device.Height * 0.8525f)));
-    }
-
-    private static float ComputerUiScale(Viewport device) =>
-        MathF.Max(0.5f, MathF.Min(device.Width / 1000f, device.Height / 750f));
-
-    private static float PageLinkScale(Viewport device) => ComputerUiScale(device) * PageLinkScaleMultiplier;
-
-    private static float LogLinkY(Viewport device) => device.Y + device.Height * 0.735f;
-
-    private static float ObjectivesLinkY(Viewport device) => device.Y + device.Height * 0.795f;
 
     public void Dispose()
     {
@@ -541,10 +184,90 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
         {
             return;
         }
+
         _disposed = true;
+        if (_game is not null && ReferenceEquals(_game.ComputerWorld.Fonts, this))
+        {
+            _game.ComputerWorld.Fonts = null;
+            _game.ComputerWorld.SpriteSizes = null;
+        }
+
         _uiResources.Dispose();
-        _archive = null;
     }
 
-    private enum Page { Map, Objectives, Log }
+    // 0x46B5C0 and 0x46B890.
+    private void DrawItem(SpriteBatch batch, ComputerItem item)
+    {
+        switch (item)
+        {
+            case ComputerButtonItem button when Frame(button.Sprite, 0) is { } frame:
+                DrawFrame(batch, frame, button.X, button.Y, Unmodified);
+                break;
+            case ComputerTextItem text:
+                (float r, float g, float b) = text.Draw();
+                DrawText(batch, text.Font, text.Text, text.X, text.Y, ItemColour(r, g, b));
+                break;
+        }
+    }
+
+    // The pages' words, and the log's rule under each line: a hundred pixels from (48, 96, 48) to (0, 16, 0).
+    private void DrawPage(SpriteBatch batch, ComputerPage page)
+    {
+        foreach (ComputerPageWord word in page.Words)
+        {
+            (float r, float g, float b) = ComputerColors.Items[word.Color];
+            DrawText(batch, word.Font, word.Text, word.X, word.Y, ItemColour(r, g, b));
+        }
+
+        foreach ((int x, int y) in page.Rules)
+        {
+            Line(batch, x, y, x + 100, y, Bgra32.FromRgba(95, 191, 95, 255), Bgra32.FromRgba(0, 31, 0, 255));
+        }
+    }
+
+    // The original's sprite and text colours are on a scale of 128 (0x534AB0 multiplies by 1/128): 128 leaves the art as it
+    // is. The 2D batch multiplies by the colour as a fraction of 255, so the scale is doubled on the way in.
+    private static readonly Bgra32 Unmodified = Bgra32.FromRgba(255, 255, 255, 255);
+
+    private static Bgra32 ItemColour(float r, float g, float b) => Bgra32.FromRgba(Channel(r), Channel(g), Channel(b), 255);
+
+    private static byte Channel(float value) => (byte)Math.Clamp((int)(value * 255f / 128f), 0, 255);
+
+    private BitmapTextRenderer? Font(string name) => _uiResources.Font(name);
+
+    private (int Width, int Height) SpriteSize(string name) =>
+        _uiResources.Sprite(name) is { Asset.Frames.Count: > 0 } sprite ? (sprite.Asset.Frames[0].Width, sprite.Asset.Frames[0].Height) : (0, 0);
+
+    private SpriteFrameRef? Frame(string name, int frame) =>
+        _uiResources.Sprite(name) is { Asset.Frames.Count: > 0 } sprite
+            ? new SpriteFrameRef(sprite, sprite.Asset.Frames[Math.Clamp(frame, 0, sprite.Asset.Frames.Count - 1)], sprite.Asset.Frames[0])
+            : null;
+
+    private void DrawFrame(SpriteBatch batch, SpriteFrameRef frame, float x, float y, Bgra32 colour) =>
+        frame.Resource.DrawFrame(batch, frame.Frame, x * _scale, y * _scale, _scale, _scale, colour);
+
+    private void DrawText(SpriteBatch batch, string font, string text, float x, float y, Bgra32 colour) =>
+        Font(font)?.Draw(batch, text, x * _scale, y * _scale, colour, _scale, _scale);
+
+    // A one-pixel line in display pixels, its colour running from one end to the other.
+    private void Line(SpriteBatch batch, float x0, float y0, float x1, float y1, Bgra32 from, Bgra32 to)
+    {
+        float dx = x1 - x0, dy = y1 - y0;
+        float length = MathF.Sqrt((dx * dx) + (dy * dy));
+        if (length <= 0f)
+        {
+            return;
+        }
+
+        float nx = -dy / length * 0.5f * _scale, ny = dx / length * 0.5f * _scale;
+        float ax = x0 * _scale, ay = y0 * _scale, bx = x1 * _scale, by = y1 * _scale;
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(ax + nx, ay + ny, 0f, 0f, from),
+            new Vertex2D(bx + nx, by + ny, 0f, 0f, to),
+            new Vertex2D(bx - nx, by - ny, 0f, 0f, to),
+            new Vertex2D(ax - nx, ay - ny, 0f, 0f, from));
+    }
+
+    private readonly record struct SpriteFrameRef(SpriteResource Resource, SpriteFrame Frame, SpriteFrame Sprite);
 }

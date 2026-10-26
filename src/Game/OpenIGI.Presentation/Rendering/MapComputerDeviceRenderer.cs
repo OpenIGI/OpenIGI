@@ -20,7 +20,6 @@ public sealed class MapComputerDeviceRenderer : IDisposable
 {
     private const string LogCategory = "Computer";
     private const string ModelName = "mapcomputer";
-    private const float DefaultWidthMetres = 0.5537f;
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
@@ -33,7 +32,6 @@ public sealed class MapComputerDeviceRenderer : IDisposable
     private MtpInstance _instance;
     private bool _hasInstance;
     private bool _disposed;
-    private float _widthMetres = DefaultWidthMetres;
 
     /// <summary>Initializes a new instance of the <see cref="MapComputerDeviceRenderer"/> class.</summary>
     /// <param name="device">The device the model is uploaded to and drawn with.</param>
@@ -74,9 +72,6 @@ public sealed class MapComputerDeviceRenderer : IDisposable
                     return false;
                 }
 
-                _widthMetres = Math.Max(
-                    _geometry.Vertices.Max(vertex => vertex.Position.X) - _geometry.Vertices.Min(vertex => vertex.Position.X),
-                    float.Epsilon);
 
                 _pack = pack;
                 _instance = instance;
@@ -90,12 +85,16 @@ public sealed class MapComputerDeviceRenderer : IDisposable
         return false;
     }
 
-    /// <summary>Draws the device square to the camera at the requested horizontal screen coverage.</summary>
-    /// <param name="camera">The active first-person camera.</param>
-    /// <param name="projection">The narrow presentation projection.</param>
-    /// <param name="horizontalHalfTangent">The half-width of the view frustum at one metre.</param>
-    /// <param name="horizontalCoverage">The fraction of the presentation occupied by the 4:3 device.</param>
-    public void Draw(in Camera3D camera, in Matrix4f projection, float horizontalHalfTangent, float horizontalCoverage)
+    /// <summary>How far ahead of the eye the device is held, metres (<c>0x46BD50</c>: 532.48 units).</summary>
+    public const double HeldForward = 532.48 / WorldScene.UnitsPerMetre;
+
+    /// <summary>How far below the eye, metres (40.96 units).</summary>
+    public const double HeldDown = 40.96 / WorldScene.UnitsPerMetre;
+
+    /// <summary>Draws the device where the player holds it (<c>0x46BD50</c>): ahead of the eye and a little below, facing it.</summary>
+    /// <param name="camera">The player's eye.</param>
+    /// <param name="projection">The eye's projection.</param>
+    public void DrawHeld(in Camera3D camera, in Matrix4f projection)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_geometry is null || _pack is null || !_hasInstance)
@@ -116,20 +115,9 @@ public sealed class MapComputerDeviceRenderer : IDisposable
             }
         }
 
-        // The mesh's outside housing deliberately overhangs the display: at retail's 4:3 presentation
-        // its outer side and bottom are cropped while the aperture fills the 91% × 85.25% HUD viewport.
-        // Coverage is consequently allowed beyond the display width rather than being capped at one.
-        float coverage = Math.Clamp(horizontalCoverage, 0.01f, 4f);
-        float halfTangent = Math.Max(horizontalHalfTangent, 0.001f);
-        float distance = _widthMetres / (2f * coverage * halfTangent);
-
-        // CreateModelView multiplies the camera orientation by the model orientation. Its inverse
-        // therefore gives this flat asset a stable, front-on view-space orientation at any player yaw.
-        // The position conversion goes in the other direction: Camera3D transforms a world offset into
-        // view space with Orientation.Transposed(), so Orientation maps the requested view offset back
-        // to the world. Using the transposed matrix here placed the panel beside or behind the player.
+        // The camera's own axes give the flat panel its front-on turn; its view offset maps back to the world through them.
         Matrix3f orientation = camera.Orientation.Transposed();
-        Vector3d position = camera.Position + camera.Orientation.Transform(new Vector3d(0d, 0d, distance));
+        Vector3d position = camera.Position + camera.Orientation.Transform(new Vector3d(0d, -HeldDown, HeldForward));
 
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);

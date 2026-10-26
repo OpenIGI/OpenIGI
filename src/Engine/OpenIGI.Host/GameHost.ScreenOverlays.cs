@@ -263,71 +263,47 @@ public sealed partial class GameHost
                 _device, state.Batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);
         }
 
-        // ComputerMap renders the terrain through its own top-down camera and turns only that
-        // captured view into green phosphor. The SIMOTECH casing is a separate retail panel that
-        // is drawn after the resolve, in its authored colours, before the HUD fills its aperture.
-        //
-        // The tactical interface has no casing at all — that is the point of it — so this whole
-        // block is the retail path's alone.
-        if (_computerOpen
-            && TacticalComputer is null
-            && _playerMode
-            && Viewpoint?.IsDeathViewActive != true
-            && Viewpoint?.WalkingEye(smoothPresentation, tickBlend) is { } computerEye)
+        // The original's computer: its screen's far layers, the device held before the eye, then the controls and the pointer
+        // nearer than the casing. The tactical interface has no casing; it draws all of itself at once.
+        if (_computerOpen && TacticalComputer is null && _mapComputer is { IsReady: true } retailComputer)
         {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            retailComputer.DrawBehindDevice(state.Batch, _window.Width, _window.Height);
+            state.Batch.End();
 
-            Matrix4f computerViewModelProjection = ViewModelProjection.Create(
-                sight.ViewModelTanX,
-                FarPlane);
-
-            // 0x46BB10 gives the computer task the mapcomputer model only while the level grants the
-            // device; without it the pages are drawn with nothing held.
-            if (_mapComputerDevice is { IsReady: true } deviceModel && _mapComputer is { MapAvailable: true })
+            // 0x46BB10 gives the computer task the mapcomputer model only while the level grants the map.
+            if (retailComputer.ShowsDevice
+                && _mapComputerDevice is { IsReady: true } deviceModel
+                && _playerMode
+                && Viewpoint?.IsDeathViewActive != true
+                && Viewpoint?.WalkingEye(smoothPresentation, tickBlend) is { } computerEye)
             {
-                Viewport deviceViewport = _mapComputer!.DeviceViewport(_window.Width, _window.Height);
-                float horizontalHalfTangent = sight.ViewModelTanX;
-                // The mapcomputer mesh is a close foreground prop. Its housing extends past the
-                // view just as it does in retail; 2.50 is the retail asset's aperture-to-frame
-                // calibration against the map task's 91% screen viewport. The casing is intentionally
-                // cropped at the display edges: leaving its outside black behind the four corners
-                // makes the computer look set back from the camera rather than held in the foreground.
-                float horizontalCoverage = deviceViewport.Width / (float)Math.Max(1, _window.Width) * 2.50f;
-                deviceModel.Draw(computerEye, computerViewModelProjection, horizontalHalfTangent, horizontalCoverage);
+                deviceModel.DrawHeld(computerEye, ViewModelProjection.Create(HumanView.DefaultTanX, FarPlane));
+                _device.SetDepthState(DepthState.Disabled);
             }
 
-            _device.SetDepthState(DepthState.Disabled);
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            retailComputer.DrawInFrontOfDevice(state.Batch, _window.Width, _window.Height);
+            state.Batch.End();
         }
-
-        if (_computerOpen
+        else if (_computerOpen
+            && TacticalComputer is { } tacticalChrome
             && ComputerObjectives is { } computerObjectives
             && ComputerBodyUnits is { } computerBody)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            if (TacticalComputer is { } tacticalChrome)
-            {
-                tacticalChrome.Draw(
-                    state.Batch,
-                    computerObjectives,
-                    computerBody,
-                    _soldiers?.MapContacts() ?? [],
-                    _computerHighlights?.Visible() ?? [],
-                    _window.Width,
-                    _window.Height,
-                    _computerFlight.ChromeOpacity);
-            }
-            else if (_mapComputer is { IsReady: true } computer && _mission.Objectives is { } objectiveRuntime)
-            {
-                computer.Draw(
-                    state.Batch,
-                    objectiveRuntime,
-                    computerBody,
-                    _soldiers?.MapContacts() ?? [],
-                    _computerHighlights?.Visible() ?? [],
-                    _window.Width,
-                    _window.Height);
-            }
-
+            tacticalChrome.Draw(
+                state.Batch,
+                computerObjectives,
+                computerBody,
+                _soldiers?.MapContacts() ?? [],
+                _computerHighlights?.Visible() ?? [],
+                _window.Width,
+                _window.Height,
+                _computerFlight.ChromeOpacity);
             state.Batch.End();
         }
 

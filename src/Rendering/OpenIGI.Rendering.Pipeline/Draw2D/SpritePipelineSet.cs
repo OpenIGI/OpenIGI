@@ -154,6 +154,13 @@ public sealed class SpritePipelineSet : IDisposable
         BlendMode.Modulate2X => new RhiBlendState(
             new RhiBlendComponent(RhiBlendFactor.Destination, RhiBlendFactor.Source, RhiBlendOperation.Add),
             new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.One, RhiBlendOperation.Add)),
+
+        // dst*src, the alpha left alone: Project I.G.I.'s computer multiplying the map's picture by its green
+        // (ZERO, SRCCOLOR). Into an interface layer drawn apart for frame generation it multiplies the layer, not the
+        // picture under it, so the tint is lost there.
+        BlendMode.Modulate => new RhiBlendState(
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.Source, RhiBlendOperation.Add),
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.One, RhiBlendOperation.Add)),
         _ => throw new ArgumentOutOfRangeException(
             nameof(blend),
             blend,

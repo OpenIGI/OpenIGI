@@ -90,7 +90,7 @@ public sealed class Sprite2DPass : IDisposable
             ShaderModuleId.Sprite2D,
             TextureLayout,
             targetFormat,
-            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive, BlendMode.Modulate2X],
+            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive, BlendMode.Modulate2X, BlendMode.Modulate],
             depthFormat);
     }
 
@@ -110,7 +110,7 @@ public sealed class Sprite2DPass : IDisposable
             ShaderModuleId.Sprite2D,
             TextureLayout,
             _targetFormat,
-            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive, BlendMode.Modulate2X],
+            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive, BlendMode.Modulate2X, BlendMode.Modulate],
             _depthFormat,
             intoLayer: true)
         : _sprites;

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Events;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Events;
 using OpenIGI.Game.Hosting;
@@ -43,7 +44,11 @@ public static class Igi1MissionSystems
                     b.LevelRoot,
                     b.MissionText ?? throw Missing(MissionSystemNames.Cutscenes),
                     game.Tick.AreaPlayerNow,
-                    made => b.Objectives = made)))
+                    made =>
+                    {
+                        b.Objectives = made;
+                        BringComputerUp(game, b, made, host);
+                    })))
             .InsertBefore(MissionSystemNames.SceneView, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Vehicles, b =>
                 game.Setup.BuildVehicles(
                     b.Loaded,
@@ -113,4 +118,31 @@ public static class Igi1MissionSystems
 
     // A step ran before the one it depends on.
     private static InvalidOperationException Missing(string name) => new($"The mission system '{name}' has not run.");
+
+    /// <summary>Gives the computer the level's text, variables, objectives and limit, closed, as each level comes up.</summary>
+    private static void BringComputerUp(Igi1Gameplay game, MissionLevelBuild b, OpenIGI.Game.World.MissionObjectiveRuntime objectives, IMissionSetupHost host)
+    {
+        game.ComputerWorld.Strings = b.MissionText;
+        game.ComputerWorld.Variables = host.Game.Variables;
+        if (game.World.Computer is not { } computer)
+        {
+            return;
+        }
+
+        computer.Close();
+        computer.Objectives = objectives;
+        computer.Limit = null;
+        computer.MapPosition = default;
+
+        // 0x466F60: the last DefineComputerLimit made is the computer's.
+        foreach (GameTask task in b.LevelRoot.Descendants())
+        {
+            if (task is DeclaredTask { Type.Name: "DefineComputerLimit" } limit
+                && limit.TryGetValue("Position", out object? at) && at is OpenIGI.Core.Numerics.Vector3d centre)
+            {
+                float size = limit.TryGetValue("Quadrant Size (m)", out object? raw) && raw is float metres ? metres : 0f;
+                computer.Limit = new OpenIGI.Game.Computer.ComputerMapLimit(centre, size);
+            }
+        }
+    }
 }

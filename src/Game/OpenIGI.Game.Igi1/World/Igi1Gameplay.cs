@@ -29,6 +29,8 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
         World.PlayerEvents = new Igi1PlayerEvents(World, Harm, Blasts, Sounds);
         Setup = new Igi1MissionSetup(World, Harm, Blasts, Sounds, Audio, Impacts, host);
         Tick = new Igi1MissionTick(World, Harm, Blasts, Audio, host);
+        ComputerWorld = new OpenIGI.Game.Igi1.Computer.Igi1ComputerWorld(World, Audio);
+        World.Computer = new OpenIGI.Game.Igi1.Computer.Igi1Computer(ComputerWorld);
     }
 
     /// <summary>Gets the played mission's world.</summary>
@@ -57,6 +59,9 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
 
     /// <summary>Gets what resolves the level's blasts and what they break.</summary>
     public Igi1Blasts Blasts { get; }
+
+    /// <summary>Gets what the computer asks of the level, which the presentation gives its fonts and sprites.</summary>
+    public OpenIGI.Game.Igi1.Computer.Igi1ComputerWorld ComputerWorld { get; }
 
     /// <summary>Gets the mission's tick.</summary>
     public Igi1MissionTick Tick { get; }

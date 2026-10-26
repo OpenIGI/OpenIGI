@@ -268,6 +268,10 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         }
     }
 
+    /// <summary>Plays one of the computer's sounds, unplaced, as <c>0x4E7200(name, 1, {1, 1, 0})</c> does.</summary>
+    /// <param name="name">The definition.</param>
+    public void PlayComputerSound(string name) => host.SoundOutput?.PlayDefinition(name, priority: 180);
+
     /// <summary>Plays the retail world-weapon cue after a <c>GunPickup</c> reaches the player.</summary>
     public void PlayGunPickupSound(GunPickup pickup)
     {

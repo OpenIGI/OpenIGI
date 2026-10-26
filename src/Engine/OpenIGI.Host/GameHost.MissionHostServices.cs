@@ -74,6 +74,16 @@ public sealed partial class GameHost
 
         public bool ComputerOpen => host._computerOpen;
 
+        public bool MissionComputer => host.UsesMissionComputer;
+
+        public bool MapComputerEnabled => host.MapComputerAvailable();
+
+        public (int Width, int Height) ComputerDisplay => host.ComputerDisplaySize;
+
+        public OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput() => host.TakeComputerInput();
+
+        public void ComputerChanged(bool open) => host.MissionComputerChanged(open);
+
         public bool TickTitlePlayer() => host.TickTitlePlayer();
 
         public void CheatWeaponsGranted() => host.ShowCheatWeapons();

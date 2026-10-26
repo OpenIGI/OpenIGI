@@ -551,7 +551,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         GrantCheatWeapons(player);
         if (host.ComputerOpen)
         {
-            player.TickMapComputer();
+            TickMapComputer(player);
         }
         else
         {
@@ -560,6 +560,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
             // Do not advance the same registry again after the walk.
             mission.InteractionsTickedByPlayer = true;
+            OpenMapComputer(player);
         }
 
         mission.TickVehicleMissiles();

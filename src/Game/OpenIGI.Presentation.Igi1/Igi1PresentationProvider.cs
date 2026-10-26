@@ -207,7 +207,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     private IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>
-        new MapComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText);
+        new MapComputerRenderer(request.Device, request.Logger, request.Gameplay);
 
     /// <inheritdoc/>
     private ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request) =>

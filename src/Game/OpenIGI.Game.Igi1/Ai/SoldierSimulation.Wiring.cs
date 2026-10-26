@@ -418,6 +418,9 @@ public sealed partial class SoldierSimulation
         Func<GameTask, bool>? standsAside = null) =>
         SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner, standsAside);
 
+    /// <inheritdoc cref="SoldierBodyQueries.MapHumans"/>
+    public IReadOnlyList<(GameTask Task, int Team, Vector3d Position, float Facing, bool Live)> MapHumans() => _bodies.MapHumans();
+
     /// <inheritdoc cref="SoldierBodyQueries.MapContacts"/>
     public IReadOnlyList<Vector3d> MapContacts() => _bodies.MapContacts();
 
