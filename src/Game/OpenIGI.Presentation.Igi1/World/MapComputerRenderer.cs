@@ -35,9 +35,15 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
 {
     public const string LocalArchive = "LOCAL:computer/computer.res";
 
+    /// <summary>The level's menu archive, whose fonts the screens are written in (<c>MenuManager_FindFont</c>, <c>0x418E40</c>).</summary>
+    public const string MenuArchive = "LOCAL:menusystem/ingamemenu.res";
+
     private readonly IOpenIgiLogger _logger;
     private readonly Igi1Gameplay? _game;
     private readonly RetailUiResources _uiResources;
+
+    // The in-game menu's fonts: the links, the pages, the labels. Only the boot box loads the computer's own font3.
+    private readonly RetailUiResources _menuResources;
     private readonly List<ComputerWord> _labelWords = [];
 
     // LineFilter's own stream (0x4A2CD0 draws from gFilterRandom, never the game's).
@@ -51,6 +57,7 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
         _logger = logger;
         _game = gameplay as Igi1Gameplay;
         _uiResources = new RetailUiResources(device, new RetailUiResourceOptions { LogCategory = "Computer" }, logger);
+        _menuResources = new RetailUiResources(device, new RetailUiResourceOptions { LogCategory = "Computer" }, logger);
     }
 
     public bool IsReady => _archive is not null && Computer is not null;
@@ -63,6 +70,9 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
 
     /// <inheritdoc/>
     public bool MapAvailable { get; set; } = true;
+
+    /// <inheritdoc/>
+    public WorldScene? Scene { get; set; }
 
     private Igi1Computer? Computer => _game?.World.Computer;
 
@@ -78,6 +88,10 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
 
             _archive = fileSystem.ReadArchive(LocalArchive);
             _uiResources.SetArchives(_archive);
+            if (fileSystem.Exists(MenuArchive))
+            {
+                _menuResources.SetArchives(fileSystem.ReadArchive(MenuArchive));
+            }
             if (_game is not null)
             {
                 _game.ComputerWorld.Fonts = this;
@@ -124,6 +138,9 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
         _scale = Math.Max(1f, MathF.Floor(screenWidth / Math.Max(1f, computer.Width)));
         if (computer.Screen is ComputerMap map)
         {
+            // The objects' outlines are drawn in the map's own view, so the multiply over it tints them too.
+            DrawOutlines(batch, computer, map);
+
             // 0x46AE30: the picture multiplied by (0, 127, 0) of 128 -- what was drawn of the level, in its green alone.
             batch.FillRect(new RectF(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgba(0, 253, 0, 255), BlendMode.Modulate);
             DrawMarks(batch, computer, map);
@@ -193,6 +210,7 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
         }
 
         _uiResources.Dispose();
+        _menuResources.Dispose();
     }
 
     // 0x46B5C0 and 0x46B890.
@@ -233,7 +251,10 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
 
     private static byte Channel(float value) => (byte)Math.Clamp((int)(value * 255f / 128f), 0, 255);
 
-    private BitmapTextRenderer? Font(string name) => _uiResources.Font(name);
+    private BitmapTextRenderer? Font(string name) => _menuResources.Font(name) ?? _uiResources.Font(name);
+
+    // The boot box's own font (0x466240 loads LOCAL:computer/font3.fnt itself).
+    private BitmapTextRenderer? ComputerFont(string name) => _uiResources.Font(name);
 
     private (int Width, int Height) SpriteSize(string name) =>
         _uiResources.Sprite(name) is { Asset.Frames.Count: > 0 } sprite ? (sprite.Asset.Frames[0].Width, sprite.Asset.Frames[0].Height) : (0, 0);
@@ -247,7 +268,10 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
         frame.Resource.DrawFrame(batch, frame.Frame, x * _scale, y * _scale, _scale, _scale, colour);
 
     private void DrawText(SpriteBatch batch, string font, string text, float x, float y, Bgra32 colour) =>
-        Font(font)?.Draw(batch, text, x * _scale, y * _scale, colour, _scale, _scale);
+        DrawText(batch, Font(font), text, x, y, colour);
+
+    private void DrawText(SpriteBatch batch, BitmapTextRenderer? font, string text, float x, float y, Bgra32 colour) =>
+        font?.Draw(batch, text, x * _scale, y * _scale, colour, _scale, _scale);
 
     // A one-pixel line in display pixels, its colour running from one end to the other.
     private void Line(SpriteBatch batch, float x0, float y0, float x1, float y1, Bgra32 from, Bgra32 to)

@@ -1,5 +1,8 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.World;
+using OpenIGI.Game.World;
 using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi1.Computer;
 using OpenIGI.Game.Player;
@@ -65,6 +68,51 @@ internal sealed partial class MapComputerRenderer
             DrawCone(batch, p, cone);
         }
     }
+
+    // 0x467800, called back for each rigid object the map's view draws (0x467900): the line between its model's magic
+    // vertices 10 and 11 (MVTX, MESH+136), white for a door and half that for anything else. Only a model authored with
+    // more than ten has one.
+    private void DrawOutlines(SpriteBatch batch, Igi1Computer computer, ComputerMap map)
+    {
+        if (Scene is not { } scene)
+        {
+            return;
+        }
+
+        Projection p = new(map.CameraPosition, map.CameraFieldOfView, computer.Width, computer.Height, computer.PixelAspect);
+        Bgra32 door = Bgra32.FromRgba(255, 255, 255, 255), other = Bgra32.FromRgba(127, 127, 127, 255);
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (placement.IsSuppressed
+                || placement.Model.MagicVertexCount <= 10
+                || !placement.Model.TryGetMagicVertex(10, out Vector3f m10)
+                || !placement.Model.TryGetMagicVertex(11, out Vector3f m11))
+            {
+                continue;
+            }
+
+            Vector3d origin = WorldScene.ToUnits(placement.Position);
+            Vector3d a = origin + placement.Orientation.Transposed().Transform(Widen(m10));
+            Vector3d b = origin + placement.Orientation.Transposed().Transform(Widen(m11));
+            Vector3f va = p.ToView(a), vb = p.ToView(b);
+            if (va.Z <= 0f || vb.Z <= 0f)
+            {
+                continue;
+            }
+
+            (float ax, float ay) = p.Project(va);
+            (float bx, float by) = p.Project(vb);
+            if (Math.Max(ax, bx) < 0f || Math.Min(ax, bx) > computer.Width || Math.Max(ay, by) < 0f || Math.Min(ay, by) > computer.Height)
+            {
+                continue;
+            }
+
+            Bgra32 colour = placement.Owner is DeclaredTask { Type.Name: "Door" } ? door : other;
+            Line(batch, ax, ay, bx, by, colour, colour);
+        }
+    }
+
+    private static Vector3d Widen(Vector3f v) => new(v.X, v.Y, v.Z);
 
     // A lens's frames turn every eighth tick through as many as its camera sprite has.
     private static SpriteFrameRef Animated(SpriteFrameRef frame, in ComputerMark mark)
@@ -193,9 +241,9 @@ internal sealed partial class MapComputerRenderer
         batch.FillRect(new RectF(x1 * _scale, y1 * _scale, Math.Max(0f, x2 - x1) * _scale, Math.Max(0f, y2 - y1) * _scale), bar);
 
         string line = computer.Text(startup.Lines[startup.Step]);
-        float ty = top - LineHeight("font3.fnt") - 2f;
+        float ty = top - (ComputerFont("font3.fnt")?.LineHeight ?? 16) - 2f;
         (float r, float g, float b) = startup.TextColor;
-        DrawText(batch, "font3.fnt", line, left, ty, ItemColour(r * 127f, g * 127f, b * 127f));
+        DrawText(batch, ComputerFont("font3.fnt"), line, left, ty, ItemColour(r * 127f, g * 127f, b * 127f));
     }
 
     // The boot box's colours, a channel times 255 made whole.

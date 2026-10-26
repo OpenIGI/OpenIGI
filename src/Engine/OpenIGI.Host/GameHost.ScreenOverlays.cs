@@ -267,6 +267,7 @@ public sealed partial class GameHost
         // nearer than the casing. The tactical interface has no casing; it draws all of itself at once.
         if (_computerOpen && TacticalComputer is null && _mapComputer is { IsReady: true } retailComputer)
         {
+            retailComputer.Scene = _scene;
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             retailComputer.DrawBehindDevice(state.Batch, _window.Width, _window.Height);

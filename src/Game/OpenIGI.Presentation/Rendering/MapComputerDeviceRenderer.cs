@@ -115,8 +115,13 @@ public sealed class MapComputerDeviceRenderer : IDisposable
             }
         }
 
-        // The camera's own axes give the flat panel its front-on turn; its view offset maps back to the world through them.
-        Matrix3f orientation = camera.Orientation.Transposed();
+        // The eye's matrix times RotX(pi/2), as 0x46BD50 builds it: the camera's rows are its right, up and forward, so the
+        // model's X goes to the right, its Y up and its Z back toward the eye.
+        Matrix3f o = camera.Orientation;
+        Matrix3f orientation = new(
+            o.M11, o.M21, -o.M31,
+            o.M12, o.M22, -o.M32,
+            o.M13, o.M23, -o.M33);
         Vector3d position = camera.Position + camera.Orientation.Transform(new Vector3d(0d, -HeldDown, HeldForward));
 
         _device.SetProjection(projection);

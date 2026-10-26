@@ -65,6 +65,9 @@ public interface IMapComputerPresenter : IDisposable
     /// <summary>Gets whether the device itself is held: only while the level grants the map.</summary>
     bool ShowsDevice { get; }
 
+    /// <summary>Gets or sets the level's placed objects, which the map outlines.</summary>
+    WorldScene? Scene { get; set; }
+
     /// <summary>Gets how the world behind the device is framed: the map's own camera, as the mission's tick last set it.</summary>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
