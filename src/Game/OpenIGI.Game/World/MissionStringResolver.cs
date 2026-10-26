@@ -50,15 +50,26 @@ public sealed class MissionStringResolver
             return string.Empty;
         }
 
+        return TryGet(key, out string text) ? text : _menuStrings.Get(key);
+    }
+
+    /// <summary>Finds a key among the registered archives alone, as the original's <c>0x4B64E0</c> does.</summary>
+    /// <param name="key">The resource key.</param>
+    /// <param name="text">Receives its text.</param>
+    /// <returns><see langword="false"/> when no archive carries it.</returns>
+    public bool TryGet(string key, out string text)
+    {
         // The archives hold CSTR entries: Latin-1 bytes to the first NUL, with whatever the packer left
         // after it. Taking the whole span would append that tail to every line.
-        if (_resources.TryGetEntry(key, out ResourceEntry? entry))
+        if (!string.IsNullOrEmpty(key) && _resources.TryGetEntry(key, out ResourceEntry? entry))
         {
             ReadOnlySpan<byte> bytes = entry.Data.Span;
             int terminator = bytes.IndexOf((byte)0);
-            return System.Text.Encoding.Latin1.GetString(terminator < 0 ? bytes : bytes[..terminator]);
+            text = System.Text.Encoding.Latin1.GetString(terminator < 0 ? bytes : bytes[..terminator]);
+            return true;
         }
 
-        return _menuStrings.Get(key);
+        text = string.Empty;
+        return false;
     }
 }
