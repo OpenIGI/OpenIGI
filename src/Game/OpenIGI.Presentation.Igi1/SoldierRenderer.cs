@@ -178,6 +178,12 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _logger = logger ?? NullLogger.Instance;
         _ownsSimulation = simulation is null;
         _sim = simulation ?? new SoldierSimulation(_logger);
+
+        // A GunPickup simulates independently after a dead human drops it, including when the optional visual corpse ragdoll
+        // is off. Stepping the corpses between, as the simulation closes its tick, keeps its walls and floor identical to the
+        // ones that stop the body.
+        _sim.CorpsesMove += StepCorpses;
+        _sim.TickClosed += FollowTick;
         _meshes = new SoldierMeshBuilder(_device, _logger, magic, heldWeapons);
         _frames = new SoldierFrameInterpolator(_groups, _sim, _logger);
         _hits = new SoldierHitTesting(_groups, _sim, _frames, _logger);
@@ -488,7 +494,12 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(roster);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _armoury.Arm(mission, roster, Count);
+        if (_ownsSimulation)
+        {
+            _sim.Arm(mission, roster);
+        }
+
+        return _armoury.Dress(mission, Count);
     }
 
     /// <inheritdoc/>
@@ -735,6 +746,8 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         }
 
         _disposed = true;
+        _sim.CorpsesMove -= StepCorpses;
+        _sim.TickClosed -= FollowTick;
         if (_ownsSimulation)
         {
             _sim.Retire();
@@ -847,17 +860,23 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The simulation closes the tick (<see cref="SoldierSimulation.EndTick"/>); the renderer steps the corpses and skins the
+    /// bodies as it does, whoever ends the tick -- a guest level runs a simulation the renderer does not own.
+    /// </remarks>
     public void EndTick()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _sim.FinishTick();
+        _sim.EndTick();
+    }
 
-        _frames.StepRagdolls();
-
-        // A GunPickup simulates independently after a dead human drops it, including when the optional
-        // visual corpse ragdoll is off. Sharing these probes keeps its walls and floor identical to the
-        // ones that stop the body.
-        _sim.TickAfterCorpses();
+    // The tick's bodies, once the simulation has closed it: each skinned in the pose it is drawn in, then recorded where it stands.
+    private void FollowTick()
+    {
+        if (_disposed)
+        {
+            return;
+        }
 
         foreach (SoldierGroup group in _groups)
         {
@@ -906,6 +925,14 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         // draws between the last two of these records, so they are the whole interface between the
         // 30 Hz simulation and however fast the display runs.
         _frames.CaptureTickStates();
+    }
+
+    private void StepCorpses()
+    {
+        if (!_disposed)
+        {
+            _frames.StepRagdolls();
+        }
     }
 
     // Poses a soldier's lower level for the eye it was last drawn from, or frees it once the body is drawn whole again.
