@@ -15,9 +15,10 @@ namespace OpenIGI.Presentation.Rendering;
 /// advance.
 /// </para>
 /// <para>
-/// The neutral colour is <b>128</b> per channel, not 255. The original initialises its font colour to
-/// <c>128.0f</c> in all three channels, so treating 255 as "unmodified" renders every string at double
-/// brightness. <see cref="NeutralColor"/> spells that out.
+/// The original's sprite and text colours are on a scale of 128: it initialises a font's colour to
+/// <c>128.0f</c> and multiplies every colour by 1/128 on its way to the vertex (<c>0x534AB0</c>), so 128 is
+/// the art as it is. The 2D batch multiplies by the colour as a fraction of 255, so
+/// <see cref="NeutralColor"/> is full white and <see cref="FromRetail"/> converts the original's colours.
 /// </para>
 /// </remarks>
 public sealed class BitmapTextRenderer
@@ -39,8 +40,19 @@ public sealed class BitmapTextRenderer
         _font = font;
     }
 
-    /// <summary>Gets the colour the original treats as "unmodified": 128 in each channel.</summary>
-    public static Bgra32 NeutralColor { get; } = new(128, 128, 128, 255);
+    /// <summary>Gets the colour that leaves the art as it is: the original's 128 in each channel.</summary>
+    public static Bgra32 NeutralColor { get; } = new(255, 255, 255, 255);
+
+    /// <summary>Converts one of the original's sprite, text or rectangle colours, 128 a channel, to the batch's.</summary>
+    /// <param name="r">Red, 0 to 128.</param>
+    /// <param name="g">Green.</param>
+    /// <param name="b">Blue.</param>
+    /// <param name="alpha">The alpha, 0 to 1.</param>
+    /// <returns>The colour, each channel times 255/128 made whole and held to a byte, as the vertex packing does.</returns>
+    public static Bgra32 FromRetail(float r, float g, float b, float alpha = 1f) =>
+        Bgra32.FromRgba(Channel(r * 255f / 128f), Channel(g * 255f / 128f), Channel(b * 255f / 128f), Channel(alpha * 255f));
+
+    private static byte Channel(float value) => (byte)Math.Clamp((int)value, 0, 255);
 
     /// <summary>Gets the font this renderer draws with.</summary>
     public SpriteResource Font => _font;

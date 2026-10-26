@@ -386,7 +386,8 @@ internal sealed class BinocularOverlayRenderer
             range,
             screenWidth * BinocularRangeX,
             (screenHeight * BinocularRangeY) - (font.LineHeight * scale),
-            new Bgra32(0, 128, 0, 255),
+            // The text object keeps the colour Text_New gives it, 128 in each channel: the font's own art.
+            BitmapTextRenderer.NeutralColor,
             scale,
             scale);
     }

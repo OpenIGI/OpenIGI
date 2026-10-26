@@ -243,13 +243,10 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
         }
     }
 
-    // The original's sprite and text colours are on a scale of 128 (0x534AB0 multiplies by 1/128): 128 leaves the art as it
-    // is. The 2D batch multiplies by the colour as a fraction of 255, so the scale is doubled on the way in.
-    private static readonly Bgra32 Unmodified = Bgra32.FromRgba(255, 255, 255, 255);
+    // The original's sprite and text colours are on a scale of 128; 128 leaves the art as it is.
+    private static readonly Bgra32 Unmodified = BitmapTextRenderer.NeutralColor;
 
-    private static Bgra32 ItemColour(float r, float g, float b) => Bgra32.FromRgba(Channel(r), Channel(g), Channel(b), 255);
-
-    private static byte Channel(float value) => (byte)Math.Clamp((int)(value * 255f / 128f), 0, 255);
+    private static Bgra32 ItemColour(float r, float g, float b) => BitmapTextRenderer.FromRetail(r, g, b);
 
     private BitmapTextRenderer? Font(string name) => _menuResources.Font(name) ?? _uiResources.Font(name);
 

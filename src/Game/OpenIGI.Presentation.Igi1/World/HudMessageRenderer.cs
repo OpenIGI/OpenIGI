@@ -67,7 +67,7 @@ internal sealed class HudMessageRenderer
             screenWidth, screenHeight, frame.Width * s, frame.Height * s);
         float alpha = StatusScreenLayout.ActionIconAlpha(_actionPulsePhase);
         byte alphaByte = (byte)Math.Clamp((int)(alpha * byte.MaxValue), 0, byte.MaxValue);
-        icon.DrawFrame(batch, frame, x, y, s, s, new Bgra32(128, 128, 128, alphaByte));
+        icon.DrawFrame(batch, frame, x, y, s, s, BitmapTextRenderer.NeutralColor.WithAlpha(alphaByte));
     }
 
     /// <summary>Draws the status messages the mission has sent, as the original places them.</summary>
@@ -179,7 +179,7 @@ internal sealed class HudMessageRenderer
                 screenHeight * 0.20f,
                 spriteScale,
                 spriteScale,
-                new Bgra32(128, 128, 128, 255));
+                BitmapTextRenderer.NeutralColor);
         }
     }
 
@@ -294,7 +294,7 @@ internal sealed class HudMessageRenderer
         else
         {
             (float R, float G, float B) colour = StatusScreenLayout.MessageColour;
-            ink = new Bgra32((byte)colour.B, (byte)colour.G, (byte)colour.R, 255);
+            ink = BitmapTextRenderer.FromRetail(colour.R, colour.G, colour.B);
         }
         Bgra32 shadow = new(0, 0, 0, 190);
         float step = font.LineHeight * scale;
