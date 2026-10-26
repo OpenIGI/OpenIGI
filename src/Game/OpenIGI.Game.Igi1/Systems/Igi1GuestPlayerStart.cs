@@ -1,6 +1,7 @@
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Systems;
@@ -12,6 +13,9 @@ namespace OpenIGI.Game.Igi1.Systems;
 /// <param name="Surroundings">What it is hurt and dies in: the level's sounds, its corpse and its death camera.</param>
 public sealed record Igi1GuestPlayerStart(HumanPlayerTask Task, ObjectCollisionIndex Solids, AiDifficulty Difficulty, IIgi1PlayerSurroundings Surroundings)
 {
+    /// <summary>Gets the level's sources of bodies its rounds meet: the level's own humans, and any other game's it hosts.</summary>
+    public IReadOnlyList<IShootableBodies> Bodies { get; init; } = [];
+
     /// <summary>Gets the ladders it climbs.</summary>
     public IReadOnlyList<LadderPlacement> Ladders { get; init; } = [];
 

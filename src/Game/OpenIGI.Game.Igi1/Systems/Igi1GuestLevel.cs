@@ -145,6 +145,7 @@ public sealed class Igi1GuestLevel
         }
 
         Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
+        rig.Humans = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
         rig.PlaceAt(world.Ground, spawn, start.Solids.PlayerRegistrationCaster());
 
         // The host's player task stands for it: its body is the rig, its events the player's, and it is the human the host's

@@ -104,9 +104,11 @@ public sealed class RetailIgi1GuestLevelTests(ITestOutputHelper output)
         Igi1GuestContent content = Igi1GuestContent.Load(GameData.RequireRoot(), []);
         Igi1GuestLevel level = Igi1GuestLevel.Open(content);
         Surroundings surroundings = new();
+        Target soldier = new();
         Igi1TitlePlayer player = level.AddPlayer(m.Collision, new Igi1GuestPlayerStart(task, ObjectCollisionIndex.Build([]), AiDifficulty.Normal, surroundings)
         {
             Loadout = PlayerLoadout.Of([new LoadoutWeapon("Gun", "WEAPON_ID_AK47", 0)], [new LoadoutAmmo("AMMO_ID_AK47", 90)]),
+            Bodies = [new OneBody(soldier)],
         });
 
         Vector3d spawn = task.Position;
@@ -135,6 +137,39 @@ public sealed class RetailIgi1GuestLevelTests(ITestOutputHelper output)
         Assert.Same(task, target);
         target.WeaponHit(new WeaponHit(met.Position, met.Normal, 0.5f, new Vector3f(-1f, 0f, 0f), null, null));
         Assert.True(player.Human.Life.Health.RemainingFraction < before);
+
+        // The player's own round meets the level's bodies, and the one it meets is struck by the player.
+        Assert.True(player.Human.Rig.Humans!(chest, chest + new Vector3d(4096.0 * 10, 0, 0), 1f, WeaponCategory.Gun, double.PositiveInfinity, false, out _));
+        Assert.Equal(1, soldier.Hits);
+    }
+
+    // One body every round meets, two metres along it.
+    private sealed class OneBody(Target target) : IShootableBodies
+    {
+        public IEnumerable<IShootableBody> Bodies() => [new Body(target)];
+
+        public void RoundPassed(Vector3d origin, Vector3d target, GameTask? struck)
+        {
+        }
+
+        private sealed class Body(Target target) : IShootableBody
+        {
+            public GameTask Task => target;
+
+            public bool TryMeet(Vector3d origin, Vector3d end, out HumanHit hit)
+            {
+                hit = new HumanHit(origin + new Vector3d(8192.0, 0, 0), 8192.0, 1, 0f, 0f);
+                return true;
+            }
+        }
+    }
+
+    // A task that counts the rounds that strike it.
+    private sealed class Target : GameTask, IWeaponHitTarget
+    {
+        public int Hits { get; private set; }
+
+        public void WeaponHit(in WeaponHit hit) => Hits++;
     }
 
     // What the player is hurt and dies in, here: nothing heard or shown, and the streams it draws from.

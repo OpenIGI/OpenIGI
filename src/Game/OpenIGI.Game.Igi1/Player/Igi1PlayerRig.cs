@@ -135,6 +135,31 @@ public static class Igi1PlayerRig
         return config.Parameters;
     }
 
+    /// <summary>
+    /// The player's rounds as the level's humans take them: offered to every source of bodies the level has, the nearest that
+    /// agrees struck, as the player's own (<see cref="LevelBodies"/>).
+    /// </summary>
+    /// <param name="rig">The rig whose rounds they are, whose tally they are credited to.</param>
+    /// <param name="sources">The level's sources of bodies, read as each round is cast.</param>
+    /// <param name="shooter">The player's task, which each body weighs in its evaluate.</param>
+    /// <returns>The shot.</returns>
+    public static HumanShot Rounds(PlayerCamera rig, IReadOnlyList<IShootableBodies> sources, Func<Engine.Tasks.GameTask?> shooter)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(shooter);
+        return (Core.Numerics.Vector3d origin, Core.Numerics.Vector3d end, float damageFactor, WeaponCategory category, double stopDistance, bool alreadyHeard, out HumanHit hit) =>
+            LevelBodies.Shoot(
+                sources,
+                origin,
+                end,
+                shooter(),
+                stopDistance,
+                alreadyHeard,
+                struck => new Ai.Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true, rig.Shots).ToShared(),
+                out hit);
+    }
+
     /// <summary>Hands the player everything a loadout declares, with the ammunition each weapon draws from.</summary>
     /// <param name="rig">The rig.</param>
     /// <param name="loadout">What the player carries.</param>
