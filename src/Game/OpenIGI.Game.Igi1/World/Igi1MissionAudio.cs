@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <remarks>Every voice the mission holds is held here, so the host only opens the device and places the ear.</remarks>
 /// <param name="mission">The mission whose things make the sounds, and whose stream picks among them.</param>
 /// <param name="host">Where they play.</param>
-public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
+public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
@@ -236,6 +236,19 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
     public bool IsPlayableSound(string name) =>
         host.SoundOutput?.Definitions?.TryResolve(name, out SoundDefinition? found) == true && found is { IsPlayable: true };
 
+    /// <summary>How long a definition's sound instance plays before it deletes itself (<c>0x4E8840</c>): its sample's length, or forever when it loops.</summary>
+    /// <param name="name">The definition.</param>
+    /// <returns>The seconds; nought for a definition or sample that is not there.</returns>
+    public double SoundSeconds(string name)
+    {
+        if (host.SoundOutput is not { Definitions: { } definitions } output || !definitions.TryResolve(name, out SoundDefinition? found) || found is null)
+        {
+            return 0.0;
+        }
+
+        return found.Loop ? double.PositiveInfinity : output.Bank.TryGet(found.BankKey, out Engine.Audio.SoundEntry entry) ? entry.SampleSeconds : 0.0;
+    }
+
     /// <summary>Stops the looping binocular cue when player ticking is suspended.</summary>
     /// <remarks>
     /// Death-camera and mission teardown deliberately stop ticking the player. Those paths therefore
@@ -268,6 +281,10 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
         }
     }
 
+    /// <summary>Plays one of the computer's sounds, unplaced, as <c>0x4E7200(name, 1, {1, 1, 0})</c> does.</summary>
+    /// <param name="name">The definition.</param>
+    public void PlayComputerSound(string name) => host.SoundOutput?.PlayDefinition(name, priority: 180);
+
     /// <summary>Plays the retail world-weapon cue after a <c>GunPickup</c> reaches the player.</summary>
     public void PlayGunPickupSound(GunPickup pickup)
     {
@@ -275,19 +292,26 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
         host.SoundOutput?.PlayDefinition("weaponpickup_1", priority: 180);
     }
 
-    /// <summary>Plays the fixed retail cue after an authored generic item reaches the player.</summary>
+    /// <summary>Awards and plays an authored item that has reached the player.</summary>
+    /// <returns><see langword="true"/> when it was ammunition, whose message the caller posts.</returns>
     /// <remarks>
+    /// <para>
     /// <c>GenericPickup::cleanup</c> calls <c>0x4E7200("pickup", 0, 0)</c>. The cue is shared by C4,
     /// keycards and every other <c>GenericPickup</c>; the model does not select a per-item sound.
     /// Like retail, it is played at the listener rather than at the item's former world position.
+    /// </para>
+    /// <para>
+    /// An <c>AmmoPickup</c> instead hands its ammunition to the player (<c>0x46D990</c>), whose handler adds it and
+    /// plays <c>weaponpickup_1</c> (<c>0x45FF80</c>); the box plays no cue of its own.
+    /// </para>
     /// </remarks>
-    public void PlayGenericPickupSound(GenericPickup pickup)
+    public bool TakeGenericPickup(GenericPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
 
-        // Ammo pickups are authored as GenericPickup/AmmoPickup world objects. Resolve and award them
-        // at the same collection edge as the retail pickup cue, so the object, inventory count and sound
+        // Award ammunition at the same collection edge as the cue, so the object, inventory count and sound
         // cannot drift apart. An explicit task payload wins over the catalog fallback.
+        bool ammunition = string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal);
         if (mission.Player?.Weapons is { } weapons
             && mission.AmmoTypes is { } ammoTypes
             && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
@@ -295,7 +319,8 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
             weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
         }
 
-        host.SoundOutput?.PlayDefinition("pickup", priority: 180);
+        host.SoundOutput?.PlayDefinition(ammunition ? "weaponpickup_1" : "pickup", priority: 180);
+        return ammunition;
     }
 
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
@@ -347,8 +372,8 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
                 }
                 else
                 {
-                    // A one-shot bed that has run out: the speakers let it go. The area keeps its instance until a
-                    // silent fade releases it (AmbientAreaRegistry), as the original's did on the probe.
+                    // A one-shot bed that has run out: the speakers let it go. The area lets its instance go on its own
+                    // clock (AmbientAreaRegistry), as the original's deletes itself at the sample's length.
                     _ambientVoices.Remove(area);
                     area.IsSounding = false;
                 }
@@ -393,13 +418,13 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
 
         // The wet layer is played AS WELL AS the material's own sound, never instead of it. Its gate
         // is 0x416FB0, a single global byte -- the level's weather flag rather than a shelter test --
-        // which is what the rain ambience already reads through the RainEffect task.
+        // which is what the rain ambience already reads through the RainEffect task. Only the material's
+        // voice is quietened for a crouch (0x463920, 0x45A7F0): the wet one keeps its full volume.
         if (host.IsRaining)
         {
             host.SoundOutput.PlayDefinition(
                 FootstepSounds.RainSoundName(step.CycleSlot),
                 step.PositionInUnits,
-                gain: step.VolumeScale,
                 pitch: pitch,
                 priority: 40);
         }
@@ -873,6 +898,7 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
         StopBinocularTransitionSound();
         StopLadderSlideSound();
         StopGrenadeCook();
+        StopMissileSounds();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
         {
@@ -931,11 +957,4 @@ public sealed class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost hos
             host.SoundOutput?.Stop(motor);
         }
     }
-
-    /// <summary>Plays a sound a soldier's script asks for (<c>AIAction_PlaySound</c>).</summary>
-    /// <param name="name">The definition.</param>
-    /// <param name="position">Where, in world units.</param>
-    /// <param name="attached">Whether it follows the soldier.</param>
-    public void PlayScriptSound(string name, Vector3d position, bool attached) =>
-        host.SoundOutput?.PlayDefinition(name, position, priority: 200);
 }

@@ -418,7 +418,7 @@ public sealed class RetailIgi2FiringTests
     [Fact]
     public void The_angles_of_an_orientation_rebuild_it()
     {
-        float[] m = Igi2Pose.Rotation(0.3f, -0.2f, 2.5f);
+        float[] m = EngineEuler.Rotation(0.3f, -0.2f, 2.5f);
 
         (float alpha, float beta, float gamma) = Igi2Pose.Angles(m);
 

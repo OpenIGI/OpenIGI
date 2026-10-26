@@ -56,10 +56,6 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // returns at the count check.
         Particles?.Dispose();
         Particles = new ImpactParticleRenderer(device, resources, fileSystem, MissionLoader.CommonSpritesArchive);
-        if (!Particles.Load(mission))
-        {
-            logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
-        }
 
         // The original's own impact effects: concrete1.spr dust, the material's own chip model, and blood1/blood2
         // for a body. The runtime keeps the motion; this only draws it. Without it the blood is still thrown and
@@ -142,81 +138,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // The rocket's smoke trail and the blast's grey column, under the fireball.
         _smoke?.Draw(eye, projection, blend);
 
-        // The retail fireball, over the scene as light: grenade, missile and shot-out-device blasts drawn from the
-        // real fireball.spr sprite.
+        // The rocket nozzle's glow, over the scene as light.
         _explosions?.Draw(eye, projection, blend);
-    }
-
-    /// <summary>Shows one blast's fireball: the real retail explosion when its texture is loaded.</summary>
-    /// <param name="positionUnits">The blast centre, in world units.</param>
-    /// <param name="intensity">The size and count scale; one is the grenade/missile fireball.</param>
-    /// <remarks>
-    /// The retail <c>1009_01_1</c> fireball is shared by every blast in the level. It is drawn from the model's own real
-    /// texture when the mounted packs hold it; a mission without it falls back to the procedural burst so a blast is never
-    /// invisible.
-    /// </remarks>
-    public void SpawnBlast(Vector3d positionUnits, float intensity)
-    {
-        // The pale grey puff a blast leaves, the retail ExplosionSmoke task's smoke2.spr. A few small translucent
-        // puffs, not a screen-filling tower -- the size is fixed, not scaled by the particle cvar.
-        if (_smoke is not null && _smoke.IsAvailable)
-        {
-            const int puffs = 3;
-            for (int i = 0; i < puffs; i++)
-            {
-                Vector3f drift = new(
-                    ((float)random.NextDouble() - 0.5f) * 140f,
-                    ((float)random.NextDouble() - 0.5f) * 140f,
-                    ((float)random.NextDouble() * 60f) + 20f);
-                _smoke.SpawnPuff(
-                    positionUnits,
-                    drift,
-                    sizeMetres: 1.0f + ((float)random.NextDouble() * 0.4f),
-                    growthMetresPerTick: 0.03f,
-                    lifeTicks: 28 + (int)random.NextBounded(14),
-                    darkness: 0.45f);
-            }
-        }
-
-        if (_explosions is not null && _explosions.Spawn(positionUnits, intensity))
-        {
-            return;
-        }
-
-        Particles?.SpawnExplosion(positionUnits, intensity);
-    }
-
-    /// <summary>Shows the flashbang's world smoke residue without drawing a screen whiteout.</summary>
-    /// <param name="positionUnits">Where it went off, in world units.</param>
-    /// <remarks>
-    /// The native flash task registers <c>ExplosionSmoke</c> and uses <c>smoke2.spr</c>. Keep the smoke in the scene so it
-    /// is occluded and distance-faded like the retail effect; the separate player handler owns the distance-based whiteout.
-    /// </remarks>
-    public void SpawnFlashbangSmoke(Vector3d positionUnits)
-    {
-        if (_smoke is not null && _smoke.IsAvailable)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                Vector3f drift = new(
-                    ((float)random.NextDouble() - 0.5f) * 90f,
-                    ((float)random.NextDouble() - 0.5f) * 90f,
-                    18f + ((float)random.NextDouble() * 35f));
-                _smoke.SpawnPuff(
-                    positionUnits,
-                    drift,
-                    sizeMetres: 0.65f + ((float)random.NextDouble() * 0.2f),
-                    growthMetresPerTick: 0.025f,
-                    lifeTicks: 34 + (int)random.NextBounded(12),
-                    darkness: 0.2f);
-            }
-
-            return;
-        }
-
-        // Keep the effect visible on a mission whose common sprite archive is incomplete. This is a world particle
-        // fallback, never the old full-screen flash.
-        Particles?.SpawnRocketSmoke(positionUnits, Vector3f.Zero, intensity: 1f);
     }
 
     /// <summary>Lays the exhaust glow and smoke trail for every rocket still in the air.</summary>

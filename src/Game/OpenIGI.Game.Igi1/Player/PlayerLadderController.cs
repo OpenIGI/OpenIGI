@@ -130,19 +130,17 @@ internal sealed class PlayerLadderController
     /// <param name="up">Whether up (W) is held.</param>
     /// <param name="down">Whether down (S) is held.</param>
     /// <param name="slide">Whether slide (use) is held.</param>
-    /// <param name="terrain">The level terrain for a foot dismount.</param>
     /// <returns>The decision; a stepping result means the host should start the rung's clip.</returns>
     /// <remarks>
     /// Up/down only act at a rung boundary. Use is checked independently and may enter the retail slide
     /// state during a rung (<c>sub_40D6B0</c>).
     /// </remarks>
-    internal LadderStepResult DecideStep(bool up, bool down, bool slide, IGroundHeightField? terrain)
+    internal LadderStepResult DecideStep(bool up, bool down, bool slide)
     {
         LadderStepResult result = _climb.Decide(up, down, slide);
         if (result == LadderStepResult.Dismounted)
         {
-            _body.Position = _climb.Position;
-            _body.EndLadderTraversal(terrain, placeOnGround: true);
+            LeaveLadder();
         }
         else
         {
@@ -193,9 +191,8 @@ internal sealed class PlayerLadderController
         return _climb.NextStepSound();
     }
 
-    /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>
-    /// <param name="terrain">The level terrain used by the final ground placement.</param>
-    internal void CompleteTopTransition(IGroundHeightField? terrain)
+    /// <summary>Consumes animation 170's endpoint, and lets go of the ladder when state 39 detaches.</summary>
+    internal void CompleteTopTransition()
     {
         LadderTraversalPhase previous = _climb.Phase;
         if (!_climb.CompleteTopTransition())
@@ -206,10 +203,20 @@ internal sealed class PlayerLadderController
         _body.Position = _climb.Position;
         if (previous == LadderTraversalPhase.GettingOffTop)
         {
-            // The clip endpoint is authored on the roof. Resolve the highest object/terrain surface below
-            // it once before restoring normal gravity, preventing a fractional endpoint from tunnelling.
-            _body.EndLadderTraversal(terrain, placeOnGround: true);
+            LeaveLadder();
         }
+    }
+
+    // Off the ladder at either end. 0x4113E0 only turns collision back on: the Human's origin stays where the climb left it,
+    // a little above the ground or the roof, so the body is in the air and falls the last few centimetres into state 29,
+    // landing with the surface's step (0x40BE40). The climb carries the origin; the body stands on its feet,
+    // StandingOriginHeight below. Snapping the origin to the first surface under it instead stood a player who had
+    // climbed to a roof on the ladder's own top, short of the roof and without the landing.
+    private void LeaveLadder()
+    {
+        Vector3d origin = _climb.Position;
+        _body.Position = new Vector3d(origin.X, origin.Y, origin.Z - PlayerBody.StandingOriginHeight);
+        _body.EndLadderTraversal();
     }
 
     /// <summary>Advances state 40 and detaches when the normal mover reports ground contact.</summary>
@@ -231,7 +238,7 @@ internal sealed class PlayerLadderController
         }
 
         _climb.CompleteSlide();
-        _body.EndLadderTraversal(terrain, placeOnGround: false);
+        _body.EndLadderTraversal();
         return true;
     }
 

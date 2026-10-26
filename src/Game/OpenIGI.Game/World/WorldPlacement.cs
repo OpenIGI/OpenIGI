@@ -118,6 +118,16 @@ public sealed record WorldPlacement(
     /// </remarks>
     public string MagicTaskTypeName { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Gets what the title's <see cref="IPlacementVisibility"/> decides this placement's visibility by, or <see langword="null"/>
+    /// for a placement it never culls.
+    /// </summary>
+    /// <remarks>
+    /// Opaque to everything but the title that set it. Every part of one object shares its object's key, because the original
+    /// culls an object and draws its attach objects with it.
+    /// </remarks>
+    public object? VisibilityKey { get; init; }
+
     /// <summary>Gets the attached magic object's authored FireBall count, when it has one.</summary>
     public float MagicExplosionFireballs { get; init; }
 
@@ -156,6 +166,12 @@ public sealed record WorldPlacement(
     /// A title that has the name simply supplies it.
     /// </remarks>
     public string LightmapEntry { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the archive entry of each level of detail's own bake, the first level's first, for a title that names its bakes (I.G.I. 2's
+    /// last digit is the level); or <see langword="null"/> for one whose levels count on from <see cref="LightmapIndex"/>.
+    /// </summary>
+    public IReadOnlyList<string>? LevelLightmapEntries { get; init; }
 
     /// <summary>
     /// Gets the level id of the task that placed this object, shared by everything hanging off it, or <c>-1</c> for a

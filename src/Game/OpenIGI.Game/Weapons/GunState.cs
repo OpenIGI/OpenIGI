@@ -34,6 +34,10 @@ public sealed class GunState
     /// </remarks>
     public int RoundsInClip { get; set; } = GunTiming.UnloadedClipSentinel;
 
+    /// <summary>Gets or sets how far a shell-by-shell reload has got (<c>Gun+reload</c>): 0 idle, then open, insert, close.</summary>
+    /// <remarks>It is the gun's, not the human's, as the original keeps it.</remarks>
+    public int ReloadStage { get; set; }
+
     /// <summary>Gets or sets how long the trigger has been held, ramping 0 to 1.</summary>
     /// <remarks>The original's <c>+328</c>; see <see cref="GunTiming.AdvanceTriggerRamp"/>.</remarks>
     public float TriggerRamp { get; set; }

@@ -62,7 +62,7 @@ internal sealed unsafe class D3D12StreamlineAdapter : IStreamlineGraphicsAdapter
     /// Streamline's own work is invisible to the tracker, so on either side of it everything waits for
     /// everything: what came before is visible to Streamline, and what Streamline wrote to what follows.
     /// </remarks>
-    public void ExternalBarrier(IRhiCommandEncoder encoder) => ((D3D12RhiCommandEncoder)encoder).GlobalBarrier();
+    public void ExternalBarrier(IRhiCommandEncoder encoder, string label) => ((D3D12RhiCommandEncoder)encoder).GlobalBarrier();
 
     /// <inheritdoc/>
     public void RebuildSwapchain(Action between) => _device.RebuildSwapchain(between);

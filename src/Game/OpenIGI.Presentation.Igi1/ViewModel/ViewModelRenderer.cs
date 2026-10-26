@@ -173,7 +173,11 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
         // own material, stayed.
         _device.SetMaterialOverride(SurfaceMaterial.Default);
 
-        Matrix4f modelView = camera.CreateModelView(metres, orientation ?? view.Orientation);
+        Matrix3f modelOrientation = orientation ?? view.Orientation;
+        Matrix4f modelView = camera.CreateModelView(metres, modelOrientation);
+
+        // The light in the model's own frame, as the world pass turns it for an unbaked placement.
+        _device.SetVertexSun(Sun is { } sun ? modelOrientation.Transform(sun.Direction) : Vector3f.Zero);
 
         // The mesh is animated (double-buffered), so the previous tick's skin is a vertex stream the
         // shader can blend against -- the same between-tick smoothing the soldiers get.
@@ -207,7 +211,11 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
 
         _device.ClearPoseInterpolation();
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+        _device.SetVertexSun(Vector3f.Zero);
     }
+
+    /// <inheritdoc/>
+    public FixedFunctionSun? Sun { get; set; }
 
     /// <inheritdoc/>
     public void Dispose()

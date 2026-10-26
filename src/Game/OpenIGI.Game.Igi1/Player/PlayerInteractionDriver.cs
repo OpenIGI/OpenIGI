@@ -37,6 +37,15 @@ internal sealed class PlayerInteractionDriver
     private Vector3d _wireDirection;
     private double _wireSpeed;
 
+    // The level wire's hand-over-hand state (0x40DDA0): which way the drag clip plays (HumanPlayer+0xD80), the step
+    // event last taken (+wireStep), a new step event the last advance crossed, which drag sound comes next, and a
+    // sound waiting to be played.
+    private int _wireDragDirection;
+    private float _wireStep = -1f;
+    private float? _wireStepCrossed;
+    private int _wireDragSound;
+    private string? _pendingWireSound;
+
     /// <summary>Initializes the driver for one player.</summary>
     /// <param name="host">The player the interactions belong to.</param>
     /// <param name="body">The body the states place.</param>
@@ -105,8 +114,22 @@ internal sealed class PlayerInteractionDriver
     /// second-to-last step, not the last.
     /// </para>
     /// </remarks>
-    internal void ApplyRootMotion(Vector3d rootDelta, bool clipEnded = false)
+    /// <param name="stepEventTime">The time of the step event (8) the clip crossed, if it crossed one.</param>
+    internal void ApplyRootMotion(Vector3d rootDelta, bool clipEnded = false, float? stepEventTime = null)
     {
+        if (IsOnLevelWire)
+        {
+            // State 42 rides the drag clip's own root motion (Human_SetExactMotion): the body moves as far as the clip
+            // steps, and a step event it has not taken stops it next tick.
+            _body.Position += rootDelta;
+            if (stepEventTime is { } step && step != _wireStep)
+            {
+                _wireStepCrossed = step;
+            }
+
+            return;
+        }
+
         if (_activeInteraction?.Type != InteractionActivateType.Fence)
         {
             return;
@@ -144,7 +167,7 @@ internal sealed class PlayerInteractionDriver
         InteractionActivateType.Terminal => 90,
         InteractionActivateType.StationaryGun => 198,
         InteractionActivateType.Fence => HumanLocomotionStates.For(41).AnimationId,
-        InteractionActivateType.Wire => Math.Abs(_wireDirection.Z) > Math.Sin(0.034906585)
+        InteractionActivateType.Wire => IsSloped(_activeInteraction.End - _activeInteraction.Anchor)
             ? HumanLocomotionStates.For(43).AnimationId
             : HumanLocomotionStates.For(42).AnimationId,
         InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
@@ -376,6 +399,12 @@ internal sealed class PlayerInteractionDriver
             return;
         }
 
+        if (!IsSloped(segment))
+        {
+            BeginWireDrag(wire, segment);
+            return;
+        }
+
         // sub_411F20 projects onto the wire but never mounts on a raw endpoint: both ends reserve
         // exactly 3072 units. Mounting on the endpoint made the next state-42/43 tick read "at end"
         // and immediately hand the body back to the ground mover.
@@ -454,16 +483,14 @@ internal sealed class PlayerInteractionDriver
     private void TickWire(IGroundHeightField? terrain, bool use)
     {
         WorldInteraction wire = _activeInteraction!;
-        bool sliding = Math.Abs(_wireDirection.Z) > Math.Sin(0.034906585);
-        if (sliding)
+        if (IsSloped(wire.End - wire.Anchor))
         {
             _wireSpeed = (-_wireDirection.Z * 88.309761) + (_wireSpeed * 0.99000001);
             _body.Position += _wireDirection * _wireSpeed;
         }
         else
         {
-            float along = PlayerInputSampler.Axis(_input, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown);
-            _body.Position += _wireDirection * (along * 512.0);
+            TickWireDrag();
         }
 
         Vector3d segment = wire.End - wire.Anchor;
@@ -475,6 +502,91 @@ internal sealed class PlayerInteractionDriver
         {
             End(completed: false, terrain);
         }
+    }
+
+    /// <summary>Mounts a level wire hand over hand — <c>sub_411AE0</c> into state 42 (<c>0x40DD60</c>).</summary>
+    /// <remarks>
+    /// The task hangs 2150.4 below the cable at the mount's projection, kept 3072 from either end, and faces down the
+    /// cable's axis toward its far half: <c>yaw + pi</c> when it mounts past the middle. The drag clip starts still.
+    /// </remarks>
+    private void BeginWireDrag(WorldInteraction wire, Vector3d segment)
+    {
+        Vector3d axis = segment.Normalized();
+        Vector3d mount = wire.WireMountPoint(_body.Eye);
+        Vector3d middle = (wire.Anchor + wire.End) * 0.5;
+        _wireDirection = Vector3d.Dot(mount - middle, axis) > 0.0 ? -axis : axis;
+        _wireSpeed = 0.0;
+        _wireDragDirection = 0;
+        _wireStep = -1f;
+        _wireStepCrossed = null;
+        _pendingWireSound = null;
+        _body.BeginLadderTraversal();
+        _body.Position = wire.WireBodyPoint(_body.Eye, WorldInteraction.WireDragDrop);
+        _body.Yaw = (float)Math.Atan2(_wireDirection.X, _wireDirection.Y);
+        _interactionFacing = -_body.Yaw;
+        _activeInteraction = wire;
+        _interactionTick = 0;
+        _interactionUseArmed = false;
+        wire.BeginUse();
+        Near = null;
+    }
+
+    /// <summary>One tick of state 42 — <c>0x40DDA0</c>.</summary>
+    /// <remarks>
+    /// A step event the clip has not taken before stops it; while it stands still, Forward plays it on and Back plays
+    /// it backward, each start sounding the next of <c>wire_drag_1</c> and <c>wire_drag_2</c> (<c>0x538C48</c>).
+    /// </remarks>
+    private void TickWireDrag()
+    {
+        if (_wireStepCrossed is { } step)
+        {
+            _wireStepCrossed = null;
+            _wireStep = step;
+            _wireDragDirection = 0;
+        }
+
+        if (_wireDragDirection != 0)
+        {
+            return;
+        }
+
+        if (_input.IsSet(PlayerInputSlot.MoveUp))
+        {
+            _wireDragDirection = 1;
+        }
+
+        if (_input.IsSet(PlayerInputSlot.MoveDown))
+        {
+            _wireDragDirection = -1;
+        }
+
+        if (_wireDragDirection != 0)
+        {
+            _pendingWireSound = $"wire_drag_{WireDragSounds[_wireDragSound] + 1}";
+            _wireDragSound = (_wireDragSound - 1) & 1;
+        }
+    }
+
+    // gWireDragSounds (0x538C48).
+    private static readonly int[] WireDragSounds = [0, 1];
+
+    // Wire_IsSloped (0x43F8A0): the cable's pitch over two degrees makes it a zip-line.
+    private static bool IsSloped(Vector3d segment) =>
+        Math.Abs(segment.Normalized().Z) > Math.Sin(0.034906585);
+
+    /// <summary>Gets whether the player hangs from a level wire, hand over hand.</summary>
+    internal bool IsOnLevelWire =>
+        _activeInteraction is { Type: InteractionActivateType.Wire } wire && !IsSloped(wire.End - wire.Anchor);
+
+    /// <summary>Gets which way the drag clip plays this tick: forward, backward, or still.</summary>
+    internal int WireDragDirection => _wireDragDirection;
+
+    /// <summary>Takes the drag sound the last tick started, if it started one.</summary>
+    internal string? TakeWireDragSound()
+    {
+        string? sound = _pendingWireSound;
+        _pendingWireSound = null;
+        return sound;
     }
 
     private void TickFence(WorldInteraction fence, IGroundHeightField? terrain)
@@ -600,7 +712,7 @@ internal sealed class PlayerInteractionDriver
         {
             // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
             // release/end look like an instant teleport to ground instead of a drop from the cable.
-            body.EndLadderTraversal(terrain, placeOnGround: false);
+            body.EndLadderTraversal();
         }
         // A fence ends in the fall it has already been handed (PlayerBody.BeginFallFromVault), so it, too, is left
         // where it is.

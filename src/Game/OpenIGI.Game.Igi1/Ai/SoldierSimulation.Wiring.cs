@@ -34,7 +34,7 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierSightQueries.RestEyeOrientation"/>
     internal static readonly Matrix3f RestEyeOrientation = SoldierSightQueries.RestEyeOrientation;
 
-    internal Action<string, Vector3d, bool>? ScriptSound;
+    internal Action<string, Vector3d, Func<Vector3d>?>? ScriptSound;
 
     internal Action<int, bool, WeaponType?, Vector3d>? WeaponSound;
 
@@ -197,8 +197,8 @@ public sealed partial class SoldierSimulation
         set => _generators.SpawnedBody = value;
     }
 
-    /// <inheritdoc cref="GuardGeneratorSpawner.BodyRemoved"/>
-    internal Action<SoldierAgent>? BodyRemoved { get => _generators.BodyRemoved; set => _generators.BodyRemoved = value; }
+    /// <inheritdoc cref="SoldierContext.BodyRemoved"/>
+    internal Action<SoldierAgent>? BodyRemoved { get => _context.BodyRemoved; set => _context.BodyRemoved = value; }
 
     /// <inheritdoc cref="SoldierNoiseBroadcaster.Humans"/>
     internal List<IHumanAiEventTarget> Humans => _noise.Humans;
@@ -353,8 +353,11 @@ public sealed partial class SoldierSimulation
     /// <summary>Supplies the authored animation triggers from <c>animtrigger/animtrigger.qvm</c>.</summary>
     public void SetAnimationTriggers(AnimTriggerRegistry? triggers) => AnimationTriggers = triggers;
 
-    /// <summary>Plays a definition requested by <c>AIAction_PlaySound</c>.</summary>
-    public void SetScriptSound(Action<string, Vector3d, bool>? report) => ScriptSound = report;
+    /// <summary>
+    /// Plays a definition requested by <c>AIAction_PlaySound</c> or an animation trigger, at a point, and following the soldier
+    /// while it plays when the sound is attached to them.
+    /// </summary>
+    public void SetScriptSound(Action<string, Vector3d, Func<Vector3d>?>? report) => ScriptSound = report;
 
     /// <summary>Reports every AI weapon tick, including quiet ticks needed to end automatic loops.</summary>
     public void SetWeaponSound(Action<int, bool, WeaponType?, Vector3d>? report) => WeaponSound = report;
@@ -405,14 +408,18 @@ public sealed partial class SoldierSimulation
         int simulationTick = int.MinValue) =>
         _binoculars.BinocularTargets(camera, horizontalTangent, screenWidth, screenHeight, tick, maxDetectionMetres, simulationTick);
 
-    /// <inheritdoc cref="SoldierSightQueries.HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask)"/>
+    /// <inheritdoc cref="SoldierSightQueries.HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask, Func{GameTask, bool})"/>
     public static bool HasLineOfSight(
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
         double objectTolerance,
-        GameTask? ignoredOwner = null) =>
-        SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner);
+        GameTask? ignoredOwner = null,
+        Func<GameTask, bool>? standsAside = null) =>
+        SoldierSightQueries.HasLineOfSight(trace, from, to, objectTolerance, ignoredOwner, standsAside);
+
+    /// <inheritdoc cref="SoldierBodyQueries.MapHumans"/>
+    public IReadOnlyList<(GameTask Task, int Team, Vector3d Position, float Facing, bool Live)> MapHumans() => _bodies.MapHumans();
 
     /// <inheritdoc cref="SoldierBodyQueries.MapContacts"/>
     public IReadOnlyList<Vector3d> MapContacts() => _bodies.MapContacts();

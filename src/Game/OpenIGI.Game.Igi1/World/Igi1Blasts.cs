@@ -27,6 +27,17 @@ namespace OpenIGI.Game.Igi1.World;
 public sealed class Igi1Blasts(
     MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1ImpactEffects impacts, IBlastEffectsHost host)
 {
+    // The FireBalls and fragments a grenade (0x476AC0) and an M203 round (0x476340) hand Explosion0.
+    private const int GrenadeFireballs = 1;
+    private const int GrenadeFragments = 3;
+
+    // How far below a grenade and a missile the line runs that finds what their blast scorches.
+    private const double GrenadeScorchDropInUnits = 2048.0;
+    private const double MissileScorchDropInUnits = 12288.0;
+
+    // The flashbang's decal half-width (0x47E9A0's 2048).
+    private const float FlashScorchHalfWidthInUnits = 2048f;
+
     // 0x412990's shove, units a tick into the body's slide -- 758.51849.
     private const float BlastShoveUnitsPerTick = 758.51849f;
 
@@ -62,11 +73,14 @@ public sealed class Igi1Blasts(
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
                 // 0x00476AC0's type-1 branch spawns only the flash (0x0047E9A0) and plays explo_flash
-                // (0x0047E820) -- no fireball and no explo_02_m. The world residue is a smoke task
-                // (smoke2.spr), while the player handler at 0x00413090 writes the distance-based
-                // whiteout fields from the player's eye. That handler does not perform a wall trace.
+                // (0x0047E820) -- no fireball and no explo_02_m. The world residue is three puffs of smoke1.spr
+                // (0x47E820), while the player handler at 0x00413090 writes the distance-based whiteout
+                // fields from the player's eye. That handler does not perform a wall trace.
                 host.PlayDefinition("explo_flash", blast.Position, 90);
-                host.FlashbangSmoke(blast.Position);
+                impacts.Explosions.Flash(blast.Position);
+
+                // 0x47E9A0 burns the same burn1.tex, 2048 wide, on what the grenade's line found 2048 below.
+                impacts.ScorchBelow(blast.Position, GrenadeScorchDropInUnits, FlashScorchHalfWidthInUnits);
                 float eyeDistance = (float)(mission.Player.EyeUnits - blast.Position).Length;
                 (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
                 // 0x00413090 writes the player fields only when one of its two distance tests passes.
@@ -79,14 +93,16 @@ public sealed class Igi1Blasts(
                 continue;
             }
 
-            // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
-            host.PlayDefinition("explo_02_m", blast.Position, 90);
-            host.Fireball(blast.Position);
-
-            // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
-            // Do not post it again here: leaving a second record behind makes a guard react twice to
-            // one retail blast, with the duplicate consumed on the following tick.
-            Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade);
+            // The frag (type 0, 0x476AC0): the scorch on whatever lies 2048 below, then an Explosion0 of one FireBall
+            // and three fragments at the configured radius, which goes off with explo_02_m and its blast at once.
+            // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick; posting it
+            // again would have a guard react twice to one retail blast.
+            GrenadeDetonation frag = blast;
+            impacts.ScorchBelow(blast.Position, GrenadeScorchDropInUnits, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
+            impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+                blast.Position, 1, 1, blast.DamageFactor, blast.RadiusUnits, blast.FalloffUnits, GrenadeFragments, GrenadeFireballs,
+                "explo_02_m",
+                () => Explode(frag.Position, frag.RadiusUnits, frag.FalloffUnits, frag.DamageFactor, WeaponCategory.Grenade)));
         }
     }
 
@@ -117,19 +133,21 @@ public sealed class Igi1Blasts(
 
         // The missile's own impact (0x428390, at 0x42854D) sets off an Explosion0 with explo_03_l -- the launcher's
         // rocket and a vehicle's alike, since both are the same Missile task.
-        host.PlayDefinition("explo_03_l", blast.Position, 90);
-        host.Fireball(blast.Position);
-        impacts.Scorch(blast.Position, blast.Normal, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
-
-        // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
-        // which is what lets a LAW rocket -- and nothing else -- blow a car up.
-        Explode(
-            blast.Position,
-            blast.RadiusUnits,
-            blast.FalloffUnits,
-            blast.DamageFactor,
-            WeaponCategory.Grenade,
-            sourceWeaponId: blast.SourceWeaponId);
+        // The scorch on whatever lies 12288 below, then five FireBalls and ten fragments at 10240. The blast carries
+        // the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894), which is what lets a LAW
+        // rocket -- and nothing else -- blow a car up.
+        impacts.ScorchBelow(blast.Position, MissileScorchDropInUnits, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);
+        impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+            blast.Position, 1, 1, blast.DamageFactor, MissileExplosion.RadiusUnits, MissileExplosion.FalloffUnits,
+            MissileExplosion.Fragments, MissileExplosion.Fireballs,
+            "explo_03_l",
+            () => Explode(
+                blast.Position,
+                blast.RadiusUnits,
+                blast.FalloffUnits,
+                blast.DamageFactor,
+                WeaponCategory.Grenade,
+                sourceWeaponId: blast.SourceWeaponId)));
     }
 
     /// <summary>
@@ -410,10 +428,12 @@ public sealed class Igi1Blasts(
             // GunM203's native projectile callback (0x476340) sends the proxy explosion tag, not the
             // hand-grenade fireball. The distinct sound/effect is audible proof that the M203 task
             // reached its own detonation path.
-            host.PlayDefinition("explo_proxy", blast.Position, 90);
-            host.Fireball(blast.Position);
+            M203Detonation round = blast;
             impacts.Scorch(blast.Position, blast.Normal, Igi1ImpactEffects.M203ScorchHalfWidthInUnits);
-            Explode(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Gun);
+            impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+                blast.Position, 1, 1, blast.DamageFactor, blast.RadiusUnits, blast.FalloffUnits, GrenadeFragments, GrenadeFireballs,
+                "explo_proxy",
+                () => Explode(round.Position, round.RadiusUnits, round.FalloffUnits, round.DamageFactor, WeaponCategory.Gun)));
         }
     }
 
@@ -464,11 +484,6 @@ public sealed class Igi1Blasts(
         // Silenced on the spot, not on the next tick's sweep -- a shot speaker cuts mid-wail.
         audio.SilenceSiren(destroyed);
 
-        if (destroyed.DestructionSound.Length > 0)
-        {
-            host.PlayDefinition(destroyed.DestructionSound, destroyed.PositionUnits, 60);
-        }
-
         if (mission.SecurityCameras?.Destroy(destroyed.Task) == true
             && mission.SecurityCameras.TryGetCamera(destroyed.Task, out SecurityCamera? camera)
             && camera is not null)
@@ -476,10 +491,20 @@ public sealed class Igi1Blasts(
             audio.SilenceCamera(camera);
         }
 
-        // The SCameraLens branch (0x441770) and AlarmLight_Explode (0x43A5F0) each start their own
-        // Explosion0 with fixed arguments: the lens a 2048 range, three FireBalls and seven fragments,
-        // the light a 4096 range, two FireBalls and five.
-        host.SpeakerExplosion(destroyed.PositionUnits, string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal));
+        // The SCameraLens branch (0x441770) and AlarmLight_Destroy (0x43A5F0) each start their own Explosion0 with
+        // fixed arguments: the lens 0.25 of damage over 2048, seven fragments and three FireBalls, heard 25 m away; the
+        // light 0.05 over 4096, five and two, heard 5 m away. Both blasts reach whoever stands that close.
+        bool lens = string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal);
+        Vector3d at = destroyed.PositionUnits;
+        (float damage, float range, int fragments, int fireballs, double heard) = lens
+            ? (0.25f, 2048f, 7, 3, 102400.0)
+            : (0.05f, 4096f, 5, 2, 20480.0);
+        mission.Soldiers?.NotifyExplosion(at, heard);
+        impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+            at, 1, 0, damage, range, 0f, fragments, fireballs,
+            destroyed.DestructionSound,
+            () => Explode(at, range, 0f, damage, WeaponCategory.Grenade),
+            SoundPriority: 60));
         host.Logger.Information("Ai", $"{destroyed.Task.Name} was shot out.");
     }
 
@@ -557,11 +582,13 @@ public sealed class Igi1Blasts(
     /// </remarks>
     public void PresentVehicleBlast(VehicleBlast blast)
     {
+        // The radius sizes the FireBalls, the smoke and the fragments' fall as well as the blast (0x47F200).
         Vector3d position = blast.PositionUnits;
-        host.PlayDefinition(VehicleBlast.Sound, position, 90);
-        host.Explosion(position, blast.FullRangeUnits, blast.Fireballs, blast.Fragments);
         mission.Soldiers?.NotifyExplosion(position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
-        Explode(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade, blast.Source);
+        impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+            position, 1, 0, blast.DamageFactor, blast.RadiusUnits, blast.FalloffUnits, blast.Fragments, blast.Fireballs,
+            VehicleBlast.Sound,
+            () => Explode(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, WeaponCategory.Grenade, blast.Source)));
 
         host.Logger.Information("World", $"{blast.Source.Owner.Name} blast at {position}: radius={blast.RadiusUnits}.");
     }
@@ -576,29 +603,147 @@ public sealed class Igi1Blasts(
         float falloff = Math.Max(0f, item.ExplosionFalloffUnits);
         float damageFactor = Math.Max(0f, item.ExplosionDamageFactor);
 
-        if (item.ExplosionSound.Length > 0)
-        {
-            host.PlayDefinition(item.ExplosionSound, item.PositionUnits, 90);
-        }
-
-        // ExplodeMagicObj (0x43C0B0) and ExplodeObject (0x481A60) hand Explosion0 their authored full
-        // range, fragment count and FireBall count; the look follows from those alone.
-        host.Explosion(item.PositionUnits, radius, (int)item.ExplosionFireballs, item.ExplosionFragments);
+        // ExplodeMagicObj (0x43C0B0) and ExplodeObject (0x481A60) hand Explosion0 their authored full range, fragment
+        // count, FireBall count and sound. Its message -- the damage, the shove and the shake -- goes to every human only
+        // when its damage is not 0 (0x47F200): a wooden window authors 0, so it splinters and nobody is hurt.
         mission.Soldiers?.NotifyExplosion(item.PositionUnits, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
-
-        // Explosion0 (0x47F200) hands its message -- the damage, the shove and the shake -- to every human
-        // only when its damage is not 0. A wooden window authors 0: it splinters, and nobody is hurt.
+        impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+            item.PositionUnits, 1, 0, damageFactor, radius, falloff, item.ExplosionFragments, (int)item.ExplosionFireballs,
+            item.ExplosionSound,
+            () => Explosion0(new Igi1ExplosionHit(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade), item, sourceWeaponId: 0)));
         if (damageFactor == 0f)
         {
             host.Logger.Information("World", $"{item.TypeName} at {item.PositionUnits} broke without a blast.");
             return;
         }
 
-        Explosion0(new Igi1ExplosionHit(item.PositionUnits, radius, falloff, damageFactor, WeaponCategory.Grenade), item, sourceWeaponId: 0);
-
         host.Logger.Information(
             "World",
             $"{item.TypeName} at {item.PositionUnits} exploded: radius={radius}, falloff={falloff}, damage={damageFactor}.");
+    }
+
+    /// <summary>
+    /// Breaks a pane a thrown or moving body strikes (<c>Glass_Touch</c>, <c>0x449CB0</c>): its damage made up to its strength,
+    /// shattered from where the body is, the body let through.
+    /// </summary>
+    /// <param name="pane">The pane the body's ray found.</param>
+    /// <param name="from">Where the body is.</param>
+    /// <returns>Whether it broke.</returns>
+    public bool TouchGlass(RetailGlassPane pane, Vector3d from)
+    {
+        ArgumentNullException.ThrowIfNull(pane);
+        if (mission.Destructibles is not { } destructibles)
+        {
+            return false;
+        }
+
+        // The pane's state is the destructible standing where it hangs.
+        DestructibleObject? glass = null;
+        double nearest = 64.0 * 64.0;
+        foreach (DestructibleObject item in destructibles.Objects)
+        {
+            if (item.Kind != DestructibleObjectKind.Glass || item.IsDestroyed)
+            {
+                continue;
+            }
+
+            double d = (item.PositionUnits - pane.PositionUnits).LengthSquared;
+            if (d < nearest)
+            {
+                nearest = d;
+                glass = item;
+            }
+        }
+
+        if (glass is null || destructibles.TryDestroy(glass.Owner, glass.Placement, float.MaxValue) is not { } broken)
+        {
+            return false;
+        }
+
+        pane.IsBroken = true;
+        HandleDestructibleImpact(broken, from);
+        return true;
+    }
+
+    /// <summary>Runs the level's minefields a tick (<c>0x43ABC0</c>): each that has waited and whose condition holds goes off.</summary>
+    public void TickMineFields()
+    {
+        foreach (Igi1MineField field in mission.MineFields)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(field.Task)
+                || !field.Pause.Due(() => field.Condition.Length != 0
+                    && mission.MineFieldExpressions?.EvaluateCondition(field.Condition, emptyValue: false, field.Task) == true))
+            {
+                continue;
+            }
+
+            ExplodeMineField(field);
+
+            // 0x43ABC0 waits its seconds between blasts; "explode once" (-1) waits for ever.
+            field.Pause.Ticks = (int)(field.WaitSeconds * 30f);
+        }
+    }
+
+    // MineField_Explode (0x43AC40): an Explosion0 at its target, dropped to the ground beneath it (0x4149B0), that throws its
+    // own fragments and FireBalls and sends no AI event.
+    private void ExplodeMineField(Igi1MineField field)
+    {
+        if (MineFieldTarget(field.TargetId) is not { } found)
+        {
+            return;
+        }
+
+        (Vector3d at, GameTask? target) = found;
+
+        if (field.SnapsToGround && mission.Trace is { } trace)
+        {
+            at = DropToGround(trace, at, target);
+        }
+
+        float radius = field.RadiusUnits;
+        float falloff = field.FalloffUnits;
+        float damage = field.Damage;
+        impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+            at,
+            1,
+            field.DelayTicks,
+            damage,
+            radius,
+            falloff,
+            field.Fragments,
+            field.Fireballs,
+            field.Sound,
+            () => Explode(at, radius, falloff, damage, WeaponCategory.ProximityMine)));
+    }
+
+    // What task a minefield goes off at: the player, task 0, where its body is; any other where the task stands.
+    private (Vector3d At, GameTask? Task)? MineFieldTarget(int id)
+    {
+        if (id == 0)
+        {
+            return mission.Player is { } player ? (player.Body.Position, null) : null;
+        }
+
+        return mission.LevelRoot?.Tree.FromId(id) is DeclaredTask task
+            && task.TryGetValue("Position", out object? raw)
+            && raw is Vector3d position
+                ? (position, task)
+                : null;
+    }
+
+    // 0x4149B0: straight down 400 m for the ground, else straight up, past the target itself; nothing found leaves it.
+    private static Vector3d DropToGround(WorldTraceCast trace, Vector3d at, GameTask? target)
+    {
+        const double reach = 1638400.0;
+        foreach (double dz in new[] { -reach, reach })
+        {
+            if (trace(new WorldTraceRequest(at, at + new Vector3d(0.0, 0.0, dz), WorldTraceMask.World, IgnoredOwner: target), out WorldTraceHit hit))
+            {
+                return new Vector3d(at.X, at.Y, hit.Position.Z);
+            }
+        }
+
+        return at;
     }
 
     /// <summary>Steps the destructibles a tick: their fuses, the blasts that went off, the cars that left the world, and the generators they settle.</summary>

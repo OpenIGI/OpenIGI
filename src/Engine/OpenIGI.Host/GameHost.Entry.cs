@@ -258,14 +258,9 @@ public sealed partial class GameHost
     // owned: the composition root builds and disposes them.
     private UiFont? _shellBodyFont;
     private UI.Kit.IgiTypography? _shellType;
-    private UiFont? _shellHeadingFont;
 
     /// <summary>Draws the shot's own chrome: the cinematic bars.</summary>
     /// <param name="painter">The shell's painter, drawing on the back buffer over everything else.</param>
-    /// <remarks>
-    /// The mission's name used to be set here, over the vantage. It stands in the level now -- see
-    /// <see cref="WorldTitleRenderer"/> -- so the frame's chrome is the bars alone.
-    /// </remarks>
     private void DrawEntryFraming(UiPainter painter)
     {
         float width = _window.Width;

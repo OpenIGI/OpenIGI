@@ -77,6 +77,7 @@ internal sealed class MissileRenderer : IMissilePresenter
                 new Vector3f(right.Y, direction.Y, up.Y),
                 new Vector3f(right.Z, direction.Z, up.Z));
 
+            model.Sun = Sun;
             model.Draw(new BoneAttachment(position, rotation), camera, projection, false, 0, WeaponDrawParts.BodyOnly);
         }
     }
@@ -106,6 +107,7 @@ internal sealed class MissileRenderer : IMissilePresenter
             // Retail 0x476670 stores the launch basis at +0x70 and 0x476340 never changes it.
             // Rebuilding a frame from the falling velocity made the nose pitch down in flight and
             // caused the rendered round to disagree with the native projectile task.
+            model.Sun = Sun;
             model.Draw(
                 new BoneAttachment(position, projectile.Orientation),
                 camera,
@@ -115,6 +117,9 @@ internal sealed class MissileRenderer : IMissilePresenter
                 WeaponDrawParts.BodyOnly);
         }
     }
+
+    /// <inheritdoc/>
+    public FixedFunctionSun? Sun { get; set; }
 
     public void Dispose()
     {

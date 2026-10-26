@@ -153,6 +153,25 @@ internal static class Igi2InteractionSystems
         }
     }
 
+    /// <summary>
+    /// The sector cull, once the doors drive the portals: every frame decides from the eye which buildings, rooms and interior
+    /// objects are drawn, and whether the outside is (<see cref="Igi2SectorVisibility"/>).
+    /// </summary>
+    public static void SectorVisibility(Igi2LevelBuild b)
+    {
+        if (b.Sectors is not { } sectors || b.SectorLocator is not { } locator)
+        {
+            return;
+        }
+
+        Igi2SectorPortals? portals = b.Level.SectorPortals;
+        b.Player.Visibility = new Igi2SectorVisibility(
+            sectors,
+            locator,
+            Igi2SectorVisibility.KeysOf(b.Request.Built.Scene),
+            portals is null ? null : portals.IsOpen);
+    }
+
     /// <summary>Props moved along spline guides: they move, and carry what stands on them.</summary>
     public static void Props(Igi2LevelBuild b)
     {

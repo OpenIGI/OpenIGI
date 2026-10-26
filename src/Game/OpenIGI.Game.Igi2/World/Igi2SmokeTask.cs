@@ -44,17 +44,11 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Smoke";
 
-    /// <summary>The sprites a smoke is drawn with, by its sprite index (<c>Smoke_Open</c>).</summary>
-    public static readonly string[] Sprites = ["fireball.spr", "blood1.spr", "smoke2.spr", "smoke1.spr"];
-
-    /// <summary>The transparencies of the fade modes nought to two.</summary>
-    public static readonly int[] FadeModeTransparency = [0x1080000, 0x1000008, 0x1000010];
-
     private LevelExpression? _generate;
     private Particle2DSystem? _system;
     private Vector3d _previous;
     private bool _isPreviousValid;
-    private float _count;
+    private readonly SmokePlumeEmitter<Fpu> _emitter = new();
     private int _damageTimer;
     private Vector3f _direction;
 
@@ -185,7 +179,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     public void Prepare()
     {
         Stream?.Reseed();
-        float[] turn = Igi2Pose.Rotation(Alpha, 0f, Gamma);
+        float[] turn = EngineEuler.Rotation(Alpha, 0f, Gamma);
         _direction = new Vector3f(turn[2], turn[5], turn[8]);
         if (Sprite == 0 && !DoDamage)
         {
@@ -201,7 +195,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
 
         float size = ((Fpu)Size * 4096.0).F;
         _system = particles.New(
-            Sprites[Math.Clamp(Sprite, 0, Sprites.Length - 1)],
+            SmokePlume.SpriteFor(Sprite),
             animated: true,
             frames: 0,
             acceleration: new Vector3f(0f, 0f, ((Fpu)Gravity * -204.8000030517578).F),
@@ -209,7 +203,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
             width: size,
             height: size,
             range: 409600f,
-            transparency: (uint)FadeMode < (uint)FadeModeTransparency.Length ? FadeModeTransparency[FadeMode] : FadeModeTransparency[0],
+            transparency: SmokePlume.TransparencyFor(FadeMode),
             animationDelta: 0,
             sizeDelta: ((Fpu)SizeDelta * 0.03333333507180214).F,
             shininess: 0f,
@@ -260,32 +254,21 @@ public sealed partial class Igi2SmokeTask : Igi2Task
             return;
         }
 
-        _count = ((Fpu)GenerateFactor + _count).F;
-        IgiRandom random = Stream?.Random ?? new IgiRandom();
-        while (_count > 30f)
-        {
-            Fpu angle = (Fpu)(double)(ushort)random.NextRaw() * 0.0000152587890625 * 6.2831854820251465;
-            Fpu reach = (Fpu)(double)(ushort)random.NextRaw() * 0.0000152587890625 * Radius * 4096.0;
-            Fpu spin = (((Fpu)(double)(ushort)random.NextRaw() * 0.0000152587890625 * ((Fpu)MaxRotation - MinRotation)) + MinRotation)
-                * 0.03333333507180214;
-            Vector3d at = new(
-                ((Fpu)Math.Cos(angle.Value) * reach + Position.X).Value,
-                ((Fpu)Math.Sin(angle.Value) * reach + Position.Y).Value,
-                Position.Z);
-            system.AddConeParticle(
-                at,
-                _direction,
-                MaxRandomAngle,
-                ((Fpu)MaxVelocity * 136.0).F,
-                ((Fpu)MinVelocity * 136.0).F,
-                Intensity,
-                spin.F,
-                0f,
-                1f,
-                Fpu.ToInt32((Fpu)LifeTime * 30.0),
-                Fpu.ToInt32((Fpu)FadeTime / Intensity * 30.0));
-            _count = ((Fpu)_count - 30.0).F;
-        }
+        _emitter.Emit(
+            system,
+            Stream?.Random ?? new IgiRandom(),
+            GenerateFactor,
+            Position,
+            Radius,
+            _direction,
+            MaxRandomAngle,
+            MinVelocity,
+            MaxVelocity,
+            Intensity,
+            MinRotation,
+            MaxRotation,
+            Fpu.ToInt32((Fpu)LifeTime * 30.0),
+            Fpu.ToInt32((Fpu)FadeTime / Intensity * 30.0));
     }
 
     /// <summary>Burns the player standing within its radius, once a second, at the head (<c>Smoke_DoDamage</c>, <c>HumanPlayer_SmokeDamageHandler</c>).</summary>

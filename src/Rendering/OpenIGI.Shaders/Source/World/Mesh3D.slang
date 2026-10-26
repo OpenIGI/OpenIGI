@@ -186,6 +186,14 @@ Varyings vertexMain(VertexInput input)
         : 0.0;
     output.fog = fogDensity > 0.0 ? clamp(exp(-fogDensity * max(clip.w, 0.0)), 0.0, 1.0) : 1.0;
 
+    // An object both games fog linearly between its sphere's near and far depths (Fog_SetRange 0x49B2D0,
+    // Direct3DRender_SetFogParameters): the ramp's value at the eye rides in the second row's w and its fall per
+    // metre where the density was.
+    if (fogDensity > 0.0 && terrain < 0.5 && push.normalKey1.w > 0.0)
+    {
+        output.fog = clamp(push.normalKey1.w - fogDensity * clip.w, 0.0, 1.0);
+    }
+
     // OpenGL clip -> Vulkan clip: flip Y, and map Z onto reverse-Z [1, 0] (near = 1, far = 0).
     clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;
@@ -200,9 +208,10 @@ Varyings vertexMain(VertexInput input)
 
     // The sun on an object with no bake, as Direct3D's vertex pipeline computed it for I.G.I. 2
     // (Direct3DRender_SetGenericStateRigid, igi2ed 0x56CA90): the global ambient plus the
-    // light's diffuse times the cosine to the normal, saturated to one.
+    // light's diffuse times the cosine to the normal, saturated to one. The direction's length is the
+    // material's diffuse, one for a model and a trunk's grey for a tree (ForestRender_SetGenericState_Trunk).
     float3 sunModel = push.normalKey0.xyz;
-    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)
+    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 1e-8)
     {
         float normalLength = length(localNormal);
         float facing = normalLength > 0.0 ? dot(localNormal / normalLength, sunModel) : 0.0;

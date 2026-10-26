@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation;
@@ -218,6 +219,22 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
         _ticks = ticks;
     }
 
+    /// <summary>Gets or sets where the dome's Dirlight points, which the original's look turns the dome to; or none.</summary>
+    public Func<Vector3f>? TowardsSun { get; set; }
+
+    /// <summary>
+    /// The dome's turn about the vertical, <c>SkyDome_Draw</c>: <c>atan2(x, y) + π/2</c> of its Dirlight's direction, so the dome's
+    /// own north and south horizon colours lie to either side of the sun.
+    /// </summary>
+    /// <param name="towardsSun">The Dirlight's direction.</param>
+    /// <returns>The dome's orientation: a model point (x, y) is carried to (x·cos + y·sin, −x·sin + y·cos).</returns>
+    public static Matrix3f DomeOrientation(Vector3f towardsSun)
+    {
+        float angle = MathF.Atan2(towardsSun.X, towardsSun.Y) + 1.5707964f;
+        float c = MathF.Cos(angle), s = MathF.Sin(angle);
+        return Matrix3f.FromRows(new Vector3f(c, s, 0f), new Vector3f(-s, c, 0f), new Vector3f(0f, 0f, 1f));
+    }
+
     /// <summary>Draws the sky behind everything.</summary>
     /// <param name="camera">Where the world is seen from.</param>
     /// <exception cref="ObjectDisposedException">The presenter has been disposed.</exception>
@@ -235,11 +252,14 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
         // The sky follows the camera, so its model position is the camera's and only the rotation
         // remains in the model-view.
         Matrix4f modelView = camera.CreateModelView(camera.Position);
+        Matrix4f domeView = TowardsSun is { } sun && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla
+            ? camera.CreateModelView(camera.Position, DomeOrientation(sun()))
+            : modelView;
         _device.DrawMesh(
             _dome,
             0,
             _domeIndexCount,
-            modelView,
+            domeView,
             TextureHandle.None,
             TextureHandle.None,
             BlendMode.Opaque);

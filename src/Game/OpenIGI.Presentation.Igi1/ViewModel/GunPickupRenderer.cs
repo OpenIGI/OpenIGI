@@ -94,6 +94,7 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
         {
             if (!entry.Pickup.IsCollected)
             {
+                entry.Renderer.Sun = Sun;
                 entry.Renderer.Draw(
                     new BoneAttachment(entry.Pickup.DrawPosition, entry.Pickup.DrawOrientation),
                     camera,
@@ -103,6 +104,9 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
             }
         }
     }
+
+    /// <inheritdoc/>
+    public FixedFunctionSun? Sun { get; set; }
 
     public void Dispose()
     {

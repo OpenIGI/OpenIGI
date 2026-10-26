@@ -163,6 +163,51 @@ public sealed class AiAlarmRuntimeTests
     }
 
     [Fact]
+    public void AnAlarmLightWearsItsOnModelUntilItHasBeenOnAndGoneOff()
+    {
+        NativeRegistry natives = new();
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AlarmLight"),
+                QvmExpression.Text("On expression"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New", QvmExpression.Int(7), QvmExpression.Text("AlarmLight"), QvmExpression.Text("Light"),
+                QvmExpression.Text("AlarmLight_7.testOn"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+        GameTask task = tree.FromId(7)!;
+        bool on = false;
+        variables.BindBool(task, "testOn", () => on, value => on = value);
+        variables.Export(task);
+
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        AlarmSpeaker light = Assert.Single(speakers.Speakers);
+
+        // 0x43A450 gives it its on model as it is made, and 0x43A270 changes model only on a change of state.
+        speakers.RunLights();
+        Assert.False(light.ShowsOff);
+        on = true;
+        speakers.RunLights();
+        Assert.False(light.ShowsOff);
+        on = false;
+        speakers.RunLights();
+        Assert.True(light.ShowsOff);
+        on = true;
+        speakers.RunLights();
+        Assert.False(light.ShowsOff);
+
+        Assert.False(speakers.IsLightGone(task));
+        Assert.Same(light, speakers.TryDestroy(task));
+        Assert.True(speakers.IsLightGone(task));
+    }
+
+    [Fact]
     public void SecurityCameraDamageProxyDoesNotSynthesizeAnAlarmLoop()
     {
         NativeRegistry natives = new();

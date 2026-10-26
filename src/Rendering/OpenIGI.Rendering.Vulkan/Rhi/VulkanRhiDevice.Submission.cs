@@ -293,6 +293,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         };
 
         VkCheck.Ok(_vk.BeginCommandBuffer(_upload, &begin), "vkBeginCommandBuffer");
+        _device.Checkpoint(_upload, VulkanCheckpointMarkers.Label("uploads"));
     }
 
     /// <summary>

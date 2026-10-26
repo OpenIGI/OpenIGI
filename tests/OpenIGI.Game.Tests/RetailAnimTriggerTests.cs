@@ -70,7 +70,7 @@ public sealed class RetailAnimTriggerTests
         AnimTriggerRegistry registry = Load();
 
         List<string> clear = [.. registry.Definitions.Values
-            .Where(d => !d.Flag)
+            .Where(d => !d.Attached)
             .Select(d => d.Resource)
             .Order()];
 

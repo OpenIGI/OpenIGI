@@ -79,7 +79,7 @@ internal sealed class WorldPlacementTransforms
     // Which of its variants a placement wears, or -1 for the model the walk placed: an index the title gives, whose binding resolved.
     internal int VariantOf(WorldPlacement placement) =>
         placement.Variants is { } variants
-        && Variants?.VariantOf(placement) is int variant
+        && (Variants?.VariantOf(placement) is >= 0 and int titled ? titled : AlarmSpeakers?.LightVariantOf(placement)) is int variant
         && variant >= 0
         && variant < variants.Count
         && variants[variant] is not null
@@ -220,6 +220,10 @@ internal sealed class WorldPlacementTransforms
         {
             drawPosition = cinematicPosition;
             drawOrientation = cinematicOrientation;
+        }
+        else if (AlarmSpeakers?.TryGetReflectorOrientation(placement, FrameAlpha, out Matrix3f reflectorOrientation) == true)
+        {
+            drawOrientation = reflectorOrientation;
         }
         else if (RotatingObjects?.TryGetDrawTransform(
             placement,

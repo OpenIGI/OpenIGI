@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
+using OpenIGI.Game.World;
+
 namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>A human body, as I.G.I. 2's <c>Human_s</c> keeps it: the part the player and the soldiers share.</summary>
@@ -12,7 +14,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// the derived class.
 /// </para>
 /// </remarks>
-public abstract partial class Igi2Human : Game.Ai.IAiHuman
+public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2MorphTargets
 {
     /// <summary>The animation controller's ticks per game frame, <c>AnimController_nTicksPerFrame</c> (<c>igi2 0x63681C</c>).</summary>
     public const int AnimationTicksPerFrame = 160;
@@ -42,6 +44,9 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman
 
     /// <summary>Gets the channel block that drives the human, <c>Human_s.avChannel</c>.</summary>
     public Igi2HumanChannels Channels { get; } = new();
+
+    /// <inheritdoc/>
+    public float[] MorphWeights { get; } = new float[Formats.World.MefMorph.Channels];
 
     /// <summary>Gets the animation layer the states drive.</summary>
     public IIgi2HumanAnimation Animation { get; }
@@ -147,7 +152,7 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman
     public bool IsBloodPuddle { get; set; }
 
     /// <summary>Gets the body's mark on the ground, which becomes its pool of blood.</summary>
-    public Igi2HumanShadow Shadow { get; } = new();
+    public HumanShadow Shadow { get; } = new(HumanShadow.Igi2MaxDistance);
 
     /// <summary>Gets or sets a value indicating whether the body bleeds no sprites, <c>isBloodSpriteDisabled</c>.</summary>
     public bool IsBloodSpriteDisabled { get; set; }

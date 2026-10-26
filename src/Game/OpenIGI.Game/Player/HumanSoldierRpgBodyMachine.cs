@@ -159,4 +159,12 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
                 EndsScriptedAnimation: input.AsksForAction || aim || input.AnimationDone);
         }
     }
+
+    /// <inheritdoc/>
+    protected override bool IsAirborne(int state) => state == HumanSoldierRpgStates.AirborneState;
+
+    /// <inheritdoc/>
+    /// <remarks>Only the run's entry carries the stride, and only from the walk (<c>0x455D10</c>).</remarks>
+    protected override bool KeepsStride(int left, int entered) =>
+        left == HumanSoldierRpgStates.WalkState && entered == HumanSoldierRpgStates.RunState;
 }

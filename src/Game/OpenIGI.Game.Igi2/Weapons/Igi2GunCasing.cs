@@ -108,7 +108,7 @@ public sealed class Igi2GunCasings(Func<string, MefModel?> models)
         speed = new Vector3f(speed.X + holderSpeed.X, speed.Y + holderSpeed.Y, speed.Z + holderSpeed.Z);
 
         const float degree = 0.01745329238474369f;
-        float[] spin = Igi2Pose.Rotation(ejection.Spin.Alpha * degree, ejection.Spin.Beta * degree, ejection.Spin.Gamma * degree);
+        float[] spin = EngineEuler.Rotation(ejection.Spin.Alpha * degree, ejection.Spin.Beta * degree, ejection.Spin.Gamma * degree);
         _casings.Add(new Igi2GunCasing(
             ejection.Model,
             at,

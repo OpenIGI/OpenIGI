@@ -215,9 +215,9 @@ public sealed class MissileFlightTests
     }
 
     [Fact]
-    public void TheMissileBurstsTenTimesWhereAGrenadeBurstsOnce()
+    public void TheMissileThrowsTenFragmentsAndLightsFiveFireBalls()
     {
-        Assert.Equal(10, MissileExplosion.BurstCount);
-        Assert.Equal(5, MissileExplosion.BurstDelayTicks);
+        Assert.Equal(10, MissileExplosion.Fragments);
+        Assert.Equal(5, MissileExplosion.Fireballs);
     }
 }

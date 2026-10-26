@@ -14,6 +14,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -108,6 +109,11 @@ public sealed partial class GameHost
     /// </remarks>
     private void ApplyLevelConstants(GameTask levelRoot)
     {
+        // The level's own fog and flat model light, which every frame sets on the device. Read for every level, however it
+        // came up: a mission loaded cold used to keep whatever the last backdrop had left here -- another level's fog and
+        // light, or none at all.
+        _globalLight = GlobalLightSettings.Read(levelRoot);
+
         SceneAtmosphere? air = _presentation.ReadAtmosphere(levelRoot);
         _atmosphere = air;
         // Through the SAME SceneFog every world draw already wears, rather than a mechanism of its own.
@@ -143,6 +149,11 @@ public sealed partial class GameHost
         {
             shadedWorld.Shading = shading;
         }
+
+        LightLooseModels(shading.Sun);
+
+        // How the level's models give up detail, which only the original's look draws by.
+        _modelLod = _presentation.ReadModelLod(levelRoot, _resources, _title?.Services);
 
         _device.SetSceneSun(shading.Sun?.Ambient ?? Vector3f.Zero, shading.Sun?.Colour ?? Vector3f.Zero);
         if (shading.Sun is { } fixedFunctionSun)
@@ -355,6 +366,7 @@ public sealed partial class GameHost
             _missileRenderer?.Dispose();
             _missileRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(ViewModelRequest());
             _missileRenderer?.Load(loaded);
+            LightLooseModels(_world?.Shading.Sun);
 
             EndStage("the loadout, the bullet marks and the HUD");
 
@@ -541,6 +553,7 @@ public sealed partial class GameHost
         // without.
         _timeOfDay.Sun = null;
         _timeOfDay.EffectiveSun = null;
+        _earCamera = null;
 
         // And so does what the level said about its own light. Left standing, the next title's mission
         // would be lit by the last one's answer -- and for Project I.G.I. that means its sky model would
@@ -719,5 +732,24 @@ public sealed partial class GameHost
     {
         _effects.Tick();
         _hosted.Impacts.Tick();
+    }
+
+    /// <summary>Lights the pickups, grenades and missiles by the level's light, as the original lights any unbaked model.</summary>
+    private void LightLooseModels(FixedFunctionSun? sun)
+    {
+        if (_gunPickupRenderer is { } pickups)
+        {
+            pickups.Sun = sun;
+        }
+
+        if (_grenadeRenderer is { } grenades)
+        {
+            grenades.Sun = sun;
+        }
+
+        if (_missileRenderer is { } missiles)
+        {
+            missiles.Sun = sun;
+        }
     }
 }

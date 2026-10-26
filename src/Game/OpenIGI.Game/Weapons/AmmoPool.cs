@@ -18,6 +18,7 @@ namespace OpenIGI.Game.Weapons;
 public sealed class AmmoPool
 {
     private readonly Dictionary<int, int> _counts = [];
+    private readonly Dictionary<int, int> _limits = [];
 
     /// <summary>Gets how many rounds of a type are carried.</summary>
     /// <param name="ammoId">The type's <see cref="AmmoType.AmmoId"/>.</param>
@@ -31,12 +32,40 @@ public sealed class AmmoPool
     /// <summary>Adds rounds of a type.</summary>
     /// <param name="ammoId">The type's <see cref="AmmoType.AmmoId"/>.</param>
     /// <param name="rounds">How many to add; a negative count removes.</param>
-    /// <remarks>The total is floored at zero, as the transfer in <c>0x4798C0</c> keeps it.</remarks>
+    /// <remarks>
+    /// The total is floored at zero, as the transfer in <c>0x4798C0</c> keeps it, and held to the type's limit when it has
+    /// one (<c>0x47CE00</c>).
+    /// </remarks>
     public void Add(int ammoId, int rounds)
     {
         int total = Count(ammoId) + rounds;
-        _counts[ammoId] = total < 0 ? 0 : total;
+        _counts[ammoId] = Limited(ammoId, total < 0 ? 0 : total);
     }
+
+    /// <summary>Caps how many rounds of a type may be carried, cutting down what is carried now (<c>0x47CE70</c>).</summary>
+    /// <param name="ammoId">The type's <see cref="AmmoType.AmmoId"/>.</param>
+    /// <param name="limit">The most that may be carried, or <c>-1</c> for no limit.</param>
+    public void SetLimit(int ammoId, int limit)
+    {
+        if (limit == -1)
+        {
+            _limits.Remove(ammoId);
+            return;
+        }
+
+        _limits[ammoId] = limit;
+        if (_counts.TryGetValue(ammoId, out int count))
+        {
+            _counts[ammoId] = Limited(ammoId, count < 0 ? 0 : count);
+        }
+    }
+
+    /// <summary>Gets the most rounds of a type that may be carried, or <c>-1</c> when there is no limit.</summary>
+    /// <param name="ammoId">The type's <see cref="AmmoType.AmmoId"/>.</param>
+    public int Limit(int ammoId) => _limits.TryGetValue(ammoId, out int limit) ? limit : -1;
+
+    private int Limited(int ammoId, int count) =>
+        _limits.TryGetValue(ammoId, out int limit) && count > limit ? limit : count;
 
     /// <summary>Takes up to a number of rounds out.</summary>
     /// <param name="ammoId">The type's <see cref="AmmoType.AmmoId"/>.</param>

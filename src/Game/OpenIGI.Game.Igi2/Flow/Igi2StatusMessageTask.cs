@@ -147,6 +147,9 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
     /// <summary>Gets or sets where the listener is, which its sound plays at.</summary>
     public Func<Vector3d>? Listener { get; set; }
 
+    /// <summary>Gets or sets the level's task with an id, a human standing for its task; what <see cref="MorphTaskIds"/> name.</summary>
+    public Func<int, object?>? TaskById { get; set; }
+
     /// <summary>
     /// Counts its pieces and their letters, and stands ready to show the first, <c>StatusMessage_InitText</c>
     /// (<c>igi2 0x50F9A0</c>), which <c>StatusMessage_UpdateInternalDataHandler</c> (<c>0x50FF60</c>) runs once its parameters are
@@ -230,7 +233,7 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
 
         if (_isDisplay != 0)
         {
-            // StatusMessage_UpdateMorph (igi2 0x50F660) sets the morph bodies' faces from the sound's lip sync; not ported.
+            UpdateMorph();
             _ticks++;
             if (now > unchecked(_tickSent + Wait()))
             {
@@ -389,6 +392,36 @@ public sealed partial class Igi2StatusMessageTask : Igi2Task
 
             // Its length, a whole number of ticks, over the frequency.
             Duration = ((Fpu)(float)sounds.LengthTicks(Sound) / (double)Igi2Sounds.Frequency).F;
+        }
+    }
+
+    // StatusMessage_UpdateMorph (igi2 0x50F660): each body named, by a leading number under 4096, opens its mouth by the sound's
+    // lip sync at this tick of the line, and shuts it once the track has run out.
+    private void UpdateMorph()
+    {
+        if (MorphTaskIds.Length == 0 || TaskById is null)
+        {
+            return;
+        }
+
+        ReadOnlySpan<float> track = Sounds?.LipSync is { } lipSync ? lipSync.Track(Sound) : [];
+        foreach (string token in MorphTaskIds.Split([',', '\t', '\n', ' '], StringSplitOptions.RemoveEmptyEntries))
+        {
+            int digits = 0;
+            while (digits < token.Length && char.IsAsciiDigit(token[digits]))
+            {
+                digits++;
+            }
+
+            if (digits == 0
+                || !int.TryParse(token.AsSpan(0, digits), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int id)
+                || id >= 0x1000
+                || TaskById(id) is not Animation.IIgi2MorphTargets body)
+            {
+                continue;
+            }
+
+            body.MorphWeights[Animation.Igi2MorphWeights.Mouth] = _ticks < track.Length ? track[_ticks] : 0f;
         }
     }
 

@@ -327,18 +327,24 @@ public sealed class RetailImpactEffectTests
             wood,
             struckHuman: false);
 
-        Assert.InRange(runtime.Fragments.Count, 2, 4);
-        Assert.All(runtime.Fragments, fragment => Assert.Equal("1011_01_1", fragment.Model));
+        // The chips are an Explosion0 of no FireBalls, thrown in the material's model (0x438440).
+        Assert.InRange(runtime.FragmentCount, 2, 4);
+        Assert.All(runtime.Explosions.FragmentGroups, group => Assert.Equal("1011_01_1", group.Model));
 
         // 0x5035FA applies scale x gravity x drag, which is under half of what a body falls at.
         Assert.True(GunShotImpactEffects.FragmentGravityPerTick < GunShotImpactEffects.GravityPerTick * 0.5f);
 
+        // Each lives the container's 45 ticks and is dropped on the next; the emptied container goes the tick after.
         for (int tick = 0; tick < GunShotImpactEffects.FragmentLifeTicks; tick++)
         {
-            runtime.Tick(null, null, null);
+            runtime.Explosions.Tick();
         }
 
-        Assert.Empty(runtime.Fragments);
+        Assert.InRange(runtime.FragmentCount, 2, 4);
+        runtime.Explosions.Tick();
+        runtime.Explosions.Tick();
+        Assert.Equal(0, runtime.FragmentCount);
+        Assert.Empty(runtime.Explosions.FragmentGroups);
     }
 
     [Fact]
@@ -358,7 +364,7 @@ public sealed class RetailImpactEffectTests
         }
 
         Assert.Equal(0, runtime.PuffCount);
-        Assert.Empty(runtime.Fragments);
+        Assert.Equal(0, runtime.FragmentCount);
     }
 
     [Fact]

@@ -142,7 +142,7 @@ public sealed class RetailIgi2SwitchTests
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
         Igi2SwitchTask power = m.Switch(PowerOn);
         m.Run.Tick();
-        float[] f = Igi2Pose.Rotation(power.Orientation.X, power.Orientation.Y, power.Orientation.Z);
+        float[] f = EngineEuler.Rotation(power.Orientation.X, power.Orientation.Y, power.Orientation.Z);
         Vector3d across = new(f[0], f[3], f[6]);
         Vector3d ahead = new(f[1], f[4], f[7]);
 
@@ -168,7 +168,7 @@ public sealed class RetailIgi2SwitchTests
         Igi2Level level = Igi2Level.Find("location1", "level1");
         Igi2SwitchTask power = level.Root.Children.SelectMany(RetailIgi2Mission1.All).OfType<Igi2SwitchTask>().Single(static s => s.Id == PowerOn);
         power.Models = level.ModelFor;
-        float[] f = Igi2Pose.Rotation(power.Orientation.X, power.Orientation.Y, power.Orientation.Z);
+        float[] f = EngineEuler.Rotation(power.Orientation.X, power.Orientation.Y, power.Orientation.Z);
         Vector3d ahead = new(f[1], f[4], f[7]);
         float facing = MathF.Atan2((float)ahead.X, (float)-ahead.Y);
 

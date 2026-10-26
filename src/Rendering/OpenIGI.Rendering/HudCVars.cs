@@ -8,19 +8,6 @@ namespace OpenIGI.Rendering;
 [CVarContainer]
 public static class HudCVars
 {
-    /// <summary>Whether the mission's briefing is posted on the nearest wall or fence at the player's start.</summary>
-    /// <remarks>
-    /// The mission caption proper is laid flat at the start and seen from the shot's altitude; this is
-    /// the briefing itself, stood a few centimetres off the nearest vertical surface the start has -- a
-    /// fence, a wall, a crate -- in the level's own space, so it is read the way a notice is read: by
-    /// walking up to it. With nothing to post it on it stands in the air a few metres ahead.
-    /// </remarks>
-    public static readonly BoolCVar WorldBriefing = CVar.Bool(
-        "r_world_briefing",
-        true,
-        CVarOptions.Archive,
-        "Posts the mission briefing on the nearest wall or fence at the player's start.");
-
     /// <summary>Whether gameplay uses the remaster HUD instead of IGI1's retail StatusScreen.</summary>
     /// <remarks>
     /// Both presentations stay loaded so this can switch live from the console or settings screen.

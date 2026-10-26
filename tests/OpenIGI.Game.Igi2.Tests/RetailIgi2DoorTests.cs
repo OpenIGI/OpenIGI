@@ -87,7 +87,7 @@ public sealed class RetailIgi2DoorTests
 
         Assert.Equal(16, ticks);
         Assert.Equal(1f, door.Slider);
-        float[] turned = Igi2Pose.RotateGamma(Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z), ((Fpu)(-90f) * 1f * 0.017453292f).F);
+        float[] turned = Igi2Pose.RotateGamma(EngineEuler.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z), ((Fpu)(-90f) * 1f * 0.017453292f).F);
         Assert.Equal(turned, door.CurrentOrientation);
         Igi2RigidObject solid = m.Collision!.SolidsOf(Igi2DoorTask.TypeName, Blockhouse)[0];
         Assert.Equal(turned, solid.Orientation);
@@ -119,7 +119,7 @@ public sealed class RetailIgi2DoorTests
     public void A_door_opens_and_shuts_the_portals_it_stands_in()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Root, model => m.Level.ModelFor(model)?.Portals);
+        Igi2SectorGraph graph = Igi2SectorGraph.Build(m.Level.Scene, m.Level.ModelFor);
         Igi2SectorPortals portals = new(m.Collision!, graph);
         foreach (Igi2DoorTask each in m.Doors)
         {
@@ -180,7 +180,7 @@ public sealed class RetailIgi2DoorTests
         Assert.Equal(-90f, door.MaxAngle);
         door.ToggleOpen(door.Position);
         door.OpenBothWays = true;
-        float[] f = Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
+        float[] f = EngineEuler.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
         Vector3d ahead = new(f[1], f[4], f[7]);
 
         door.ToggleOpen(door.Position - (ahead * 2000.0));
@@ -202,7 +202,7 @@ public sealed class RetailIgi2DoorTests
         m.Run.Tick();
         Igi2DoorTask door = m.Door(LargeBuilding);
         Vector3d vertex = Vertex(m, door);
-        float[] f = Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
+        float[] f = EngineEuler.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
         Vector3d across = new(f[0], f[3], f[6]);
         Vector3d ahead = new(f[1], f[4], f[7]);
         float[] facing = [-f[0], -f[1], f[2], -f[3], -f[4], f[5], -f[6], -f[7], f[8]];
@@ -213,7 +213,7 @@ public sealed class RetailIgi2DoorTests
 
         Igi2DoorTask gate = m.Door(FrontGate);
         Assert.True(gate.IsLocked);
-        float[] g = Igi2Pose.Rotation(gate.Orientation.X, gate.Orientation.Y, gate.Orientation.Z);
+        float[] g = EngineEuler.Rotation(gate.Orientation.X, gate.Orientation.Y, gate.Orientation.Z);
         Vector3d gateAhead = new(g[1], g[4], g[7]);
         Assert.Null(Find(gate, Vertex(m, gate) - (gateAhead * 2000.0), g));
     }
@@ -228,7 +228,7 @@ public sealed class RetailIgi2DoorTests
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
         m.Run.Tick();
         Igi2DoorTask door = m.Door(LargeBuilding);
-        float[] f = Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
+        float[] f = EngineEuler.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
         Vector3d ahead = new(f[1], f[4], f[7]);
         Vector3d at = Vertex(m, door) - (ahead * 2400.0);
         float facing = MathF.Atan2(-(float)ahead.X, (float)ahead.Y);
@@ -257,7 +257,7 @@ public sealed class RetailIgi2DoorTests
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
         m.Run.Tick();
         Igi2DoorTask door = m.Door(LargeBuilding);
-        float[] f = Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
+        float[] f = EngineEuler.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
         Vector3d ahead = new(f[1], f[4], f[7]);
         door.ToggleOpen(door.Position + (ahead * 2000.0));
         Assert.Equal(-90f, door.MaxAngle);
@@ -348,7 +348,7 @@ public sealed class RetailIgi2DoorTests
     // The player 2400 units behind a door's vertex along its Y, facing it.
     private static Igi2TitlePlayer Before(RetailIgi2Mission1 m, Igi2DoorTask door)
     {
-        float[] f = Igi2Pose.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
+        float[] f = EngineEuler.Rotation(door.Orientation.X, door.Orientation.Y, door.Orientation.Z);
         Vector3d ahead = new(f[1], f[4], f[7]);
         Vector3d at = Vertex(m, door) - (ahead * 2400.0);
         float facing = MathF.Atan2(-(float)ahead.X, (float)ahead.Y);

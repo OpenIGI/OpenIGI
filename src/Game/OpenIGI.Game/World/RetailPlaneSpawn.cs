@@ -127,9 +127,38 @@ public static class RetailPlaneSpawn
         plane.Dimensions[0] = plane.Dimensions[1] = plane.Dimensions[2] = 1f;
         plane.RunCollide = true;
 
-        // The model's attachments, in ATTA order: each Gear becomes a leg, touching at its model's magic vertex 0.
+        // The model's attachments, in ATTA order: each Gear becomes a leg, touching at its model's magic vertex 0, and the
+        // Hatch runs after the legs attached before it.
         foreach (MefAttachment attachment in model.Attachments)
         {
+            Vector3d local = new(attachment.Position.X, attachment.Position.Y, attachment.Position.Z);
+            if (magic(attachment.Name) is { HatchDegrees: { } hatchDegrees })
+            {
+                plane.Hatch = new RetailPlaneHatch(local, AttachmentBasis(attachment.Orientation), hatchDegrees, plane.Gears.Count)
+                {
+                    Mirrored = attachment.Orientation.Determinant < 0f,
+                };
+                continue;
+            }
+
+            if (magic(attachment.Name) is { Rudder: { } rudder })
+            {
+                plane.Rudders.Add(new RetailPlaneRudder(local, AttachmentBasis(attachment.Orientation), rudder)
+                {
+                    Mirrored = attachment.Orientation.Determinant < 0f,
+                });
+                continue;
+            }
+
+            if (magic(attachment.Name) is { CanopyDegrees: { } canopyDegrees })
+            {
+                plane.Shield = new RetailPlaneCanopy(local, AttachmentBasis(attachment.Orientation), canopyDegrees)
+                {
+                    Mirrored = attachment.Orientation.Determinant < 0f,
+                };
+                continue;
+            }
+
             if (magic(attachment.Name) is not { Gear: { } record } definition
                 || models(definition.Model) is not { } legModel
                 || !legModel.TryGetMagicVertex(0, out Vector3f vertex))
@@ -141,15 +170,14 @@ public static class RetailPlaneSpawn
                 new Vector3d(attachment.Position.X, attachment.Position.Y, attachment.Position.Z),
                 AttachmentBasis(attachment.Orientation),
                 record,
-                vertex));
+                vertex)
+            {
+                Mirrored = attachment.Orientation.Determinant < 0f,
+            });
         }
 
         Reset(plane, physics, placement);
-        foreach (RetailPlaneGear gear in plane.Gears)
-        {
-            gear.Seat(plane.GearDown != 0);
-        }
-
+        plane.SeatParts();
         return plane;
     }
 

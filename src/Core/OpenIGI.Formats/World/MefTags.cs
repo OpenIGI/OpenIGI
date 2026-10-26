@@ -48,6 +48,9 @@ public static class MefTags
     /// <summary>Chunk <c>BNAM</c>: an I.G.I. 2 bone mesh's bone names, sixteen bytes each.</summary>
     public static FourCc BoneNames { get; } = FourCc.FromString("MANB");
 
+    /// <summary>Chunk <c>HPRM</c> (<c>MRPH</c>): an I.G.I. 2 bone mesh's morph targets (see <see cref="MefMorph"/>).</summary>
+    public static FourCc Morphs { get; } = FourCc.FromString("HPRM");
+
     /// <summary>Chunk <c>TROP</c> (<c>PORT</c>): portals.</summary>
     public static FourCc Portals { get; } = FourCc.FromString("TROP");
 

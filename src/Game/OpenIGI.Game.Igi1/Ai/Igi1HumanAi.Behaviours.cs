@@ -238,11 +238,12 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        // The wrapper skips the action when the current event names a task less than 30 m away. Event
-        // records without a source task do not run that gate, exactly like the null-handle retail arm.
-        if (_currentEventSource != 0
-            && ResolveCurrentEventSourcePosition() is { } sourcePosition
-            && Vector3d.Distance(Position, sourcePosition) < AiScriptApi.GunshotRange)
+        // 0x44D2C0 skips the action when the current event's subject (its +44 task) stands nearer than the AI's own
+        // lie-down distance (+15800, the row's "Combat liedown min distance"), origin to origin. A record that names
+        // no subject skips the test, as the null-handle arm does.
+        if (_currentEventSubject != 0
+            && ResolveCurrentEventSubjectOrigin() is { } subjectOrigin
+            && Vector3d.Distance(subjectOrigin, OriginPosition) < (CombatParameters?.LieDownMinimumDistanceInUnits ?? 0.0))
         {
             return;
         }
@@ -252,27 +253,26 @@ public sealed partial class Igi1HumanAi
         Activity = AiSoldierActivity.FallenFlat;
     }
 
-    private Vector3d? ResolveCurrentEventSourcePosition()
+    // The origin (Human+32) of the human the current event names, as 0x44D2C0 reads it off the record's +44 task.
+    private Vector3d? ResolveCurrentEventSubjectOrigin()
     {
-        // Player-authored sensed events use -1 because the player is not one of the renderer-local soldier
-        // ids. By the time an event is dispatched Tick has supplied the player's current feet position.
-        if (_tracked.TryGetValue(_currentEventSource, out Igi1AiTrackedHuman? human))
+        // The player is -1 in records and candidates alike; by the time an event is dispatched Tick has offered
+        // every human's current body.
+        if (_tracked.TryGetValue(_currentEventSubject, out Igi1AiTrackedHuman? human))
         {
-            return human.Candidate.Feet;
+            AiDetectionCandidate candidate = human.Candidate;
+            return candidate.Origin ?? new Vector3d(
+                candidate.Feet.X,
+                candidate.Feet.Y,
+                candidate.Feet.Z + (candidate.Crouching ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits));
         }
 
-        if (_currentEventSource == -1)
-        {
-            return _playerEventSourcePosition;
-        }
-
-        if (_locateTask is not null && _locateTask(_currentEventSource, out Vector3d position))
+        if (_locateTask is not null && _locateTask(_currentEventSubject, out Vector3d position))
         {
             return position;
         }
 
-        // Retain the old record-position fallback for synthetic/headless events with no task registry.
-        return _currentEventPosition;
+        return null;
     }
 
     private void RunFallFlat(int tick)
@@ -340,80 +340,107 @@ public sealed partial class Igi1HumanAi
 
     private void BeginScriptedFire(Func<Vector3d?> locateTarget, AiProducedAction action)
     {
-        if (locateTarget() is null)
+        if (locateTarget() is null || CombatParameters is null)
         {
             return;
         }
 
+        // 0x44D580 / 0x44D630: the time and the wait are seconds the script names, made ticks at once.
         _scriptedFire = new Igi1ScriptedFire
         {
             LocateTarget = locateTarget,
+            Bursts = new AiGuardCombat(CombatParameters, _random.NextDouble) { DrawsStandDelay = false },
             RemainingTicks = (int)(action.Real(1) * 30.0f),
-            BurstDelayTicks = Math.Max(0, (int)(action.Real(2) * 30.0f)),
+            BurstDelayTicks = (int)(action.Real(2) * 30.0f),
             ShowReload = action.Argument(3) != 0,
         };
         Body.Reset();
         Activity = AiSoldierActivity.FiringAtTask;
     }
 
+    /// <summary>One tick of FireAtNode / FireAtTask — <c>0x48ECC0</c> / <c>0x48EE00</c>.</summary>
+    /// <remarks>
+    /// The time runs down first and ends the action. An empty clip reloads through the input slot and fires nothing
+    /// that tick, or refills at once and sets the next burst up afresh. A burst is set up (<c>0x48B9C0</c>, at full
+    /// accuracy) the first tick there is none, then -- once the wait armed after the last burst has run out, and with
+    /// no turning while it does -- fired through combat's own fire child (<c>0x48D8E0</c>); its end arms the wait again.
+    /// </remarks>
     private void RunScriptedFire()
     {
         Igi1ScriptedFire firing = _scriptedFire!;
-        if (firing.RemainingTicks-- < 0 || firing.LocateTarget() is not { } target || _weapon is null)
+        _channelWrites.Clear();
+        Combat = default;
+        if (firing.RemainingTicks-- < 0 || _weapon is null)
         {
             EndScriptedFire();
             return;
         }
 
         AiCombatWeaponState weapon = _weapon();
-        if (firing.PreviousAmmo >= 0 && weapon.AmmoInClip < firing.PreviousAmmo)
-        {
-            firing.BurstRoundsLeft -= firing.PreviousAmmo - weapon.AmmoInClip;
-            if (firing.BurstRoundsLeft <= 0)
-            {
-                firing.BurstRoundsLeft = 0;
-                firing.DelayTicks = firing.BurstDelayTicks;
-            }
-        }
-
-        firing.PreviousAmmo = weapon.AmmoInClip;
-        _channelWrites.Clear();
-        Combat = new AiCombatCommand { TurnTo = target };
-        TurnTowards(target, (float)AiGuardCombat.AimToleranceRadians);
-
         if (weapon.AmmoInClip <= 0)
         {
-            Combat = firing.ShowReload
-                ? new AiCombatCommand { TurnTo = target, PressReload = true }
-                : new AiCombatCommand { TurnTo = target, ReloadWeaponDirectly = true };
             if (firing.ShowReload)
             {
+                Combat = new AiCombatCommand { PressReload = true };
                 WriteRawInputSlot(8, 1f);
+                return;
             }
 
+            // Weapon_UseAmmo (0x4F2350): the clip refills now, and the burst is set up again.
+            Combat = new AiCombatCommand { ReloadWeaponDirectly = true };
+            firing.BurstSetUp = false;
             return;
         }
 
-        if (firing.DelayTicks > 0)
+        if (firing.LocateTarget() is not { } target)
         {
-            firing.DelayTicks--;
+            EndScriptedFire();
             return;
         }
 
-        if (firing.BurstRoundsLeft <= 0)
+        AiCombatSense sense = new(
+            HasDetectionSlot: true,
+            InCone: true,
+            Visible: true,
+            TargetPosition: target,
+            DistanceToTargetInUnits: Vector3d.Distance(Position, target),
+            LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
+            AmmoInClip: weapon.AmmoInClip,
+            Category: weapon.Category,
+            ClipSize: weapon.ClipSize,
+            BurstSize: weapon.BurstSize,
+            AimersOnTarget: 0);
+
+        if (!firing.BurstSetUp)
         {
-            firing.BurstRoundsLeft = Math.Max(1, weapon.BurstSize);
+            AiCombatBurst burst = firing.Bursts.StartScriptedBurst(sense, Vision.Primary.Length);
+            HitProbability = burst.HitProbability;
+            firing.BurstSetUp = true;
         }
 
-        bool aimed = IsFacing(target, (float)AiGuardCombat.AimToleranceRadians);
-        Combat = new AiCombatCommand
+        if (firing.Wait >= 0)
         {
-            TurnTo = target,
-            Aimed = aimed,
-            FirePose = true,
-            PullTrigger = aimed,
-        };
-        WriteChannel(AiCombatChannel.Fire, 1f);
+            firing.Wait--;
+            return;
+        }
+
+        AiCombatCommand command = firing.Bursts.FireScriptedBurst(sense, out bool done);
+        Combat = command;
+        if (command.FirePose)
+        {
+            WriteChannel(AiCombatChannel.Fire, 1f);
+        }
+
+        if (command.TurnTo is { } point)
+        {
+            firing.Bursts.ReportAimed(TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians));
+        }
+
+        if (done)
+        {
+            firing.BurstSetUp = false;
+            firing.Wait = firing.BurstDelayTicks;
+        }
     }
 
     private void EndScriptedFire()

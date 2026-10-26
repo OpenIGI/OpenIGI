@@ -137,9 +137,6 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets whether binoculars closed on the last simulation tick.</summary>
     public bool BinocularsClosedThisTick => _optics.Binoculars.ClosedThisTick;
 
-    /// <summary>Gets whether the binocular zoom target changed on the last simulation tick.</summary>
-    public bool BinocularZoomTargetChangedThisTick => _optics.Binoculars.ZoomTargetChangedThisTick;
-
     /// <summary>Gets whether a held zoom key moved the binocular magnification on the last tick.</summary>
     public bool BinocularZoomSteppingThisTick => _optics.Binoculars.ZoomSteppingThisTick;
 
@@ -618,8 +615,17 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public float InteractionFacing => _interaction.Facing;
 
     /// <inheritdoc cref="PlayerInteractionDriver.ApplyRootMotion"/>
-    public void ApplyInteractionRootMotion(Vector3d rootDelta, bool clipEnded = false) =>
-        _interaction.ApplyRootMotion(rootDelta, clipEnded);
+    public void ApplyInteractionRootMotion(Vector3d rootDelta, bool clipEnded = false, float? stepEventTime = null) =>
+        _interaction.ApplyRootMotion(rootDelta, clipEnded, stepEventTime);
+
+    /// <inheritdoc cref="PlayerInteractionDriver.IsOnLevelWire"/>
+    public bool IsOnLevelWire => _interaction.IsOnLevelWire;
+
+    /// <inheritdoc cref="PlayerInteractionDriver.WireDragDirection"/>
+    public int WireDragDirection => _interaction.WireDragDirection;
+
+    /// <inheritdoc cref="PlayerInteractionDriver.TakeWireDragSound"/>
+    public string? TakeWireDragSound() => _interaction.TakeWireDragSound();
 
     /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
     public bool InteractionAnimationLoops => _interaction.AnimationLoops;
@@ -802,19 +808,25 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// Advances only the presentation while the map computer is open. The player remains grounded and
     /// motionless, but the first-person rig keeps advancing exactly as the retail state-45 handler does.
     /// </summary>
-    public void TickMapComputer()
+    /// <param name="input">
+    /// The input, whose map key closes the computer as state 45's run does (<c>0x40E3C0</c>); or <see langword="null"/> for an
+    /// empty frame, where the host closes it.
+    /// </param>
+    /// <returns><see langword="true"/> when the map key went down this tick.</returns>
+    public bool TickMapComputer(InputState? input = null)
     {
         if (!_mapComputerOpen)
         {
-            return;
+            return false;
         }
 
         // The console stays usable over the map, so a cheat can change while it is open.
         ApplyCheats(PlayerCheatOptions.Current);
 
-        // Map controls are consumed by ComputerMap, not HumanPlayer. Feeding an empty frame prevents a
-        // held movement/fire key from leaking into the dormant weapon machine while preserving its clock.
-        _input.Accept(default);
+        // Map controls are consumed by ComputerMap, not HumanPlayer, and the weapon machine waits out state 11 whatever is
+        // held. Without the host's input the frame is empty, which keeps the machine's clock.
+        _input.Accept(input is null ? default : PlayerInputSampler.SampleFrame(input, InputProfile));
+        bool close = input is not null && _input.IsRisingEdge(PlayerInputSlot.MapComputer);
         _locomotion.Animator?.Enter(45);
         TickWeapons();
         _firstPerson.Rig?.Tick();
@@ -826,6 +838,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         PoseChanged = true;
         SyncView();
         CaptureViewTickState();
+        return close;
     }
 
     /// <summary>Stops the held-weapon machine because the player has died.</summary>
@@ -895,8 +908,8 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _firstPerson.SmoothedRig(AimPitch, alpha);
 
     /// <inheritdoc cref="PlayerLadderController.DecideStep"/>
-    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide, IGroundHeightField? terrain) =>
-        _ladder.DecideStep(up, down, slide, terrain);
+    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide) =>
+        _ladder.DecideStep(up, down, slide);
 
     /// <inheritdoc cref="PlayerLadderController.Move"/>
     public void MoveLadder(Vector3d rootDelta) => _ladder.Move(rootDelta);
@@ -914,7 +927,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public string TakeLadderStep() => _ladder.TakeStep(AiNoise);
 
     /// <inheritdoc cref="PlayerLadderController.CompleteTopTransition"/>
-    public void CompleteLadderTopTransition(IGroundHeightField? terrain) => _ladder.CompleteTopTransition(terrain);
+    public void CompleteLadderTopTransition() => _ladder.CompleteTopTransition();
 
     /// <inheritdoc cref="PlayerLadderController.TickSlide"/>
     public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain) => _ladder.TickSlide(rootDelta, terrain);

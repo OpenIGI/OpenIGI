@@ -52,9 +52,9 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     private const double FindDown = -4096.0;
     private const double FindUp = 4096.0;
 
-    private float[] _base = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _orientation = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _lastOrientation = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _base = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _orientation = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _lastOrientation = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _start;
     private Vector3d _position;
     private Vector3d _lastPosition;
@@ -464,7 +464,7 @@ public sealed partial class Igi2DoorTask : Igi2Task, IIgi2Door, IIgi2PlacedTask,
     protected override void OnParsed()
     {
         _start = Position;
-        _base = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        _base = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         _isClosed = 1;
         _isLastClosed = 1;
         _isOpen = 0;

@@ -44,6 +44,9 @@ public sealed class PlayerBody
     private float? _pendingLandingVelocityZ;
     private Vector3f? _pendingWalkOffVelocity;
 
+    // Set as the body lets go of a ladder: the tick it is let go in is state 0's, which only finds the ground gone.
+    private bool _ladderReleaseTick;
+
     /// <summary>Last tick's world-space root step — what <c>Human+1312</c> holds when a state entry reads it.</summary>
     private Vector3f _previousStep;
     private Action<HumanFallImpact>? _fallImpactSink;
@@ -356,12 +359,11 @@ public sealed class PlayerBody
     }
 
     /// <summary>Restores ordinary movement after the ladder's deinitialization flag is consumed.</summary>
-    /// <param name="terrain">The level terrain.</param>
-    /// <param name="placeOnGround">
-    /// Whether to resolve the highest surface below the authored endpoint. Top animation 170 uses this
-    /// to commit onto the roof instead of allowing numerical drift to fall through it.
-    /// </param>
-    public void EndLadderTraversal(IGroundHeightField? terrain, bool placeOnGround)
+    /// <remarks>
+    /// The body is left in the air where it is: 0x4113E0 only turns collision back on, and the next tick's move finds the
+    /// ground or falls to it, as state 29 does.
+    /// </remarks>
+    public void EndLadderTraversal()
     {
         Velocity = default;
         InheritedVelocity = default;
@@ -369,12 +371,13 @@ public sealed class PlayerBody
         HitShove = default;
         _previousStep = default;
         TouchedWall = false;
-        if (placeOnGround)
-        {
-            IsGrounded = false;
-            GroundNormal = null;
-            PlaceOnGround(terrain);
-        }
+
+        // Off the ladder the human is in state 0 without the ground bit the mount cleared; its next update finds no ground and
+        // enters state 29 (0x4087B0), whose entry carries the still step on and runs no gravity (0x40BDB0). The fall starts
+        // the tick after. The tick of the release itself is state 0's and moves nothing either: measured, the original falls on
+        // the second tick after it lets go.
+        _pendingWalkOffVelocity = Vector3f.Zero;
+        _ladderReleaseTick = true;
     }
 
     /// <summary>Advances the player by one tick.</summary>
@@ -394,7 +397,13 @@ public sealed class PlayerBody
         // explicit so walking off a ledge carries the pace that crossed it instead of dropping straight
         // down, and so neither the crossing step nor gravity is applied twice.
         bool enteredFallFromGround = false;
-        if (!IsGrounded && _pendingWalkOffVelocity is Vector3f walkOffVelocity)
+        bool releaseTick = _ladderReleaseTick;
+        _ladderReleaseTick = false;
+        if (!IsGrounded && releaseTick)
+        {
+            enteredFallFromGround = true;
+        }
+        else if (!IsGrounded && _pendingWalkOffVelocity is Vector3f walkOffVelocity)
         {
             Velocity = walkOffVelocity;
             _pendingWalkOffVelocity = null;

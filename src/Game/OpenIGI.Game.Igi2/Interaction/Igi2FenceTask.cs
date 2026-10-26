@@ -55,7 +55,7 @@ public sealed partial class Igi2FenceTask : Igi2Task, IIgi2PlacedTask, IIgi2Fenc
     public const float ActivateTime = 6f;
 
     private LevelExpression? _electric;
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private Igi2AmbientAreaTask? _hum;
 
     /// <summary>Gets or sets where it stands.</summary>

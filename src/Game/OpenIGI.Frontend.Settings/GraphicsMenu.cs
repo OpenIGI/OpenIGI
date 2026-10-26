@@ -524,11 +524,6 @@ public static class GraphicsMenu
             "Draws that highlight as a soft outline over a faint fill, red for enemies, seen through walls "
                 + "and fading towards the edges of the view. Off, it is a coloured glow."),
         new GraphicsSetting(
-            "r_world_briefing",
-            "Posted Briefing",
-            "Stands the mission briefing against the nearest wall or fence where you start, to be read "
-                + "by walking up to it. Off, the briefing is only in the menu."),
-        new GraphicsSetting(
             "r_weather_enabled",
             "Weather",
             "Draws the rain or snow the level authors gave each mission."),
@@ -728,6 +723,7 @@ public static class GraphicsMenu
         "r_terrain_occlusion",
         "r_terrain_cache",  // how much streamed ground stays resident; the detail row is the player's version
         "r_gi_far_refresh", // how many frames the far GI cache sweep is spread over; each preset picks its cost
+        "r_mip_point",      // the original's nearest-mip sampling, part of its look: the Preset row decides it
 
         // The night's calibration. The sky's scatter, the airglow and the moonlight were tuned together
         // until a night read as dark but legible; moving one alone relights every night mission. The

@@ -1,0 +1,112 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World.Particles;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
+
+namespace OpenIGI.Game.World;
+
+/// <summary>
+/// An explosion's smoke, <c>ExplosionSmoke</c>: a white puff when it starts and a black one late in its life. Both titles run
+/// it alike (Project I.G.I.'s <c>0x480420</c> and <c>0x47EAD0</c>; I.G.I. 2's <c>Explosion0_SmokeRunHandler</c>,
+/// <c>igi2 0x5095C0</c>).
+/// </summary>
+public sealed class ExplosionSmoke : IDynamicTask
+{
+    private readonly IgiRandom _random;
+    private readonly List<ExplosionSmokePuff> _puffs = [];
+    private bool _isBlack;
+    private Particle2DSystem? _black;
+
+    /// <summary>Initializes a new instance of the <see cref="ExplosionSmoke"/> class.</summary>
+    /// <param name="random">The run stream.</param>
+    /// <param name="position">Where.</param>
+    /// <param name="radius">How big, <c>vRadius</c>.</param>
+    /// <param name="lifetime">The ticks it lives.</param>
+    public ExplosionSmoke(IgiRandom random, Vector3d position, float radius, int lifetime)
+    {
+        _random = random;
+        Position = position;
+        Radius = radius;
+        TotalLifetime = lifetime;
+        Lifetime = lifetime;
+    }
+
+    /// <summary>Gets where it is.</summary>
+    public Vector3d Position { get; }
+
+    /// <summary>Gets how big its puffs start, <c>vRadius</c>.</summary>
+    public float Radius { get; }
+
+    /// <summary>Gets the ticks it lives, <c>nTotalLifetime</c>.</summary>
+    public int TotalLifetime { get; }
+
+    /// <summary>Gets the ticks it has left, <c>nLifetime</c>.</summary>
+    public int Lifetime { get; private set; }
+
+    /// <summary>Gets the puffs it has started.</summary>
+    public IReadOnlyList<ExplosionSmokePuff> Puffs => _puffs;
+
+    /// <summary>Gets the black puff's brightness, set each tick once it has started.</summary>
+    public float BlackIntensity { get; private set; }
+
+    /// <summary>Gets what makes a puff's particle system, when the title draws its smoke; <see langword="null"/> keeps only the record.</summary>
+    /// <remarks>The black puff's system is the one whose particles take <see cref="BlackIntensity"/> each tick (<c>Particle2D_SetLevel</c>).</remarks>
+    public Func<ExplosionSmokePuff, Particle2DSystem?>? Emit { get; init; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// On its first tick the white puff starts: it lives a tenth of the smoke's life, fades over four fifths to all of it at
+    /// random, and is a tenth bright and a tenth more at random. At nine tenths of its life the black puff starts, which brightens
+    /// to three tenths at half the smoke's life and fades out by nine tenths.
+    /// </remarks>
+    public bool Run()
+    {
+        if (Lifetime <= 0)
+        {
+            return false;
+        }
+
+        int total = TotalLifetime;
+        if (Lifetime == total)
+        {
+            int partLife = Fpu.ToInt32((Fpu)(double)total * 0.1f);
+            Fpu fade = ((Draw() * 0.2f) + 0.8f) * (double)total;
+            int partFade = Fpu.ToInt32(fade);
+            float sizeDelta = ((Fpu)1f / (double)total).F;
+            float intensity = ((Draw() + 1f) * 0.1f).F;
+            ExplosionSmokePuff white = Puff(0x1000008, sizeDelta, partLife, partFade, intensity);
+            _puffs.Add(white);
+            _ = Emit?.Invoke(white);
+        }
+
+        if (Lifetime == Fpu.ToInt32((Fpu)0.9f * (double)total))
+        {
+            float sizeDelta = ((Fpu)1f / (double)total).F;
+            ExplosionSmokePuff black = Puff(0x1000010, sizeDelta, total, 0, 0.001f);
+            _puffs.Add(black);
+            _black = Emit?.Invoke(black);
+            _isBlack = true;
+        }
+
+        if (_isBlack)
+        {
+            Fpu life = (double)Lifetime, whole = (double)total;
+            Fpu half = whole * 0.5f;
+            Fpu share = life.Value <= half.Value ? life / half : (Fpu)1f - ((life - half) / ((whole * 0.9f) - half));
+            BlackIntensity = (share * 0.3f).F;
+            _black?.SetLevel(BlackIntensity);
+        }
+
+        Lifetime--;
+        return true;
+    }
+
+    private Fpu Draw() => _random.NextDouble();
+
+    /// <summary><c>Explosion0_AddSmoke</c>: a particle at the smoke, turned at random and turning at random.</summary>
+    private ExplosionSmokePuff Puff(int flags, float sizeDelta, int lifetime, int fadetime, float intensity)
+    {
+        float rotation = (Draw() * 6.2831855f).F;
+        float rotationDelta = (((Fpu)0.5 - Draw()) * 0.018849557f).F;
+        return new ExplosionSmokePuff(flags, Position, Radius, sizeDelta, lifetime, fadetime, intensity, rotation, rotationDelta);
+    }
+}

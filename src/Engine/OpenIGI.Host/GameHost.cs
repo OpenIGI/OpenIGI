@@ -254,6 +254,13 @@ public sealed partial class GameHost : IDisposable
     private ICameraStatusLightPresenter? _cameraStatusLights;
     private IGrenadePresenter? _grenadeRenderer;
     private IMissilePresenter? _missileRenderer;
+
+    // How the level's models give up detail with distance, or none.
+    private ModelLodPolicy? _modelLod;
+
+    // The camera the last frame was drawn from, which the ear follows; null before a level has drawn one.
+    private Camera3D? _earCamera;
+
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
     private ISoldierBodies? _soldiers;
@@ -854,7 +861,7 @@ public sealed partial class GameHost : IDisposable
     /// The level's collision makes it once (<see cref="LevelCollision.Walls"/>), as it is asked every frame.
     /// </para>
     /// </remarks>
-    private DeathCameraVantage.Blocked? ThirdPersonWalls() => _mission.Collision.Walls;
+    private WorldWalls.Blocked? ThirdPersonWalls() => _mission.Collision.Walls;
 
     /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
     /// <remarks>
@@ -883,6 +890,8 @@ public sealed partial class GameHost : IDisposable
         _forest = null;
         _water?.Dispose();
         _water = null;
+        _retailWeather?.Dispose();
+        _retailWeather = null;
         _world?.Dispose();
         _soldiers?.Dispose();
         _menuBackdrop.Dispose();

@@ -81,6 +81,12 @@ public sealed class ConditionalContainerGate
                 return false;
             }
 
+            // A body its human's own update took out of the world (0x4609A0 clears Human+3318).
+            if (current is Player.HumanTask { IsOutOfWorld: true })
+            {
+                return false;
+            }
+
             // A GuardGenerator's nested HumanSoldier is an authored template until the generator's
             // first successful update. IGI1's 0x488000 clone path only registers that live copy then;
             // keeping the parsed template out of runtime walks reproduces the same distinction.

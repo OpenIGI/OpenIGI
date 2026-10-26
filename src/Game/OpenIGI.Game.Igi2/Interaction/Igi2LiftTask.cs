@@ -43,10 +43,10 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
     // One thirtieth, the float 0x3D088889: a speed in metres a second, made units a tick.
     private const float PerTick = 0.033333335f;
 
-    private float[] _startOrientation = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _stopOrientation = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _orientation = Igi2Pose.Rotation(0f, 0f, 0f);
-    private float[] _lastOrientation = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _startOrientation = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _stopOrientation = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _orientation = EngineEuler.Rotation(0f, 0f, 0f);
+    private float[] _lastOrientation = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3d _startPosition;
     private Vector3d _stopPosition;
     private Vector3d _position;
@@ -326,7 +326,7 @@ public sealed partial class Igi2LiftTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover
     protected override void OnParsed()
     {
         _startPosition = StartPosition;
-        _startOrientation = Igi2Pose.Rotation(StartOrientation.X, StartOrientation.Y, StartOrientation.Z);
+        _startOrientation = EngineEuler.Rotation(StartOrientation.X, StartOrientation.Y, StartOrientation.Z);
         _built = Igi2Pose.FromAngles(StartPosition, StartOrientation);
         UpdateInternalData();
     }

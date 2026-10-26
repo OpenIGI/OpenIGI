@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -29,11 +30,31 @@ internal sealed class SoldierWeaponDrawer(
     IOpenIgiLogger logger)
 {
     private readonly List<SoldierGroup> _groups = groups;
+
+    /// <summary>Gets or sets where the level's light is read from, or none to draw at the textures.</summary>
+    public Func<FixedFunctionSun?>? Sun { get; set; }
+
+    // The light in a model's own frame: the orientation takes the model to the world as M * v, so its transpose (the
+    // row-vector Transform) takes the world's light back.
+    private void LightModel(Matrix3f orientation) =>
+        _device.SetVertexSun(Sun?.Invoke() is { } sun ? orientation.Transform(sun.Direction) : Vector3f.Zero);
     private readonly IGraphicsDevice _device = device;
     private readonly SoldierArmoury _armoury = armoury;
     private readonly SoldierFrameInterpolator _frames = frames;
     private readonly Func<TexTextureCache> _textures = textures;
     private readonly IOpenIgiLogger _logger = logger;
+
+    /// <summary>Gets or sets the sector cull the soldiers are drawn by, or <see langword="null"/> for none.</summary>
+    public Game.Igi1.World.Igi1SectorVisibility? Visibility { get; set; }
+
+    /// <summary>Gets or sets where the level's detail settings are read from, or none to draw every body whole.</summary>
+    public Func<ModelLodPolicy?>? Lod { get; set; }
+
+    /// <summary>Gets the eye the soldiers were last drawn from, which the tick poses their lower levels for.</summary>
+    public Camera3D? LastEye { get; private set; }
+
+    /// <summary>Gets that eye's horizontal half-angle tangent.</summary>
+    public float LastFieldOfView { get; private set; } = 1f;
 
     /// <summary>Draws every active soldier's body and held weapon, and the stationary and vehicle guns.</summary>
     /// <param name="camera">The eye.</param>
@@ -58,6 +79,19 @@ internal sealed class SoldierWeaponDrawer(
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
 
+        // Narrowed to the outside's window only from the frame's own eye; a light's view of the soldiers has no window.
+        Game.Igi1.World.Igi1SectorVisibility? clipping = Visibility is { } eyeCull && eyeCull.IsEye(camera) ? eyeCull : null;
+
+        // Each view picks its own level for each body (0x49F700); the frame's eye is the one the tick poses them for.
+        ModelLodPolicy? lod = Lod?.Invoke() is { HasBoneSettings: true } settings ? settings : null;
+        float fieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
+        if (Visibility is null || Visibility.IsEye(camera))
+        {
+            LastEye = camera;
+            LastFieldOfView = fieldOfView;
+        }
+
+        ViewClip? appliedClip = null;
         foreach (SoldierGroup group in _groups)
         {
             foreach (SoldierMember member in group.Soldiers)
@@ -67,12 +101,32 @@ internal sealed class SoldierWeaponDrawer(
                     continue;
                 }
 
-                // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
-                // vanishing was only ever the port having no death animation to play. Each soldier
-                // carries its own skinned mesh, so a corpse is posed by its own death clip.
+                // A dead soldier keeps being drawn until its HumanAI takes the body out of the world, ten
+                // seconds after it lands and only once no render drew it (0x44F410). Each soldier carries its
+                // own skinned mesh, so a corpse is posed by its own death clip.
                 if (!member.HasFrameState)
                 {
                     _frames.ResolveFrameState(member, 1f, smooth: false);
+                }
+
+                // Every pass the frame draws a soldier in leaves out the ones the sector cull does, its shadow among them.
+                if (Visibility is { } cull && !IsDrawn(cull, group, member))
+                {
+                    continue;
+                }
+
+                // Beyond its cutoff a body is not drawn at all, nor the gun in its hand.
+                int level = lod is null ? 0 : SoldierLevelOfDetail.Select(lod, group, member, camera, fieldOfView);
+                if (level < 0)
+                {
+                    continue;
+                }
+
+                ViewClip? clip = clipping?.ClipOfObject(WorldScene.ToUnits(member.DrawnWhere));
+                if (clip != appliedClip)
+                {
+                    _device.SetDrawClip(clip);
+                    appliedClip = clip;
                 }
 
                 Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
@@ -94,12 +148,60 @@ internal sealed class SoldierWeaponDrawer(
                     NoHistory = member.NoHistoryThisFrame,
                 });
 
-                DrawSubsets(group, member, modelView);
+                LightModel(member.DrawnOrientation);
+
+                // 0x49F700 fogs the body along its sphere: its origin's depth, either side by the mesh's radius (Fog_SetRange).
+                if (OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla
+                    && group.Body.Model is { } fogged)
+                {
+                    Vector3d offset = member.DrawnWhere - camera.Position;
+                    Matrix3f view = camera.Orientation;
+                    float depth = (float)((view.M31 * offset.X) + (view.M32 * offset.Y) + (view.M33 * offset.Z));
+                    float radius = (float)(fogged.RenderSphereRadius / WorldScene.UnitsPerMetre);
+                    _device.SetObjectFogRange(depth - radius, depth + radius);
+                }
+
+                if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
+                {
+                    SoldierLevel lower = group.Lower[level - 1];
+                    DrawSubsets(lower.Geometry, lower.Instance, lower.Pack, member.LevelMesh, modelView);
+                }
+                else
+                {
+                    DrawSubsets(group, member, modelView);
+                }
+
+                _device.SetVertexSun(Vector3f.Zero);
 
                 _device.SetMaterialOverride(SurfaceMaterial.Default);
                 _device.ClearPoseInterpolation();
+                _device.SetObjectFogRange(0f, 0f);
             }
         }
+
+        if (appliedClip is not null)
+        {
+            _device.SetDrawClip(null);
+        }
+    }
+
+    /// <summary>Whether the sector cull lets a soldier be drawn from the frame's eye, or there is no cull.</summary>
+    public bool IsSectorVisible(SoldierGroup group, SoldierMember member) =>
+        Visibility is not { } cull || IsDrawn(cull, group, member);
+
+    // The soldier's own position is what the inside sphere is measured to; its exclusion sphere is its mesh's render sphere,
+    // moved by the root bone and turned by the body, as a bone object is excluded.
+    private static bool IsDrawn(Game.Igi1.World.Igi1SectorVisibility cull, SoldierGroup group, SoldierMember member)
+    {
+        Vector3d origin = WorldScene.ToUnits(member.DrawnWhere);
+        if (group.Body.Model is not { } model)
+        {
+            return cull.IsObjectVisible(origin, origin, 0f);
+        }
+
+        Vector3f root = model.BoneHierarchy is { BoneCount: > 0 } rig ? rig.Translations[0] : Vector3f.Zero;
+        Vector3f turned = member.DrawnOrientation.Transposed().Transform(model.RenderSphereCentre + root);
+        return cull.IsObjectVisible(origin, new Vector3d(origin.X + turned.X, origin.Y + turned.Y, origin.Z + turned.Z), model.RenderSphereRadius);
     }
 
     private void DrawStationaryGuns(in Camera3D camera, in Matrix4f projection)
@@ -187,7 +289,8 @@ internal sealed class SoldierWeaponDrawer(
                 if (!member.Agent.FiredThisTick
                     || !member.HasWeaponFrameState
                     || member.Weapon is not { } weapon
-                    || weapon.Presentation is not { } presentation)
+                    || weapon.Presentation is not { } presentation
+                    || (Visibility is { } cull && !IsDrawn(cull, group, member)))
                 {
                     continue;
                 }
@@ -276,6 +379,7 @@ internal sealed class SoldierWeaponDrawer(
 
         if (weapon.Presentation is { } presentation)
         {
+            presentation.Sun = Sun?.Invoke();
             // Body only: the muzzle flame is LIGHT, and drawing it here put it into the deferred
             // G-buffer to be shaded like scenery -- a one-frame dark square at the muzzle. It is
             // drawn by DrawMuzzleFlashes instead, in the forward pass, like the player's own.
@@ -299,6 +403,7 @@ internal sealed class SoldierWeaponDrawer(
     private void DrawRigidWeapon(SoldierHeldWeapon weapon, Vector3d originMetres, Matrix3f rotation, in Camera3D camera)
     {
         Matrix4f modelView = camera.CreateModelView(originMetres, rotation);
+        LightModel(rotation);
 
         foreach (MeshSubset subset in weapon.Geometry.Subsets)
         {
@@ -326,12 +431,16 @@ internal sealed class SoldierWeaponDrawer(
                 BlendMode.Opaque);
         }
 
+        _device.SetVertexSun(Vector3f.Zero);
     }
 
     // Every textured subset of a body's own mesh, opaque, through the material the caller set.
-    public void DrawSubsets(SoldierGroup group, SoldierMember member, in Matrix4f modelView)
+    public void DrawSubsets(SoldierGroup group, SoldierMember member, in Matrix4f modelView) =>
+        DrawSubsets(group.Geometry, group.Instance, group.Pack, member.Mesh, modelView);
+
+    private void DrawSubsets(MeshGeometry geometry, MtpInstance? named, LoadedPack? from, MeshHandle mesh, in Matrix4f modelView)
     {
-        foreach (MeshSubset subset in group.Geometry.Subsets)
+        foreach (MeshSubset subset in geometry.Subsets)
         {
             if (subset.IndexCount == 0)
             {
@@ -340,15 +449,15 @@ internal sealed class SoldierWeaponDrawer(
 
             TextureHandle diffuse = TextureHandle.None;
             if (subset.HasMaterial
-                && group.Instance is { } instance
-                && group.Pack is { } pack
+                && named is { } instance
+                && from is { } pack
                 && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
             {
                 diffuse = _textures().Get(texture);
             }
 
             _device.DrawMesh(
-                member.Mesh,
+                mesh,
                 subset.IndexOffset,
                 subset.IndexCount,
                 modelView,

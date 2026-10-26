@@ -13,6 +13,25 @@ public sealed class LadderInteractionTests
     private static readonly Vector3d Foot = new(1000.0, 2000.0, 0.0);
     private static readonly Vector3d Head = new(1000.0, 2000.0, 12288.0);
 
+    /// <summary>
+    /// Let go of a ladder in the air, the body holds still for the tick it lets go in (state 0) and the next (state 29's entry,
+    /// 0x40BDB0), and falls on the third -- measured on the original at a tower's top.
+    /// </summary>
+    [Fact]
+    public void ABodyLetGoOfALadderFallsOnTheSecondTickAfter()
+    {
+        PlayerBody body = new() { Position = new Vector3d(0.0, 0.0, 100000.0) };
+        PlayerCommand still = new(0f, 0f, 0f, 0f, Run: false, Crouch: false, Jump: false);
+
+        body.EndLadderTraversal();
+        body.Tick(still, terrain: null, Vector3f.Zero);
+        body.Tick(still, terrain: null, Vector3f.Zero);
+        Assert.Equal(100000.0, body.Position.Z);
+
+        body.Tick(still, terrain: null, Vector3f.Zero);
+        Assert.True(body.Position.Z < 100000.0);
+    }
+
     [Fact]
     public void StepCountIsHeightOverOneStepTruncated()
     {
@@ -269,6 +288,26 @@ public sealed class LadderInteractionTests
             HumanInteractionDispatch.Dispatch(InteractionActivateType.Switch).Action);
         Assert.Equal(11, (int)InteractionActivateType.Fence);
         Assert.Equal(9, (int)InteractionActivateType.Wire);
+    }
+
+    [Fact]
+    public void SteppingOffLeavesTheBodyInTheAirOnItsFeetForTheFallToLand()
+    {
+        // 0x4113E0 only turns collision back on when a climb ends: the origin stays where the climb left it and the body
+        // falls the last few centimetres into state 29, landing with its step. The climb carries the origin, the body
+        // its feet; snapping the origin to the first surface below stood a player who had climbed to a roof on the
+        // ladder's own top.
+        LadderPlacement ladder = Ladder();
+        PlayerBody body = new() { Position = new Vector3d(ladder.BottomMount.X, ladder.BottomMount.Y, Foot.Z) };
+        PlayerLadderController controller = new(body);
+        controller.Use([ladder]);
+        body.Yaw = new[] { 0f, MathF.PI / 2f, MathF.PI, -MathF.PI / 2f }.First(yaw => ladder.CanActivate(body.Eye, yaw, out _));
+        controller.UpdateNear();
+        controller.Mount();
+
+        Assert.Equal(LadderStepResult.Dismounted, controller.DecideStep(up: false, down: true, slide: false));
+        Assert.Equal(ladder.BottomMount.Z - PlayerBody.StandingOriginHeight, body.Position.Z, 6);
+        Assert.False(body.IsGrounded);
     }
 
     private static LadderPlacement Ladder() =>

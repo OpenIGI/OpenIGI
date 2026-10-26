@@ -103,7 +103,7 @@ internal static class Igi2WorldSystems
     /// <summary>A level's model LOD settings over the game's (<c>LocalModelLODSettingsContainer_UpdateInternalDataAfterLoadHandler</c>).</summary>
     public static void ModelLod(Igi2LevelBuild b)
     {
-        if (b.Services.TryGet(out Igi2ModelLodTable? lodTable))
+        if (b.Services.TryGet(out OpenIGI.Game.World.ModelLodTable? lodTable))
         {
             lodTable.BeginLevel();
             foreach (Igi2LocalModelLodSettingsContainerTask container in b.Root.Descendants().OfType<Igi2LocalModelLodSettingsContainerTask>())

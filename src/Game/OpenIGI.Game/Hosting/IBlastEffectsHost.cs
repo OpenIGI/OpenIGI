@@ -25,26 +25,6 @@ public interface IBlastEffectsHost
     /// <param name="priority">Its priority.</param>
     void PlayDefinition(string name, Vector3d positionInUnits, int priority);
 
-    /// <summary>Spawns the smoke a flashbang leaves.</summary>
-    /// <param name="positionInUnits">Where it went off.</param>
-    void FlashbangSmoke(Vector3d positionInUnits);
-
-    /// <summary>Spawns the fireball a grenade, rocket or launcher round makes.</summary>
-    /// <param name="positionInUnits">Where it went off.</param>
-    void Fireball(Vector3d positionInUnits);
-
-    /// <summary>Spawns an <c>Explosion0</c>'s fire and fragments.</summary>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="fullRangeUnits">Its full range.</param>
-    /// <param name="fireballs">How many fireballs.</param>
-    /// <param name="fragments">How many fragments.</param>
-    void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments);
-
-    /// <summary>Spawns a shot-out camera lens's or alarm light's explosion.</summary>
-    /// <param name="positionInUnits">Where.</param>
-    /// <param name="isCameraLens">Whether it was a camera's lens rather than an alarm light.</param>
-    void SpeakerExplosion(Vector3d positionInUnits, bool isCameraLens);
-
     /// <summary>Shatters a pane into its shards.</summary>
     /// <param name="placement">The pane.</param>
     /// <param name="atUnits">Where it was struck.</param>

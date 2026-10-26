@@ -97,29 +97,41 @@ public sealed partial class Igi1HumanAi
     /// <summary>Gets what the patrol arm chose on the last tick it ran.</summary>
     public AiPatrolAction PatrolAction { get; private set; } = AiPatrolAction.LookForTarget;
 
-    /// <summary>Takes a recorded close-combat strike, if one is waiting.</summary>
-    /// <param name="damage">Receives the row's damage factor on a hit, or zero.</param>
-    /// <returns><see langword="true"/> when a strike was pending.</returns>
-    public bool ConsumeMeleeStrike(out float damage)
+    /// <summary>
+    /// The close-combat blow at its clip's hit frame (event 12) — <c>Soldier_MeleeUpdate</c> (<c>0x45B530</c>).
+    /// </summary>
+    /// <param name="damage">Receives the row's damage factor when the blow lands.</param>
+    /// <returns><see langword="true"/> when it lands on the soldier's target.</returns>
+    /// <remarks>
+    /// The level's stream is drawn first, every time: a draw over the row's chance (<c>+15768</c>) misses. A hit needs a
+    /// target, and does the row's damage (<c>+15772</c>) through the target's punch handler. A class whose entry latches
+    /// the blow done (the pistol soldier's <c>+3353</c>) never reaches the draw.
+    /// </remarks>
+    public bool StrikeCloseCombat(out float damage)
     {
-        damage = _pendingMeleeStrike;
-        _pendingMeleeStrike = 0f;
-        return damage > 0f;
+        damage = 0f;
+        if (!SoldierClass.LandsCloseCombatBlow || CombatParameters is not { } parameters)
+        {
+            return false;
+        }
+
+        if (_random.NextDouble() > parameters.CloseCombatHitProbability || Target is null)
+        {
+            return false;
+        }
+
+        damage = parameters.CloseCombatDamage;
+        return true;
     }
+
+    /// <summary>Gets where the soldier aims at its target now — <c>0x451380</c>: the target's origin, raised.</summary>
+    public Vector3d TargetAimPoint => TrueAimPoint();
 
     private bool _movingInCombat;
     private AiPatrolAction? _patrolOneShotChild;
     private AiEvasiveAction? _patrolRollChild;
     private bool _patrolProne;
 
-    /// <summary>The damage of a close-combat strike chosen this tick, waiting to be consumed.</summary>
-    /// <remarks>
-    /// Recorded at the trigger tick (the <c>CloseCombat</c> case below) and read once by whoever
-    /// ticks the brain — the renderer forwards player-directed strikes to the mission, which owns
-    /// the player's health. Zero means no strike is pending. NPC-directed strikes are recorded
-    /// the same way but currently discarded there: NPC-on-NPC melee has no victim pipeline yet.
-    /// </remarks>
-    private float _pendingMeleeStrike;
 
     /// <summary>Gets a value indicating whether the soldier is walking a combat route this tick.</summary>
     /// <remarks>
@@ -557,10 +569,12 @@ public sealed partial class Igi1HumanAi
     private bool RunGunnerMount(AiGunnerCombat gunnerCombat, Vector3d enemy, out bool mounted)
     {
         mounted = false;
+        // 0x48D340 tests the gun's cone against 0x451380's point -- the target's origin raised, read live -- not the
+        // shared record.
         AiStationaryGun? gun = GunnerId == -1 ? null : _stationaryGun?.Invoke(GunnerId);
         AiGunnerCommand gunner = gunnerCombat.Update(
             gun,
-            enemy,
+            TrueAimPoint(),
             TargetSlot.IsRegistered);
 
         if (gunner.Ended)
@@ -586,6 +600,13 @@ public sealed partial class Igi1HumanAi
                 _seatedOnGunThisTick = true;
                 SeatOn(gun);
             }
+
+            // 0x48D340 stops aiming at the target as it gets off a gun whose cone the target has left.
+            if (gunner.DismountedThisTick)
+            {
+                Target?.Aim(this, AiAimMode.None);
+            }
+
             return true;
         }
 
@@ -604,13 +625,14 @@ public sealed partial class Igi1HumanAi
         // only the constructor ever writes, so it is dead; a guard holding a knife reaches the fire child,
         // sets up no burst (sub_48B9C0 has none for it) and stands.
         AiCombatWeaponState weapon = _weapon!();
+        Vector3d aim = TrueAimPoint();
 
         AiCombatSense sense = new(
             HasDetectionSlot: TargetSlot.IsRegistered,
             InCone: TargetSlot.IsInCone,
             Visible: TargetSlot.IsVisible,
-            TargetPosition: TrueAimPoint(),
-            DistanceToTargetInUnits: Vector3d.Distance(Position, enemy),
+            TargetPosition: aim,
+            DistanceToTargetInUnits: Vector3d.Distance(Position, aim),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
             Category: weapon.Category,

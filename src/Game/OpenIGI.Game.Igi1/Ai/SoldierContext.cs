@@ -94,6 +94,12 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Gets or sets the cast a sight line is tested with.</summary>
     public WorldRayCast? Sight { get; set; }
 
+    /// <summary>Gets or sets the world trace the detection ray (<c>0x489B20</c>) is cast through, which reports what it met.</summary>
+    public WorldTraceCast? SightTrace { get; set; }
+
+    /// <summary>Gets or sets the level's live StationaryGun tasks.</summary>
+    public WorldInteractionRegistry? Interactions { get; set; }
+
     /// <summary>Gets or sets the placed-object collision index.</summary>
     public ObjectCollisionIndex? Solids { get; set; }
 
@@ -288,6 +294,37 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         return null;
     }
 
+    /// <summary>Gets or sets what is told when a dead body leaves the world, for whoever draws it.</summary>
+    public Action<SoldierAgent>? BodyRemoved { get; set; }
+
+    /// <summary>Gets each body that has left the world, by its soldier, with the roster group it was drawn in.</summary>
+    /// <remarks>A generator clones its replacement from what is kept here; the brain stays until then.</remarks>
+    public Dictionary<SoldierView, (SoldierAgent Agent, SoldierModelGroup Group)> GoneBodies { get; } = [];
+
+    /// <summary>Takes a dead body out of the world, as <c>Human_DeactivateHandler</c> (<c>0x4609A0</c>) does.</summary>
+    /// <param name="view">The soldier whose body leaves.</param>
+    /// <remarks>
+    /// Every draw, shadow, hit test and sweep walks the roster, so leaving it is leaving the world: retail clears the
+    /// Human's in-world byte (+3318) and takes its bone object out of the world's cubes.
+    /// </remarks>
+    public void RemoveBody(SoldierView view)
+    {
+        if (FindAgent(view) is not { } agent || FindRoster(view) is not { } group)
+        {
+            return;
+        }
+
+        group.Remove(agent);
+        if (Brains.TryGetValue(view, out Igi1HumanAi? brain))
+        {
+            BrainsByRuntimeId.Remove(brain.RuntimeId);
+        }
+
+        view.Soldier.IsOutOfWorld = true;
+        GoneBodies[view] = (agent, group);
+        BodyRemoved?.Invoke(agent);
+    }
+
     /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
     /// <param name="view">The soldier.</param>
     /// <returns>The task, or <see langword="null"/>.</returns>
@@ -334,6 +371,23 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         double origin = feet.Z + view.RootSample.Z;
         return new Vector3d(feet.X, feet.Y, origin + (brain.Body.CrouchByte ? 1433.6 : 2867.24));
     }
+
+    /// <summary>
+    /// Whether a stationary gun the detection ray meets stands aside for it (<c>0x4752B0</c>): it does when the one looking,
+    /// or the one looked at, is on it -- so a gunner sees past his own gun and is seen behind it. To any other pair of
+    /// humans it is as solid as a wall.
+    /// </summary>
+    /// <param name="owner">The task whose collision the ray met.</param>
+    /// <param name="looker">The human looking: a soldier's id, or <see cref="AiDetectionCandidate.PlayerId"/>.</param>
+    /// <param name="seen">The human looked at, the same way.</param>
+    public bool GunStandsAside(GameTask owner, int looker, int seen) =>
+        Interactions?.FindStationaryGun(owner.Id) is { Occupant: { } user }
+        && (IsOn(user, owner.Id, looker) || IsOn(user, owner.Id, seen));
+
+    // Whether a human is the one on a gun: the player through its use of the gun, a soldier through its brain.
+    private bool IsOn(object user, int gunTaskId, int human) => human == AiDetectionCandidate.PlayerId
+        ? Interactions?.IsPlayerOnStationaryGun(gunTaskId) == true
+        : Brains.Any(pair => pair.Key.Soldier.Id == human && ReferenceEquals(pair.Value, user));
 
     /// <summary>Gets a soldier's damage state, creating it on the first hit.</summary>
     public HumanHealth HealthOf(SoldierView soldier)

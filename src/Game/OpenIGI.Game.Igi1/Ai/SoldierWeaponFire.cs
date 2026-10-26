@@ -324,15 +324,21 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
         static Vector3f ToFloat(Vector3d v) => new((float)v.X, (float)v.Y, (float)v.Z);
     }
 
-    /// <summary>Lets a soldier's grenade go as its throw state ends, at the settings' own fly and fuse times.</summary>
+    /// <summary>
+    /// Lets a soldier's grenade go at its throw clip's release frame — <c>Soldier_ThrowUpdate</c> (<c>0x45B2F0</c>) into
+    /// <c>AI_AimThrow</c> (<c>0x452930</c>) and <c>Grenade_Throw</c> (<c>0x477040</c>).
+    /// </summary>
     /// <param name="brain">The thrower.</param>
-    /// <param name="target">Where it is thrown, the target's feet.</param>
+    /// <param name="hand">Where it leaves the hand: the origin plus bone 16's palette offset (<c>motion+0x858</c>).</param>
     /// <param name="grenades">The pool it flies in.</param>
-    // The lob: reach the target's feet in the settings' own fly time, and cut the fuse to the
-    // settings' explode time. The velocity is the closed-form ballistic answer for the port's
-    // per-tick integrator: v = d/T + g(T+1)/2 upward, which lands EXACTLY on the target after T
-    // ticks of `v.z -= g; p += v`.
-    public void ThrowAiGrenade(Igi1HumanAi brain, Vector3d target, GrenadeSimulation grenades)
+    /// <remarks>
+    /// Two draws from the level's stream, in this order: the flight time in seconds (<c>+15784</c> plus a share of
+    /// <c>+15788</c>) and the cook (<c>fistp(rand * +15796 * 30 + +15792)</c> -- the minimum not made ticks). The throw
+    /// aims at the target's origin raised (<c>0x451380</c>), a tenth past it: <c>delta * 1.1 / (time * 30)</c> a tick,
+    /// with <c>time * 30 * 22.30044</c> -- half the fall a tick, times the ticks -- added upward. The cook comes off the
+    /// grenade's own fuse.
+    /// </remarks>
+    public void ThrowAiGrenade(Igi1HumanAi brain, Vector3d hand, GrenadeSimulation grenades)
     {
         AiCombatParameters? parameters = brain.CombatParameters;
         if (parameters is null)
@@ -340,20 +346,25 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
             return;
         }
 
-        float flySeconds = parameters.GrenadeMinimumFlyTimeSeconds
-            + ((float)_context.AiRandom.NextDouble() * parameters.GrenadeRandomFlyTimeSeconds);
-        int flyTicks = Math.Max(1, (int)(flySeconds * 30f));
+        float flySeconds = (float)(_context.AiRandom.NextDouble() * parameters.GrenadeRandomFlyTimeSeconds)
+            + parameters.GrenadeMinimumFlyTimeSeconds;
+        int cooked = (int)((_context.AiRandom.NextDouble() * parameters.GrenadeRandomExplodeTimeSeconds * 30.0)
+            + parameters.GrenadeMinimumExplodeTimeSeconds);
 
-        Vector3d origin = brain.EyePosition();
+        Vector3d target = brain.TargetAimPoint;
+        float frames = flySeconds * 30f;
         Vector3f velocity = new(
-            (float)((target.X - origin.X) / flyTicks),
-            (float)((target.Y - origin.Y) / flyTicks),
-            (float)((target.Z - origin.Z) / flyTicks) + (GrenadePhysics.GravityPerTick * (flyTicks + 1) * 0.5f));
+            (float)((target.X - hand.X) * ThrowAhead / frames),
+            (float)((target.Y - hand.Y) * ThrowAhead / frames),
+            (float)(((target.Z - hand.Z) * ThrowAhead / frames) + (frames * ThrowLift)));
 
-        float fuseSeconds = parameters.GrenadeMinimumExplodeTimeSeconds
-            + ((float)_context.AiRandom.NextDouble() * parameters.GrenadeRandomExplodeTimeSeconds);
-        int fuseTicks = fuseSeconds > 0f ? Math.Max(1, (int)(fuseSeconds * 30f)) : GrenadePhysics.FuseTicks;
-
-        grenades.SpawnWithVelocity(origin, velocity, GrenadeExplosionType.Normal, fuseTicks);
+        int fuseTicks = Math.Max(0, GrenadePhysics.FuseTicks - cooked);
+        grenades.SpawnWithVelocity(hand, velocity, GrenadeExplosionType.Normal, fuseTicks);
     }
+
+    // AI_AimThrow's 1.1: the throw is aimed a tenth past the target.
+    private const double ThrowAhead = 1.1;
+
+    // AI_AimThrow's lift a frame of flight, 0x4036_4CE9_ED57_275E: half the grenade's fall a tick.
+    private const double ThrowLift = 22.300444444444445;
 }

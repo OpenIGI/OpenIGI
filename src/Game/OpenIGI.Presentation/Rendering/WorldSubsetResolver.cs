@@ -40,6 +40,9 @@ internal sealed class WorldSubsetResolver
     private readonly Dictionary<WorldPlacement, ResolvedWorldModel?> _resolvedDestroyed = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<WorldPlacement, ResolvedWorldModel?[]> _resolvedVariants = new(ReferenceEqualityComparer.Instance);
 
+    /// <summary>The lower levels of detail, each placement the level-of-detail policy made for one.</summary>
+    private readonly Dictionary<WorldPlacement, ResolvedWorldModel?> _resolvedLevels = new(ReferenceEqualityComparer.Instance);
+
     /// <summary>Initializes the resolver over the renderer's device and its texture and lightmap caches.</summary>
     /// <param name="device">The device meshes upload to.</param>
     /// <param name="logger">Where to report upload problems.</param>
@@ -176,6 +179,21 @@ internal sealed class WorldSubsetResolver
         _resolved.Clear();
         _resolvedDestroyed.Clear();
         _resolvedVariants.Clear();
+        _resolvedLevels.Clear();
+    }
+
+    /// <summary>Resolves one of a placement's lower levels of detail, once.</summary>
+    /// <param name="level">The level's placement.</param>
+    /// <returns>Its model, or <see langword="null"/> when it does not build.</returns>
+    internal ResolvedWorldModel? ResolveLevel(WorldPlacement level)
+    {
+        if (!_resolvedLevels.TryGetValue(level, out ResolvedWorldModel? model))
+        {
+            model = ResolveModel(level);
+            _resolvedLevels[level] = model;
+        }
+
+        return model;
     }
 
     /// <summary>Destroys every uploaded model mesh, as disposing the renderer does.</summary>
@@ -195,6 +213,7 @@ internal sealed class WorldSubsetResolver
         _resolved.Clear();
         _resolvedDestroyed.Clear();
         _resolvedVariants.Clear();
+        _resolvedLevels.Clear();
     }
 
     /// <summary>Returns every resolved placement's occlusion query to the device.</summary>
@@ -210,6 +229,15 @@ internal sealed class WorldSubsetResolver
         }
 
         foreach (ResolvedWorldModel? model in _resolvedDestroyed.Values)
+        {
+            if (model is { Query.IsValid: true })
+            {
+                _device.DestroyOcclusionQuery(model.Query);
+                model.Query = OcclusionQueryHandle.None;
+            }
+        }
+
+        foreach (ResolvedWorldModel? model in _resolvedLevels.Values)
         {
             if (model is { Query.IsValid: true })
             {
@@ -356,7 +384,8 @@ internal sealed class WorldSubsetResolver
                 material,
                 lightmap,
                 lamp,
-                subset.SkinIndexCount);
+                subset.SkinIndexCount,
+                subset.Blend);
         }
 
         // Which of the level's lights this placement is the housing of, so that switching that light off
@@ -398,6 +427,14 @@ internal sealed class WorldSubsetResolver
         }
 
         foreach (ResolvedWorldModel? model in _resolvedDestroyed.Values)
+        {
+            if (model is not null)
+            {
+                model.Subsets = null;
+            }
+        }
+
+        foreach (ResolvedWorldModel? model in _resolvedLevels.Values)
         {
             if (model is not null)
             {

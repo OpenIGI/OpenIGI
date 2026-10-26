@@ -7,6 +7,7 @@ using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -81,7 +82,7 @@ public sealed class RetailIgi2GenericTbaTests
     public void A_finished_padlock_blows()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load(collision: true);
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2GenericTbaTask padlock = Arm(m, Padlock, new Igi2ExplosionWorld(new IgiRandom(0x1234567u), m.Collision!, m.Materials, dynamic));
         m.Run.Tick();
         Assert.False(padlock.Explosive.IsExploded);

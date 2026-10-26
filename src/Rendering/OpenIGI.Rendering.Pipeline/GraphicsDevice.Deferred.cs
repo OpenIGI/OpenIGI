@@ -279,7 +279,7 @@ public sealed partial class GraphicsDevice
         if (_foreground)
         {
             pass.SetViewport(0, 0, scene.Width, scene.Height, Viewport.ForegroundDepthFloor, 1f);
-            pass.SetScissor(0, 0, scene.Width, scene.Height);
+            SetClippedScissor(pass, 0, 0, scene.Width, scene.Height);
             return;
         }
 
@@ -295,7 +295,7 @@ public sealed partial class GraphicsDevice
             view.MinDepth,
             view.MaxDepth is 0f && view.MinDepth is 0f ? 1f : view.MaxDepth);
 
-        pass.SetScissor(Math.Max(0, view.X), Math.Max(0, view.Y), width, height);
+        SetClippedScissor(pass, Math.Max(0, view.X), Math.Max(0, view.Y), width, height);
     }
 
     /// <summary>Takes a viewport set while a capture is open, which is the scene's rather than the window's.</summary>

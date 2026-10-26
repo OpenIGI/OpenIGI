@@ -197,12 +197,12 @@ public sealed class Igi2GunPickup
             beta = beta >= 0f ? 1.5707964f : -1.5707964f;
         }
 
-        Igi2GunPickup pickup = new(null, weaponType, tables, position, Igi2Pose.Rotation(alpha, beta, gamma), modelRadius)
+        Igi2GunPickup pickup = new(null, weaponType, tables, position, EngineEuler.Rotation(alpha, beta, gamma), modelRadius)
         {
             IsMoving = isMoving,
         };
 
-        float[] heading = Igi2Pose.Rotation(0f, 0f, throwGamma);
+        float[] heading = EngineEuler.Rotation(0f, 0f, throwGamma);
         float x = heading[1], y = heading[4], z = 0f;
         if (x != 0f || y != 0f)
         {
@@ -456,7 +456,7 @@ public sealed class Igi2GunPickup
             gamma = ((Fpu)Math.Atan(((Fpu)ly / lx).Value)).F;
         }
 
-        float[] t = Igi2Pose.Rotation(0f, beta, gamma);
+        float[] t = EngineEuler.Rotation(0f, beta, gamma);
         float[] turned = new float[9];
         for (int j = 0; j < 3; j++)
         {

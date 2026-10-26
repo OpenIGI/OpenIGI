@@ -61,7 +61,7 @@ public sealed partial class GameHost
 
         _computerHighlights = _presentation.Presenters.Create<ComputerHighlightRequest, IComputerHighlightCatalogue>(new ComputerHighlightRequest(levelRoot, _loop.Variables));
         _mapComputer = _presentation.Presenters.Create<MapComputerPresentationRequest, IMapComputerPresenter>(
-            new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
+            new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get, _hosted));
         if (_mapComputer is not null && !_mapComputer.Load(_fileSystem))
         {
             _mapComputer.Dispose();
@@ -181,7 +181,7 @@ public sealed partial class GameHost
             }
 
             bool toggleComputer = ComputerKeyPressed() || automaticOpen;
-            bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
+            bool closeComputer = _computerOpen && TacticalComputer is not null && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
 
             // The computer always opens; whether its map is there to read is the level's to say.
             bool mapAvailable = ComputerMapOffered();
@@ -267,29 +267,136 @@ public sealed partial class GameHost
                     _window.Input.Captured = true;
                 }
             }
-            else if (_mapComputer is { IsReady: true } retailComputer && HostedPlayer is { } retailPlayer)
+            else if (_mapComputer is { IsReady: true } retailComputer && HostedPlayer is not null)
             {
+                // The original's own computer is the mission's: its tick opens it from the weapon's idle state and closes it
+                // on the key, and it reads the mouse the frames gather here. Escape does not close it.
                 retailComputer.MapAvailable = mapAvailable;
-                if (toggleComputer || closeComputer)
+                GatherComputerInput();
+
+                // -computercam holds the map key down for a few frames, so the capture opens it as the player would.
+                if (automaticOpen)
                 {
-                    _computerOpen = toggleComputer ? !_computerOpen : false;
-                    if (_computerOpen)
-                    {
-                        retailComputer.Open(retailPlayer.Body.Position);
-                    }
-                    retailPlayer.SetMapComputerOpen(_computerOpen);
-                    // Retail draws COMPUTER:pointer.spr. Leaving the platform cursor visible put a
-                    // second, unrelated pointer over it.
-                    _window.CursorVisible = false;
-                    _window.CursorLocked = false;
+                    _computerCamKeyFrames = 4;
                 }
 
+                PressComputerCamKey();
                 if (_computerOpen)
                 {
-                    retailComputer.Update(_window.Input, _window.Width, _window.Height);
                     _window.Input.Captured = true;
                 }
             }
+        }
+    }
+
+    // The frames -computercam still holds the map key down.
+    private int _computerCamKeyFrames;
+    private Input.InputState? _computerCamInput;
+
+    private void PressComputerCamKey()
+    {
+        if (_computerCamKeyFrames <= 0)
+        {
+            if (_computerCamInput is not null && ReferenceEquals(ScriptedViewInput, _computerCamInput))
+            {
+                ScriptedViewInput = null;
+            }
+
+            _computerCamInput = null;
+            return;
+        }
+
+        _computerCamKeyFrames--;
+        string? name = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.MapComputer));
+        if (!InputBindingKeyNames.TryParseKeyboardKey(name, out Input.KeyCode key))
+        {
+            return;
+        }
+
+        _computerCamInput ??= new Input.InputState();
+        _computerCamInput.Keyboard.BeginFrame();
+        _computerCamInput.Keyboard.SetKey(key, _computerCamKeyFrames > 0);
+        ScriptedViewInput = _computerCamInput;
+    }
+
+    // The mouse between two ticks, as the original's poll leaves it for the computer: the counts added up, a button down if it
+    // was held or went down at any frame, the wheel's notches queued one a tick.
+    private float _computerCountsX;
+    private float _computerCountsY;
+    private int _computerButtons;
+    private int _computerWheel;
+    private bool _computerMapKey;
+    private long _computerOpenedFrame = -1;
+
+    private void GatherComputerInput()
+    {
+        Input.MouseState mouse = _window.Input.Mouse;
+        _computerCountsX += mouse.DeltaX;
+        _computerCountsY += mouse.DeltaY;
+        if (mouse.IsDown(Input.MouseButton.Left) || mouse.WasPressed(Input.MouseButton.Left))
+        {
+            _computerButtons |= 0x1;
+        }
+
+        if (mouse.IsDown(Input.MouseButton.Right) || mouse.WasPressed(Input.MouseButton.Right))
+        {
+            _computerButtons |= 0x2;
+        }
+
+        _computerWheel += Math.Sign(mouse.WheelDelta);
+        // Not the press that opened it, which the same frame can read again once the tick has opened it.
+        _computerMapKey |= _computerOpen && _loop.Clock.FrameCount != _computerOpenedFrame && ComputerKeyPressed();
+    }
+
+    /// <summary>Hands the computer the mouse since the last tick and starts gathering the next.</summary>
+    private OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput()
+    {
+        int buttons = _computerButtons;
+        if (_computerWheel > 0)
+        {
+            buttons |= 0x100;
+            _computerWheel--;
+        }
+        else if (_computerWheel < 0)
+        {
+            buttons |= 0x200;
+            _computerWheel++;
+        }
+
+        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey);
+        _computerMapKey = false;
+        _computerCountsX = 0f;
+        _computerCountsY = 0f;
+        _computerButtons = 0;
+        return taken;
+    }
+
+    /// <summary>The mission's computer has opened or closed: the view, the HUD and the platform's pointer follow it.</summary>
+    private void MissionComputerChanged(bool open)
+    {
+        _computerOpen = open;
+        _computerMapKey = false;
+        if (open)
+        {
+            _computerOpenedFrame = _loop.Clock.FrameCount;
+        }
+
+        // The computer draws its own pointer; the platform's would be a second one over it.
+        _window.CursorVisible = false;
+        _window.CursorLocked = false;
+        _computerWheel = 0;
+    }
+
+    /// <summary>Gets a value indicating whether the title's own computer is in use rather than the tactical one.</summary>
+    private bool UsesMissionComputer => TacticalComputer is null && _mapComputer is { IsReady: true } && HostedPlayer is not null;
+
+    /// <summary>Gets the display the computer lays its screens across: the back buffer at the interface's magnification.</summary>
+    private (int Width, int Height) ComputerDisplaySize
+    {
+        get
+        {
+            int scale = Math.Max(1, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+            return (_window.Width / scale, _window.Height / scale);
         }
     }
 }

@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
@@ -82,6 +83,22 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
                     member.IsCutsceneActor));
             }
         }
+    }
+
+    /// <summary>Gets every soldier as the map computer reads the human list: where it is, which way it faces, whether it lives.</summary>
+    /// <returns>The soldiers, in the order they were placed.</returns>
+    public IReadOnlyList<(GameTask Task, int Team, Vector3d Position, float Facing, bool Live)> MapHumans()
+    {
+        List<(GameTask, int, Vector3d, float, bool)> humans = new(_context.Brains.Count);
+        foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains)
+        {
+            bool live = ConditionalContainerGate.IsTaskActive(view.Soldier)
+                && !view.IsDead
+                && (!_context.Health.TryGetValue(view, out HumanHealth? health) || health is not { IsDead: true });
+            humans.Add((view.Soldier, view.Soldier.Team, brain.Position, brain.Facing, live));
+        }
+
+        return humans;
     }
 
     /// <summary>Gets the living soldiers the retail map computer plots as guard contacts.</summary>

@@ -349,4 +349,60 @@ public sealed class HumanSoldierBodyMachineTests
         Assert.Equal(56, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.FiringState)); // 6 -> fire
         Assert.Equal(55, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ReloadState)); // 12 -> recover
     }
+
+    /// <summary>
+    /// The look goes off for a flinch and comes back when it plays out to standing (<c>0x45C2E0</c>, <c>0x4592F0</c>),
+    /// but a flinch that ends in a fall leaves it off.
+    /// </summary>
+    [Fact]
+    public void AFlinchTurnsTheLookOffUntilItPlaysOut()
+    {
+        HumanSoldierBodyMachine body = new();
+        Assert.True(body.LooksAlongView);
+
+        body.Tick(Grounded() | HumanSoldierBodyMachine.Signal.Flinch);
+        Assert.Equal(HumanSoldierStates.FlinchState, body.State);
+        Assert.False(body.LooksAlongView);
+
+        body.Tick(Grounded(animDone: true));
+        Assert.Equal(HumanSoldierStates.StandState, body.State);
+        Assert.True(body.LooksAlongView);
+
+        body.Tick(Grounded() | HumanSoldierBodyMachine.Signal.Flinch);
+        body.Tick(HumanSoldierBodyMachine.Signal.None);
+        Assert.Equal(HumanSoldierStates.AirborneState, body.State);
+        body.Tick(Grounded());
+        Assert.Equal(HumanSoldierStates.StandState, body.State);
+        Assert.False(body.LooksAlongView);
+    }
+
+    /// <summary>A change of gait keeps the stride only between the gaits retail names (<c>0x45A9E0</c>, <c>0x45AF60</c>).</summary>
+    [Theory]
+    [InlineData(HumanSoldierStates.ForwardState, HumanSoldierStates.WalkState, true)]
+    [InlineData(HumanSoldierStates.RunState, HumanSoldierStates.WalkState, true)]
+    [InlineData(HumanSoldierStates.StandState, HumanSoldierStates.WalkState, false)]
+    [InlineData(HumanSoldierStates.WalkState, HumanSoldierStates.FastForwardState, true)]
+    [InlineData(HumanSoldierStates.RunState, HumanSoldierStates.FastForwardState, false)]
+    [InlineData(HumanSoldierStates.RunFiringState, HumanSoldierStates.RunState, false)]
+    public void AChangeOfGaitKeepsTheStrideBetweenNeighbouringGaits(int from, int to, bool keeps) =>
+        Assert.Equal(keeps, HumanSoldierStates.KeepsStridePhase(from, to));
+
+    /// <summary>A fall that ends on the ground lands; one that ends in a flinch does not (<c>0x45C210</c>).</summary>
+    [Fact]
+    public void AFallThatEndsOnTheGroundLands()
+    {
+        HumanSoldierBodyMachine body = new();
+        body.Tick(HumanSoldierBodyMachine.Signal.None);
+        Assert.Equal(HumanSoldierStates.AirborneState, body.State);
+        Assert.False(body.LandedThisTick);
+
+        body.Tick(Grounded());
+        Assert.Equal(HumanSoldierStates.StandState, body.State);
+        Assert.True(body.LandedThisTick);
+
+        body.Tick(HumanSoldierBodyMachine.Signal.None);
+        body.Tick(HumanSoldierBodyMachine.Signal.Flinch);
+        Assert.Equal(HumanSoldierStates.FlinchState, body.State);
+        Assert.False(body.LandedThisTick);
+    }
 }

@@ -30,7 +30,7 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
 
     /// <summary>Gets each soldier's line of sight from the eye, as last cast on <see cref="VisibilityTick"/>.</summary>
     // LOS is a simulation fact, not a render fact. Cache it for the fixed tick so a second render
-    // of the same simulation state does not cast the same three rays again.
+    // of the same simulation state does not cast the same ray again.
     public Dictionary<SoldierView, bool> Visibility { get; } = [];
 
     /// <summary>Gets the joined humans the last scan drew a contact for, and the team colour their marker uses.</summary>
@@ -100,21 +100,15 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
                 continue;
             }
 
-            // FUN_00470F70 sizes the marker as projectionScale * Human+0xA0 / depth, where Human+0xA0
-            // is the model's authored MESH+0x78 bound. For the soldier LODs that value is ~0.94 m --
-            // a half-body radius -- so the rectangle only frames the body when it is centred on the
-            // model's own origin, which sits that same ~0.94 m above the grounded feet. view.Position
-            // is the grounded foot contact, so lift the marker centre by the bound to reach the retail
-            // body origin; leaving it at the feet drew the box half into the ground, over the shins.
+            // 0x470F70 sizes the marker as projectionScale * Human+0xA0 / depth, where Human+0xA0 is the model's authored
+            // MESH+0x78 bound (~0.94 m for the soldier LODs), and 0x471B60 centres it on the human's origin (Human+32).
             if (!_context.DetectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
                 || markerScaleMetres <= 0f)
             {
                 continue;
             }
 
-            Vector3d feetUnits = view.Position;
-            double bodyCentreUnits = markerScaleMetres * WorldScene.UnitsPerMetre;
-            Vector3d targetUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + bodyCentreUnits);
+            Vector3d targetUnits = SoldierContext.OccupantOrigin(view);
             Vector3d delta = new(
                 targetUnits.X / WorldScene.UnitsPerMetre - camera.Position.X,
                 targetUnits.Y / WorldScene.UnitsPerMetre - camera.Position.Y,
@@ -138,40 +132,32 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
                 + (float)(viewPosition.X / (viewPosition.Z * horizontalTangent) * screenWidth * 0.5f);
             float screenY = screenHeight * 0.5f
                 - (float)(viewPosition.Y / (viewPosition.Z * verticalTangent) * screenHeight * 0.5f);
-            if (screenX < -8f || screenX > screenWidth + 8f || screenY < -8f || screenY > screenHeight + 8f)
+            // 0x471B60 culls the human's bounding sphere (Human+0xA0) against the view's sides (0x4D03D0): one that only
+            // reaches into the view from off the screen's edge is still a contact.
+            if (OutsideView(viewPosition, markerScaleMetres, horizontalTangent, verticalTangent))
             {
                 continue;
             }
 
-            // FUN_00471B60 gates a contact on FUN_004D03D0, a view-frustum cull that the in-front and
-            // on-screen tests above already reproduce. The retail engine then hides fully-occluded
-            // humans through its sector/portal visibility, which this reimplementation lacks. Approximate
-            // that with a line-of-sight sweep: probe the feet, the body origin and the head, and keep the
-            // contact when ANY of them is unobstructed. A guard whose upper body clears a low container is
-            // still marked; one standing completely behind a wall is dropped, as the original drops it.
-            if (_context.Sight is { } lineOfSight)
+            // 0x471B60 then casts one line from the camera to the human's eye with the detection ray's filter (the player
+            // looking, the human looked at), and a contact the line comes back from at a fraction of exactly 0 -- a wall, the
+            // ground -- is occluded: it keeps its slot, refreshed, but is not drawn.
+            bool visible = true;
+            if (_context.SightTrace is { } trace)
             {
-                bool anyVisible;
-                if (simulationTick != int.MinValue
-                    && Visibility.TryGetValue(view, out bool cachedVisibility))
+                if (simulationTick == int.MinValue || !Visibility.TryGetValue(view, out visible))
                 {
-                    anyVisible = cachedVisibility;
-                }
-                else
-                {
-                    Vector3d headUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + (2d * bodyCentreUnits));
-                    anyVisible =
-                        SoldierSightQueries.HasLineOfSight(lineOfSight, eyeUnits, targetUnits)
-                        || SoldierSightQueries.HasLineOfSight(lineOfSight, eyeUnits, headUnits)
-                        || SoldierSightQueries.HasLineOfSight(lineOfSight, eyeUnits, feetUnits);
+                    int seen = view.Soldier.Id;
+                    visible = SoldierSightQueries.HasLineOfSight(
+                        trace,
+                        eyeUnits,
+                        brain.EyePosition(),
+                        double.Epsilon,
+                        standsAside: owner => _context.GunStandsAside(owner, AiDetectionCandidate.PlayerId, seen));
                     if (simulationTick != int.MinValue)
                     {
-                        Visibility[view] = anyVisible;
+                        Visibility[view] = visible;
                     }
-                }
-                if (!anyVisible)
-                {
-                    continue;
                 }
             }
 
@@ -194,12 +180,17 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
                 configFlag: 1,
                 screenX,
                 screenY,
-                eventParam: 0,
+                eventParam: visible ? 0 : 1,
                 extraParam1: view.Soldier.Team != 1 ? 1 : 0,
                 extraParam2: 0,
                 tick,
                 boxWidth,
                 boxHeight);
+
+            if (!visible)
+            {
+                continue;
+            }
 
             // Record the contact for the through-wall glow, in the same team colour its marker uses.
             Detected[view] = view.Soldier.Team != 1
@@ -284,4 +275,12 @@ internal sealed class SoldierBinocularScan(SoldierContext context)
         Overlay.ExpireInactive(tick);
         return Overlay.OverlayBoxes(tick);
     }
+
+    // Whether a sphere about a view-space point lies wholly outside one of the four side planes of a view whose half-angle
+    // tangents are given: its centre is further outside a plane than its radius.
+    private static bool OutsideView(Vector3d point, double radius, double tanX, double tanY) =>
+        Outside(point.X, point.Z, radius, tanX) || Outside(point.Y, point.Z, radius, tanY);
+
+    private static bool Outside(double across, double depth, double radius, double tangent) =>
+        ((depth * tangent) - Math.Abs(across)) / Math.Sqrt(1.0 + (tangent * tangent)) < -radius;
 }

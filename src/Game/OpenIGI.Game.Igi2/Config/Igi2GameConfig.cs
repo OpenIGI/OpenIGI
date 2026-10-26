@@ -20,13 +20,15 @@ public sealed class Igi2GfxOptions
     public bool TextureCompression { get; set; }
 
     /// <summary>Gets or sets a value indicating whether forests are drawn at high quality.</summary>
-    public bool HighQualityForests { get; set; }
+    /// <remarks>On in every default row but the lowest (<c>GfxOptions_atDefaultOptions</c>), so a new profile has it.</remarks>
+    public bool HighQualityForests { get; set; } = true;
 
     /// <summary>Gets or sets a value indicating whether forests sway in the wind.</summary>
     public bool WindOnForests { get; set; }
 
     /// <summary>Gets or sets a value indicating whether lens flares are drawn.</summary>
-    public bool LensFlares { get; set; }
+    /// <remarks>On in every default row but the lowest (<c>GfxOptions_atDefaultOptions</c>), so a new profile has it.</remarks>
+    public bool LensFlares { get; set; } = true;
 
     /// <summary>Gets or sets a value indicating whether bullet hits throw effects.</summary>
     public bool BulletHitEffects { get; set; }

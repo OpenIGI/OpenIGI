@@ -82,8 +82,10 @@ public sealed partial class Igi2DoorTask
         _sector2 = null;
         _isAttachedToPortal = false;
 
+        // A door the eye can see through closes nothing: Direct3DRender_IsTransparent asks whether any face group blends or cuts
+        // out (0x44).
         if (!LinkUpToPortal || Portals is null || Models?.Invoke(Model) is not MefModel model
-            || model.DrawRecords.Any(static r => r.IsTransparent))
+            || model.DrawRecords.Any(static r => r.IsTransparent || r.IsAlphaTested))
         {
             return;
         }

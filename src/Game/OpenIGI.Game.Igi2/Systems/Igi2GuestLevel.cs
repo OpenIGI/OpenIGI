@@ -398,7 +398,7 @@ public sealed class Igi2GuestLevel
         }
         Igi2GameMaterials materials = services.Require<Igi2GameMaterials>();
         Igi2AiWorld levelAi = services.Require<Igi2AiWorld>();
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
 
         // The level's world as I.G.I. 2 brings its own up (Igi2Gameplay.CreatePlayer): the blasts and what flies through
         // them, the pickups a soldier drops, and the casings its weapon throws.
@@ -414,6 +414,7 @@ public sealed class Igi2GuestLevel
             {
                 Effects = explosions,
                 Explosions = explosions,
+                MissileSounds = _sounds,
             };
             if (services.TryGet(out MissileRandom? missileStream))
             {
@@ -510,6 +511,7 @@ public sealed class Igi2GuestLevel
         {
             FlowTicks = ticks,
             LevelTick = ticks,
+            GunOperatorOf = Weapons.Igi2StationaryGunTask.OperatorsOf(_guns),
         };
         // The host's doors and switches, which the level's own player uses as I.G.I. 2's player uses its own.
         if (_player is { } user)
@@ -642,6 +644,7 @@ public sealed class Igi2GuestLevel
         {
             Pickups = pickups,
             Grenades = grenades,
+            Explosions = explosions,
             Particles = particles.Module,
             Casings = casings,
             Alarms = [.. _alarms],

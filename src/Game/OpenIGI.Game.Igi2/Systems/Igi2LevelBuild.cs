@@ -84,6 +84,9 @@ public sealed class Igi2LevelBuild : LevelBuild
     /// <summary>Gets or sets the level's sectors and their portals.</summary>
     public World.Igi2SectorGraph? Sectors { get; set; }
 
+    /// <summary>Gets or sets what finds the room a point stands in, over <see cref="Sectors"/>.</summary>
+    public World.Igi2SectorLocator? SectorLocator { get; set; }
+
     /// <summary>Gets or sets what hears the level: the game's camera, inside its sector.</summary>
     public Audio.Igi2CameraListener? Listener { get; set; }
 

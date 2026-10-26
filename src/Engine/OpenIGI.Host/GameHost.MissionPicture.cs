@@ -320,13 +320,18 @@ public sealed partial class GameHost
             _resources,
             name => loaded.TryGetModel(name, out MefModel? model) ? model : null,
             (name, slot) => loaded.TryGetTextureName(name, slot, out string texture) ? texture : null,
-            _logger);
+            _logger,
+            _title?.Services);
 
         _forest?.Dispose();
         _forest = _presentation.Presenters.Create<ScenePresentationRequest, IForestPresenter>(adornments);
 
         _water?.Dispose();
         _water = _presentation.Presenters.Create<ScenePresentationRequest, IWaterPresenter>(adornments);
+
+        // The level's weather as its original draws it, for the original's look.
+        _retailWeather?.Dispose();
+        _retailWeather = _presentation.Presenters.Create<ScenePresentationRequest, IWeatherPresenter>(adornments);
         MakeTaskPresenters(levelRoot);
 
         // The menus are done; without closing their screens the last one would keep drawing over the world.

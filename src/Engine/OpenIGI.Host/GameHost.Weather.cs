@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -22,6 +23,9 @@ public sealed partial class GameHost
     // PrecipitationGeometry.BuildDrops.
     private const float RainVeilDisplay = 5f;
     private SnowRenderer? _snow;
+
+    // The level's weather as its title's original runs and draws it, which the original's look draws in place of the two above.
+    private IWeatherPresenter? _retailWeather;
 
     // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
     // -- the fog, the falling rain, its splashes and the standing water all ask this -- and it is built

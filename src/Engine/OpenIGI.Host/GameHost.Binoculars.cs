@@ -71,7 +71,8 @@ public sealed partial class GameHost
 
         if (_titleMarked.Count > 0)
         {
-            models.DrawWorldOutlines(owned.WorldModels, _titleMarked, eye, radiusPixels: 8f, _titlePresentationBlend);
+            // Over every body, the ones the sector cull left out among them: the marks are what shows a soldier behind a wall.
+            models.DrawWorldOutlines(owned.OutlineModels, _titleMarked, eye, radiusPixels: 8f, _titlePresentationBlend);
         }
     }
 

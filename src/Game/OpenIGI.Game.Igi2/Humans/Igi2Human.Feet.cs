@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Humans;
 
@@ -135,12 +136,9 @@ public abstract partial class Igi2Human
             return;
         }
 
-        int step = FeetSoundSequence[FeetSoundIndex];
-        FeetSoundIndex++;
-        if (FeetSoundIndex >= FeetSoundSequence.Length)
-        {
-            FeetSoundIndex = 0;
-        }
+        int cursor = FeetSoundIndex;
+        int step = FootstepSounds.NextSlot(FeetSoundSequence, ref cursor);
+        FeetSoundIndex = cursor;
 
         Vector3d at = GroundIntersection.Position;
         if (WaterDepth > 0f)

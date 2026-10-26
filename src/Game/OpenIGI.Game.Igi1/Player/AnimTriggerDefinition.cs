@@ -11,8 +11,9 @@ namespace OpenIGI.Game.Igi1.Player;
 /// marker with no constructor — it exists only to receive the sound messages.
 /// </param>
 /// <param name="Resource">The sound name for an <c>AnimSound</c>.</param>
-/// <param name="Flag">
-/// The fourth argument. <see langword="true"/> for every retail entry except the four
-/// <c>walk_fence_*</c> surface sounds, whose meaning is not established.
+/// <param name="Attached">
+/// The fourth argument, an <c>AnimSound</c>'s attached flag (<c>0x51B4B0</c>): its sound plays on the human and follows it,
+/// where without it the sound stays where the event fired (<c>0x51B4F0</c>). Every retail entry is attached but the four
+/// <c>walk_fence_*</c> surface sounds.
 /// </param>
-public readonly record struct AnimTriggerDefinition(int EventId, string TaskType, string Resource, bool Flag);
+public readonly record struct AnimTriggerDefinition(int EventId, string TaskType, string Resource, bool Attached);

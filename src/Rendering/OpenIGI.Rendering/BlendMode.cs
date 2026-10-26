@@ -36,4 +36,20 @@ public enum BlendMode
     /// the ground the material passes left, once -- white leaves it as it was.
     /// </remarks>
     Modulate,
+
+    /// <summary>Darkening: <c>dst * (1 - src)</c>, the frame dimmed by the brightness of what is drawn.</summary>
+    /// <remarks>
+    /// Project I.G.I.'s sprites flagged <c>0x10</c> (<c>D3DQVertex_SetBlendStates</c>, <c>0x50E000</c>: <c>ZERO, INVSRCCOLOR</c>): an
+    /// explosion's black smoke, whose faint colour takes a little of the light behind it rather than painting it out.
+    /// </remarks>
+    Darken,
+
+    /// <summary>Additive at full strength: <c>src + dst</c>, whatever the source's alpha.</summary>
+    /// <remarks>
+    /// Project I.G.I.'s additive face groups (<c>0x49EC70</c>'s <c>set_alpha_states</c>: <c>ONE, ONE</c>, unlit and unfogged), its
+    /// explosions' fireballs among them. <see cref="Additive"/> weighs the source by its alpha, as I.G.I. 2's additive groups
+    /// (<c>Direct3DRender_SetBlendStateAdditive</c>: <c>SRCALPHA, ONE</c>) and both games' sprites do; a fireball drawn that way
+    /// burns at a fraction of its brightness.
+    /// </remarks>
+    AddColour,
 }

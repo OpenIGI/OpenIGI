@@ -71,6 +71,9 @@ public sealed class RetailObjectLightmapTests
     [InlineData(4)]
     [InlineData(7)]
     [InlineData(9)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
     public void EveryLightmapIndexLandsOnAModelOfMatchingPageSize(int missionId)
     {
         (LoadedMission mission, LevelTask levelRoot, MagicObjectRegistry magic, ResourceRegistry resources) =

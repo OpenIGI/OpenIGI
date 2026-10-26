@@ -300,7 +300,8 @@ public sealed class Igi1MissionSetup(
             mission.Ambience.AttachTo(
                 walked.Walker,
                 () => mission.AmbienceListener,
-                audio.IsPlayableSound);
+                audio.IsPlayableSound,
+                audio.SoundSeconds);
         }
         if (mission.Ambience.Areas.Count > 0)
         {
@@ -468,6 +469,20 @@ public sealed class Igi1MissionSetup(
             host.Game.Variables);
         host.EndStage("animating the soldiers' brains");
 
+        // The minefields, which blast at their target while their condition holds.
+        mission.MineFields = Igi1MineFields.Build(levelRoot);
+        mission.MineFieldExpressions = new LevelExpressionRuntime(host.Game.Variables);
+
+        // The Smoke tasks' plumes, in the impact effects' particle module so the one particle drawer shows them.
+        mission.SmokePlumes = Igi1SmokePlumes.Build(levelRoot, host.Game.Variables);
+        mission.SmokePlumes.Expressions = mission.MineFieldExpressions;
+        mission.SmokePlumes.Bind(impacts.Runtime.Particles);
+
+        // A smoke a level hangs off a train or a vehicle rides along with it (0x437AD0).
+        mission.SmokePlumes.CarrierPose = task => mission.Cutscenes?.TryGetDrawTransform(task, out Vector3d at, out Matrix3f turn) == true
+            ? (at * WorldScene.UnitsPerMetre, turn)
+            : null;
+
         // The level's alarm speakers, for the sirens: each follows its own expression over
         // the same live variables the controls export through.
         mission.AlarmSpeakers = AlarmSpeakerRegistry.Build(
@@ -534,9 +549,13 @@ public sealed class Igi1MissionSetup(
                 RetailWorldObjects.Build(
                     levelRoot,
                     carModels,
-                    name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
+                    name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null,
+                    definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) == "TASKTYPE_GLASS"),
                 cutscenes.RetailVehicleModels,
-                static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task));
+                static owner => owner is RetailGlassPane pane
+                    ? !pane.IsBroken && ConditionalContainerGate.IsTaskActive(pane.Owner)
+                    : owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task),
+                (pane, from) => mission.TouchGlass?.Invoke(pane, from) == true);
             cutscenes.ConfigureRetailCars(
                 mission.RetailWorld,
                 carModels,
@@ -547,6 +566,14 @@ public sealed class Igi1MissionSetup(
         // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
         mission.SoundRandom.SeedForLevel();
 
+        // The Hind's rocket pods and door, which its flights run; each pod draws its first gap as it is made. The pods and
+        // the vehicles' guns draw from the level's stream.
+        cutscenes.ConfigureVehicleParts(
+            scene,
+            name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition part) == true ? part : null,
+            definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) ?? string.Empty);
+        cutscenes.VehicleRandom = mission.SoundRandom;
+
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
         mission.Destructibles = DestructibleObjectRegistry.Build(
@@ -554,7 +581,8 @@ public sealed class Igi1MissionSetup(
             scene.Placements,
             host.Game.Variables,
             mission.VehiclePhysics,
-            random: mission.SoundRandom);
+            random: mission.SoundRandom,
+            made: cutscenes.VehiclePartMade);
         solids.Destructibles = mission.Destructibles;
         cutscenes.Destructibles = mission.Destructibles;
     }

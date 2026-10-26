@@ -204,10 +204,12 @@ public sealed class Particle2DRenderer : IDisposable
         _sprites.Clear();
     }
 
-    // The sprite renderer's blend for a system's graphic flags: additive by alpha, darkening, multiplying, or alpha.
+    // The sprite renderer's blend for a system's graphic flags, in the order 0x50E000 tests them: additive by alpha (8),
+    // darkening by the sprite's inverse (0x10), multiplying (0x80000000), or alpha.
     private static BlendMode BlendOf(int flags) =>
         (flags & Particle2DFlags.Additive) != 0 ? BlendMode.Additive
-        : (flags & Particle2DFlags.Darkening) != 0 || flags < 0 ? BlendMode.Modulate
+        : (flags & Particle2DFlags.Darkening) != 0 ? BlendMode.Darken
+        : flags < 0 ? BlendMode.Modulate
         : BlendMode.AlphaBlend;
 
     private void AddQuad(Particle2DSystem system, in SpriteStrip strip, Particle2D particle, Vector3d eye, float blend)

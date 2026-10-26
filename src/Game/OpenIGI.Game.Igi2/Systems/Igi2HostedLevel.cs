@@ -93,6 +93,9 @@ public sealed class Igi2HostedLevel
     /// <summary>Gets the soldiers' grenades and missiles in flight, or <see langword="null"/> without physics types.</summary>
     public Igi2Grenades? Grenades { get; init; }
 
+    /// <summary>Gets the level's explosions: their FireBalls and thrown pieces are drawn with its models.</summary>
+    public Igi2ExplosionWorld? Explosions { get; init; }
+
     /// <summary>Gets the host's alarms the level holds controls for (<see cref="Igi2GuestLevel.AddAlarm"/>), run each tick.</summary>
     public IReadOnlyList<Interaction.Igi2AlarmControlTask> Alarms { get; init; } = [];
 
@@ -321,6 +324,11 @@ public sealed class Igi2HostedLevel
             if (Casings is { } casings)
             {
                 models.AddRange(casings.Models());
+            }
+
+            if (Explosions is { } explosions)
+            {
+                models.AddRange(ExplosionPieceModels.Of(explosions, Ticks));
             }
 
             _drawn = [.. models];

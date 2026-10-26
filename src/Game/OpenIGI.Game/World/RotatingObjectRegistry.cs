@@ -110,6 +110,10 @@ public sealed class PlacedRotatingObject
         TargetSpeedY = speedY;
         TargetSpeedZ = speedZ;
 
+        MaxSpeedX = speedX;
+        MaxSpeedY = speedY;
+        MaxSpeedZ = speedZ;
+
         CurrentSpeedX = speedX;
         CurrentSpeedY = speedY;
         CurrentSpeedZ = speedZ;
@@ -123,6 +127,31 @@ public sealed class PlacedRotatingObject
         Sound = sound ?? string.Empty;
 
         CurrentOrientation = BaseOrientation;
+    }
+
+    /// <summary>Gets its authored top speed about the X axis, degrees a second.</summary>
+    public float MaxSpeedX { get; }
+
+    /// <summary>Gets its authored top speed about the Y axis.</summary>
+    public float MaxSpeedY { get; }
+
+    /// <summary>Gets its authored top speed about the Z axis.</summary>
+    public float MaxSpeedZ { get; }
+
+    /// <summary>
+    /// Gets the one parameter its loop is played with: a dish's speed over its top speed (<c>0x448E30</c>), a
+    /// <c>RotatingObject</c>'s three axes' summed (<c>0x439090</c>), held to nought to one -- an axis with no top speed makes the
+    /// sum no number at all, which reads as nought.
+    /// </summary>
+    public float SoundLevel
+    {
+        get
+        {
+            float level = IsRotatingObjectTask
+                ? (CurrentSpeedZ / MaxSpeedZ) + (CurrentSpeedX / MaxSpeedX) + (CurrentSpeedY / MaxSpeedY)
+                : CurrentSpeedZ / MaxSpeedZ;
+            return level < 0f || float.IsNaN(level) ? 0f : Math.Min(level, 1f);
+        }
     }
 
     /// <summary>Gets whether this is a level <c>RotatingObject</c> task, which updates by <c>0x439090</c>, rather than a radar dish.</summary>
@@ -361,6 +390,29 @@ public sealed class RotatingObjectRegistry
 
     /// <summary>Gets all registered rotating objects.</summary>
     public IReadOnlyList<PlacedRotatingObject> Objects => _objects;
+
+    /// <summary>Every turning object's loop, as it is made (<c>0x448B70</c>, <c>0x439620</c>), with its speed as its parameter.</summary>
+    /// <returns>One per object that names a sound and stands in the world.</returns>
+    public IEnumerable<VehicleSoundSource> SoundSources()
+    {
+        foreach (PlacedRotatingObject turning in _objects)
+        {
+            if (turning.Sound.Length == 0 || !ConditionalContainerGate.IsTaskActive(turning.Placement.Owner))
+            {
+                continue;
+            }
+
+            yield return new VehicleSoundSource(
+                turning.Placement.Owner,
+                turning.Sound,
+                turning.Placement.Position * WorldScene.UnitsPerMetre,
+                turning.SoundLevel,
+                0f,
+                0f,
+                SoundOn: true,
+                Key: turning);
+        }
+    }
 
     /// <summary>Checks whether a model instance name is a known retail radar dish model.</summary>
     public static bool IsKnownRadarDishModel(string modelName) =>

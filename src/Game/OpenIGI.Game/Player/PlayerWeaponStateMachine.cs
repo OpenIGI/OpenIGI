@@ -560,6 +560,11 @@ internal sealed class PlayerWeaponStateMachine
     // all, which is a good example of a field that exists for the HUD.
     private HumanWeaponState Reloading()
     {
+        if (InHand is { } shotgun && LoadsByTheShell(shotgun.Weapon))
+        {
+            return LoadingShells(shotgun.Gun);
+        }
+
         if (!Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
         {
             return HumanWeaponState.Reloading;
@@ -569,6 +574,53 @@ internal sealed class PlayerWeaponStateMachine
         _actionComplete = true;
         return HumanWeaponState.Ready;
     }
+
+    // 0x472AE0, the SPAS-12's own reload handler in 0x479990's place: open, then a shell a clip until the tube is full or
+    // the pocket is empty, then close. A gun with nothing to load and no reload under way is done at once.
+    private HumanWeaponState LoadingShells(HeldGun gun)
+    {
+        GunState state = gun.State;
+        bool clipDone = Flags.HasFlag(HumanWeaponFlagWord.ClipEnded);
+        if (gun.Reserve(Ammunition) <= 0 && state.ReloadStage == 0)
+        {
+            _actionComplete = true;
+            return HumanWeaponState.Ready;
+        }
+
+        switch (state.ReloadStage)
+        {
+            case 0:
+                Request(WeaponAction.ShellReloadOpen);
+                state.ReloadStage = 1;
+                break;
+            case 1 when clipDone:
+                Request(WeaponAction.ShellReloadInsert);
+                state.ReloadStage = 2;
+                break;
+            case 2 when clipDone:
+                bool pocket = gun.Reserve(Ammunition) > 0;
+                int room = pocket ? gun.LoadShell(Ammunition) : 0;
+                if (room > 1)
+                {
+                    Request(WeaponAction.ShellReloadInsert);
+                    break;
+                }
+
+                Request(WeaponAction.ShellReloadClose);
+                state.ReloadStage = 3;
+                break;
+            case 3 when clipDone:
+                state.ReloadStage = 0;
+                _actionComplete = true;
+                return HumanWeaponState.Ready;
+        }
+
+        return HumanWeaponState.Reloading;
+    }
+
+    // The one gun whose class loads a shell at a time.
+    private static bool LoadsByTheShell(WeaponType weapon) =>
+        string.Equals(weapon.Weapon.TypeName, "TASKTYPE_GUNSPAS12", StringComparison.Ordinal);
 
     private HumanWeaponState Medipack()
     {
@@ -743,7 +795,8 @@ internal sealed class PlayerWeaponStateMachine
                 Request(WeaponAction.Fire);
                 break;
 
-            case HumanWeaponState.Reloading:
+            // 0x479990's first call; the SPAS-12's handler plays its own clips instead.
+            case HumanWeaponState.Reloading when InHand is not { } held || !LoadsByTheShell(held.Weapon):
                 Request(WeaponAction.Reload);
                 break;
 

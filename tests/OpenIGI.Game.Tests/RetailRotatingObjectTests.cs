@@ -163,6 +163,11 @@ public sealed class RetailRotatingObjectTests
             registry.Objects,
             obj => obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
 
+        // It hums its "radardishsounds" loop from the start (0x448B70), at full while turning at its top speed.
+        VehicleSoundSource hum = Assert.Single(registry.SoundSources(), source => ReferenceEquals(source.Key, dish));
+        Assert.Equal("radardishsounds", hum.SoundSet);
+        Assert.Equal(1f, hum.Throttle);
+
         registry.WeaponHit(dish.Owner, dish.Placement);
         registry.Tick();
 
@@ -178,6 +183,9 @@ public sealed class RetailRotatingObjectTests
         registry.Tick();
         Assert.Equal(0f, dish.CurrentSpeedZ);
         Assert.Equal(angle, dish.AngleZ);
+
+        // Run down, its loop goes on at nought.
+        Assert.Equal(0f, dish.SoundLevel);
     }
 
     [RequiresGameDataFact]

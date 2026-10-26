@@ -19,6 +19,9 @@ internal sealed class StatusMessage(
     public bool Cutscene { get; } = cutscene;
     public float Duration { get; } = duration;
     public string Sound { get; init; } = string.Empty;
+
+    /// <summary>Gets the sprite drawn beside the text, from the status archive; none for an authored message.</summary>
+    public string Portrait { get; init; } = string.Empty;
     public bool IsSent { get; set; }
     public int SentTick { get; set; } = -100000;
     public bool IsFinishedDisplay { get; set; }

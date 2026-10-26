@@ -190,34 +190,6 @@ public sealed class AiPatrolCombat
     /// <summary>Gets the direction of the last roll, so the next one goes the other way.</summary>
     public AiEvasiveAction LastRoll => _lastRoll;
 
-    /// <summary>Rolls a close-combat strike that was chosen this tick.</summary>
-    /// <returns>
-    /// The row's <c>CloseCombatDamage</c> when the hit lands, or zero on a miss.
-    /// </returns>
-    /// <remarks>
-    /// <para>
-    /// The bullet cast rolls <c>random &gt; probability -&gt; no hit</c> when the trace meets a human
-    /// (DesktopGame.Mission); the strike gates the same way. What the native does with a landed hit
-    /// past choosing it is the open question: <c>0x48DBB0</c> only raises the animation trigger and
-    /// channel 9 (confirmed in the r2 disassembly — no damage call), and the Ghidra half of the
-    /// validation loop is unavailable in this environment, so the strike-tick timing below (at the
-    /// trigger tick, in <c>Igi1HumanAi</c>) is a documented approximation, not an attested site.
-    /// </para>
-    /// <para>
-    /// The damage is a plain factor like a round's: the accumulator math (zone multiplier,
-    /// difficulty scale) happens in <c>HumanHealth</c> at application time.
-    /// </para>
-    /// </remarks>
-    public float RollMeleeStrike()
-    {
-        if (_random() > _parameters.CloseCombatHitProbability)
-        {
-            return 0f;
-        }
-
-        return _parameters.CloseCombatDamage;
-    }
-
     /// <summary>Arms the behaviour.</summary>
     public void Begin()
     {

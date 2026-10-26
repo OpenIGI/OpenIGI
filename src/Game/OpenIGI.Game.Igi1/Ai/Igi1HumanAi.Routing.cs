@@ -110,6 +110,22 @@ public sealed partial class Igi1HumanAi
     // The deviance every node-square test in the planner and the walker adds to the radius -- 0.3 m.
     private const double NodeDevianceMetres = 0.3;
 
+    // Human+32, the body's origin: the port keeps the feet, and the origin stands its measured height over them --
+    // lower when the soldier kneels or lies.
+    private Vector3d OriginPosition
+    {
+        get
+        {
+            bool low = IsCrouching
+                || AiCombatChannels.IsInStance(_type, AiStanceChannel.Kneeling, CombatState)
+                || AiCombatChannels.IsInStance(_type, AiStanceChannel.Prone, CombatState);
+            return new Vector3d(
+                Position.X,
+                Position.Y,
+                Position.Z + (low ? HumanOriginCrouchedInUnits : HumanOriginStandingInUnits));
+        }
+    }
+
     // Which node the planner starts from, or -1 to walk from the current node as it stands.
     private int RouteStart(int destination, GraphRouteTable routes)
     {
@@ -120,7 +136,9 @@ public sealed partial class Igi1HumanAi
             return -1;
         }
 
-        double fromCurrent = Vector3d.Distance(current.Position, Position);
+        // 0x4518E0 measures both distances from the Human's origin (DynCubeObj position, Human+32), not its feet.
+        Vector3d origin = OriginPosition;
+        double fromCurrent = Vector3d.Distance(current.Position, origin);
         int next = -1;
         foreach (AiWaypoint waypoint in _route)
         {
@@ -143,7 +161,7 @@ public sealed partial class Igi1HumanAi
 
         if (next == destination)
         {
-            return Vector3d.Distance(ahead.Position, Position) < fromCurrent ? next : CurrentNode;
+            return Vector3d.Distance(ahead.Position, origin) < fromCurrent ? next : CurrentNode;
         }
 
         // "ERROR IN ROUTENET" leaves the current node as the start.
@@ -325,7 +343,8 @@ public sealed partial class Igi1HumanAi
                             node.Position.Y,
                             node.Position.Z + FreePositionRayHeightOf(_graph)),
                         // 0x48B6E0 aims the can-shoot ray at 0x451380's point, the target's origin raised.
-                        LiveTargetNodePoint() ?? AimPointOf(enemy))),
+                        LiveTargetNodePoint() ?? AimPointOf(enemy),
+                        seen: null)),
                 occupancy: claim ? _occupancy : null,
                 claimant: claim ? this : null,
                 claimedPosition: claim ? position => _combatFreePosition = position : null);

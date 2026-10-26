@@ -23,6 +23,10 @@ public sealed partial class GameHost
     private IMissionViewpoint? _viewpoint;
 
     /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
+    /// <summary>Gets the ground, unless the title's culling leaves the world outside its buildings out of this frame.</summary>
+    /// <remarks>The cascades take it from here too, so a ground the eye cannot see out to casts nothing into the room.</remarks>
+    private ITerrainPresenter? OutsideTerrain => _world?.Visibility?.IsOutsideVisible == false ? null : _terrain;
+
     private void DrawSceneGeometry(
         MapSceneView? mapScene, bool captured, Camera3D eye, Matrix4f projection, float verticalFieldOfView, float aspectRatio, bool cascadesRead,
         int cascadeCount, bool smoothPresentation, float tickBlend)
@@ -42,6 +46,16 @@ public sealed partial class GameHost
         // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
         // same authored haze through the froxel volume instead, and their models are lit by the
         // G-buffer pass rather than by this one.
+        // The original's levels of detail, on its own look only: the other presets draw every model whole.
+        if (_world is { } detailedWorld)
+        {
+            bool vanilla = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            detailedWorld.Lod = vanilla ? _modelLod : null;
+
+            // And its face groups as it draws them: the opaque ones without an alpha test, the sorted ones blended after.
+            detailedWorld.FaceGroupBlending = vanilla;
+        }
+
         bool retailFog = FogCVars.RetailFog.Value;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
         _device.SetModelAmbient(
@@ -69,7 +83,19 @@ public sealed partial class GameHost
                 _device.SetPaintedSky(true);
             }
 
+            // The original draws its whole sky unfogged: the dome (SkyDome_Draw) and the cloud layers' strips, whose QVertex
+            // states turn fog off (Direct3DQVertex_SetGenericState). Added clouds fogged here dimmed toward black.
+            bool unfoggedSky = retailFog && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            if (unfoggedSky)
+            {
+                _device.SetFog(SceneFog.None);
+            }
+
             _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
+            if (unfoggedSky)
+            {
+                _device.SetFog(RetailAir(_globalLight.ObjectFog));
+            }
 
             if (paintedSky)
             {
@@ -95,7 +121,7 @@ public sealed partial class GameHost
         // fewer. Where the order does decide the picture, the render group is honoured: the sky
         // is drawn first, the water last, and the world's own objects come out grouped, which is
         // what BuildDrawOrder is for.
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: GeometryCVars.WorldOcclusion.Value));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: GeometryCVars.WorldOcclusion.Value, FromEye: true));
         EndStageIfSlow("the sky and the world's objects");
 
         if (captured)
@@ -113,7 +139,18 @@ public sealed partial class GameHost
             _device.SetFog(RetailAir(_globalLight.TerrainFog));
         }
 
-        _terrain?.Draw(new TerrainFrame(
+        // Nothing outside the buildings is drawn while the title's culling says the eye cannot see out: I.G.I. 2 skips its
+        // terrain and its forests outright while the camera is in a room no window or doorway shows the outside through.
+        bool outsideVisible = _world.Visibility?.IsOutsideVisible != false;
+
+        // ...and seen through the outside's windows, I.G.I. 2 clips them to the frustum enclosing those windows.
+        ViewClip? outsideClip = _world.Visibility?.OutsideClip;
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(outsideClip);
+        }
+
+        OutsideTerrain?.Draw(new TerrainFrame(
             eye,
             projection,
             verticalFieldOfView,
@@ -144,10 +181,35 @@ public sealed partial class GameHost
         // The foliage after the ground it is planted in, so a tree's trunk depth-tests against
         // the hillside rather than against whatever was drawn there before it. Half-tangents
         // rather than the angle, because the cull's planes are built straight out of them.
-        _forest?.Draw(new ForestFrame(
-            eye,
-            MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
-            MathF.Tan(verticalFieldOfView * 0.5f)));
+        if (outsideVisible)
+        {
+            // The original fogs its trees in the objects' colour at four fifths of the ground's density
+            // (ForestRender_SetGenericState_*), on its own look.
+            bool retailForest = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            if (retailForest && retailFog && _forest is not null)
+            {
+                _device.SetFog(RetailAir(_globalLight.ObjectFog) with
+                {
+                    DensityPerMetre = RetailAir(_globalLight.TerrainFog).DensityPerMetre * 0.8f,
+                });
+            }
+
+            _forest?.Draw(new ForestFrame(
+                eye,
+                MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
+                MathF.Tan(verticalFieldOfView * 0.5f),
+                retailForest,
+                _world.Shading.Sun?.Direction ?? Vector3f.Zero));
+            if (retailForest && retailFog && _forest is not null)
+            {
+                _device.SetFog(RetailAir(_globalLight.ObjectFog));
+            }
+        }
+
+        if (outsideClip is not null)
+        {
+            _device.SetDrawClip(null);
+        }
         EndStageIfSlow("the forest");
 
         // With the world and the terrain both in the depth buffer, the world's occlusion
@@ -257,7 +319,7 @@ public sealed partial class GameHost
             // the finished picture. It writes no depth, because the tracers and the smoke are
             // drawn after it through the same buffer.
             _device.BeginPass(ScenePass.GlassLayer);
-            _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true));
+            _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true, FromEye: true));
 
             _device.EndPass();
             _device.BeginPass(ScenePass.Forward);
@@ -277,14 +339,18 @@ public sealed partial class GameHost
                 Math.Max(1, (int)(rotorMap.Viewport.Width * scaleX)),
                 Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
         }
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true, FromEye: true));
+        if (_world.FaceGroupBlending)
+        {
+            _world.Draw(_scene, eye, projection, new WorldDrawOptions(FromEye: true, BlendedOnly: true));
+        }
 
         // The level's glazing, over a picture the lighting has finished. It has to follow the
         // opaque world for the ordinary reason anything blended does, and it is a pass of its own
         // rather than part of the rotor pass above because the two share nothing: a rotor is a
         // whole placement that blends, and a pane is half of a texture on a placement whose other
         // half was drawn into the G-buffer.
-        _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true));
+        _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true, FromEye: true));
         if (mapScene is not null)
         {
             _device.SetViewport(new Viewport(0, 0,
@@ -298,6 +364,12 @@ public sealed partial class GameHost
         _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
         EndStageIfSlow("the water");
         DrawTitleGroundDecals(eye, projection);
+
+        // And the level's own bodies' marks on the ground, on the original's look (Shadow_MagicObjEnterHandler).
+        if (_world.FaceGroupBlending)
+        {
+            _soldiers?.DrawGroundShadows(eye, projection);
+        }
 
         // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
         // the geometry pass they are written into the g-buffer as scenery and come out lit
@@ -423,6 +495,11 @@ public sealed partial class GameHost
                 // units, so the drops never sink below a faint grey whatever the night.
                 RainVeilDisplay / MathF.Max(_device.SceneExposure, 1e-3f));
         }
+        else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
+        {
+            // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
+            retailWeather.Draw(new WeatherFrame(eye, projection, _window.Height, _mission.EffectWalls, _loop.Clock.TickCount));
+        }
         else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
         {
             // The original's band, drawn only where the storm is not the renderer in charge.
@@ -438,7 +515,8 @@ public sealed partial class GameHost
 
         // Snow uses the same authored building shells and weather band, but renders small,
         // drifting flakes instead of rain droplets.
-        if (_snow is { IsWeatherEnabled: true } snow)
+        if (_snow is { IsWeatherEnabled: true } snow
+            && !(GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is not null))
         {
             snow.Indoors = cameraIndoors;
             snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
@@ -454,6 +532,15 @@ public sealed partial class GameHost
                 projection,
                 tickBlend,
                 smoothPresentation);
+        }
+
+        // An alarm light's turning reflector throws its red flare at the eye (0x439F10), with the camera lamps' sprite.
+        if (_mission.AlarmSpeakers is { Reflectors.Count: > 0 } lights)
+        {
+            _cameraStatusLights?.DrawGlows(
+                lights.ReflectorFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f),
+                eye,
+                projection);
         }
 
         // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD
@@ -519,7 +606,8 @@ public sealed partial class GameHost
                 _mission.Terrain,
                 _arms,
                 _heldWeapon,
-                _loadedMissionForWeapon)) ?? default;
+                _loadedMissionForWeapon,
+                _world?.Shading.Sun)) ?? default;
         if (!drawn.DrewRig)
         {
             DrawTitleFirstPerson(eye);

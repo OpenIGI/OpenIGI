@@ -100,6 +100,17 @@ public sealed class PlayerCameraKnifeTests
         Assert.Equal(0.0, first.Z, 6);
     }
 
+    [RequiresGameDataFact]
+    public void TheSpasReloadClipsAreInTheViewSet()
+    {
+        // 0x472AE0 plays 61, 62 and 63 by number on the first-person rig.
+        BoneAnimationSet set = LoadViewSet();
+        Assert.True(set.TryGet(WeaponAnimationTable.ShellReloadOpenClip, out _));
+        Assert.True(set.TryGet(WeaponAnimationTable.ShellReloadInsertClip, out _));
+        Assert.True(set.TryGet(WeaponAnimationTable.ShellReloadCloseClip, out _));
+        Assert.Equal(WeaponAnimationTable.ShellReloadOpenClip, LoadRoster().Weapons.First(w => w.ScriptId == "WEAPON_ID_SPAS12").ReloadAnimation);
+    }
+
     private static BoneAnimationSet LoadViewSet() => BoneAnimationSet.Read(File.ReadAllBytes(
         Path.Combine(GameData.RequireRoot(), "common", "anims", "005.iff")));
 

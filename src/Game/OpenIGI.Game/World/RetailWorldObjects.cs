@@ -45,10 +45,12 @@ public sealed class RetailWorldObjects
     /// interior -- are placed too; <see langword="null"/> places the level's own tasks only.
     /// </param>
     /// <returns>The objects.</returns>
+    /// <param name="isGlass">Whether an attachment is a pane of glass, which a body breaks and passes through.</param>
     public static RetailWorldObjects Build(
         GameTask levelRoot,
         Func<string, MefModel?> models,
-        Func<string, MagicObjectDefinition?>? magic = null)
+        Func<string, MagicObjectDefinition?>? magic = null,
+        Func<MagicObjectDefinition, bool>? isGlass = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(models);
@@ -99,7 +101,7 @@ public sealed class RetailWorldObjects
             set.Add(placed, position, ((X87)found.Radius * 1.0f).Value);
             if (magic is not null && models(name) is { } root)
             {
-                set.AddAttachments(declared, root, placed.Position, placed.M, models, magic, meshes, depth: 0);
+                set.AddAttachments(declared, root, placed.Position, placed.M, models, magic, meshes, depth: 0, isGlass);
             }
         }
 
@@ -119,7 +121,8 @@ public sealed class RetailWorldObjects
         Func<string, MefModel?> models,
         Func<string, MagicObjectDefinition?> magic,
         Dictionary<string, (RetailRayMesh Mesh, float Radius)?> meshes,
-        int depth)
+        int depth,
+        Func<MagicObjectDefinition, bool>? isGlass = null)
     {
         // The original has no guard against an attachment naming its own model; its data has no such cycle.
         if (depth > 16)
@@ -167,7 +170,11 @@ public sealed class RetailWorldObjects
             double[] placedPosition = [wx, wy, wz];
             if (mesh is { } found)
             {
-                RetailRayModel placed = new(owner, found.Mesh, found.Radius);
+                // A pane answers for itself, so a body that strikes it can break it and pass (0x449CB0).
+                object struck = isGlass?.Invoke(definition) == true
+                    ? new RetailGlassPane(owner, new Vector3d(wx, wy, wz))
+                    : owner;
+                RetailRayModel placed = new(struck, found.Mesh, found.Radius);
                 placed.Position[0] = wx;
                 placed.Position[1] = wy;
                 placed.Position[2] = wz;

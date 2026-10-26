@@ -32,6 +32,14 @@ public sealed partial class GameHost
         ResolveProjection(state, ref view);
         ComposeFrameEye(state, console, ref view);
 
+        // The title's own culling, decided once from the eye before the first pass draws: every pass of the frame -- the
+        // cascades and the lamps' maps among them -- then leaves out what the eye's place in the level leaves out.
+        float tangentHalfFovY = MathF.Tan(view.VerticalFieldOfView * 0.5f);
+        _world.Visibility?.BeginView(view.Eye, tangentHalfFovY * view.AspectRatio, tangentHalfFovY);
+
+        // The soldiers are drawn by the same answer, outside the world renderer.
+        _soldiers?.Visibility = _world.Visibility;
+
         ICharacterPresenter? casterBodies = BeginCharacterFrame(view.TickBlend, view.SmoothPresentation);
         view.SceneTarget = DescribeSceneTarget(view.Resolution, view.WantsTemporal);
         ResolveFrameSun(ref view);
@@ -118,7 +126,7 @@ public sealed partial class GameHost
         {
             // The cascades are filled through the title's presentation, not through this
             // host's renderer fields: the pass draws whichever game is loaded.
-            _shadowPass.Render(state.CascadeStorage, cascadeCount, eye, _scene, _world, casterBodies, _terrain);
+            _shadowPass.Render(state.CascadeStorage, cascadeCount, eye, _scene, _world, casterBodies, OutsideTerrain);
         }
 
         // The nearest lamps' own shadow maps, where the device marches lamp shadows rather than

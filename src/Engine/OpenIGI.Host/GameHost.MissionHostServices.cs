@@ -61,7 +61,7 @@ public sealed partial class GameHost
 
             host._vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
             host._vehicleSounds.Tick(
-                cutscenes.VehicleSoundSources(),
+                cutscenes.VehicleSoundSources().Concat(host._mission.RotatingObjects?.SoundSources() ?? []),
                 cutscenes.VehicleGunSounds(),
                 host._audioOut.Device.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
         }
@@ -73,6 +73,16 @@ public sealed partial class GameHost
         public bool FailedMenu => host._session.FailedMenu;
 
         public bool ComputerOpen => host._computerOpen;
+
+        public bool MissionComputer => host.UsesMissionComputer;
+
+        public bool MapComputerEnabled => host.MapComputerAvailable();
+
+        public (int Width, int Height) ComputerDisplay => host.ComputerDisplaySize;
+
+        public OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput() => host.TakeComputerInput();
+
+        public void ComputerChanged(bool open) => host.MissionComputerChanged(open);
 
         public bool TickTitlePlayer() => host.TickTitlePlayer();
 
@@ -211,20 +221,6 @@ public sealed partial class GameHost
 
         public void PlayDefinition(string name, Vector3d positionInUnits, int priority) =>
             host._audioOut.Sounds?.PlayDefinition(name, positionInUnits, priority: priority);
-
-        public void FlashbangSmoke(Vector3d positionInUnits) => host._effects.SpawnFlashbangSmoke(positionInUnits);
-
-        public void Fireball(Vector3d positionInUnits) =>
-            host._effects.SpawnBlast(positionInUnits, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
-
-
-        public void Explosion(Vector3d positionInUnits, float fullRangeUnits, int fireballs, int fragments) =>
-            host._effects.Particles?.SpawnRetailExplosion(positionInUnits, new RetailExplosionShape(fullRangeUnits, fireballs, fragments));
-
-        public void SpeakerExplosion(Vector3d positionInUnits, bool isCameraLens) =>
-            host._effects.Particles?.SpawnRetailExplosion(
-                positionInUnits,
-                isCameraLens ? RetailExplosionShape.CameraLens : RetailExplosionShape.AlarmLight);
 
         public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
             host._effects.Particles?.SpawnGlassShatter(placement, atUnits);

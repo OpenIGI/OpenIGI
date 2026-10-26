@@ -6,6 +6,7 @@ using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -28,16 +29,16 @@ public sealed class Igi2ExplosionTests
     {
         IgiRandom stream = new(Seed);
         IgiRandom reference = new(Seed);
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2ExplosionWorld world = new(stream, new OpenGround(), new Igi2GameMaterials(), dynamic);
 
         world.Explode(Grenade(new Vector3d(0.0, 0.0, 0.0)));
         Assert.True(InStep(stream, reference, 6));
 
         dynamic.Run();
-        Assert.Contains(dynamic.Tasks, static t => t is Igi2ExplosionSmoke);
-        Assert.Contains(dynamic.Tasks, static t => t is Igi2FireBall);
-        Igi2FragmentContainer fragments = Assert.Single(dynamic.Tasks.OfType<Igi2FragmentContainer>());
+        Assert.Contains(dynamic.Tasks, static t => t is ExplosionSmoke);
+        Assert.Contains(dynamic.Tasks, static t => t is ExplosionFireBall);
+        ExplosionFragments fragments = Assert.Single(dynamic.Tasks.OfType<ExplosionFragments>());
         Assert.Equal(3, fragments.Flying.Count);
         Assert.DoesNotContain(dynamic.Tasks, static t => t is Igi2Explosion);
         Assert.True(InStep(stream, reference, 21 + 4));
@@ -59,7 +60,7 @@ public sealed class Igi2ExplosionTests
     [Fact]
     public void A_blast_falls_away_past_its_full_range()
     {
-        Igi2ExplosionWorld world = new(new IgiRandom(Seed), new OpenGround(), new Igi2GameMaterials(), new Igi2DynamicTasks());
+        Igi2ExplosionWorld world = new(new IgiRandom(Seed), new OpenGround(), new Igi2GameMaterials(), new DynamicTasks());
         Igi2ExplosionHit hit = new(world, new Vector3d(0.0, 0.0, 0.0), -1, 4f, 16384f, 40960f, 90, null, null, Igi2ExplosionFalloff.Exponential);
 
         Assert.Equal(4.0, hit.Resolve(new Vector3d(10000.0, 0.0, 0.0), 0f).Value);
@@ -83,7 +84,7 @@ public sealed class Igi2ExplosionTests
         };
         player.Create(OpenIGI.Game.Ai.AiDifficulty.Normal);
         player.UpdateViewBody(updateAnimation: false);
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2ExplosionWorld world = new(player.Random, new OpenGround(), new Igi2GameMaterials(), dynamic);
         world.AddTarget(player);
 

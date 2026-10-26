@@ -59,152 +59,147 @@ public sealed class PlayerBinocularsTests
         Assert.Null(weapons.RequestedAction);
     }
 
+    // 0x470D70's fallbacks, which are also what the retail weapon config authors: 70, 90 and 5 degrees.
+    private static readonly float Default = BinocularsView.HalfAngleTangent(70f);
+    private static readonly float Widest = BinocularsView.HalfAngleTangent(90f);
+    private static readonly float Narrowest = BinocularsView.HalfAngleTangent(5f);
+
     [Fact]
-    public void BinocularViewUsesAuthoredDefaultAndClampsZoomToAuthoredBounds()
+    public void TheAnglesAreTheConfigsHalfAngleTangents()
     {
+        // The task's own arguments halve with integer division (5 -> 2 degrees); the config's reader does not.
+        Assert.Equal(MathF.Tan(35f * MathF.PI / 180f), Default, 5);
+        Assert.Equal(1f, Widest, 5);
+        Assert.Equal(MathF.Tan(2.5f * MathF.PI / 180f), Narrowest, 5);
+        Assert.NotEqual(WeaponTaskParameters.HalfAngleTangent(5), Narrowest);
+    }
+
+    [Fact]
+    public void RaisingTheBinocularsSnapsTheViewToTheDefault()
+    {
+        // 0x470B83 writes the view's tangent outright on the first use, and takes no zoom step that tick.
         BinocularsView view = new();
         WeaponType binoculars = Binoculars;
-        SightZoomFrame opened = view.Tick(
-            binoculars,
-            togglePressed: true,
-            zoomInHeld: false,
-            zoomOutHeld: false,
-            tanX: HumanView.DefaultTanX,
-            viewModelTanX: HumanView.DefaultViewModelTanX);
+        SightZoomFrame opened = view.Tick(binoculars, togglePressed: true, zoomInHeld: true, zoomOutHeld: false,
+            HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
         Assert.True(view.IsOpen);
         Assert.True(view.OpenedThisTick);
-        Assert.False(view.ClosedThisTick);
-        Assert.True(view.ZoomTargetChangedThisTick);
-        // Opening the view is silent: the motor cue only sounds while a zoom key is actually moving the
-        // magnification, so no zoom step is reported on the open tick.
-        Assert.False(view.ZoomSteppingThisTick);
-        Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, 5);
+        Assert.Equal(Default, opened.TanX);
         Assert.Equal(HumanView.DefaultViewModelTanX, opened.ViewModelTanX);
-
-        // Retail is level-triggered: the handler is invoked every simulation tick while the
-        // binoculars are open, multiplying by 0.95999998 on each ZoomIn tick and by 1.04 on each
-        // ZoomOut tick. It does NOT use an edge or a cooldown — holding the key steps every tick
-        // until the respective authored minimum/maximum tangent is reached, where it stays.
-        SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
-        Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.True(view.ZoomChangedThisTick);
-        Assert.True(view.ZoomTargetChangedThisTick);
-        // A held zoom key that moved the magnification is a zoom step -- this is when the cue plays.
+        Assert.False(view.ZoomSteppingThisTick);
+    }
+
+    [Fact]
+    public void AZoomStepsUntilItHasPassedItsLimit()
+    {
+        BinocularsView view = new();
+        WeaponType binoculars = Binoculars;
+        SightZoomFrame frame = view.Tick(binoculars, true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+
+        frame = view.Tick(binoculars, false, true, false, frame.TanX, frame.ViewModelTanX);
+        Assert.Equal(Default * BinocularsView.ZoomInFactor, frame.TanX);
         Assert.True(view.ZoomSteppingThisTick);
-        narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
-        // Releasing the key holds the current magnification instead of continuing toward the last
-        // retail target. Only holding a zoom input multiplies on the next tick.
-        Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
-        Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
-        Assert.False(view.ZoomChangedThisTick);
-        Assert.False(view.ZoomTargetChangedThisTick);
-        // Releasing the key ends the zoom step, so the cue stops even though the view stays open.
+
+        // Let go, and the magnification holds.
+        float held = frame.TanX;
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX);
+        Assert.Equal(held, frame.TanX);
         Assert.False(view.ZoomSteppingThisTick);
-        for (int i = 0; i < 100; i++)
+
+        // A step is taken while the tangent is still above the minimum, unclamped, so the last lands under it.
+        for (int i = 0; i < 200 && frame.TanX > Narrowest; i++)
         {
-            narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
-            Assert.False(float.IsNaN(narrowed.TanX));
+            frame = view.Tick(binoculars, false, true, false, frame.TanX, frame.ViewModelTanX);
         }
 
-        Assert.Equal(0.1f, narrowed.TanX, 3);
-        // Held at the authored minimum the magnification no longer moves, so the zoom step -- and its
-        // cue -- ends even while the key is still down.
+        Assert.True(frame.TanX <= Narrowest);
+        Assert.True(frame.TanX > Narrowest * BinocularsView.ZoomInFactor);
+        float floor = frame.TanX;
+        frame = view.Tick(binoculars, false, true, false, frame.TanX, frame.ViewModelTanX);
+        Assert.Equal(floor, frame.TanX);
         Assert.False(view.ZoomSteppingThisTick);
 
-        SightZoomFrame closing = view.Tick(
-            binoculars,
-            togglePressed: true,
-            zoomInHeld: false,
-            zoomOutHeld: false,
-            tanX: narrowed.TanX,
-            viewModelTanX: narrowed.ViewModelTanX);
+        for (int i = 0; i < 400 && frame.TanX < Widest; i++)
+        {
+            frame = view.Tick(binoculars, false, false, true, frame.TanX, frame.ViewModelTanX);
+        }
+
+        Assert.True(frame.TanX >= Widest);
+        Assert.True(frame.TanX < Widest * BinocularsView.ZoomOutFactor);
+    }
+
+    [Fact]
+    public void AlternateFireZoomsInThenLatchesThenSnapsBack()
+    {
+        BinocularsView view = new();
+        WeaponType binoculars = Binoculars;
+        SightZoomFrame frame = view.Tick(binoculars, true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+
+        // Held: it zooms in, a step a tick.
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: true, alternateHeldLastTick: false);
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: true, alternateHeldLastTick: true);
+        float zoomed = Default * BinocularsView.ZoomInFactor * BinocularsView.ZoomInFactor;
+        Assert.Equal(zoomed, frame.TanX);
+
+        // Let go: it latches and holds.
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: false, alternateHeldLastTick: true);
+        Assert.Equal(zoomed, frame.TanX);
+
+        // Pressed again while latched: back to the default at once, silently.
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: true, alternateHeldLastTick: false);
+        Assert.Equal(Default, frame.TanX);
+        Assert.False(view.ZoomSteppingThisTick);
+
+        // Still held, still latched: nothing.
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: true, alternateHeldLastTick: true);
+        Assert.Equal(Default, frame.TanX);
+
+        // Let go frees the latch, and the next hold zooms in again.
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: false, alternateHeldLastTick: true);
+        frame = view.Tick(binoculars, false, false, false, frame.TanX, frame.ViewModelTanX, alternateHeld: true, alternateHeldLastTick: false);
+        Assert.Equal(Default * BinocularsView.ZoomInFactor, frame.TanX);
+        Assert.True(view.ZoomSteppingThisTick);
+    }
+
+    [Fact]
+    public void PuttingTheBinocularsAwaySnapsTheViewHome()
+    {
+        BinocularsView view = new();
+        WeaponType binoculars = Binoculars;
+        SightZoomFrame frame = view.Tick(binoculars, true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        frame = view.Tick(binoculars, false, true, false, frame.TanX, frame.ViewModelTanX);
+
+        frame = view.Tick(binoculars, true, false, false, frame.TanX, frame.ViewModelTanX);
+
         Assert.False(view.IsOpen);
-        Assert.False(view.OpenedThisTick);
         Assert.True(view.ClosedThisTick);
-        Assert.True(view.ZoomTargetChangedThisTick);
-        // Closing is silent too -- only an active zoom key drives the cue.
-        Assert.False(view.ZoomSteppingThisTick);
-
-        // Closing starts the authored return transition; it does not snap the world camera back in one
-        // tick. The loop cue must also stop on close — see bin_zoom_1 one-shot at mission teardown
-        // or death (Ghidra FUN_004B5860 strip + FUN_00470570 0x3c23d70a syringe vs firearm report).
-        Assert.Equal(0.1f * BinocularsView.ZoomOutFactor, closing.TanX, 5);
-        Assert.Equal(HumanView.DefaultViewModelTanX, closing.ViewModelTanX);
-
-        SightZoomFrame restored = closing;
-        for (int i = 0; i < 100 && view.HasOpticsState; i++)
-        {
-            restored = view.Tick(
-                binoculars,
-                togglePressed: false,
-                zoomInHeld: false,
-                zoomOutHeld: false,
-                tanX: restored.TanX,
-                viewModelTanX: restored.ViewModelTanX);
-        }
-
-        Assert.Equal(HumanView.DefaultTanX, restored.TanX, 5);
         Assert.False(view.HasOpticsState);
+        Assert.Equal(HumanView.DefaultTanX, frame.TanX);
+        Assert.False(view.ZoomSteppingThisTick);
     }
 
     [Fact]
     public void BinocularZoomInFractionTracksTheTangentBetweenDefaultAndMinimum()
     {
-        // The remastered detector's range scales with this. Binoculars author default 0.5, min 0.1.
+        // The remastered detector's range scales with this.
         BinocularsView view = new();
-        view.Tick(Binoculars, togglePressed: true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        WeaponType binoculars = Binoculars;
+        view.Tick(binoculars, togglePressed: true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
-        Assert.Equal(0f, view.ZoomInFraction(0.5f), 3);   // the authored default -- base range
-        Assert.Equal(1f, view.ZoomInFraction(0.1f), 3);   // the tightest zoom -- full range
-        Assert.Equal(0.5f, view.ZoomInFraction(0.3f), 3); // halfway in
-        Assert.Equal(0f, view.ZoomInFraction(1.0f), 3);   // zoomed out past the default -- clamped
-        Assert.Equal(0f, view.ZoomInFraction(2.0f), 3);   // beyond the widest -- clamped
+        Assert.Equal(0f, view.ZoomInFraction(Default), 3);
+        Assert.Equal(1f, view.ZoomInFraction(Narrowest), 3);
+        Assert.Equal(0.5f, view.ZoomInFraction((Default + Narrowest) / 2f), 3);
+        Assert.Equal(0f, view.ZoomInFraction(Widest), 3);
     }
 
     [Fact]
     public void BinocularZoomInFractionIsZeroWithoutABoundBinocular()
     {
         BinocularsView view = new();
-        Assert.Equal(0f, view.ZoomInFraction(0.3f), 3);
-    }
-
-    [Fact]
-    public void BinocularViewUsesTheRetailMultiplicativeZoomFactors()
-    {
-        BinocularsView view = new();
         WeaponType binoculars = Binoculars;
-
-        SightZoomFrame opened = view.Tick(
-            binoculars,
-            togglePressed: true,
-            zoomInHeld: false,
-            zoomOutHeld: false,
-            tanX: HumanView.DefaultTanX,
-            viewModelTanX: HumanView.DefaultViewModelTanX);
-        Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, precision: 5);
-        Assert.True(view.ZoomChangedThisTick);
-        // No progress or filter check — retail input is exact; r2 shows immediate multiply & clamp.
-
-        // Exactly one zoom factor per held tick at 0.95999998 / 1.04 (IGI.EXE 0x5399D0 constants).
-        SightZoomFrame belowThreshold = view.Tick(
-            binoculars,
-            togglePressed: false,
-            zoomInHeld: true,
-            zoomOutHeld: false,
-            tanX: 0.79f,
-            viewModelTanX: HumanView.DefaultViewModelTanX);
-        Assert.Equal(0.79f * BinocularsView.ZoomInFactor, belowThreshold.TanX, precision: 5);
-
-        SightZoomFrame wider = view.Tick(
-            binoculars,
-            togglePressed: false,
-            zoomInHeld: false,
-            zoomOutHeld: true,
-            tanX: belowThreshold.TanX,
-            viewModelTanX: HumanView.DefaultViewModelTanX);
-        Assert.Equal(belowThreshold.TanX * BinocularsView.ZoomOutFactor, wider.TanX, precision: 5);
-        Assert.True(wider.TanX > belowThreshold.TanX);
+        Assert.Equal(0f, view.ZoomInFraction(0.3f), 3);
     }
 
     [Fact]

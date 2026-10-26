@@ -20,13 +20,15 @@ namespace OpenIGI.Game.Igi2.World;
 /// One weight per mesh vertex: <c>1</c> where the sample carries this material and <c>0</c> where it
 /// carries another. This is the source alpha the pass blends with.
 /// </param>
+/// <param name="MappingStyle">The material's <c>eMappingStyle</c>: which two world axes its textures are laid along.</param>
 public readonly record struct Igi2TerrainPass(
     int MaterialId,
     float TextureScale,
     float DetailTextureScale,
     ReadOnlyMemory<int> Indices,
     int BaseTriangleCount,
-    ReadOnlyMemory<float> Weights)
+    ReadOnlyMemory<float> Weights,
+    int MappingStyle = 0)
 {
     /// <summary>Gets the triangles this pass draws as the ground's opaque base.</summary>
     /// <remarks>
@@ -305,7 +307,8 @@ public sealed class Igi2TerrainMesh
                 declared.DetailTextureScale,
                 indices.ToArray(),
                 baseTriangles,
-                weights));
+                weights,
+                declared.MappingStyle));
         }
 
         // And the terrain map's own pass, which no material guards. See GroundIndices.
@@ -344,6 +347,11 @@ public sealed class Igi2TerrainMesh
     /// <summary>Gets the texture coordinate a pass samples at one world position.</summary>
     /// <param name="scale">The material's texture scale, in metres per repeat.</param>
     /// <param name="position">The world position.</param>
+    /// <param name="mappingStyle">
+    /// The material's <c>eMappingStyle</c>, which picks one of three vertex shaders
+    /// (<c>TerrainRender_anVertexShader</c>): nought lays the textures along X and Y, one along X and Z, two along Y and Z -- the
+    /// last two for cliffs, which a flat projection stretches.
+    /// </param>
     /// <returns>The coordinate, in texture space.</returns>
     /// <remarks>
     /// <b>A world-space planar projection, and the same one for both texture stages.</b>
@@ -353,10 +361,15 @@ public sealed class Igi2TerrainMesh
     /// texturing does not follow the tile's own grid at all, and two adjacent tiles at different sample
     /// densities still line up.
     /// </remarks>
-    public static (float U, float V) TextureCoordinate(float scale, Vector3d position)
+    public static (float U, float V) TextureCoordinate(float scale, Vector3d position, int mappingStyle = 0)
     {
         double factor = 1.0 / (scale * WorldScene.UnitsPerMetre);
-        return ((float)(position.X * factor), (float)(position.Y * factor));
+        return mappingStyle switch
+        {
+            1 => ((float)(position.X * factor), (float)(position.Z * factor)),
+            2 => ((float)(position.Y * factor), (float)(position.Z * factor)),
+            _ => ((float)(position.X * factor), (float)(position.Y * factor)),
+        };
     }
 
     /// <inheritdoc/>

@@ -14,8 +14,10 @@ namespace OpenIGI.Game.World;
 internal sealed class CutsceneAnimationPackets(
     CutsceneContext context,
     CutsceneVehicleBodies bodies,
-    CutsceneGroundSupport ground)
+    CutsceneGroundSupport ground,
+    CutsceneVehicleParts parts)
 {
+    private readonly CutsceneVehicleParts _parts = parts;
     private readonly CutsceneContext _context = context;
     private readonly CutsceneVehicleBodies _bodies = bodies;
     private readonly CutsceneGroundSupport _ground = ground;
@@ -178,6 +180,20 @@ internal sealed class CutsceneAnimationPackets(
         int simulationOrder,
         AnimDataProgram program)
     {
+        // 0x431B70: the set-up packet makes the parts again; every later one runs them (0x4F4660) before the step, from
+        // where the last step left them.
+        if (target is not null)
+        {
+            if (program.Tick == 0)
+            {
+                _parts.Remake(target);
+            }
+            else
+            {
+                _parts.Run(target, transform);
+            }
+        }
+
         HelicopterPhysicsDefinition physics = transform.HelicopterPhysics
             ?? new HelicopterPhysicsDefinition(
                 3_000f,
@@ -453,6 +469,8 @@ internal sealed class CutsceneAnimationPackets(
         retailPlane.Receive(program.Channels);
         if (program.Tick == 0)
         {
+            // The set-up makes the parts again before it resets the controls, so they seat by the gear byte this packet left.
+            retailPlane.SeatParts();
             RetailPlaneSpawn.Reset(retailPlane, retailPlanePhysics, RetailPlaneSpawn.Placement(retailPlaneTask));
             CutsceneVehicleBodies.CopyRetailPose(transform, retailPlane);
             transform.PreviousPosition = transform.Position;

@@ -45,7 +45,7 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
 
     private readonly List<string> _sounds = [];
     private LevelExpression? _on;
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private bool _isFramed;
     private double _volume;
     private double _target;
@@ -161,7 +161,7 @@ public sealed partial class Igi2AmbientAreaTask : Igi2Task, IIgi2WorldMember
 
         if (!_isFramed)
         {
-            _frame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+            _frame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         }
 
         DrawDelay();

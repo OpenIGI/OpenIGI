@@ -66,7 +66,7 @@ internal sealed class CutsceneVehicleBodies(
     public IReadOnlyDictionary<WorldPlacement, int> CarWheelIndices => _carWheelIndices;
 
     /// <summary>Every live vehicle's sound inputs, as its update left them this tick.</summary>
-    /// <returns>One entry per active, undestroyed Car, Heli or Plane.</returns>
+    /// <returns>One entry per active, undestroyed Car, Heli, Plane or Train car.</returns>
     /// <remarks>
     /// A plane instantiates <c>su27</c> while its "Play sound" holds (<c>0x433690</c>), as a helicopter does
     /// <c>helicopter_1</c> (<c>0x4316D0</c>). Both answer their sounds' parameter query with a two-entry array
@@ -74,16 +74,28 @@ internal sealed class CutsceneVehicleBodies(
     /// physics step fills after each step (<c>0x433B50</c>, <c>0x431E30</c>): parameter 0 the thrust (<c>+1824</c>),
     /// parameter 1 whether it is above 0.01. <c>plane_01</c> reads parameter 1, so a jet sounds at its curves'
     /// "on" point whenever its engine is running.
+    /// <para>
+    /// Every car of a train sounds too (<c>0x42B700</c>): <c>train_loop_1</c> for a locomotive pulling wagons,
+    /// <c>train_loop_2</c> for anything else, unless its "Play Sound" expression reads 0 -- and no IGI1 level writes one.
+    /// Its two parameters are its locomotive's thrust five times over, held to 0.8..1, and whether that thrust is over a
+    /// thousandth.
+    /// </para>
     /// </remarks>
     public IEnumerable<VehicleSoundSource> VehicleSoundSources()
     {
         foreach ((GameTask task, CutsceneTransformState state) in _context.TaskTransforms)
         {
             if (task is not DeclaredTask vehicle
-                || vehicle.Type.Name is not ("Car" or "Heli" or "Plane")
+                || vehicle.Type.Name is not ("Car" or "Heli" or "Plane" or "Train")
                 || !ConditionalContainerGate.IsTaskActive(vehicle)
                 || _context.Destructibles?.IsDestroyed(vehicle) == true)
             {
+                continue;
+            }
+
+            if (vehicle.Type.Name == "Train")
+            {
+                yield return TrainSound(vehicle, state);
                 continue;
             }
 
@@ -113,6 +125,24 @@ internal sealed class CutsceneVehicleBodies(
                 speed,
                 on);
         }
+    }
+
+    private VehicleSoundSource TrainSound(DeclaredTask car, CutsceneTransformState state)
+    {
+        bool pullsWagons = car.Children.Any(child => child.Type.Name == "Train");
+        string gate = TextOrEmpty(car, "Play Sound");
+        bool on = string.IsNullOrWhiteSpace(gate) || _context.Expressions.EvaluateCondition(gate, emptyValue: true, car);
+        float thrust = (state.TrainRoot ?? state).Thrust;
+        double level = thrust * 5.0;
+        float pitch = (float)(level < 0.800000011920929 ? 0.800000011920929 : Math.Min(level, 1.0));
+        return new VehicleSoundSource(
+            car,
+            pullsWagons ? "train_loop_1" : "train_loop_2",
+            state.Position,
+            pitch,
+            thrust > 0.0010000000474974513f ? 1f : 0f,
+            0f,
+            on);
     }
 
     /// <summary>Gets every vehicle in the world at its current origin, as CRITERIA_VEHICLE counts them.</summary>
@@ -295,12 +325,18 @@ internal sealed class CutsceneVehicleBodies(
                     }
                 }
 
+                // The drawn wheel rolls by the radius its own physics type gives it (Wheel_ParseDef, 0x42FE80); the model's size
+                // stands in only where the scripts define none.
+                float rolling = _context.VehiclePhysics?.Types.TryFind(placements[i].Instance.Name, out PhysicsObjectType wheelType) == true
+                    && DrawnWheel.RadiusOf(wheelType) is > 0f and float typed
+                        ? typed
+                        : (float)radius;
                 wheels[i] = new CarWheel(
                     definition,
                     offset,
                     body?.FrictionX ?? 0.95f,
                     body?.FrictionY ?? 0.05f,
-                    (float)radius);
+                    rolling);
             }
 
             _carWheels[owner] = wheels;
@@ -430,13 +466,7 @@ internal sealed class CutsceneVehicleBodies(
         transform.CarMotion.Velocity = new Vector3d(body.Velocity[0], body.Velocity[1], body.Velocity[2]);
         if (transform.CarPhysics is { } physics)
         {
-            CarDynamics.AnimateWheels(
-                transform.CarMotion,
-                physics,
-                CarWheelsFor(target, physics),
-                transform.Velocity.Length,
-                body.Steering,
-                body.Handbrake);
+            CarDynamics.AnimateWheels(transform.CarMotion, body, CarWheelsFor(target, physics));
         }
 
         transform.IsDynamic = true;

@@ -503,6 +503,17 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
     HemisphereBasis basis = BasisAround(normal);
     float3 viewNormal = ToView(normal);
 
+#if OPENIGI_RAY_QUERY
+    // Where the traced rays leave from: the surface point, drawn back towards the eye that saw it. Off the
+    // surface along its normal is not enough at an inside edge -- a pixel on one wall a few millimetres from
+    // the corner sits a few millimetres from the other wall, nearer than a trace can tell apart at this
+    // world's scale, and its rays went through that wall and lit the corner from beyond it. The eye saw the
+    // point across open space, so a step towards the eye is a step away from everything at the edge.
+    float3 traceFrom = world + (normalize(uCameraToCache - world) * kTraceViewPull);
+#else
+    float3 traceFrom = world;
+#endif
+
     float3 irradiance = float3(0.0, 0.0, 0.0);
 
     // How many rays this probe's estimate stands on.
@@ -557,7 +568,7 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
         if (!resolved)
         {
             float3 hit;
-            bool fieldHit = VisibilityAt(world, normal, direction, hit) <= 0.5;
+            bool fieldHit = VisibilityAt(traceFrom, normal, direction, hit) <= 0.5;
 
 #if !OPENIGI_RAY_QUERY
             // The terrain, which the field does not hold: a ray heading down that meets it before anything
@@ -605,6 +616,24 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
                 // wall, the underside of the desk -- which is the contact darkening the gather is for.
 #if OPENIGI_RAY_QUERY
                 float near = 1.0;
+
+                // Read through the cards facing the face the ray struck, as a reflection reads them. The lookup
+                // below knows only where the hit is and which way the ray went, and a hit a hand's breadth into a
+                // corner stands inside the card of the wall the ray LEFT as well as the one it struck: the first
+                // to agree within its tolerance won, often the wall's own, and the wall lit itself -- a bright
+                // seam down every corner. The face says which surface it was; the record walk that gives it is
+                // the one the cut-out test already makes.
+                float3 tracedFiltered;
+                if (dot(gTraceHitNormal, gTraceHitNormal) > 0.5
+                    && SampleCardsWithin(hit, gTraceHitNormal, kCardSkin, tracedFiltered))
+                {
+                    radiance = tracedFiltered * uBounceScale;
+                    weight = near;
+                    source = 2;
+                    surfaceSum += CapRayIntensity(radiance) * near;
+                    surfaceCount += near;
+                }
+                else
 #else
                 // And by its height off the surface's own plane, not only its distance: a ray leaving a
                 // wall at a grazing angle runs along it and the march finds the same wall again metres on,

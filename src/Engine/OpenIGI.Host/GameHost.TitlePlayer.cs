@@ -1,4 +1,5 @@
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -123,6 +124,10 @@ public sealed partial class GameHost
         _mission.ForgetPlayer();
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
+        if (player.Visibility is { } visibility)
+        {
+            _world?.Visibility = visibility;
+        }
         if (player.Variants is { } variants)
         {
             _world?.Variants = variants;
@@ -425,6 +430,9 @@ public sealed partial class GameHost
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
+            // The original's levels of detail, on its own look only, as the world's models give theirs up.
+            models.Lod = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null;
+            models.LodBiasHeld = TitlePlayer?.IsCutscenePlaying == true;
             models.DrawWorld(owned.WorldModels, eye, projection, _titlePresentationBlend);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);
         }
@@ -436,6 +444,12 @@ public sealed partial class GameHost
     /// <param name="blend">How far the frame is between the last two ticks.</param>
     private void DrawTitleParticles(in Camera3D eye, in Matrix4f projection, float blend)
     {
+        // Explosion0's FireBalls first, so its smoke lies over its fire.
+        if (_titleFeatures?.WorldModels?.Explosions is { } explosions && TitleWorldModelPresenter is { } burning)
+        {
+            burning.DrawExplosions(explosions, eye, projection, blend);
+        }
+
         if (_titleFeatures?.WorldModels?.Particles is { } particles && TitleWorldModelPresenter is { } models)
         {
             models.DrawParticles(particles, eye, projection, blend);

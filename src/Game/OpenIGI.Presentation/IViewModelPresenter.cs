@@ -48,6 +48,12 @@ public interface IViewModelPresenter : IDisposable
     /// <summary>Marks the pose stale, so the next draw rebuilds it.</summary>
     void Invalidate();
 
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights a model with no bake by, the first-person
+    /// layer included (<c>0x49F700</c> and <c>0x49DF60</c> select <c>0x49D480</c>); or none to draw it at its texture.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Draws the arms.</summary>
     /// <param name="view">The player's view state, which the pose follows.</param>
     /// <param name="camera">Where the arms are seen from.</param>
@@ -93,6 +99,20 @@ public interface ITitleViewModelPresenter : IDisposable
 /// </remarks>
 public interface ITitleWorldModelPresenter
 {
+    /// <summary>Gets or sets how a body gives up detail with distance, or <see langword="null"/> to draw each whole.</summary>
+    Rendering.ModelLodPolicy? Lod
+    {
+        get => null;
+        set { }
+    }
+
+    /// <summary>Gets or sets a value indicating whether a cutscene holds the model-detail bias off (<c>CutScene_isRunning</c>).</summary>
+    bool LodBiasHeld
+    {
+        get => false;
+        set { }
+    }
+
     /// <summary>
     /// Highlights those of the models drawn last that stand for people the binoculars marked, as the level's own marked soldiers
     /// are highlighted (<see cref="Rendering.BinocularMarking"/>); a presenter that draws no people draws nothing.
@@ -131,6 +151,13 @@ public interface ITitleWorldModelPresenter
     /// <param name="blend">How far the frame is between the last two ticks.</param>
     void DrawParticles(OpenIGI.Game.World.Particles.Particle2DModule particles, in Camera3D camera, in Matrix4f projection, float blend) { }
 
+    /// <summary>Draws the level's explosions' FireBalls over the lit scene, with the title's own model of one.</summary>
+    /// <param name="explosions">The level's explosions.</param>
+    /// <param name="camera">The world camera.</param>
+    /// <param name="projection">The world projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    void DrawExplosions(OpenIGI.Game.World.IExplosionScene explosions, in Camera3D camera, in Matrix4f projection, float blend) { }
+
     /// <summary>
     /// Draws the muzzle flashes of the models the last <see cref="DrawWorld"/> drew, as light over the lit scene: drawn among
     /// the solid models they land in the G-buffer, where most of each is cut away and the rest is shaded as a wall.
@@ -154,6 +181,12 @@ public interface IHeldWeaponPresenter : IDisposable
 
     /// <summary>Gets or sets what each of the weapon's textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
+
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights a model with no bake by, the first-person
+    /// layer included (<c>0x49F700</c> and <c>0x49DF60</c> select <c>0x49D480</c>); or none to draw it at its texture.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
 
     /// <summary>Gets where the weapon's muzzle is, in metres in the weapon's own frame, or null when it has no gun flame.</summary>
     /// <remarks>The gun-flame part's place in the magic-object tree: where the original draws the flame.</remarks>
@@ -193,6 +226,12 @@ public interface IHeldWeaponPresenter : IDisposable
 /// </remarks>
 public interface IGrenadePresenter : IDisposable
 {
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights these models by, as it lights any rigid
+    /// model with no lightmap (<c>0x49DF60</c> selects <c>0x49D480</c>); or none to draw them at their textures.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Loads the grenade models a mission uses.</summary>
     /// <param name="mission">The mission whose packs the models are read from.</param>
     void Load(LoadedMission mission);
@@ -208,6 +247,12 @@ public interface IGrenadePresenter : IDisposable
 /// <summary>Draws the rockets and grenade-launcher rounds a level has in flight.</summary>
 public interface IMissilePresenter : IDisposable
 {
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights these models by, as it lights any rigid
+    /// model with no lightmap (<c>0x49DF60</c> selects <c>0x49D480</c>); or none to draw them at their textures.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Loads the projectile models a mission uses.</summary>
     /// <param name="mission">The mission whose packs the models are read from.</param>
     void Load(LoadedMission mission);
@@ -230,6 +275,12 @@ public interface IMissilePresenter : IDisposable
 /// <summary>Draws the weapons lying in the world for the player to pick up.</summary>
 public interface IGunPickupPresenter : IDisposable
 {
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights these models by, as it lights any rigid
+    /// model with no lightmap (<c>0x49DF60</c> selects <c>0x49D480</c>); or none to draw them at their textures.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Gets or sets what each of the weapons' textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
 

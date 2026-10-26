@@ -183,7 +183,7 @@ public sealed class Igi2CarDoor : IIgi2WeaponHitTarget
         {
             0 => [1f, 0f, 0f, 0f, cos, -sin, 0f, sin, cos],
             1 => [cos, 0f, sin, 0f, 1f, 0f, -sin, 0f, cos],
-            2 => Igi2Pose.Rotation(0f, 0f, Angle),
+            2 => EngineEuler.Rotation(0f, 0f, Angle),
             _ => [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f],
         };
     }

@@ -65,6 +65,16 @@ public interface IGraphicsDevice :
     /// </remarks>
     void SetFog(in SceneFog fog);
 
+    /// <summary>
+    /// Sets the view depths, in metres, of the sphere of the object the following draws belong to, which fogs it along the straight
+    /// line through the exponential's values at the two (<c>Fog_SetRange</c>); equal depths return to the exponential.
+    /// </summary>
+    /// <param name="nearDepth">The sphere's near depth.</param>
+    /// <param name="farDepth">The sphere's far depth.</param>
+    void SetObjectFogRange(float nearDepth, float farDepth)
+    {
+    }
+
     /// <summary>Gets the fog the last <see cref="SetFog"/> set.</summary>
     /// <remarks>So that a renderer which must draw unfogged — the sky — can put back what it found.</remarks>
     SceneFog Fog { get; }

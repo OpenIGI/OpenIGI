@@ -30,14 +30,17 @@ public sealed class Igi1WorldBuilder : ITitleWorldBuilder
         WorldScene scene = WorldScene.Build(
             request.Mission, request.LevelRoot, request.Magic, request.Logger, request.VehiclePhysics, quirks.DestroyedModelArchiveName);
         LoadedMission mission = request.Mission;
-        return new WorldBuildResult(
-            scene,
-            0,
-            0,
-            Solids: ObjectCollisionIndex.Build(
-                scene.Placements,
-                AssetFormatProfile.Igi1.Collision,
-                name => mission.TryGetModel(name, out MefModel? model) ? model : null));
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(
+            scene.Placements,
+            AssetFormatProfile.Igi1.Collision,
+            name => mission.TryGetModel(name, out MefModel? model) ? model : null);
+
+        // The sector cull reads the buildings' attach trees, which only the magic table expands; a walk without one placed
+        // no rooms to cull.
+        Igi1SectorVisibility? visibility = request.Magic is { } magic
+            ? Igi1SectorVisibility.Build(scene, mission.TryGetModel, magic, solids)
+            : null;
+        return new WorldBuildResult(scene, 0, 0, Solids: solids, Visibility: visibility);
     }
 
     /// <inheritdoc/>

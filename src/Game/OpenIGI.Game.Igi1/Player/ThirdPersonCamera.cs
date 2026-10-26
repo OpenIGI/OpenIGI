@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Player;
 
@@ -181,7 +182,7 @@ public sealed class ThirdPersonCamera
         float seconds,
         bool wanted,
         in Camera3D firstPerson,
-        DeathCameraVantage.Blocked? walls = null)
+        WorldWalls.Blocked? walls = null)
     {
         double step = BlendSeconds > 0.0 ? Math.Clamp(seconds, 0f, 0.1f) / BlendSeconds : 1.0;
         _blend = wanted

@@ -23,6 +23,7 @@ namespace OpenIGI.Presentation;
 /// instance that uses the mesh, and only the packs know which instance that is.
 /// </param>
 /// <param name="Logger">Where load diagnostics go.</param>
+/// <param name="Services">The session's services, which hold the title's graphics options when it keeps them.</param>
 /// <remarks>
 /// <para>
 /// <b>The model lookup is the whole reason this is a separate request.</b> A ground reads its own height
@@ -44,12 +45,15 @@ public readonly record struct ScenePresentationRequest(
     ResourceRegistry Resources,
     Func<string, MefModel?> Models,
     Func<string, int, string?> MaterialTextures,
-    IOpenIgiLogger Logger);
+    IOpenIgiLogger Logger,
+    Engine.Titles.IServiceCatalog? Services = null);
 
 /// <summary>What one frame needs in order to draw a title's foliage.</summary>
 /// <param name="Camera">Where the trees are seen from.</param>
 /// <param name="HorizontalHalfTangent">The tangent of half the horizontal field of view.</param>
 /// <param name="VerticalHalfTangent">The tangent of half the vertical field of view.</param>
+/// <param name="RetailLook">Whether the trees are drawn with the original's states, the original's look's way.</param>
+/// <param name="TowardsSun">The world direction towards the level's fixed-function sun, or zero for none.</param>
 /// <remarks>
 /// Half-tangents rather than an angle and an aspect ratio, because that is the form the culling wants:
 /// the planes a forest tests its stands against are built straight out of them, and converting an angle
@@ -58,7 +62,9 @@ public readonly record struct ScenePresentationRequest(
 public readonly record struct ForestFrame(
     Camera3D Camera,
     float HorizontalHalfTangent,
-    float VerticalHalfTangent);
+    float VerticalHalfTangent,
+    bool RetailLook = false,
+    Vector3f TowardsSun = default);
 
 /// <summary>What one frame needs in order to draw a title's water.</summary>
 /// <param name="Camera">Where the water is seen from.</param>
@@ -102,4 +108,21 @@ public interface IWaterPresenter : IDisposable
     /// <summary>Draws the water.</summary>
     /// <param name="frame">The frame to draw for.</param>
     void Draw(in WaterFrame frame);
+}
+
+/// <summary>What one frame needs in order to draw a level's weather.</summary>
+/// <param name="Camera">Where the weather is seen from.</param>
+/// <param name="Projection">The view-to-clip transform.</param>
+/// <param name="ViewportHeight">The picture's height in pixels.</param>
+/// <param name="Ground">What the weather stops on: the terrain and what stands on it.</param>
+/// <param name="Tick">The game's tick, which the weather runs on.</param>
+public readonly record struct WeatherFrame(Camera3D Camera, Matrix4f Projection, int ViewportHeight, Game.World.WorldRayCast? Ground, long Tick);
+
+/// <summary>A level's weather as its title's original draws it, which the original's look draws in place of the remastered weather.</summary>
+/// <remarks>A title or level without weather returns no presenter.</remarks>
+public interface IWeatherPresenter : IDisposable
+{
+    /// <summary>Runs the weather up to the frame's tick and draws it.</summary>
+    /// <param name="frame">The frame.</param>
+    void Draw(in WeatherFrame frame);
 }

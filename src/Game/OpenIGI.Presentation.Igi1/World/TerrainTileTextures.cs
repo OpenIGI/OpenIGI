@@ -74,7 +74,11 @@ internal sealed class TerrainTileTextures
                         tile.Height,
                         tile.MipLevels,
                         TextureFilter.Linear,
-                        TextureAddressMode.Repeat),
+                        // The original's look clamps a tile, as TerrainMesh_DrawD3D (0x512C30) does: a chunk's coordinates run
+                        // within the tile, and its edges filter against their own texels. Taken as the level loads.
+                        OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla
+                            ? TextureAddressMode.Clamp
+                            : TextureAddressMode.Repeat),
                     tile.Pixels);
 
                 // A caller that has already done the arithmetic off this thread hands the result in; the

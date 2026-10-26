@@ -71,12 +71,17 @@ public sealed class DestructibleObjectRegistry
     /// <param name="random">
     /// The engine's global stream: each pane's break threshold and each car explosion point's delay.
     /// </param>
+    /// <param name="made">
+    /// Told of every magic object as it is made, in the level's order, so the others that draw from the stream as they
+    /// are made -- a helicopter's rocket pods -- draw in their place among the panes.
+    /// </param>
     public static DestructibleObjectRegistry Build(
         GameTask root,
         IEnumerable<WorldPlacement> placements,
         ScriptVarRegistry variables,
         VehiclePhysicsRegistry? vehiclePhysics = null,
-        IgiRandom? random = null)
+        IgiRandom? random = null,
+        Action<WorldPlacement>? made = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(placements);
@@ -178,8 +183,13 @@ public sealed class DestructibleObjectRegistry
 
         foreach (WorldPlacement placement in resolved)
         {
-            if (placement.MagicTaskTypeName.Length == 0
-                || !TryMagicKind(placement.MagicTaskTypeName, out DestructibleObjectKind kind))
+            if (placement.MagicTaskTypeName.Length == 0)
+            {
+                continue;
+            }
+
+            made?.Invoke(placement);
+            if (!TryMagicKind(placement.MagicTaskTypeName, out DestructibleObjectKind kind))
             {
                 continue;
             }

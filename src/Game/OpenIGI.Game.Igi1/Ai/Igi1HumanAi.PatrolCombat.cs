@@ -55,7 +55,7 @@ public sealed partial class Igi1HumanAi
                 && (current.Criteria & GraphNodeCriteria.Stair) != 0;
             AiEvasiveAction evasion = _patrol!.ChooseEvasion(
                 tick,
-                Vector3d.Distance(Position, enemy),
+                CombatDistance(enemy),
                 AvailableRollSpace(),
                 underFire,
                 onStair);
@@ -309,7 +309,7 @@ public sealed partial class Igi1HumanAi
     /// <returns>What the chooser chose.</returns>
     private AiPatrolAction ChoosePatrolAction(Vector3d enemy, AiCombatWeaponState weapon, out bool visible)
     {
-        double distance = Vector3d.Distance(Position, enemy);
+        double distance = CombatDistance(enemy);
         visible = TargetSlot.IsVisible;
 
         // Only the branch that needs a search runs one, as the original's call sites do: a search CLAIMS
@@ -404,15 +404,10 @@ public sealed partial class Igi1HumanAi
                     return;
                 }
 
-                // 0x48DBB0 only raises channel 9; it does not turn the body.
+                // 0x48DBB0 only raises channel 9; it does not turn the body. The blow is the body's, at the clip's
+                // hit frame (StrikeCloseCombat).
                 _patrolOneShotChild = action;
                 WriteChannel(AiCombatChannel.CloseCombat, 1f);
-
-                // The strike resolves with the trigger: the damage model (probability-gated factor)
-                // is attested retail data, while the exact native strike tick is not — see
-                // AiPatrolCombat.RollMeleeStrike. Range was already established by the chooser.
-                float strike = _patrol!.RollMeleeStrike();
-                _pendingMeleeStrike = SoldierClass.LandsCloseCombatBlow ? strike : 0f;
                 return;
 
             case AiPatrolAction.ThrowGrenade:
@@ -595,7 +590,7 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        if (IsFacing(AimPointOf(enemy, TargetCrouching), FollowFireConeRadians))
+        if (FacesForFollowFire(AimPointOf(enemy, TargetCrouching)))
         {
             if ((Target?.Count(AiAimMode.Aiming) ?? 0) >= AiCombatTarget.MaximumAimers
                 && Target?.ModeOf(this) != AiAimMode.Aiming)
@@ -634,12 +629,13 @@ public sealed partial class Igi1HumanAi
     /// <param name="weapon">The held weapon's state this tick.</param>
     private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon)
     {
+        Vector3d aim = TrueAimPoint();
         AiCombatSense sense = new(
             HasDetectionSlot: TargetSlot.IsRegistered,
             InCone: TargetSlot.IsInCone,
             Visible: TargetSlot.IsVisible,
-            TargetPosition: TrueAimPoint(),
-            DistanceToTargetInUnits: Vector3d.Distance(Position, enemy),
+            TargetPosition: aim,
+            DistanceToTargetInUnits: Vector3d.Distance(Position, aim),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
             Category: weapon.Category,
@@ -647,7 +643,17 @@ public sealed partial class Igi1HumanAi
             BurstSize: weapon.BurstSize,
             AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0);
 
-        AiCombatCommand command = _combat!.Update(sense, standing: true, Vision.Primary.Length);
+        // The reload the arm installs finishes in the arm's own pose, and the prone one leaves the input/direct
+        // alternation alone (0x48DB10 / 0x48DD10 / 0x48DE00).
+        AiStanceChannel pose = _patrolProne ? AiStanceChannel.Prone
+            : _patrolKneeling ? AiStanceChannel.Kneeling
+            : AiStanceChannel.Standing;
+        AiCombatCommand command = _combat!.Update(
+            sense,
+            standing: true,
+            Vision.Primary.Length,
+            reloadPose: AiCombatChannels.IsInStance(_type, pose, CombatState),
+            togglesReload: !_patrolProne);
         Combat = command;
 
         // The shared fire sub-action ending ends the whole engagement, exactly as it does in the guard
@@ -685,8 +691,32 @@ public sealed partial class Igi1HumanAi
         }
     }
 
-    /// <summary>The cone a following patrol will fire through — 16.3°, i.e. <c>acos 0.96</c>.</summary>
-    private const float FollowFireConeRadians = 0.2837941f;
+    /// <summary>The cosine a following patrol fires within — <c>0x48C860</c>'s <c>0.96</c>, a 16.3° cone.</summary>
+    private const double FollowFireCosine = 0.96;
+
+    /// <summary>Whether the record point lies inside the running fire cone — <c>0x48C860</c>.</summary>
+    /// <param name="recordPoint">The shared record's point: the target's origin raised (<c>0x451380</c>).</param>
+    /// <remarks>
+    /// The test is three-dimensional: the view's forward (the run levels the view, <c>0x451540</c>) against the
+    /// direction from the AI's view position (its feet) to the record point, which stands about a metre and a half
+    /// over them. So the cone narrows with the height difference, and a target a few metres off is above it: a
+    /// running patrol holds its fire until it is clear of the target, and only fires at range.
+    /// </remarks>
+    private bool FacesForFollowFire(Vector3d recordPoint)
+    {
+        double dx = recordPoint.X - Position.X;
+        double dy = recordPoint.Y - Position.Y;
+        double dz = recordPoint.Z - Position.Z;
+        double length = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        if (length == 0.0)
+        {
+            return false;
+        }
+
+        double forwardX = -Math.Sin(Facing);
+        double forwardY = Math.Cos(Facing);
+        return ((forwardX * dx) + (forwardY * dy)) / length > FollowFireCosine;
+    }
 
     /// <summary>Sets a destination, but only when it is a new one.</summary>
     /// <param name="node">Where to head.</param>
@@ -756,6 +786,16 @@ public sealed partial class Igi1HumanAi
 
     // 0x451380's point for a node search: the target's origin raised half a metre (0x4530A0, 0x48B050).
     private Vector3d? LiveTargetNodePoint() => TargetHuman?.Candidate.NodeQueryPoint;
+
+    /// <summary>The combat action's distance to its target -- <c>0x48A920</c>'s <c>+16</c> of the action block.</summary>
+    /// <param name="recordFeet">The shared record's position, as the port keeps it: the target's feet.</param>
+    /// <remarks>
+    /// Measured from the soldier's own origin (Human+32) to the record's point, which <c>0x451380</c> stored as the
+    /// target's origin raised half a metre (a quarter crouched). Close combat, the lie-down range, the walk toward the
+    /// target and the grenade window all compare against it.
+    /// </remarks>
+    private double CombatDistance(Vector3d recordFeet) =>
+        Vector3d.Distance(OriginPosition, AimPointOf(recordFeet, TargetCrouching));
 
     /// <summary>0x48A920's tracking of the node nearest the target -- <c>HumanAI+15852</c> and <c>+15856</c>.</summary>
     /// <param name="enemy">Where the target is.</param>

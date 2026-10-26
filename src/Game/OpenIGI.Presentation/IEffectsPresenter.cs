@@ -60,6 +60,14 @@ public interface ICameraStatusLightPresenter : IDisposable
         in Matrix4f projection,
         float tickFraction = 1f,
         bool smooth = false);
+
+    /// <summary>Draws glows over the world with the same sprite: an alarm light's flare.</summary>
+    /// <param name="glows">The glows.</param>
+    /// <param name="eye">Where they are seen from.</param>
+    /// <param name="projection">The projection to draw under.</param>
+    void DrawGlows(IReadOnlyList<WorldGlow> glows, in Camera3D eye, in Matrix4f projection)
+    {
+    }
 }
 
 /// <summary>What a title needs in order to build the small world-effect presenters.</summary>

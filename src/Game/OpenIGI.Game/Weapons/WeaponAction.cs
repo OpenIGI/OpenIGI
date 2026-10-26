@@ -48,4 +48,13 @@ public enum WeaponAction
     /// FireAnimation1 once, then keeps FireAnimation2 looping while Fire remains held.
     /// </remarks>
     MedipackLoop = 11,
+
+    /// <summary>The SPAS-12's reload opening: clip 61, eased in (<c>0x472AE0</c>, stage 0).</summary>
+    ShellReloadOpen = 12,
+
+    /// <summary>One shell going into the SPAS-12's tube: clip 62, replayed for every shell.</summary>
+    ShellReloadInsert = 13,
+
+    /// <summary>The SPAS-12's reload closing: clip 63.</summary>
+    ShellReloadClose = 14,
 }

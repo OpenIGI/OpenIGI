@@ -78,7 +78,7 @@ public sealed class MeleeStrikeTests
     }
 
     [Fact]
-    public void AiSoldierCloseCombatConsumesDamageOnceAndResets()
+    public void AiSoldierCloseCombatBlowLandsWhenTheDrawIsWithinTheChance()
     {
         Vector3d position = new(1000, 2000, 3000);
         Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre / 4), position.Z);
@@ -96,15 +96,9 @@ public sealed class MeleeStrikeTests
 
         Assert.Equal(AiPatrolAction.CloseCombat, soldier.PatrolAction);
 
-        // First consume succeeds with full damage.
-        bool hasStrike = soldier.ConsumeMeleeStrike(out float strikeDamage);
-        Assert.True(hasStrike);
+        // 0x45B530 draws at the clip's hit frame, not when close combat is chosen.
+        Assert.True(soldier.StrikeCloseCombat(out float strikeDamage));
         Assert.Equal(damage, strikeDamage);
-
-        // Second consume on the same strike is empty (one-shot).
-        bool secondStrike = soldier.ConsumeMeleeStrike(out float secondDamage);
-        Assert.False(secondStrike);
-        Assert.Equal(0f, secondDamage);
     }
 
     [Fact]
@@ -126,9 +120,8 @@ public sealed class MeleeStrikeTests
 
         Assert.Equal(AiPatrolAction.CloseCombat, soldier.PatrolAction);
 
-        // Consume returns false because probability roll yielded 0 damage.
-        bool hasStrike = soldier.ConsumeMeleeStrike(out float strikeDamage);
-        Assert.False(hasStrike);
+        // Any draw is over a zero chance: the blow misses.
+        Assert.False(soldier.StrikeCloseCombat(out float strikeDamage));
         Assert.Equal(0f, strikeDamage);
     }
 
@@ -157,6 +150,7 @@ public sealed class MeleeStrikeTests
                 AimPrecision = 0.6f,
             }),
             () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+        soldier.SetDefaultTarget(new AiCombatTarget("HumanPlayer"));
         return soldier;
     }
 
@@ -194,5 +188,17 @@ public sealed class MeleeStrikeTests
         }
 
         Assert.Equal(8, eventFiredTick);
+    }
+
+    /// <summary>A soldier's blow on another soldier lands on its back from behind, on its front otherwise (<c>0x45A5E0</c>).</summary>
+    [Fact]
+    public void ASoldiersBlowOnAnotherLandsFrontOrBackByWhereItCameFrom()
+    {
+        // Facing zero looks along +Y.
+        Matrix3f facing = Matrix3f.FromEngineEulerAngles(0f, 0f, 0f);
+        Vector3d struck = new(0.0, 0.0, 0.0);
+
+        Assert.Equal(HumanDamage.RearZone, SoldierDamage.PunchZone(facing, struck, new Vector3d(0.0, -4096.0, 0.0)));
+        Assert.Equal(HumanDamage.FrontZone, SoldierDamage.PunchZone(facing, struck, new Vector3d(0.0, 4096.0, 0.0)));
     }
 }

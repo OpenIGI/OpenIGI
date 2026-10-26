@@ -149,7 +149,7 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
         in Matrix4f projection,
         float blend)
     {
-        if (effects.Fragments.Count == 0 || _fragmentModels.Count == 0)
+        if (effects.Explosions.FragmentGroups.Count == 0 || _fragmentModels.Count == 0)
         {
             return;
         }
@@ -160,9 +160,10 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
             _device.SetCullMode(CullMode.None);
             _device.SetDepthState(DepthState.TestAndWrite);
 
-            foreach (ImpactFragment fragment in effects.Fragments)
+            // Every Explosion0's pieces, a round's chips and a blast's alike, each group in its own model (0x47F0D0).
+            foreach (ExplosionFragments group in effects.Explosions.FragmentGroups)
             {
-                if (!_fragmentModels.TryGetValue(fragment.Model, out FragmentModel? model))
+                if (group.Flying.Count == 0 || !_fragmentModels.TryGetValue(group.Model, out FragmentModel? model))
                 {
                     continue;
                 }
@@ -172,34 +173,41 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
                     model.Mesh = _device.CreateMesh(model.Geometry.Vertices, model.Geometry.Indices);
                 }
 
-                Vector3d position = Vector3d.Lerp(
-                    fragment.PreviousPosition, fragment.Position, blend);
-                Matrix4f rigid = camera.CreateModelView(
-                    position / WorldScene.UnitsPerMetre,
-                    fragment.Orientation);
-                Matrix4f modelView = ScaleModelView(rigid, GunShotImpactEffects.FragmentModelScale);
-
-                foreach (MeshSubset subset in model.Geometry.Subsets)
+                foreach (ExplosionFragment fragment in group.Flying)
                 {
-                    if (subset.IndexCount == 0)
-                    {
-                        continue;
-                    }
-
-                    _device.DrawMesh(
-                        model.Mesh,
-                        subset.IndexOffset,
-                        subset.IndexCount,
-                        modelView,
-                        model.Texture,
-                        TextureHandle.None,
-                        BlendMode.Opaque);
+                    DrawFragment(model, fragment, camera, blend);
                 }
             }
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
         {
             _ = ex;
+        }
+    }
+
+    private void DrawFragment(FragmentModel model, ExplosionFragment fragment, in Camera3D camera, float blend)
+    {
+        Vector3d position = Vector3d.Lerp(fragment.PreviousPosition, fragment.Position, blend);
+        float[] o = fragment.Orientation;
+        Matrix4f rigid = camera.CreateModelView(
+            position / WorldScene.UnitsPerMetre,
+            Matrix3f.FromRows(new Vector3f(o[0], o[1], o[2]), new Vector3f(o[3], o[4], o[5]), new Vector3f(o[6], o[7], o[8])));
+        Matrix4f modelView = rigid.WithAxesScaled(fragment.Scale);
+        foreach (MeshSubset subset in model.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            _device.DrawMesh(
+                model.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                model.Texture,
+                TextureHandle.None,
+                BlendMode.Opaque);
         }
     }
 
@@ -226,12 +234,6 @@ public sealed class RetailImpactRenderer : IImpactEffectPresenter, IDisposable
 
         _fragmentModels.Clear();
     }
-
-    private static Matrix4f ScaleModelView(in Matrix4f rigid, float scale) => new(
-        rigid.M11 * scale, rigid.M12 * scale, rigid.M13 * scale, rigid.M14,
-        rigid.M21 * scale, rigid.M22 * scale, rigid.M23 * scale, rigid.M24,
-        rigid.M31 * scale, rigid.M32 * scale, rigid.M33 * scale, rigid.M34,
-        rigid.M41, rigid.M42, rigid.M43, rigid.M44);
 
     private static Bgra32 Tint(float r, float g, float b, float a) => new(
         (byte)Math.Clamp(r * 255f, 0f, 255f),

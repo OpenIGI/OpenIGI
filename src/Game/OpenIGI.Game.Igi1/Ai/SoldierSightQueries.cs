@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// </remarks>
 /// <param name="context">The soldiers and their brains.</param>
 /// <param name="scriptSound">Plays a definition a brain's script asks for, at a position.</param>
-internal sealed class SoldierSightQueries(SoldierContext context, Action<string, Vector3d, bool> scriptSound)
+internal sealed class SoldierSightQueries(SoldierContext context, Action<string, Vector3d, Func<Vector3d>?> scriptSound)
 {
     /// <summary>The soldier model's <c>MESH+0x78</c> bound, <c>Human+160</c>, when the model's own is not to hand.</summary>
     public const float DefaultHumanBoundMetres = 0.94f;
@@ -54,7 +54,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
 
     private readonly SoldierContext _context = context;
 
-    private readonly Action<string, Vector3d, bool> _scriptSound = scriptSound;
+    private readonly Action<string, Vector3d, Func<Vector3d>?> _scriptSound = scriptSound;
 
     // One combat-target record per opposing soldier, created lazily as each is first engaged. The
     // friendly-vs-guard gate fight needs a real enemy record to aim at and fight, not just the player:
@@ -68,7 +68,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>Whether the eye can see a point along a plain cast, any contact blocking.</summary>
     /// <remarks>
     /// The binocular overlay's rule: the retail detector culls by sector/portal visibility, which
-    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask)"/>.
+    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask, Func{GameTask, bool})"/>.
     /// </remarks>
     public static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to)
     {
@@ -109,13 +109,18 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// </para>
     /// </remarks>
     /// <param name="ignoredOwner">The viewer itself, when it has a body the ray would otherwise meet -- a vehicle.</param>
+    /// <param name="standsAside">
+    /// Whether an object the ray meets answers the detection ray that it is not in the way: a stationary gun does, for
+    /// a ray from or to the human on it (<c>0x4752B0</c>).
+    /// </param>
     /// <returns><see langword="true"/> when the line is clear.</returns>
     public static bool HasLineOfSight(
         WorldTraceCast trace,
         Vector3d from,
         Vector3d to,
         double objectTolerance,
-        GameTask? ignoredOwner = null)
+        GameTask? ignoredOwner = null,
+        Func<GameTask, bool>? standsAside = null)
     {
         ArgumentNullException.ThrowIfNull(trace);
 
@@ -133,7 +138,8 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
                 return true;
             }
 
-            bool transparent = GameMaterial.IsSightTransparent(hit.Material);
+            bool transparent = GameMaterial.IsSightTransparent(hit.Material)
+                || (standsAside is not null && hit.Owner is { } owner && standsAside(owner));
             if (!transparent || step == SightSkipLimit)
             {
                 // The traversal budget is a safety bound, not evidence that the remainder is clear: past
@@ -228,7 +234,7 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <param name="view">Its body.</param>
     public void BindViewTracking(Igi1HumanAi brain, SoldierView view)
     {
-        brain.SetScriptSound((name, attached) => _scriptSound(name, view.Position, attached));
+        brain.SetScriptSound((name, attached) => _scriptSound(name, view.Position, attached ? () => view.Position : null));
 
         // A new human's palette is built once, at its creation, from its authored heading (0x463220 sets the facing
         // and rebuilds it through 0x4D38C0): the eye of a soldier nobody has drawn or looked past is the rest eye
@@ -437,6 +443,12 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         {
             Vector3f hand = toWorld.Transform(pose.Positions[HumanAttachPoints.ThirdPersonWeapon]);
             member.GunOffset = new Vector3d(hand.X, hand.Y, hand.Z);
+        }
+
+        if (HumanAttachPoints.AiThrow < pose.BoneCount)
+        {
+            Vector3f thrown = toWorld.Transform(pose.Positions[HumanAttachPoints.AiThrow]);
+            member.ThrowOffset = new Vector3d(thrown.X, thrown.Y, thrown.Z);
         }
     }
 

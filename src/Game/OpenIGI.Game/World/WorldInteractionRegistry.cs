@@ -248,6 +248,11 @@ public sealed class WorldInteractionRegistry : IPlacementVariant
     public AiStationaryGun? FindStationaryGun(int taskId) =>
         _items.FirstOrDefault(item => item.Task.Id == taskId)?.StationaryGun;
 
+    /// <summary>Whether the player is on the stationary gun a task places.</summary>
+    /// <param name="taskId">The gun's task.</param>
+    public bool IsPlayerOnStationaryGun(int taskId) =>
+        _items.FirstOrDefault(item => item.Task.Id == taskId)?.IsPlayerUsingStationaryGun == true;
+
     /// <summary>Finds the interaction owned by a placed task.</summary>
     public bool TryGet(GameTask task, out WorldInteraction? interaction)
     {

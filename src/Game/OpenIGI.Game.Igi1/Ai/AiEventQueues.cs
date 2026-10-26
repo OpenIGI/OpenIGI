@@ -47,7 +47,17 @@ public sealed class AiEventQueues
     /// <summary>The cap used when no pending action names one — every position may dispatch.</summary>
     public const int UnboundedPriorityCap = TypeCount;
 
+    /// <summary>How many event records an AI owns: <c>HumanAI+0xF0</c>, 32 records of 48 bytes.</summary>
+    /// <remarks>
+    /// Admission takes a record from the free list (<c>0x450520</c>) and drops the event when none is left; the pump
+    /// returns every record it drains (<c>0x44FE50</c>). So no more than 32 events wait at once, whatever their types.
+    /// </remarks>
+    public const int RecordPool = 32;
+
     private readonly List<AiEventRecord>[] _queues = new List<AiEventRecord>[TypeCount];
+
+    // How many of the pool's records are queued (HumanAI+0x8E0).
+    private int _pending;
     private readonly int[] _drained = new int[TypeCount];
     private readonly bool[] _enabled = new bool[TypeCount];
     private readonly List<AiEvent> _order = [];
@@ -108,6 +118,11 @@ public sealed class AiEventQueues
             return false;
         }
     }
+
+    /// <summary>Gets every record queued for a type, head first.</summary>
+    /// <param name="type">The event type.</param>
+    /// <returns>The queue.</returns>
+    public IReadOnlyList<AiEventRecord> RecordsOf(AiEvent type) => _queues[Index(type)];
 
     /// <summary>Gets a type's head record, or <see langword="null"/> when its queue is empty.</summary>
     /// <param name="type">The event type.</param>
@@ -222,6 +237,13 @@ public sealed class AiEventQueues
             return false;
         }
 
+        // 0x450520: no free record, no event.
+        if (_pending >= RecordPool)
+        {
+            return false;
+        }
+
+        _pending++;
         _queues[(int)record.Type].Add(record);
         Queued?.Invoke(record);
         return true;
@@ -261,6 +283,7 @@ public sealed class AiEventQueues
 
             // Drained whether or not it was dispatched — an undelivered event is lost, not deferred.
             _drained[slot] = _queues[slot].Count;
+            _pending -= _queues[slot].Count;
             _queues[slot].Clear();
         }
 

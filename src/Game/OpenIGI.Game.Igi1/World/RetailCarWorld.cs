@@ -15,11 +15,13 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="objects">The level's placed models and spline segments, or <see langword="null"/>.</param>
 /// <param name="vehicles">The vehicles other rays can strike, at their live poses, or <see langword="null"/>.</param>
 /// <param name="present">Whether an object's owner is in the world now, or <see langword="null"/> for always.</param>
+/// <param name="touchGlass">Breaks a pane a body strikes from where it is, answering whether it broke.</param>
 public sealed class RetailCarWorld(
     RetailTerrainRay terrain,
     RetailWorldObjects? objects = null,
     Func<IReadOnlyList<RetailRayModel>>? vehicles = null,
-    Func<object, bool>? present = null) : IRetailCarWorld
+    Func<object, bool>? present = null,
+    Func<RetailGlassPane, Vector3d, bool>? touchGlass = null) : IRetailCarWorld
 {
     private readonly RetailTerrainRay _terrain = terrain ?? throw new ArgumentNullException(nameof(terrain));
 
@@ -45,5 +47,12 @@ public sealed class RetailCarWorld(
     }
 
     /// <inheritdoc/>
-    public bool VetoContact(RetailRigidBody car, in RetailRayResult result) => false;
+    /// <remarks>
+    /// A pane of glass answers the physics object's hit (<c>0x449CB0</c>): it breaks, its shards thrown from where the body is,
+    /// and the contact is handled -- the body goes on through. Nothing else a body strikes answers.
+    /// </remarks>
+    public bool VetoContact(RetailRigidBody car, in RetailRayResult result) =>
+        result.Struck is RetailGlassPane pane
+        && !pane.IsBroken
+        && touchGlass?.Invoke(pane, car is null ? result.Point : new Vector3d(car.Position[0], car.Position[1], car.Position[2])) == true;
 }

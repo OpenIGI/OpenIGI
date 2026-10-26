@@ -29,6 +29,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
     private bool _climbActive;
     private bool _climbSlideArmed;
+
+    // Animation 170's end, seen on the tick it ends and acted on the tick after (see the top transitions below).
+    private bool _ladderTopOffEnded;
     private bool _worldInteractionActive;
 
     /// <summary>Forgets a climb or an interaction in progress, as a new mission starts.</summary>
@@ -36,6 +39,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     {
         _climbActive = false;
         _climbSlideArmed = false;
+        _ladderTopOffEnded = false;
         _worldInteractionActive = false;
     }
 
@@ -63,6 +67,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
+
         // A level with no player task in its walk updates the player after the walk instead.
         if (!mission.PlayerInWalk)
         {
@@ -77,6 +82,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         else if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.PlayerStandIn is { } standIn)
         {
             ResolveStandInTick(standIn);
+        }
+        else
+        {
+            // A cut-scene or the free camera: nobody's update steps the world's effects, yet in the original they are tasks
+            // that run whatever is watching. An explosion under a cut-scene burns and smokes, and a chimney keeps smoking.
+            host.StepWorldEffects();
+            mission.SmokePlumes?.Tick();
         }
 
         // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
@@ -294,9 +306,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // A simulated corpse decides for itself where it ends up, so the death camera has to
         // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
         // you were shot frames the whole of it.
-        if (mission.IsPlayerDead && soldiers?.PlayerRagdollCentre is { } corpseCentre)
+        // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick: the body's
+        // own eye height over where it fell when nothing simulates the corpse.
+        if (mission.IsPlayerDead && mission.Player is { } fallen)
         {
-            host.FollowCorpse(corpseCentre);
+            Vector3d feet = fallen.Body.Position;
+            host.FollowCorpse(soldiers?.PlayerRagdollCentre
+                ?? new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
         }
 
         TickClimbsAndInteractions();
@@ -341,8 +357,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
 
             bool climbSlide = climbUse && _climbSlideArmed;
-            LadderStepResult decision = mission.Player.DecideLadderStep(
-                climbUp, climbDown, climbSlide, host.Ground!);
+            LadderStepResult decision = mission.Player.DecideLadderStep(climbUp, climbDown, climbSlide);
             switch (decision)
             {
                 case LadderStepResult.SteppingUp:
@@ -380,6 +395,14 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
                         break;
 
+                    case LadderTraversalPhase.GettingOffTop when _ladderTopOffEnded:
+                        // State 39 (0x40DA80) reads the clip-done bit the previous tick's advance set, in the state machine
+                        // ahead of this tick's advance: it lets go of the ladder a tick after animation 170 ends, the clip
+                        // held on its last frame meanwhile.
+                        _ladderTopOffEnded = false;
+                        mission.Player.CompleteLadderTopTransition();
+                        break;
+
                     case LadderTraversalPhase.GettingOnTop:
                     case LadderTraversalPhase.GettingOffTop:
                         soldiers.AdvancePlayerLadderAnimation(
@@ -390,9 +413,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                         mission.Player.MoveLadder(topDelta);
                         TakeLadderRungEvent(topEventTime);
 
-                        if (topAnimationEnded)
+                        if (topAnimationEnded && mission.Player.LadderPhase == LadderTraversalPhase.GettingOffTop)
                         {
-                            mission.Player.CompleteLadderTopTransition(host.Ground!);
+                            _ladderTopOffEnded = true;
+                        }
+                        else if (topAnimationEnded)
+                        {
+                            mission.Player.CompleteLadderTopTransition();
                             if (mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
                             {
                                 StartLadderClimbAnimation(soldiers);
@@ -461,12 +488,22 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
             else if (soldiers is not null)
             {
+                // State 42 plays its drag clip only while a step is under way (0x40DDA0).
+                if (interacting.IsOnLevelWire)
+                {
+                    mission.Soldiers?.SetPlayerLadderPlaybackDirection(interacting.WireDragDirection);
+                    if (interacting.TakeWireDragSound() is { } dragSound)
+                    {
+                        audio.PlayLadderStepSound(dragSound, interacting.InteractionFeet);
+                    }
+                }
+
                 soldiers.AdvancePlayerLadderAnimation(
                     interacting.InteractionFacing,
                     out Vector3d interactionRootDelta,
-                    out _,
+                    out float? interactionStepTime,
                     out bool interactionClipEnded);
-                interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded);
+                interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded, interactionStepTime);
                 soldiers.PlacePlayerBodyClimbing(
                     interacting.InteractionFeet, interacting.InteractionFacing);
             }
@@ -502,6 +539,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             mission.Soldiers?.HidePlayerBodyClimbing();
             host.ResetInteractionView();
             _climbActive = false;
+            _ladderTopOffEnded = false;
             _worldInteractionActive = false;
         }
     }
@@ -537,7 +575,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         GrantCheatWeapons(player);
         if (host.ComputerOpen)
         {
-            player.TickMapComputer();
+            TickMapComputer(player);
         }
         else
         {
@@ -546,6 +584,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
             // Do not advance the same registry again after the walk.
             mission.InteractionsTickedByPlayer = true;
+            OpenMapComputer(player);
         }
 
         mission.TickVehicleMissiles();
@@ -620,7 +659,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
-                soldiers.NotifyFlashbang(blast.Position, blast.RadiusUnits);
+                soldiers.NotifyFlashbang(blast.Position);
             }
             else
             {
@@ -810,6 +849,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     {
         elevators.TickElevator(elevator);
         audio.UpdateElevatorSoundPositions();
+        audio.UpdateScriptSoundPositions();
 
         // A staged soldier standing in a car rides it through the cutscene runtime's attachments, so the runtime is
         // told where the car now is.
@@ -818,6 +858,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             elevators.ApplyCollision(elevatorSolids, elevator);
         }
+
+        // The soldiers grounded on a graph authored in the cab ride it with their graph (0x4F9770, 0x460CF0).
+        mission.Soldiers?.CarryOnPlatform(elevator.Task, elevator.State.Position - elevator.State.PreviousPosition);
 
         if (host.PlayerMode && mission.Player is { } passenger
             && ElevatorRegistry.TryGetPassengerDisplacement(elevator, passenger.Body.Position, mission.Solids, out Vector3d displacement))
@@ -879,11 +922,15 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             blasts.ResolveMissileDetonations();
             blasts.ResolveM203Detonations();
             audio.PlayGrenadeBounces();
+            audio.SoundMissiles();
 
             // The alarm speakers, following their own level expressions -- the siren the
             // room hears when a guard reaches a switch.
             blasts.TickDestructibles();
+            blasts.TickMineFields();
+            mission.SmokePlumes?.Tick();
             audio.SoundAlarms();
+            mission.AlarmSpeakers?.RunLights();
 
             // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
             // impact list carries both the instant rays and the ballistic arrivals, so either

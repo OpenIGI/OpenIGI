@@ -54,6 +54,21 @@ public readonly record struct MagicObjectDefinition(
     /// <summary>Gets a landing gear leg's record, for a <c>TASKTYPE_GEAR</c> object.</summary>
     public MagicGear? Gear { get; init; }
 
+    /// <summary>Gets the angle a plane's nose-gear hatch shuts through, degrees, for a <c>TASKTYPE_HATCH</c> object (<c>0x436090</c>).</summary>
+    public float? HatchDegrees { get; init; }
+
+    /// <summary>Gets a plane control surface's kind and throw, for a <c>TASKTYPE_RUDDER</c> object (<c>0x436740</c>).</summary>
+    public MagicRudder? Rudder { get; init; }
+
+    /// <summary>Gets the angle a plane's canopy swings open through, degrees, for a <c>TASKTYPE_COCKPITSHIELD</c> object (<c>0x436090</c>).</summary>
+    public float? CanopyDegrees { get; init; }
+
+    /// <summary>Gets a rocket pod's least gap between salvoes, in ticks, for a <c>TASKTYPE_ROCKETPOD</c> object (<c>0x427D40</c>).</summary>
+    public int? RocketPodDelayTicks { get; init; }
+
+    /// <summary>Gets a sliding door's record, for a <c>TASKTYPE_HELIDOOR</c> object.</summary>
+    public MagicHeliDoor? HeliDoor { get; init; }
+
     /// <inheritdoc/>
     public override string ToString() => $"{Name} -> {Model} (type {TaskType})";
 }
@@ -62,6 +77,17 @@ public readonly record struct MagicObjectDefinition(
 /// <param name="Travel">Record <c>+0</c>: how far below the skid the ground can still carry it (L0).</param>
 /// <param name="BottomOut">Record <c>+4</c>: the depth under which the skid has bottomed out (L1).</param>
 public readonly record struct MagicHeliWheel(float Travel, float BottomOut);
+
+/// <summary>A plane control surface's 8-byte record (<c>0x436740</c>), read from argument 3 on.</summary>
+/// <param name="Kind">0 an aileron, 1 the left taileron, 2 the right, 3 the rudder.</param>
+/// <param name="Degrees">How far a full control throws it, degrees.</param>
+public readonly record struct MagicRudder(int Kind, float Degrees);
+
+/// <summary>A helicopter's sliding door's 12-byte record (<c>0x4277C0</c>), read from argument 3 on.</summary>
+/// <param name="Axis">The axis of the vehicle's frame it slides along: 0 X, 1 Y, 2 Z.</param>
+/// <param name="SpeedUnitsPerTick">How far it slides a tick: the authored metres a second times 4096 over 30.</param>
+/// <param name="OpenUnits">Where it stops open, along the axis: the authored metres times 4096.</param>
+public readonly record struct MagicHeliDoor(int Axis, float SpeedUnitsPerTick, float OpenUnits);
 
 /// <summary>A landing gear leg's 20-byte record (<c>0x435BD0</c>), read from argument 3 on.</summary>
 /// <param name="FoldDegrees">Record <c>+0</c>: the angle the leg folds through when the gear comes up.</param>

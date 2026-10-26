@@ -108,11 +108,27 @@ public sealed class SoldierView
     /// <summary>Switches the rig to a walk cycle, or back to standing.</summary>
     /// <param name="walking">Whether the soldier is moving.</param>
     /// <param name="walkAnimation">The walk clip's id, from the locomotion table's forward state.</param>
+    /// <param name="keepPhase">Whether a new clip starts at the old one's phase, as a change of gait does.</param>
     /// <returns><see langword="true"/> when the requested clip resolved in this soldier's set.</returns>
-    public bool SetMoving(bool walking, int walkAnimation)
+    public bool SetMoving(bool walking, int walkAnimation, bool keepPhase = false)
     {
         int wanted = walking ? walkAnimation : StandAnimation;
-        return PlayStateAnimation(wanted, loops: true);
+
+        // 0x4D6520 and 0x4D65B0: the old clip's time over its length, then the new clip's length times that.
+        float? phase = keepPhase && wanted != CurrentAnimation && _bones.SourceOf(0) is { Animation.Duration: > 0f } old
+            ? old.Time / old.Animation.Duration
+            : null;
+        if (!PlayStateAnimation(wanted, loops: true))
+        {
+            return false;
+        }
+
+        if (phase is { } carried && _bones.SourceOf(0) is { } started)
+        {
+            started.SetTime(started.Animation.Duration * carried);
+        }
+
+        return true;
     }
 
     /// <summary>Plays the clip selected by a HumanSoldier state with that table entry's loop mode.</summary>
@@ -231,62 +247,53 @@ public sealed class SoldierView
     public void ReleaseUpperBody()
     {
         StopUpperBodyAnimation();
-        AimAlong(0f);
+        LookAlong(0f);
     }
 
-    /// <summary>Bends the torso and head to look along an aim pitch.</summary>
-    /// <param name="pitchRadians">Where the human is looking, positive up; zero stands the rig level.</param>
+    /// <summary>Turns the body to look along its view's pitch — <c>Human_ApplyLook</c> (<c>0x489F70</c>).</summary>
+    /// <param name="pitchRadians">The view's pitch, positive up; zero when the human's look is off.</param>
     /// <remarks>
     /// <para>
-    /// <b>A remaster addition, and not a transcription.</b> IGI1 has one orientation source in the whole
-    /// engine — the node <c>0x4D6130</c> builds for the upper body — and its quaternion
-    /// (<c>Human+1616</c>) is written exactly once, by the human's constructor at <c>0x410424</c>, from
-    /// the rig's own bone 0 after the palette build. Nothing else in <c>.text</c> writes it, and
-    /// <c>0x4D5790</c> copies it <i>by value</i> into the node when a clip starts, so even a hypothetical
-    /// writer could not steer it live. Retail's body does not follow the eye, because retail never draws
-    /// it.
+    /// Every palette rebuild (<c>0x45F240</c>) ends with it: bone 1 is turned by the pitch, up to 55° either way, about
+    /// the body's own side axis, and whatever is left over turns bone 4 the same way. The view's yaw would turn them
+    /// about the body's up as well, but only a target written by <c>HumanView_SetTarget</c> (<c>0x465920</c>) ever
+    /// makes it other than zero, and its one caller clears it. A human looks this way from its creation until its body
+    /// machine turns the look off.
     /// </para>
     /// <para>
-    /// The split follows the rig rather than taste. Bone 1 carries the arms, the head and the weapon
-    /// chain, so bending it is what actually points the gun; bone 4 is the neck, so bending it is what
-    /// moves the head alone. Each is capped well short of the player's own ±89° pitch limit, because a
-    /// spine folded to 89° is a bow rather than an aim, and the remainder is simply not expressed.
+    /// Applied to every pose this rig builds, so the body drawn, the parts a round is tested against and the eye, gun
+    /// and hand a soldier's brain reads all turn with it, as they do in the palette.
     /// </para>
     /// </remarks>
-    public void AimAlong(float pitchRadians)
+    public void LookAlong(float pitchRadians)
     {
-        float chest = Math.Clamp(
-            pitchRadians * HumanUpperBody.ChestShare,
-            -HumanUpperBody.ChestLimitRadians,
-            HumanUpperBody.ChestLimitRadians);
-        float head = Math.Clamp(
-            pitchRadians * HumanUpperBody.HeadShare,
-            -HumanUpperBody.HeadLimitRadians,
-            HumanUpperBody.HeadLimitRadians);
-
-        if (chest == _chestBend && head == _headBend)
+        if (pitchRadians == LookPitch)
         {
             return;
         }
 
-        _chestBend = chest;
-        _headBend = head;
-
-        // About X, which is the rig's own right: the weapon chain's rest translations run +Y out of the
-        // chest (measured at 1.08 m forward), so +Y is forward and a pitch is a
-        // turn about X. Positive leans back and looks up, matching the camera's own pitch sign.
-        _bones.Bend(HumanUpperBody.Bone, Pitch(chest));
-        _bones.Bend(HumanUpperBody.NeckBone, Pitch(head));
+        LookPitch = pitchRadians;
         _pose = null;
         _unrotatedPose = null;
     }
 
-    private float _chestBend;
-    private float _headBend;
+    /// <summary>Gets the pitch the body looks along — see <see cref="LookAlong"/>.</summary>
+    public float LookPitch { get; private set; }
 
-    private static Quaternion32? Pitch(float radians) => radians == 0f
-        ? null
-        : Quaternion32.FromAxisAngle(new Vector3f(1f, 0f, 0f), radians);
+    // 0x489F70 on a built pose: the turn about the body's side, its column 0 (the rig's own +X when unrotated).
+    private BonePose Looked(BonePose pose, Matrix3f? root)
+    {
+        if (LookPitch == 0f)
+        {
+            return pose;
+        }
+
+        Vector3f side = root is { } body ? new Vector3f(body.M11, body.M21, body.M31) : new Vector3f(1f, 0f, 0f);
+        float chest = Math.Clamp(LookPitch, -HumanUpperBody.LookLimitRadians, HumanUpperBody.LookLimitRadians);
+        return pose
+            .TurnSubtree(HumanUpperBody.Bone, side, chest)
+            .TurnSubtree(HumanUpperBody.NeckBone, side, LookPitch - chest);
+    }
 
     /// <summary>Starts one of the three authored ladder animations.</summary>
     /// <param name="animation">The state's animation id: 168, 169 or 170 in the player set.</param>
@@ -506,7 +513,7 @@ public sealed class SoldierView
 
     /// <summary>Gets the current pose, in the object's own space with the facing baked in.</summary>
     /// <returns>The posed rig.</returns>
-    public BonePose Pose() => _pose ??= _bones.Pose(Orientation);
+    public BonePose Pose() => _pose ??= Looked(_bones.Pose(Orientation), Orientation);
 
     /// <summary>Gets the pose built with an identity root, for a renderer that applies the facing itself.</summary>
     /// <returns>The posed rig, unrotated.</returns>
@@ -515,14 +522,14 @@ public sealed class SoldierView
     /// rotation only ever left-multiplies every bone — the trade the port's skinned draw already makes
     /// so that a shared pose skins once and turns per soldier (see <c>ViewModelRenderer</c>).
     /// </remarks>
-    public BonePose UnrotatedPose() => _unrotatedPose ??= _bones.Pose();
+    public BonePose UnrotatedPose() => _unrotatedPose ??= Looked(_bones.Pose(), null);
 
     /// <summary>Gets the pose the clocks will reach on the next tick -- what a cast re-posing the body between ticks sees.</summary>
     /// <returns>The posed rig under <see cref="Orientation"/>, one tick on; not cached.</returns>
-    public BonePose PoseAhead() => _bones.PoseAhead(Orientation);
+    public BonePose PoseAhead() => Looked(_bones.PoseAhead(Orientation), Orientation);
 
     /// <summary>Gets <see cref="PoseAhead"/> built with an identity root.</summary>
     /// <returns>The posed rig, unrotated, one tick on; not cached.</returns>
-    public BonePose UnrotatedPoseAhead() => _bones.PoseAhead();
+    public BonePose UnrotatedPoseAhead() => Looked(_bones.PoseAhead(), null);
 
 }

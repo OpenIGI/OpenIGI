@@ -207,6 +207,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// <summary>Shows a non-scripted retail-style status message in the next free top-left slot.</summary>
     /// <param name="text">The already formatted text to draw.</param>
     /// <param name="durationSeconds">How long the text holds after it has typed out.</param>
+    /// <param name="portrait">The sprite drawn beside it, by its name in the status archive, or empty.</param>
     /// <returns><see langword="true"/> when a display slot was available.</returns>
     /// <remarks>
     /// <para>
@@ -217,7 +218,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// alter script variables or the map-computer log.
     /// </para>
     /// </remarks>
-    public bool ShowTransientMessage(string text, float durationSeconds = 2f)
+    public bool ShowTransientMessage(string text, float durationSeconds = 2f, string portrait = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         if (!float.IsFinite(durationSeconds) || durationSeconds < 0f)
@@ -225,7 +226,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
             throw new ArgumentOutOfRangeException(nameof(durationSeconds));
         }
 
-        return _messages.ShowTransient(text, durationSeconds);
+        return _messages.ShowTransient(text, durationSeconds, portrait);
     }
 
     /// <summary>Gets the messages on screen now, in the slot order the original draws them in.</summary>
@@ -506,40 +507,46 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
         }
     }
 
-    /// <summary>Chooses the valid objective definition and publishes its rows.</summary>
+    // The definition that ran last, the computer's (gObjective).
+    private Definition? _current;
+
+    /// <summary>Runs the objective definitions and publishes the rows of the one that ran last.</summary>
     /// <remarks>
-    /// Read-only against the level: it evaluates the authored <c>Objectives Valid</c>, <c>Complete</c>
-    /// and <c>Failed</c> expressions to decide what to draw and latches nothing. That is what makes it
-    /// safe to run at construction, before the host has a player to report.
+    /// <c>0x467410</c>: a definition whose <c>Objectives Valid</c> is empty or holds becomes the computer's, and each of its
+    /// rows takes its <c>Complete</c> and <c>Failed</c> flags from its expressions -- off where a row has none. One that does
+    /// not hold leaves everything as it was, so the computer keeps the last that ran, flags and all. Running it at
+    /// construction, before the host has a player to report, latches the level's opening state.
     /// </remarks>
     private void PublishObjectives()
     {
-        Definition? active = null;
         foreach (Definition definition in _definitions)
         {
-            if (_expressions.EvaluateCondition(
-                    definition.ValidExpression, emptyValue: true, definition.Task))
+            if (!_expressions.EvaluateCondition(definition.ValidExpression, emptyValue: true, definition.Task))
             {
-                active = definition;
+                continue;
+            }
+
+            _current = definition;
+            foreach (Slot slot in definition.Slots)
+            {
+                slot.IsComplete = _expressions.EvaluateCondition(slot.CompleteExpression, emptyValue: false, definition.Task);
+                slot.IsFailed = _expressions.EvaluateCondition(slot.FailedExpression, emptyValue: false, definition.Task);
             }
         }
 
         List<MissionObjective> current = [];
-        if (active is not null)
+        if (_current is { } active)
         {
-            foreach (Slot slot in active.Slots)
+            for (int index = 0; index < active.Slots.Count; index++)
             {
+                Slot slot = active.Slots[index];
                 if (string.IsNullOrEmpty(slot.TextResource))
                 {
                     continue;
                 }
 
-                bool complete = _expressions.EvaluateCondition(
-                    slot.CompleteExpression, emptyValue: false, active.Task);
-                bool failed = _expressions.EvaluateCondition(
-                    slot.FailedExpression, emptyValue: false, active.Task);
-                MissionObjectiveState state = failed ? MissionObjectiveState.Failed
-                    : complete ? MissionObjectiveState.Complete
+                MissionObjectiveState state = slot.IsFailed ? MissionObjectiveState.Failed
+                    : slot.IsComplete ? MissionObjectiveState.Complete
                     : MissionObjectiveState.Incomplete;
                 Vector3d? position = slot.LinkTaskId >= 0 && _levelRoot.Tree.FromId(slot.LinkTaskId) is not null
                     ? FindPosition(_levelRoot.Tree.FromId(slot.LinkTaskId)!)
@@ -547,6 +554,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
                 current.Add(new MissionObjective(slot.TextResource, slot.LinkTaskId, position, state)
                 {
                     Text = _resolveText(slot.TextResource),
+                    Slot = index,
                 });
             }
         }
@@ -596,7 +604,13 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
         DeclaredTask Task,
         string ValidExpression,
         IReadOnlyList<Slot> Slots);
-    private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression);
+    private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression)
+    {
+        // The flags the row's definition last left it with (+0x42, +0x43).
+        public bool IsComplete { get; set; }
+
+        public bool IsFailed { get; set; }
+    }
 
     /// <summary>One LevelFlow task's state: the fields the original keeps in the task at <c>+96</c>..<c>+104</c>.</summary>
     private sealed class LevelFlow(

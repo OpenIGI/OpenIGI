@@ -123,7 +123,35 @@ public sealed class Igi2BodyModel
             groinBone = markBone;
         }
 
-        return new Igi2BodyModel(name, names, Igi2BoneMesh.Of(model), parts, groin, groinBone);
+        return new Igi2BodyModel(name, names, Igi2BoneMesh.Of(model), parts, groin, groinBone)
+        {
+            RenderSphereCentre = model.RenderSphereCentre,
+            RenderSphereRadius = model.RenderSphereRadius,
+        };
+    }
+
+    /// <summary>Gets the centre of the mesh's render sphere, <c>tRenderMeshSphere</c>, in model space; nought for a missing model.</summary>
+    public Vector3f RenderSphereCentre { get; private init; }
+
+    /// <summary>Gets the radius of the mesh's render sphere; nought for a missing model.</summary>
+    public float RenderSphereRadius { get; private init; }
+
+    /// <summary>
+    /// The sphere the body is culled by, <c>BoneDynCubeObj_Exclude</c> (<c>igi2 e/3/bonedyncubeobj.c</c>): the render sphere's
+    /// centre moved by the root bone's translation, turned by the body's rows and added to its position, at its radius.
+    /// </summary>
+    /// <param name="orientation">The body's orientation, rows its local axes.</param>
+    /// <param name="position">The body's position, in world units.</param>
+    /// <param name="rootTranslation">The root bone's translation, <c>tRootTranslation</c>.</param>
+    /// <returns>The sphere's centre and radius, in world units.</returns>
+    public (Vector3d Centre, float Radius) CullSphere(Matrix3f orientation, Vector3d position, Vector3f rootTranslation)
+    {
+        Vector3f c = RenderSphereCentre + rootTranslation;
+        return (new Vector3d(
+            position.X + ((orientation.M11 * c.X) + (orientation.M12 * c.Y) + (orientation.M13 * c.Z)),
+            position.Y + ((orientation.M21 * c.X) + (orientation.M22 * c.Y) + (orientation.M23 * c.Z)),
+            position.Z + ((orientation.M31 * c.X) + (orientation.M32 * c.Y) + (orientation.M33 * c.Z))),
+            RenderSphereRadius);
     }
 
     /// <summary>

@@ -25,8 +25,8 @@ namespace OpenIGI.Game.Igi2.Animation;
 /// places the vertex by its bone, from the vertex less that bone's bind position, and the results are summed by
 /// weight. Every slot but the last weighs its byte over 255; the last takes what is left of one. The normal is turned
 /// by the first slot's bone alone. The first-person view always draws at that detail
-/// (<c>Direct3DRender_DrawBoneMesh</c>, <c>0x56FC30</c>, forces it on layer zero). Morph targets, which only a face
-/// sets weights for, are not applied.
+/// (<c>Direct3DRender_DrawBoneMesh</c>, <c>0x56FC30</c>, forces it on layer zero). A face's morph targets move the rest
+/// positions by their weights first (<c>Direct3DRender_MorphVerticesBone</c>).
 /// </para>
 /// </remarks>
 public sealed class Igi2BoneSkin
@@ -43,6 +43,8 @@ public sealed class Igi2BoneSkin
     private readonly uint[] _bones;
     private readonly uint[] _weights;
     private readonly byte[] _lastSlot;
+    private MefMorph? _morph;
+    private Vector3f[]? _morphed;
 
     private Igi2BoneSkin(Vector3f[] bind, Vector3f[] positions, MefVertex[] vertices, uint[] bones, uint[] weights, byte[] lastSlot)
     {
@@ -155,7 +157,7 @@ public sealed class Igi2BoneSkin
             weights[target] |= (uint)(byte)weight << (8 * slot);
         }
 
-        return new Igi2BoneSkin(bind, positions, vertices, bones, weights, lastSlot);
+        return new Igi2BoneSkin(bind, positions, vertices, bones, weights, lastSlot) { _morph = model.Morph };
     }
 
     /// <summary>
@@ -212,7 +214,17 @@ public sealed class Igi2BoneSkin
     /// <returns>The number of vertices written.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="pose"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The pose has fewer bones than the bind pose, or the destination is too small.</exception>
-    public int Skin(BonePose pose, float scale, Span<Vertex3D> destination)
+    public int Skin(BonePose pose, float scale, Span<Vertex3D> destination) => Skin(pose, scale, destination, []);
+
+    /// <summary>Poses the vertices on a skeleton with the face's morph targets weighted in first.</summary>
+    /// <param name="pose">The posed skeleton, in the model's own frame.</param>
+    /// <param name="scale">A factor applied to every position afterwards, for converting units.</param>
+    /// <param name="destination">Receives the posed vertices; must hold at least <see cref="VertexCount"/>.</param>
+    /// <param name="morphWeights">The morph channels' weights, <c>BoneDynCubeObj_s.avMorphWeights</c>; empty for none.</param>
+    /// <returns>The number of vertices written.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pose"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The pose has fewer bones than the bind pose, or the destination is too small.</exception>
+    public int Skin(BonePose pose, float scale, Span<Vertex3D> destination, ReadOnlySpan<float> morphWeights)
     {
         ArgumentNullException.ThrowIfNull(pose);
         if (pose.BoneCount < _bind.Length)
@@ -226,11 +238,22 @@ public sealed class Igi2BoneSkin
             throw new ArgumentException($"The skin needs {count} vertices but {destination.Length} were given.", nameof(destination));
         }
 
+        ReadOnlySpan<Vector3f> rest = _positions;
+        if (_morph is { } morph && morphWeights.Length > 0)
+        {
+            _morphed ??= new Vector3f[count];
+            _positions.CopyTo(_morphed, 0);
+            if (morph.Apply(morphWeights, _morphed))
+            {
+                rest = _morphed;
+            }
+        }
+
         ReadOnlySpan<Matrix3f> rotations = pose.Rotations;
         ReadOnlySpan<Vector3f> translations = pose.Positions;
         for (int i = 0; i < count; i++)
         {
-            Vector3f p = _positions[i];
+            Vector3f p = rest[i];
             int last = _lastSlot[i];
             Fpu x = 0f, y = 0f, z = 0f, total = 0f;
             for (int s = 0; s <= last; s++)

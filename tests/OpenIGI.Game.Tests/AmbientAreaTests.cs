@@ -1,4 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Flow;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Time;
 using OpenIGI.Game.World;
 using Xunit;
 using OpenIGI.Game.Igi1.World;
@@ -157,6 +160,68 @@ public sealed class AmbientAreaTests
 
         live.Tick(default(Vector3d));
         Assert.Equal(4, draws);
+    }
+
+    [Fact]
+    public void AnAreaTheWalkStepsIsNotSteppedAgainOnceItsFadeHasMoved()
+    {
+        // The walk steps an area where the tree places it; the registry's own tick is for the areas no walk reaches. An
+        // area whose fade has moved must still be known as walked, or it is stepped twice a tick and draws twice.
+        GameLoop loop = new(new ManualTimeSource());
+        GameTask task = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        PlacedAmbientArea area = new(
+            task, default, Matrix3f.Identity, new Vector3d(1.0, 1.0, 1.0),
+            MinDelaySeconds: 0.1, RandomWaitSeconds: 0.0, Sounds: ["dog_01"]);
+        IgiRandom stream = new();
+        int draws = 0;
+        stream.Drew = _ => draws++;
+        AmbientAreaRegistry live = new(stream);
+        ((List<PlacedAmbientArea>)live.Areas).Add(area);
+        area.Countdown = 100;
+        LevelUpdateWalker walker = new(loop.Tasks.Root);
+        live.AttachTo(walker, static () => default(Vector3d), static _ => true);
+
+        for (int tick = 1; tick <= 3; tick++)
+        {
+            walker.Tick();
+            live.Tick(default(Vector3d));
+            Assert.Equal(tick, draws);
+        }
+    }
+
+    [Theory]
+    [InlineData(1.0, true)]
+    [InlineData(double.PositiveInfinity, false)]
+    public void AOneShotBedLetsItsInstanceGoAtTheSamplesLengthAndALoopedOneNever(double seconds, bool released)
+    {
+        // 0x4E8840: a one-shot instance deletes itself once its clock, a tick's worth a tick from the tick after it was made,
+        // reaches the sample's length; the area finds the slot empty the tick after and draws a fresh gap (0x44C370).
+        GameLoop loop = new(new ManualTimeSource());
+        GameTask task = loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        PlacedAmbientArea area = new(
+            task, default, Matrix3f.Identity, new Vector3d(1.0, 1.0, 1.0),
+            MinDelaySeconds: 10.0, RandomWaitSeconds: 0.0, Sounds: ["dog_01"]);
+        AmbientAreaRegistry live = new(new IgiRandom());
+        ((List<PlacedAmbientArea>)live.Areas).Add(area);
+        LevelUpdateWalker walker = new(loop.Tasks.Root);
+        live.AttachTo(walker, static () => default(Vector3d), static _ => true, _ => seconds);
+
+        walker.Tick();
+        Assert.True(area.HasVoice);
+        int held = 0;
+        for (int tick = 0; tick < 120 && area.HasVoice; tick++)
+        {
+            walker.Tick();
+            held++;
+        }
+
+        Assert.Equal(released, !area.HasVoice);
+        if (released)
+        {
+            // Thirty ticks of clock reach the second, the tick after it is gone, and the area lets go one more on.
+            Assert.InRange(held, 31, 32);
+            Assert.Equal(299, area.Countdown);
+        }
     }
 
     private static PlacedAmbientArea Area(

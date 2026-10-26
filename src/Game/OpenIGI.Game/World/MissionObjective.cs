@@ -15,4 +15,8 @@ public sealed record MissionObjective(
     /// remains available for the retail map computer and save/debug tooling that addresses it directly.
     /// </remarks>
     public string Text { get; init; } = string.Empty;
+
+    /// <summary>Gets the row's place among its definition's six, nought first, which the computer numbers it by.</summary>
+    /// <remarks>An empty row is not listed, so the place need not be the row's index in the list.</remarks>
+    public int Slot { get; init; }
 }

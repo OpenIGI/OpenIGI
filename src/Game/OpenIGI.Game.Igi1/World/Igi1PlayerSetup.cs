@@ -123,6 +123,12 @@ public sealed class Igi1PlayerSetup(
         return placed;
     }
 
+    // The message an AmmoPickup posts, with the ammunition box's portrait (0x46D990).
+    private const string AmmoPickupMessage = "PICKEDUPAMMO";
+
+    // STATUSSCREEN:ammo.spr, by its name in the status archive.
+    private const string AmmoPickupPortrait = "ammo.spr";
+
     // A missile is the original's physics object of its model's type, flying by its missile type (0x429A30).
     private RetailMissileBody? FireMissile(LoadedMission loaded, string model, Vector3d at, Matrix3f frame, float speed, Vector3d target) =>
         mission.VehiclePhysics?.Types is { } types
@@ -229,7 +235,14 @@ public sealed class Igi1PlayerSetup(
         if (mission.GenericPickups is { } genericPickups)
         {
             candidate.UseGenericPickups(genericPickups);
-            candidate.GenericPickedUp += audio.PlayGenericPickupSound;
+            candidate.GenericPickedUp += pickup =>
+            {
+                // An AmmoPickup posts its own message as it is taken (0x46D990); a GenericPickup posts none.
+                if (audio.TakeGenericPickup(pickup))
+                {
+                    mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage), portrait: AmmoPickupPortrait);
+                }
+            };
             host.Logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
         }
 
@@ -402,6 +415,13 @@ public sealed class Igi1PlayerSetup(
             // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
             // list starts with the knife.
             candidate.UseWeaponCycle(config.WeaponCycle);
+
+            // 0x410370 caps the new player's ammunition at DefineHumanPlayerAmmoLimit's figures before anything is put in
+            // its pockets, so every pickup after is held to them.
+            foreach ((int ammoId, int limit) in config.AmmoLimits)
+            {
+                candidate.Weapons?.Ammunition.SetLimit(ammoId, limit);
+            }
 
             // And the nine categories the number keys select — 0x411000 reads exactly this table.
             candidate.Weapons?.UseCategories(config.Categories);

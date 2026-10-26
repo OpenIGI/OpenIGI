@@ -62,49 +62,29 @@ public interface IMapComputerPresenter : IDisposable
     /// <returns><see langword="false"/> when the installation ships no such device.</returns>
     bool Load(VirtualFileSystem fileSystem);
 
-    /// <summary>Opens the device, centred on where the player is standing.</summary>
-    /// <param name="playerUnits">Where the player is, in engine units.</param>
-    void Open(Vector3d playerUnits);
+    /// <summary>Gets whether the device itself is held: only while the level grants the map.</summary>
+    bool ShowsDevice { get; }
 
-    /// <summary>Advances the device for one frame of input.</summary>
-    /// <param name="input">What the player is pressing.</param>
-    /// <param name="screenWidth">The target width in pixels.</param>
-    /// <param name="screenHeight">The target height in pixels.</param>
-    void Update(InputState input, int screenWidth, int screenHeight);
+    /// <summary>Gets or sets the level's placed objects, which the map outlines.</summary>
+    WorldScene? Scene { get; set; }
 
-    /// <summary>Gets how the world behind the device should be framed.</summary>
-    /// <param name="playerUnits">Where the player is, in engine units.</param>
+    /// <summary>Gets how the world behind the device is framed: the map's own camera, as the mission's tick last set it.</summary>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     /// <returns>The view to draw the world with.</returns>
-    MapSceneView SceneView(Vector3d playerUnits, int screenWidth, int screenHeight);
+    MapSceneView SceneView(int screenWidth, int screenHeight);
 
-    /// <summary>Gets where on the screen the device itself sits.</summary>
-    /// <param name="width">The target width in pixels.</param>
-    /// <param name="height">The target height in pixels.</param>
-    /// <returns>The viewport the device model is drawn into.</returns>
-    /// <remarks>
-    /// On the interface because the host draws the device's own model into it, which it cannot place
-    /// without asking. A title whose computer is not a held object returns the whole screen.
-    /// </remarks>
-    Viewport DeviceViewport(int width, int height);
-
-    /// <summary>Draws the device.</summary>
+    /// <summary>Draws what lies behind the device's casing: its screen's picture, tint and marks.</summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="runtime">The mission's objectives, which the device lists.</param>
-    /// <param name="player">Where the player is, in engine units.</param>
-    /// <param name="guards">Where the guards the device knows about are.</param>
-    /// <param name="highlights">The marks to show.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void Draw(
-        SpriteBatch batch,
-        MissionObjectiveRuntime runtime,
-        Vector3d player,
-        IReadOnlyList<Vector3d> guards,
-        IEnumerable<ComputerMapHighlight> highlights,
-        int screenWidth,
-        int screenHeight);
+    void DrawBehindDevice(SpriteBatch batch, int screenWidth, int screenHeight);
+
+    /// <summary>Draws what lies in front of the casing: the controls, the text and the pointer.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawInFrontOfDevice(SpriteBatch batch, int screenWidth, int screenHeight);
 
     /// <summary>Draws the mission-failed page.</summary>
     /// <param name="batch">The batch to draw into.</param>
@@ -194,11 +174,13 @@ public interface ITacticalComputerPresenter : IDisposable
 /// handed the lookup rather than the archive: which language a name resolves in is the shell's business
 /// and not a renderer's.
 /// </param>
+/// <param name="Gameplay">The mission the computer belongs to, whose own computer a title's presenter draws; or none.</param>
 public readonly record struct MapComputerPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
     IOpenIgiLogger Logger,
-    Func<string, string> ResolveText);
+    Func<string, string> ResolveText,
+    IMissionGameplay? Gameplay = null);
 
 /// <summary>What a title needs in order to build the catalogue of places its computer marks.</summary>
 /// <param name="LevelRoot">The level's task tree, which the marks are read from.</param>

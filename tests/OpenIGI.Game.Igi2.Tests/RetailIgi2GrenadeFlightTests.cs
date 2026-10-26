@@ -7,6 +7,7 @@ using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Tests;
 
@@ -97,7 +98,7 @@ public sealed class RetailIgi2GrenadeFlightTests
         Igi2WeaponTypeTask weapon = WeaponType();
         Igi2GrenadeParameters parameters = Igi2GrenadeParameters.Of(Assert.IsType<Igi2ProjectileLauncherTask>(weapon.FireType(0)));
         Igi2PhysicsWorld world = new(m.World, m.Session.Require<Igi2GameMaterials>());
-        Igi2DynamicTasks dynamic = new();
+        DynamicTasks dynamic = new();
         Igi2Grenades grenades = new(m.Session.Require<PhysicsObjectTypes>(), m.Level.ModelFor, world, dynamic);
         Recording effects = new();
         grenades.Effects = effects;

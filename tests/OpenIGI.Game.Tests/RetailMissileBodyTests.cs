@@ -29,6 +29,9 @@ public sealed class RetailMissileBodyTests(ITestOutputHelper output)
         Assert.Equal(4, missile.Vehicle.Wings.Count);
         Assert.Equal(200f, missile.Vehicle.MaxThrust);
 
+        // And the sound it flies with, which 0x429D80 starts as it is made.
+        Assert.NotEmpty(missile.Sound);
+
         Assert.True(data.Vehicles.Types.TryFind("700_10_1", out PhysicsObjectType hind));
         Assert.Equal((int)MissileType.HindHelicopter, MissileTypeDefinition.Of<X87>(hind)!.Guidance);
     }

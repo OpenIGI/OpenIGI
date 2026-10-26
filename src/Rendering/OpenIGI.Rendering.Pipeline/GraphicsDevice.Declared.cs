@@ -51,6 +51,9 @@ public sealed partial class GraphicsDevice
     public void SetTextureQuality(int maxAnisotropy) => _textures.MaxAnisotropy = maxAnisotropy;
 
     /// <inheritdoc/>
+    public void SetPointMips(bool point) => _textures.PointMips = point;
+
+    /// <inheritdoc/>
     public void SetStageTiming(bool enabled) => _profiler.Enabled = enabled;
 
     /// <inheritdoc/>

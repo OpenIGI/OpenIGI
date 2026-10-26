@@ -369,7 +369,7 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
                 ((((Fpu)b.X - a.X) * share) + a.X).F, ((((Fpu)b.Y - a.Y) * share) + a.Y).F, ((((Fpu)b.Z - a.Z) * share) + a.Z).F);
         }
 
-        float[] frame = Igi2Pose.Rotation(alpha, beta, gamma);
+        float[] frame = EngineEuler.Rotation(alpha, beta, gamma);
 
         // Linked, the camera is carried with its link when it changes or updates, and its position held from then otherwise.
         if (from.LinkTaskId >= 0)
@@ -430,7 +430,7 @@ public sealed partial class Igi2CutSceneTask : Igi2Task
         {
             position = new Vector3d(Shaken(position.X), Shaken(position.Y), Shaken(position.Z));
             float turnGamma = Turn(shakes.Next()), turnBeta = Turn(shakes.Next()), turnAlpha = Turn(shakes.Next());
-            frame = Igi2CutsceneCameras.Shake(frame, Igi2Pose.Rotation(turnAlpha, turnBeta, turnGamma));
+            frame = Igi2CutsceneCameras.Shake(frame, EngineEuler.Rotation(turnAlpha, turnBeta, turnGamma));
         }
 
         float height = (((Fpu)open * ViewportHeightFactor) + ((Fpu)1f - open)).F;

@@ -73,6 +73,33 @@ public abstract class HumanBodyMachine
     /// <summary>Gets the state it was in before <see cref="State"/>.</summary>
     public int PreviousState { get; private set; }
 
+    /// <summary>Gets whether a fall ended on the ground this tick: the body left its airborne state for its standing one.</summary>
+    /// <remarks>Every class's fall plays the ground's land sound then (<c>0x45C210</c>); a flinch or a death out of the fall does not.</remarks>
+    public bool LandedThisTick => ChangedThisTick && State == InitialState && IsAirborne(PreviousState);
+
+    /// <summary>Gets whether the gait entered this tick starts at the stride the last one had reached.</summary>
+    /// <remarks>Each class's own gait entries decide which changes of pace carry the walk cycle's phase over (<c>0x4D6520</c>).</remarks>
+    public bool KeptStrideThisTick => ChangedThisTick && KeepsStride(PreviousState, State);
+
+    /// <summary>Whether entering a state from another carries the stride's phase over.</summary>
+    /// <param name="left">The state left.</param>
+    /// <param name="entered">The state entered.</param>
+    /// <returns><see langword="true"/> when the new clip starts at the old one's phase.</returns>
+    protected virtual bool KeepsStride(int left, int entered) => false;
+
+    /// <summary>Whether a state is the class's fall.</summary>
+    /// <param name="state">The state.</param>
+    /// <returns><see langword="true"/> for the airborne state.</returns>
+    protected virtual bool IsAirborne(int state) => false;
+
+    /// <summary>Gets whether the body turns to look along its view — the human's look byte, which <c>0x489F70</c> reads.</summary>
+    /// <remarks>
+    /// On from the human's creation. The flinch, death and scripted-clip entries turn it off (<c>0x48A330</c>), and only
+    /// a flinch or a clip that plays out to its standing state turns it back on (<c>0x48A320</c>): a flinch that ends
+    /// in a fall or a death leaves it off.
+    /// </remarks>
+    public bool LooksAlongView { get; protected set; } = true;
+
     /// <summary>Gets a value indicating whether <see cref="State"/> changed on the last tick.</summary>
     public bool ChangedThisTick { get; private set; }
 

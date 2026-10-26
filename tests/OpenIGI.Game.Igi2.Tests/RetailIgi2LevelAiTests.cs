@@ -627,7 +627,7 @@ public sealed class RetailIgi2LevelAiTests
         {
             // Fifteen metres along the soldier's view (the second column of his frame), turned to face him.
             Igi2HumanSoldierTask soldier = m.Tree.OfType<Igi2HumanSoldierTask>().Single(t => t.Id == id);
-            float[] frame = Igi2Pose.Rotation(0f, 0f, soldier.Gamma);
+            float[] frame = EngineEuler.Rotation(0f, 0f, soldier.Gamma);
             at = new Vector3d(soldier.Position.X + (frame[1] * 61440.0), soldier.Position.Y + (frame[4] * 61440.0), soldier.Position.Z);
             gamma = soldier.Gamma + MathF.PI;
         }
@@ -636,7 +636,7 @@ public sealed class RetailIgi2LevelAiTests
         {
             // A metre and a half behind the soldier, facing the way he faces.
             Igi2HumanSoldierTask soldier = m.Tree.OfType<Igi2HumanSoldierTask>().Single(t => t.Id == back);
-            float[] frame = Igi2Pose.Rotation(0f, 0f, soldier.Gamma);
+            float[] frame = EngineEuler.Rotation(0f, 0f, soldier.Gamma);
             at = new Vector3d(soldier.Position.X - (frame[1] * 3072.0), soldier.Position.Y - (frame[4] * 3072.0), soldier.Position.Z);
             gamma = soldier.Gamma;
         }

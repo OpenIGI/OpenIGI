@@ -118,10 +118,22 @@ public static class FootstepSounds
     {
         ArgumentNullException.ThrowIfNull(material);
 
-        slot = Cycle[((cursor % Cycle.Length) + Cycle.Length) % Cycle.Length];
-        cursor = (cursor + 1) % Cycle.Length;
+        slot = NextSlot(Cycle, ref cursor);
 
         return slot < material.WalkSounds.Count ? material.WalkSounds[slot] : string.Empty;
+    }
+
+    /// <summary>Takes the next of a material's sounds from a title's step order, and moves the walker on through it.</summary>
+    /// <param name="order">The title's order: Project I.G.I.'s twelve (<see cref="Cycle"/>), I.G.I. 2's thirty-one
+    /// (<c>Human_anFeetSoundSequence</c>).</param>
+    /// <param name="cursor">The walker's place in the order; moved on by one, round again at the end.</param>
+    /// <returns>The sound's place among the material's.</returns>
+    /// <remarks>Both titles step the same way, each walker with a cursor of its own; only the order differs.</remarks>
+    public static int NextSlot(ReadOnlySpan<int> order, ref int cursor)
+    {
+        int slot = order[((cursor % order.Length) + order.Length) % order.Length];
+        cursor = (cursor + 1) % order.Length;
+        return slot;
     }
 
     /// <summary>The wet layer a step lays over its own sound while the level's weather is on.</summary>
@@ -145,8 +157,8 @@ public static class FootstepSounds
     /// <summary>How much of its volume a crouched step keeps.</summary>
     /// <remarks>
     /// <para>
-    /// <c>0.6666667</c>. The handler tests <c>Human+829</c> — the crouch byte — and, when it is set,
-    /// sends the started voice a two-float message, <c>-1.0</c> and <c>0.6666667</c>
+    /// <c>0.66</c> (<c>0x3F28F5C3</c>, in both <c>0x45A7F0</c> and <c>0x463920</c>). The handler tests <c>Human+829</c> —
+    /// the crouch byte — and, when it is set, sends the started voice a two-float message, <c>-1.0</c> and <c>0.66</c>
     /// (<c>0x4E6C60</c>). The second is the volume the voice keeps; the <c>-1.0</c> reads as "leave the
     /// other alone", which is how the same message is used elsewhere, though that half is inference
     /// rather than something traced to a handler.
@@ -156,7 +168,7 @@ public static class FootstepSounds
     /// the ear and completely silent to a guard.
     /// </para>
     /// </remarks>
-    public const float CrouchedVolumeScale = 0.6666667f;
+    public const float CrouchedVolumeScale = 0.66f;
 
     /// <summary>Reports whether a material names anything to walk on.</summary>
     /// <param name="material">The material a probe struck.</param>

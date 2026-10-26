@@ -93,6 +93,8 @@ public sealed partial class GameHost
         // keeps, so a level loaded before this would keep the filtering it started with.
         _device.SetTextureQuality(MaterialCVars.Anisotropy.Value);
         WhenChanged(MaterialCVars.Anisotropy, () => _device.SetTextureQuality(MaterialCVars.Anisotropy.Value));
+        _device.SetPointMips(MaterialCVars.PointMips.Value);
+        WhenChanged(MaterialCVars.PointMips, () => _device.SetPointMips(MaterialCVars.PointMips.Value));
 
         _device.VSyncEnabled = FrameCVars.VSync.Value;
         WhenChanged(FrameCVars.VSync, () => _device.VSyncEnabled = FrameCVars.VSync.Value);
@@ -480,7 +482,6 @@ public sealed partial class GameHost
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
             _shellBodyFont = state.ShellTypography.Body;
-            _shellHeadingFont = state.ShellTypography.Display;
             _shellType = state.ShellTypography;
 
             // The real DefineMission data, resolved to display strings through the language table, in the

@@ -111,7 +111,9 @@ public sealed class AiMovementRetailTests
 
         Assert.NotNull(found);
         (GraphNode From, GraphNode To) hop = found.Value;
-        Igi1HumanAi soldier = new(graph, hop.From.Position, facing: 0f, phase: 0, seed: 1);
+        // A unit off the centre: exactly on it, 0x4F9A40 calls the soldier outside its own node.
+        Vector3d inside = new(hop.From.Position.X + 1.0, hop.From.Position.Y, hop.From.Position.Z);
+        Igi1HumanAi soldier = new(graph, inside, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.GoTo(hop.To.Id));
 
@@ -122,5 +124,39 @@ public sealed class AiMovementRetailTests
             Math.Abs(first.Y - hop.From.Position.Y));
         Assert.Equal(edge, reach, 3);
         Assert.Equal(hop.From.Position.Z, first.Z);
+    }
+
+    /// <summary>
+    /// A soldier exactly on its node's centre is outside it (<c>0x4F9A40</c> returns 0 for a zero offset), so the walk
+    /// first steps back to the centre -- the edge point of a zero direction -- and leaves by no exit edge.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AWalkFromExactlyANodeCentreStartsAtTheCentre()
+    {
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat")));
+        (GraphNode From, GraphNode To)? found = null;
+        foreach (GraphNode from in graph.Nodes)
+        {
+            foreach (GraphNode to in graph.Nodes)
+            {
+                if (from.Id != to.Id && graph.RouteTable!.EnumerateRoute(from.Id, to.Id) is { Count: > 1 })
+                {
+                    found = (from, to);
+                    break;
+                }
+            }
+
+            if (found is not null)
+            {
+                break;
+            }
+        }
+
+        Assert.NotNull(found);
+        Igi1HumanAi soldier = new(graph, found.Value.From.Position, facing: 0f, phase: 0, seed: 1);
+
+        Assert.True(soldier.GoTo(found.Value.To.Id));
+        Assert.Equal(found.Value.From.Position, soldier.DebugWaypoint!.Value);
     }
 }

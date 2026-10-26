@@ -10,7 +10,7 @@ public sealed partial class Igi2GenericPickupTask : IIgi2Serialized
     public void WriteState(Igi2StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        Igi2ModelObjState.Write(writer, Position, Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z), _isPickedUp == 0);
+        Igi2ModelObjState.Write(writer, Position, EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z), _isPickedUp == 0);
         writer.Bool(_isPickedUp != 0);
         writer.Text(Model);
     }

@@ -71,8 +71,9 @@ internal sealed class MissionStatusMessages
     /// <summary>Shows a non-scripted message in the next free slot; see <see cref="MissionObjectiveRuntime.ShowTransientMessage"/>.</summary>
     /// <param name="text">The already formatted text to draw.</param>
     /// <param name="durationSeconds">How long the text holds after it has typed out.</param>
+    /// <param name="portrait">The sprite drawn beside it, by its name in the status archive, or empty.</param>
     /// <returns><see langword="true"/> when a display slot was available.</returns>
-    public bool ShowTransient(string text, float durationSeconds)
+    public bool ShowTransient(string text, float durationSeconds, string portrait = "")
     {
         StatusMessage message = new(
             owner: null,
@@ -84,6 +85,7 @@ internal sealed class MissionStatusMessages
         {
             IsSent = true,
             SentTick = _tick(),
+            Portrait = portrait ?? string.Empty,
         };
         if (!TryTakeMessageSlot(message))
         {
@@ -108,7 +110,8 @@ internal sealed class MissionStatusMessages
                         slot.DisplayText,
                         slot.RevealedCharacters,
                         slot.DisplayFrame,
-                        slot.Cutscene);
+                        slot.Cutscene,
+                        slot.Portrait);
                 }
             }
         }

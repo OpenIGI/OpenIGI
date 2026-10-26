@@ -192,6 +192,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         };
 
         VkCheck.Ok(_vk.BeginCommandBuffer(transition, &begin), "vkBeginCommandBuffer");
+        _device.Checkpoint(transition, VulkanCheckpointMarkers.Label("present transition"));
 
         // What frame generation reads when the image is presented goes back into the layout its tag named,
         // whatever the passes after the tag did with it.

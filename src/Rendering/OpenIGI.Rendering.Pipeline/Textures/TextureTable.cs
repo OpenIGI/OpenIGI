@@ -116,6 +116,9 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     /// </remarks>
     public int MaxAnisotropy { get; set; } = 1;
 
+    /// <summary>Gets or sets whether textures created afterwards take their nearest mip level rather than blending two.</summary>
+    public bool PointMips { get; set; }
+
     /// <summary>Creates a texture and uploads every level the caller handed over.</summary>
     /// <param name="description">Its size, how many levels it has, and how it is filtered.</param>
     /// <param name="pixels">
@@ -413,7 +416,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
         RhiSamplerDescriptor wanted = new(
             filter,
             filter,
-            filter,
+            PointMips ? RhiFilter.Nearest : filter,
             address,
             address,
             address,
@@ -424,7 +427,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
             Compare: null,
             LodMin: 0f,
             LodMax: 1000f,
-            $"{filter}-{address}",
+            $"{filter}-{address}{(PointMips ? "-pointmip" : string.Empty)}",
 
             // The frame's mip bias, only where there are levels to choose.
             MipLodBias: description.MipLevels > 1 ? MipLodBias : 0f);

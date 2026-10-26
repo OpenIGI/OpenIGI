@@ -58,6 +58,11 @@ public sealed class Igi2HostedLevelPresenter : ITaskPresenter
     /// </remarks>
     public void DrawParticles(in Camera3D camera, in Matrix4f projection, float blend)
     {
+        if (_level.Explosions is { } explosions)
+        {
+            _renderer.DrawExplosions(explosions, camera, projection, blend);
+        }
+
         if (_level.Particles is { } particles)
         {
             _renderer.DrawParticles(particles, camera, projection, blend);

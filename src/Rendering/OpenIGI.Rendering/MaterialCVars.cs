@@ -193,6 +193,22 @@ public static class MaterialCVars
         high: "8",
         ultra: "16");
 
+    /// <summary>Whether a texture picks its nearest mip level rather than blending between two.</summary>
+    /// <remarks>
+    /// Both games filter linearly within a level and take the nearest level (<c>D3DTSS_MIPFILTER</c> point: Project I.G.I.'s
+    /// stage setup at <c>0x49D730</c>, and its terrain at <c>0x512C30</c>), which is the original's look.
+    /// </remarks>
+    public static readonly BoolCVar PointMips = Presets.Define(
+        CVar.Bool(
+            "r_mip_point",
+            false,
+            CVarOptions.Archive,
+            "Take each texture's nearest mip level instead of blending two, as the original does. Applies to textures loaded afterwards."),
+        vanilla: "1",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

@@ -5,10 +5,10 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Ai;
 
-/// <summary>The soldiers' footsteps: what each step landed on, which of its material's sounds is next, and who hears it.</summary>
+/// <summary>The soldiers' footsteps and landings: what the feet met, and which of its material's sounds is next.</summary>
 /// <remarks>
-/// <c>0x463920</c> is one handler for every human, so a guard's step is resolved exactly as the player's is; only the
-/// cursor through the material's sounds is the soldier's own.
+/// A soldier steps through its own <c>0x45A7F0</c>, which reads the ground as the player's <c>0x463920</c> does and walks
+/// the same twelve-step table with a cursor of its own; a fall that ends on the ground plays the ground's land sound.
 /// </remarks>
 /// <param name="context">The soldiers and the cast their steps probe.</param>
 internal sealed class SoldierFootsteps(SoldierContext context)
@@ -21,12 +21,64 @@ internal sealed class SoldierFootsteps(SoldierContext context)
     /// <summary>Gets or sets where a resolved step is sounded, or <see langword="null"/> to make soldiers walk silently.</summary>
     public Action<Footstep>? FootstepSound { get; set; }
 
+    /// <summary>Gets or sets where a landing's sound is played: its name and where, or <see langword="null"/> for none.</summary>
+    public Action<string, Vector3d>? LandSound { get; set; }
+
     /// <summary>Gets or sets the material table a footstep picks its sound from.</summary>
     public GameMaterialRegistry? Materials { get; set; }
 
     /// <summary>The game material the level's terrain is made of, or null to fall back to <c>Ground</c>.</summary>
     /// <remarks>Guards walk on the same ground the player does; see the player camera's copy.</remarks>
     public int? TerrainGameMaterialIndex { get; set; }
+
+    /// <summary>Plays the ground's land sound under a soldier whose fall has ended on it (<c>0x45C210</c>).</summary>
+    /// <param name="view">The soldier.</param>
+    public void ReportLanding(SoldierView view)
+    {
+        if (LandSound is { } land && TryGetGround(view, out GameMaterial material, out Vector3d where)
+            && FootstepSounds.LandSound(material) is { Length: > 0 } sound)
+        {
+            land(sound, where);
+        }
+    }
+
+    // The ground under a soldier's feet, by the original's short downward probe. The probe answers only for OBJECTS --
+    // the original asks the hit task for its material, and open terrain is no task in this port -- so feet that find
+    // nothing solid are on the ground, the level's terrain row or the Ground row.
+    private bool TryGetGround(SoldierView view, out GameMaterial material, out Vector3d where)
+    {
+        material = null!;
+        where = view.Position;
+        if (Materials is not { } materials || _context.Cast is not { } cast)
+        {
+            return false;
+        }
+
+        // As the player: a face that names no walk sound is not the floor, so keep looking down.
+        (Vector3d probeFrom, Vector3d probeTo) = FootstepSounds.Probe(view.Position);
+        if (cast(probeFrom, probeTo, out WorldRayHit hit)
+            && materials.TryGet(hit.Material, out GameMaterial struck)
+            && FootstepSounds.NamesAWalk(struck))
+        {
+            material = struck;
+            where = hit.Position;
+            return true;
+        }
+
+        if (TerrainGameMaterialIndex is int terrainRow && materials.TryGet(terrainRow, out GameMaterial declared))
+        {
+            material = declared;
+            return true;
+        }
+
+        if (materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
+        {
+            material = ground;
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>Forgets a soldier's place in its material's sounds, as it dies.</summary>
     /// <param name="view">The soldier.</param>
@@ -38,39 +90,13 @@ internal sealed class SoldierFootsteps(SoldierContext context)
     /// the body — the original probes separately, from 0.05 m above the ground point to 0.5 m below it,
     /// which is short enough not to punch through a floor into whatever is beneath it.
     /// </remarks>
-    public void ReportFootstep(SoldierView view)
+    /// <param name="view">The soldier.</param>
+    /// <param name="crouched">The soldier's crouch byte, which keeps the step at <see cref="FootstepSounds.CrouchedVolumeScale"/> (<c>0x45A7F0</c>).</param>
+    public void ReportFootstep(SoldierView view, bool crouched)
     {
-        if (FootstepSound is not { } footstepSound || Materials is not { } materials || _context.Cast is not { } cast)
+        if (FootstepSound is not { } footstepSound || !TryGetGround(view, out GameMaterial material, out Vector3d where))
         {
             return;
-        }
-
-        // The probe answers only for OBJECTS -- the original asks the hit task for its material, and
-        // open terrain is no task in this port. A step that finds nothing solid landed on the ground,
-        // so it takes the Ground row; see FootstepSounds.TerrainMaterialName.
-        (Vector3d probeFrom, Vector3d probeTo) = FootstepSounds.Probe(view.Position);
-        Vector3d where = view.Position;
-        GameMaterial? material;
-
-        // As the player: a face that names no walk sound is not the floor, so keep looking down.
-        if (cast(probeFrom, probeTo, out WorldRayHit hit)
-            && materials.TryGet(hit.Material, out GameMaterial struck)
-            && FootstepSounds.NamesAWalk(struck))
-        {
-            material = struck;
-            where = hit.Position;
-        }
-        else if (TerrainGameMaterialIndex is int terrainRow && materials.TryGet(terrainRow, out GameMaterial declared))
-        {
-            material = declared;
-        }
-        else if (!materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
-        {
-            return;
-        }
-        else
-        {
-            material = ground;
         }
 
         // One cursor per soldier, so two guards walking abreast do not step in unison.
@@ -80,13 +106,14 @@ internal sealed class SoldierFootsteps(SoldierContext context)
 
         if (sound.Length > 0)
         {
-            // 0x463920 is one handler for every human, so a guard walking in the rain lays down the
-            // same wet layer the player does. The slot is what names it.
+            // 0x45A7F0, the soldier's own step: the same twelve-step table, wet layer and pitch as the player's
+            // 0x463920, and no hearing event.
             footstepSound(new Footstep(
                 sound,
                 where,
                 FootstepSounds.HearingRadiusInUnits(material),
-                slot));
+                slot,
+                crouched ? FootstepSounds.CrouchedVolumeScale : 1f));
         }
     }
 }

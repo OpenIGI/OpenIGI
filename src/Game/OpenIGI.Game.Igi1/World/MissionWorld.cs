@@ -34,6 +34,18 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the guards' rounds this mission, once the brains are animated.</summary>
     public GuardRounds? GuardRounds { get; set; }
 
+    /// <summary>Gets or sets what breaks a pane a grenade, a missile or a car strikes, answering whether it broke.</summary>
+    public Func<RetailGlassPane, Vector3d, bool>? TouchGlass { get; set; }
+
+    /// <summary>Gets or sets the level's smoke plumes.</summary>
+    public Igi1SmokePlumes? SmokePlumes { get; set; }
+
+    /// <summary>Gets or sets the level's minefields.</summary>
+    public IReadOnlyList<Igi1MineField> MineFields { get; set; } = [];
+
+    /// <summary>Gets or sets what the minefields' conditions are read through.</summary>
+    public LevelExpressionRuntime? MineFieldExpressions { get; set; }
+
     /// <summary>Gets or sets the soldiers' simulation: their brains, bodies and rounds, or <see langword="null"/> before a level has any.</summary>
     public SoldierSimulation? Soldiers { get; set; }
 
@@ -52,6 +64,9 @@ public sealed class MissionWorld : MissionState
 
     /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
     public PlayerCamera? Player { get; set; }
+
+    /// <summary>Gets or sets the computer the player carries, the original's own.</summary>
+    public OpenIGI.Game.Igi1.Computer.Igi1Computer? Computer { get; set; }
 
     /// <summary>Gets or sets the title's human AI table.</summary>
     public HumanAiConfigRegistry? AiConfig { get; set; }

@@ -2,11 +2,13 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Igi2.Ai;
+using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Ai.Runtime;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.Vehicles;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Game.Physics;
@@ -195,6 +197,104 @@ public sealed class RetailIgi2CarTests
         }
 
         Assert.Equal(0f, door.Angle);
+    }
+
+    /// <summary>
+    /// Mission 15's armoured car's four wheels are drawn on their own (Wheel_RunHandler, Wheel_UpdateAttachmentHandler): each of the
+    /// walk's wheel placements is one of its wheels, a wheel's radius comes from its physics type, and driving forward rolls them,
+    /// the roll counting down, while the brake stops them dead.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_cars_wheels_roll_as_it_drives_and_stand_where_its_springs_put_them()
+    {
+        (RetailIgi2Mission1 m, Igi2CarTask car) = Car(1300);
+        HashSet<string> models = [.. car.Wheels.Where(static w => w.Model is not null).Select(static w => w.Model!)];
+        WorldPlacement[] placements = [.. Igi2LevelScene.Build(m.Level).Built.Scene.Placements
+            .Where(p => p.LevelId == car.Id && models.Contains(p.Instance.Name))];
+        Assert.Equal(4, placements.Length);
+        Assert.All(car.Wheels, static w => Assert.True(w.Radius > 0f));
+
+        for (int tick = 1; tick <= 90; tick++)
+        {
+            car.Drive(tick, [0f, 0f, 0f, 1f], tick);
+            car.RunWheels();
+        }
+
+        Assert.All(car.Wheels, static w => Assert.Equal(0d, w.Roll));
+        for (int tick = 91; tick <= 150; tick++)
+        {
+            car.Drive(tick, [0f, 1f, 0f, Igi2CarTask.HoldChannel], tick);
+            car.RunWheels();
+        }
+
+        Assert.All(car.Wheels, static w => Assert.True(w.Roll < -0.5d, $"rolled {w.Roll}"));
+        Vector3d[] at = new Vector3d[placements.Length];
+        for (int i = 0; i < placements.Length; i++)
+        {
+            Assert.True(car.TryMovePart(placements[i], out Vector3d where, out _));
+            at[i] = where;
+        }
+
+        Assert.Equal(placements.Length, at.Distinct().Count());
+        double low = at.Min(static p => p.Z), high = at.Max(static p => p.Z);
+        Assert.InRange(high - low, 0.0, 0.5);
+    }
+
+    /// <summary>
+    /// Mission 15's armoured car's engine sound is a group, two triggers and two graphs, which the mixer cannot play as one voice:
+    /// it is made as a set the car drives, ticked with the car's channels (Car_SoundUpdateParameterListHandler), and it lasts
+    /// until it is deleted whether or not anything is heard.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_cars_engine_group_is_driven_by_its_channels()
+    {
+        (RetailIgi2Mission1 m, _) = Car(1300);
+        RecordingAudio heard = new();
+        Igi2Sounds sounds = new(m.Sounds.Definitions, heard);
+        float[] channels = [0.5f, 1f, 0.25f];
+        Vector3d at = new(1.0, 2.0, 3.0);
+        Igi2Sound? engine = sounds.New("apc_sounds", at, () => at, parameters: () => channels);
+        Assert.NotNull(engine);
+        sounds.Run();
+        Assert.Equal("apc_sounds", heard.Set);
+        Assert.Equal(channels, heard.Parameters);
+        Assert.Equal(at, heard.Position);
+
+        Igi2Sound? unheard = new Igi2Sounds(m.Sounds.Definitions, null).New("apc_sounds", at, parameters: () => channels);
+        Assert.True(unheard!.IsAlive);
+        engine!.Delete();
+        Assert.True(heard.Silenced);
+    }
+
+    private sealed class RecordingAudio : ITitleAudio, ITitleSoundSet
+    {
+        public string? Set { get; private set; }
+
+        public IReadOnlyList<float> Parameters { get; private set; } = [];
+
+        public Vector3d Position { get; private set; }
+
+        public bool Silenced { get; private set; }
+
+        public void UseDefinitions(Engine.Audio.ISoundDefinitionLookup definitions, IReadOnlyList<string> bankDirectories)
+        {
+        }
+
+        public ITitleVoice? Play(string definition, Vector3d positionInUnits, bool? looping = null) => null;
+
+        public ITitleSoundSet? PlaySet(string definition)
+        {
+            Set = definition;
+            return this;
+        }
+
+        public void Tick(Vector3d positionInUnits, IReadOnlyList<float> parameters)
+        {
+            Position = positionInUnits;
+            Parameters = [.. parameters];
+        }
+
+        public void Silence() => Silenced = true;
     }
 
     private static Matrix3f Rows(IReadOnlyList<float> f) => new(f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);

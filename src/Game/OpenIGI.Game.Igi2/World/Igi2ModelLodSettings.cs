@@ -2,78 +2,29 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Scripting;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.World;
 
-/// <summary>
-/// The distances each model switches its levels of detail at, <c>LODVirModel_s.avLODDistance</c> with <c>isLODDistanceSpecified</c>, as
-/// the model LOD settings set them: the game's own file at start-up, and a level's over it.
-/// </summary>
-public sealed class Igi2ModelLodTable
+/// <summary>I.G.I. 2's model LOD settings files, run in the session as its containers run them.</summary>
+public static class Igi2ModelLodScript
 {
     /// <summary>The game's file, which the game's container loads as it is made (<c>ModelLODSettingsContainer_CreateHandler</c>).</summary>
     public const string GameFile = "LOCAL:lod.qsc";
-
-    private readonly Dictionary<string, float[]> _distances = new(StringComparer.OrdinalIgnoreCase);
-    private IReadOnlyDictionary<string, float[]> _game = new Dictionary<string, float[]>();
-
-    /// <summary>Notes the distances as they stand as the game's own, which each level starts from.</summary>
-    public void KeepAsGame() => _game = Snapshot();
-
-    /// <summary>Puts the game's own distances back, as a level starts.</summary>
-    public void BeginLevel() => Reset(_game);
-
-    /// <summary>Gets the models with distances of their own.</summary>
-    public int Count => _distances.Count;
-
-    /// <summary>Gets a model's distances, in world units: to its second to fifth levels and its cutoff.</summary>
-    /// <param name="model">The model.</param>
-    /// <param name="distances">Receives its distances.</param>
-    /// <returns>Whether it has distances of its own.</returns>
-    public bool TryGet(string model, out IReadOnlyList<float> distances)
-    {
-        bool found = _distances.TryGetValue(model, out float[]? stored);
-        distances = stored ?? [];
-        return found;
-    }
-
-    /// <summary>Gives a model its distances.</summary>
-    /// <param name="model">The model.</param>
-    /// <param name="distances">Its distances, in world units.</param>
-    public void Set(string model, float[] distances)
-    {
-        ArgumentNullException.ThrowIfNull(model);
-        ArgumentNullException.ThrowIfNull(distances);
-        _distances[model] = distances;
-    }
-
-    /// <summary>Forgets the distances a level gave, keeping the game's.</summary>
-    /// <param name="game">The game's distances, as they stood after start-up.</param>
-    public void Reset(IReadOnlyDictionary<string, float[]> game)
-    {
-        ArgumentNullException.ThrowIfNull(game);
-        _distances.Clear();
-        foreach ((string model, float[] distances) in game)
-        {
-            _distances[model] = distances;
-        }
-    }
-
-    /// <summary>Takes a copy of the distances as they stand.</summary>
-    /// <returns>The copy.</returns>
-    public IReadOnlyDictionary<string, float[]> Snapshot() => new Dictionary<string, float[]>(_distances, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Loads a settings file into a container, <c>ModelLODSettingsContainer_LoadSettings</c>: its <c>Task_New</c> calls made under the
     /// container (<c>Script_SetSymbolContext</c>), then each setting made applied. A file that is not there loads nothing.
     /// </summary>
+    /// <param name="table">The table the settings are written into.</param>
     /// <param name="container">The container.</param>
     /// <param name="path">The file, a <c>.qsc</c> read from its compiled <c>.qvm</c>.</param>
     /// <param name="resources">Where the file is read from.</param>
     /// <param name="natives">The script namespace, with <c>Task_New</c>.</param>
-    public void Load(GameTask container, string path, ResourceRegistry resources, NativeRegistry natives)
+    public static void Load(this ModelLodTable table, GameTask container, string path, ResourceRegistry resources, NativeRegistry natives)
     {
+        ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(container);
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(resources);
@@ -97,7 +48,7 @@ public sealed class Igi2ModelLodTable
 
         foreach (Igi2ModelLodSettingsTask setting in container.Children.OfType<Igi2ModelLodSettingsTask>())
         {
-            setting.Apply(this);
+            setting.Apply(table);
         }
     }
 }
@@ -162,7 +113,7 @@ public sealed partial class Igi2ModelLodSettingsTask : Igi2Task
 
     /// <summary>Gives the model its distances, unless another setting of its container sets that model.</summary>
     /// <param name="table">The table.</param>
-    public void Apply(Igi2ModelLodTable table)
+    public void Apply(ModelLodTable table)
     {
         ArgumentNullException.ThrowIfNull(table);
         string model = Model.TrimEnd(' ');

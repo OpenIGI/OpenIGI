@@ -582,10 +582,6 @@ public sealed partial class GameHost
         // is warming -- that is exactly when somebody is looking into why it is.
         DrawMissionWarmUp(state.Batch);
 
-        // The mission's caption, standing in the level under the shot: over the defocus, so it is the
-        // one sharp thing while the lighting settles, and under the state.Console.
-        DrawWorldTitle(state.Batch);
-
         // The console goes over everything, including the menus, so it is the last thing drawn.
         // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up
         // with the console shut. It is false during a capture run whatever the reader pinned, so a

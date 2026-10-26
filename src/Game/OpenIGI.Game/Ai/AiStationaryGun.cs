@@ -161,6 +161,9 @@ public sealed class AiStationaryGun
 
     public bool IsOccupiedBy(object owner) => ReferenceEquals(_occupant, owner);
 
+    /// <summary>Gets whoever is on the gun, <c>+520</c>: a gunner's brain, or the player's use of it.</summary>
+    public object? Occupant => _occupant;
+
     public bool TryMount(object owner)
     {
         ArgumentNullException.ThrowIfNull(owner);

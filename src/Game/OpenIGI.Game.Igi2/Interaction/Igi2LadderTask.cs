@@ -40,7 +40,7 @@ public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Lad
     /// <summary>The groups its lines of sight look through, <c>Forest_bQTaskGroup | 0x8000000</c>.</summary>
     public const uint SightGroups = Igi2CollisionWorld.ForestGroup | 0x8000000;
 
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
 
     /// <summary>Gets or sets its model.</summary>
     [ScriptParam(ScriptParamType.String16, "Model")]
@@ -117,7 +117,7 @@ public sealed partial class Igi2LadderTask : Igi2Task, IIgi2PlacedTask, IIgi2Lad
     {
         if (!_isFramed)
         {
-            _frame = Igi2Pose.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+            _frame = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         }
 
         MefModel? model = Models?.Invoke(Model);

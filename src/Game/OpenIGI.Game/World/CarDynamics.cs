@@ -43,6 +43,18 @@ public sealed class CarMotionState
     /// <summary>Gets or sets the body's vertical velocity in world units per tick.</summary>
     public double RiseRate { get; set; }
 
+    /// <summary>Gets each drawn wheel's own roll, radians, when the car's body tracks its wheels one by one.</summary>
+    public double[] WheelRolls { get; } = new double[RetailCarBody.MaxWheels];
+
+    /// <summary>Gets each drawn wheel's own spin rate, radians a tick.</summary>
+    public double[] WheelSpinRates { get; } = new double[RetailCarBody.MaxWheels];
+
+    /// <summary>Gets how far each drawn wheel's spring has it up from its attach point, world units.</summary>
+    public double[] WheelLifts { get; } = new double[RetailCarBody.MaxWheels];
+
+    /// <summary>Gets or sets a value indicating whether the wheels are tracked one by one, in the arrays above.</summary>
+    public bool HasWheelStates { get; set; }
+
     /// <summary>Clears the motion, leaving the body parked.</summary>
     public void Reset()
     {
@@ -52,6 +64,10 @@ public sealed class CarMotionState
         WheelSteer = 0d;
         WheelSpinRate = 0d;
         RiseRate = 0d;
+        Array.Clear(WheelRolls);
+        Array.Clear(WheelSpinRates);
+        Array.Clear(WheelLifts);
+        HasWheelStates = false;
     }
 }
 
@@ -95,12 +111,6 @@ public static class CarDynamics
 
     /// <summary>The slip-proportional term of the tyre force (<c>0x430960</c>).</summary>
     public const float SlipForceScale = 0.1f;
-
-    /// <summary>The speed a drawn wheel ignores before it starts rolling (<c>0x4301C0</c>).</summary>
-    public const float WheelSpeedDeadzoneUnits = 40.96f;
-
-    /// <summary>How much of the new spin rate a drawn wheel takes each tick (<c>0x4301C0</c>).</summary>
-    public const float WheelSpinBlend = 0.3f;
 
     /// <summary>The share of the wheel's normal load a sliding tyre holds (<c>0x430960</c>).</summary>
     public const float SlidingLoadFactor = 0.24f;
@@ -285,14 +295,7 @@ public static class CarDynamics
         // smoothed spin rate of speed/radius at 0.3 of the new value to 0.7 of the old. The roll
         // accumulates against that rate, and a steered wheel's angle is the NEGATIVE of
         // MaximumSteerDegrees * steering * pi/180 -- the same sign as the drive direction above.
-        double wheelSpeed = travelled;
-        if (wheelSpeed < WheelSpeedDeadzoneUnits)
-        {
-            wheelSpeed = 0d;
-        }
-
-        motion.WheelSpinRate = (wheelSpeed / WheelRadiusUnits(physics, wheels) * WheelSpinBlend)
-            + (motion.WheelSpinRate * (1d - WheelSpinBlend));
+        motion.WheelSpinRate = DrawnWheel.NextSpinRate(travelled, WheelRadiusUnits(physics, wheels), motion.WheelSpinRate);
         if (handbrake)
         {
             motion.WheelSpinRate = 0d;
@@ -300,6 +303,34 @@ public static class CarDynamics
 
         motion.WheelRoll -= motion.WheelSpinRate;
         motion.WheelSteer = -MaximumSteerRadians(wheels) * steering;
+    }
+
+    /// <summary>Rolls, steers and lifts each drawn wheel of a car on the original's body -- <c>Wheel_Run</c> and <c>Wheel_Move</c>.</summary>
+    /// <param name="motion">The car's motion, whose per-wheel state is advanced.</param>
+    /// <param name="body">The car's body, after its tick.</param>
+    /// <param name="wheels">The car's wheels, for their radii.</param>
+    public static void AnimateWheels(CarMotionState motion, RetailCarBody body, IReadOnlyList<CarWheel> wheels)
+    {
+        ArgumentNullException.ThrowIfNull(motion);
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(wheels);
+        int count = Math.Min(body.Definition.Wheels.Length, RetailCarBody.MaxWheels);
+        for (int i = 0; i < count; i++)
+        {
+            double radius = i < wheels.Count && wheels[i].RadiusUnits > 0f ? wheels[i].RadiusUnits : 0d;
+            double rate = DrawnWheel.NextSpinRate(body.DrawnWheelSpeed(i), radius, motion.WheelSpinRates[i]);
+            if (body.Handbrake)
+            {
+                rate = 0d;
+            }
+
+            motion.WheelSpinRates[i] = rate;
+            motion.WheelRolls[i] -= rate;
+            motion.WheelLifts[i] = body.DrawnWheelLift(i);
+        }
+
+        motion.WheelSteer = -MaximumSteerRadians(wheels) * body.Steering;
+        motion.HasWheelStates = true;
     }
 
     /// <summary>Rides the springs, returning how far the body rises this tick.</summary>

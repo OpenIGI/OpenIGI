@@ -8,101 +8,56 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
-/// The retail <c>Explosion0</c> effect: its <c>1006_01_1</c> FireBalls, its <c>1009_01_1</c>
-/// fragments and the smoke column's second puff.
+/// Draws the retail <c>Explosion0</c>'s <c>1006_01_1</c> FireBalls, as a title's simulation has them (<see cref="IExplosionScene"/>).
 /// </summary>
 /// <remarks>
-/// Owns the two authored effect models and their textures, the live fragments, FireBalls and smoke
-/// timers, and draws the models. The smoke puffs themselves are sprite particles, so they are handed
-/// back to <see cref="ImpactParticleRenderer"/>'s pool through the smoke callback. It draws from the
-/// renderer's own random stream, in the order the renderer always drew.
+/// Owns the FireBall's model and its animated texture; what is drawn, and where, is the simulation's. An explosion's
+/// fragments are ordinary models, drawn by the title's impact drawer with a round's chips, and its smoke is particle
+/// systems, which the particle drawer shows.
 /// </remarks>
-internal sealed class RetailExplosionEffects
+public sealed class RetailExplosionEffects
 {
     private const float UnitsPerMetre = (float)WorldScene.UnitsPerMetre;
-    // Explosion0 (FUN_0047F200) and its children. The FireBall is 1006_01_1 (FUN_00480060), 75 ticks
-    // long, its size stored over 2048; a fragment is a 1009_01_1 SimpointObj (FUN_0047F0D0) at 204.8
-    // over 2048, living the container's 45 ticks (FUN_00503C00's first argument).
-    private const int RetailFireballLifeTicks = 75;
+
+    // A FireBall's size is stored over 2048 (0x480060), and its depth never falls below a hundredth.
     private const float RetailFireballSizeDivisor = 2048f;
     private const float RetailFireballDepthFloor = 0.0099999998f;
-    private const float RetailSeveralFireballsScale = 0.75f;
-    private const int RetailFragmentLifeTicks = 45;
-    private const float RetailFragmentScale = 204.8f / 2048f;
-    private const float RetailFragmentRollRange = 0.031415928f;
-    private const float RetailFragmentConeRadians = 1.5707964f;
-    private const float RetailFragmentMinSpeed = 272f;
-    private const float RetailFragmentMaxSpeed = 1360f;
-    private const float RetailFragmentMassPerUnit = 0.00021972656f;
-    private const int RetailExplosionSmokeTicks = 150;
-    private const int RetailExplosionSmokeSecondSpawnAge = 15;
-    private const float RetailExplosionDrag = 0.98f;
-    private const float RetailExplosionAngleDrag = 0.99f;
-    private const float RetailExplosionAngleRange = 0.628318548f;
-    private const float RetailExplosionGravity = 44.600006f;
-    private const string RetailFragmentModelName = "1009_01_1";
     private const string RetailFireballModelName = "1006_01_1";
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry? _resources;
-    private readonly IgiRandom _random;
-    private readonly Action<Vector3d, Vector3f, float, int> _emitSmokePuff;
-    private readonly List<RetailFragment> _retailFragments = [];
-    private readonly List<RetailFireball> _retailFireballs = [];
-    private readonly List<RetailSmoke> _retailSmokes = [];
-    private MeshGeometry? _retailFragmentGeometry;
-    private MeshHandle _retailFragmentMesh = MeshHandle.None;
-    private TextureHandle _retailFragmentTexture = TextureHandle.None;
-    private BlendMode _retailFragmentBlend = BlendMode.Opaque;
     private MeshGeometry? _retailFireballGeometry;
     private MeshHandle _retailFireballMesh = MeshHandle.None;
     private TextureHandle[] _retailFireballFrameTextures = [];
     private BlendMode _retailFireballBlend = BlendMode.Additive;
+    private bool _ownsFireballTextures = true;
 
-    /// <summary>Initializes the effect over the renderer's device, resources and random stream.</summary>
+    /// <summary>Initializes the drawer over a device and the bound resources.</summary>
     /// <param name="device">The device the models upload to and draw with.</param>
     /// <param name="resources">The bound retail resources the model textures load from.</param>
-    /// <param name="random">The renderer's random stream.</param>
-    /// <param name="emitSmokePuff">Adds one smoke sprite particle: position, velocity, size in metres, life in ticks.</param>
-    internal RetailExplosionEffects(
-        IGraphicsDevice device,
-        ResourceRegistry? resources,
-        IgiRandom random,
-        Action<Vector3d, Vector3f, float, int> emitSmokePuff)
+    public RetailExplosionEffects(IGraphicsDevice device, ResourceRegistry? resources)
     {
         _device = device;
         _resources = resources;
-        _random = random;
-        _emitSmokePuff = emitSmokePuff;
     }
 
-    /// <summary>Gets whether the IGI1 common pack supplied the native <c>1009_01_1</c> fragment model.</summary>
-    internal bool UsesRetailExplosionModel => _retailFragmentGeometry is not null
-        && _retailFragmentTexture.IsValid;
-
     /// <summary>Gets whether the common pack supplied the native 1006 FireBall model.</summary>
-    internal bool UsesRetailFireballModel => _retailFireballGeometry is not null
+    public bool UsesRetailFireballModel => _retailFireballGeometry is not null
         && _retailFireballFrameTextures.Length > 0;
 
     /// <summary>Gets how many animation frames the FireBall's texture has, for parity tests.</summary>
-    internal int RetailFireballModelFrameCount => _retailFireballFrameTextures.Length;
+    public int RetailFireballModelFrameCount => _retailFireballFrameTextures.Length;
 
     /// <summary>Gets the blend the FireBall model's face group asks for.</summary>
-    internal BlendMode RetailFireballBlend => _retailFireballBlend;
+    public BlendMode RetailFireballBlend => _retailFireballBlend;
 
-    /// <summary>Gets the blend the fragment model's face group asks for.</summary>
-    internal BlendMode RetailFragmentBlend => _retailFragmentBlend;
-
-    /// <summary>Gets whether any fragment or FireBall is alive to draw.</summary>
-    internal bool HasDrawable => _retailFragments.Count != 0 || _retailFireballs.Count != 0;
-
-    /// <summary>Binds the authored fragment and FireBall models from the mission's packs.</summary>
+    /// <summary>Binds the authored FireBall model from the mission's packs.</summary>
     /// <param name="mission">The loaded IGI1 mission whose common pack owns the effect.</param>
-    /// <returns><see langword="true"/> when <c>1009_01_1</c> and its texture resolved.</returns>
-    internal bool Load(LoadedMission mission)
+    /// <returns><see langword="true"/> when <c>1006_01_1</c> and its animation resolved.</returns>
+    public bool Load(LoadedMission mission)
     {
-        ReleaseRetailFragmentModel();
         ReleaseRetailFireballModel();
+        _ownsFireballTextures = true;
         if (_resources is null)
         {
             return false;
@@ -112,9 +67,7 @@ internal sealed class RetailExplosionEffects
         {
             foreach (MtpInstance instance in pack.Instances)
             {
-                bool isFragment = string.Equals(instance.Name, RetailFragmentModelName, StringComparison.OrdinalIgnoreCase);
-                bool isFireball = string.Equals(instance.Name, RetailFireballModelName, StringComparison.OrdinalIgnoreCase);
-                if ((!isFragment && !isFireball)
+                if (!string.Equals(instance.Name, RetailFireballModelName, StringComparison.OrdinalIgnoreCase)
                     || !pack.TryGetModel(instance, out MefModel? model)
                     || model is null)
                 {
@@ -127,343 +80,56 @@ internal sealed class RetailExplosionEffects
                     continue;
                 }
 
-                BlendMode blend = BlendOf(model);
-                if (isFragment)
+                TextureHandle[] frames = LoadRetailAnimationFrames(textureName);
+                if (frames.Length == 0)
                 {
-                    TextureHandle texture = SpriteStrip.LoadTexture(_device, _resources, textureName);
-                    if (!texture.IsValid)
-                    {
-                        continue;
-                    }
-
-                    ReleaseRetailFragmentModel();
-                    _retailFragmentGeometry = geometry;
-                    _retailFragmentTexture = texture;
-                    _retailFragmentBlend = blend;
+                    continue;
                 }
-                else
-                {
-                    TextureHandle[] frames = LoadRetailAnimationFrames(textureName);
-                    if (frames.Length == 0)
-                    {
-                        continue;
-                    }
 
-                    ReleaseRetailFireballModel();
-                    _retailFireballGeometry = geometry;
-                    _retailFireballFrameTextures = frames;
-                    _retailFireballBlend = blend;
-                }
+                ReleaseRetailFireballModel();
+                _retailFireballGeometry = geometry;
+                _retailFireballFrameTextures = frames;
+                // Project I.G.I.'s own model: its additive face group adds at full strength (0x49EC70).
+                _retailFireballBlend = BlendOf(model) == BlendMode.Additive ? BlendMode.AddColour : BlendOf(model);
             }
         }
 
-        return UsesRetailExplosionModel;
+        return UsesRetailFireballModel;
     }
 
-    /// <summary>Spawns one <c>Explosion0</c> with the retail models bound.</summary>
-    /// <param name="positionUnits">The blast's centre, in world units.</param>
-    /// <param name="shape">The caller's <c>Explosion0</c> arguments.</param>
-    /// <param name="includeSmoke">Whether the native <c>ExplosionSmoke</c> child is present.</param>
-    internal void Spawn(Vector3d positionUnits, RetailExplosionShape shape, bool includeSmoke)
+    /// <summary>Takes a FireBall model a title built from its own packs, whose frames the title keeps and frees.</summary>
+    /// <param name="geometry">The <c>1006_01_1</c> model, in metres.</param>
+    /// <param name="frames">Its animated texture's frames, in order.</param>
+    /// <param name="blend">The blend its face group asks for (<see cref="BlendOf"/>).</param>
+    /// <returns><see langword="true"/> when there is something to draw.</returns>
+    public bool UseFireBall(MeshGeometry geometry, TextureHandle[] frames, BlendMode blend)
     {
-        float range = Math.Max(0f, shape.FullRangeUnits);
-        int fireballs = Math.Max(0, shape.Fireballs);
-
-        // FUN_00480FE0 draws the blast's axis first, and FUN_004810A0 the container's spin.
-        Vector3f axis = new(
-            _random.NextSingle() - 0.5f,
-            _random.NextSingle() - 0.5f,
-            _random.NextSingle() - 0.3f);
-        Vector3f spin = new(
-            _random.NextSingle() * RetailExplosionAngleRange,
-            _random.NextSingle() * RetailExplosionAngleRange,
-            _random.NextSingle() * RetailExplosionAngleRange);
-
-        if (fireballs > 0)
-        {
-            // The first FireBall sits on the blast, a quarter smaller when others share it; the others
-            // are scattered through the range, smaller, shorter-lived and staggered in.
-            float firstSize = fireballs > 1 ? range * RetailSeveralFireballsScale : range;
-            _retailFireballs.Add(new RetailFireball(
-                positionUnits, firstSize, DelayTicks: 0, RetailFireballLifeTicks, RetailFireballLifeTicks));
-
-            for (int i = 1; i < fireballs; i++)
-            {
-                float size = ((_random.NextSingle() * 0.25f) + 0.5f) * range;
-                _ = _random.NextSingle();
-                Vector3d offset = new(
-                    (_random.NextSingle() - 0.5d) * range,
-                    (_random.NextSingle() - 0.5d) * range,
-                    (_random.NextSingle() - 0.5d) * range);
-                int life = (int)((_random.NextSingle() + 1d) * RetailFireballLifeTicks * 0.5d);
-                int delay = (i * (RetailFireballLifeTicks / fireballs)) + (int)(_random.NextSingle() * 15f);
-                _retailFireballs.Add(new RetailFireball(positionUnits + offset, size, delay, life, life));
-            }
-        }
-
-        if (includeSmoke)
-        {
-            float smokeScale = 0.9f * range / UnitsPerMetre;
-            int smokeTicks = fireballs <= 1
-                ? RetailExplosionSmokeTicks
-                : (int)(RetailExplosionSmokeTicks - (RetailExplosionSmokeTicks / (double)fireballs) - 1d
-                    + RetailExplosionSmokeTicks);
-            EmitSmokePuff(
-                positionUnits,
-                new Vector3f(0f, 0f, UnitsPerMetre / 30f),
-                sizeMetres: 0.8f * smokeScale,
-                lifeTicks: smokeTicks);
-            _retailSmokes.Add(new RetailSmoke(
-                positionUnits,
-                smokeScale,
-                smokeTicks,
-                RetailExplosionSmokeSecondSpawnAge));
-        }
-
-        float gravityScale = range * RetailFragmentMassPerUnit;
-        for (int i = 0; i < Math.Max(0, shape.Fragments); i++)
-        {
-            float speed = (_random.NextSingle() * (RetailFragmentMaxSpeed - RetailFragmentMinSpeed))
-                + RetailFragmentMinSpeed;
-            Vector3f direction = RandomUnitVectorInCone(RetailFragmentConeRadians, axis);
-            Matrix3f roll = Matrix3f.FromEngineEulerAngles(
-                _random.NextSingle() * RetailFragmentRollRange,
-                _random.NextSingle() * RetailFragmentRollRange,
-                _random.NextSingle() * RetailFragmentRollRange);
-            _retailFragments.Add(new RetailFragment(
-                positionUnits,
-                positionUnits,
-                direction * speed,
-                roll,
-                spin,
-                gravityScale,
-                RetailFragmentLifeTicks));
-        }
+        ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(frames);
+        ReleaseRetailFireballModel();
+        _ownsFireballTextures = false;
+        _retailFireballGeometry = geometry;
+        _retailFireballFrameTextures = [.. frames.Where(static frame => frame.IsValid)];
+        _retailFireballBlend = blend;
+        return UsesRetailFireballModel;
     }
 
-    /// <summary>Picks a direction inside a cone the way <c>GameFunctions_GetRandomUnitVectorInCone</c> does.</summary>
-    /// <remarks>
-    /// A random turn about the axis and a random fraction of the cone's tangent. At the right-angle cone
-    /// every destructible uses, the single-precision tangent is enormous, so almost every fragment leaves
-    /// square to the blast's axis: a flat spray, not a sphere.
-    /// </remarks>
-    private Vector3f RandomUnitVectorInCone(float coneRadians, Vector3f axis)
-    {
-        float turn = _random.NextSingle() * MathF.Tau;
-        float reach = _random.NextSingle() * MathF.Tan(coneRadians);
-        float x = MathF.Sin(turn) * reach;
-        float y = MathF.Cos(turn) * reach;
-        float length = MathF.Sqrt((x * x) + (y * y) + 1f);
-        x /= length;
-        y /= length;
-        float z = 1f / length;
-
-        Vector3f d = axis.Normalized();
-        Vector3f side = new(d.Y, -d.X, 0f);
-        Vector3f up;
-        if (side.Length <= 0.1f)
-        {
-            up = new Vector3f(0f, -d.Z, d.Y).Normalized();
-            side = Vector3f.Cross(d, up).Normalized();
-        }
-        else
-        {
-            side = side.Normalized();
-            up = Vector3f.Cross(side, d).Normalized();
-        }
-
-        return (side * x) + (up * y) + (d * z);
-    }
-
-    /// <summary>Advances one <c>SimpointObj</c> fragment through the retail container update.</summary>
-    /// <remarks>
-    /// IGI1's <c>FUN_005035B0</c> multiplies velocity by the container drag (<c>0.98</c>) and subtracts
-    /// <c>mass * 44.600006 * 0.98</c> from Z. The mass is the blast's full range times
-    /// <c>0.000219726557</c> (<c>FUN_004810A0</c>), so a bigger blast throws heavier-falling debris.
-    /// </remarks>
-    internal static (Vector3d PositionUnits, Vector3f Velocity) AdvanceRetailExplosionMotion(
-        Vector3d positionUnits,
-        Vector3f velocity,
-        float gravityScale)
-    {
-        float gravity = gravityScale * RetailExplosionGravity * RetailExplosionDrag;
-        Vector3f nextVelocity = new(
-            velocity.X * RetailExplosionDrag,
-            velocity.Y * RetailExplosionDrag,
-            (velocity.Z * RetailExplosionDrag) - gravity);
-        return (
-            new Vector3d(
-                positionUnits.X + nextVelocity.X,
-                positionUnits.Y + nextVelocity.Y,
-                positionUnits.Z + nextVelocity.Z),
-            nextVelocity);
-    }
-
-    /// <summary>Advances the fragments, the FireBalls and the smoke timers by one game tick.</summary>
-    internal void Tick()
-    {
-        for (int i = _retailFragments.Count - 1; i >= 0; i--)
-        {
-            RetailFragment current = _retailFragments[i];
-            if (current.RemainingTicks <= 0)
-            {
-                _retailFragments.RemoveAt(i);
-                continue;
-            }
-
-            // The container damps its spin first, then turns every piece by it and moves it on.
-            Vector3f spin = current.Spin * RetailExplosionAngleDrag;
-            (Vector3d positionUnits, Vector3f velocity) = AdvanceRetailExplosionMotion(
-                current.PositionUnits,
-                current.Velocity,
-                current.GravityScale);
-            _retailFragments[i] = current with
-            {
-                PreviousPositionUnits = current.PositionUnits,
-                PositionUnits = positionUnits,
-                Velocity = velocity,
-                Orientation = Matrix3f.FromEngineEulerAngles(spin.X, spin.Y, spin.Z) * current.Orientation,
-                Spin = spin,
-                RemainingTicks = current.RemainingTicks - 1,
-            };
-        }
-
-        // FUN_004806E0: a FireBall waits out its delay, then counts its life down to nothing.
-        for (int i = _retailFireballs.Count - 1; i >= 0; i--)
-        {
-            RetailFireball fireball = _retailFireballs[i];
-            if (fireball.DelayTicks > 0)
-            {
-                _retailFireballs[i] = fireball with { DelayTicks = fireball.DelayTicks - 1 };
-            }
-            else if (fireball.RemainingTicks > 0)
-            {
-                _retailFireballs[i] = fireball with { RemainingTicks = fireball.RemainingTicks - 1 };
-            }
-            else
-            {
-                _retailFireballs.RemoveAt(i);
-            }
-        }
-
-        for (int i = _retailSmokes.Count - 1; i >= 0; i--)
-        {
-            RetailSmoke current = _retailSmokes[i];
-            if (!current.SecondEmitted && current.AgeTicks >= current.SecondSpawnAge)
-            {
-                EmitSmokePuff(
-                    current.PositionUnits,
-                    new Vector3f(0f, 0f, UnitsPerMetre / 30f),
-                    sizeMetres: 0.8f * current.Scale,
-                    lifeTicks: RetailExplosionSmokeTicks - current.SecondSpawnAge);
-                current = current with { SecondEmitted = true };
-            }
-
-            current = current with { AgeTicks = current.AgeTicks + 1 };
-            if (current.AgeTicks >= current.TotalTicks)
-            {
-                _retailSmokes.RemoveAt(i);
-            }
-            else
-            {
-                _retailSmokes[i] = current;
-            }
-        }
-    }
-
-    /// <summary>Draws the live fragments, then the started FireBalls.</summary>
+    /// <summary>Draws the started FireBalls.</summary>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The world projection.</param>
     /// <param name="alpha">The frame's position between the last two ticks, 0–1.</param>
-    internal void Draw(in Camera3D camera, in Matrix4f projection, float alpha)
+    /// <param name="scene">The title's explosions.</param>
+    public void Draw(IExplosionScene scene, in Camera3D camera, in Matrix4f projection, float alpha)
     {
-        DrawRetailFragments(camera, projection, alpha);
-        DrawRetailFireballs(camera, projection);
+        ArgumentNullException.ThrowIfNull(scene);
+        _ = alpha;
+        DrawRetailFireballs(scene, camera, projection);
     }
 
-    /// <summary>Removes every fragment, FireBall and smoke timer, as changing level does.</summary>
-    internal void Clear()
+    /// <summary>Releases the FireBall's model.</summary>
+    public void Release()
     {
-        _retailFragments.Clear();
-        _retailFireballs.Clear();
-        _retailSmokes.Clear();
-    }
-
-    /// <summary>Releases both effect models.</summary>
-    internal void Release()
-    {
-        ReleaseRetailFragmentModel();
         ReleaseRetailFireballModel();
-    }
-
-    private void EmitSmokePuff(Vector3d positionUnits, Vector3f velocity, float sizeMetres, int lifeTicks) =>
-        _emitSmokePuff(positionUnits, velocity, sizeMetres, lifeTicks);
-
-    /// <summary>Draws the thrown <c>1009_01_1</c> pieces as the ordinary models they are.</summary>
-    /// <remarks>
-    /// A fragment is a <c>SimpointObj</c>, drawn by the plain model path: its face group is not
-    /// transparent (<c>0x49DF60</c>), so it is lit and opaque, a small dark rock.
-    /// </remarks>
-    private void DrawRetailFragments(in Camera3D camera, in Matrix4f projection, float alpha)
-    {
-        if (_retailFragments.Count == 0 || _retailFragmentGeometry is null || !_retailFragmentTexture.IsValid)
-        {
-            return;
-        }
-
-        try
-        {
-            if (!_retailFragmentMesh.IsValid)
-            {
-                _retailFragmentMesh = _device.CreateMesh(
-                    _retailFragmentGeometry.Vertices,
-                    _retailFragmentGeometry.Indices);
-            }
-
-            bool blended = _retailFragmentBlend != BlendMode.Opaque;
-            _device.SetProjection(projection);
-            _device.SetCullMode(CullMode.None);
-            _device.SetDepthState(blended ? DepthState.TestOnly : DepthState.TestAndWrite);
-            _device.SetMaterialOverride(_retailFragmentBlend == BlendMode.Additive ? ImpactParticleRenderer.GlowMaterial : SurfaceMaterial.Default);
-
-            foreach (RetailFragment fragment in _retailFragments)
-            {
-                Vector3d positionUnits = Vector3d.Lerp(
-                    fragment.PreviousPositionUnits,
-                    fragment.PositionUnits,
-                    alpha);
-                Matrix4f modelView = ScaleModelView(
-                    camera.CreateModelView(positionUnits / WorldScene.UnitsPerMetre, fragment.Orientation),
-                    RetailFragmentScale);
-
-                foreach (MeshSubset subset in _retailFragmentGeometry.Subsets)
-                {
-                    if (subset.IndexCount == 0)
-                    {
-                        continue;
-                    }
-
-                    _device.DrawMesh(
-                        _retailFragmentMesh,
-                        subset.IndexOffset,
-                        subset.IndexCount,
-                        modelView,
-                        _retailFragmentTexture,
-                        TextureHandle.None,
-                        _retailFragmentBlend);
-                }
-            }
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-        {
-            // The effect is optional presentation. A backend upload failure must not stop gameplay.
-            _ = ex;
-        }
-        finally
-        {
-            _device.SetDepthState(DepthState.TestAndWrite);
-            _device.SetMaterialOverride(SurfaceMaterial.Default);
-        }
     }
 
     /// <summary>Draws every started FireBall the way <c>Explosion0_FireBallEnterHandler</c> does.</summary>
@@ -479,9 +145,9 @@ internal sealed class RetailExplosionEffects
     /// card was an opaque square that the fog lightened into the box around the blast.
     /// </para>
     /// </remarks>
-    private void DrawRetailFireballs(in Camera3D camera, in Matrix4f projection)
+    private void DrawRetailFireballs(IExplosionScene scene, in Camera3D camera, in Matrix4f projection)
     {
-        if (_retailFireballs.Count == 0 || _retailFireballGeometry is null || _retailFireballFrameTextures.Length == 0)
+        if (scene.FireBalls.Count == 0 || _retailFireballGeometry is null || _retailFireballFrameTextures.Length == 0)
         {
             return;
         }
@@ -498,22 +164,22 @@ internal sealed class RetailExplosionEffects
             _device.SetProjection(projection);
             _device.SetCullMode(CullMode.None);
             _device.SetDepthState(_retailFireballBlend == BlendMode.Opaque ? DepthState.TestAndWrite : DepthState.TestOnly);
-            _device.SetMaterialOverride(_retailFireballBlend == BlendMode.Additive ? ImpactParticleRenderer.GlowMaterial : SurfaceMaterial.Default);
+            _device.SetMaterialOverride(_retailFireballBlend is BlendMode.Additive or BlendMode.AddColour ? ImpactParticleRenderer.GlowMaterial : SurfaceMaterial.Default);
 
             int frames = _retailFireballFrameTextures.Length;
-            foreach (RetailFireball fireball in _retailFireballs)
+            foreach (ExplosionFireBall fireball in scene.FireBalls)
             {
-                if (fireball.DelayTicks > 0 || fireball.LifeTicks <= 0)
+                if (fireball.Delay > 0 || fireball.TotalLifetime <= 0 || fireball.AnimationDuration <= 0)
                 {
                     continue;
                 }
 
-                int frame = (int)((double)(fireball.LifeTicks - fireball.RemainingTicks)
-                    / fireball.LifeTicks * frames) % frames;
-                float across = fireball.SizeUnits / RetailFireballSizeDivisor;
-                float depth = ((1f - ((float)fireball.RemainingTicks / fireball.LifeTicks)) * across)
+                // 0x4806E0 steps the texture once over the FireBall's animation; the game's FPU chops the frame.
+                int frame = (int)((double)(fireball.TotalLifetime - fireball.Lifetime) / fireball.AnimationDuration * frames) % frames;
+                float across = fireball.Size / RetailFireballSizeDivisor;
+                float depth = ((1f - ((float)fireball.Lifetime / fireball.TotalLifetime)) * across)
                     + RetailFireballDepthFloor;
-                Vector3d positionMetres = fireball.PositionUnits / WorldScene.UnitsPerMetre;
+                Vector3d positionMetres = fireball.Position / WorldScene.UnitsPerMetre;
                 Matrix4f modelView = camera.CreateModelView(
                     positionMetres,
                     FacingEye(positionMetres, camera.Position, across, depth));
@@ -549,8 +215,10 @@ internal sealed class RetailExplosionEffects
 
     /// <summary>Builds the FireBall's eye-facing, scaled orientation.</summary>
     /// <remarks>
-    /// The rows are the model's axes: across the view <c>(-f.y, f.x, 0)</c>, then <c>f x across</c>,
-    /// then the direction to the eye <c>f</c>, which is the dome's own axis.
+    /// <c>0x480790</c> builds three rows -- across the view <c>(-f.y, f.x, 0)</c>, then <c>f x across</c>, then the direction to the
+    /// eye <c>f</c>, the dome's own axis -- and then takes their transpose as the model's frame, so in this engine's terms they
+    /// are its columns. Used as rows, the dome's axis lay across the view and the flame showed edge on, a thin ring behind
+    /// whatever exploded.
     /// </remarks>
     internal static Matrix3f FacingEye(Vector3d positionMetres, Vector3d eyeMetres, float across, float depth)
     {
@@ -572,30 +240,7 @@ internal sealed class RetailExplosionEffects
             up = Vector3f.Cross(f, side).Normalized();
         }
 
-        return Matrix3f.FromRows(side * across, up * across, f * depth);
-    }
-
-    private static Matrix4f ScaleModelView(in Matrix4f rigid, float scale) => new(
-        rigid.M11 * scale, rigid.M12 * scale, rigid.M13 * scale, rigid.M14,
-        rigid.M21 * scale, rigid.M22 * scale, rigid.M23 * scale, rigid.M24,
-        rigid.M31 * scale, rigid.M32 * scale, rigid.M33 * scale, rigid.M34,
-        rigid.M41, rigid.M42, rigid.M43, rigid.M44);
-
-    private void ReleaseRetailFragmentModel()
-    {
-        if (_retailFragmentMesh.IsValid)
-        {
-            _device.DestroyMesh(_retailFragmentMesh);
-            _retailFragmentMesh = MeshHandle.None;
-        }
-
-        if (_retailFragmentTexture.IsValid)
-        {
-            _device.DestroyTexture(_retailFragmentTexture);
-            _retailFragmentTexture = TextureHandle.None;
-        }
-
-        _retailFragmentGeometry = null;
+        return Matrix3f.FromRows(side * across, up * across, f * depth).Transposed();
     }
 
     private void ReleaseRetailFireballModel()
@@ -608,7 +253,7 @@ internal sealed class RetailExplosionEffects
 
         foreach (TextureHandle frame in _retailFireballFrameTextures)
         {
-            if (frame.IsValid)
+            if (frame.IsValid && _ownsFireballTextures)
             {
                 _device.DestroyTexture(frame);
             }
@@ -624,22 +269,29 @@ internal sealed class RetailExplosionEffects
     /// numbered run the texture archive carries after it, which <c>Mesh3D_SetAnimTextureFrame</c> steps.
     /// A name that does not end in a three-digit frame number is a single still frame.
     /// </remarks>
-    private TextureHandle[] LoadRetailAnimationFrames(string firstFrame)
+    private TextureHandle[] LoadRetailAnimationFrames(string firstFrame) =>
+        AnimationFrames(firstFrame, name => SpriteStrip.LoadTexture(_device, _resources, name));
+
+    /// <summary>Loads an animated texture's frames, <c>name000</c> onwards, until one is missing, through a title's loader.</summary>
+    /// <param name="firstFrame">The name the model's material carries, its first frame.</param>
+    /// <param name="load">Loads one frame by name, <see cref="TextureHandle.None"/> when there is none.</param>
+    /// <returns>The frames; one for a name without a frame number.</returns>
+    public static TextureHandle[] AnimationFrames(string firstFrame, Func<string, TextureHandle> load)
     {
-        List<TextureHandle> frames = [];
-        int digits = firstFrame.Length >= 3 && firstFrame[^3..].All(char.IsAsciiDigit) ? 3 : 0;
-        if (digits == 0)
+        ArgumentNullException.ThrowIfNull(firstFrame);
+        ArgumentNullException.ThrowIfNull(load);
+        if (firstFrame.Length < 3 || !firstFrame[^3..].All(char.IsAsciiDigit))
         {
-            TextureHandle still = SpriteStrip.LoadTexture(_device, _resources, firstFrame);
+            TextureHandle still = load(firstFrame);
             return still.IsValid ? [still] : [];
         }
 
+        List<TextureHandle> frames = [];
         string stem = firstFrame[..^3];
         int first = int.Parse(firstFrame[^3..], System.Globalization.CultureInfo.InvariantCulture);
         for (int frame = first; frame < 1000; frame++)
         {
-            TextureHandle texture = SpriteStrip.LoadTexture(_device, _resources, 
-                stem + frame.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
+            TextureHandle texture = load(stem + frame.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
             if (!texture.IsValid)
             {
                 break;
@@ -656,7 +308,7 @@ internal sealed class RetailExplosionEffects
     /// <c>0x49DF60</c> draws a group opaque and lit unless it is flagged transparent, in which case
     /// <c>0x49EC70</c> adds it (<c>ONE, ONE</c>) when additive and alpha-blends it otherwise.
     /// </remarks>
-    private static BlendMode BlendOf(MefModel model)
+    public static BlendMode BlendOf(MefModel model)
     {
         if (model.DrawRecords.Any(record => record.IsAdditive))
         {
@@ -665,28 +317,4 @@ internal sealed class RetailExplosionEffects
 
         return model.DrawRecords.Any(record => record.IsTransparent) ? BlendMode.AlphaBlend : BlendMode.Opaque;
     }
-
-    private readonly record struct RetailFragment(
-        Vector3d PreviousPositionUnits,
-        Vector3d PositionUnits,
-        Vector3f Velocity,
-        Matrix3f Orientation,
-        Vector3f Spin,
-        float GravityScale,
-        int RemainingTicks);
-
-    private readonly record struct RetailFireball(
-        Vector3d PositionUnits,
-        float SizeUnits,
-        int DelayTicks,
-        int LifeTicks,
-        int RemainingTicks);
-
-    private readonly record struct RetailSmoke(
-        Vector3d PositionUnits,
-        float Scale,
-        int TotalTicks,
-        int SecondSpawnAge,
-        int AgeTicks = 0,
-        bool SecondEmitted = false);
 }

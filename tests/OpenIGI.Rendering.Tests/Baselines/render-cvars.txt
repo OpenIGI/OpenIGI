@@ -107,6 +107,7 @@ r_lut_table		-
 r_material_detail	0	archive
 r_menu_lite	1	-
 r_messages_tactical	1	archive
+r_mip_point	0	archive
 r_mission_warmup	45	archive
 r_moon_brightness	1	archive
 r_moonlight	0.1	archive
@@ -189,7 +190,6 @@ r_weather_speed	1	archive
 r_wetness	1	archive
 r_white_point	1.1	archive
 r_window_mode	borderless	archive
-r_world_briefing	1	archive
 r_world_cull	0	archive
 r_world_objective	1	archive
 r_world_occlusion	1	archive

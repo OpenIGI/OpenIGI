@@ -14,7 +14,7 @@ namespace OpenIGI.Presentation.Igi2.Hud;
 /// down the left on its grey panel, the screen's own text and buttons, the pointer, the casing over everything and its lamp's
 /// glow. The screens are laid out 480 lines high, as on the display the casing was drawn for, and stretched across.
 /// </content>
-public sealed partial class Igi2HudRenderer : IIgi2ComputerFonts
+public sealed partial class Igi2HudRenderer : OpenIGI.Game.Computer.IComputerFonts
 {
     /// <summary>The lines the computer's screens are laid out in.</summary>
     public const float ComputerLines = 480f;

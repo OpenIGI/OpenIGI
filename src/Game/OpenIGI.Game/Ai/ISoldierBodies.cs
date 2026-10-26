@@ -29,6 +29,16 @@ public interface ISoldierBodies : IDisposable
     /// </remarks>
     bool PlayerBodyFollowVisible { get; set; }
 
+    /// <summary>
+    /// Gets or sets the title's own view culling, which the bodies are drawn by as the world's placements are, or
+    /// <see langword="null"/> for none. Ignored by a title whose culling leaves no body out.
+    /// </summary>
+    IPlacementVisibility? Visibility
+    {
+        get => null;
+        set { }
+    }
+
     /// <summary>Draws a team-coloured through-wall glow over every soldier the last binocular scan marked.</summary>
     /// <remarks>
     /// Reuses the same inverted-hull selection glow as <c>DrawOutline</c>, keyed by the contacts
@@ -39,6 +49,13 @@ public interface ISoldierBodies : IDisposable
     /// <param name="camera">The eye the scene is being drawn through.</param>
     /// <param name="radiusPixels">The glow's screen-space radius, in pixels.</param>
     void DrawBinocularOutlines(in Camera3D camera, float radiusPixels);
+
+    /// <summary>Draws each body's mark on the ground under it, over the lit world, for a title whose bodies cast one.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The world's projection.</param>
+    void DrawGroundShadows(in Camera3D camera, in Matrix4f projection)
+    {
+    }
 
     /// <summary>
     /// Gets what else the last binocular scan marked -- another game's humans in the level -- and the class of contact each is, for

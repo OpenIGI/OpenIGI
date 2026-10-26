@@ -232,6 +232,15 @@ public readonly struct Matrix4f : IEquatable<Matrix4f>, IFormattable
         orientation.M31, orientation.M32, orientation.M33, translation.Z,
         0f, 0f, 0f, 1f);
 
+    /// <summary>Scales the three axes a model's points are carried along, leaving the translation: a model drawn at a size.</summary>
+    /// <param name="scale">How large the model is drawn.</param>
+    /// <returns>The scaled transform.</returns>
+    public Matrix4f WithAxesScaled(float scale) => new(
+        M11 * scale, M12 * scale, M13 * scale, M14,
+        M21 * scale, M22 * scale, M23 * scale, M24,
+        M31 * scale, M32 * scale, M33 * scale, M34,
+        M41, M42, M43, M44);
+
     /// <summary>
     /// Builds the projection the original applies as scalar arithmetic, expressed for a clip-space
     /// pipeline.

@@ -50,8 +50,9 @@ internal static class Igi2FlowSystems
         Igi2TitlePlayer player = b.Player;
         Igi2LevelRun level = b.Level;
         Func<string, Formats.World.MefModel?> models = b.Models;
-        b.Sectors = Igi2SectorGraph.Build(b.Root, model => models(model)?.Portals);
+        b.Sectors = Igi2SectorGraph.Build(Igi2WorldScene.Build(b.Root, models), models, b.Magic);
         Igi2SectorLocator locator = new(player.CollisionWorld, b.Sectors);
+        b.SectorLocator = locator;
         b.Listener = new Audio.Igi2CameraListener(
             () => level.CutsceneView?.Position ?? player.Human.View.Position,
             locator,
@@ -124,6 +125,7 @@ internal static class Igi2FlowSystems
             message.Strings = strings;
             message.Screen = player.StatusMessages;
             message.Listener = () => player.Human.View.Position;
+            message.TaskById = id => b.PlacedById.GetValueOrDefault(id);
             message.InitText();
         }
     }

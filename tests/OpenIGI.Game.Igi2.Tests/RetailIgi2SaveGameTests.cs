@@ -72,7 +72,7 @@ public sealed class RetailIgi2SaveGameTests
     [Fact]
     public void Frames_are_written_as_their_angles()
     {
-        float[] frame = World.Igi2Pose.Rotation(0f, 0f, 1.5f);
+        float[] frame = EngineEuler.Rotation(0f, 0f, 1.5f);
         Igi2StateWriter writer = new();
         writer.Real9(frame);
         Assert.Equal(3, writer.Arguments.Split(", ", StringSplitOptions.RemoveEmptyEntries).Length);

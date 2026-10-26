@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="context">The soldiers, their brains, health and combat rows.</param>
 /// <param name="footsteps">The soldiers' steps, whose cursor a dying soldier gives up.</param>
 /// <param name="scriptSound">Plays a definition at a position, attached or not.</param>
-internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps footsteps, Action<string, Vector3d, bool> scriptSound)
+internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps footsteps, Action<string, Vector3d, Func<Vector3d>?> scriptSound)
 {
     // The blade's own sound, which 0x45D3C0 adds to the grunt when a knife lands.
     private const string KnifeStabSound = "stab_01";
@@ -30,7 +30,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
     private readonly SoldierFootsteps _footsteps = footsteps;
 
-    private readonly Action<string, Vector3d, bool> _scriptSound = scriptSound;
+    private readonly Action<string, Vector3d, Func<Vector3d>?> _scriptSound = scriptSound;
 
     private readonly Dictionary<SoldierView, HumanRecoil> _recoil = [];
 
@@ -344,7 +344,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                 ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
                 if (round.Category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
                 {
-                    _scriptSound(KnifeStabSound, struckView.Position, true);
+                    _scriptSound(KnifeStabSound, struckView.Position, () => struckView.Position);
                 }
             }
         }
@@ -361,6 +361,59 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
                 + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
                 + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} dead={(health.IsDead ? 1 : 0)}");
+    }
+
+    /// <summary>A blow from another soldier's close combat -- the soldiers' punch handler (<c>0x45A5E0</c>, <c>0x457620</c>).</summary>
+    /// <param name="struckView">The soldier struck.</param>
+    /// <param name="attacker">The soldier who struck.</param>
+    /// <param name="damage">The attacker's close-combat damage.</param>
+    /// <remarks>
+    /// The blow lands on the back (zone 14) when the attacker stands behind the struck soldier's facing, else on the front
+    /// (zone 13), scaled by that zone's multiplier. Short of the soldier's maximum it reacts as to a round; at it the soldier
+    /// crumples away from the attacker. Either way the brain is told who hit it, an invulnerable one too.
+    /// </remarks>
+    public void TakePunch(SoldierView struckView, SoldierView attacker, float damage)
+    {
+        HumanHealth health = _context.HealthOf(struckView);
+        if (health.IsDead)
+        {
+            return;
+        }
+
+        Igi1HumanAi? brain = _context.Brains.TryGetValue(struckView, out Igi1HumanAi? b) ? b : null;
+        int zone = PunchZone(struckView.Orientation, struckView.Position, attacker.Position);
+        if (!(brain?.IsInvulnerable ?? false))
+        {
+            float dealt = health.Apply(zone, damage, brain?.IsInstantDeathDisabled ?? false);
+            if (health.IsDead)
+            {
+                brain?.ReceiveDamage(attacker.Position, attacker.Soldier.Id);
+                Die(
+                    struckView,
+                    new HumanHit(struckView.Position, 0.0, zone, 0f, 0f),
+                    attacker.Position,
+                    struckView.Position,
+                    WeaponCategory.Knife,
+                    SoldierDeathMode.Crumple);
+                return;
+            }
+
+            ReactToHit(struckView, brain, zone, dealt, explosion: false);
+        }
+
+        brain?.ReceiveDamage(attacker.Position, attacker.Soldier.Id);
+    }
+
+    /// <summary>Where a blow lands: the back (zone 14) when it comes from behind the struck soldier's facing, else the front (13).</summary>
+    /// <param name="facing">The struck soldier's matrix, whose column 1 is its forward.</param>
+    /// <param name="struck">Where the struck soldier stands.</param>
+    /// <param name="attacker">Where the attacker stands.</param>
+    /// <returns>The zone.</returns>
+    public static int PunchZone(Matrix3f facing, Vector3d struck, Vector3d attacker)
+    {
+        Vector3d away = struck - attacker;
+        double along = (away.X * facing.M12) + (away.Y * facing.M22) + (away.Z * facing.M32);
+        return along >= 0.0 ? HumanDamage.RearZone : HumanDamage.FrontZone;
     }
 
     /// <summary>Applies one explosion to every living soldier in reach.</summary>

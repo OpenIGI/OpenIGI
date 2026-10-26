@@ -1,10 +1,12 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Igi2.Audio;
 using OpenIGI.Game.Igi2.Physics;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World.Particles;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
 
@@ -28,7 +30,7 @@ namespace OpenIGI.Game.Igi2.Weapons;
 /// with is the presentation's.
 /// </para>
 /// </remarks>
-public sealed class Igi2Missile : IIgi2DynamicTask
+public sealed class Igi2Missile : IDynamicTask
 {
     /// <summary>The gravity a missile falls by, a tick squared.</summary>
     public const float Gravity = 44.600887298583984f;
@@ -167,8 +169,34 @@ public sealed class Igi2Missile : IIgi2DynamicTask
     /// <summary>Gets where it is.</summary>
     public Vector3d Position => Body.Position;
 
+    /// <summary>Gets the sound it flies with, <c>Missile_InitSound</c>: its type's, following it, until it is gone.</summary>
+    public Igi2Sound? FlightSound { get; private set; }
+
+    /// <summary>Starts the sound its type names, following it (<c>Missile_InitSound</c>, as it is made).</summary>
+    /// <param name="sounds">The level's sounds, or <see langword="null"/> for none.</param>
+    public void StartSound(Igi2Sounds? sounds)
+    {
+        if (sounds is not null && Type.Sound.Length != 0)
+        {
+            FlightSound = sounds.New(Type.Sound, Position, () => Position);
+        }
+    }
+
     /// <inheritdoc/>
     public bool Run()
+    {
+        bool flying = Fly();
+        if (!flying)
+        {
+            // Missile_DeleteHandler: its sound goes with it.
+            FlightSound?.Delete();
+            FlightSound = null;
+        }
+
+        return flying;
+    }
+
+    private bool Fly()
     {
         Steer();
         if (Fuel != 0f && Type.Smoke != 0)
@@ -373,7 +401,7 @@ public sealed class Igi2Missile : IIgi2DynamicTask
         float alpha = (((Fpu)0.5 - first) * 0.10000000149011612).F;
         float beta = (((Fpu)0.699999988079071 - second) * 0.10000000149011612).F;
         float gamma = (((Fpu)0.30000001192092896 - third) * 0.10000000149011612).F;
-        float[] r = Igi2Pose.Rotation(alpha, beta, gamma);
+        float[] r = EngineEuler.Rotation(alpha, beta, gamma);
         float[] turned = new float[9];
         for (int row = 0; row < 3; row++)
         {

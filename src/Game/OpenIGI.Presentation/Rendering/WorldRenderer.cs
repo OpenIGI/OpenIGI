@@ -48,6 +48,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public ObjectShading Shading { get; set; } = ObjectShading.Default;
 
+    /// <inheritdoc/>
+    public ModelLodPolicy? Lod { get; set; }
+
     // The glass pass's own order, rebuilt per frame. See the comment where it is filled.
     private readonly List<int> _glassOrder = [];
     private PlacementPose? _drawPoses;
@@ -70,9 +73,13 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <param name="resources">Where texture bytes are read from.</param>
     /// <param name="formats">The title's format policy; a baked lightmap's descriptor stride differs.</param>
     /// <param name="logger">Where to report upload problems.</param>
+    /// <param name="additiveFaceGroups">
+    /// How an additive face group is added under <see cref="FaceGroupBlending"/>: Project I.G.I. adds its whole colour
+    /// (<c>ONE, ONE</c>, <c>0x49EC70</c>), I.G.I. 2 weights it by alpha (<c>Direct3DRender_SetBlendStateAdditive</c>).
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
-    /// The profile is the only title-shaped thing this renderer takes, and it takes it because a
+    /// The profile is the only title-shaped format this renderer takes, and it takes it because a
     /// <c>.olm</c> entry cannot be read without knowing which game wrote it — the descriptor is 44
     /// bytes in Project I.G.I. and 52 in the sequel, and the stride decides where the pixels start.
     /// It is a parameter rather than a default so that a title cannot forget to say.
@@ -81,8 +88,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
         IGraphicsDevice device,
         ResourceRegistry resources,
         AssetFormatProfile formats,
-        IOpenIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null,
+        BlendMode additiveFaceGroups = BlendMode.Additive)
     {
+        _additiveFaceGroups = additiveFaceGroups;
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(formats);
@@ -94,6 +103,12 @@ public sealed partial class WorldRenderer : IWorldPresenter
         _subsets = new WorldSubsetResolver(device, _logger, _transforms, _textures, _lightmapPages);
         _frameState = new WorldFrameState(_transforms, _subsets, _occlusionSettle);
     }
+
+    // How the title adds an additive face group: Project I.G.I. at ONE, ONE (0x49EC70), I.G.I. 2 at SRCALPHA, ONE.
+    private readonly BlendMode _additiveFaceGroups;
+
+    /// <inheritdoc/>
+    public bool FaceGroupBlending { get; set; }
 
     /// <summary>Gets how many sub-meshes the last <see cref="Draw"/> submitted.</summary>
     public int LastDrawCount { get; private set; }
@@ -163,7 +178,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
             options.MinimumRadius,
             options.OcclusionCulling,
             options.RotorsOnly,
-            options.GlassOnly);
+            options.GlassOnly,
+            options.FromEye,
+            options.BlendedOnly);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -261,6 +278,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// keeps what that pass discarded. Like the rotors it tests depth without writing it, and its tallies
     /// accumulate onto the opaque pass's rather than replacing them.
     /// </param>
+    /// <param name="fromEye">
+    /// Whether the pass is drawn from the frame's eye, so a placement the title's culling sees through a window is scissored to it
+    /// (<see cref="IPlacementVisibility.ClipOf"/>). A light's pass is never narrowed.
+    /// </param>
+    /// <param name="blendedOnly">Draws only the face groups the original sorts and blends, over the opaque world.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         WorldScene scene,
@@ -269,7 +291,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
         float minimumRadius = 0f,
         bool occlusionCulling = false,
         bool rotorsOnly = false,
-        bool glassOnly = false)
+        bool glassOnly = false,
+        bool fromEye = false,
+        bool blendedOnly = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -279,7 +303,14 @@ public sealed partial class WorldRenderer : IWorldPresenter
         int[] drawOrder = _frameState.DrawOrder;
 
         _device.SetProjection(projection);
-        _device.SetDepthState(rotorsOnly || glassOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
+        _device.SetDepthState(rotorsOnly || glassOnly || blendedOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
+
+        // The original's face group states, when they are asked for: no alpha test on an opaque group, alpha over 64 on an
+        // alpha-tested one (Direct3DRender_SetBlendStateAlphaTest), and alpha over one on the groups the blended pass draws
+        // (ALPHAREF 1: 0x49EC70, Direct3DRender_SetBlendStateTransparent). The test is GREATER and the device's is at least, so
+        // each reference is one more.
+        bool faceGroups = FaceGroupBlending && !rotorsOnly && !glassOnly;
+        byte appliedReference = IGraphicsDevice.DefaultAlphaReference;
 
         // Interior sectors and meshes without authored normals have no reliable outward facing.
         // Choose culling per mesh below, including when an archived r_world_cull enables it.
@@ -299,6 +330,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
         float appliedScale = _lightmapPages.Scale;
         Vector3f appliedSun = Vector3f.Zero;
         bool appliedMotion = false;
+        ViewClip? appliedClip = null;
 
         int draws = 0;
         int triangles = 0;
@@ -331,7 +363,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
         // copying it per frame to share one loop would be a real cost for no gain.
         // Whether this pass is the one that feeds the traced world. Exactly one of the three must be,
         // or every placement behind the camera would be submitted three times a frame.
-        bool tracedOnly = !glassOnly && !rotorsOnly && RayTracingCVars.TracedWorldRadius.Value > 0f;
+        bool tracedOnly = !glassOnly && !rotorsOnly && !blendedOnly && RayTracingCVars.TracedWorldRadius.Value > 0f;
 
         ReadOnlySpan<int> order = drawOrder;
         if (glassOnly)
@@ -355,12 +387,32 @@ public sealed partial class WorldRenderer : IWorldPresenter
             order = CollectionsMarshal.AsSpan(_glassOrder);
         }
 
+        // The view's horizontal half-angle tangent, which a level of detail is picked against.
+        float lodFieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
         foreach (int index in order)
         {
             ref WorldFrameEntry entry = ref frame[index];
             if (entry.Skip || entry.Model is not { } model)
             {
                 continue;
+            }
+
+            // The level this view draws the model at, as the original picks it for each view (0x4CFCB0); beyond its cutoff
+            // it is not drawn at all.
+            WorldPlacement displayed = entry.Displayed!;
+            if (Lod is { } lod && !entry.HasRotor && displayed.BentGeometry is null && entry.Variant < 0 && !entry.WasDestroyed)
+            {
+                int level = lod.Select(scene.Placements[index], entry.Position, camera, lodFieldOfView);
+                if (level < 0)
+                {
+                    continue;
+                }
+
+                if (level > 0 && lod.Level(displayed, level) is { } lower && _subsets.ResolveLevel(lower) is { } lowerModel)
+                {
+                    displayed = lower;
+                    model = lowerModel;
+                }
             }
 
             // Each pass takes only the half of the placements it is for: the rotors blend against the
@@ -385,6 +437,13 @@ public sealed partial class WorldRenderer : IWorldPresenter
             Matrix4f baseModelView = camera.CreateModelView(entry.Position, entry.Orientation);
             BoundingSphere bounds = model.Geometry.Bounds;
 
+            // The original's look fogs each object along its own sphere (Fog_SetRange).
+            if (FaceGroupBlending)
+            {
+                float depth = baseModelView.TransformPoint(bounds.Centre).Z;
+                _device.SetObjectFogRange(depth - bounds.Radius, depth + bounds.Radius);
+            }
+
             // A ROTOR IS CULLED TOO, and against a bound that holds for every phase of its spin. The
             // blur turns the mesh about its own local origin, so an off-origin bound centre travels a
             // circle and a sphere taken at one blade sample is wrong at every other -- which is why a
@@ -408,7 +467,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure
                 // built only from what the frustum passed can never hold it.
                 SubmitTracedOnly(
-                    scene, model, entry.Displayed!, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
+                    scene, model, displayed, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
                     tracedOnly);
                 continue;
             }
@@ -449,14 +508,19 @@ public sealed partial class WorldRenderer : IWorldPresenter
                         // Hidden from the camera is not hidden from a ray. A wall standing between the
                         // two is exactly what a window reflects around.
                         SubmitTracedOnly(
-                            scene, model, entry.Displayed!, baseModelView,
+                            scene, model, displayed, baseModelView,
                             viewX, viewY, viewZ, bounds.Radius, tracedOnly);
                         continue;
                     }
                 }
             }
 
-            WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, entry.Displayed!);
+            if (!ApplyClip(entry, fromEye, ref appliedClip))
+            {
+                continue;
+            }
+
+            WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, displayed);
 
             CullMode cull = cullBackFaces && model.CanCullBackFaces ? CullMode.CounterClockwise : CullMode.None;
             if (cull != appliedCull)
@@ -496,6 +560,28 @@ public sealed partial class WorldRenderer : IWorldPresenter
                     continue;
                 }
 
+                // A sorted group is the blended pass's alone; the opaque pass leaves it out.
+                bool blended = subset.Blend is SubsetBlend.Translucent or SubsetBlend.Additive;
+                if (faceGroups ? blended != blendedOnly : blendedOnly)
+                {
+                    continue;
+                }
+
+                if (faceGroups)
+                {
+                    byte reference = subset.Blend switch
+                    {
+                        SubsetBlend.Opaque => 0,
+                        SubsetBlend.AlphaTested => 65,
+                        _ => 2,
+                    };
+                    if (reference != appliedReference)
+                    {
+                        _device.SetAlphaReference(reference);
+                        appliedReference = reference;
+                    }
+                }
+
                 _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? WorldSubsetResolver.Dimmed(subset.Material, glow) : subset.Material);
 
                 // A bake is multiplied by the title's gain on top of whatever headroom it was encoded
@@ -533,7 +619,10 @@ public sealed partial class WorldRenderer : IWorldPresenter
                         appliedSun = sun;
                     }
 
-                    DrawSubset(model.Mesh, subset, modelView, rotorsOnly || glassOnly ? BlendMode.AlphaBlend : BlendMode.Opaque, appliedCull);
+                    BlendMode blend = blendedOnly
+                        ? subset.Blend == SubsetBlend.Additive ? _additiveFaceGroups : BlendMode.AlphaBlend
+                        : rotorsOnly || glassOnly ? BlendMode.AlphaBlend : BlendMode.Opaque;
+                    DrawSubset(model.Mesh, subset, modelView, blend, appliedCull);
 
                     draws++;
                     triangles += subset.TriangleCount;
@@ -553,10 +642,20 @@ public sealed partial class WorldRenderer : IWorldPresenter
 
         // The rotor pass adds to the opaque pass's tallies rather than replacing them: the two are
         // halves of one frame's world draw, and the overlay is reading the frame.
-        LastDrawCount = (rotorsOnly || glassOnly ? LastDrawCount : 0) + draws;
-        LastTriangleCount = (rotorsOnly || glassOnly ? LastTriangleCount : 0) + triangles;
-        LastLightmappedCount = (rotorsOnly || glassOnly ? LastLightmappedCount : 0) + lit;
-        LastOccludedCount = (rotorsOnly || glassOnly ? LastOccludedCount : 0) + occluded;
+        bool overlay = rotorsOnly || glassOnly || blendedOnly;
+        LastDrawCount = (overlay ? LastDrawCount : 0) + draws;
+        LastTriangleCount = (overlay ? LastTriangleCount : 0) + triangles;
+        LastLightmappedCount = (overlay ? LastLightmappedCount : 0) + lit;
+        LastOccludedCount = (overlay ? LastOccludedCount : 0) + occluded;
+        if (appliedReference != IGraphicsDevice.DefaultAlphaReference)
+        {
+            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+        }
+
+        if (FaceGroupBlending)
+        {
+            _device.SetObjectFogRange(0f, 0f);
+        }
 
         // Back to one, and to no sun, for whatever draws next -- the terrain keeps its shipped LDR
         // lightmaps and lights itself.
@@ -573,6 +672,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
         if (appliedMotion)
         {
             _device.SetObjectMotion(false);
+        }
+
+        if (appliedClip is not null)
+        {
+            _device.SetDrawClip(null);
         }
     }
 

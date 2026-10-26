@@ -33,7 +33,10 @@ public enum AiCombatPhase
 /// <param name="InCone">The slot's <c>+40</c>: the target is inside a view cone.</param>
 /// <param name="Visible">The slot's <c>+41</c>: the cone <i>and</i> a clear line.</param>
 /// <param name="TargetPosition">Where to aim — the target's position raised by half a metre.</param>
-/// <param name="DistanceToTargetInUnits">How far the target is, for the accuracy interpolation.</param>
+/// <param name="DistanceToTargetInUnits">
+/// How far the aim point is, for the accuracy interpolation: <c>0x48B9C0</c> measures from the AI's view position (its
+/// feet) to <see cref="TargetPosition"/>.
+/// </param>
 /// <param name="LocomotionState">The body's current locomotion state — <c>Human+764</c>.</param>
 /// <param name="AmmoInClip">How many rounds are left in the held weapon's clip.</param>
 /// <param name="Category">The held weapon's category.</param>
@@ -218,8 +221,20 @@ public sealed class AiGuardCombat
     /// <param name="sense">What the body looks like this tick.</param>
     /// <param name="standing">Whether the body is in its standing stance.</param>
     /// <param name="primaryViewLengthInUnits">The AI's primary view length, for the accuracy scaling.</param>
+    /// <param name="reloadPose">
+    /// Whether the body is in the pose its reload finishes in -- standing, kneeling or lying, by the arm that installed
+    /// it (<c>0x48DB10</c>, <c>0x48DD10</c>, <c>0x48DE00</c>); <see langword="null"/> for <paramref name="standing"/>.
+    /// </param>
+    /// <param name="togglesReload">
+    /// Whether a finished reload flips the input/direct alternation: the prone reload (<c>0x48DE00</c>) does not.
+    /// </param>
     /// <returns>What the body should do.</returns>
-    public AiCombatCommand Update(in AiCombatSense sense, bool standing, double primaryViewLengthInUnits)
+    public AiCombatCommand Update(
+        in AiCombatSense sense,
+        bool standing,
+        double primaryViewLengthInUnits,
+        bool? reloadPose = null,
+        bool togglesReload = true)
     {
         if (Phase == AiCombatPhase.Ended)
         {
@@ -246,7 +261,7 @@ public sealed class AiGuardCombat
 
         if (Phase == AiCombatPhase.Reload)
         {
-            return Reloading(sense, standing);
+            return Reloading(sense, reloadPose ?? standing, togglesReload);
         }
 
         if (!standing)
@@ -301,8 +316,34 @@ public sealed class AiGuardCombat
         return StartBurst(sense, primaryViewLengthInUnits, AiAimMode.Aiming);
     }
 
+    /// <summary>
+    /// Starts a burst at the sense's point for <c>AIAction_FireAtNode</c>/<c>FireAtTask</c> (<c>0x48ECC0</c>,
+    /// <c>0x48EE00</c>): <c>0x48B9C0</c> with the halving flag clear, and the fire child after it.
+    /// </summary>
+    /// <param name="sense">The point and the weapon; <see cref="AiCombatSense.TargetPosition"/> is the aim point.</param>
+    /// <param name="primaryViewLengthInUnits">The AI's primary view length, for the accuracy scaling.</param>
+    /// <returns>The burst set up.</returns>
+    public AiCombatBurst StartScriptedBurst(in AiCombatSense sense, double primaryViewLengthInUnits)
+    {
+        _targetThisTick = sense.TargetPosition;
+        return StartBurst(sense, primaryViewLengthInUnits, AiAimMode.None, halveAccuracy: false).StartedBurst!.Value;
+    }
+
+    /// <summary>One tick of a scripted burst — <c>0x48D8E0</c>.</summary>
+    /// <param name="sense">The point and the weapon.</param>
+    /// <param name="done">Receives whether the burst is over (out of shots or of ammo).</param>
+    /// <returns>What the body should do.</returns>
+    public AiCombatCommand FireScriptedBurst(in AiCombatSense sense, out bool done)
+    {
+        _targetThisTick = sense.TargetPosition;
+        AiCombatCommand command = Phase == AiCombatPhase.Fire ? Firing(sense) : default;
+        done = Phase != AiCombatPhase.Fire;
+        return command;
+    }
+
     // sub_48B9C0 and the fire child it installs, shared by every arm that stands and shoots.
-    private AiCombatCommand StartBurst(in AiCombatSense sense, double primaryViewLengthInUnits, AiAimMode aim)
+    private AiCombatCommand StartBurst(
+        in AiCombatSense sense, double primaryViewLengthInUnits, AiAimMode aim, bool? halveAccuracy = null)
     {
         // The first burst of an engagement is deliberately made half as accurate, and the flag is
         // consumed here exactly as the original clears its argument-block byte after the call.
@@ -314,9 +355,12 @@ public sealed class AiGuardCombat
             sense.DistanceToTargetInUnits,
             primaryViewLengthInUnits,
             _random(),
-            halveAccuracy: _firstFire);
+            halveAccuracy: halveAccuracy ?? _firstFire);
 
-        _firstFire = false;
+        if (halveAccuracy is null)
+        {
+            _firstFire = false;
+        }
 
         _roundsLeft = burst.Rounds;
         _ammoLastTick = sense.AmmoInClip;
@@ -534,8 +578,9 @@ public sealed class AiGuardCombat
             if (singleShot)
             {
                 // A semi-automatic weapon has to see the trigger RELEASED between rounds, and not
-                // writing the slot this tick is exactly that release.
-                return new AiCombatCommand { FirePose = true, TurnTo = _trackedAim };
+                // writing the slot this tick is exactly that release. 0x48D8E0 returns before its turn
+                // (0x4525B0), so the soldier does not turn on this tick either.
+                return new AiCombatCommand { FirePose = true };
             }
         }
 
@@ -553,11 +598,15 @@ public sealed class AiGuardCombat
         return new AiCombatCommand { FirePose = true, TurnTo = _trackedAim, PullTrigger = true };
     }
 
-    private AiCombatCommand Reloading(in AiCombatSense sense, bool standing)
+    private AiCombatCommand Reloading(in AiCombatSense sense, bool standing, bool toggles = true)
     {
         if (sense.AmmoInClip > 0 && standing)
         {
-            _reloadThroughInput = !_reloadThroughInput;
+            if (toggles)
+            {
+                _reloadThroughInput = !_reloadThroughInput;
+            }
+
             Phase = AiCombatPhase.Stand;
             return default;
         }

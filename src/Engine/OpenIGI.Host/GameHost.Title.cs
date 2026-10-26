@@ -483,6 +483,8 @@ public sealed partial class GameHost
         _forest = null;
         _water?.Dispose();
         _water = null;
+        _retailWeather?.Dispose();
+        _retailWeather = null;
         _shadowPass = null;
         _showcaseCamera = null;
 

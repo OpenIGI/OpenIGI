@@ -294,4 +294,16 @@ public sealed class RetailIgi2TerrainMeshTests
         // Measured: 758 samples across 6.36 million carry a material their level deleted.
         Assert.Equal(758, uncovered);
     }
+
+    [Theory]
+    [InlineData(0, 1.0, 2.0)]
+    [InlineData(1, 1.0, 3.0)]
+    [InlineData(2, 2.0, 3.0)]
+    public void A_materials_mapping_style_picks_the_axes_its_textures_lie_along(int style, double u, double v)
+    {
+        // TerrainRender_anVertexShader: v0.xy, v0.xz, v0.yz, times 1 / (scale * 4096).
+        (float U, float V) uv = Igi2TerrainMesh.TextureCoordinate(1f, new OpenIGI.Core.Numerics.Vector3d(4096.0, 8192.0, 12288.0), style);
+        Assert.Equal((float)u, uv.U, 5);
+        Assert.Equal((float)v, uv.V, 5);
+    }
 }

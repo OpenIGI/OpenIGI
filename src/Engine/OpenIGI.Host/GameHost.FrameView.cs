@@ -195,8 +195,7 @@ public sealed partial class GameHost
             }
             else if (_mapComputer is { IsReady: true, ShowsMap: true } computerView)
             {
-                mapScene = computerView.SceneView(
-                    mapBody, _window.Width, _window.Height);
+                mapScene = computerView.SceneView(_window.Width, _window.Height);
             }
         }
 
@@ -261,7 +260,7 @@ public sealed partial class GameHost
             SpatialAaThreshold: PostCVars.SpatialAaThreshold.Value,
             ColourLookup: PostCVars.ColourLookup.Value,
             AutoExposure: ExposureCVars.AutoExposure.Value,
-            GreenPhosphor: mapScene is not null && TacticalComputer is null,
+            GreenPhosphor: false,
             Tactical: computerDisplay,
             Binocular: binocularDisplay,
 
@@ -420,6 +419,11 @@ public sealed partial class GameHost
             eye = titlePlayerEye ?? _camera.Camera;
             flashlightBody = eye;
         }
+
+        // The ear goes where the picture is taken from: the original's microphone is the camera controller's own
+        // (0x4EBBF0, set from the camera each frame), so a cut-scene, the camera over a dead body or the orbit round a
+        // climber is heard from there, not from the head the player no longer looks out of.
+        _earCamera = eye;
 
         bool flashlightShown = _playerMode
             && !_mission.IsPlayerDead

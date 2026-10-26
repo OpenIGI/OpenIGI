@@ -21,6 +21,9 @@ public sealed partial class Igi2DefineComputerLimitTask : Igi2Task
     [ScriptParam(ScriptParamType.Real32, "Quadrant Size (m)")]
     public float QuadrantSize { get; set; }
 
+    /// <summary>Gets the square it lets the map look over.</summary>
+    public OpenIGI.Game.Computer.ComputerMapLimit Limit => new(Position, QuadrantSize);
+
     /// <summary>Makes it the computer's limit, as its create handler does.</summary>
     /// <param name="computer">The computer.</param>
     public void Attach(Igi2Computer computer)

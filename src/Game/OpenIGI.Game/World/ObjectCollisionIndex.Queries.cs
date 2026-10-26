@@ -19,6 +19,67 @@ public sealed partial class ObjectCollisionIndex
     public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         CastIndexed(_entries, _defaultGrid, _dynamicDefault, origin, end, out hit);
 
+    /// <summary>Casts a ray at a few chosen placements only, their portal faces counted as surfaces.</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="placements">The placements to test, and nothing else.</param>
+    /// <param name="struck">Receives the index into <paramref name="placements"/> of the one met nearest, or -1.</param>
+    /// <param name="hit">Receives that contact.</param>
+    /// <returns><see langword="false"/> when the ray meets none of them.</returns>
+    /// <remarks>
+    /// The trace a sector object makes to say which of its sectors a point stands in (<c>SectorObject_GetSectorHandler</c>,
+    /// <c>IGI.exe 0x4DBCC0</c>): its own shell and its rooms, with <c>isTracePortals</c> set so an opening is struck like a
+    /// wall. Nothing else in the world can come between, so no other entry is asked.
+    /// </remarks>
+    public bool TryCastPlacements(
+        Vector3d origin,
+        Vector3d end,
+        IReadOnlyList<WorldPlacement> placements,
+        out int struck,
+        out WorldRayHit hit)
+    {
+        ArgumentNullException.ThrowIfNull(placements);
+        struck = -1;
+        hit = default;
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        if (direction.LengthSquared <= 0.0)
+        {
+            return false;
+        }
+
+        double nearest = double.MaxValue;
+        for (int i = 0; i < placements.Count; i++)
+        {
+            if (!_entriesByPlacement.TryGetValue(placements[i], out ObjectCollisionEntry[]? entries))
+            {
+                continue;
+            }
+
+            foreach (ObjectCollisionEntry entry in entries)
+            {
+                // The default level alone (the query's mesh 0, SectorObject_LocateHandler 0x4DBCC0): the walking level can hold a floor
+                // the default level does not, and a ray meeting it named the shell where the original names the room below.
+                if (!entry.IsPlayerSet
+                    && MeetsSphere(origin, direction, entry.Centre, entry.Radius)
+                    && entry.TryCast(
+                        origin,
+                        direction,
+                        ref nearest,
+                        useClosedTransform: false,
+                        includePortals: true,
+                        portalIsOpening: null,
+                        out WorldRayHit candidate))
+                {
+                    hit = candidate;
+                    struck = i;
+                }
+            }
+        }
+
+        return struck >= 0;
+    }
+
     /// <summary>Collects every live solid triangle of the default collision level that touches a box.</summary>
     /// <param name="min">The box's low corner, in world units.</param>
     /// <param name="max">The box's high corner.</param>

@@ -36,7 +36,7 @@ public sealed class RetailIgi2ConveyorBeltTests
         Igi2ConveyorBeltTask running = belts.Single(static b => b.Id == Running);
         Assert.Equal((10f, 0f), (running.XSpeed, running.YSpeed));
 
-        float[] f = Igi2Pose.Rotation(running.Orientation.X, running.Orientation.Y, running.Orientation.Z);
+        float[] f = EngineEuler.Rotation(running.Orientation.X, running.Orientation.Y, running.Orientation.Z);
         float x = ((Fpu)10f * 136.53334f).F;
         Vector3f expected = new(
             ((((Fpu)f[1] * 0f) + ((Fpu)f[0] * x)) + ((Fpu)f[2] * 0.0)).F,
@@ -83,7 +83,7 @@ public sealed class RetailIgi2ConveyorBeltTests
     private static Vector3d Surface(Igi2CollisionWorld world, Igi2ConveyorBeltTask belt, Igi2GameMaterials materials)
     {
         Igi2RigidObject solid = world.SolidsOf(Igi2ConveyorBeltTask.TypeName, belt.Id)[0];
-        float[] f = Igi2Pose.Rotation(belt.Orientation.X, belt.Orientation.Y, belt.Orientation.Z);
+        float[] f = EngineEuler.Rotation(belt.Orientation.X, belt.Orientation.Y, belt.Orientation.Z);
         for (double x = -8192.0; x <= 8192.0; x += 512.0)
         {
             for (double y = -8192.0; y <= 8192.0; y += 512.0)

@@ -34,7 +34,14 @@ public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, MeshSub
 /// How many of the subset's last indices are coincident skins (<see cref="CoincidentSkins"/>): faces a mesh drawn two-sided must
 /// still draw culled, or they fight their opposite face.
 /// </param>
-public readonly record struct MeshSubset(int IndexOffset, int IndexCount, int MaterialSlot, int LightmapPage, int SkinIndexCount = 0)
+/// <param name="Blend">How the original draws the face group the subset came from.</param>
+public readonly record struct MeshSubset(
+    int IndexOffset,
+    int IndexCount,
+    int MaterialSlot,
+    int LightmapPage,
+    int SkinIndexCount = 0,
+    SubsetBlend Blend = SubsetBlend.Opaque)
 {
     /// <summary>Gets a value indicating whether this subset has a material.</summary>
     public bool HasMaterial => MaterialSlot != OpenIGI.Formats.World.MefDrawRecord.NoMaterialSlot;
@@ -44,4 +51,20 @@ public readonly record struct MeshSubset(int IndexOffset, int IndexCount, int Ma
 
     /// <inheritdoc/>
     public override string ToString() => $"[{IndexOffset}..{IndexOffset + IndexCount}) slot={MaterialSlot}";
+}
+
+/// <summary>How the original draws a model's face group.</summary>
+public enum SubsetBlend
+{
+    /// <summary>Solid, with no alpha test.</summary>
+    Opaque,
+
+    /// <summary>Solid, its texture cut out where its alpha is low.</summary>
+    AlphaTested,
+
+    /// <summary>Sorted and blended over what is behind it by its texture's alpha, writing no depth.</summary>
+    Translucent,
+
+    /// <summary>Sorted and added to what is behind it, unlit and unfogged, writing no depth.</summary>
+    Additive,
 }

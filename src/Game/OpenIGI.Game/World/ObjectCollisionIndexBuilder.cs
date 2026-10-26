@@ -66,6 +66,13 @@ internal static class ObjectCollisionIndexBuilder
 
         foreach (WorldPlacement placement in all)
         {
+            // A rotor is never struck itself: its line handler hands the query to the helicopter it turns on (Project I.G.I.'s
+            // Rotor_ForwardEvent9, 0x42D9B0), so a round or a sight line meets the body and passes the blades by.
+            if (placement.IsRotor)
+            {
+                continue;
+            }
+
             if (!cache.TryGetValue(placement.Model, out var meshes))
             {
                 meshes = (

@@ -11,35 +11,17 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
-/// Plays the retail explosion: staggered bursts of the animated <c>fireball.spr</c>, each cycling the
-/// sprite's frames over its life the way the <c>FireBall</c> task does.
+/// The glow at a launcher rocket's nozzle: an additive card of <c>fireball.spr</c> laid every powered tick.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The effect system is registered in <c>sub_4801B0</c>: an <c>Explosion0</c> controller fires
-/// <c>N</c> bursts with random delays (the missile passes <b>10</b> bursts / delay <b>5</b> at
-/// <c>0x00428390</c>), each spawning a <c>FireBall</c> that draws <b>fireball.spr</b> (<c>dword_5C1158</c>).
-/// The <c>FireBall</c> tick (<c>0x004806E0</c>) steps the sprite frame by
-/// <c>(start − remaining) / total · frameCount % frameCount</c> and destroys itself at the end — an
-/// animated sprite, not a model. (<c>1009_01_1</c> is the model the generic <c>Explosion0</c> also
-/// carries, and <c>explo_03_l</c> is the large-explosion <i>sound</i>, not a texture.)
-/// </para>
-/// <para>
-/// The sprite lives in the global <c>common/sprites/sprites.res</c>, loaded the same way
-/// <c>CameraStatusLightRenderer</c> loads <c>alarmlight.spr</c>. Without it the caller falls back
-/// to the procedural burst so a blast is never invisible.
-/// </para>
+/// The sprite lives in the global <c>common/sprites/sprites.res</c>, loaded the way <c>CameraStatusLightRenderer</c> loads
+/// <c>alarmlight.spr</c>. A blast is not drawn here: every explosion is the retail <c>Explosion0</c>, drawn by
+/// <see cref="RetailExplosionEffects"/>.
 /// </remarks>
 public sealed class ExplosionEffectRenderer : IDisposable
 {
     /// <summary>The retail fireball sprite (<c>dword_5C1158</c> in <c>sub_4801B0</c>).</summary>
     public const string SpriteName = "fireball.spr";
-
-    /// <summary>Bursts one explosion fires, from <c>a8</c> at <c>0x00428390</c>.</summary>
-    public const int BurstCount = 10;
-
-    /// <summary>The largest random delay between bursts, in ticks, from <c>a9</c>.</summary>
-    public const int BurstDelayTicks = 5;
 
     /// <summary>The most live fireball cards; older ones are spared when a spawn would pass it.</summary>
     public const int MaximumPuffs = 256;
@@ -67,7 +49,6 @@ public sealed class ExplosionEffectRenderer : IDisposable
     private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
-    private readonly List<Pending> _pending = [];
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
     private SpriteResource? _sprite;
     private SpriteFrame[] _frames = [];
@@ -96,65 +77,10 @@ public sealed class ExplosionEffectRenderer : IDisposable
     /// <summary>Gets how many fireball cards are alive.</summary>
     public int LiveCount => _count;
 
-    /// <summary>Schedules one blast's bursts of the fireball sprite.</summary>
-    /// <param name="positionUnits">The blast centre, in world units.</param>
-    /// <param name="intensity">The size and count scale; one is the grenade/missile fireball.</param>
-    /// <returns>
-    /// <see langword="true"/> when the sprite is present and the blast was scheduled;
-    /// <see langword="false"/> when the caller should fall back to the procedural burst.
-    /// </returns>
-    public bool Spawn(Vector3d positionUnits, float intensity)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (!(intensity > 0f) || !EnsureLoaded())
-        {
-            return false;
-        }
-
-        // A grenade/missile fireball spans a few metres; 0.6 shrinks it for a shot-out light.
-        float coreMetres = 2.2f + (2.6f * Math.Min(intensity, 2f));
-        int bursts = Math.Max(3, (int)(BurstCount * Math.Min(intensity, 1.5f)));
-
-        for (int i = 0; i < bursts; i++)
-        {
-            // (rand−0.5, rand−0.5, rand−0.3): the up-biased scatter each burst is jittered by.
-            Vector3f jitter = new(
-                ((float)_random.NextDouble() - 0.5f) * coreMetres * UnitsPerMetre * 0.6f,
-                ((float)_random.NextDouble() - 0.5f) * coreMetres * UnitsPerMetre * 0.6f,
-                ((float)_random.NextDouble() - 0.3f) * coreMetres * UnitsPerMetre * 0.6f);
-
-            _pending.Add(new Pending
-            {
-                Position = new Vector3d(
-                    positionUnits.X + jitter.X,
-                    positionUnits.Y + jitter.Y,
-                    positionUnits.Z + jitter.Z),
-                DelayTicks = (int)_random.NextBounded(BurstDelayTicks + 1),
-                SizeMetres = coreMetres * (0.55f + ((float)_random.NextDouble() * 0.6f)),
-            });
-        }
-
-        return true;
-    }
-
-    /// <summary>Advances the scheduled bursts and every live fireball by one game tick.</summary>
+    /// <summary>Ages every live glow by one game tick.</summary>
     public void Tick()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        for (int i = _pending.Count - 1; i >= 0; i--)
-        {
-            Pending pending = _pending[i];
-            if (--pending.DelayTicks > 0)
-            {
-                _pending[i] = pending;
-                continue;
-            }
-
-            EmitPuff(pending);
-            _pending.RemoveAt(i);
-        }
 
         for (int i = _count - 1; i >= 0; i--)
         {
@@ -165,18 +91,8 @@ public sealed class ExplosionEffectRenderer : IDisposable
                 continue;
             }
 
+            // The exhaust flare stays where it was laid — the rocket has flown on.
             p.PreviousPosition = p.Position;
-            if (p.Glow)
-            {
-                // The exhaust flare stays where it was laid — the rocket has flown on.
-                continue;
-            }
-
-            p.Velocity = new Vector3f(p.Velocity.X * 0.9f, p.Velocity.Y * 0.9f, (p.Velocity.Z * 0.9f) + 24f);
-            p.Position = new Vector3d(
-                p.Position.X + p.Velocity.X,
-                p.Position.Y + p.Velocity.Y,
-                p.Position.Z + p.Velocity.Z);
         }
     }
 
@@ -261,11 +177,10 @@ public sealed class ExplosionEffectRenderer : IDisposable
         _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
-    /// <summary>Removes every card and pending burst, as changing level does.</summary>
+    /// <summary>Removes every card, as changing level does.</summary>
     public void Clear()
     {
         _count = 0;
-        _pending.Clear();
     }
 
     /// <inheritdoc/>
@@ -302,7 +217,7 @@ public sealed class ExplosionEffectRenderer : IDisposable
     /// The retail rocket's engine light (<c>0x004CABF0</c>) bakes onto nearby vertices through the world
     /// octree — a lighting path this clean-room renderer has no equivalent for (I.G.I. declares no point
     /// lights). This is the visible half: the bright flare at the tube's mouth, an additive spot of the
-    /// same <c>fireball.spr</c> the blast uses, laid every powered tick so the exhaust reads as steady.
+    /// <c>fireball.spr</c> laid every powered tick so the exhaust reads as steady.
     /// </remarks>
     public void SpawnEngineGlow(Vector3d positionUnits, float sizeMetres)
     {
@@ -317,34 +232,10 @@ public sealed class ExplosionEffectRenderer : IDisposable
         {
             Position = positionUnits,
             PreviousPosition = positionUnits,
-            Velocity = default,
             LifeTicks = 4,
             AgeTicks = 0,
             SizeMetres = sizeMetres,
             Roll = (float)_random.NextDouble() * 6.2831855f,
-            Glow = true,
-        };
-    }
-
-    private void EmitPuff(in Pending pending)
-    {
-        if (_count >= MaximumPuffs)
-        {
-            return;
-        }
-
-        _puffs[_count++] = new Puff
-        {
-            Position = pending.Position,
-            PreviousPosition = pending.Position,
-            Velocity = new Vector3f(
-                ((float)_random.NextDouble() - 0.5f) * 220f,
-                ((float)_random.NextDouble() - 0.5f) * 220f,
-                ((float)_random.NextDouble() * 180f) + 30f),
-            LifeTicks = Math.Max(_frames.Length, 14 + (int)_random.NextBounded(10)),
-            AgeTicks = 0,
-            SizeMetres = pending.SizeMetres,
-            Roll = ((float)_random.NextDouble() - 0.5f) * 1.2f,
         };
     }
 
@@ -355,12 +246,9 @@ public sealed class ExplosionEffectRenderer : IDisposable
             return used;
         }
 
-        // A burst has a brief bright core then a long fade; a glow stays hot and eases off at the end.
-        // The additive multiply restores the frame linearly either way.
+        // A glow stays hot and eases off at the end; the additive multiply restores the frame linearly.
         float life = (float)p.AgeTicks / p.LifeTicks;
-        float brightness = p.Glow
-            ? 1f - (life * life)
-            : (life < 0.2f ? 0.4f + (life / 0.2f * 0.6f) : 1f - ((life - 0.2f) / 0.8f));
+        float brightness = 1f - (life * life);
         brightness = Math.Clamp(brightness, 0f, 1f);
         if (!(brightness > 0f))
         {
@@ -388,8 +276,7 @@ public sealed class ExplosionEffectRenderer : IDisposable
             return used;
         }
 
-        // A burst swells as it plays out, roughly doubling across its life; a glow holds its size.
-        float sizeMetres = p.Glow ? p.SizeMetres : p.SizeMetres * (0.6f + (0.6f * life));
+        float sizeMetres = p.SizeMetres;
 
         Vector3d toEye = centre / -distance;
         Vector3d reference = Math.Abs(toEye.Z) < 0.9 ? new Vector3d(0, 0, 1) : new Vector3d(1, 0, 0);
@@ -425,10 +312,8 @@ public sealed class ExplosionEffectRenderer : IDisposable
             return used;
         }
 
-        // The glow burns hotter and whiter than the smoky fireball tint.
-        Bgra32 colour = p.Glow
-            ? Tint(brightness, brightness * 0.78f, brightness * 0.45f, brightness)
-            : Tint(brightness, brightness, brightness, brightness);
+        // The glow burns hot: warm, not the sprite's own grey.
+        Bgra32 colour = Tint(brightness, brightness * 0.78f, brightness * 0.45f, brightness);
 
         // fireball.spr carries a one-pixel opaque dark frame; sampled full, additive blending sums it
         // into a faint rectangle around every card, and linear filtering at the clamped edge widens it.
@@ -497,25 +382,13 @@ public sealed class ExplosionEffectRenderer : IDisposable
         return new Bgra32(Channel(b), Channel(g), Channel(r), Math.Max((byte)1, Channel(a)));
     }
 
-    private struct Pending
-    {
-        public Vector3d Position;
-        public int DelayTicks;
-        public float SizeMetres;
-    }
-
     private struct Puff
     {
         public Vector3d Position;
         public Vector3d PreviousPosition;
-        public Vector3f Velocity;
         public int LifeTicks;
         public int AgeTicks;
         public float SizeMetres;
         public float Roll;
-
-        // A glow sits still at the rocket nozzle for a couple of ticks, hot and constant-sized, rather
-        // than swelling and rising like a burst.
-        public bool Glow;
     }
 }

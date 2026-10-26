@@ -646,12 +646,12 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
         if (fillWidth > 0f && fillHeight > 0f)
         {
             // Submission order and colours match HumanPlayer's status-display handler at 0x413120.
-            batch.FillRect(new RectF(fillX, fillY, fillWidth, fillHeight), new Bgra32(0, 0, 128, 128));
+            batch.FillRect(new RectF(fillX, fillY, fillWidth, fillHeight), BitmapTextRenderer.FromRetail(128f, 0f, 0f, 0.5f));
         }
 
         (float backX, float backY, float backWidth, float backHeight) =
             StatusScreenLayout.InteractionBackground(screenWidth, screenHeight);
-        batch.FillRect(new RectF(backX, backY, backWidth, backHeight), new Bgra32(0, 100, 0, 128));
+        batch.FillRect(new RectF(backX, backY, backWidth, backHeight), BitmapTextRenderer.FromRetail(0f, 100f, 0f, 0.5f));
     }
 
     private float DrawRightAligned(SpriteBatch batch, string text, float rightEdge, float y, float scale = 1f)

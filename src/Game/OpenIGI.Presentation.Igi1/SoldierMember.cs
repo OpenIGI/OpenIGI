@@ -48,6 +48,15 @@ internal sealed class SoldierMember(SoldierAgent agent, MeshHandle mesh)
     /// <summary>The persistent buffer this soldier's pose is skinned into, allocated once.</summary>
     public Vertex3D[]? SkinScratch { get; set; }
 
+    /// <summary>Gets or sets the lower level of detail <see cref="LevelMesh"/> is skinned at, or nought for none.</summary>
+    public int Level { get; set; }
+
+    /// <summary>Gets or sets the soldier's skin at its lower level of detail, posed alongside <see cref="Mesh"/>.</summary>
+    public MeshHandle LevelMesh { get; set; }
+
+    /// <summary>Gets or sets the buffer the lower level is skinned into.</summary>
+    public Vertex3D[]? LevelScratch { get; set; }
+
     /// <summary>
     /// The pose this soldier was skinned from this tick — its rig's, or its corpse's.
     /// </summary>

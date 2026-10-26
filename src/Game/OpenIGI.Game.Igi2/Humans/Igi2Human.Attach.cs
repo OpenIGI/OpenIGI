@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// </content>
 public abstract partial class Igi2Human
 {
-    private readonly float[] _attachOrientation = Igi2Pose.Rotation(0f, 0f, 0f);
+    private readonly float[] _attachOrientation = EngineEuler.Rotation(0f, 0f, 0f);
 
     /// <summary>Gets the body's frame, row by row, as the original reads <c>tOrientation</c>.</summary>
     public float[] OrientationRows

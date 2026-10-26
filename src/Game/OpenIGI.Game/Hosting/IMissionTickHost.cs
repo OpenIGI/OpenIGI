@@ -44,6 +44,23 @@ public interface IMissionTickHost
     /// <summary>Gets a value indicating whether the map computer is open.</summary>
     bool ComputerOpen { get; }
 
+    /// <summary>Gets a value indicating whether the title's own computer is the one in use, run by the mission's tick.</summary>
+    bool MissionComputer { get; }
+
+    /// <summary>Gets a value indicating whether the level lets the player read the computer's map now (<c>0x45DCF0</c>).</summary>
+    bool MapComputerEnabled { get; }
+
+    /// <summary>Gets the display the computer's screens are laid out across, in its own pixels.</summary>
+    (int Width, int Height) ComputerDisplay { get; }
+
+    /// <summary>Takes the mouse as it moved and was pressed since the last tick.</summary>
+    /// <returns>The mouse.</returns>
+    OpenIGI.Game.Computer.ComputerPointerInput TakeComputerInput();
+
+    /// <summary>Tells the host the mission's computer has opened or closed.</summary>
+    /// <param name="open">Whether it is now open.</param>
+    void ComputerChanged(bool open);
+
     /// <summary>Runs another title's own player in this one's place, if the title brought one.</summary>
     /// <returns>Whether it ran, in which case a title's player does not.</returns>
     bool TickTitlePlayer();

@@ -192,6 +192,13 @@ public interface ITitlePresentationProvider
     /// </remarks>
     ObjectShading? ReadObjectShading(GameTask levelRoot) => null;
 
+    /// <summary>Reads how this title's models give up detail with distance, if its renderer did so.</summary>
+    /// <param name="levelRoot">The level's task tree, which carries the level's settings.</param>
+    /// <param name="resources">Where the game's per-model distances are read from.</param>
+    /// <param name="services">The session's services, which hold a title's own distances and detail options when it keeps them.</param>
+    /// <returns>The policy, or nothing to draw every model at its first level.</returns>
+    Rendering.ModelLodPolicy? ReadModelLod(GameTask levelRoot, ResourceRegistry resources, Engine.Titles.IServiceCatalog? services = null) => null;
+
     /// <summary>Reads how this title's level drives the dynamic renderer, if it authors that itself.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <returns>

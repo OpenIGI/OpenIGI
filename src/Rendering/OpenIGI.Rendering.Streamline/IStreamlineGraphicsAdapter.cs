@@ -36,7 +36,8 @@ internal interface IStreamlineGraphicsAdapter
 
     /// <summary>Records a barrier making everything written so far visible to Streamline, or what it wrote to what follows.</summary>
     /// <param name="encoder">The encoder, outside any pass.</param>
-    void ExternalBarrier(IRhiCommandEncoder encoder);
+    /// <param name="label">What follows the barrier, for a backend that marks where a lost device was.</param>
+    void ExternalBarrier(IRhiCommandEncoder encoder, string label);
 
     /// <summary>Rebuilds the swapchain at its current size, running something while none exists.</summary>
     /// <param name="between">What to run between releasing the old swapchain and creating the new one.</param>

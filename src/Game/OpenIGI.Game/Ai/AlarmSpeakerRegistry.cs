@@ -58,6 +58,13 @@ public sealed class AlarmSpeaker(
     /// <summary>Gets whether world damage can permanently silence this emitter.</summary>
     public bool CanBeDestroyed { get; } = CanBeDestroyed;
 
+    /// <summary>Gets or sets whether an alarm light was on at its last run.</summary>
+    public bool WasOn { get; set; }
+
+    /// <summary>Gets or sets whether an alarm light wears its off model: only once it has been on and gone off.</summary>
+    /// <remarks><c>0x43A450</c> gives it its on model as it is made; <c>0x43A270</c> changes model only on a change of state.</remarks>
+    public bool ShowsOff { get; set; }
+
     /// <summary>Gets or sets whether the speaker has been shot out — retail's <c>+417</c>.</summary>
     /// <remarks>Permanent: a destroyed speaker never sounds its working loop again; only a siren's faulty loop is left.</remarks>
     public bool IsDestroyed { get; set; }
@@ -188,6 +195,96 @@ public sealed class AlarmSpeakerRegistry
         return IsOn(speaker) ? speaker.SirenSound : string.Empty;
     }
 
+    private readonly List<AlarmLightReflector> _reflectors = [];
+
+    /// <summary>Gets the turning reflectors inside the level's alarm lights.</summary>
+    public IReadOnlyList<AlarmLightReflector> Reflectors => _reflectors;
+
+    /// <summary>Runs every alarm light that is not shot out, as <c>AlarmLight_Run</c> (<c>0x43A270</c>) changes its model.</summary>
+    public void RunLights()
+    {
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            reflector.Run(!reflector.Light.IsDestroyed && IsOn(reflector.Light));
+        }
+
+        foreach (AlarmSpeaker light in _speakers)
+        {
+            if (light.IsDestroyed || !string.Equals(light.Task.Type.Name, WorldScene.AlarmLightType, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            bool on = IsOn(light);
+            if (light.WasOn && !on)
+            {
+                light.ShowsOff = true;
+            }
+            else if (!light.WasOn && on)
+            {
+                light.ShowsOff = false;
+            }
+
+            light.WasOn = on;
+        }
+    }
+
+    /// <summary>The orientation a reflector is drawn with this frame, turned as its light has turned it.</summary>
+    /// <param name="placement">The placement.</param>
+    /// <param name="alpha">How far the frame is between the last two ticks.</param>
+    /// <param name="orientation">Receives the orientation.</param>
+    /// <returns>Whether the placement is a reflector.</returns>
+    public bool TryGetReflectorOrientation(WorldPlacement placement, float alpha, out Matrix3f orientation)
+    {
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            if (ReferenceEquals(reflector.Placement, placement))
+            {
+                orientation = reflector.Orientation(alpha);
+                return true;
+            }
+        }
+
+        orientation = default;
+        return false;
+    }
+
+    /// <summary>The flares the lights' reflectors show this frame (<c>0x439EC0</c>).</summary>
+    /// <param name="eyeUnits">Where they are seen from.</param>
+    /// <param name="alpha">How far the frame is between the last two ticks.</param>
+    public IReadOnlyList<WorldGlow> ReflectorFlares(Vector3d eyeUnits, float alpha)
+    {
+        List<WorldGlow> flares = [];
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            if (reflector.TryGetFlare(eyeUnits, alpha, out WorldGlow flare))
+            {
+                flares.Add(flare);
+            }
+        }
+
+        return flares;
+    }
+
+    /// <summary>Which of its models an alarm light's placement wears: 0 on, 1 off; -1 for anything else.</summary>
+    /// <param name="placement">The placement.</param>
+    public int LightVariantOf(WorldPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return placement.Variants is not null
+            && _byTask.TryGetValue(placement.Owner, out AlarmSpeaker? light)
+            && string.Equals(light.Task.Type.Name, WorldScene.AlarmLightType, StringComparison.Ordinal)
+                ? (light.ShowsOff ? 1 : 0)
+                : -1;
+    }
+
+    /// <summary>Whether a shot-out alarm light has no model left to show: <c>0x43A5F0</c> wears its dead model, which may be none.</summary>
+    /// <param name="task">The placing task.</param>
+    public bool IsLightGone(GameTask task) =>
+        _byTask.TryGetValue(task, out AlarmSpeaker? light)
+        && light.IsDestroyed
+        && string.Equals(light.Task.Type.Name, WorldScene.AlarmLightType, StringComparison.Ordinal);
+
     /// <summary>Gets whether the placed destructible task has already been shot out.</summary>
     public bool IsDestroyed(GameTask task) =>
         _byTask.TryGetValue(task, out AlarmSpeaker? speaker) && speaker.IsDestroyed;
@@ -202,6 +299,8 @@ public sealed class AlarmSpeakerRegistry
     public void BindScene(IEnumerable<WorldPlacement> placements)
     {
         ArgumentNullException.ThrowIfNull(placements);
+        _reflectors.Clear();
+        _lightOrientations.Clear();
 
         foreach (WorldPlacement placement in placements)
         {
@@ -212,6 +311,17 @@ public sealed class AlarmSpeakerRegistry
 
             if (string.Equals(speaker.Task.Type.Name, "AlarmLight", StringComparison.Ordinal))
             {
+                if (string.Equals(placement.MagicTaskTypeName, ReflectorTaskType, StringComparison.Ordinal))
+                {
+                    _reflectors.Add(new AlarmLightReflector(placement, speaker));
+                    continue;
+                }
+
+                if (!placement.IsAttached)
+                {
+                    _lightOrientations[speaker] = placement.Orientation;
+                }
+
                 // AlarmLight's ExplosionHit (0x43A660) weighs a blast against its own model's bound (0x4D0950).
                 if (placement.Model is { NativeMarkerBound: > 0f } light && float.IsFinite(light.NativeMarkerBound))
                 {
@@ -233,7 +343,18 @@ public sealed class AlarmSpeakerRegistry
                 speaker.ExplosionContactRadiusUnits = model.NativeMarkerBound;
             }
         }
+
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            if (_lightOrientations.TryGetValue(reflector.Light, out Matrix3f lightOrientation))
+            {
+                reflector.LightOrientation = lightOrientation;
+            }
+        }
     }
+
+    private const string ReflectorTaskType = "TASKTYPE_ALARMLIGHTREFLECTOR";
+    private readonly Dictionary<AlarmSpeaker, Matrix3f> _lightOrientations = [];
 
     /// <summary>The damage that breaks a security camera's lens.</summary>
     /// <remarks>

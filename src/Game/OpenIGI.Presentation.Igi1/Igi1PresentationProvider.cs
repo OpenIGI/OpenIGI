@@ -29,7 +29,10 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
                 new Igi1RetailMenus(request))
             .Add<MissionEffectsRequest, IMissionImpactView>(static (in MissionEffectsRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay
-                    ? new Igi1ImpactView(new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem), gameplay)
+                    ? new Igi1ImpactView(
+                        new RetailImpactRenderer(request.Device, request.Resources, request.FileSystem),
+                        new RetailExplosionEffects(request.Device, request.Resources),
+                        gameplay)
                     : null)
             .Add<MissionPresentationRequest, IMissionHudOverlay>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1HudOverlay(request.Device, gameplay) : null)
@@ -40,7 +43,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay) : null)
             .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
-                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
+                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps, Sun = request.Sun, Lod = request.Lod })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<ViewModelPresentationRequest, IViewModelPresenter>(CreateViewModel)
@@ -55,7 +58,8 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MapComputerPresentationRequest, IMapComputerPresenter>(CreateMapComputer)
             .Add<MapComputerPresentationRequest, ITacticalComputerPresenter>(CreateTacticalComputer)
             .Add<ComputerHighlightRequest, IComputerHighlightCatalogue>(CreateComputerHighlights)
-            .Add<TerrainPresentationRequest, ITerrainPresenter>(CreateTerrain);
+            .Add<TerrainPresentationRequest, ITerrainPresenter>(CreateTerrain)
+            .Add<ScenePresentationRequest, IWeatherPresenter>(CreateWeather);
 
     /// <inheritdoc/>
     public PresenterRegistry Presenters { get; }
@@ -143,8 +147,66 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A model with no bake is lit by Direct3D's fixed-function pipeline (<c>Direct3DRender_SetLitState</c>,
+    /// <c>0x49D480</c>): the ambient is the <c>GlobalLight</c>'s object band (<c>0xB818AC</c>) and the one light is the
+    /// level's <c>Dirlight</c>, its front colour along its direction (<c>0x4DAA60</c>), over a white material. The light's
+    /// colour is scaled by the world scale, which the scaled normals cancel. Bakes are drawn as they always were.
+    /// </remarks>
+    public ObjectShading? ReadObjectShading(GameTask levelRoot)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        return DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings sun)
+            ? new ObjectShading(ObjectShading.Default.LightmapGain, new FixedFunctionSun(GlobalLightSettings.Read(levelRoot).ObjectAmbient, sun.Colour, sun.Direction))
+            : null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The level's <c>LODSettings</c> for rigid and bone models (<c>0x4EDAA0</c>: percentages times 0.02, the ideal radius in
+    /// metres) and the game's own per-model distances, which <c>LOCAL:lod.qsc</c> makes as <c>ModelLODSettings</c>
+    /// (<c>0x4EDB60</c>: made ascending, in metres).
+    /// </remarks>
+    public ModelLodPolicy? ReadModelLod(GameTask levelRoot, Engine.Resources.ResourceRegistry resources, Engine.Titles.IServiceCatalog? services = null)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(resources);
+        DeclaredTask? lod = levelRoot.Descendants().OfType<DeclaredTask>().FirstOrDefault(static t => t.Type.Name == "LODSettings");
+        if (lod is null)
+        {
+            return null;
+        }
+
+        ModelLodSettings settings = new(
+            Real(lod, "Distance to first switch, relative to object radius (Rigid Objects)") * ModelLodSettings.Percent,
+            Real(lod, "Cutoff distance, relative to object radius (Rigid Objects)") * ModelLodSettings.Percent,
+            Real(lod, "Degree to which radius affects LOD"),
+            Real(lod, "Ideal radius") * 4096f);
+        ModelLodSettings bones = settings with
+        {
+            Detail = Real(lod, "Distance to first switch, relative to object radius (Bone Objects)") * ModelLodSettings.Percent,
+            Cull = Real(lod, "Cutoff distance, relative to object radius (Bone Objects)") * ModelLodSettings.Percent,
+        };
+        return new ModelLodPolicy(settings, Igi1ModelLodTable.Read(resources), bones: bones);
+
+        static float Real(DeclaredTask task, string name) =>
+            task.TryGetValue(name, out object? value) ? Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture) : 0f;
+    }
+
+    /// <summary>A level's weather as Project I.G.I. runs it, from its <c>RainEffect</c>.</summary>
+    /// <remarks>Its flakes are <c>snow.tex</c> (<c>RainEffect_Init</c>, <c>0x436780</c>).</remarks>
+    private static IWeatherPresenter? CreateWeather(in ScenePresentationRequest request) =>
+        RainRenderer.FindRainEffect(request.LevelRoot) is { } task
+            ? new RetailWeather(
+                request.Device,
+                PrecipitationStyle.Igi1,
+                RetailWeather.ReadIgi1(task),
+                RetailWeather.LoadTexture(request.Device, request.Resources, "LOCAL:common/textures/snow.tex", LoadedPack.TextureResourceName("snow")))
+            : null;
+
+    /// <inheritdoc/>
     private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
-        new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger);
+        new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger, additiveFaceGroups: OpenIGI.Rendering.BlendMode.AddColour);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -204,7 +266,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     private IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>
-        new MapComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText);
+        new MapComputerRenderer(request.Device, request.Logger, request.Gameplay);
 
     /// <inheritdoc/>
     private ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request) =>

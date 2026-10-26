@@ -51,6 +51,43 @@ public sealed class ForwardPushBlockTests
         Assert.Equal(fog.DensityPerMetre, block[31]);
     }
 
+    /// <summary>Project I.G.I.'s added face groups are drawn with fog off (0x49EC70); an alpha-weighted add still fogs to black.</summary>
+    [Theory]
+    [InlineData(BlendMode.AddColour, 0f)]
+    [InlineData(BlendMode.Additive, 0.002f)]
+    public void Project_IGIs_added_face_groups_are_not_fogged(BlendMode blend, float density)
+    {
+        Span<float> block = stackalloc float[ForwardPushBlock.Floats];
+        ForwardPushBlock.Write(block, World with { Fog = new SceneFog(new Vector3f(0.2f, 0.3f, 0.4f), 0.002f) }, Matrix4f.Identity, blend, hasLightmap: false);
+        Assert.Equal(density, block[31]);
+    }
+
+    /// <summary>
+    /// An object's linear fog (Fog_SetRange, 0x49B2D0) is the line through the exponential's values at its sphere's near and far
+    /// depths: the value at the eye in the second row's w, the fall per metre where the density was.
+    /// </summary>
+    [Fact]
+    public void An_objects_fog_is_the_line_through_the_exponential_at_its_spheres_ends()
+    {
+        Span<float> block = stackalloc float[ForwardPushBlock.Floats];
+        const float density = 0.01f, near = 40f, far = 60f;
+        ForwardPushBlock.Write(
+            block,
+            World with { Fog = new SceneFog(new Vector3f(0.2f, 0.3f, 0.4f), density), ObjectFogNear = near, ObjectFogFar = far },
+            Matrix4f.Identity,
+            BlendMode.Opaque,
+            hasLightmap: false);
+
+        float atNear = MathF.Exp(-density * near), atFar = MathF.Exp(-density * far);
+        Assert.Equal(atNear, block[27] - (block[31] * near), 5);
+        Assert.Equal(atFar, block[27] - (block[31] * far), 5);
+
+        // Without a sphere the draw keeps the exponential.
+        ForwardPushBlock.Write(block, World with { Fog = new SceneFog(default, density) }, Matrix4f.Identity, BlendMode.Opaque, hasLightmap: false);
+        Assert.Equal(0f, block[27]);
+        Assert.Equal(density, block[31]);
+    }
+
     [Fact]
     public void The_first_sixteen_slots_are_the_model_view_projection()
     {

@@ -26,11 +26,21 @@ namespace OpenIGI.Presentation;
 /// sorted into it, so the host issues a second draw for them. A title whose scenes mark no rotors draws
 /// nothing and costs a walk of the list.
 /// </param>
+/// <param name="FromEye">
+/// Whether the pass is drawn from the frame's eye, so the title's view culling may narrow a placement to the part of the view it
+/// is seen through (<see cref="IPlacementVisibility.ClipOf"/>). False for a light's view, which has no window onto anything.
+/// </param>
+/// <param name="BlendedOnly">
+/// Draws only the face groups the original sorts and blends (<see cref="IWorldPresenter.FaceGroupBlending"/>), over the opaque world,
+/// testing depth without writing it.
+/// </param>
 public readonly record struct WorldDrawOptions(
     float MinimumRadius = 0f,
     bool OcclusionCulling = false,
     bool RotorsOnly = false,
-    bool GlassOnly = false);
+    bool GlassOnly = false,
+    bool FromEye = false,
+    bool BlendedOnly = false);
 
 /// <summary>Draws a title's static world geometry.</summary>
 /// <remarks>
@@ -88,6 +98,23 @@ public interface IWorldPresenter : IDisposable
     /// </remarks>
     ObjectShading Shading { get; set; }
 
+    /// <summary>
+    /// Gets or sets which level of detail each model is drawn at from each view, or <see langword="null"/> to draw every model
+    /// whole, which is what every preset but the original's look does.
+    /// </summary>
+    Rendering.ModelLodPolicy? Lod { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether each face group is drawn the way the original draws it: an opaque one with no alpha
+    /// test, an alpha-tested one cut out, and a translucent or added one left to the <see cref="WorldDrawOptions.BlendedOnly"/> pass.
+    /// Off, every group is a cut-out at the port's own threshold, which is what every preset but the original's look draws.
+    /// </summary>
+    bool FaceGroupBlending
+    {
+        get => false;
+        set { }
+    }
+
     /// <summary>Gets or sets the live rotating world objects, or null for a title with none.</summary>
     /// <remarks>
     /// Radar dishes and the authored <c>Rotating</c> tasks. The scene walk places them; this turns them,
@@ -130,6 +157,12 @@ public interface IWorldPresenter : IDisposable
 
     /// <summary>Gets or sets which placements a title's own objects have destroyed, or null when none can be.</summary>
     IPlacementDestruction? Destruction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the title's own view culling, which leaves placements out of every pass of the frame, or null when only
+    /// the renderer's culling applies.
+    /// </summary>
+    IPlacementVisibility? Visibility { get; set; }
 
     /// <summary>Gets or sets which of their models the placements wear by their objects' state, or null when none change.</summary>
     IPlacementVariant? Variants { get; set; }

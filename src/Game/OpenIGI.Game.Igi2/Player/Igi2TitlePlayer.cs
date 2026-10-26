@@ -58,6 +58,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     private long _heldTick = -1;
     private TitleWorldModel[] _lying = [];
     private long _lyingTick = -1;
+    private long _lyingFrame = -1;
+    private TitleWorldModel[] _outline = [];
+    private long _outlineTick = -1;
     private TitleWorldSprite[] _lights = [];
     private long _lightsTick = -1;
 
@@ -83,7 +86,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each body's mark where it shows (<see cref="Humans.Igi2HumanShadow"/>), the player's and the soldiers': coloured by the
+    /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>), the player's and the soldiers': coloured by the
     /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>).
     /// </remarks>
     public IReadOnlyList<TitleGroundDecal> GroundDecals
@@ -101,7 +104,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
     }
 
-    private static TitleGroundDecal? Decal(Humans.Igi2HumanShadow shadow)
+    private static TitleGroundDecal? Decal(OpenIGI.Game.World.HumanShadow shadow)
     {
         if (!shadow.IsEnabled || !shadow.IsPositionValid || shadow.Size <= 0f)
         {
@@ -115,7 +118,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             shadow.Position,
             shadow.Normal,
             shadow.Size,
-            Humans.Igi2HumanShadow.Hover,
+            OpenIGI.Game.World.HumanShadow.Hover,
             OpenIGI.Core.Graphics.Bgra32.FromRgba(channel, channel, channel, 255));
     }
 
@@ -144,8 +147,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the explosions the level's blasts go off in, or <see langword="null"/> for none.</summary>
     public Weapons.Igi2ExplosionWorld? Explosions { get; set; }
 
+    /// <inheritdoc/>
+    OpenIGI.Game.World.IExplosionScene? ITitleWorldModels.Explosions => Explosions;
+
     /// <summary>Gets the level's dynamic tasks, <c>Level_ptDynamicQTask</c>: the grenades, explosions and what they leave.</summary>
-    public World.Igi2DynamicTasks Dynamic { get; } = new();
+    public OpenIGI.Game.World.DynamicTasks Dynamic { get; } = new();
 
     /// <summary>Gets or sets the level's soldiers, or <see langword="null"/> before the level made them.</summary>
     public Soldiers.Igi2Soldiers? Soldiers { get; set; }
@@ -183,6 +189,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     public IPlacementVariant? Variants { get; set; }
+
+    /// <inheritdoc/>
+    public IPlacementVisibility? Visibility { get; set; }
 
     /// <summary>Gets or sets the level's tick the player runs inside, or <see langword="null"/> to run the player alone.</summary>
     public Igi2LevelRun? Level { get; set; }
@@ -413,43 +422,77 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     /// <remarks>
     /// The level's pickups not yet taken, each the weapon's <c>Fixed Model</c> where it lies, then the grenades in flight, each
-    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand, then the figures; built once a tick.
+    /// its <c>ProjectileModel</c>, then the soldiers, each posed with the weapon in its hand, then the figures; built once a tick,
+    /// and again whenever the sector cull decides a new frame, because it may leave a soldier out between two ticks.
     /// </remarks>
     public IReadOnlyList<TitleWorldModel> WorldModels
     {
         get
         {
-            if (_lyingTick != _ticks)
+            Igi2SectorVisibility? cull = Visibility as Igi2SectorVisibility;
+            long frame = cull?.Frame ?? -1;
+            if (_lyingTick != _ticks || _lyingFrame != frame)
             {
-                IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
-                    ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
-                    : [];
-                IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
-                    ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
-                        .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
-                            .Where(static g => g.Parameters.Model.Length != 0)
-                            .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
-                        .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
-                            .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
-                    : [];
-                IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks) ?? [];
-                IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
-                IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
-                IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
-                IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
-                    ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
-                    : [];
-                // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
-                // interaction mode draws the working body rather than the first-person weapon.
-                IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
-                    ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
-                IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
-                _lying = [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings];
+                bool infra = Human.IsInfraEnabled;
+                _lying = Gather(cull is null ? null : body => cull.IsHumanVisible(body, infra));
                 _lyingTick = _ticks;
+                _lyingFrame = frame;
             }
 
             return _lying;
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every soldier, whatever the sector cull left out of <see cref="WorldModels"/>.</remarks>
+    public IReadOnlyList<TitleWorldModel> OutlineModels
+    {
+        get
+        {
+            if (Visibility is not Igi2SectorVisibility)
+            {
+                return WorldModels;
+            }
+
+            if (_outlineTick != _ticks)
+            {
+                _outline = Gather(null);
+                _outlineTick = _ticks;
+            }
+
+            return _outline;
+        }
+    }
+
+    private TitleWorldModel[] Gather(Func<Soldiers.Igi2HumanSoldier, bool>? isDrawn)
+    {
+        IEnumerable<TitleWorldModel> pickups = Human.Pickups is { } lying
+            ? lying.Items.Select(static p => new TitleWorldModel(p.WeaponType.FixedModel, p.Position, Rows(p.Orientation)))
+            : [];
+        IEnumerable<TitleWorldModel> flying = Grenades is { } grenades
+            ? grenades.Flying.Select(static g => new TitleWorldModel(g.Model, g.Position, Rows(g.Orientation)))
+                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2ImpactGrenade>()
+                    .Where(static g => g.Parameters.Model.Length != 0)
+                    .Select(static g => new TitleWorldModel(g.Parameters.Model, g.Position, Rows(g.Orientation))))
+                .Concat(grenades.Dynamic.Tasks.OfType<Weapons.Igi2Missile>()
+                    .Select(static m => new TitleWorldModel(m.Model, m.Position, Rows(m.Body.Orientation))))
+            : [];
+        IEnumerable<TitleWorldModel> soldiers = Soldiers?.Models(_ticks, isDrawn) ?? [];
+        IEnumerable<TitleWorldModel> figures = Figures.SelectMany(f => f.Models(_ticks));
+        IEnumerable<TitleWorldModel> barrels = StationaryGuns.Select(static g => g.Barrel()).OfType<TitleWorldModel>();
+        IEnumerable<TitleWorldModel> wrecks = Cars.Select(static c => c.Wreck()).OfType<TitleWorldModel>();
+        IEnumerable<TitleWorldModel> laid = Mines is { } mineWorld
+            ? mineWorld.Laid.Select(static m => new TitleWorldModel(m.Explosive.Model, m.Position, Rows([.. m.Frame])))
+            : [];
+        // human.c Human_GetHumanCameraInfoHandler; humancamera.c HumanCamera_MovementSetCamera:
+        // interaction mode draws the working body rather than the first-person weapon.
+        IReadOnlyList<TitleWorldModel> working = Human.CameraMode is 3 or 5 && Human.Model is { } body
+            ? Igi2BodyFrame.Build(Human, Human.BodyPose(), body.Name, Inventory?.Current?.WeaponType.FixedModel, _ticks, Weapons?.Firing.Flashes) : [];
+        IEnumerable<TitleWorldModel> casings = Casings?.Models() ?? [];
+
+        // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
+        IEnumerable<TitleWorldModel> pieces = Explosions is { } explosions ? ExplosionPieceModels.Of(explosions, _ticks) : [];
+        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces];
     }
 
     /// <summary>Makes the player at its spawn, as <c>HumanPlayer_CreateHandler</c> does, over a collision world.</summary>
@@ -496,7 +539,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         // Human_UpdateInternalDataHandler (igi2 0x4FF2F0): the level's Gamma is the heading and the ideal heading
         // both, and the body stands upright turned by it.
-        float[] facing = Igi2Pose.Rotation(0f, 0f, gamma);
+        float[] facing = EngineEuler.Rotation(0f, 0f, gamma);
         human.Orientation = new Matrix3f(
             facing[0], facing[1], facing[2],
             facing[3], facing[4], facing[5],

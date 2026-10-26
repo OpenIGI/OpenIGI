@@ -112,7 +112,7 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AreaActivate";
 
-    private float[] _frame = Igi2Pose.Rotation(0f, 0f, 0f);
+    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
     private Vector3f _half;
     private int? _mask;
     private int _active;
@@ -162,7 +162,7 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
     public void Prepare()
     {
         Vector3f angles = Orientation;
-        _frame = Igi2Pose.Rotation(angles.X, angles.Y, angles.Z);
+        _frame = EngineEuler.Rotation(angles.X, angles.Y, angles.Z);
         Vector3f d = Dimensions;
         _half = new Vector3f(((Fpu)d.X * 0.5).F, ((Fpu)d.Y * 0.5).F, ((Fpu)d.Z * 0.5).F);
     }

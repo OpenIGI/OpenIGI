@@ -90,7 +90,7 @@ public sealed partial class Igi2HumanPlayer
         float round = (float)Random.NextDouble();
         float beta = ((Fpu)round * WholeTurn).F;
         float alpha = (((Fpu)precision * DegreesToRadians) * far).F;
-        float[] n = Igi2Pose.Rotation(alpha, beta, 0f);
+        float[] n = EngineEuler.Rotation(alpha, beta, 0f);
 
         float[] turned = new float[9];
         for (int c = 0; c < 3; c++)

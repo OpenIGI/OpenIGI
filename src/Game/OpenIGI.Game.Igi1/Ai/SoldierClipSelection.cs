@@ -36,6 +36,9 @@ internal static class SoldierClipSelection
         // port had walked them in the player's walk clip and run them in the combat run (state 17), whose strides
         // carried them half a metre off the original's path. Classes with machines of their own keep theirs.
         bool soldierGaits = brain.Body is HumanSoldierBodyMachine;
+
+        // A change of gait keeps the stride's phase as each class's gait entries do (0x45A9E0, 0x455D10).
+        bool keepStride = brain.Body.KeptStrideThisTick;
         int walkAnimation = soldierGaits
             ? brain.Body.StateTable.AnimationOf(HumanSoldierStates.FastForwardState)
             : soldierClass.WalkAnimation;
@@ -84,7 +87,7 @@ internal static class SoldierClipSelection
                 && brain.Body.CurrentAnimation >= 0
                 ? brain.Body.CurrentAnimation
                 : runAnimation;
-            if (movingAnimation < 0 || !view.SetMoving(true, movingAnimation))
+            if (movingAnimation < 0 || !view.SetMoving(true, movingAnimation, keepStride))
             {
                 view.SetMoving(true, walkAnimation);
             }
@@ -146,7 +149,7 @@ internal static class SoldierClipSelection
             // slow walk (1). The body enters it on the tick the walker first writes forward, and not before it has
             // stood up from whatever it was doing -- a reload that has just ended leaves it standing for that tick.
             int gait = brain.Body.CurrentAnimation;
-            if (gait < 0 || !view.SetMoving(true, gait))
+            if (gait < 0 || !view.SetMoving(true, gait, keepStride))
             {
                 view.SetMoving(true, walkAnimation);
             }
@@ -160,7 +163,7 @@ internal static class SoldierClipSelection
             // what made them amble out of the barracks at 1.28 m/s. The run gait is the soldier's
             // state 2 (see above), and its clip's own root motion carries the brain at run speed;
             // sets without one fall back to the walk.
-            if (patrolRunAnimation < 0 || !view.SetMoving(true, patrolRunAnimation))
+            if (patrolRunAnimation < 0 || !view.SetMoving(true, patrolRunAnimation, keepStride))
             {
                 view.SetMoving(true, walkAnimation);
             }
