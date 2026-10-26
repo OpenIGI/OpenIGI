@@ -54,9 +54,10 @@ public sealed class GuestTitle
     /// <param name="runtime">The game.</param>
     /// <param name="dataRoot">Where the game is installed.</param>
     /// <param name="logger">Where its diagnostics go; defaults to a sink that discards them.</param>
+    /// <param name="inherited">Services the session starts with, which its content reads as it loads; <see langword="null"/> for none.</param>
     /// <returns>The guest, its tables loaded.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public static GuestTitle Start(IGameTitleRuntime runtime, string dataRoot, IOpenIgiLogger? logger = null)
+    public static GuestTitle Start(IGameTitleRuntime runtime, string dataRoot, IOpenIgiLogger? logger = null, IServiceCatalog? inherited = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrEmpty(dataRoot);
@@ -78,7 +79,7 @@ public sealed class GuestTitle
         }
 
         GameLoop loop = new(new ManualTimeSource(), logger: log, structuralTypes: runtime.Layout.StructuralTaskTypes);
-        TitleSession session = TitleSession.Start(runtime.Modules, loop, fileSystem, resources, log);
+        TitleSession session = TitleSession.Start(runtime.Modules, loop, fileSystem, resources, log, inherited: inherited);
         return new GuestTitle(runtime, loop, fileSystem, resources, session);
     }
 }
