@@ -219,6 +219,8 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _worldFrame++;
         float between = Math.Clamp(blend, 0f, 1f);
         models = LevelsOf(models, camera, projection);
+        bool retailFog = OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current
+            == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla;
         PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
@@ -267,8 +269,22 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
             if (part is not null)
             {
+                // Direct3DRender_SetFogParameters: fogged along the model's render sphere, on the original's look.
+                if (retailFog)
+                {
+                    Vector3f centre = model.RenderSphereCentre * (float)(1.0 / WorldScene.UnitsPerMetre);
+                    float depth = modelView.TransformPoint(centre).Z;
+                    float radius = (float)(model.RenderSphereRadius / WorldScene.UnitsPerMetre) * wanted.Scale;
+                    _device.SetObjectFogRange(depth - radius, depth + radius);
+                }
+
                 DrawPart(part, modelView, orientation);
             }
+        }
+
+        if (retailFog)
+        {
+            _device.SetObjectFogRange(0f, 0f);
         }
 
         _device.ClearPoseInterpolation();
