@@ -212,6 +212,12 @@ public interface IHeldWeaponPresenter : IDisposable
 /// </remarks>
 public interface IGrenadePresenter : IDisposable
 {
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights these models by, as it lights any rigid
+    /// model with no lightmap (<c>0x49DF60</c> selects <c>0x49D480</c>); or none to draw them at their textures.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Loads the grenade models a mission uses.</summary>
     /// <param name="mission">The mission whose packs the models are read from.</param>
     void Load(LoadedMission mission);
@@ -227,6 +233,12 @@ public interface IGrenadePresenter : IDisposable
 /// <summary>Draws the rockets and grenade-launcher rounds a level has in flight.</summary>
 public interface IMissilePresenter : IDisposable
 {
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights these models by, as it lights any rigid
+    /// model with no lightmap (<c>0x49DF60</c> selects <c>0x49D480</c>); or none to draw them at their textures.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Loads the projectile models a mission uses.</summary>
     /// <param name="mission">The mission whose packs the models are read from.</param>
     void Load(LoadedMission mission);
@@ -249,6 +261,12 @@ public interface IMissilePresenter : IDisposable
 /// <summary>Draws the weapons lying in the world for the player to pick up.</summary>
 public interface IGunPickupPresenter : IDisposable
 {
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights these models by, as it lights any rigid
+    /// model with no lightmap (<c>0x49DF60</c> selects <c>0x49D480</c>); or none to draw them at their textures.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Gets or sets what each of the weapons' textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
 

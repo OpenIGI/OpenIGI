@@ -89,6 +89,7 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
             // object whose one-tick contact flag has already been cleared before this frame is drawn.
             Matrix3f tumble = GrenadePhysics.PresentationOrientation(grenade, alpha);
 
+            model.Sun = Sun;
             model.Draw(
                 new BoneAttachment(position, tumble),
                 camera,
@@ -98,6 +99,9 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
                 WeaponDrawParts.BodyOnly);
         }
     }
+
+    /// <inheritdoc/>
+    public FixedFunctionSun? Sun { get; set; }
 
     public void Dispose()
     {

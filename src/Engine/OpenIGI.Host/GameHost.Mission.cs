@@ -144,6 +144,8 @@ public sealed partial class GameHost
             shadedWorld.Shading = shading;
         }
 
+        LightLooseModels(shading.Sun);
+
         _device.SetSceneSun(shading.Sun?.Ambient ?? Vector3f.Zero, shading.Sun?.Colour ?? Vector3f.Zero);
         if (shading.Sun is { } fixedFunctionSun)
         {
@@ -355,6 +357,7 @@ public sealed partial class GameHost
             _missileRenderer?.Dispose();
             _missileRenderer = _presentation.Presenters.Create<ViewModelPresentationRequest, IMissilePresenter>(ViewModelRequest());
             _missileRenderer?.Load(loaded);
+            LightLooseModels(_world?.Shading.Sun);
 
             EndStage("the loadout, the bullet marks and the HUD");
 
@@ -719,5 +722,24 @@ public sealed partial class GameHost
     {
         _effects.Tick();
         _hosted.Impacts.Tick();
+    }
+
+    /// <summary>Lights the pickups, grenades and missiles by the level's light, as the original lights any unbaked model.</summary>
+    private void LightLooseModels(FixedFunctionSun? sun)
+    {
+        if (_gunPickupRenderer is { } pickups)
+        {
+            pickups.Sun = sun;
+        }
+
+        if (_grenadeRenderer is { } grenades)
+        {
+            grenades.Sun = sun;
+        }
+
+        if (_missileRenderer is { } missiles)
+        {
+            missiles.Sun = sun;
+        }
     }
 }
