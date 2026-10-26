@@ -107,6 +107,7 @@ r_lut_table		-
 r_material_detail	0	archive
 r_menu_lite	1	-
 r_messages_tactical	1	archive
+r_mip_point	0	archive
 r_mission_warmup	45	archive
 r_moon_brightness	1	archive
 r_moonlight	0.1	archive

@@ -93,6 +93,8 @@ public sealed partial class GameHost
         // keeps, so a level loaded before this would keep the filtering it started with.
         _device.SetTextureQuality(MaterialCVars.Anisotropy.Value);
         WhenChanged(MaterialCVars.Anisotropy, () => _device.SetTextureQuality(MaterialCVars.Anisotropy.Value));
+        _device.SetPointMips(MaterialCVars.PointMips.Value);
+        WhenChanged(MaterialCVars.PointMips, () => _device.SetPointMips(MaterialCVars.PointMips.Value));
 
         _device.VSyncEnabled = FrameCVars.VSync.Value;
         WhenChanged(FrameCVars.VSync, () => _device.VSyncEnabled = FrameCVars.VSync.Value);

@@ -67,6 +67,12 @@ public interface ITextureDevice
     /// </remarks>
     void SetTextureQuality(int maxAnisotropy);
 
+    /// <summary>Sets whether textures created afterwards take their nearest mip level rather than blending two.</summary>
+    /// <param name="point">Whether the mip level is the nearest one.</param>
+    void SetPointMips(bool point)
+    {
+    }
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>
