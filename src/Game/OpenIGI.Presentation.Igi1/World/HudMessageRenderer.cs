@@ -209,36 +209,55 @@ internal sealed class HudMessageRenderer
         float centreY = y + halfHeight;
         float openWidth = halfWidth * StatusScreenLayout.MessageWidthScale(message.DisplayFrame);
         float openHeight = halfHeight * StatusScreenLayout.MessageHeightScale(message.DisplayFrame);
-
         if (openWidth > 0f && openHeight > 0f)
         {
-            byte alpha = (byte)Math.Clamp(
-                StatusScreenLayout.MessagePanelAlpha(message.DisplayFrame) * 255f, 0f, 255f);
-            Bgra32 panel = new(0, 0, 0, alpha);
-            batch.DrawQuad(
-                TextureHandle.None,
-                new Vertex2D(centreX - openWidth, centreY - openHeight, 0f, 0f, panel),
-                new Vertex2D(centreX + openWidth, centreY - openHeight, 1f, 0f, panel),
-                new Vertex2D(centreX + openWidth, centreY + openHeight, 1f, 1f, panel),
-                new Vertex2D(centreX - openWidth, centreY + openHeight, 0f, 1f, panel));
+            DrawPanel(batch, centreX - openWidth, centreY - openHeight, centreX + openWidth, centreY + openHeight, message.DisplayFrame, scale);
         }
 
-        // Nothing is typed until the panel has finished opening, so there is never text over a panel that
-        // is still narrower than it is.
-        if (message.RevealedCharacters <= 0)
+        // The text in front of the panel: 0x4860F0 queues both, the panel at depth one behind the text. Nothing is typed
+        // until the panel has finished opening.
+        if (message.RevealedCharacters > 0)
         {
-            return;
+            DrawWrapped(
+                batch,
+                font,
+                message.Text.AsSpan(0, message.RevealedCharacters),
+                x + (((portraitFrame?.Width ?? 0) + StatusScreenLayout.MessageTextInset) * scale),
+                y + (StatusScreenLayout.MessageTextDrop * scale),
+                StatusScreenLayout.MessageWrapWidth * scale,
+                scale,
+                cutscene: false);
         }
+    }
 
-        DrawWrapped(
-            batch,
-            font,
-            message.Text.AsSpan(0, message.RevealedCharacters),
-            x + (((portraitFrame?.Width ?? 0) + StatusScreenLayout.MessageTextInset) * scale),
-            y + (StatusScreenLayout.MessageTextDrop * scale),
-            StatusScreenLayout.MessageWrapWidth * scale,
-            scale,
-            cutscene: false);
+    // 0x486210: a black rectangle at a third, a green quad brightest at its lower right that flares as the line comes up and
+    // settles at 0.15, and a green outline at half.
+    private static void DrawPanel(SpriteBatch batch, float x0, float y0, float x1, float y1, int displayFrame, float scale)
+    {
+        Bgra32 black = Bgra32.FromRgba(0, 0, 0, 84);
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(x0, y0, 0f, 0f, black),
+            new Vertex2D(x1, y0, 1f, 0f, black),
+            new Vertex2D(x1, y1, 1f, 1f, black),
+            new Vertex2D(x0, y1, 0f, 1f, black));
+
+        byte alpha = (byte)Math.Clamp((int)(StatusScreenLayout.MessagePanelAlpha(displayFrame) * 255f), 0, 255);
+        Bgra32 green = Bgra32.FromRgba(0, 127, 0, alpha), bright = Bgra32.FromRgba(0, 255, 0, alpha);
+        // Split from the upper right to the lower left as the original's strip is, so only one triangle reaches the bright
+        // corner.
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(x1, y0, 1f, 0f, green),
+            new Vertex2D(x1, y1, 1f, 1f, bright),
+            new Vertex2D(x0, y1, 0f, 1f, green),
+            new Vertex2D(x0, y0, 0f, 0f, green));
+
+        Bgra32 edge = Bgra32.FromRgba(0, 229, 0, 127);
+        batch.FillRect(new RectF(x0, y0, x1 - x0, scale), edge);
+        batch.FillRect(new RectF(x0, y1 - scale, x1 - x0, scale), edge);
+        batch.FillRect(new RectF(x0, y0, scale, y1 - y0), edge);
+        batch.FillRect(new RectF(x1 - scale, y0, scale, y1 - y0), edge);
     }
 
     private static void DrawSubtitle(
@@ -296,7 +315,6 @@ internal sealed class HudMessageRenderer
             (float R, float G, float B) colour = StatusScreenLayout.MessageColour;
             ink = BitmapTextRenderer.FromRetail(colour.R, colour.G, colour.B);
         }
-        Bgra32 shadow = new(0, 0, 0, 190);
         float step = font.LineHeight * scale;
 
         int lineStart = 0;
@@ -314,10 +332,6 @@ internal sealed class HudMessageRenderer
             if (font.Measure(text[lineStart..i], scale, scale).Width > maxWidth && lastBreak > lineStart)
             {
                 ReadOnlySpan<char> line = text[lineStart..lastBreak];
-                if (!cutscene)
-                {
-                    font.Draw(batch, line, x + scale, y + scale, shadow, scale, scale);
-                }
                 font.Draw(batch, line, x, y, ink, scale, scale);
                 y += step;
                 lineStart = lastBreak + 1;
@@ -329,10 +343,6 @@ internal sealed class HudMessageRenderer
         if (lineStart < text.Length)
         {
             ReadOnlySpan<char> tail = text[lineStart..];
-            if (!cutscene)
-            {
-                font.Draw(batch, tail, x + scale, y + scale, shadow, scale, scale);
-            }
             font.Draw(batch, tail, x, y, ink, scale, scale);
         }
     }
