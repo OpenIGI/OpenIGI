@@ -236,6 +236,19 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public bool IsPlayableSound(string name) =>
         host.SoundOutput?.Definitions?.TryResolve(name, out SoundDefinition? found) == true && found is { IsPlayable: true };
 
+    /// <summary>How long a definition's sound instance plays before it deletes itself (<c>0x4E8840</c>): its sample's length, or forever when it loops.</summary>
+    /// <param name="name">The definition.</param>
+    /// <returns>The seconds; nought for a definition or sample that is not there.</returns>
+    public double SoundSeconds(string name)
+    {
+        if (host.SoundOutput is not { Definitions: { } definitions } output || !definitions.TryResolve(name, out SoundDefinition? found) || found is null)
+        {
+            return 0.0;
+        }
+
+        return found.Loop ? double.PositiveInfinity : output.Bank.TryGet(found.BankKey, out Engine.Audio.SoundEntry entry) ? entry.SampleSeconds : 0.0;
+    }
+
     /// <summary>Stops the looping binocular cue when player ticking is suspended.</summary>
     /// <remarks>
     /// Death-camera and mission teardown deliberately stop ticking the player. Those paths therefore
@@ -359,8 +372,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
                 }
                 else
                 {
-                    // A one-shot bed that has run out: the speakers let it go. The area keeps its instance until a
-                    // silent fade releases it (AmbientAreaRegistry), as the original's did on the probe.
+                    // A one-shot bed that has run out: the speakers let it go. The area lets its instance go on its own
+                    // clock (AmbientAreaRegistry), as the original's deletes itself at the sample's length.
                     _ambientVoices.Remove(area);
                     area.IsSounding = false;
                 }

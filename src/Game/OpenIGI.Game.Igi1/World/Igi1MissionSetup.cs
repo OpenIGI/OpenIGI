@@ -300,7 +300,8 @@ public sealed class Igi1MissionSetup(
             mission.Ambience.AttachTo(
                 walked.Walker,
                 () => mission.AmbienceListener,
-                audio.IsPlayableSound);
+                audio.IsPlayableSound,
+                audio.SoundSeconds);
         }
         if (mission.Ambience.Areas.Count > 0)
         {

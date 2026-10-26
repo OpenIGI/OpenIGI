@@ -49,8 +49,17 @@ public sealed record PlacedAmbientArea(
 
     /// <summary>Gets whether the task that made the area has deleted it: it goes quiet, then leaves the level.</summary>
     public bool IsRetired { get; internal set; }
-    /// <summary>Gets whether the area holds a sound instance -- <c>+440</c>, which only a silent fade releases.</summary>
+    /// <summary>Gets whether the area holds a sound instance -- <c>+440</c>, which a silent fade or the sound's end releases.</summary>
     public bool HasVoice { get; internal set; }
+
+    /// <summary>Gets how long the held instance plays before it deletes itself, seconds; infinite for a looped one.</summary>
+    public double VoiceSeconds { get; internal set; } = double.PositiveInfinity;
+
+    /// <summary>Gets the held instance's own clock, seconds, a tick's worth added each tick it runs (<c>0x4E8840</c>).</summary>
+    public float VoiceTime { get; internal set; }
+
+    /// <summary>Gets whether the held instance has deleted itself, which the area finds on its next update.</summary>
+    public bool VoiceGone { get; internal set; }
 }
 
 /// <summary>
@@ -83,7 +92,9 @@ public sealed class AmbientAreaRegistry
     private readonly List<PlacedAmbientArea> _areas = [];
 
     // The areas the level walk updates, where the tree places them; the rest are Tick's.
-    private readonly HashSet<PlacedAmbientArea> _walked = [];
+    // By identity: an area is a record whose fade and countdown change every tick, and a set hashing it by value loses it
+    // as soon as they do -- the area was then stepped twice a tick, once in the walk and once more here.
+    private readonly HashSet<PlacedAmbientArea> _walked = new(ReferenceEqualityComparer.Instance);
     private readonly IgiRandom _random;
 
     /// <summary>Initializes a new instance of the <see cref="AmbientAreaRegistry"/> class.</summary>
@@ -133,7 +144,8 @@ public sealed class AmbientAreaRegistry
     /// the walk -- so an area reads last tick's. <see langword="null"/> before the camera has been placed at all.
     /// </param>
     /// <param name="canStart">Whether a sound definition of that name exists, so that starting it gives an instance.</param>
-    public void AttachTo(LevelUpdateWalker walker, Func<Vector3d?> listener, Func<string, bool> canStart)
+    /// <param name="voiceSeconds">How long a definition's instance plays before it deletes itself; infinite for a looped one.</param>
+    public void AttachTo(LevelUpdateWalker walker, Func<Vector3d?> listener, Func<string, bool> canStart, Func<string, double>? voiceSeconds = null)
     {
         ArgumentNullException.ThrowIfNull(walker);
         ArgumentNullException.ThrowIfNull(listener);
@@ -143,7 +155,7 @@ public sealed class AmbientAreaRegistry
             _walked.Add(area);
             walker.Bind(area.Task, task =>
             {
-                Step(area, listener(), canStart);
+                Step(area, listener(), canStart, voiceSeconds);
                 walker.RunChildren(task);
             });
         }
@@ -165,22 +177,25 @@ public sealed class AmbientAreaRegistry
                 continue;
             }
 
-            Step(area, listenerInUnits, canStart ?? (static _ => true));
+            Step(area, listenerInUnits, canStart ?? (static _ => true), null);
         }
     }
 
     // 0x44C370, one area's update. Every draw is on the level's global stream, in this order, so the count and the
     // place of each is the original's:
     //   * the fade steps 0.05 toward inside or out, clamped to [0, 1];
-    //   * silent (fade 0): the gap is drawn afresh, (int)((rand * wait + min) * 30), and the instance let go;
-    //   * an instance held: it follows the listener while inside, at the fade's gain -- and it is held until a silent
-    //     fade lets it go: on the probe no area re-armed in 5400 ticks of mission 4 once its sound had started;
+    //   * silent (fade 0), or the held instance gone: the gap is drawn afresh, (int)((rand * wait + min) * 30), and the
+    //     instance let go;
+    //   * an instance held: it follows the listener while inside, at the fade's gain. A one-shot instance deletes itself
+    //     in its own update, which the area's children run after it, once its clock reaches the sample's length
+    //     (0x4E8840); the area finds the slot empty the tick after;
     //   * none held and inside: a variant is drawn EVERY tick, (int)(rand * count), and started once the gap is out;
     //   * the gap counts down.
-    private void Step(PlacedAmbientArea area, Vector3d? listener, Func<string, bool> canStart)
+    private void Step(PlacedAmbientArea area, Vector3d? listener, Func<string, bool> canStart, Func<string, double>? voiceSeconds)
     {
         area.PendingSound = string.Empty;
         area.WantsStop = false;
+        bool held = area.HasVoice;
 
         // Deleted by the task that made it: its voice stops, and it plays nothing more.
         if (area.IsRetired)
@@ -194,11 +209,12 @@ public sealed class AmbientAreaRegistry
         area.Inside = inside;
         area.Fade = Math.Clamp(area.Fade + (inside ? FadeStepPerTick : -FadeStepPerTick), 0.0, 1.0);
 
-        if (area.Fade == 0.0)
+        if (area.Fade == 0.0 || area.VoiceGone)
         {
             area.Countdown = DrawGap(area);
             area.WantsStop = area.HasVoice;
             area.HasVoice = false;
+            area.VoiceGone = false;
         }
         else if (!area.HasVoice && inside)
         {
@@ -207,12 +223,28 @@ public sealed class AmbientAreaRegistry
             {
                 area.PendingSound = area.Sounds[variant];
                 area.HasVoice = true;
+                area.VoiceSeconds = voiceSeconds?.Invoke(area.PendingSound) ?? double.PositiveInfinity;
+                area.VoiceTime = 0f;
             }
         }
 
         if (area.Countdown > 0)
         {
             area.Countdown--;
+        }
+
+        // The held instance's own update, run as one of the area's children -- from the tick after it was made, which joins
+        // the children after this tick's have been walked.
+        if (held && area.HasVoice)
+        {
+            if (!(area.VoiceSeconds > area.VoiceTime))
+            {
+                area.VoiceGone = true;
+            }
+            else
+            {
+                area.VoiceTime = (1f / 30f) + area.VoiceTime;
+            }
         }
     }
 
