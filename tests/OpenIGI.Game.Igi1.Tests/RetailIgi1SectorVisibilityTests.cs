@@ -38,6 +38,29 @@ public sealed class RetailIgi1SectorVisibilityTests
 
     private static readonly Lazy<Setup> Mission3 = new(() => Load(3));
 
+    // A standing player's eye above the feet, world units.
+    private static readonly double Eye = new PlayerBody().EyeHeight;
+
+    /// <summary>
+    /// From mission 1's compound, standing on <c>Building_1118</c>'s shell and looking along the fence, the rail beyond it stays
+    /// drawn as the view turns: a length of rail is weighed against the outside's window by its bent mesh's bound, laid about its
+    /// middle (<c>0x4E4530</c>), not by the straight model's bound at its first waypoint, which left the window as the view
+    /// turned away from that one end.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_bent_rail_is_weighed_by_its_own_bound()
+    {
+        Setup m = Mission1.Value;
+        WorldPlacement rail = m.Scene.Placements.Single(static p => p.TaskName == "spline:1:4");
+        foreach (float yaw in new[] { -18.1f, -3.2f })
+        {
+            m.Visibility.Decide(
+                new Camera3D(new Vector3d(24578866, -55865450, 174413292 + Eye), Camera3D.LookRotation(yaw * MathF.PI / 180f, -1.2f * MathF.PI / 180f)),
+                SectorScreenProjection.ForView(1f, 0.5625f));
+            Assert.True(m.Visibility.IsVisible(rail), $"the rail is culled at yaw {yaw}");
+        }
+    }
+
     /// <summary>
     /// In mission 3's tunnel, looking in at the inner room's door, and on its ramp looking back out: a portal the eye stands in
     /// covers the screen, as the original's (logged at <c>Sector_FloodPortals</c>, <c>0x4DD650</c>) do, so the rooms beyond

@@ -159,6 +159,18 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
         {
             WorldPlacement root = parts.Find(static p => !p.IsAttached) ?? parts[0];
             Vector3d at = WorldScene.ToUnits(root.Position);
+
+            // A spline segment -- a length of rail or road -- is its model bent between two waypoints and laid about their middle
+            // (0x4E4530): it is measured by the bent mesh's own bound, not the straight model's at the first waypoint, which took a
+            // rail out of the outside's window whenever that one end was.
+            if (root.BentGeometry is { } bent)
+            {
+                Vector3f middle = root.Orientation.Transposed().Transform(bent.Bounds.Centre * (float)WorldScene.UnitsPerMetre);
+                Vector3d laid = new(at.X + middle.X, at.Y + middle.Y, at.Z + middle.Z);
+                visibility._owners.TryAdd(task, new Owner(laid, laid, (float)(bent.Bounds.Radius * WorldScene.UnitsPerMetre)));
+                continue;
+            }
+
             Vector3f c = root.Orientation.Transposed().Transform(root.Model.RenderSphereCentre);
             visibility._owners.TryAdd(task, new Owner(at, new Vector3d(at.X + c.X, at.Y + c.Y, at.Z + c.Z), root.Model.RenderSphereRadius));
         }
