@@ -149,6 +149,18 @@ internal sealed class SoldierWeaponDrawer(
                 });
 
                 LightModel(member.DrawnOrientation);
+
+                // 0x49F700 fogs the body along its sphere: its origin's depth, either side by the mesh's radius (Fog_SetRange).
+                if (OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla
+                    && group.Body.Model is { } fogged)
+                {
+                    Vector3d offset = member.DrawnWhere - camera.Position;
+                    Matrix3f view = camera.Orientation;
+                    float depth = (float)((view.M31 * offset.X) + (view.M32 * offset.Y) + (view.M33 * offset.Z));
+                    float radius = (float)(fogged.RenderSphereRadius / WorldScene.UnitsPerMetre);
+                    _device.SetObjectFogRange(depth - radius, depth + radius);
+                }
+
                 if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
                 {
                     SoldierLevel lower = group.Lower[level - 1];
@@ -163,6 +175,7 @@ internal sealed class SoldierWeaponDrawer(
 
                 _device.SetMaterialOverride(SurfaceMaterial.Default);
                 _device.ClearPoseInterpolation();
+                _device.SetObjectFogRange(0f, 0f);
             }
         }
 
