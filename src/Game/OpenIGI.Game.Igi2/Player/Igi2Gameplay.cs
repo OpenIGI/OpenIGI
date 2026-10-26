@@ -92,7 +92,13 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
         player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
-        world.AddBody(player.Human.Collider);
+
+        // Another game's player standing for the level's own: this one is not in the world, nor struck by its blasts.
+        player.StoodFor = PlayerSpawn.FindGameplayTask(request.World.LevelRoot) is Igi2HumanPlayerTask { Driver: not null } claimed ? claimed : null;
+        if (player.StoodFor is null)
+        {
+            world.AddBody(player.Human.Collider);
+        }
 
         // The panes of glass the buildings hang, each made as the level's objects are, drawing its threshold from the run stream.
         player.Glass = Interaction.Igi2GlassContainer.Build(world, models, player.Human.Random, explosions: null);
@@ -118,7 +124,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
                         impacts.Explosions = explosions;
                     }
 
-                    explosions.AddTarget(player.Human);
+                    if (player.StoodFor is null)
+                    {
+                        explosions.AddTarget(player.Human);
+                    }
+
                     foreach (Interaction.Igi2Glass pane in player.Glass.Panes)
                     {
                         pane.Explosions = explosions;
@@ -477,16 +487,18 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
     /// <summary>
     /// Every human of the level in <c>Human_ptQTaskList</c>'s order: each registers as it is made (<c>Human_CreateHandler</c>),
-    /// so in the tree's order, the player where its <c>HumanPlayer</c> task stands.
+    /// so in the tree's order, the player where its <c>HumanPlayer</c> task stands -- unless another game's player stands for it
+    /// (<see cref="Igi2TitlePlayer.StoodFor"/>), which is no human of this game's.
     /// </summary>
     internal static List<Igi2Human> LevelHumans(Engine.Tasks.GameTask? root, Igi2TitlePlayer player)
     {
         List<Igi2Human> humans = [];
+        bool own = player.StoodFor is null;
         if (root is not null)
         {
             foreach (Engine.Tasks.GameTask node in root.Descendants())
             {
-                if (node is Igi2HumanPlayerTask && !humans.Contains(player.Human))
+                if (node is Igi2HumanPlayerTask && own && !humans.Contains(player.Human))
                 {
                     humans.Add(player.Human);
                 }
@@ -497,7 +509,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             }
         }
 
-        if (!humans.Contains(player.Human))
+        if (own && !humans.Contains(player.Human))
         {
             humans.Insert(0, player.Human);
         }

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// </remarks>
 public abstract class HumanTask
-    : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable
+    : ContainerTask, IWeaponCollisionTarget, IWeaponHitTarget, IExplosionHitTarget, IHumanAiEventTarget, IAiHuman, IAiDetectable, IHostedHuman
 {
     /// <summary>
     /// Gets or sets the live body the human's game keeps for it: where it stands, its eyes and its stance; <see langword="null"/>
@@ -49,6 +49,13 @@ public abstract class HumanTask
     /// game's body keeps current.
     /// </remarks>
     public GameTitle? Driver { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A human whose body another game keeps in the level's own world answers through <see cref="Body"/> and <see cref="Events"/>
+    /// instead; this is the other game's own human, where the level's game finds one in its stead.
+    /// </remarks>
+    public IAiHuman? StandIn { get; set; }
 
     /// <inheritdoc/>
     Vector3d IAiHuman.Position => Body?.Feet ?? Position;

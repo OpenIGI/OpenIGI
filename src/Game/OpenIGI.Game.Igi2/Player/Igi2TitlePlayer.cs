@@ -147,6 +147,22 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <summary>Gets or sets the explosions the level's blasts go off in, or <see langword="null"/> for none.</summary>
     public Weapons.Igi2ExplosionWorld? Explosions { get; set; }
 
+    /// <summary>
+    /// Gets or sets the level's player task when another game's player stands for it (<see cref="IHostedHuman.Driver"/>), or
+    /// <see langword="null"/> while this player is the level's. A player stood for is not run, struck or seen: the other game's
+    /// is, where the level finds it (<see cref="StandIn"/>).
+    /// </summary>
+    public IHostedHuman? StoodFor { get; set; }
+
+    /// <summary>Gets the other game's player standing for this one, as the level's AI looks out for it; <see langword="null"/> for none.</summary>
+    public Game.Ai.IAiPlayer? StandIn => StoodFor?.StandIn as Game.Ai.IAiPlayer;
+
+    /// <summary>
+    /// Gets or sets what runs the other game's player where the level's walk reaches the player's task (<see cref="StoodFor"/>),
+    /// in this player's stead.
+    /// </summary>
+    public Action? StandInRun { get; set; }
+
     /// <inheritdoc/>
     OpenIGI.Game.World.IExplosionScene? ITitleWorldModels.Explosions => Explosions;
 
@@ -609,6 +625,12 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// </summary>
     internal void RunPlayer()
     {
+        if (StoodFor is not null)
+        {
+            StandInRun?.Invoke();
+            return;
+        }
+
         Weapons?.RunGunShot();
         if (Level is { } level)
         {

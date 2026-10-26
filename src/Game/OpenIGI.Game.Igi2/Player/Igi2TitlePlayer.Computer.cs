@@ -397,7 +397,7 @@ public sealed partial class Igi2TitlePlayer
         public IIgi2CameraTarget? Task(int id) => player.TaskById?.Invoke(id) switch
         {
             IIgi2CameraTarget target => target,
-            Igi2HumanPlayerTask => new Target(() => player.Human.Position),
+            Igi2HumanPlayerTask => new Target(() => player.StandIn?.Position ?? player.Human.Position),
             Ai.Igi2HumanSoldierTask { Body: { } soldier } => new Target(() => soldier.Position),
             GameTask task when task.TryGetScriptValue("Position", out object? value) && value is Vector3d position
                 => new Target(() => position),

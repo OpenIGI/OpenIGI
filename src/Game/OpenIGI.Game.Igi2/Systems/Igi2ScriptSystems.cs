@@ -20,7 +20,7 @@ internal static class Igi2ScriptSystems
                 {
                     Ai.Igi2HumanSoldierTask { Body: { } body } => body,
                     Ai.Igi2HumanSoldierTask { StandIn: { } standIn } => standIn,
-                    Igi2HumanPlayerTask => b.Player.Human,
+                    Igi2HumanPlayerTask => (object?)b.Player.StandIn ?? b.Player.Human,
                     _ => node,
                 });
             }
@@ -77,7 +77,7 @@ internal static class Igi2ScriptSystems
             b.Request.World.Resources,
             b.Natives,
             b.Functions,
-            player.Human,
+            player.StandIn ?? player.Human,
             everyone,
             player.Human.Random,
             () => level.LevelFlow?.Tick ?? 0)

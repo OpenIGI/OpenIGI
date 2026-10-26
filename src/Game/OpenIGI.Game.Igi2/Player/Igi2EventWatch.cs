@@ -39,7 +39,7 @@ internal sealed class Igi2EventWatch
         _events = events;
         _alarms = [.. level.Descendants().OfType<Igi2AlarmControlTask>()];
         _damage = player.Human.Damage.Damage;
-        _playerDead = player.Human.IsDead;
+        _playerDead = player.StandIn?.IsDead ?? player.Human.IsDead;
         _alarm = AnyAlarm();
 
         // A soldier the level places dead has not died in play.
@@ -71,7 +71,7 @@ internal sealed class Igi2EventWatch
         }
 
         _damage = damage;
-        bool dead = _player.Human.IsDead;
+        bool dead = _player.StandIn?.IsDead ?? _player.Human.IsDead;
         if (dead && !_playerDead && _events.IsHeard<PlayerKilled>())
         {
             _events.Raise(new PlayerKilled());
