@@ -207,6 +207,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// <summary>Shows a non-scripted retail-style status message in the next free top-left slot.</summary>
     /// <param name="text">The already formatted text to draw.</param>
     /// <param name="durationSeconds">How long the text holds after it has typed out.</param>
+    /// <param name="portrait">The sprite drawn beside it, by its name in the status archive, or empty.</param>
     /// <returns><see langword="true"/> when a display slot was available.</returns>
     /// <remarks>
     /// <para>
@@ -217,7 +218,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// alter script variables or the map-computer log.
     /// </para>
     /// </remarks>
-    public bool ShowTransientMessage(string text, float durationSeconds = 2f)
+    public bool ShowTransientMessage(string text, float durationSeconds = 2f, string portrait = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         if (!float.IsFinite(durationSeconds) || durationSeconds < 0f)
@@ -225,7 +226,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
             throw new ArgumentOutOfRangeException(nameof(durationSeconds));
         }
 
-        return _messages.ShowTransient(text, durationSeconds);
+        return _messages.ShowTransient(text, durationSeconds, portrait);
     }
 
     /// <summary>Gets the messages on screen now, in the slot order the original draws them in.</summary>

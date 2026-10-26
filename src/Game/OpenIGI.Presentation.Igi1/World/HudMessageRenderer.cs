@@ -183,7 +183,7 @@ internal sealed class HudMessageRenderer
         }
     }
 
-    private static void DrawStatusMessage(
+    private void DrawStatusMessage(
         SpriteBatch batch,
         BitmapTextRenderer font,
         in StatusMessageDisplay message,
@@ -191,12 +191,21 @@ internal sealed class HudMessageRenderer
         float y,
         float scale)
     {
+        // A portrait (0x4860F0) is drawn at the line's corner once the panel has opened, the text set after it and the
+        // panel as tall as it.
+        SpriteResource? portrait = message.Portrait.Length > 0 ? _sprite(message.Portrait) : null;
+        SpriteFrame? portraitFrame = portrait is { Asset.Frames.Count: > 0 } ? portrait.Asset.Frames[0] : null;
+        if (portrait is not null && portraitFrame is { } shown && message.DisplayFrame > 9)
+        {
+            portrait.DrawFrame(batch, shown, x, y, scale, scale, BitmapTextRenderer.NeutralColor);
+        }
+
         // The panel, drawn open from its own centre. Its width and height are independent factors that
         // finish at different times, so for the first couple of ticks this is a zero-width line and
         // nothing shows at all -- see StatusScreenLayout.MessageHeightScale.
         float halfWidth = StatusScreenLayout.MessagePanelHalfWidth * scale;
         float centreX = x + halfWidth;
-        float halfHeight = StatusScreenLayout.MessagePanelHeight * 0.5f * scale;
+        float halfHeight = (portraitFrame?.Height ?? StatusScreenLayout.MessagePanelHeight) * 0.5f * scale;
         float centreY = y + halfHeight;
         float openWidth = halfWidth * StatusScreenLayout.MessageWidthScale(message.DisplayFrame);
         float openHeight = halfHeight * StatusScreenLayout.MessageHeightScale(message.DisplayFrame);
@@ -225,7 +234,7 @@ internal sealed class HudMessageRenderer
             batch,
             font,
             message.Text.AsSpan(0, message.RevealedCharacters),
-            x + (StatusScreenLayout.MessageTextInset * scale),
+            x + (((portraitFrame?.Width ?? 0) + StatusScreenLayout.MessageTextInset) * scale),
             y + (StatusScreenLayout.MessageTextDrop * scale),
             StatusScreenLayout.MessageWrapWidth * scale,
             scale,

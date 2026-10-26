@@ -345,6 +345,41 @@ public sealed class StatusScreenRendererTests
         Assert.Equal(new Bgra32(255, 255, 255, 255), draw.Vertices[0].Color);
     }
 
+    [RequiresGameDataFact]
+    public void TheAmmunitionMessageWearsItsPortraitWithItsTextAfterIt()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        RecordingGraphicsDevice device = new();
+        using StatusScreenRenderer renderer = new(device);
+        SpriteBatch batch = new(device);
+        Assert.True(renderer.Load(fileSystem));
+        SpriteFrame ammo = Frame(IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenLayout.Archive)), "ammo.spr");
+
+        List<RecordingGraphicsDevice.DrawCall> Draw(string portrait, int frame)
+        {
+            device.Draws.Clear();
+            batch.Begin();
+            renderer.DrawStatusMessages(
+                batch,
+                [new StatusMessageDisplay("A", RevealedCharacters: 1, DisplayFrame: frame, IsCutscene: false, Portrait: portrait)],
+                screenWidth: 640,
+                screenHeight: 480);
+            batch.End();
+            return [.. device.Draws];
+        }
+
+        List<RecordingGraphicsDevice.DrawCall> plain = Draw(string.Empty, 20);
+        List<RecordingGraphicsDevice.DrawCall> worn = Draw("ammo.spr", 20);
+
+        // The portrait is one more draw, and the text moves right by its width (0x4860F0).
+        Assert.Equal(plain.Count + 1, worn.Count);
+        Assert.Equal(plain[^1].Vertices[0].X + ammo.Width, worn[^1].Vertices[0].X, 3);
+
+        // Not until the panel has opened.
+        Assert.Equal(plain.Count, Draw("ammo.spr", 9).Count);
+    }
+
     private static SpriteFrame Frame(IresArchive archive, string name)
         => Assert.Single(Asset(archive, name).Frames);
 

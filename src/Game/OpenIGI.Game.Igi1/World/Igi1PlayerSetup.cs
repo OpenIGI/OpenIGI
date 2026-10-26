@@ -126,6 +126,9 @@ public sealed class Igi1PlayerSetup(
     // The message an AmmoPickup posts, with the ammunition box's portrait (0x46D990).
     private const string AmmoPickupMessage = "PICKEDUPAMMO";
 
+    // STATUSSCREEN:ammo.spr, by its name in the status archive.
+    private const string AmmoPickupPortrait = "ammo.spr";
+
     // A missile is the original's physics object of its model's type, flying by its missile type (0x429A30).
     private RetailMissileBody? FireMissile(LoadedMission loaded, string model, Vector3d at, Matrix3f frame, float speed, Vector3d target) =>
         mission.VehiclePhysics?.Types is { } types
@@ -237,7 +240,7 @@ public sealed class Igi1PlayerSetup(
                 // An AmmoPickup posts its own message as it is taken (0x46D990); a GenericPickup posts none.
                 if (audio.TakeGenericPickup(pickup))
                 {
-                    mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage));
+                    mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage), portrait: AmmoPickupPortrait);
                 }
             };
             host.Logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
