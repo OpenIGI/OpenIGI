@@ -368,6 +368,11 @@ public sealed class PlayerBody
         HitShove = default;
         _previousStep = default;
         TouchedWall = false;
+
+        // Off the ladder the human is in state 0 without the ground bit the mount cleared; its next update finds no ground and
+        // enters state 29 (0x4087B0), whose entry carries the still step on and runs no gravity (0x40BDB0). The fall starts
+        // the tick after.
+        _pendingWalkOffVelocity = Vector3f.Zero;
     }
 
     /// <summary>Advances the player by one tick.</summary>

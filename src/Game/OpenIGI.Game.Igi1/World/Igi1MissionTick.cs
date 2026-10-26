@@ -29,6 +29,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
     private bool _climbActive;
     private bool _climbSlideArmed;
+
+    // Animation 170's end, seen on the tick it ends and acted on the tick after (see the top transitions below).
+    private bool _ladderTopOffEnded;
     private bool _worldInteractionActive;
 
     /// <summary>Forgets a climb or an interaction in progress, as a new mission starts.</summary>
@@ -36,6 +39,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     {
         _climbActive = false;
         _climbSlideArmed = false;
+        _ladderTopOffEnded = false;
         _worldInteractionActive = false;
     }
 
@@ -391,6 +395,14 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
                         break;
 
+                    case LadderTraversalPhase.GettingOffTop when _ladderTopOffEnded:
+                        // State 39 (0x40DA80) reads the clip-done bit the previous tick's advance set, in the state machine
+                        // ahead of this tick's advance: it lets go of the ladder a tick after animation 170 ends, the clip
+                        // held on its last frame meanwhile.
+                        _ladderTopOffEnded = false;
+                        mission.Player.CompleteLadderTopTransition();
+                        break;
+
                     case LadderTraversalPhase.GettingOnTop:
                     case LadderTraversalPhase.GettingOffTop:
                         soldiers.AdvancePlayerLadderAnimation(
@@ -401,7 +413,11 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                         mission.Player.MoveLadder(topDelta);
                         TakeLadderRungEvent(topEventTime);
 
-                        if (topAnimationEnded)
+                        if (topAnimationEnded && mission.Player.LadderPhase == LadderTraversalPhase.GettingOffTop)
+                        {
+                            _ladderTopOffEnded = true;
+                        }
+                        else if (topAnimationEnded)
                         {
                             mission.Player.CompleteLadderTopTransition();
                             if (mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
@@ -523,6 +539,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             mission.Soldiers?.HidePlayerBodyClimbing();
             host.ResetInteractionView();
             _climbActive = false;
+            _ladderTopOffEnded = false;
             _worldInteractionActive = false;
         }
     }
