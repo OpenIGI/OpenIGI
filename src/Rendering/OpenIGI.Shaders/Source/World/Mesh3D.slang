@@ -186,6 +186,14 @@ Varyings vertexMain(VertexInput input)
         : 0.0;
     output.fog = fogDensity > 0.0 ? clamp(exp(-fogDensity * max(clip.w, 0.0)), 0.0, 1.0) : 1.0;
 
+    // An object both games fog linearly between its sphere's near and far depths (Fog_SetRange 0x49B2D0,
+    // Direct3DRender_SetFogParameters): the ramp's value at the eye rides in the second row's w and its fall per
+    // metre where the density was.
+    if (fogDensity > 0.0 && terrain < 0.5 && push.normalKey1.w > 0.0)
+    {
+        output.fog = clamp(push.normalKey1.w - fogDensity * clip.w, 0.0, 1.0);
+    }
+
     // OpenGL clip -> Vulkan clip: flip Y, and map Z onto reverse-Z [1, 0] (near = 1, far = 0).
     clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;

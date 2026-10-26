@@ -20,6 +20,8 @@ namespace OpenIGI.Rendering.Mesh3D;
 /// composited and divides it by <see cref="Exposure"/>, which the block carries in place of the lightmap
 /// scale.
 /// </param>
+/// <param name="ObjectFogNear">The near view depth of the drawn object's sphere, in metres, for its linear fog.</param>
+/// <param name="ObjectFogFar">Its far view depth; equal to the near for the frame's exponential fog.</param>
 public readonly record struct ForwardDrawState(
     Matrix4f Projection,
     SceneLighting Lighting,
@@ -33,7 +35,9 @@ public readonly record struct ForwardDrawState(
     float Exposure,
     Vector3f LampLight,
     bool FirstPerson,
-    bool LinearScene = false);
+    bool LinearScene = false,
+    float ObjectFogNear = 0f,
+    float ObjectFogFar = 0f);
 
 /// <summary>The terrain's level-of-detail slide.</summary>
 /// <param name="Scale">How the ramp is scaled.</param>
@@ -222,6 +226,7 @@ public static class ForwardPushBlock
         // frame's fog rides in. The rig itself is never fogged, which is the original's arrangement too:
         // it is drawn a hand's length from the eye, where the exponential has not begun.
         WriteFog(block, state, blend);
+        WriteObjectFog(block, state);
     }
 
     /// <summary>Writes the frame's fog into the last row of the block.</summary>
@@ -241,6 +246,32 @@ public static class ForwardPushBlock
         // Project I.G.I.'s added face groups -- the FireBall's among them -- are drawn with fog off (set_alpha_states, 0x49EC70),
         // so they keep their whole colour however far off they burn.
         block[31] = blend == BlendMode.AddColour ? 0f : state.Fog.DensityPerMetre;
+    }
+
+    /// <summary>Turns the frame's exponential fog into the straight line an object is fogged along, where the draw names one.</summary>
+    /// <remarks>
+    /// <c>Fog_SetRange</c> (<c>0x49B2D0</c>) and I.G.I. 2's <c>Direct3DRender_SetFogParameters</c> set linear fog from the object's
+    /// sphere: the line through the exponential's values at its near and far depths. The value at the eye goes in the second row's
+    /// w, which an ordinary world draw leaves at nought, and the fall per metre in the density's place.
+    /// </remarks>
+    private static void WriteObjectFog(Span<float> block, in ForwardDrawState state)
+    {
+        float density = block[31];
+        float near = state.ObjectFogNear, far = state.ObjectFogFar;
+        if (!(density > 0f) || !(far > near))
+        {
+            return;
+        }
+
+        float atNear = MathF.Exp(-density * near), atFar = MathF.Exp(-density * far);
+        float fall = (atNear - atFar) / (far - near);
+        if (!(fall > 0f))
+        {
+            return;
+        }
+
+        block[27] = atNear + (fall * near);
+        block[31] = fall;
     }
 
     /// <summary>How bright a light is, by the same weights the rest of the renderer meters with.</summary>

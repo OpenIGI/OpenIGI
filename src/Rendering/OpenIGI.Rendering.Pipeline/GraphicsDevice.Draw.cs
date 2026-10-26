@@ -35,6 +35,10 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     private float _alphaHashSeed;
     private float _poseBlend;
     private byte _alphaReference = Mesh3DConstants.DefaultAlphaReference;
+
+    // The view depths of the sphere of the object being drawn, which fog it linearly; equal for the exponential.
+    private float _objectFogNear;
+    private float _objectFogFar;
     private Vector3f _sceneSunAmbient;
     private Vector3f _sceneSunColour;
     private bool _firstPerson;
@@ -319,6 +323,9 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public void SetModelAmbient(Vector3f ambient) => _modelAmbient = ambient;
 
     /// <inheritdoc/>
+    public void SetObjectFogRange(float nearDepth, float farDepth) => (_objectFogNear, _objectFogFar) = (nearDepth, farDepth);
+
+    /// <inheritdoc/>
     public void SetSceneSun(Vector3f ambient, Vector3f colour)
     {
         _sceneSunAmbient = ambient;
@@ -566,7 +573,9 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
                 ? LampFill.AtEye(LocalLights) + (_flashlight.IsOn ? _flashlight.RigFill : Vector3f.Zero)
                 : Vector3f.Zero,
             _firstPerson,
-            linearScene);
+            linearScene,
+            _objectFogNear,
+            _objectFogFar);
 
         ForwardPushBlock.Write(push, state, modelView, blend, hasLightmap);
     }

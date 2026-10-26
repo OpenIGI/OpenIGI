@@ -184,30 +184,51 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
     {
         fogDensity_0 = 0.0f;
     }
-    if(fogDensity_0 > 0.0f)
+    var _S7 : bool = fogDensity_0 > 0.0f;
+    if(_S7)
     {
-        fogDensity_0 = clamp(exp(- fogDensity_0 * max(clip_0.w, 0.0f)), 0.0f, 1.0f);
+        facing_0 = clamp(exp(- fogDensity_0 * max(clip_0.w, 0.0f)), 0.0f, 1.0f);
     }
     else
     {
-        fogDensity_0 = 1.0f;
+        facing_0 = 1.0f;
     }
-    output_0.fog_0 = fogDensity_0;
+    output_0.fog_0 = facing_0;
+    if(_S7)
+    {
+        _S6 = terrain_0 < 0.5f;
+    }
+    else
+    {
+        _S6 = false;
+    }
+    if(_S6)
+    {
+        _S6 = (push_0.normalKey1_0.w) > 0.0f;
+    }
+    else
+    {
+        _S6 = false;
+    }
+    if(_S6)
+    {
+        output_0.fog_0 = clamp(push_0.normalKey1_0.w - fogDensity_0 * clip_0.w, 0.0f, 1.0f);
+    }
     clip_0[i32(1)] = OpenIgiClipY_0(clip_0.y);
     clip_0[i32(2)] = (clip_0.w - clip_0.z) * 0.5f;
     output_0.position_0 = clip_0;
     output_0.diffuseUv_0 = diffuseUv_2;
     output_0.lightmapUv_0 = _S2.lightmapUv_1;
-    var _S7 : vec4<f32>;
+    var _S8 : vec4<f32>;
     if(_S4)
     {
-        _S7 = vec4<f32>(1.0f, 1.0f, 1.0f, 1.0f);
+        _S8 = vec4<f32>(1.0f, 1.0f, 1.0f, 1.0f);
     }
     else
     {
-        _S7 = _S2.colorBgra_0.zyxw;
+        _S8 = _S2.colorBgra_0.zyxw;
     }
-    output_0.color_0 = _S7;
+    output_0.color_0 = _S8;
     var sunModel_0 : vec3<f32> = push_0.normalKey0_0.xyz;
     if((abs(push_0.markerExposure_0.x)) > 0.5f)
     {
@@ -244,10 +265,10 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
         {
             facing_0 = 0.0f;
         }
-        var _S8 : vec3<f32> = output_0.color_0.xyz * clamp(vec3<f32>(cSunAmbientRed_0, cSunAmbientGreen_0, cSunAmbientBlue_0) + vec3<f32>(cSunRed_0, cSunGreen_0, cSunBlue_0) * vec3<f32>(max(facing_0, 0.0f)), vec3<f32>(0.0f), vec3<f32>(1.0f));
-        output_0.color_0.x = _S8.x;
-        output_0.color_0.y = _S8.y;
-        output_0.color_0.z = _S8.z;
+        var _S9 : vec3<f32> = output_0.color_0.xyz * clamp(vec3<f32>(cSunAmbientRed_0, cSunAmbientGreen_0, cSunAmbientBlue_0) + vec3<f32>(cSunRed_0, cSunGreen_0, cSunBlue_0) * vec3<f32>(max(facing_0, 0.0f)), vec3<f32>(0.0f), vec3<f32>(1.0f));
+        output_0.color_0.x = _S9.x;
+        output_0.color_0.y = _S9.y;
+        output_0.color_0.z = _S9.z;
     }
     output_0.normal_0 = vec3<f32>(dot(push_0.normalKey0_0.xyz, localNormal_0), dot(push_0.normalKey1_0.xyz, localNormal_0), dot(push_0.normalKey2_0.xyz, localNormal_0));
     return output_0;
@@ -262,16 +283,16 @@ fn EncodeSrgb_0( c_0 : vec3<f32>) -> vec3<f32>
 
 fn SampledDisplay_0( sampled_0 : vec3<f32>) -> vec3<f32>
 {
-    var _S9 : vec3<f32>;
+    var _S10 : vec3<f32>;
     if(cSamplerDecodes_0 != i32(0))
     {
-        _S9 = EncodeSrgb_0(sampled_0);
+        _S10 = EncodeSrgb_0(sampled_0);
     }
     else
     {
-        _S9 = sampled_0;
+        _S10 = sampled_0;
     }
-    return _S9;
+    return _S10;
 }
 
 fn DecodeSrgb_0( c_1 : vec3<f32>) -> vec3<f32>
@@ -296,35 +317,35 @@ struct pixelInput_0
 };
 
 @fragment
-fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>) -> pixelOutput_0
+fn fragmentMain( _S11 : pixelInput_0, @builtin(position) position_2 : vec4<f32>) -> pixelOutput_0
 {
-    var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S10.diffuseUv_4)));
+    var diffuse_0 : vec4<f32> = (textureSample((uDiffuse_0), (uDiffuseSampler_0), (_S11.diffuseUv_4)));
     var marker_0 : f32 = push_0.markerExposure_0.x;
     var translucent_0 : bool = marker_0 < 0.0f;
-    var _S11 : bool;
+    var _S12 : bool;
     if(!translucent_0)
     {
-        _S11 = (diffuse_0.w) < cAlphaReference_0;
+        _S12 = (diffuse_0.w) < cAlphaReference_0;
     }
     else
     {
-        _S11 = false;
+        _S12 = false;
     }
-    if(_S11)
+    if(_S12)
     {
         discard;
     }
-    var lightmap_0 : vec3<f32> = SampledDisplay_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S10.lightmapUv_2))).xyz);
+    var lightmap_0 : vec3<f32> = SampledDisplay_0((textureSample((uLightmap_0), (uLightmapSampler_0), (_S11.lightmapUv_2))).xyz);
     if((abs(push_0.normalKey0_0.w)) > 0.5f)
     {
-        _S11 = true;
+        _S12 = true;
     }
     else
     {
-        _S11 = marker_0 < 0.5f;
+        _S12 = marker_0 < 0.5f;
     }
     var modelTint_0 : vec3<f32>;
-    if(_S11)
+    if(_S12)
     {
         modelTint_0 = vec3<f32>(1.0f, 1.0f, 1.0f);
     }
@@ -332,17 +353,17 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
     {
         modelTint_0 = push_0.normalKey1_0.xyz;
     }
-    var _S12 : bool = (abs(marker_0)) > 0.5f;
-    if(_S12)
+    var _S13 : bool = (abs(marker_0)) > 0.5f;
+    if(_S13)
     {
-        _S11 = cLinearScene_0 == i32(0);
+        _S12 = cLinearScene_0 == i32(0);
     }
     else
     {
-        _S11 = false;
+        _S12 = false;
     }
     var lightmapGain_0 : f32;
-    if(_S11)
+    if(_S12)
     {
         lightmapGain_0 = push_0.markerExposure_0.y;
     }
@@ -350,11 +371,11 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
     {
         lightmapGain_0 = 1.0f;
     }
-    var base_0 : vec3<f32> = SampledDisplay_0(diffuse_0.xyz) * lightmap_0 * vec3<f32>(lightmapGain_0) * _S10.color_1.xyz * vec3<f32>(_S10.fade_1) * modelTint_0;
+    var base_0 : vec3<f32> = SampledDisplay_0(diffuse_0.xyz) * lightmap_0 * vec3<f32>(lightmapGain_0) * _S11.color_1.xyz * vec3<f32>(_S11.fade_1) * modelTint_0;
     var base_1 : vec3<f32>;
     if(cReflective_0 != i32(0))
     {
-        base_1 = base_0 + SampledDisplay_0((textureSample((uEnvironment_0), (uEnvironmentSampler_0), (normalize(_S10.reflection_1).xzy))).xyz);
+        base_1 = base_0 + SampledDisplay_0((textureSample((uEnvironment_0), (uEnvironmentSampler_0), (normalize(_S11.reflection_1).xzy))).xyz);
     }
     else
     {
@@ -363,7 +384,7 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
     var alpha_0 : f32;
     if(translucent_0)
     {
-        alpha_0 = diffuse_0.w * _S10.color_1.w;
+        alpha_0 = diffuse_0.w * _S11.color_1.w;
     }
     else
     {
@@ -377,38 +398,38 @@ fn fragmentMain( _S10 : pixelInput_0, @builtin(position) position_2 : vec4<f32>)
         }
         alpha_0 = lightmapGain_0;
     }
-    if(_S12)
+    if(_S13)
     {
         var fogShare_0 : f32;
         if((push_0.normalKey0_0.w) < -0.5f)
         {
-            fogShare_0 = _S10.color_1.x;
+            fogShare_0 = _S11.color_1.x;
         }
         else
         {
             fogShare_0 = 1.0f;
         }
-        var shown_0 : vec3<f32> = mix(push_0.normalKey2_0.xyz * vec3<f32>(fogShare_0), base_1, vec3<f32>(_S10.fog_1));
+        var shown_0 : vec3<f32> = mix(push_0.normalKey2_0.xyz * vec3<f32>(fogShare_0), base_1, vec3<f32>(_S11.fog_1));
         if(cLinearScene_0 != i32(0))
         {
-            var _S13 : pixelOutput_0 = pixelOutput_0( vec4<f32>(DecodeSrgb_0(max(shown_0, vec3<f32>(0.0f, 0.0f, 0.0f))) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
-            return _S13;
+            var _S14 : pixelOutput_0 = pixelOutput_0( vec4<f32>(DecodeSrgb_0(max(shown_0, vec3<f32>(0.0f, 0.0f, 0.0f))) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
+            return _S14;
         }
-        var _S14 : pixelOutput_0 = pixelOutput_0( vec4<f32>(shown_0, alpha_0) );
-        return _S14;
+        var _S15 : pixelOutput_0 = pixelOutput_0( vec4<f32>(shown_0, alpha_0) );
+        return _S15;
     }
     if(cLinearScene_0 != i32(0))
     {
         base_1 = DecodeSrgb_0(max(base_1, vec3<f32>(0.0f, 0.0f, 0.0f)));
     }
     var keyDirection_0 : vec3<f32> = normalize(vec3<f32>(-0.34999999403953552f, 0.44999998807907104f, -0.81999999284744263f));
-    var normal_3 : vec3<f32> = normalize(_S10.normal_2);
+    var normal_3 : vec3<f32> = normalize(_S11.normal_2);
     const toEye_1 : vec3<f32> = vec3<f32>(0.0f, 0.0f, -1.0f);
     var keyColour_0 : vec3<f32> = vec3<f32>(push_0.normalKey0_0.w, push_0.normalKey1_0.w, push_0.normalKey2_0.w);
-    var _S15 : vec3<f32> = vec3<f32>(max(dot(normal_3, keyDirection_0), 0.0f));
+    var _S16 : vec3<f32> = vec3<f32>(max(dot(normal_3, keyDirection_0), 0.0f));
     var gloss_0 : f32 = exp2(7.05000019073486328f);
-    var _S16 : vec3<f32> = mix(vec3<f32>(0.03999999910593033f, 0.03999999910593033f, 0.03999999910593033f), base_1, vec3<f32>(0.34999999403953552f)) * keyColour_0;
-    var _S17 : pixelOutput_0 = pixelOutput_0( vec4<f32>((base_1 * vec3<f32>(0.64999997615814209f) * (vec3<f32>(push_0.markerExposure_0.w, push_0.markerExposure_0.w, push_0.markerExposure_0.w) + keyColour_0 * _S15 + keyColour_0 * vec3<f32>(0.25f) * vec3<f32>(max(dot(normal_3, normalize(vec3<f32>(0.55000001192092896f, -0.20000000298023224f, -0.55000001192092896f))), 0.0f))) + _S16 * vec3<f32>((pow(max(dot(normal_3, normalize(keyDirection_0 + toEye_1)), 0.0f), gloss_0) * (gloss_0 + 8.0f) / 25.0f)) * _S15 + _S16 * vec3<f32>(pow(1.0f - max(dot(normal_3, toEye_1), 0.0f), 4.0f)) * vec3<f32>(0.34999999403953552f) * vec3<f32>(0.60000002384185791f)) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
-    return _S17;
+    var _S17 : vec3<f32> = mix(vec3<f32>(0.03999999910593033f, 0.03999999910593033f, 0.03999999910593033f), base_1, vec3<f32>(0.34999999403953552f)) * keyColour_0;
+    var _S18 : pixelOutput_0 = pixelOutput_0( vec4<f32>((base_1 * vec3<f32>(0.64999997615814209f) * (vec3<f32>(push_0.markerExposure_0.w, push_0.markerExposure_0.w, push_0.markerExposure_0.w) + keyColour_0 * _S16 + keyColour_0 * vec3<f32>(0.25f) * vec3<f32>(max(dot(normal_3, normalize(vec3<f32>(0.55000001192092896f, -0.20000000298023224f, -0.55000001192092896f))), 0.0f))) + _S17 * vec3<f32>((pow(max(dot(normal_3, normalize(keyDirection_0 + toEye_1)), 0.0f), gloss_0) * (gloss_0 + 8.0f) / 25.0f)) * _S16 + _S17 * vec3<f32>(pow(1.0f - max(dot(normal_3, toEye_1), 0.0f), 4.0f)) * vec3<f32>(0.34999999403953552f) * vec3<f32>(0.60000002384185791f)) * vec3<f32>(push_0.markerExposure_0.y), alpha_0) );
+    return _S18;
 }
 

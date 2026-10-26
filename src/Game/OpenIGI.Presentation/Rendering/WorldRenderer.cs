@@ -437,6 +437,13 @@ public sealed partial class WorldRenderer : IWorldPresenter
             Matrix4f baseModelView = camera.CreateModelView(entry.Position, entry.Orientation);
             BoundingSphere bounds = model.Geometry.Bounds;
 
+            // The original's look fogs each object along its own sphere (Fog_SetRange).
+            if (FaceGroupBlending)
+            {
+                float depth = baseModelView.TransformPoint(bounds.Centre).Z;
+                _device.SetObjectFogRange(depth - bounds.Radius, depth + bounds.Radius);
+            }
+
             // A ROTOR IS CULLED TOO, and against a bound that holds for every phase of its spin. The
             // blur turns the mesh about its own local origin, so an off-origin bound centre travels a
             // circle and a sphere taken at one blade sample is wrong at every other -- which is why a
@@ -643,6 +650,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
         if (appliedReference != IGraphicsDevice.DefaultAlphaReference)
         {
             _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+        }
+
+        if (FaceGroupBlending)
+        {
+            _device.SetObjectFogRange(0f, 0f);
         }
 
         // Back to one, and to no sun, for whatever draws next -- the terrain keeps its shipped LDR
