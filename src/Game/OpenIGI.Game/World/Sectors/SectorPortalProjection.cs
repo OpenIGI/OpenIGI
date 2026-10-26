@@ -330,8 +330,11 @@ public static class SectorPortalProjection
             {
                 // The original's interpolant, 0x586650: `(clipZ − a.z) / (b.z − a.z)` applied to the
                 // view-space position, which is then reprojected and given a fresh outcode.
+                // It is projected whatever its rounding, as the original's is: an interpolated depth a hair under the plane, read
+                // as behind it, put the point at the screen's corner and cut a portal the eye stood in to a sliver.
                 float t = (NearPlaneZ - current.View.Z) / (next.View.Z - current.View.Z);
-                scratch[written++] = Project(Vector3f.Lerp(current.View, next.View, t), projection);
+                Vector3f point = Vector3f.Lerp(current.View, next.View, t);
+                scratch[written++] = Project(new Vector3f(point.X, point.Y, MathF.Max(point.Z, NearPlaneZ)), projection);
             }
         }
 

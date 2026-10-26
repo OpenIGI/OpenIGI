@@ -39,6 +39,27 @@ public sealed class RetailIgi1SectorVisibilityTests
     private static readonly Lazy<Setup> Mission3 = new(() => Load(3));
 
     /// <summary>
+    /// In mission 3's tunnel, looking in at the inner room's door, and on its ramp looking back out: a portal the eye stands in
+    /// covers the screen, as the original's (logged at <c>Sector_FloodPortals</c>, <c>0x4DD650</c>) do, so the rooms beyond
+    /// are drawn. The near clip's interpolated depth used to round under the plane and cut each to a sliver at the screen's edge.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_portal_the_eye_stands_in_covers_the_screen()
+    {
+        Setup m = Mission3.Value;
+        m.Visibility.Decide(
+            new Camera3D(new Vector3d(23786718, -55266762, 174406288), Camera3D.LookRotation(-456.4f * MathF.PI / 180f, -6.5f * MathF.PI / 180f)),
+            Projection());
+        Assert.Contains(m.Scene.Placements, p => p.Owner.Name == "Building_3083" && p.Instance.Name == "424_02_1" && m.Visibility.IsVisible(p));
+
+        m.Visibility.Decide(
+            new Camera3D(new Vector3d(23783625, -55273469, 174405691), Camera3D.LookRotation(-643f * MathF.PI / 180f, -1.4f * MathF.PI / 180f)),
+            Projection());
+        Assert.Contains(m.Scene.Placements, p => p.Owner.Name == "Building_3083" && p.Instance.Name == "424_01_1" && m.Visibility.IsVisible(p));
+        Assert.True(m.Visibility.SeesOut);
+    }
+
+    /// <summary>
     /// On mission 3's ramp down into <c>Building_3083</c>'s tunnel the eye stands in the tunnel room, as the original's locate
     /// (logged at <c>0x4DBCC0</c>) says: the shell's walking level has a floor 3.7 cm above the tunnel's there, and a locate that
     /// met it put the eye on the shell, both of whose portals face away, so the tunnel and the rooms beyond it were never drawn.
