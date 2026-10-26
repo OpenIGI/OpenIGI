@@ -83,7 +83,19 @@ public sealed partial class GameHost
                 _device.SetPaintedSky(true);
             }
 
+            // The original draws its whole sky unfogged: the dome (SkyDome_Draw) and the cloud layers' strips, whose QVertex
+            // states turn fog off (Direct3DQVertex_SetGenericState). Added clouds fogged here dimmed toward black.
+            bool unfoggedSky = retailFog && GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            if (unfoggedSky)
+            {
+                _device.SetFog(SceneFog.None);
+            }
+
             _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
+            if (unfoggedSky)
+            {
+                _device.SetFog(RetailAir(_globalLight.ObjectFog));
+            }
 
             if (paintedSky)
             {
