@@ -99,6 +99,20 @@ public interface ITitleViewModelPresenter : IDisposable
 /// </remarks>
 public interface ITitleWorldModelPresenter
 {
+    /// <summary>Gets or sets how a body gives up detail with distance, or <see langword="null"/> to draw each whole.</summary>
+    Rendering.ModelLodPolicy? Lod
+    {
+        get => null;
+        set { }
+    }
+
+    /// <summary>Gets or sets a value indicating whether a cutscene holds the model-detail bias off (<c>CutScene_isRunning</c>).</summary>
+    bool LodBiasHeld
+    {
+        get => false;
+        set { }
+    }
+
     /// <summary>
     /// Highlights those of the models drawn last that stand for people the binoculars marked, as the level's own marked soldiers
     /// are highlighted (<see cref="Rendering.BinocularMarking"/>); a presenter that draws no people draws nothing.

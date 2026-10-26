@@ -25,8 +25,15 @@ public sealed class ModelLodPolicy
     /// <param name="distances">The models' own distances by their first level's name, world units.</param>
     /// <param name="scale">The detail scale, <c>gLodScale</c>.</param>
     /// <param name="bones">The level's settings for skinned models; none leaves them whole.</param>
-    public ModelLodPolicy(in ModelLodSettings settings, IReadOnlyDictionary<string, float[]> distances, float scale = 1f, ModelLodSettings? bones = null)
+    /// <param name="rules">The title's way of picking; Project I.G.I.'s by default.</param>
+    public ModelLodPolicy(
+        in ModelLodSettings settings,
+        IReadOnlyDictionary<string, float[]> distances,
+        float scale = 1f,
+        ModelLodSettings? bones = null,
+        ModelLodRules? rules = null)
     {
+        Rules = rules ?? ModelLodRules.Igi1;
         ArgumentNullException.ThrowIfNull(distances);
         _settings = settings;
         _bones = bones ?? default;
@@ -37,6 +44,9 @@ public sealed class ModelLodPolicy
 
     /// <summary>Gets the detail scale.</summary>
     public float Scale { get; }
+
+    /// <summary>Gets the title's way of picking.</summary>
+    public ModelLodRules Rules { get; }
 
     /// <summary>Gets a value indicating whether skinned models give up detail too.</summary>
     public bool HasBoneSettings { get; }
@@ -67,7 +77,7 @@ public sealed class ModelLodPolicy
         Matrix3f o = camera.Orientation;
         double depth = (o.M31 * (at.X - eye.X + centre.X)) + (o.M32 * (at.Y - eye.Y + centre.Y)) + (o.M33 * (at.Z - eye.Z + centre.Z));
         float[] distances = _distances.TryGetValue(name, out float[]? own) ? own : [];
-        return ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0, fieldOfView, _bones, triangles, distances);
+        return ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0, Math.Min(fieldOfView, Rules.FieldOfViewCeiling), _bones, triangles, distances);
     }
 
     /// <summary>Picks the level a placement is drawn at from a view.</summary>
@@ -86,6 +96,19 @@ public sealed class ModelLodPolicy
         Vector3f centre = first.RenderSphereCentre;
         Vector3d eye = WorldScene.ToUnits(camera.Position);
         Vector3d at = WorldScene.ToUnits(positionMetres);
+        if (Rules.RigidByDistance)
+        {
+            // ModelObj_CalcDistanceSquared: the eye's offset taken into the model's own frame, then the sphere's centre added.
+            Vector3d offset = at - eye;
+            Matrix3f m = placement.Orientation;
+            double x = (m.M11 * offset.X) + (m.M21 * offset.Y) + (m.M31 * offset.Z) + centre.X;
+            double y = (m.M12 * offset.X) + (m.M22 * offset.Y) + (m.M32 * offset.Z) + centre.Y;
+            double z = (m.M13 * offset.X) + (m.M23 * offset.Y) + (m.M33 * offset.Z) + centre.Z;
+            float bias = first.Format == MefMeshFormat.Lightmapped ? 1f : Rules.BiasSquared;
+            return ModelLodSelector.SelectByDistance(
+                (float)((x * x) + (y * y) + (z * z)), 1f, fieldOfView, bias, first.RenderSphereRadius, _settings.Cull, chain.Triangles.Length, chain.Distances);
+        }
+
         Matrix3f o = camera.Orientation;
         double depth = (o.M31 * (at.X - eye.X + centre.X)) + (o.M32 * (at.Y - eye.Y + centre.Y)) + (o.M33 * (at.Z - eye.Z + centre.Z));
         return ModelLodSelector.Select(depth, first.RenderSphereRadius, Scale, fieldOfView, _settings, chain.Triangles, chain.Distances);
@@ -137,6 +160,7 @@ public sealed class ModelLodPolicy
                 Instance = instance,
                 Model = model,
                 LightmapIndex = placement.LightmapIndex >= 0 ? placement.LightmapIndex + level : -1,
+                LightmapEntry = placement.LevelLightmapEntries is { } entries ? (level < entries.Count ? entries[level] : string.Empty) : placement.LightmapEntry,
                 Variants = null,
                 BentGeometry = null,
             });

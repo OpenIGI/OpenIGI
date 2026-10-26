@@ -166,7 +166,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// metres) and the game's own per-model distances, which <c>LOCAL:lod.qsc</c> makes as <c>ModelLODSettings</c>
     /// (<c>0x4EDB60</c>: made ascending, in metres).
     /// </remarks>
-    public ModelLodPolicy? ReadModelLod(GameTask levelRoot, Engine.Resources.ResourceRegistry resources)
+    public ModelLodPolicy? ReadModelLod(GameTask levelRoot, Engine.Resources.ResourceRegistry resources, Engine.Titles.IServiceCatalog? services = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(resources);

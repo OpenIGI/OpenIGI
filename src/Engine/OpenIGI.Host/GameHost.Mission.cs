@@ -153,7 +153,7 @@ public sealed partial class GameHost
         LightLooseModels(shading.Sun);
 
         // How the level's models give up detail, which only the original's look draws by.
-        _modelLod = _presentation.ReadModelLod(levelRoot, _resources);
+        _modelLod = _presentation.ReadModelLod(levelRoot, _resources, _title?.Services);
 
         _device.SetSceneSun(shading.Sun?.Ambient ?? Vector3f.Zero, shading.Sun?.Colour ?? Vector3f.Zero);
         if (shading.Sun is { } fixedFunctionSun)

@@ -168,6 +168,12 @@ public sealed record WorldPlacement(
     public string LightmapEntry { get; init; } = string.Empty;
 
     /// <summary>
+    /// Gets the archive entry of each level of detail's own bake, the first level's first, for a title that names its bakes (I.G.I. 2's
+    /// last digit is the level); or <see langword="null"/> for one whose levels count on from <see cref="LightmapIndex"/>.
+    /// </summary>
+    public IReadOnlyList<string>? LevelLightmapEntries { get; init; }
+
+    /// <summary>
     /// Gets the level id of the task that placed this object, shared by everything hanging off it, or <c>-1</c> for a
     /// title whose placements carry none.
     /// </summary>

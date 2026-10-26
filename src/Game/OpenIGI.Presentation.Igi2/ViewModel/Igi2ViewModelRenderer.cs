@@ -47,7 +47,11 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
     private readonly IOpenIgiLogger _logger;
     private readonly List<MeshDrawRange> _outlineRanges = [];
     private readonly Dictionary<string, Part?> _parts = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<object, Part?> _bodies = new(ReferenceEqualityComparer.Instance);
+    // Each body at each level it has been drawn at keeps its own mesh.
+    private readonly Dictionary<BodyKey, Part?> _bodies = [];
+
+    // Each body model's levels: their names, the first's first, and their triangle counts.
+    private readonly Dictionary<string, (string[] Names, int[] Triangles)> _bodyLevels = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Part> _skinBatch = [];
     private readonly Dictionary<object, Track> _tracks = [];
     private long _worldFrame;
@@ -214,6 +218,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
         _worldFrame++;
         float between = Math.Clamp(blend, 0f, 1f);
+        models = LevelsOf(models, camera, projection);
         PrepareWorldSkins(models, camera, frustum);
         foreach (TitleWorldModel wanted in models)
         {
@@ -233,14 +238,15 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             if (wanted is { Pose: { } pose, Instance: { } instance })
             {
                 // A body of its own: one model may stand many times over, each posed its own way, so each keeps its own mesh.
-                if (!_bodies.TryGetValue(instance, out part))
+                BodyKey key = new(instance, wanted.Model);
+                if (!_bodies.TryGetValue(key, out part))
                 {
                     part = Build(wanted.Model, skinned: true);
-                    _bodies[instance] = part;
+                    _bodies[key] = part;
                 }
 
                 if (part is null || (part.Tick != wanted.Tick && !(SamePose(part.SkinnedPose, pose) && SameMorph(part.SkinnedMorph, wanted.MorphWeights))
-                    && !Reskin(part, pose, wanted.Model, () => _bodies[instance] = null, morph: wanted.MorphWeights)))
+                    && !Reskin(part, pose, wanted.Model, () => _bodies[key] = null, morph: wanted.MorphWeights)))
                 {
                     continue;
                 }
@@ -379,7 +385,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         foreach (TitleWorldModel wanted in models)
         {
             if (wanted.Instance is not { } instance || !marked.TryGetValue(instance, out OpenIGI.Game.Player.BinocularMarkerColor marker)
-                || !_bodies.TryGetValue(instance, out Part? part) || part is null || part.Tick != wanted.Tick)
+                || !_bodies.TryGetValue(new BodyKey(instance, wanted.Model), out Part? part) || part is null || part.Tick != wanted.Tick)
             {
                 continue;
             }
@@ -504,10 +510,11 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                 continue;
             }
 
-            if (!_bodies.TryGetValue(instance, out Part? part))
+            BodyKey key = new(instance, wanted.Model);
+            if (!_bodies.TryGetValue(key, out Part? part))
             {
                 part = Build(wanted.Model, skinned: true);
-                _bodies[instance] = part;
+                _bodies[key] = part;
             }
 
             if (part is null || part.Tick == wanted.Tick || (SamePose(part.SkinnedPose, pose) && SameMorph(part.SkinnedMorph, wanted.MorphWeights))
@@ -518,7 +525,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
 
             part.PendingPose = pose;
             part.PendingMorph = wanted.MorphWeights;
-            part.PendingInstance = instance;
+            part.PendingInstance = key;
             part.PendingModel = wanted.Model;
             part.PendingTick = wanted.Tick;
             part.SkinError = null;
@@ -547,7 +554,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
             {
                 _logger.Warning(LogCategory, $"'{part.PendingModel}' could not be posed: {ex.Message}");
-                _bodies[part.PendingInstance!] = null;
+                _bodies[(BodyKey)part.PendingInstance!] = null;
             }
             finally
             {
@@ -559,6 +566,80 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         }
         _skinBatch.Clear();
     }
+
+    /// <summary>Gets or sets how a body gives up detail with distance, or <see langword="null"/> to draw each whole.</summary>
+    public OpenIGI.Presentation.Rendering.ModelLodPolicy? Lod { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a cutscene holds the model-detail bias off.</summary>
+    public bool LodBiasHeld { get; set; }
+
+    // Direct3DRender_DrawBoneMesh: each body at the level its distance picks from this view (Mesh3D_GetBoneMeshLOD), the bias having
+    // its say; past its cutoff a body is not drawn. The models are the same but for the level a body wears.
+    private IReadOnlyList<TitleWorldModel> LevelsOf(IReadOnlyList<TitleWorldModel> models, in Camera3D camera, in Matrix4f projection)
+    {
+        if (Lod is not { HasBoneSettings: true } lod || _models is null)
+        {
+            return models;
+        }
+
+        float fieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
+        List<TitleWorldModel>? drawn = null;
+        for (int i = 0; i < models.Count; i++)
+        {
+            TitleWorldModel wanted = models[i];
+            TitleWorldModel? kept = wanted;
+            if (wanted is { Pose: not null, Instance: not null } && _models(wanted.Model) is { } first)
+            {
+                (string[] names, int[] triangles) = LevelsOf(wanted.Model, first);
+                int level = lod.SelectBone(wanted.Model, first, triangles, WorldScene.ToMetres(wanted.Position), camera, fieldOfView);
+                level = lod.Rules.Biased(level, names.Length, LodBiasHeld);
+                kept = level < 0 ? null : level == 0 ? wanted : wanted with { Model = names[level] };
+            }
+
+            if (drawn is null && !ReferenceEquals(kept, wanted))
+            {
+                drawn = [.. models.Take(i)];
+            }
+
+            if (drawn is not null && kept is not null)
+            {
+                drawn.Add(kept);
+            }
+        }
+
+        return drawn ?? models;
+    }
+
+    // A body model's levels: those named after it with the last character counted on, each a skinned model of its own.
+    private (string[] Names, int[] Triangles) LevelsOf(string name, MefModel first)
+    {
+        if (_bodyLevels.TryGetValue(name, out (string[] Names, int[] Triangles) known))
+        {
+            return known;
+        }
+
+        List<string> names = [name];
+        List<int> triangles = [first.TriangleCount];
+        string next = name;
+        while (names.Count < LodModelChain.MaxLevels && next.Length > 0)
+        {
+            next = next[..^1] + (char)(next[^1] + 1);
+            if (_models!(next) is not { Format: MefMeshFormat.Skinned } lower)
+            {
+                break;
+            }
+
+            names.Add(next);
+            triangles.Add(lower.TriangleCount);
+        }
+
+        known = ([.. names], [.. triangles]);
+        _bodyLevels[name] = known;
+        return known;
+    }
+
+    // A body and the model it wears at a level.
+    private readonly record struct BodyKey(object Instance, string Model);
 
     private void SkinWorldPart(int index)
     {

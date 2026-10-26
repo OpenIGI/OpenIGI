@@ -130,6 +130,25 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     /// <remarks>
+    /// No level of the game makes a <c>LODSettings</c>, so its renderer runs on the values it starts with: switches at nought, cutoffs at
+    /// ten radii, the radius taken as it is (<c>Mesh3D_vRadiusImpact</c> one, the ideal radius nought). Every model the game draws
+    /// near has distances of its own in <c>lod.qsc</c> or a level's, which the session's table holds. The model-detail option biases
+    /// the pick (<c>Config_SetGameToCurrentPerformanceLevel</c>: <c>1 - vModelDetail</c>).
+    /// </remarks>
+    public ModelLodPolicy? ReadModelLod(GameTask levelRoot, ResourceRegistry resources, Engine.Titles.IServiceCatalog? services = null)
+    {
+        if (services is null || !services.TryGet(out ModelLodTable? table))
+        {
+            return null;
+        }
+
+        float detail = services.TryGet(out Game.Igi2.Config.Igi2GameConfig? config) ? config.Gfx.ModelDetail : 1f;
+        ModelLodSettings defaults = new(Detail: 0f, Cull: 10f, Blend: 1f, Range: 0f);
+        return new ModelLodPolicy(defaults, table.Distances, bones: defaults, rules: ModelLodRules.Igi2(detail));
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// The gain is a property of the renderer and holds for every level; the sun is read off the level and
     /// may be absent, in which case an unlightmapped object is left as the port has always drawn it.
     /// </remarks>

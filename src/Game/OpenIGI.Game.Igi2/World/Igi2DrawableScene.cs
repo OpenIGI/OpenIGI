@@ -154,6 +154,7 @@ public static class Igi2DrawableScene
             // here. Binding it to the owning waypoint's own number would be a guess, and a wrong bake
             // looks worse on screen than no bake, so it goes unlit until the numbering is read.
             string entry = string.Empty;
+            string[]? levelEntries = null;
             if (geometry is null
                 && lightmaps is not null
                 && lightmaps.TryGetBindings(new Igi2Placement(placementId, string.Empty, modelName, default, default, 0, variant), out IReadOnlyList<Igi2LightmapBinding>? bindings)
@@ -161,6 +162,15 @@ public static class Igi2DrawableScene
             {
                 entry = BareName(bake.ResourceName);
                 lit++;
+
+                // Each level of detail is baked its own lightmap, which the level draws with: the name counts the levels from one.
+                levelEntries = new string[LodModelChain.MaxLevels];
+                for (int lod = 0; lod < levelEntries.Length; lod++)
+                {
+                    levelEntries[lod] = bindings.FirstOrDefault(b => b.Lod == lod + 1 && b.ModelIndex == bake.ModelIndex && b.Variant == bake.Variant) is { ResourceName: { } name }
+                        ? BareName(name)
+                        : string.Empty;
+                }
             }
 
             drawable.Add(new WorldPlacement(
@@ -176,6 +186,7 @@ public static class Igi2DrawableScene
                 levelRoot)
             {
                 LightmapEntry = entry,
+                LevelLightmapEntries = levelEntries,
                 BentGeometry = bent,
                 LevelId = placementId,
 

@@ -1,4 +1,5 @@
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -429,6 +430,9 @@ public sealed partial class GameHost
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
+            // The original's levels of detail, on its own look only, as the world's models give theirs up.
+            models.Lod = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null;
+            models.LodBiasHeld = TitlePlayer?.IsCutscenePlaying == true;
             models.DrawWorld(owned.WorldModels, eye, projection, _titlePresentationBlend);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);
         }
