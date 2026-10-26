@@ -48,6 +48,12 @@ public interface IViewModelPresenter : IDisposable
     /// <summary>Marks the pose stale, so the next draw rebuilds it.</summary>
     void Invalidate();
 
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights a model with no bake by, the first-person
+    /// layer included (<c>0x49F700</c> and <c>0x49DF60</c> select <c>0x49D480</c>); or none to draw it at its texture.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
+
     /// <summary>Draws the arms.</summary>
     /// <param name="view">The player's view state, which the pose follows.</param>
     /// <param name="camera">Where the arms are seen from.</param>
@@ -161,6 +167,12 @@ public interface IHeldWeaponPresenter : IDisposable
 
     /// <summary>Gets or sets what each of the weapon's textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
+
+    /// <summary>
+    /// Gets or sets the level's fixed-function light, which the original lights a model with no bake by, the first-person
+    /// layer included (<c>0x49F700</c> and <c>0x49DF60</c> select <c>0x49D480</c>); or none to draw it at its texture.
+    /// </summary>
+    FixedFunctionSun? Sun { get; set; }
 
     /// <summary>Gets where the weapon's muzzle is, in metres in the weapon's own frame, or null when it has no gun flame.</summary>
     /// <remarks>The gun-flame part's place in the magic-object tree: where the original draws the flame.</remarks>

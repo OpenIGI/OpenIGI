@@ -551,7 +551,8 @@ public sealed partial class GameHost
                 _mission.Terrain,
                 _arms,
                 _heldWeapon,
-                _loadedMissionForWeapon)) ?? default;
+                _loadedMissionForWeapon,
+                _world?.Shading.Sun)) ?? default;
         if (!drawn.DrewRig)
         {
             DrawTitleFirstPerson(eye);

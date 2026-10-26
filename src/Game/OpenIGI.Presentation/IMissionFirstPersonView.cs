@@ -13,6 +13,7 @@ namespace OpenIGI.Presentation;
 /// <param name="Arms">The arms, or <see langword="null"/>.</param>
 /// <param name="Held">The weapon in hand, or <see langword="null"/>.</param>
 /// <param name="LoadedForWeapon">The mission whose packs a newly held weapon's model is read from, or <see langword="null"/>.</param>
+/// <param name="Sun">The level's fixed-function light the rig is lit by, or <see langword="null"/>.</param>
 public readonly record struct FirstPersonFrame(
     bool ShowViewModel,
     float ViewModelTanX,
@@ -22,7 +23,8 @@ public readonly record struct FirstPersonFrame(
     TerrainData? Terrain,
     IViewModelPresenter? Arms,
     IHeldWeaponPresenter? Held,
-    LoadedMission? LoadedForWeapon);
+    LoadedMission? LoadedForWeapon,
+    FixedFunctionSun? Sun = null);
 
 /// <summary>What the first-person view drew.</summary>
 /// <param name="DrewRig">Whether it drew the title's rig, in which case nothing else draws a first-person view.</param>

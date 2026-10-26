@@ -139,6 +139,16 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             // and the indirect gather must not bounce light off them, or holstering changes the
             // lighting of a room that has not moved.
             _device.SetFirstPersonGeometry(true);
+            if (frame.Arms is { } litArms)
+            {
+                litArms.Sun = frame.Sun;
+            }
+
+            if (frame.Held is { } litHeld)
+            {
+                litHeld.Sun = frame.Sun;
+            }
+
             frame.Arms?.Draw(rig, eye, viewModelProjection, rigOriginUnits, previousPoseShare, rigOrientation);
 
             // Cycling weapons changes the model as well as the animations, so the renderer has to

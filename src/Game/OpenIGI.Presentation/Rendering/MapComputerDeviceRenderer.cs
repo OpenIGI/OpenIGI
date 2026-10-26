@@ -94,7 +94,8 @@ public sealed class MapComputerDeviceRenderer : IDisposable
     /// <summary>Draws the device where the player holds it (<c>0x46BD50</c>): ahead of the eye and a little below, facing it.</summary>
     /// <param name="camera">The player's eye.</param>
     /// <param name="projection">The eye's projection.</param>
-    public void DrawHeld(in Camera3D camera, in Matrix4f projection)
+    /// <param name="sun">The level's fixed-function light, which lights the model as it lights any without a bake; or none.</param>
+    public void DrawHeld(in Camera3D camera, in Matrix4f projection, FixedFunctionSun? sun)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_geometry is null || _pack is null || !_hasInstance)
@@ -124,6 +125,8 @@ public sealed class MapComputerDeviceRenderer : IDisposable
             o.M13, o.M23, -o.M33);
         Vector3d position = camera.Position + camera.Orientation.Transform(new Vector3d(0d, -HeldDown, HeldForward));
 
+        // The light in the model's own frame, which is what the vertex stage lights the normals with.
+        _device.SetVertexSun(sun is { } light ? orientation.Transform(light.Direction) : Vector3f.Zero);
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
@@ -154,6 +157,7 @@ public sealed class MapComputerDeviceRenderer : IDisposable
         }
 
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+        _device.SetVertexSun(Vector3f.Zero);
     }
 
     /// <inheritdoc/>

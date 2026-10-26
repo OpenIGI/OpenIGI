@@ -146,6 +146,21 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A model with no bake is lit by Direct3D's fixed-function pipeline (<c>Direct3DRender_SetLitState</c>,
+    /// <c>0x49D480</c>): the ambient is the <c>GlobalLight</c>'s object band (<c>0xB818AC</c>) and the one light is the
+    /// level's <c>Dirlight</c>, its front colour along its direction (<c>0x4DAA60</c>), over a white material. The light's
+    /// colour is scaled by the world scale, which the scaled normals cancel. Bakes are drawn as they always were.
+    /// </remarks>
+    public ObjectShading? ReadObjectShading(GameTask levelRoot)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        return DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings sun)
+            ? new ObjectShading(ObjectShading.Default.LightmapGain, new FixedFunctionSun(GlobalLightSettings.Read(levelRoot).ObjectAmbient, sun.Colour, sun.Direction))
+            : null;
+    }
+
+    /// <inheritdoc/>
     private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
         new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger);
 

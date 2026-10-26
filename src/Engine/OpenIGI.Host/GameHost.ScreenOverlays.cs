@@ -280,7 +280,7 @@ public sealed partial class GameHost
                 && Viewpoint?.IsDeathViewActive != true
                 && Viewpoint?.WalkingEye(smoothPresentation, tickBlend) is { } computerEye)
             {
-                deviceModel.DrawHeld(computerEye, ViewModelProjection.Create(HumanView.DefaultTanX, FarPlane));
+                deviceModel.DrawHeld(computerEye, ViewModelProjection.Create(HumanView.DefaultTanX, FarPlane), _world?.Shading.Sun);
                 _device.SetDepthState(DepthState.Disabled);
             }
 

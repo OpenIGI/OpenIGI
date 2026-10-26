@@ -367,7 +367,11 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
             {
                 partOrientation = _gunFlameRotation * partOrientation;
             }
-            Matrix4f modelView = camera.CreateModelView(position, partAttachment.Rotation * partOrientation);
+            Matrix3f modelOrientation = partAttachment.Rotation * partOrientation;
+            Matrix4f modelView = camera.CreateModelView(position, modelOrientation);
+
+            // The light in the part's own frame; the gun flame is drawn additive, unlit (0x49DF60's sorted additive path).
+            _device.SetVertexSun(Sun is { } sun && !part.IsGunFlame ? modelOrientation.Transform(sun.Direction) : Vector3f.Zero);
 
             _device.SetDepthState(part.IsGunFlame ? DepthState.TestOnly : DepthState.TestAndWrite);
 
@@ -404,7 +408,11 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
 
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
+        _device.SetVertexSun(Vector3f.Zero);
     }
+
+    /// <inheritdoc/>
+    public FixedFunctionSun? Sun { get; set; }
 
     /// <inheritdoc/>
     public void Dispose()
