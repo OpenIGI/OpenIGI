@@ -305,7 +305,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Puts a set of cheats in force on the body and the weapons.</summary>
     /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
     /// <remarks>
-    /// <see cref="Tick"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
+    /// <see cref="Tick(InputState, IGroundHeightField)"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
     /// every tick, so a change from Extras or the console lands on the next one without a restart.
     /// </remarks>
     public void ApplyCheats(PlayerCheatOptions cheats)
@@ -689,8 +689,15 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void Look(InputState input, float seconds)
     {
         ArgumentNullException.ThrowIfNull(input);
+        Look(input.Mouse.DeltaX, input.Mouse.DeltaY);
+    }
 
-        if (_firstPerson.Turn(input.Mouse, MountedStationaryGun) is { } steered)
+    /// <summary>Takes the look from mouse motion, in counts: the window's this frame, or a title path's this tick.</summary>
+    /// <param name="deltaX">The motion across.</param>
+    /// <param name="deltaY">The motion up and down.</param>
+    public void Look(float deltaX, float deltaY)
+    {
+        if (_firstPerson.Turn(deltaX, deltaY, MountedStationaryGun) is { } steered)
         {
             _interaction.FaceAlongGun(steered);
             SyncView();
@@ -718,10 +725,19 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void Tick(InputState input, IGroundHeightField? terrain)
     {
         ArgumentNullException.ThrowIfNull(input);
+        Tick(PlayerInputSampler.SampleFrame(input, InputProfile), terrain);
+    }
 
+    /// <summary>Advances the body by one simulation tick, with the actions held as a title path reads them.</summary>
+    /// <param name="held">The actions held this tick.</param>
+    /// <param name="terrain">The level's terrain.</param>
+    public void Tick(PlayerAction held, IGroundHeightField? terrain) => Tick(PlayerInputSampler.FromActions(held), terrain);
+
+    private void Tick(PlayerInputFrame frame, IGroundHeightField? terrain)
+    {
         ApplyCheats(PlayerCheatOptions.Current);
 
-        _input.Accept(PlayerInputSampler.SampleFrame(input, InputProfile));
+        _input.Accept(frame);
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
 
