@@ -44,6 +44,7 @@ public sealed class CutsceneRuntime
     private readonly CutsceneTransformCapture _capture;
     private readonly CutsceneAnimationPackets _packets;
     private readonly CutsceneVehicleArmament _armament;
+    private readonly CutsceneVehicleParts _parts;
     private readonly CutsceneCarAi _carAi;
     private readonly CutsceneVehicleDraw _draw;
     private readonly CutsceneCameraFrames _camera;
@@ -173,10 +174,11 @@ public sealed class CutsceneRuntime
         _ground = new CutsceneGroundSupport(_context);
         _bodies = new CutsceneVehicleBodies(_context, _ground, vehicleObstacleHit, vehicleObstacleReleased);
         _capture = new CutsceneTransformCapture(_context, _attachments, modelLength, modelPivot);
-        _packets = new CutsceneAnimationPackets(_context, _bodies, _ground);
         _armament = new CutsceneVehicleArmament(_context, _carAis, _animations);
+        _parts = new CutsceneVehicleParts(_context, _armament);
+        _packets = new CutsceneAnimationPackets(_context, _bodies, _ground, _parts);
         _carAi = new CutsceneCarAi(_context, _walker, _bodies, _armament, _carAis);
-        _draw = new CutsceneVehicleDraw(_context, _attachments, _bodies, _armament);
+        _draw = new CutsceneVehicleDraw(_context, _attachments, _bodies, _armament, _parts);
         _camera = new CutsceneCameraFrames(_context, _attachments);
         List<CutSceneTask> cutscenes = [];
 
@@ -635,6 +637,7 @@ public sealed class CutsceneRuntime
     /// <summary>A Heli's update (<c>0x4316D0</c>): its children -- its AnimTask flies it -- then its gun.</summary>
     private void TickHeli(GameTask heli)
     {
+        _parts.TickDoor(heli);
         _armament.TickVehicleVision(heli);
         _walker.RunChildren(heli);
         _armament.TickVehicleCombat(heli);
@@ -684,6 +687,24 @@ public sealed class CutsceneRuntime
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetPlacementDrawTransform(WorldPlacement, out Vector3d, out Matrix3f)"/>
     public bool TryGetPlacementDrawTransform(WorldPlacement placement, out Vector3d position, out Matrix3f orientation) =>
         _draw.TryGetPlacementDrawTransform(placement, out position, out orientation);
+
+    /// <inheritdoc cref="CutsceneVehicleParts.Configure"/>
+    public void ConfigureVehicleParts(WorldScene scene, Func<string, MagicObjectDefinition?> magic, Func<MagicObjectDefinition, string> taskTypeName) =>
+        _parts.Configure(scene, magic, taskTypeName);
+
+    /// <inheritdoc cref="CutsceneVehicleParts.Made"/>
+    public void VehiclePartMade(WorldPlacement placement) => _parts.Made(placement);
+
+    /// <summary>Gets or sets the game's stream, which the vehicles' guns and the helicopters' rocket pods draw from.</summary>
+    public IgiRandom? VehicleRandom
+    {
+        get => _parts.Random;
+        set
+        {
+            _parts.Random = value;
+            _armament.Random = value;
+        }
+    }
 
     /// <inheritdoc cref="CutsceneVehicleArmament.BindVehicleGunPlacements"/>
     public void BindVehicleGunPlacements(WorldScene scene) => _armament.BindVehicleGunPlacements(scene);

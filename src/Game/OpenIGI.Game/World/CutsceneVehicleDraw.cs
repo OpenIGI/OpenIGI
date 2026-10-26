@@ -13,8 +13,10 @@ internal sealed class CutsceneVehicleDraw(
     CutsceneContext context,
     CutsceneAttachments attachments,
     CutsceneVehicleBodies bodies,
-    CutsceneVehicleArmament armament)
+    CutsceneVehicleArmament armament,
+    CutsceneVehicleParts parts)
 {
+    private readonly CutsceneVehicleParts _parts = parts;
     private readonly CutsceneContext _context = context;
     private readonly CutsceneAttachments _attachments = attachments;
     private readonly CutsceneVehicleBodies _bodies = bodies;
@@ -137,6 +139,13 @@ internal sealed class CutsceneVehicleDraw(
             return true;
         }
 
+        // A plane's legs fold, its hatch shuts, its canopy swings and its control surfaces throw, each about its attachment
+        // (0x435A80, 0x435F60, 0x435300, 0x4362C0).
+        if (_parts.TryGetPlanePartDraw(placement, out position, out orientation))
+        {
+            return true;
+        }
+
         if (!TryGetPlacementDrawTransform(
             placement.Owner,
             placement.Position,
@@ -150,6 +159,13 @@ internal sealed class CutsceneVehicleDraw(
         if (TryGetWheelDraw(placement, out Matrix3f spun))
         {
             orientation *= spun;
+        }
+
+        // A sliding door (0x4274E0) sits at its attachment moved along the helicopter's axis by how far it has slid.
+        if (_parts.TryGetDoorSlide(placement, out Vector3d slide)
+            && _context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? state))
+        {
+            position += state.Orientation.Transposed().Transform(slide) / WorldScene.UnitsPerMetre;
         }
 
         return true;

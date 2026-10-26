@@ -29,139 +29,6 @@ public sealed class RetailPlaneDefinition
     public Wing[] Surfaces { get; set; } = [];
 }
 
-/// <summary>One landing gear leg: a <c>Gear</c> attachment (<c>0x435460</c>), 320 bytes.</summary>
-public sealed class RetailPlaneGear
-{
-    private static readonly float DegreesToRadians = BitConverter.Int32BitsToSingle(0x3C8EFA35);
-    private static readonly float Retention = BitConverter.Int32BitsToSingle(0x3F7AE148);
-    private static readonly float Approach = BitConverter.Int32BitsToSingle(0x3CA3D700);
-    private static readonly float Snap = BitConverter.Int32BitsToSingle(0x3C23D70A);
-    private static readonly float Home = BitConverter.Int32BitsToSingle(0x3DCCCCCD);
-
-    /// <summary>Initializes a new instance of the <see cref="RetailPlaneGear"/> class.</summary>
-    /// <param name="local">The attach point in the plane's frame (<c>+240</c>).</param>
-    /// <param name="baseOrientation">The attachment's orientation, row-major (<c>+264</c>).</param>
-    /// <param name="record">The leg's record (<c>+312</c>).</param>
-    /// <param name="vertex">The leg model's magic vertex 0: where its wheel touches.</param>
-    public RetailPlaneGear(Vector3d local, float[] baseOrientation, MagicGear record, Vector3f vertex)
-    {
-        ArgumentNullException.ThrowIfNull(baseOrientation);
-        Local = local;
-        Array.Copy(baseOrientation, Base, 9);
-        Record = record;
-        Vertex = vertex;
-    }
-
-    /// <summary>Gets the attach point, plane frame (<c>+240</c>).</summary>
-    public Vector3d Local { get; }
-
-    /// <summary>Gets the attachment's orientation (<c>+264</c>).</summary>
-    public float[] Base { get; } = new float[9];
-
-    /// <summary>Gets the leg's record.</summary>
-    public MagicGear Record { get; }
-
-    /// <summary>Gets the wheel's contact vertex, model frame.</summary>
-    public Vector3f Vertex { get; }
-
-    /// <summary>Gets or sets the fold angle, radians (<c>+316</c>).</summary>
-    public float Angle { get; set; }
-
-    /// <summary>Gets the leg's world position (<c>+32</c>).</summary>
-    public double[] World { get; } = new double[3];
-
-    /// <summary>Gets the leg's world orientation (<c>+112</c>).</summary>
-    public float[] M { get; } = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
-
-    /// <summary>The fold angle the leg starts at (<c>0x435460</c>): none with the gear down, the full fold with it up.</summary>
-    /// <param name="gearDown">The plane's gear byte (<c>+2093</c>).</param>
-    public void Seat(bool gearDown) =>
-        Angle = gearDown ? 0.0f : ((X87)Record.FoldDegrees * DegreesToRadians).F;
-
-    /// <summary>The leg's update (<c>0x435930</c>): the fold eases toward its target; returns the gear state byte.</summary>
-    /// <param name="gearDown">The plane's gear byte (<c>+2093</c>).</param>
-    /// <param name="gearArgument">The plane's <c>+2099</c>.</param>
-    /// <returns>The value the update writes to the plane's <c>+2098</c>.</returns>
-    public sbyte Update(bool gearDown, byte gearArgument)
-    {
-        X87 fold = (X87)Record.FoldDegrees * DegreesToRadians;
-        X87 target = gearDown && gearArgument == 1 ? (X87)0.0f : fold;
-        if (target.Value != Angle)
-        {
-            Angle = ((X87)Angle * Retention + target * Approach).F;
-        }
-
-        if (X87.Abs((X87)Angle - target).Value < Snap)
-        {
-            Angle = target.F;
-        }
-
-        if (Math.Abs(Angle) < Home)
-        {
-            return 1;
-        }
-
-        X87 travel = X87.Abs(fold) - Math.Abs(Angle);
-        return travel.Value >= Home ? (sbyte)-1 : (sbyte)0;
-    }
-
-    /// <summary>
-    /// Follows the plane (<c>0x435A80</c>): <c>M·l + pos</c> in doubles, then the leg's orientation from its fold, its
-    /// steering and its attachment turn (<c>0x4355A0</c>).
-    /// </summary>
-    /// <param name="position">The plane's position.</param>
-    /// <param name="m">The plane's orientation.</param>
-    /// <param name="steer">The steering angle (yaw control × π/4 on a steering leg with the gear down, else 0).</param>
-    public void Follow(double[] position, float[] m, float steer)
-    {
-        Vector3d l = Local;
-        double wx = ((X87)m[2] * l.Z + (X87)m[1] * l.Y + (X87)m[0] * l.X).Value;
-        double wy = ((X87)m[5] * l.Z + (X87)m[4] * l.Y + (X87)m[3] * l.X).Value;
-        double wz = ((X87)m[8] * l.Z + (X87)m[7] * l.Y).Value;
-        wz = ((X87)wz + (X87)m[6] * l.X).Value;
-        World[0] = X87.Add(wx, position[0]);
-        World[1] = X87.Add(wy, position[1]);
-        World[2] = X87.Add(wz, position[2]);
-
-        Span<float> r = stackalloc float[9];
-        RetailPlaneBody.Euler(r, Angle, 0.0f, steer);
-        float[] b = Base;
-        X87 v3 = (X87)r[0] * b[0] + (X87)r[6] * b[2] + (X87)r[3] * b[1];
-        float v11 = ((X87)r[1] * b[0] + (X87)r[7] * b[2] + (X87)r[4] * b[1]).F;
-        float v12 = ((X87)r[2] * b[0] + (X87)r[8] * b[2] + (X87)r[5] * b[1]).F;
-        X87 v4 = (X87)r[0] * b[3] + (X87)r[6] * b[5] + (X87)r[3] * b[4];
-        float v13 = ((X87)r[1] * b[3] + (X87)r[7] * b[5] + (X87)r[4] * b[4]).F;
-        float v14 = ((X87)r[2] * b[3] + (X87)r[8] * b[5] + (X87)r[5] * b[4]).F;
-        X87 v5 = (X87)r[6] * b[8] + (X87)r[3] * b[7] + (X87)r[0] * b[6];
-        float v15 = ((X87)r[7] * b[8] + (X87)r[4] * b[7] + (X87)r[1] * b[6]).F;
-        float v16 = ((X87)r[8] * b[8] + (X87)r[5] * b[7] + (X87)r[2] * b[6]).F;
-        float[] g = M;
-        g[0] = (v5 * m[2] + v4 * m[1] + v3 * m[0]).F;
-        g[1] = ((X87)v15 * m[2] + (X87)v13 * m[1] + (X87)v11 * m[0]).F;
-        g[2] = ((X87)v16 * m[2] + (X87)v14 * m[1] + (X87)v12 * m[0]).F;
-        g[3] = (v3 * m[3] + v5 * m[5] + v4 * m[4]).F;
-        g[4] = ((X87)v11 * m[3] + (X87)v15 * m[5] + (X87)v13 * m[4]).F;
-        g[5] = ((X87)v12 * m[3] + (X87)v16 * m[5] + (X87)v14 * m[4]).F;
-        g[6] = (v3 * m[6] + v5 * m[8] + v4 * m[7]).F;
-        g[7] = ((X87)v11 * m[6] + (X87)v15 * m[8] + (X87)v13 * m[7]).F;
-        g[8] = ((X87)v12 * m[6] + (X87)v16 * m[8] + (X87)v14 * m[7]).F;
-    }
-
-    /// <summary>The wheel vertex turned by the leg (<c>0x4D0A50</c>, unit scale): world offset from the leg's origin.</summary>
-    /// <returns>The offset.</returns>
-    public Vector3d WheelOffset()
-    {
-        float[] g = M;
-        X87 x = Vertex.X;
-        float y = Vertex.Y;
-        float z = Vertex.Z;
-        double ox = X87.ToFloat(((X87)z * g[2] + (X87)y * g[1] + x * g[0]).Value);
-        double oy = ((X87)z * g[5] + (X87)y * g[4] + x * g[3]).Value;
-        double oz = X87.ToFloat(((X87)z * g[8] + (X87)y * g[7] + x * g[6]).Value);
-        return new Vector3d(ox, oy, oz);
-    }
-}
-
 /// <summary>
 /// A plane as the original simulates it -- <c>Plane_Physics</c> (<c>0x433B50</c>), its landing gear contact
 /// (<c>0x434310</c>), its channel receiver (<c>0x4337E0</c>) and its gear legs (<c>0x435930</c>, <c>0x435A80</c>) -- on the
@@ -253,11 +120,38 @@ public sealed class RetailPlaneBody : RetailRigidBody
     /// <summary>Gets or sets the gear state the legs report (<c>+2098</c>).</summary>
     public sbyte GearState { get; set; }
 
-    /// <summary>Gets or sets <c>+2099</c>, the level's Gear again, which the legs fold toward.</summary>
-    public byte GearArgument { get; set; }
+    /// <summary>
+    /// Gets or sets <c>+2099</c>, what the hatch reports of itself (it starts as the level's Gear): the legs come down only
+    /// while it reads 1.
+    /// </summary>
+    public sbyte GearArgument { get; set; }
 
     /// <summary>Gets the landing gear legs, in attachment order (at most four touch the ground).</summary>
     public List<RetailPlaneGear> Gears { get; } = [];
+
+    /// <summary>Gets or sets the hatch over the nose gear, when the airframe has one.</summary>
+    public RetailPlaneHatch? Hatch { get; set; }
+
+    /// <summary>Gets or sets the canopy, when the airframe has one.</summary>
+    public RetailPlaneCanopy? Shield { get; set; }
+
+    /// <summary>Gets the control surfaces, in attachment order.</summary>
+    public List<RetailPlaneRudder> Rudders { get; } = [];
+
+    /// <summary>Makes the legs and the hatch again (<c>0x4F4800</c>): each seated by the gear byte as it stands.</summary>
+    public void SeatParts()
+    {
+        foreach (RetailPlaneGear gear in Gears)
+        {
+            gear.Seat(GearDown != 0);
+        }
+
+        Hatch?.Seat(GearDown != 0);
+        Shield?.Seat(Canopy != 0);
+
+        // The new parts take their place on the airframe at once (the move event the set-up sends them).
+        FollowParts();
+    }
 
     /// <inheritdoc/>
     protected override float TypeMass => Definition.Mass;
@@ -328,7 +222,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
         Canopy = InitialCanopy;
         GearDown = InitialGear;
         GearState = (sbyte)InitialGear;
-        GearArgument = InitialGear;
+        GearArgument = (sbyte)InitialGear;
         Flaps = false;
         Boost = false;
         Toggle9 = 0;
@@ -350,7 +244,7 @@ public sealed class RetailPlaneBody : RetailRigidBody
         }
 
         UpdateSpeed();
-        FollowGears();
+        FollowParts();
     }
 
     /// <summary>One plane tick -- <c>0x433B50</c>, then the legs' updates (<c>0x4F4660</c>).</summary>
@@ -500,12 +394,23 @@ public sealed class RetailPlaneBody : RetailRigidBody
             Step(world, Gravity, LinearRetention, AngularRetention);
         }
 
-        // J. The legs follow the new pose, then ease their fold (0x4F4660).
-        FollowGears();
-        foreach (RetailPlaneGear gear in Gears)
+        // J. The legs follow the new pose, then the parts run in their attachment order (0x4F4660): each leg eases its
+        // fold, and the hatch among them answers the state the legs before it left.
+        FollowParts();
+        for (int index = 0; index <= Gears.Count; index++)
         {
-            GearState = gear.Update(GearDown != 0, GearArgument);
+            if (Hatch is { } hatch && hatch.Order == index)
+            {
+                GearArgument = hatch.Update(GearDown != 0, GearState);
+            }
+
+            if (index < Gears.Count)
+            {
+                GearState = Gears[index].Update(GearDown != 0, GearArgument);
+            }
         }
+
+        Shield?.Update(Canopy != 0);
     }
 
     /// <summary>
@@ -632,12 +537,22 @@ public sealed class RetailPlaneBody : RetailRigidBody
     }
 
     /// <summary>Places every leg at the body's pose (<c>0x435A80</c>).</summary>
-    private void FollowGears()
+    private void FollowParts()
     {
         foreach (RetailPlaneGear gear in Gears)
         {
             float steer = gear.Record.Steers && GearDown != 0 ? ((X87)Controls[2] * QuarterTurn).F : 0.0f;
             gear.Follow(Position, M, steer);
+        }
+
+        Hatch?.Follow(Position, M, 0.0f);
+        Shield?.Follow(Position, M, 0.0f);
+
+        // A control surface takes its throw from the controls as it follows (0x4362C0).
+        foreach (RetailPlaneRudder rudder in Rudders)
+        {
+            rudder.Aim(Controls, Definition.Record[1]);
+            rudder.Follow(Position, M, 0.0f);
         }
     }
 

@@ -560,6 +560,14 @@ public sealed class Igi1MissionSetup(
         // the glass panes' thresholds below, then the ambience, then everything a tick draws, in walk order.
         mission.SoundRandom.SeedForLevel();
 
+        // The Hind's rocket pods and door, which its flights run; each pod draws its first gap as it is made. The pods and
+        // the vehicles' guns draw from the level's stream.
+        cutscenes.ConfigureVehicleParts(
+            scene,
+            name => mission.MagicObjects?.TryGet(name, out MagicObjectDefinition part) == true ? part : null,
+            definition => mission.MagicObjects?.TaskTypeName(definition.TaskType) ?? string.Empty);
+        cutscenes.VehicleRandom = mission.SoundRandom;
+
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
         mission.Destructibles = DestructibleObjectRegistry.Build(
@@ -567,7 +575,8 @@ public sealed class Igi1MissionSetup(
             scene.Placements,
             host.Game.Variables,
             mission.VehiclePhysics,
-            random: mission.SoundRandom);
+            random: mission.SoundRandom,
+            made: cutscenes.VehiclePartMade);
         solids.Destructibles = mission.Destructibles;
         cutscenes.Destructibles = mission.Destructibles;
     }

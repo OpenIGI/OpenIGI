@@ -33,6 +33,9 @@ public sealed class MagicObjectRegistry
     /// <summary>The prefix of the task-type constants the script's third argument uses.</summary>
     public const string TaskTypeConstantPrefix = Config.TaskTypeConstants.Prefix;
 
+    // 4096 / 30 as the original stores it: a door's metres a second into world units a tick.
+    private const float HeliDoorSpeedScale = 136.533340f;
+
     private readonly Dictionary<string, MagicObjectDefinition> _byName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Config.TaskTypeConstants _taskTypes = new();
     private readonly IOpenIgiLogger _logger;
@@ -54,6 +57,12 @@ public sealed class MagicObjectRegistry
     {
         ArgumentNullException.ThrowIfNull(natives);
         natives.RegisterFunction(DefineNative, Define);
+
+        // The control-surface kinds a Rudder's definition names (0x4361D0 registers them with its type).
+        natives.RegisterConstant("RUDDER_AILERON", 0);
+        natives.RegisterConstant("RUDDER_TAILERON_LEFT", 1);
+        natives.RegisterConstant("RUDDER_TAILERON_RIGHT", 2);
+        natives.RegisterConstant("RUDDER_GAMMA", 3);
     }
 
     /// <summary>Reads and runs the magic-object script.</summary>
@@ -194,6 +203,39 @@ public sealed class MagicObjectRegistry
                         call.GetSingle(5),
                         call.GetSingle(6),
                         call.GetSingle(7))
+                    : null,
+
+            // 0x436090: the one angle.
+            HatchDegrees = string.Equals(typeName, "TASKTYPE_HATCH", StringComparison.Ordinal)
+                && call.ArgumentCount > 3
+                    ? call.GetSingle(3)
+                    : null,
+
+            // 0x436740: the kind, then the throw.
+            Rudder = string.Equals(typeName, "TASKTYPE_RUDDER", StringComparison.Ordinal)
+                && call.ArgumentCount > 4
+                    ? new MagicRudder(call.GetInt32(3), call.GetSingle(4))
+                    : null,
+
+            // The canopy reads its one angle with the hatch's parser.
+            CanopyDegrees = string.Equals(typeName, "TASKTYPE_COCKPITSHIELD", StringComparison.Ordinal)
+                && call.ArgumentCount > 3
+                    ? call.GetSingle(3)
+                    : null,
+
+            // 0x427D40: the salvo gap in seconds, an integer, kept in ticks.
+            RocketPodDelayTicks = string.Equals(typeName, "TASKTYPE_ROCKETPOD", StringComparison.Ordinal)
+                && call.ArgumentCount > 3
+                    ? call.GetInt32(3) * 30
+                    : null,
+
+            // 0x4277C0: the axis, then the speed and the open stop, each scaled into world units.
+            HeliDoor = string.Equals(typeName, "TASKTYPE_HELIDOOR", StringComparison.Ordinal)
+                && call.ArgumentCount > 5
+                    ? new MagicHeliDoor(
+                        call.GetInt32(3),
+                        call.GetSingle(4) * HeliDoorSpeedScale,
+                        call.GetSingle(5) * 4096.0f)
                     : null,
         };
 

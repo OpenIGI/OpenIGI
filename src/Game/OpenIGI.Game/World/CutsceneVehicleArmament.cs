@@ -30,6 +30,12 @@ internal sealed class CutsceneVehicleArmament(
     private readonly Random _gunRandom = new(0x46F390);
     private int _visionCounter;
 
+    /// <summary>
+    /// Gets or sets the game's stream, which Gun_Fire draws a round's cone from (<c>0x478BA0</c>) as it does for the
+    /// soldiers; a private generator stands in without one.
+    /// </summary>
+    public IgiRandom? Random { get; set; }
+
     /// <summary>Gets or sets what supplies the living player eye used by firing vehicles.</summary>
     public Func<Vector3d?>? VehicleCombatTarget { get; set; }
 
@@ -272,6 +278,27 @@ internal sealed class CutsceneVehicleArmament(
         }
     }
 
+    /// <summary>Where each enemy a vehicle's detector sees now is: the human's model origin, which its guns aim at too.</summary>
+    /// <param name="vehicle">The Car or Heli task.</param>
+    /// <returns>The player, while the vehicle is live and sees them; nothing otherwise.</returns>
+    public IEnumerable<Vector3d> EnemiesSeenBy(GameTask vehicle)
+    {
+        if (ConditionalContainerGate.IsTaskActive(vehicle)
+            && _context.Destructibles?.IsDestroyed(vehicle) != true
+            && _visions.TryGetValue(vehicle, out VehicleVision? vision)
+            && vision.Sees
+            && VehicleCombatTarget?.Invoke() is { } target)
+        {
+            yield return target;
+        }
+    }
+
+    /// <summary>Whether a part of a vehicle sees a point from where it is, by the soldiers' sight test.</summary>
+    public bool PartSees(GameTask vehicle, Vector3d from, Vector3d to) => VehicleCombatLineOfSight?.Invoke(vehicle, from, to) ?? true;
+
+    /// <summary>Fires a vehicle part's rocket into the missile simulation.</summary>
+    public void FireRocket(GameTask vehicle, VehicleCombatShot shot) => VehicleCombatShotFired?.Invoke(shot with { Owner = vehicle });
+
     /// <summary>Measures how far each zone-carrying vehicle moved this tick, the speed 0x45FA80 tests.</summary>
     public void TickDeathZones(GameTask vehicle)
     {
@@ -344,7 +371,7 @@ internal sealed class CutsceneVehicleArmament(
             Span<float> draws = stackalloc float[GunFiring.ConeRadiusSamples + 1];
             for (int draw = 0; draw < draws.Length; draw++)
             {
-                draws[draw] = _gunRandom.NextSingle();
+                draws[draw] = Random?.NextSingle() ?? _gunRandom.NextSingle();
             }
 
             (float radius, float bearing) = GunFiring.SampleCone(cone, draws);
