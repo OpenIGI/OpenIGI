@@ -174,7 +174,6 @@ public sealed partial class GameHost
         _sky = _presentation.Presenters.Create<SkyPresentationRequest, ISkyPresenter>(
             new SkyPresentationRequest(
                 _device, preview.LevelRoot, preview.FileSystem, preview.Resources, FarPlane, _logger));
-        _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
         Lap("sky");
 

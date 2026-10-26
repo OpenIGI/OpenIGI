@@ -14,6 +14,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -108,6 +109,11 @@ public sealed partial class GameHost
     /// </remarks>
     private void ApplyLevelConstants(GameTask levelRoot)
     {
+        // The level's own fog and flat model light, which every frame sets on the device. Read for every level, however it
+        // came up: a mission loaded cold used to keep whatever the last backdrop had left here -- another level's fog and
+        // light, or none at all.
+        _globalLight = GlobalLightSettings.Read(levelRoot);
+
         SceneAtmosphere? air = _presentation.ReadAtmosphere(levelRoot);
         _atmosphere = air;
         // Through the SAME SceneFog every world draw already wears, rather than a mechanism of its own.
