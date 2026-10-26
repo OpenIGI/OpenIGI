@@ -728,6 +728,7 @@ public static class GraphicsMenu
         "r_terrain_occlusion",
         "r_terrain_cache",  // how much streamed ground stays resident; the detail row is the player's version
         "r_gi_far_refresh", // how many frames the far GI cache sweep is spread over; each preset picks its cost
+        "r_mip_point",      // the original's nearest-mip sampling, part of its look: the Preset row decides it
 
         // The night's calibration. The sky's scatter, the airglow and the moonlight were tuned together
         // until a night read as dark but legible; moving one alone relights every night mission. The
