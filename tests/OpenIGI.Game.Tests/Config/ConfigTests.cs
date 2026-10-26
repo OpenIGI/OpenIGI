@@ -554,6 +554,15 @@ public sealed class ConfigTests
     }
 
     [Fact]
+    public void TheMainMenuNeverTakesTheMachineForAnAmericanOne()
+    {
+        ConfigNatives natives = new(GameConfig.CreateDefault(), new NullConfigHost());
+
+        Assert.True(Invoke(natives, "LevelFlow_IsCountryUSA", null, out QvmValue usa));
+        Assert.Equal(0, usa.ToInt32());
+    }
+
+    [Fact]
     public void AListFillerWritesIntoTheControlRunningItsScript()
     {
         GameConfig config = GameConfig.CreateDefault();

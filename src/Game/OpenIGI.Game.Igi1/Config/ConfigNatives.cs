@@ -309,6 +309,12 @@ public sealed class ConfigNatives : IMenuConfiguration, IMenuInputBindings
                 result = QvmValue.FromInt32(_config.IsGermany ? 1 : 0);
                 return true;
 
+            // 0x488E90: whether the machine's locale country is "USA", which hides the main menu's Language item. The
+            // locale names its country in full ("United States"), so the original never finds it.
+            case "LevelFlow_IsCountryUSA":
+                result = QvmValue.FromInt32(0);
+                return true;
+
             // ---- missions ----
 
             case "Config_FillMissionSelectionBox":
