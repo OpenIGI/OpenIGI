@@ -218,23 +218,26 @@ public sealed class RetailIgi2PortalCullingTests
         }
 
         // 1,725 views, one per portal of a shell or a room that stands within 60 degrees of upright.
-        // `reached` counts sector requests including the camera's own -- 3,915 over 1,725 walks, a shade
+        // `reached` counts sector requests including the camera's own -- 3,731 over 1,725 walks, a shade
         // over two sectors per view, because a walk never leaves its building and most buildings are a
         // shell and one room. `windows` counts the rectangles those requests carry once a sector holding
         // more than four is left with their union, as SectorObject_EnterHandler leaves it. 1,722 of the
         // views see past their own sector: a room's opening and its shell's are numbered alike, so a
         // portal leads somewhere almost without exception.
         Assert.Equal(1725, views);
-        Assert.Equal(3915, reached);
-        Assert.Equal(4789, windows);
+        //
+        // The counts fell (from 3,915 and 4,789) when the near clip stopped dropping its own interpolated point at the screen's
+        // corner: SectorObject_CheckTriangle reprojects that point with no near test, and the stray corner had widened boxes.
+        Assert.Equal(3731, reached);
+        Assert.Equal(4438, windows);
         Assert.Equal(1722, withNeighbours);
 
         // The point of the whole algorithm: what is beyond a portal is drawn through less than the whole
         // screen. The camera's own sector holds exactly one window each -- it is on the discard list for
-        // its entire walk, so nothing can re-request it -- leaving 3,064 windows that belong to a sector
-        // reached through a portal. All but 262 of them are strictly smaller than the display area; those
-        // 262 are portals the camera stands close enough to that their outline covers it.
-        Assert.Equal(2802, narrowed);
+        // its entire walk, so nothing can re-request it -- leaving 2,713 windows that belong to a sector
+        // reached through a portal. All but 33 of them are strictly smaller than the display area; those
+        // 33 are portals the camera stands close enough to that their outline covers it.
+        Assert.Equal(2680, narrowed);
     }
 
     /// <summary>The traversal's answer does not depend on the port's own recursion budget.</summary>
@@ -265,8 +268,8 @@ public sealed class RetailIgi2PortalCullingTests
             windows += visible.Sum(static v => v.ClipWindows.Count);
         }
 
-        Assert.Equal(3915, reached);
-        Assert.Equal(4789, windows);
+        Assert.Equal(3731, reached);
+        Assert.Equal(4438, windows);
     }
 
     /// <summary>A closed portal admits nothing, which is the whole of what a door drives.</summary>
