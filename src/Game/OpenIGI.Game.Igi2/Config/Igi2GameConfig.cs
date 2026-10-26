@@ -27,7 +27,8 @@ public sealed class Igi2GfxOptions
     public bool WindOnForests { get; set; }
 
     /// <summary>Gets or sets a value indicating whether lens flares are drawn.</summary>
-    public bool LensFlares { get; set; }
+    /// <remarks>On in every default row but the lowest (<c>GfxOptions_atDefaultOptions</c>), so a new profile has it.</remarks>
+    public bool LensFlares { get; set; } = true;
 
     /// <summary>Gets or sets a value indicating whether bullet hits throw effects.</summary>
     public bool BulletHitEffects { get; set; }

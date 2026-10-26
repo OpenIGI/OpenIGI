@@ -45,6 +45,7 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
             return;
         }
 
+        DrawLensflares(batch, title, screenWidth, screenHeight);
         DrawCutsceneFraming(batch, title, screenWidth, screenHeight);
         if (!title.IsCutscenePlaying) { DrawZoomOverlay(batch, title, width, height); }
         // The remastered display in place of the status display, inventory, action row and messages, where it is chosen. Neither

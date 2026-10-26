@@ -47,6 +47,7 @@ public sealed partial class Igi2HudRenderer
     public void Load(VirtualFileSystem files)
     {
         Dispose();
+        _files = files;
         _assets = new Igi2SpriteResources(_device, files, _logger);
         // statusscreen.c StatusScreen_CreateHandler: persistent weapon/ammo text uses ComputerMenu's font3, not fontmp -- and the
         // computer's font3 is the file font1.fnt (ComputerMenu_LoadComputerMenuResource loads its fonts one and three the other way round).
@@ -70,6 +71,7 @@ public sealed partial class Igi2HudRenderer
         _logFont = null;
         _assets?.Dispose();
         _assets = null;
+        ReleaseLensflares();
     }
 
     private static void DrawEffects(SpriteBatch batch, Igi2HumanPlayer human, int width, int height, bool damage = true)
