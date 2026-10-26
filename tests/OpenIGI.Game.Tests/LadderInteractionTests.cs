@@ -13,6 +13,25 @@ public sealed class LadderInteractionTests
     private static readonly Vector3d Foot = new(1000.0, 2000.0, 0.0);
     private static readonly Vector3d Head = new(1000.0, 2000.0, 12288.0);
 
+    /// <summary>
+    /// Let go of a ladder in the air, the body holds still for the tick it lets go in (state 0) and the next (state 29's entry,
+    /// 0x40BDB0), and falls on the third -- measured on the original at a tower's top.
+    /// </summary>
+    [Fact]
+    public void ABodyLetGoOfALadderFallsOnTheSecondTickAfter()
+    {
+        PlayerBody body = new() { Position = new Vector3d(0.0, 0.0, 100000.0) };
+        PlayerCommand still = new(0f, 0f, 0f, 0f, Run: false, Crouch: false, Jump: false);
+
+        body.EndLadderTraversal();
+        body.Tick(still, terrain: null, Vector3f.Zero);
+        body.Tick(still, terrain: null, Vector3f.Zero);
+        Assert.Equal(100000.0, body.Position.Z);
+
+        body.Tick(still, terrain: null, Vector3f.Zero);
+        Assert.True(body.Position.Z < 100000.0);
+    }
+
     [Fact]
     public void StepCountIsHeightOverOneStepTruncated()
     {
