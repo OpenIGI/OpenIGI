@@ -688,6 +688,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _spriteResources = null;
         ReleaseParticles();
         ReleaseExplosions();
+        ReleaseDecals();
         foreach (Part? part in _parts.Values.Concat(_bodies.Values))
         {
             if (part is { Mesh.IsValid: true })

@@ -86,7 +86,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each body's mark where it shows (<see cref="Humans.Igi2HumanShadow"/>), the player's and the soldiers': coloured by the
+    /// Each body's mark where it shows (<see cref="OpenIGI.Game.World.HumanShadow"/>), the player's and the soldiers': coloured by the
     /// light where it lay, or nine tenths grey, times its strength above the ground (<c>Shadow_MagicObjEnterHandler</c>).
     /// </remarks>
     public IReadOnlyList<TitleGroundDecal> GroundDecals
@@ -104,7 +104,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         }
     }
 
-    private static TitleGroundDecal? Decal(Humans.Igi2HumanShadow shadow)
+    private static TitleGroundDecal? Decal(OpenIGI.Game.World.HumanShadow shadow)
     {
         if (!shadow.IsEnabled || !shadow.IsPositionValid || shadow.Size <= 0f)
         {
@@ -118,7 +118,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
             shadow.Position,
             shadow.Normal,
             shadow.Size,
-            Humans.Igi2HumanShadow.Hover,
+            OpenIGI.Game.World.HumanShadow.Hover,
             OpenIGI.Core.Graphics.Bgra32.FromRgba(channel, channel, channel, 255));
     }
 

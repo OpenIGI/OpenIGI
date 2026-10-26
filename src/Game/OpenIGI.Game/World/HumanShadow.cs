@@ -1,14 +1,15 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Game.Igi2.Humans;
+namespace OpenIGI.Game.World;
 
 /// <summary>
-/// A human's mark on the ground, its <c>Shadow</c> (<c>shadow.c</c>, made by <c>Human_CreateHandler</c>): a square lying on the
-/// ground under the body, drawn where the ground was found, fainter the further the body is above it. With the game's shadow
-/// volumes on a standing body casts those instead (<c>Human_GetShadowInfoHandler</c>), so the mark only shows as the pool of
-/// blood a body leaves once it has come to rest.
+/// A human's mark on the ground, both games' <c>Shadow</c> (<c>Shadow_New</c>, <c>0x4E0CC0</c>; I.G.I. 2's <c>shadow.c</c>, made by
+/// <c>Human_CreateHandler</c>): a square lying on the ground under the body, drawn where the ground was found, fainter the further
+/// the body is above it. Project I.G.I. shows it under every body; I.G.I. 2, whose shadow volumes a standing
+/// body casts instead (<c>Human_GetShadowInfoHandler</c>), only as the pool of blood a body leaves once it has come to rest.
 /// </summary>
-public sealed class Igi2HumanShadow
+/// <param name="maxDistance">How far above the ground a body may be before its mark has faded as far as it goes, in world units.</param>
+public sealed class HumanShadow(float maxDistance)
 {
     /// <summary>The mark a body casts, <c>shadow1.tex</c>.</summary>
     public const string ShadowTexture = "shadow1.tex";
@@ -19,8 +20,14 @@ public sealed class Igi2HumanShadow
     /// <summary>The half-width a mark grows to, in world units: <c>Shadow_New</c>'s radius.</summary>
     public const float Radius = 1843.199951171875f;
 
-    /// <summary>How far above the ground a body may be for its mark to show at all, in world units.</summary>
-    public const float MaxDistance = 40960f;
+    /// <summary>Project I.G.I.'s fade height: the 4,096,000 units <c>Human_Create</c> hands <c>Shadow_New</c>.</summary>
+    public const float Igi1MaxDistance = 4096000f;
+
+    /// <summary>I.G.I. 2's fade height.</summary>
+    public const float Igi2MaxDistance = 40960f;
+
+    /// <summary>Gets how far above the ground a body may be before its mark has faded as far as it goes, in world units.</summary>
+    public float MaxDistance { get; } = maxDistance;
 
     /// <summary>How far above the ground the square is drawn, in world units.</summary>
     public const float Hover = 10f;

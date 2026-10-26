@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
+using OpenIGI.Game.World;
+
 namespace OpenIGI.Game.Igi2.Humans;
 
 /// <summary>A human body, as I.G.I. 2's <c>Human_s</c> keeps it: the part the player and the soldiers share.</summary>
@@ -150,7 +152,7 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2Morph
     public bool IsBloodPuddle { get; set; }
 
     /// <summary>Gets the body's mark on the ground, which becomes its pool of blood.</summary>
-    public Igi2HumanShadow Shadow { get; } = new();
+    public HumanShadow Shadow { get; } = new(HumanShadow.Igi2MaxDistance);
 
     /// <summary>Gets or sets a value indicating whether the body bleeds no sprites, <c>isBloodSpriteDisabled</c>.</summary>
     public bool IsBloodSpriteDisabled { get; set; }
