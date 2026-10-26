@@ -553,6 +553,7 @@ public sealed partial class GameHost
         // without.
         _timeOfDay.Sun = null;
         _timeOfDay.EffectiveSun = null;
+        _earCamera = null;
 
         // And so does what the level said about its own light. Left standing, the next title's mission
         // would be lit by the last one's answer -- and for Project I.G.I. that means its sky model would

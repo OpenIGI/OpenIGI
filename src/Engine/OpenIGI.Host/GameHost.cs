@@ -257,6 +257,10 @@ public sealed partial class GameHost : IDisposable
 
     // How the level's models give up detail with distance, or none.
     private ModelLodPolicy? _modelLod;
+
+    // The camera the last frame was drawn from, which the ear follows; null before a level has drawn one.
+    private Camera3D? _earCamera;
+
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
     private ISoldierBodies? _soldiers;

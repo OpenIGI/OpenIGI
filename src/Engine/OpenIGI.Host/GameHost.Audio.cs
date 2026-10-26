@@ -99,6 +99,14 @@ public sealed partial class GameHost
             return;
         }
 
+        // The last frame's camera, whichever drew it; see ComposeFrameEye. The head below is for the frames before a
+        // mission has drawn one.
+        if (_earCamera is { } ear)
+        {
+            _audioOut.Device.Listener = AudioListenerState.FromViewRotation(ear.Position, ear.Orientation);
+            return;
+        }
+
         // The same blend the presentation uses, so the ear and the eye agree about where the head is.
         float alpha = FrameCVars.SmoothPresentation.Value
             ? _loop.Clock.TickFraction(_loop.Clock.FrameInstantMilliseconds)
