@@ -712,7 +712,7 @@ internal sealed class PlayerInteractionDriver
         {
             // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
             // release/end look like an instant teleport to ground instead of a drop from the cable.
-            body.EndLadderTraversal(terrain, placeOnGround: false);
+            body.EndLadderTraversal();
         }
         // A fence ends in the fall it has already been handed (PlayerBody.BeginFallFromVault), so it, too, is left
         // where it is.

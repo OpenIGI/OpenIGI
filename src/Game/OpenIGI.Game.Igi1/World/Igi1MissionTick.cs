@@ -345,8 +345,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
 
             bool climbSlide = climbUse && _climbSlideArmed;
-            LadderStepResult decision = mission.Player.DecideLadderStep(
-                climbUp, climbDown, climbSlide, host.Ground!);
+            LadderStepResult decision = mission.Player.DecideLadderStep(climbUp, climbDown, climbSlide);
             switch (decision)
             {
                 case LadderStepResult.SteppingUp:
@@ -396,7 +395,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
                         if (topAnimationEnded)
                         {
-                            mission.Player.CompleteLadderTopTransition(host.Ground!);
+                            mission.Player.CompleteLadderTopTransition();
                             if (mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
                             {
                                 StartLadderClimbAnimation(soldiers);

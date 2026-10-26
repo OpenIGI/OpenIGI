@@ -908,8 +908,8 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _firstPerson.SmoothedRig(AimPitch, alpha);
 
     /// <inheritdoc cref="PlayerLadderController.DecideStep"/>
-    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide, IGroundHeightField? terrain) =>
-        _ladder.DecideStep(up, down, slide, terrain);
+    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide) =>
+        _ladder.DecideStep(up, down, slide);
 
     /// <inheritdoc cref="PlayerLadderController.Move"/>
     public void MoveLadder(Vector3d rootDelta) => _ladder.Move(rootDelta);
@@ -927,7 +927,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public string TakeLadderStep() => _ladder.TakeStep(AiNoise);
 
     /// <inheritdoc cref="PlayerLadderController.CompleteTopTransition"/>
-    public void CompleteLadderTopTransition(IGroundHeightField? terrain) => _ladder.CompleteTopTransition(terrain);
+    public void CompleteLadderTopTransition() => _ladder.CompleteTopTransition();
 
     /// <inheritdoc cref="PlayerLadderController.TickSlide"/>
     public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain) => _ladder.TickSlide(rootDelta, terrain);

@@ -356,12 +356,11 @@ public sealed class PlayerBody
     }
 
     /// <summary>Restores ordinary movement after the ladder's deinitialization flag is consumed.</summary>
-    /// <param name="terrain">The level terrain.</param>
-    /// <param name="placeOnGround">
-    /// Whether to resolve the highest surface below the authored endpoint. Top animation 170 uses this
-    /// to commit onto the roof instead of allowing numerical drift to fall through it.
-    /// </param>
-    public void EndLadderTraversal(IGroundHeightField? terrain, bool placeOnGround)
+    /// <remarks>
+    /// The body is left in the air where it is: 0x4113E0 only turns collision back on, and the next tick's move finds the
+    /// ground or falls to it, as state 29 does.
+    /// </remarks>
+    public void EndLadderTraversal()
     {
         Velocity = default;
         InheritedVelocity = default;
@@ -369,12 +368,6 @@ public sealed class PlayerBody
         HitShove = default;
         _previousStep = default;
         TouchedWall = false;
-        if (placeOnGround)
-        {
-            IsGrounded = false;
-            GroundNormal = null;
-            PlaceOnGround(terrain);
-        }
     }
 
     /// <summary>Advances the player by one tick.</summary>

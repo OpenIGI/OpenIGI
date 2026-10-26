@@ -271,6 +271,26 @@ public sealed class LadderInteractionTests
         Assert.Equal(9, (int)InteractionActivateType.Wire);
     }
 
+    [Fact]
+    public void SteppingOffLeavesTheBodyInTheAirOnItsFeetForTheFallToLand()
+    {
+        // 0x4113E0 only turns collision back on when a climb ends: the origin stays where the climb left it and the body
+        // falls the last few centimetres into state 29, landing with its step. The climb carries the origin, the body
+        // its feet; snapping the origin to the first surface below stood a player who had climbed to a roof on the
+        // ladder's own top.
+        LadderPlacement ladder = Ladder();
+        PlayerBody body = new() { Position = new Vector3d(ladder.BottomMount.X, ladder.BottomMount.Y, Foot.Z) };
+        PlayerLadderController controller = new(body);
+        controller.Use([ladder]);
+        body.Yaw = new[] { 0f, MathF.PI / 2f, MathF.PI, -MathF.PI / 2f }.First(yaw => ladder.CanActivate(body.Eye, yaw, out _));
+        controller.UpdateNear();
+        controller.Mount();
+
+        Assert.Equal(LadderStepResult.Dismounted, controller.DecideStep(up: false, down: true, slide: false));
+        Assert.Equal(ladder.BottomMount.Z - PlayerBody.StandingOriginHeight, body.Position.Z, 6);
+        Assert.False(body.IsGrounded);
+    }
+
     private static LadderPlacement Ladder() =>
         new(Origin, Head, Foot, Head, Matrix3f.Identity);
 
