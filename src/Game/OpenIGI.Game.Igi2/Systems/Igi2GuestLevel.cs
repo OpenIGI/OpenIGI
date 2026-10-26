@@ -15,6 +15,7 @@ using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -40,8 +41,6 @@ namespace OpenIGI.Game.Igi2.Systems;
 /// </remarks>
 public sealed class Igi2GuestLevel
 {
-    private const int TopId = 4095;
-
     private readonly Igi2GuestContent _content;
     private readonly GuestTitle _guest;
     private readonly List<Interaction.Igi2AlarmControlTask> _alarms = [];
@@ -49,12 +48,13 @@ public sealed class Igi2GuestLevel
     private Igi2CollisionWorld? _playerWorld;
     private Igi2Sounds? _sounds;
     private readonly List<Weapons.Igi2StationaryGunTask> _guns = [];
-    private int _spare = TopId;
+    private readonly GuestTaskIds _ids;
 
     private Igi2GuestLevel(Igi2GuestContent content, LevelTask root, GameTask dynamic)
     {
         _content = content;
         _guest = content.Guest;
+        _ids = new GuestTaskIds(_guest.Loop.Tasks);
         Root = root;
         Dynamic = dynamic;
     }
@@ -658,21 +658,7 @@ public sealed class Igi2GuestLevel
 
     private GameTask New(GameTask parent, string typeName) => _guest.Loop.Tasks.New(parent, _guest.Loop.Types.Get(typeName));
 
-    private void Bind(GameTask task, int preferred)
-    {
-        TaskTree tasks = _guest.Loop.Tasks;
-        if (preferred >= 0 && tasks.FromId(preferred) is null && tasks.TryBindId(preferred, task))
-        {
-            return;
-        }
-
-        while (tasks.FromId(_spare) is not null)
-        {
-            _spare--;
-        }
-
-        tasks.TryBindId(_spare--, task);
-    }
+    private void Bind(GameTask task, int preferred) => _ids.Bind(task, preferred);
 
     // A soldier as a blast finds it: only while it takes part in the level.
     private sealed class ActiveBody(Soldiers.Igi2HumanSoldier body) : IExplosionHitTarget

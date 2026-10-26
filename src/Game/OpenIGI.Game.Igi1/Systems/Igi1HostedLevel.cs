@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
@@ -24,8 +25,7 @@ public sealed class Igi1HostedLevel
     private readonly IReadOnlyList<Igi1HumanLineCollider> _colliders;
     private readonly IHostCollisionWorld _world;
     private readonly IAiPlayer _player;
-    private readonly List<Action> _eachTick = [];
-    private readonly List<Action> _onLeave = [];
+    private readonly HostedLevelHooks _hooks = new();
     private bool _left;
 
     internal Igi1HostedLevel(
@@ -107,11 +107,11 @@ public sealed class Igi1HostedLevel
 
     /// <summary>Has something done at the end of each of the level's ticks.</summary>
     /// <param name="action">What is done.</param>
-    public void EachTick(Action action) => _eachTick.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    public void EachTick(Action action) => _hooks.EachTick(action);
 
     /// <summary>Has something done as the level is left, before its tasks are deleted.</summary>
     /// <param name="action">What is done.</param>
-    public void OnLeave(Action action) => _onLeave.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    public void OnLeave(Action action) => _hooks.OnLeave(action);
 
     /// <summary>
     /// Runs the level a tick: every soldier where its walk reaches it, looking out for the host's player as it stands now, then the
@@ -129,10 +129,7 @@ public sealed class Igi1HostedLevel
         Soldiers.EndTick();
         Soldiers.PublishCollisionBodies();
         Ticks++;
-        foreach (Action action in _eachTick)
-        {
-            action();
-        }
+        _hooks.RunTick();
     }
 
     /// <summary>Takes the level down as its mission is left: its colliders out of the host's world, and its tasks deleted.</summary>
@@ -144,10 +141,7 @@ public sealed class Igi1HostedLevel
         }
 
         _left = true;
-        foreach (Action action in _onLeave)
-        {
-            action();
-        }
+        _hooks.RunLeave();
 
         foreach (Igi1HumanLineCollider collider in _colliders)
         {

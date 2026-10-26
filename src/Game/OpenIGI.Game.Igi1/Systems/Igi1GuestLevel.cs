@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
@@ -30,16 +31,15 @@ public sealed class Igi1GuestLevel
     /// <summary>The type the game's levels arm a human with, a child of it naming the weapon.</summary>
     public const string GunType = "Gun";
 
-    private const int TopId = 4095;
-
     private readonly Igi1GuestContent _content;
     private readonly GameLoop _loop;
-    private int _spare = TopId;
+    private readonly GuestTaskIds _ids;
 
     private Igi1GuestLevel(Igi1GuestContent content, LevelTask root)
     {
         _content = content;
         _loop = content.Guest.Loop;
+        _ids = new GuestTaskIds(_loop.Tasks);
         Root = root;
     }
 
@@ -206,19 +206,5 @@ public sealed class Igi1GuestLevel
 
     private GameTask New(GameTask parent, string typeName) => _loop.Tasks.New(parent, _loop.Types.Get(typeName));
 
-    private void Bind(GameTask task, int preferred)
-    {
-        TaskTree tasks = _loop.Tasks;
-        if (preferred >= 0 && tasks.FromId(preferred) is null && tasks.TryBindId(preferred, task))
-        {
-            return;
-        }
-
-        while (tasks.FromId(_spare) is not null)
-        {
-            _spare--;
-        }
-
-        tasks.TryBindId(_spare--, task);
-    }
+    private void Bind(GameTask task, int preferred) => _ids.Bind(task, preferred);
 }
