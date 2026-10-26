@@ -43,6 +43,22 @@ public sealed class Igi2MoverMotions : IPlacementMotion
         {
             if (part.TryMovePart(placement, out positionMetres, out orientation))
             {
+                // A part is posed where its object stands at the tick; it is drawn on the object as the object is drawn, between
+                // ticks, or a wheel or a gun trails the body it is on.
+                if (_movers.TryGetValue(placement.LevelId, out IIgi2Mover? carrier) && tickFraction < 1f)
+                {
+                    Matrix3f standing = Blend(carrier.CurrentOrientation, carrier.CurrentOrientation, 1f);
+                    Vector3d local = standing.Transform(WorldScene.ToUnits(positionMetres) - carrier.CurrentPosition);
+                    Matrix3f localOrientation = standing.Transposed() * orientation;
+                    double f = Math.Clamp(tickFraction, 0f, 1f);
+                    Vector3d from = carrier.LastPosition, to = carrier.CurrentPosition;
+                    Vector3d between = new(
+                        from.X + ((to.X - from.X) * f), from.Y + ((to.Y - from.Y) * f), from.Z + ((to.Z - from.Z) * f));
+                    Matrix3f blended = Blend(carrier.LastOrientation, carrier.CurrentOrientation, (float)f);
+                    orientation = blended * localOrientation;
+                    positionMetres = WorldScene.ToMetres(blended.Transposed().Transform(local) + between);
+                }
+
                 return true;
             }
 

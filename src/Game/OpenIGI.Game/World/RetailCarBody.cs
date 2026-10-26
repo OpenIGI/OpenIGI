@@ -218,6 +218,56 @@ public sealed class RetailCarBody : RetailRigidBody
     /// <summary>The wheels' per-tick state (<c>+1884</c>).</summary>
     public RetailCarWheel[] Wheels { get; } = new RetailCarWheel[MaxWheels];
 
+    /// <summary>How far each wheel lowers its body point, world units (record <c>+604</c>), which a drawn wheel rises back by.</summary>
+    public float WheelDrop { get; set; }
+
+    /// <summary>The speed a drawn wheel is carried at -- <c>Wheel_Run</c>, <c>0x4301C0</c>.</summary>
+    /// <param name="wheel">The wheel's entry.</param>
+    /// <returns>World units a tick.</returns>
+    /// <remarks>
+    /// A wheel whose body point touches is carried at that point's speed, the point handed over in the body's own frame as the
+    /// original hands it; a driven one off the ground at its share of the engine's thrust; a crawler's track by its turn factor.
+    /// </remarks>
+    public double DrawnWheelSpeed(int wheel)
+    {
+        CarWheelTypeDefinition entry = Definition.Wheels[wheel];
+        int point = DrawnWheelPoint(wheel);
+        double speed = 0d;
+        if (point < PointCount && Points[point].Contact)
+        {
+            float[] p = Points[point].Position;
+            PointVelocity(p[0], p[1], p[2], out float x, out float y, out float z);
+            speed = Math.Sqrt((double)(((X87)x * x) + ((X87)y * y) + ((X87)z * z)).Value);
+        }
+        else if (entry.IsEngine && DrivenWheels > 0)
+        {
+            speed = ((((X87)Throttle * 44.600887f) * Definition.EngineForce) / DrivenWheels * 0.6f).Value;
+        }
+
+        if (Definition.SkidSteer && point < PointCount)
+        {
+            speed *= SkidSteerFactor(point).Value;
+        }
+
+        return speed;
+    }
+
+    /// <summary>How far a drawn wheel's spring has it up -- the body point's compression less the wheel drop, <c>Wheel_Move</c>.</summary>
+    /// <param name="wheel">The wheel's entry.</param>
+    /// <returns>World units, along the body's up axis.</returns>
+    public double DrawnWheelLift(int wheel)
+    {
+        int point = DrawnWheelPoint(wheel);
+        return point < PointCount ? ((X87)Points[point].Compression - WheelDrop).Value : -WheelDrop;
+    }
+
+    // The body point a wheel reads: one stored below nought is -10 less it.
+    private int DrawnWheelPoint(int wheel)
+    {
+        int point = Definition.Wheels[wheel].ContactPoint;
+        return point < 0 ? -10 - point : point;
+    }
+
     /// <summary>Runs one car tick -- <c>0x42ECA0</c>.</summary>
     /// <param name="world">The world the rays are cast in.</param>
     public void Tick(IRetailCarWorld world)

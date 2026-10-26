@@ -59,6 +59,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     public const string ExplosionSound = "explo_03_l";
 
     private readonly Igi2CarWheel[] _wheels = new Igi2CarWheel[CarTypeDefinition.MaxWheels];
+    private readonly Dictionary<WorldPlacement, Igi2CarWheel?> _wheelPlacements = new(ReferenceEqualityComparer.Instance);
     private CarTypeDefinition? _type;
     private PhysicsObjectType? _physicsType;
     private Igi2PhysicsObject? _body;
@@ -334,7 +335,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             _engineWheels = _type.Wheels.Count(static w => w.IsEngine);
         }
 
-        AttachWheelsAndGun(weapons, models, random);
+        AttachWheelsAndGun(types, weapons, models, random);
         _deathZones = _model is not null && Magic is { } magic ? Igi2DeathZone.Find(_model, magic, models, _solids) : [];
         _doors = _model is not null && Magic is { } doorMagic ? Igi2CarDoor.Find(_model, doorMagic, models, _solids) : [];
         Reset();
@@ -369,6 +370,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         RunDetection(level);
         level.RunChildren(this);
+        RunWheels();
 
         // CarDoor_RunHandler: its doors are among its magic objects, which run as its children do.
         foreach (Igi2CarDoor door in _doors)
@@ -485,6 +487,12 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             }
         }
 
+        if (WheelOf(placement) is { } wheel)
+        {
+            (positionMetres, orientation) = WheelPose(wheel);
+            return true;
+        }
+
         if (Gun is { } gun)
         {
             return gun.TryMovePart(placement, out positionMetres, out orientation);
@@ -492,6 +500,123 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         (positionMetres, orientation) = (default, placement.Orientation);
         return false;
+    }
+
+    // Wheel_RunHandler, for each wheel that is an attach object of its own: a wheel touching the ground is carried at its contact
+    // point's speed, a driven one in the air at its share of the engine's thrust; it rolls at that over its circumference, steers by
+    // its type's angle, and stops dead while the car brakes.
+    internal void RunWheels()
+    {
+        if (_type is not { } type || _body is not { } body)
+        {
+            return;
+        }
+
+        for (int w = 0; w < _attachedWheels && w < type.Wheels.Count; w++)
+        {
+            Igi2CarWheel wheel = _wheels[w];
+            if (wheel.Attachment is null)
+            {
+                continue;
+            }
+
+            CarWheelTypeDefinition definition = type.Wheels[w];
+            int cp = ContactPointOf(definition);
+            double speed = 0d;
+            if (cp < body.ContactPoints.Count && body.ContactPoints[cp].IsContact)
+            {
+                // Physics_GetPointVelocity is handed the contact point as the car's frame has it, unturned.
+                Vector3f v = body.Body.PointVelocity(body.ContactPoints[cp].LocalPosition);
+                speed = Math.Sqrt((v.X * (double)v.X) + (v.Y * (double)v.Y) + (v.Z * (double)v.Z));
+            }
+            else if (definition.IsEngine && _engineWheels > 0)
+            {
+                speed = RealThrust * Gravity * type.Vehicle.MaxThrust / _engineWheels * 0.6000000238418579;
+            }
+
+            if (type.IsCrawler && cp < body.ContactPoints.Count)
+            {
+                speed *= CrawlerScale(body, cp);
+            }
+
+            wheel.SpinRate = DrawnWheel.NextSpinRate(speed, wheel.Radius, wheel.SpinRate);
+            if (definition.IsSteering)
+            {
+                wheel.Steer = -(definition.MaxAngle * RealDeltaGamma * 0.01745329238474369);
+            }
+
+            if (IsBreak)
+            {
+                wheel.SpinRate = 0d;
+            }
+
+            wheel.Roll -= wheel.SpinRate;
+        }
+    }
+
+    // A wheel's contact point, as Wheel_RunHandler reads it: one stored below nought is -10 less it.
+    private static int ContactPointOf(CarWheelTypeDefinition wheel) =>
+        wheel.ContactPoint < 0 ? -10 - wheel.ContactPoint : wheel.ContactPoint;
+
+    // The wheel a placement the walk made from the car's model is, matched by where the walk put it against where each wheel's attach
+    // point puts it as the level placed the car; kept once found.
+    private Igi2CarWheel? WheelOf(WorldPlacement placement)
+    {
+        if (placement.LevelId != Id || _attachedWheels == 0 || _built is not { } built)
+        {
+            return null;
+        }
+
+        if (_wheelPlacements.TryGetValue(placement, out Igi2CarWheel? known))
+        {
+            return known;
+        }
+
+        Igi2CarWheel? nearest = null;
+        double best = double.MaxValue;
+        Vector3d at = WorldScene.ToUnits(placement.Position);
+        for (int w = 0; w < _attachedWheels; w++)
+        {
+            Igi2CarWheel wheel = _wheels[w];
+            if (wheel.Attachment is not { } attachment
+                || !string.Equals(wheel.Model, placement.Instance.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            double distance = (built.Attach(attachment).Position - at).Length;
+            if (distance < best)
+            {
+                best = distance;
+                nearest = wheel;
+            }
+        }
+
+        _wheelPlacements[placement] = nearest;
+        return nearest;
+    }
+
+    // Wheel_UpdateAttachmentHandler: on a car the wheel stands on its contact point, raised by its spring's travel and its radius and
+    // lowered by its type's contact lowering, turned on its attach point's frame by its roll and its steer.
+    private (Vector3d PositionMetres, Matrix3f Orientation) WheelPose(Igi2CarWheel wheel)
+    {
+        Igi2Pose attached = Igi2Pose.FromMatrix(CurrentPosition, Rows(CurrentOrientation)).Attach(wheel.Attachment!.Value);
+        Vector3d position = attached.Position;
+        int index = Array.IndexOf(_wheels, wheel);
+        if (_type is { } type && _body is { } body && index >= 0 && index < type.Wheels.Count
+            && ContactPointOf(type.Wheels[index]) is int cp && cp < body.ContactPoints.Count)
+        {
+            Igi2PhysicsContactPoint point = body.ContactPoints[cp];
+            Vector3f p = point.LocalPosition;
+            double z = (double)p.Z + point.ZDisplacement + wheel.Radius - type.WheelContactLowering;
+            IReadOnlyList<float> m = CurrentOrientation;
+            position = new Vector3d(
+                CurrentPosition.X + (m[0] * (double)p.X) + (m[1] * (double)p.Y) + (m[2] * z),
+                CurrentPosition.Y + (m[3] * (double)p.X) + (m[4] * (double)p.Y) + (m[5] * z),
+                CurrentPosition.Z + (m[6] * (double)p.X) + (m[7] * (double)p.Y) + (m[8] * z));
+        }
+
+        return (WorldScene.ToMetres(position), attached.ToMatrix() * DrawnWheel.Rotation(wheel.Roll, wheel.Steer));
     }
 
     /// <summary>Gets the model it left when it blew up, where it stood, or <see langword="null"/> when it has not or leaves none.</summary>
@@ -516,7 +641,7 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
     private static Matrix3f Rows(IReadOnlyList<float> m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
 
     // Wheel_CreateHandler, for each wheel attach point in order, and the gun's attach point (Vehicle_Create's attach objects).
-    private void AttachWheelsAndGun(Igi2HumanWeapons? weapons, Func<string, MefModel?> models, IgiRandom? random)
+    private void AttachWheelsAndGun(PhysicsObjectTypes types, Igi2HumanWeapons? weapons, Func<string, MefModel?> models, IgiRandom? random)
     {
         _attachedWheels = 0;
         _gunAttachment = null;
@@ -525,7 +650,14 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
         {
             wheel.IsAttached = false;
             wheel.Attachment = null;
+            wheel.Model = null;
+            wheel.Radius = 0f;
+            wheel.Roll = 0d;
+            wheel.SpinRate = 0d;
+            wheel.Steer = 0d;
         }
+
+        _wheelPlacements.Clear();
 
         // Car_SetWheelCount: a car whose wheels are not attach objects of their own has every wheel of its type.
         if (_type is { IsWheelsAttachObject: false })
@@ -547,8 +679,17 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
             switch (magic.Find(attachment.Name)?.TaskType)
             {
                 case WheelType when _type is { IsWheelsAttachObject: true } && _attachedWheels < _type.Wheels.Count:
-                    _wheels[_attachedWheels].IsAttached = true;
-                    _wheels[_attachedWheels].Attachment = attachment;
+                    Igi2CarWheel attached = _wheels[_attachedWheels];
+                    attached.IsAttached = true;
+                    attached.Attachment = attachment;
+
+                    // Wheel_CreateHandler: its radius from the physics type its model names.
+                    attached.Model = magic.Find(attachment.Name)!.Model;
+                    if (types.TryFind(attached.Model, out PhysicsObjectType wheelType))
+                    {
+                        attached.Radius = DrawnWheel.RadiusOf(wheelType);
+                    }
+
                     _attachedWheels++;
                     break;
                 case Igi2AiStationaryGun.TypeName when Gun is null && weapons is not null:
@@ -588,7 +729,8 @@ public sealed partial class Igi2CarTask : Igi2Task, IIgi2PlacedTask, IIgi2Mover,
 
         if (_engineSound is null && _type is { EngineSound.Length: > 0 } type)
         {
-            _engineSound = Sounds?.New(type.EngineSound, CurrentPosition, () => CurrentPosition);
+            // Car_SoundUpdateParameterListHandler: its sounds read its channels -- the thrust, whether it drives, its speed.
+            _engineSound = Sounds?.New(type.EngineSound, CurrentPosition, () => CurrentPosition, parameters: () => SoundChannels);
         }
     }
 
@@ -716,4 +858,19 @@ public sealed class Igi2CarWheel
 
     /// <summary>Gets or sets its attach point on the car's model, when it is an attach object of its own.</summary>
     public MefAttachment? Attachment { get; set; }
+
+    /// <summary>Gets or sets the model it is drawn as, when it is an attach object of its own.</summary>
+    public string? Model { get; set; }
+
+    /// <summary>Gets or sets its radius in world units, from its own physics type.</summary>
+    public float Radius { get; set; }
+
+    /// <summary>Gets or sets how far it has rolled, radians; it counts down as the car goes forward.</summary>
+    public double Roll { get; set; }
+
+    /// <summary>Gets or sets how fast it rolls, radians a tick.</summary>
+    public double SpinRate { get; set; }
+
+    /// <summary>Gets or sets how far it is steered, radians.</summary>
+    public double Steer { get; set; }
 }

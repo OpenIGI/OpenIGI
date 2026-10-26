@@ -74,7 +74,7 @@ public static class RetailCarSpawn
         float F(int i) => i < a.Count ? a[i].ToSingle() : 0f;
         int I(int i) => i < a.Count ? a[i].ToInt32() : 0;
 
-        RetailCarBody car = new(definition);
+        RetailCarBody car = new(definition) { WheelDrop = wheelDrop };
         car.Dimensions[0] = car.Dimensions[1] = car.Dimensions[2] = 1.0f;
         car.ModelRadius = model.NativeMarkerBound;
 

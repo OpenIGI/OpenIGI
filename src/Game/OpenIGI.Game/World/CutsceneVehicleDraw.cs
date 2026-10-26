@@ -159,6 +159,17 @@ internal sealed class CutsceneVehicleDraw(
         if (TryGetWheelDraw(placement, out Matrix3f spun))
         {
             orientation *= spun;
+
+            // Wheel_Move (0x430640): the wheel stands on its spring, its body point's compression up from its attach point less
+            // the wheel drop, along the car's up axis.
+            if (_bodies.CarWheelIndices.TryGetValue(placement, out int lifted)
+                && _context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? carried)
+                && carried.CarMotion.HasWheelStates
+                && lifted < carried.CarMotion.WheelLifts.Length)
+            {
+                position += carried.Orientation.Transposed().Transform(new Vector3d(0d, 0d, carried.CarMotion.WheelLifts[lifted]))
+                    / WorldScene.UnitsPerMetre;
+            }
         }
 
         // A sliding door (0x4274E0) sits at its attachment moved along the helicopter's axis by how far it has slid.
@@ -196,15 +207,10 @@ internal sealed class CutsceneVehicleDraw(
         bool steerable = _bodies.CarWheelIndices.TryGetValue(placement, out int index)
             && index < wheels.Length
             && wheels[index].Definition.IsSteering;
-        // Retail's accumulator counts DOWN as the car goes forward (Wheel::Tick subtracts the spin
-        // rate), and it is applied against the wheel's own axle axis, which points the opposite way
-        // from the placement frame's X here. Rolling by the raw accumulator spins the tyres
-        // backwards while the truck drives forwards.
-        rotation = Matrix3f.RotationX((float)-state.CarMotion.WheelRoll);
-        if (steerable && state.CarMotion.WheelSteer != 0d)
-        {
-            rotation = Matrix3f.RotationZ((float)state.CarMotion.WheelSteer) * rotation;
-        }
+        double roll = state.CarMotion.HasWheelStates && index < state.CarMotion.WheelRolls.Length
+            ? state.CarMotion.WheelRolls[index]
+            : state.CarMotion.WheelRoll;
+        rotation = DrawnWheel.Rotation(roll, steerable ? state.CarMotion.WheelSteer : 0d);
 
         return true;
     }

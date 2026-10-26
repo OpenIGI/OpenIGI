@@ -325,12 +325,18 @@ internal sealed class CutsceneVehicleBodies(
                     }
                 }
 
+                // The drawn wheel rolls by the radius its own physics type gives it (Wheel_ParseDef, 0x42FE80); the model's size
+                // stands in only where the scripts define none.
+                float rolling = _context.VehiclePhysics?.Types.TryFind(placements[i].Instance.Name, out PhysicsObjectType wheelType) == true
+                    && DrawnWheel.RadiusOf(wheelType) is > 0f and float typed
+                        ? typed
+                        : (float)radius;
                 wheels[i] = new CarWheel(
                     definition,
                     offset,
                     body?.FrictionX ?? 0.95f,
                     body?.FrictionY ?? 0.05f,
-                    (float)radius);
+                    rolling);
             }
 
             _carWheels[owner] = wheels;
@@ -460,13 +466,7 @@ internal sealed class CutsceneVehicleBodies(
         transform.CarMotion.Velocity = new Vector3d(body.Velocity[0], body.Velocity[1], body.Velocity[2]);
         if (transform.CarPhysics is { } physics)
         {
-            CarDynamics.AnimateWheels(
-                transform.CarMotion,
-                physics,
-                CarWheelsFor(target, physics),
-                transform.Velocity.Length,
-                body.Steering,
-                body.Handbrake);
+            CarDynamics.AnimateWheels(transform.CarMotion, body, CarWheelsFor(target, physics));
         }
 
         transform.IsDynamic = true;

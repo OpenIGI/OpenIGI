@@ -86,6 +86,34 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
         output.WriteLine($"{t} ticks replayed; final position ({car.Position[0]:R}, {car.Position[1]:R}, {car.Position[2]:R})");
     }
 
+    /// <summary>
+    /// Over a recorded drive, each drawn wheel rolls on its own (Wheel_Run, 0x4301C0): one carried forward rolls its count down, and
+    /// stands on its spring, its body point's compression less the wheel drop (Wheel_Move, 0x430640).
+    /// </summary>
+    [Fact]
+    public void EachDrawnWheelRollsAndStandsOnItsOwnSpring()
+    {
+        RetailCarStepCapture capture = Load("carstep-m7-apc352.log.gz");
+        RetailCarBody car = new(RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory)) { WheelDrop = 512f };
+        RetailCarMemory.Load(car, capture.Ticks[0].Entry);
+        CarWheel[] wheels = [.. car.Definition.Wheels.Select(static w => new CarWheel(w, default, 0.95f, 0.05f, 2048f))];
+        CarMotionState motion = new();
+        for (int t = 0; t + 1 < capture.Ticks.Count; t++)
+        {
+            RetailCarMemory.LoadControls(car, capture.Ticks[t].Entry);
+            car.Tick(new RetailCarMemory.RecordedWorld(capture.Ticks[t]));
+            CarDynamics.AnimateWheels(motion, car, wheels);
+        }
+
+        Assert.True(motion.HasWheelStates);
+        for (int i = 0; i < car.Definition.Wheels.Length; i++)
+        {
+            Assert.True(motion.WheelRolls[i] < -1d, $"wheel {i} rolled {motion.WheelRolls[i]}");
+            int point = car.Definition.Wheels[i].ContactPoint is int c and < 0 ? -10 - c : car.Definition.Wheels[i].ContactPoint;
+            Assert.Equal(car.Points[point].Compression - 512.0, motion.WheelLifts[i], 3);
+        }
+    }
+
     private static RetailCarStepCapture Load(string fixture)
     {
         lock (Captures)
