@@ -51,6 +51,17 @@ public sealed class ForwardPushBlockTests
         Assert.Equal(fog.DensityPerMetre, block[31]);
     }
 
+    /// <summary>Project I.G.I.'s added face groups are drawn with fog off (0x49EC70); an alpha-weighted add still fogs to black.</summary>
+    [Theory]
+    [InlineData(BlendMode.AddColour, 0f)]
+    [InlineData(BlendMode.Additive, 0.002f)]
+    public void Project_IGIs_added_face_groups_are_not_fogged(BlendMode blend, float density)
+    {
+        Span<float> block = stackalloc float[ForwardPushBlock.Floats];
+        ForwardPushBlock.Write(block, World with { Fog = new SceneFog(new Vector3f(0.2f, 0.3f, 0.4f), 0.002f) }, Matrix4f.Identity, blend, hasLightmap: false);
+        Assert.Equal(density, block[31]);
+    }
+
     [Fact]
     public void The_first_sixteen_slots_are_the_model_view_projection()
     {

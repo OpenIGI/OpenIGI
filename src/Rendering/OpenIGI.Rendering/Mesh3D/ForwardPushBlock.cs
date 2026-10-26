@@ -238,7 +238,9 @@ public static class ForwardPushBlock
         block[28] = colour.X;
         block[29] = colour.Y;
         block[30] = colour.Z;
-        block[31] = state.Fog.DensityPerMetre;
+        // Project I.G.I.'s added face groups -- the FireBall's among them -- are drawn with fog off (set_alpha_states, 0x49EC70),
+        // so they keep their whole colour however far off they burn.
+        block[31] = blend == BlendMode.AddColour ? 0f : state.Fog.DensityPerMetre;
     }
 
     /// <summary>How bright a light is, by the same weights the rest of the renderer meters with.</summary>
