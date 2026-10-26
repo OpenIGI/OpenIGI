@@ -275,19 +275,26 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         host.SoundOutput?.PlayDefinition("weaponpickup_1", priority: 180);
     }
 
-    /// <summary>Plays the fixed retail cue after an authored generic item reaches the player.</summary>
+    /// <summary>Awards and plays an authored item that has reached the player.</summary>
+    /// <returns><see langword="true"/> when it was ammunition, whose message the caller posts.</returns>
     /// <remarks>
+    /// <para>
     /// <c>GenericPickup::cleanup</c> calls <c>0x4E7200("pickup", 0, 0)</c>. The cue is shared by C4,
     /// keycards and every other <c>GenericPickup</c>; the model does not select a per-item sound.
     /// Like retail, it is played at the listener rather than at the item's former world position.
+    /// </para>
+    /// <para>
+    /// An <c>AmmoPickup</c> instead hands its ammunition to the player (<c>0x46D990</c>), whose handler adds it and
+    /// plays <c>weaponpickup_1</c> (<c>0x45FF80</c>); the box plays no cue of its own.
+    /// </para>
     /// </remarks>
-    public void PlayGenericPickupSound(GenericPickup pickup)
+    public bool TakeGenericPickup(GenericPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
 
-        // Ammo pickups are authored as GenericPickup/AmmoPickup world objects. Resolve and award them
-        // at the same collection edge as the retail pickup cue, so the object, inventory count and sound
+        // Award ammunition at the same collection edge as the cue, so the object, inventory count and sound
         // cannot drift apart. An explicit task payload wins over the catalog fallback.
+        bool ammunition = string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal);
         if (mission.Player?.Weapons is { } weapons
             && mission.AmmoTypes is { } ammoTypes
             && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
@@ -295,7 +302,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
         }
 
-        host.SoundOutput?.PlayDefinition("pickup", priority: 180);
+        host.SoundOutput?.PlayDefinition(ammunition ? "weaponpickup_1" : "pickup", priority: 180);
+        return ammunition;
     }
 
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
