@@ -587,8 +587,11 @@ public sealed class Igi2Gameplay : ITitleGameplay
 
         IReadOnlyList<string> directories = Igi2SoundDefinitions.Directories(request.World.Mission.Descriptor);
         definitions.Load(request.World.Resources, directories);
-        request.Audio?.UseDefinitions(definitions, Igi2SoundDefinitions.BankDirectories(request.World.Mission.Descriptor));
-        return new Igi2Sounds(definitions, request.Audio);
+        IReadOnlyList<string> banks = Igi2SoundDefinitions.BankDirectories(request.World.Mission.Descriptor);
+        request.Audio?.UseDefinitions(definitions, banks);
+
+        // SoundSys_RegisterSampleCallback files a .syn it lists among the samples as a lip-sync track.
+        return new Igi2Sounds(definitions, request.Audio) { LipSync = Igi2LipSync.Load(request.World.Resources.FileSystem, banks) };
     }
 
     /// <summary>The rig of the model the first-person view carries.</summary>

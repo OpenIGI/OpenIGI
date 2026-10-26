@@ -239,8 +239,8 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                     _bodies[instance] = part;
                 }
 
-                if (part is null || (part.Tick != wanted.Tick && !SamePose(part.SkinnedPose, pose)
-                    && !Reskin(part, pose, wanted.Model, () => _bodies[instance] = null)))
+                if (part is null || (part.Tick != wanted.Tick && !(SamePose(part.SkinnedPose, pose) && SameMorph(part.SkinnedMorph, wanted.MorphWeights))
+                    && !Reskin(part, pose, wanted.Model, () => _bodies[instance] = null, morph: wanted.MorphWeights)))
                 {
                     continue;
                 }
@@ -510,12 +510,14 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
                 _bodies[instance] = part;
             }
 
-            if (part is null || part.Tick == wanted.Tick || SamePose(part.SkinnedPose, pose) || _skinBatch.Contains(part))
+            if (part is null || part.Tick == wanted.Tick || (SamePose(part.SkinnedPose, pose) && SameMorph(part.SkinnedMorph, wanted.MorphWeights))
+                || _skinBatch.Contains(part))
             {
                 continue;
             }
 
             part.PendingPose = pose;
+            part.PendingMorph = wanted.MorphWeights;
             part.PendingInstance = instance;
             part.PendingModel = wanted.Model;
             part.PendingTick = wanted.Tick;
@@ -539,7 +541,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             try
             {
                 if (part.SkinError is { } error) { throw error; }
-                UploadSkin(part, part.PendingPose!, part.PendingTick);
+                UploadSkin(part, part.PendingPose!, part.PendingTick, part.PendingMorph);
                 part.Tick = part.PendingTick;
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
@@ -550,6 +552,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             finally
             {
                 part.PendingPose = null;
+                part.PendingMorph = null;
                 part.PendingInstance = null;
                 part.SkinError = null;
             }
@@ -562,7 +565,7 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         Part part = _skinBatch[index];
         try
         {
-            part.Skin!.Skin(part.PendingPose!, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
+            part.Skin!.Skin(part.PendingPose!, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices, part.PendingMorph);
         }
         catch (ArgumentException ex)
         {
@@ -570,8 +573,9 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         }
     }
 
-    private void UploadSkin(Part part, BonePose pose, long tick)
+    private void UploadSkin(Part part, BonePose pose, long tick, float[]? morph = null)
     {
+        part.SkinnedMorph = morph;
         if (part.Mesh.IsValid) { _device.UpdateAnimatedMesh(part.Mesh, part.Vertices); }
         else { part.Mesh = _device.CreateAnimatedMesh(part.Vertices, part.Geometry.Indices); }
         part.SkinnedPose = pose;
@@ -579,12 +583,12 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         part.SkinTick = tick;
     }
 
-    private bool Reskin(Part part, BonePose pose, string model, Action drop, long tick = long.MinValue)
+    private bool Reskin(Part part, BonePose pose, string model, Action drop, long tick = long.MinValue, float[]? morph = null)
     {
         try
         {
-            part.Skin!.Skin(pose, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices);
-            UploadSkin(part, pose, tick);
+            part.Skin!.Skin(pose, (float)(1.0 / WorldScene.UnitsPerMetre), part.Vertices, morph);
+            UploadSkin(part, pose, tick, morph);
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
@@ -618,6 +622,10 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         _models = null;
     }
 
+    // Two faces moved alike: none moved, or the same weights.
+    private static bool SameMorph(float[]? skinned, float[]? wanted) =>
+        skinned is null ? wanted is null : wanted is not null && skinned.AsSpan().SequenceEqual(wanted);
+
     private static bool SamePose(BonePose? previous, BonePose current) => ReferenceEquals(previous, current)
         || (previous is not null
             && MemoryMarshal.AsBytes(previous.Positions).SequenceEqual(MemoryMarshal.AsBytes(current.Positions))
@@ -640,6 +648,10 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
         public BonePose? SkinnedPose { get; set; }
 
         public BonePose? PendingPose { get; set; }
+
+        public float[]? SkinnedMorph { get; set; }
+
+        public float[]? PendingMorph { get; set; }
 
         public object? PendingInstance { get; set; }
 

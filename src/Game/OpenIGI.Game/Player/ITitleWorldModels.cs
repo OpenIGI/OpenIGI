@@ -72,6 +72,9 @@ public sealed record TitleWorldModel(
 
     /// <summary>Gets the flashes at a rigid model's muzzle, its third magic vertex, or <see langword="null"/> for none.</summary>
     public IReadOnlyList<TitleMuzzleFlash>? MuzzleFlashes { get; init; }
+
+    /// <summary>Gets the weights a skinned model's morph targets are moved by this tick, or <see langword="null"/> for none moved.</summary>
+    public float[]? MorphWeights { get; init; }
 }
 
 /// <summary>An explosion's thrown pieces as models in the world, for a title that draws them among its own.</summary>

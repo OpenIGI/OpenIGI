@@ -405,6 +405,10 @@ public sealed class MefModel
         return false;
     }
 
+    /// <summary>Gets the model's morph targets, a face's; or <see langword="null"/> when it has none.</summary>
+    public MefMorph? Morph =>
+        TryGetRawChunk(MefTags.Morphs, out ReadOnlyMemory<byte> payload) ? MefMorph.Read(payload.Span) : null;
+
     /// <summary>Gets how many magic vertices the model carries in its <c>XTVM</c>/<c>MVTX</c> chunk.</summary>
     /// <remarks>Empty in most models (377 of 415 level-1 ones); non-zero on ladders, doors and mounts.</remarks>
     public int MagicVertexCount =>

@@ -32,6 +32,9 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
     /// <summary>Gets the sounds made and not yet ended or deleted.</summary>
     public IReadOnlyList<Igi2Sound> Playing => _playing;
 
+    /// <summary>Gets or sets the level's lip-sync tracks, or <see langword="null"/> for none.</summary>
+    public Igi2LipSync? LipSync { get; set; }
+
     /// <summary>Makes a sound, <c>SoundSys_NewSoundFn</c> then <c>SoundSys_eSetPositionQTaskEvent</c>.</summary>
     /// <param name="name">The definition's name.</param>
     /// <param name="position">Where it starts.</param>

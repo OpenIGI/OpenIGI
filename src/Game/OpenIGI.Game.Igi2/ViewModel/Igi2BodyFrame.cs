@@ -32,7 +32,8 @@ public static class Igi2BodyFrame
         }
 
         Matrix3f orientation = human.Orientation;
-        List<TitleWorldModel> models = [new TitleWorldModel(model, human.Position, orientation, pose.Pose, human, tick)];
+        List<TitleWorldModel> models =
+            [new TitleWorldModel(model, human.Position, orientation, pose.Pose, human, tick) { MorphWeights = Animation.Igi2MorphWeights.Drawn(human.MorphWeights) }];
         if (pose.AttachClip is not { } attachClip)
         {
             return models;

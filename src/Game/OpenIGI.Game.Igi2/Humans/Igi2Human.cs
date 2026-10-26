@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 /// the derived class.
 /// </para>
 /// </remarks>
-public abstract partial class Igi2Human : Game.Ai.IAiHuman
+public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2MorphTargets
 {
     /// <summary>The animation controller's ticks per game frame, <c>AnimController_nTicksPerFrame</c> (<c>igi2 0x63681C</c>).</summary>
     public const int AnimationTicksPerFrame = 160;
@@ -42,6 +42,9 @@ public abstract partial class Igi2Human : Game.Ai.IAiHuman
 
     /// <summary>Gets the channel block that drives the human, <c>Human_s.avChannel</c>.</summary>
     public Igi2HumanChannels Channels { get; } = new();
+
+    /// <inheritdoc/>
+    public float[] MorphWeights { get; } = new float[Formats.World.MefMorph.Channels];
 
     /// <summary>Gets the animation layer the states drive.</summary>
     public IIgi2HumanAnimation Animation { get; }

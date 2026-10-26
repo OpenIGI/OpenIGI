@@ -27,7 +27,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// and 0.2.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask
+public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Animation.IIgi2MorphTargets
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditBoneObj";
@@ -94,7 +94,15 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask
     public string WornModel { get; private set; } = string.Empty;
 
     /// <summary>Gets how far its eyes are closed, nought open.</summary>
-    public float Blink { get; private set; }
+    public float Blink
+    {
+        get => MorphWeights[Animation.Igi2MorphWeights.Eyelids];
+        private set => MorphWeights[Animation.Igi2MorphWeights.Eyelids] = value;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The eyelids' channel is <see cref="Blink"/>.</remarks>
+    public float[] MorphWeights { get; } = new float[Formats.World.MefMorph.Channels];
 
     /// <summary>Gets the clip it plays, or <see langword="null"/>.</summary>
     public Igi2AnimationClip? Clip => _current?.Clip;
@@ -193,7 +201,7 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask
         BonePose pose = _bones.ToPose(rig.Parents);
         float[] turn = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         Matrix3f frame = new(turn[0], turn[1], turn[2], turn[3], turn[4], turn[5], turn[6], turn[7], turn[8]);
-        List<TitleWorldModel> models = [new TitleWorldModel(WornModel, Position, frame, pose, this, tick)];
+        List<TitleWorldModel> models = [new TitleWorldModel(WornModel, Position, frame, pose, this, tick) { MorphWeights = Animation.Igi2MorphWeights.Drawn(MorphWeights) }];
         if (_current.Clip is { } clip)
         {
             foreach (Igi2AttachedPart part in Igi2AttachedParts.Of(clip, _current.Time, pose, WeaponModel.Length > 0 ? WeaponModel : null))

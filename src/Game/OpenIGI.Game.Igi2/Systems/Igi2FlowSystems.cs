@@ -125,6 +125,7 @@ internal static class Igi2FlowSystems
             message.Strings = strings;
             message.Screen = player.StatusMessages;
             message.Listener = () => player.Human.View.Position;
+            message.TaskById = id => b.PlacedById.GetValueOrDefault(id);
             message.InitText();
         }
     }
