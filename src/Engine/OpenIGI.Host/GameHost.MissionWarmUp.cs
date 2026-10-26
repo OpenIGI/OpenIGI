@@ -34,6 +34,9 @@ public sealed partial class GameHost
     /// <summary>The load the sequence will run once the departure has played out.</summary>
     private Action? _pendingLoad;
 
+    /// <summary>Gets a value indicating whether a mission is on its way in from the menu, the load or the shot still to run.</summary>
+    private bool EnteringMission => _pendingLoad is not null || _entry.IsRunning;
+
     /// <summary>The mission that load brings up, for the load gate to be asked about.</summary>
     private int _pendingLoadMission;
 

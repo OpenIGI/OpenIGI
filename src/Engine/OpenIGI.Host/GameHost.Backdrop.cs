@@ -128,6 +128,7 @@ public sealed partial class GameHost
         // nothing either way, because the build happens on a worker.
         if (_menuFlow.MenuMode
             && !_menuFlow.PauseMenu
+            && !EnteringMission
             && _menuFlow.PendingPreviewMissionId is { } previewMissionId
             && _loop.TimeSource.Milliseconds - _menuFlow.PreviewRequestedAtMs > PreviewSettleMs)
         {
@@ -145,7 +146,10 @@ public sealed partial class GameHost
         // is the part that cannot be — a GL texture belongs to the context that made it — so the
         // renderers are constructed here, on the frame after the outgoing picture was held. Same shape
         // as the probe and distance-field bakes above.
-        if (_menuFlow.OverShowcase && _menuFlow.HeldFrameReady)
+        // Not once Play has been pressed: the mission goes in from the backdrop that was up when it was, and a backdrop
+        // adopted under the going-in sequence would replace the renderer, the scene and the level's light with another
+        // mission's, which the promoted one would then play under.
+        if (_menuFlow.OverShowcase && _menuFlow.HeldFrameReady && !EnteringMission)
         {
             bool changed = false;
             if (state.PreviewLoader is { } loader
