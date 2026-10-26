@@ -600,6 +600,13 @@ public sealed partial class Igi1HumanAi
                 _seatedOnGunThisTick = true;
                 SeatOn(gun);
             }
+
+            // 0x48D340 stops aiming at the target as it gets off a gun whose cone the target has left.
+            if (gunner.DismountedThisTick)
+            {
+                Target?.Aim(this, AiAimMode.None);
+            }
+
             return true;
         }
 
