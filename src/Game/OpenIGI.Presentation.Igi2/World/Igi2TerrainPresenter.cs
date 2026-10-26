@@ -526,8 +526,8 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private static Vertex3D Build(Igi2TerrainMesh mesh, Igi2TerrainPass pass, int index, Vector3d centre)
     {
         Vector3d world = mesh.Positions[index];
-        (float U, float V) diffuseUv = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, world);
-        (float U, float V) detailUv = Igi2TerrainMesh.TextureCoordinate(pass.DetailTextureScale, world);
+        (float U, float V) diffuseUv = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, world, pass.MappingStyle);
+        (float U, float V) detailUv = Igi2TerrainMesh.TextureCoordinate(pass.DetailTextureScale, world, pass.MappingStyle);
         Vector3f normal = mesh.Normals[index];
 
         // THE WEIGHT IS FOLDED INTO THE COLOUR, not left in the alpha for a blend factor to apply.
