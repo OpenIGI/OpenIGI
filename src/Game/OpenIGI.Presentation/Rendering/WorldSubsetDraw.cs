@@ -1,3 +1,4 @@
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -16,6 +17,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// <param name="Lightmap">The baked lightmap page it samples, or none.</param>
 /// <param name="IsLamp">Whether the lamp detection called it a fixture.</param>
 /// <param name="SkinIndexCount">How many of its last indices are coincident skins, drawn culled when the rest is two-sided.</param>
+/// <param name="Blend">How the original draws the face group.</param>
 internal readonly record struct WorldSubsetDraw(
     int IndexOffset,
     int IndexCount,
@@ -24,4 +26,5 @@ internal readonly record struct WorldSubsetDraw(
     SurfaceMaterial Material,
     TextureHandle Lightmap,
     bool IsLamp = false,
-    int SkinIndexCount = 0);
+    int SkinIndexCount = 0,
+    SubsetBlend Blend = SubsetBlend.Opaque);

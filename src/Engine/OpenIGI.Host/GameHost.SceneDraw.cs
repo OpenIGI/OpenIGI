@@ -49,7 +49,11 @@ public sealed partial class GameHost
         // The original's levels of detail, on its own look only: the other presets draw every model whole.
         if (_world is { } detailedWorld)
         {
-            detailedWorld.Lod = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null;
+            bool vanilla = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+            detailedWorld.Lod = vanilla ? _modelLod : null;
+
+            // And its face groups as it draws them: the opaque ones without an alpha test, the sorted ones blended after.
+            detailedWorld.FaceGroupBlending = vanilla;
         }
 
         bool retailFog = FogCVars.RetailFog.Value;
@@ -307,6 +311,10 @@ public sealed partial class GameHost
                 Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
         }
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true, FromEye: true));
+        if (_world.FaceGroupBlending)
+        {
+            _world.Draw(_scene, eye, projection, new WorldDrawOptions(FromEye: true, BlendedOnly: true));
+        }
 
         // The level's glazing, over a picture the lighting has finished. It has to follow the
         // opaque world for the ordinary reason anything blended does, and it is a pass of its own

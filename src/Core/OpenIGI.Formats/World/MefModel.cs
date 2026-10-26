@@ -767,8 +767,21 @@ public sealed class MefModel
                 indices[j] = index;
             }
 
+            // bMaterialProperties: 0x40 cuts out by alpha, ahead of all else; otherwise 0x04 is a sorted, blended group, and
+            // with 0x01 an added one (Direct3DRender_DrawRigidFacegroup).
+            byte properties = group[0];
+            bool alphaTested = (properties & 0x40) != 0;
             records[i] = new MefDrawRecord(
-                centre, materialSlot, lightmapPage, startVertex, vertexSpan, indicesAreRelative: false, indices);
+                centre,
+                materialSlot,
+                lightmapPage,
+                startVertex,
+                vertexSpan,
+                indicesAreRelative: false,
+                indices,
+                isTransparent: !alphaTested && (properties & 0x04) != 0,
+                isAdditive: (properties & 0x01) != 0,
+                isAlphaTested: alphaTested);
             triangles += faceCount;
         }
 
@@ -863,10 +876,10 @@ public sealed class MefModel
                 indices[j] = index;
             }
 
-            // The compact header's tail is the face group's blend state (0x49DF60, 0x49EC70); the
-            // lightmapped header lays its fields out differently.
-            bool isTransparent = !lightmappedHeader && BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) != 0;
-            bool isAdditive = !lightmappedHeader && (header[24] & 1) != 0;
+            // The header's tail is the face group's blend state (0x49DF60, 0x49EC70): a sorted word, then a flags byte whose bit 0
+            // adds. The lightmapped header has its lightmap page ahead of them, so both sit two words further on (0x49F1C0).
+            bool isTransparent = BinaryPrimitives.ReadUInt16LittleEndian(header[(lightmappedHeader ? 24 : 22)..]) != 0;
+            bool isAdditive = (header[lightmappedHeader ? 28 : 24] & 1) != 0;
             records[i] = new MefDrawRecord(
                 centre, materialSlot, lightmapPage, baseVertex, span0, true, indices, isTransparent, isAdditive);
             triangles += indexCount / 3;

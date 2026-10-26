@@ -30,12 +30,17 @@ namespace OpenIGI.Presentation;
 /// Whether the pass is drawn from the frame's eye, so the title's view culling may narrow a placement to the part of the view it
 /// is seen through (<see cref="IPlacementVisibility.ClipOf"/>). False for a light's view, which has no window onto anything.
 /// </param>
+/// <param name="BlendedOnly">
+/// Draws only the face groups the original sorts and blends (<see cref="IWorldPresenter.FaceGroupBlending"/>), over the opaque world,
+/// testing depth without writing it.
+/// </param>
 public readonly record struct WorldDrawOptions(
     float MinimumRadius = 0f,
     bool OcclusionCulling = false,
     bool RotorsOnly = false,
     bool GlassOnly = false,
-    bool FromEye = false);
+    bool FromEye = false,
+    bool BlendedOnly = false);
 
 /// <summary>Draws a title's static world geometry.</summary>
 /// <remarks>
@@ -98,6 +103,17 @@ public interface IWorldPresenter : IDisposable
     /// whole, which is what every preset but the original's look does.
     /// </summary>
     Rendering.ModelLodPolicy? Lod { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether each face group is drawn the way the original draws it: an opaque one with no alpha
+    /// test, an alpha-tested one cut out, and a translucent or added one left to the <see cref="WorldDrawOptions.BlendedOnly"/> pass.
+    /// Off, every group is a cut-out at the port's own threshold, which is what every preset but the original's look draws.
+    /// </summary>
+    bool FaceGroupBlending
+    {
+        get => false;
+        set { }
+    }
 
     /// <summary>Gets or sets the live rotating world objects, or null for a title with none.</summary>
     /// <remarks>

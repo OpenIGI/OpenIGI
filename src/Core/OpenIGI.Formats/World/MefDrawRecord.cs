@@ -41,6 +41,7 @@ public readonly record struct MefDrawRecord
     /// <param name="indices">The triangle-list indices.</param>
     /// <param name="isTransparent">Whether the record is a sorted, blended face group.</param>
     /// <param name="isAdditive">Whether a transparent record adds its texture rather than blending it.</param>
+    /// <param name="isAlphaTested">Whether an opaque record cuts its texture out by alpha.</param>
     public MefDrawRecord(
         Vector3f centre,
         int materialSlot,
@@ -50,8 +51,10 @@ public readonly record struct MefDrawRecord
         bool indicesAreRelative,
         ReadOnlyMemory<ushort> indices,
         bool isTransparent = false,
-        bool isAdditive = false)
+        bool isAdditive = false,
+        bool isAlphaTested = false)
     {
+        IsAlphaTested = !isTransparent && isAlphaTested;
         IsTransparent = isTransparent;
         IsAdditive = isTransparent && isAdditive;
         Centre = centre;
@@ -95,7 +98,7 @@ public readonly record struct MefDrawRecord
     /// <remarks>
     /// The word at offset 22 of the compact header. The model draw (<c>0x49DF60</c>) draws a record
     /// with it clear straight away, opaque and lit, and defers one with it set to the depth-sorted
-    /// transparent pass (<c>0x49EC70</c>). Lightmapped records keep the flag elsewhere and report false.
+    /// transparent pass (<c>0x49EC70</c>). A lightmapped record keeps it at offset 24 (<c>0x49F1C0</c>).
     /// </remarks>
     public bool IsTransparent { get; }
 
@@ -107,6 +110,13 @@ public readonly record struct MefDrawRecord
     /// record: a flame painted on black that only reads added to the scene.
     /// </remarks>
     public bool IsAdditive { get; }
+
+    /// <summary>Gets a value indicating whether an opaque record cuts its texture out where its alpha is low.</summary>
+    /// <remarks>
+    /// I.G.I. 2's <c>0x40</c> in the face group's <c>bMaterialProperties</c>: <c>Direct3DRender_DrawRigidFacegroup</c> then draws it
+    /// with the alpha-test blend state, which keeps texels of alpha 64 and over. Project I.G.I.'s records carry no such flag.
+    /// </remarks>
+    public bool IsAlphaTested { get; }
 
     /// <summary>Gets the triangle-list indices; the count is always a multiple of three.</summary>
     public ReadOnlyMemory<ushort> Indices { get; }

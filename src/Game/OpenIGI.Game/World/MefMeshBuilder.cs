@@ -75,7 +75,11 @@ public static class MefMeshBuilder
                 indices[cursor++] = (ushort)record.ToVertexIndex(index);
             }
 
-            subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot, record.LightmapPage));
+            SubsetBlend blend = record.IsAdditive ? SubsetBlend.Additive
+                : record.IsTransparent ? SubsetBlend.Translucent
+                : record.IsAlphaTested ? SubsetBlend.AlphaTested
+                : SubsetBlend.Opaque;
+            subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot, record.LightmapPage, Blend: blend));
         }
 
         RepairWinding(vertices, indices);

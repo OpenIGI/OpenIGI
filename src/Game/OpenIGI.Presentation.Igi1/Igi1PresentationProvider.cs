@@ -194,7 +194,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     private IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
-        new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger);
+        new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger, additiveFaceGroups: OpenIGI.Rendering.BlendMode.AddColour);
 
     /// <inheritdoc/>
     /// <remarks>
