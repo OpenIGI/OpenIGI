@@ -50,6 +50,13 @@ public interface ISoldierBodies : IDisposable
     /// <param name="radiusPixels">The glow's screen-space radius, in pixels.</param>
     void DrawBinocularOutlines(in Camera3D camera, float radiusPixels);
 
+    /// <summary>Draws each body's mark on the ground under it, over the lit world, for a title whose bodies cast one.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The world's projection.</param>
+    void DrawGroundShadows(in Camera3D camera, in Matrix4f projection)
+    {
+    }
+
     /// <summary>
     /// Gets what else the last binocular scan marked -- another game's humans in the level -- and the class of contact each is, for
     /// whatever draws them to outline as <see cref="DrawBinocularOutlines"/> outlines the level's own.

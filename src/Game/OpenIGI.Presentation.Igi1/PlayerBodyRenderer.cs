@@ -55,6 +55,9 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
     private bool _active;
 
     private float _facing;
+
+    /// <summary>Gets where the player's feet were last placed, in world units; none before the body is first placed.</summary>
+    public Vector3d? FeetUnits { get; private set; }
     private Igi1HumanAi.GroundQuery? _ground;
 
     // The player body's own tick-state pair and frame bookkeeping -- the same smoothing a soldier's
@@ -265,6 +268,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
     public void StandAt(Vector3d feetUnits, float facing)
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        FeetUnits = feetUnits;
         if (_sim.PlayerBodyView is not { } view)
         {
             return;
@@ -316,6 +320,7 @@ internal sealed class PlayerBodyRenderer(SoldierRenderer owner, IGraphicsDevice 
     public void Follow(Vector3d feetUnits, float facing, int animation, bool loops, in PlayerBodyPose pose)
     {
         ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        FeetUnits = feetUnits;
         if (_sim.PlayerBodyView is not { } view)
         {
             return;

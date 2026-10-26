@@ -364,6 +364,12 @@ public sealed partial class GameHost
         EndStageIfSlow("the water");
         DrawTitleGroundDecals(eye, projection);
 
+        // And the level's own bodies' marks on the ground, on the original's look (Shadow_MagicObjEnterHandler).
+        if (_world.FaceGroupBlending)
+        {
+            _soldiers?.DrawGroundShadows(eye, projection);
+        }
+
         // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
         // the geometry pass they are written into the g-buffer as scenery and come out lit
         // and fogged (a dim grey square was exactly what that looked like). Here they draw

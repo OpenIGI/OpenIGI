@@ -37,7 +37,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// <see cref="IViewModelPresenter"/>).
 /// </para>
 /// </remarks>
-public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
+public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
 {
     internal const string LogCategory = "Soldier";
 
@@ -768,6 +768,7 @@ public sealed class SoldierRenderer : ISoldierPresenter, IDisposable
         _gunShotTracers = null;
 
         _textureCache?.Clear();
+        ReleaseShadows();
     }
 
     private void Release()
