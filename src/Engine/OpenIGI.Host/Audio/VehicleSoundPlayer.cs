@@ -28,12 +28,11 @@ namespace OpenIGI.Host.Audio;
 /// </remarks>
 internal sealed class VehicleSoundPlayer
 {
-    private const int Priority = 180;
-    private const float TickSeconds = 1f / 30f;
+    private const int Priority = VehicleEngineSound.Priority;
 
     private readonly SoundSystem _sounds;
     private readonly Random _random;
-    private readonly Dictionary<object, EngineSet> _engines = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<object, VehicleEngineSound> _engines = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(GameTask Vehicle, int Index), GunVoices> _guns = [];
     private readonly HashSet<object> _seenEngines = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<(GameTask Vehicle, int Index)> _seenGuns = [];
@@ -67,14 +66,14 @@ internal sealed class VehicleSoundPlayer
             }
 
             object key = vehicle.Key ?? vehicle.Vehicle;
-            if (!_engines.TryGetValue(key, out EngineSet? set))
+            if (!_engines.TryGetValue(key, out VehicleEngineSound? set))
             {
-                set = EngineSet.Create(_sounds, vehicle.SoundSet);
+                set = VehicleEngineSound.Create(_sounds, vehicle.SoundSet);
                 _engines[key] = set;
             }
 
             _seenEngines.Add(key);
-            set.Tick(_sounds, vehicle, listenerUnits);
+            set.Tick(_sounds, [vehicle.Throttle, vehicle.Running, vehicle.Speed], vehicle.PositionUnits, listenerUnits);
         }
 
         // A vehicle that went out of the world, blew up, or turned its "Play sound" off loses its set at once.
@@ -109,7 +108,7 @@ internal sealed class VehicleSoundPlayer
     /// <summary>Stops every vehicle sound, for a level that is going.</summary>
     public void StopAll()
     {
-        foreach (EngineSet set in _engines.Values)
+        foreach (VehicleEngineSound set in _engines.Values)
         {
             set.Stop(_sounds);
         }
@@ -188,213 +187,5 @@ internal sealed class VehicleSoundPlayer
             Turn = AudioVoiceHandle.None;
             FireHeld = false;
         }
-    }
-
-    /// <summary>One instantiated engine sound set: a voice slot per sound the named definition holds.</summary>
-    private sealed class EngineSet
-    {
-        private readonly List<Member> _members;
-
-        private EngineSet(List<Member> members) => _members = members;
-
-        public static EngineSet Create(SoundSystem sounds, string name)
-        {
-            List<Member> members = [];
-            if (name.Length > 0
-                && sounds.Definitions is { } definitions
-                && definitions.TryResolve(name, out SoundDefinition? root)
-                && root is not null)
-            {
-                Collect(root, members);
-            }
-
-            return new EngineSet(members);
-        }
-
-        public void Tick(SoundSystem sounds, in VehicleSoundSource vehicle, Vector3d listenerUnits)
-        {
-            ReadOnlySpan<float> parameters = [vehicle.Throttle, vehicle.Running, vehicle.Speed];
-            double distance = (listenerUnits - vehicle.PositionUnits).Length;
-            foreach (Member member in _members)
-            {
-                member.Tick(sounds, parameters, vehicle.PositionUnits, distance);
-            }
-        }
-
-        public void Stop(SoundSystem sounds)
-        {
-            foreach (Member member in _members)
-            {
-                member.Stop(sounds);
-            }
-        }
-
-        private static void Collect(SoundDefinition definition, List<Member> into)
-        {
-            if (definition.Kind == SoundDefinitionKind.Group)
-            {
-                foreach (SoundDefinition child in definition.Children)
-                {
-                    Collect(child, into);
-                }
-
-                return;
-            }
-
-            into.Add(new Member(definition));
-        }
-    }
-
-    /// <summary>One sound of an engine set and its voice.</summary>
-    private sealed class Member(SoundDefinition definition)
-    {
-        private AudioVoiceHandle _voice;
-        private TriggerState _trigger;
-        private float _elapsed;
-        private bool _started;
-
-        private enum TriggerState
-        {
-            Armed,
-            Playing,
-            Spent,
-        }
-
-        public void Tick(SoundSystem sounds, ReadOnlySpan<float> parameters, Vector3d positionUnits, double distanceUnits)
-        {
-            bool inRange = distanceUnits <= definition.MaximumDistanceMetres * SoundSystem.UnitsPerMetre;
-            switch (definition.Kind)
-            {
-                case SoundDefinitionKind.Graph:
-                    TickGraph(sounds, parameters, positionUnits, inRange);
-                    break;
-                case SoundDefinitionKind.TriggerOnce:
-                    TickTrigger(sounds, parameters, positionUnits, inRange);
-                    break;
-                default:
-                    // A plain sound in a set plays once, from its creation, following the vehicle.
-                    if (!_started)
-                    {
-                        _started = true;
-                        _voice = Start(sounds, positionUnits, Math.Clamp(definition.Volume, 0f, 1f), 1f, definition.Loop);
-                    }
-                    else if (_voice != AudioVoiceHandle.None && sounds.IsPlaying(_voice))
-                    {
-                        Move(sounds, positionUnits, Math.Clamp(definition.Volume, 0f, 1f), 1f, definition.Loop);
-                    }
-
-                    break;
-            }
-        }
-
-        public void Stop(SoundSystem sounds)
-        {
-            sounds.Stop(_voice);
-            _voice = AudioVoiceHandle.None;
-        }
-
-        // 0x4EAEB0: gain off curve A of its parameter (0 while the parameter is negative), pitch off curve B plus the
-        // optional added parameter; looping, and only issued within its maximum distance. Gain 0 frees the voice, so
-        // the loop starts again from the top when it rises.
-        private void TickGraph(SoundSystem sounds, ReadOnlySpan<float> parameters, Vector3d positionUnits, bool inRange)
-        {
-            float gain = 1f;
-            if (definition.VolumeParameterIndex >= 0)
-            {
-                float x = Parameter(parameters, definition.VolumeParameterIndex);
-                gain = x < 0f ? 0f : SoundDefinition.Sample(definition.GainCurve, x);
-            }
-
-            float pitch = definition.PitchParameterIndex >= 0
-                ? SoundDefinition.Sample(definition.PitchCurve, Parameter(parameters, definition.PitchParameterIndex))
-                : 1f;
-            if (definition.PitchAddParameterIndex >= 0)
-            {
-                pitch += Parameter(parameters, definition.PitchAddParameterIndex);
-            }
-
-            gain *= Math.Clamp(definition.Volume, 0f, 1f);
-            if (!(gain > 0f) || !inRange)
-            {
-                Stop(sounds);
-                return;
-            }
-
-            if (_voice == AudioVoiceHandle.None || !sounds.IsPlaying(_voice))
-            {
-                _voice = Start(sounds, positionUnits, gain, pitch, looping: true);
-            }
-            else
-            {
-                Move(sounds, positionUnits, gain, pitch, looping: true);
-            }
-        }
-
-        // 0x4EA040: fires on its parameter turning true (inverted: zero), plays for its duration or its sample's
-        // length, and arms again only once the parameter has gone false.
-        private void TickTrigger(SoundSystem sounds, ReadOnlySpan<float> parameters, Vector3d positionUnits, bool inRange)
-        {
-            float value = definition.TriggerParameterIndex >= 0 ? Parameter(parameters, definition.TriggerParameterIndex) : 0f;
-            bool fired = definition.Invert ? value == 0f : (int)value != 0;
-            switch (_trigger)
-            {
-                case TriggerState.Armed:
-                    if (fired && inRange)
-                    {
-                        float gain = definition.VolumeParameterIndex >= 0
-                            ? Parameter(parameters, definition.VolumeParameterIndex)
-                            : 1f;
-                        _voice = Start(sounds, positionUnits, gain * Math.Clamp(definition.Volume, 0f, 1f), 1f, definition.Loop);
-                        _elapsed = 0f;
-                        _trigger = TriggerState.Playing;
-                    }
-
-                    break;
-                case TriggerState.Playing:
-                    _elapsed += TickSeconds;
-                    bool done = definition.DurationSeconds >= 0f
-                        ? _elapsed >= definition.DurationSeconds
-                        : definition.Loop ? !fired : _voice == AudioVoiceHandle.None || !sounds.IsPlaying(_voice);
-                    if (done)
-                    {
-                        Stop(sounds);
-                        _trigger = fired ? TriggerState.Spent : TriggerState.Armed;
-                    }
-                    else if (_voice != AudioVoiceHandle.None)
-                    {
-                        Move(sounds, positionUnits, Math.Clamp(definition.Volume, 0f, 1f), 1f, definition.Loop);
-                    }
-
-                    break;
-                case TriggerState.Spent:
-                    if (!fired)
-                    {
-                        _trigger = TriggerState.Armed;
-                    }
-
-                    break;
-            }
-        }
-
-        private AudioVoiceHandle Start(SoundSystem sounds, Vector3d positionUnits, float gain, float pitch, bool looping) =>
-            sounds.Play(definition.BankKey, Parameters(positionUnits, gain, pitch, looping));
-
-        private void Move(SoundSystem sounds, Vector3d positionUnits, float gain, float pitch, bool looping) =>
-            sounds.SetVoiceParameters(_voice, Parameters(positionUnits, gain, pitch, looping));
-
-        private VoiceParameters Parameters(Vector3d positionUnits, float gain, float pitch, bool looping) =>
-            (VoiceParameters.Default with
-            {
-                Gain = gain,
-                Pitch = Math.Clamp(pitch, 0.5f, 2f),
-                Looping = looping,
-                Priority = Priority,
-            }).At(
-                SoundSystem.ToMetres(positionUnits + definition.Offset),
-                definition.MinimumDistanceMetres,
-                definition.MaximumDistanceMetres);
-
-        private static float Parameter(ReadOnlySpan<float> parameters, int index) =>
-            index >= 0 && index < parameters.Length ? parameters[index] : 0f;
     }
 }

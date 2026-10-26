@@ -260,7 +260,8 @@ public sealed partial class Igi2TrainTask : Igi2Task, IIgi2Mover, IIgi2AnimTarge
         _playSound ??= Igi2LevelExpressions.Create(PlaySound, Name, level.Natives);
         if (!_playSound.IsEmpty && LevelExpression.Truncate(level.Evaluate(_playSound)) != 0)
         {
-            _sound ??= Sounds?.New(_carriages != 0 ? "train_loop_1" : "train_loop_2", _at, () => _at);
+            // Train_SoundUpdateParameterListHandler: its sounds read its channels.
+            _sound ??= Sounds?.New(_carriages != 0 ? "train_loop_1" : "train_loop_2", _at, () => _at, parameters: () => SoundChannels);
         }
         else
         {

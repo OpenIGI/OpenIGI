@@ -55,6 +55,10 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank, Func<SoundS
     }
 
     /// <inheritdoc/>
+    public ITitleSoundSet? PlaySet(string definition) =>
+        sounds.Definitions?.TryResolve(definition, out _) == true ? new SoundSet(sounds, VehicleEngineSound.Create(sounds, definition)) : null;
+
+    /// <inheritdoc/>
     public bool CanBorrow(string definition) =>
         borrowFrom?.Invoke() is { Definitions: { } theirs } host && !ReferenceEquals(host, sounds) && theirs.TryResolve(definition, out _);
 
@@ -62,6 +66,23 @@ internal sealed class TitleAudio(SoundSystem sounds, SoundBank bank, Func<SoundS
     public double SampleSeconds(string bankKey)
     {
         return bank.TryGet(bankKey, out SoundEntry entry) ? entry.SampleSeconds : 0.0;
+    }
+
+    /// <summary>A set the title drives, heard against the ear the mixer has.</summary>
+    private sealed class SoundSet(SoundSystem sounds, VehicleEngineSound set) : ITitleSoundSet
+    {
+        public void Tick(Vector3d positionInUnits, IReadOnlyList<float> parameters)
+        {
+            Span<float> values = stackalloc float[parameters.Count];
+            for (int i = 0; i < values.Length; i++)
+            {
+                values[i] = parameters[i];
+            }
+
+            set.Tick(sounds, values, positionInUnits, sounds.Listener.Position * SoundSystem.UnitsPerMetre);
+        }
+
+        public void Silence() => set.Stop(sounds);
     }
 
     /// <summary>A voice the title holds.</summary>

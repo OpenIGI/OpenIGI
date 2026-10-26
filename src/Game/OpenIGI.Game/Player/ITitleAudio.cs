@@ -44,6 +44,26 @@ public interface ITitleAudio
     /// <param name="definition">The definition's name.</param>
     /// <returns>Whether <see cref="Play"/> would sound it.</returns>
     bool CanBorrow(string definition) => false;
+
+    /// <summary>
+    /// Instantiates a definition as a whole set its owner drives -- a group's every member, a graph or a trigger, which
+    /// <see cref="Play"/> refuses -- for an owner that hands its sounds parameters every tick.
+    /// </summary>
+    /// <param name="definition">The definition's name.</param>
+    /// <returns>The set, or <see langword="null"/> when nothing could be played.</returns>
+    ITitleSoundSet? PlaySet(string definition) => null;
+}
+
+/// <summary>A sound set its owner drives: its sounds follow the owner and read the owner's parameters, once a tick.</summary>
+public interface ITitleSoundSet
+{
+    /// <summary>Advances the set a tick.</summary>
+    /// <param name="positionInUnits">Where its owner is, in world units.</param>
+    /// <param name="parameters">What the owner hands its sounds, in the owner's order.</param>
+    void Tick(Vector3d positionInUnits, IReadOnlyList<float> parameters);
+
+    /// <summary>Stops every sound of the set.</summary>
+    void Silence();
 }
 
 /// <summary>

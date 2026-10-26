@@ -37,10 +37,14 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
     /// <param name="position">Where it starts.</param>
     /// <param name="follow">Where it is each tick after, or <see langword="null"/> to stay put.</param>
     /// <param name="looping">Whether it loops, or <see langword="null"/> for as its definition says.</param>
+    /// <param name="parameters">
+    /// What its owner hands it each tick (<c>SoundSys_eSoundUpdateParameterListQTaskEvent</c>), for a definition that is a set of
+    /// sounds -- a car's group of start, stop and engine graphs -- or <see langword="null"/> for an owner that hands none.
+    /// </param>
     /// <returns>The sound, or <see langword="null"/> for an empty name or one nothing defines.</returns>
-    public Igi2Sound? New(string name, Vector3d position, Func<Vector3d>? follow = null, bool? looping = null)
+    public Igi2Sound? New(string name, Vector3d position, Func<Vector3d>? follow = null, bool? looping = null, Func<IReadOnlyList<float>>? parameters = null)
     {
-        if (!Definitions.TryResolve(name, out _))
+        if (!Definitions.TryResolve(name, out SoundDefinition? definition))
         {
             // A name this game never defines may still be heard where the mixer finds it elsewhere: I.G.I. 2's clips name all
             // of Project I.G.I.'s reload clicks and ship two. Played or not at all.
@@ -54,7 +58,11 @@ public sealed class Igi2Sounds(Igi2SoundDefinitions definitions, ITitleAudio? au
             return found;
         }
 
-        Igi2Sound sound = new(this, name, audio?.Play(name, position, looping), follow);
+        // A group, a graph or a trigger is instantiated whole and driven by its owner (SoundSys_NewSoundFn makes the definition's
+        // tree as a child of the owner); a plain sound is one voice.
+        Igi2Sound sound = definition is { IsPlayable: false }
+            ? new(this, name, null, follow, audio?.PlaySet(name), position, parameters, isSet: true)
+            : new(this, name, audio?.Play(name, position, looping), follow);
         _playing.Add(sound);
         return sound;
     }
@@ -119,14 +127,30 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     private readonly Igi2Sounds _owner;
     private readonly ITitleVoice? _voice;
     private readonly Func<Vector3d>? _follow;
+    private readonly ITitleSoundSet? _set;
+    private readonly Func<IReadOnlyList<float>>? _parameters;
+    private readonly Vector3d _made;
+    private readonly bool _isSet;
     private bool _deleted;
 
-    internal Igi2Sound(Igi2Sounds owner, string name, ITitleVoice? voice, Func<Vector3d>? follow)
+    internal Igi2Sound(
+        Igi2Sounds owner,
+        string name,
+        ITitleVoice? voice,
+        Func<Vector3d>? follow,
+        ITitleSoundSet? set = null,
+        Vector3d made = default,
+        Func<IReadOnlyList<float>>? parameters = null,
+        bool isSet = false)
     {
+        _isSet = isSet;
         _owner = owner;
         Name = name;
         _voice = voice;
         _follow = follow;
+        _set = set;
+        _made = made;
+        _parameters = parameters;
     }
 
     /// <summary>Gets the definition's name.</summary>
@@ -155,8 +179,11 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     }
 
     /// <inheritdoc/>
-    /// <remarks>Until it is deleted, and while the mixer still plays it: one never heard has nothing to end but its deletion.</remarks>
-    public bool IsAlive => !_deleted && _voice is { IsPlaying: true };
+    /// <remarks>
+    /// Until it is deleted, and while the mixer still plays it: one never heard has nothing to end but its deletion. A set -- a
+    /// car's engine group -- lasts until it is deleted, heard or not: its graphs loop.
+    /// </remarks>
+    public bool IsAlive => !_deleted && (_isSet || _voice is { IsPlaying: true });
 
     /// <inheritdoc/>
     public void MoveToHuman()
@@ -177,6 +204,7 @@ public sealed class Igi2Sound : IIgi2SoundInstance
 
         _deleted = true;
         _voice?.Silence();
+        _set?.Silence();
         _owner.Forget(this);
     }
 
@@ -184,6 +212,7 @@ public sealed class Igi2Sound : IIgi2SoundInstance
     internal void Tick()
     {
         MoveToHuman();
+        _set?.Tick(_follow?.Invoke() ?? _made, _parameters?.Invoke() ?? []);
         Seconds += TickSeconds;
     }
 }
