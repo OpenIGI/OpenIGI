@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
@@ -23,6 +25,12 @@ public sealed partial class GameHost
     private const float RainVeilDisplay = 5f;
     private SnowRenderer? _snow;
 
+    // The level's weather as the original runs and draws it, which the original's look draws in place of the two above; its flake,
+    // and the clock tick it has been run to.
+    private RetailWeather? _retailWeather;
+    private TextureHandle _retailFlake = TextureHandle.None;
+    private long _retailWeatherTick;
+
     // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
     // -- the fog, the falling rain, its splashes and the standing water all ask this -- and it is built
     // once when the mission loads, out of the geometry itself rather than out of which tasks happen to
@@ -30,6 +38,62 @@ public sealed partial class GameHost
     private ShelterHeightField _shelterField = ShelterHeightField.Empty;
     private TextureHandle _shelterMap = TextureHandle.None;
     private Vector3d _stormEyeMetres;
+
+    // A level's weather as Project I.G.I. runs it, with snow.tex for its flakes. I.G.I. 2's comes with its own presentation.
+    private void MakeRetailWeather(GameTask levelRoot)
+    {
+        DisposeRetailWeather();
+        if (!string.Equals(ActiveTitle.Id, "igi1", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        foreach (string name in (string[])["LOCAL:common/textures/snow.tex", LoadedPack.TextureResourceName("snow")])
+        {
+            if (_resources.TryLoad(name, out ReadOnlyMemory<byte> bytes))
+            {
+                TextureImage image = TexFile.Load(bytes.Span);
+                _retailFlake = _device.CreateTexture(
+                    new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Clamp),
+                    image.Pixels);
+                break;
+            }
+        }
+
+        _retailWeather = RetailWeather.FromLevel(levelRoot, _device, PrecipitationStyle.Igi1, _retailFlake);
+        _retailWeatherTick = _loop.Clock.TickCount;
+    }
+
+    private void DisposeRetailWeather()
+    {
+        _retailWeather?.Dispose();
+        _retailWeather = null;
+        if (_retailFlake.IsValid)
+        {
+            _device.DestroyTexture(_retailFlake);
+            _retailFlake = TextureHandle.None;
+        }
+    }
+
+    // Runs the original's weather up to the clock's tick, on the game's thirty a second; a long gap is not caught up.
+    private void TickRetailWeather()
+    {
+        if (_retailWeather is not { } weather)
+        {
+            return;
+        }
+
+        long now = _loop.Clock.TickCount;
+        if (now - _retailWeatherTick > 120)
+        {
+            _retailWeatherTick = now - 1;
+        }
+
+        for (; _retailWeatherTick < now; _retailWeatherTick++)
+        {
+            weather.Tick();
+        }
+    }
 
     private void ApplyWeatherSettings()
     {

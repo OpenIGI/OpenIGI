@@ -210,6 +210,7 @@ public sealed partial class GameHost
         _snow?.Dispose();
         _snow = new SnowRenderer(_device, _logger);
         _snow.ReadParams(levelRoot);
+        MakeRetailWeather(levelRoot);
         _storm?.Dispose();
         _storm = new StormRenderer(_device, _logger);
         BuildShelterField(scene, loaded);

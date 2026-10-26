@@ -495,6 +495,12 @@ public sealed partial class GameHost
                 // units, so the drops never sink below a faint grey whatever the night.
                 RainVeilDisplay / MathF.Max(_device.SceneExposure, 1e-3f));
         }
+        else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
+        {
+            // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
+            TickRetailWeather();
+            retailWeather.Draw(eye, projection, _window.Height, _mission.EffectWalls);
+        }
         else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
         {
             // The original's band, drawn only where the storm is not the renderer in charge.
@@ -510,7 +516,8 @@ public sealed partial class GameHost
 
         // Snow uses the same authored building shells and weather band, but renders small,
         // drifting flakes instead of rain droplets.
-        if (_snow is { IsWeatherEnabled: true } snow)
+        if (_snow is { IsWeatherEnabled: true } snow
+            && !(GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is not null))
         {
             snow.Indoors = cameraIndoors;
             snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
