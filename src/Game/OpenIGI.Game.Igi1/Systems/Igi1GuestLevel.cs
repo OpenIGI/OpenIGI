@@ -42,10 +42,17 @@ public sealed class Igi1GuestLevel
         _loop = content.Guest.Loop;
         _ids = new GuestTaskIds(_loop.Tasks);
         Root = root;
+        GunPickups = GunPickupRegistry.Empty(content.Arsenal.Ammunition);
     }
 
     /// <summary>Gets the level's root, in the guest's task tree.</summary>
     public LevelTask Root { get; }
+
+    /// <summary>
+    /// Gets the game's guns lying in the host's level: those the host lays in its own's stead (<see cref="AddGunPickup"/>), and those
+    /// the soldiers drop. The player takes them as the game's own; the soldiers' simulation drops and settles them.
+    /// </summary>
+    public GunPickupRegistry GunPickups { get; }
 
     /// <summary>Opens a level in the guest session of the game, empty, its soldiers' scripts forgotten.</summary>
     /// <param name="content">What the level's soldiers are made of, in the guest session it was read in.</param>
@@ -146,6 +153,10 @@ public sealed class Igi1GuestLevel
 
         Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
         rig.Humans = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
+
+        // It takes the game's guns lying in the level as it reaches them, with the game's cue.
+        rig.UseGunPickups(GunPickups);
+        rig.GunPickedUp += _ => start.Surroundings.PlayDefinition(Igi1MissionAudio.GunPickupSound, Igi1MissionAudio.GunPickupSoundPriority);
         rig.PlaceAt(world.Ground, spawn, start.Solids.PlayerRegistrationCaster());
 
         // The host's player task stands for it: its body is the rig, its events the player's, and it is the human the host's
@@ -157,6 +168,19 @@ public sealed class Igi1GuestLevel
         task.StandIn = task;
         world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
         return new Igi1TitlePlayer(human, world.Ground);
+    }
+
+    /// <summary>Lays one of the game's guns where the host laid one of its own, for the player to take.</summary>
+    /// <param name="weaponId">The weapon, a <c>WEAPON_ID_*</c> name of the game's.</param>
+    /// <param name="position">Where it lies, in world units.</param>
+    /// <param name="orientation">How it lies.</param>
+    /// <returns>The pickup; <see langword="null"/> where the game has no such weapon.</returns>
+    public GunPickup? AddGunPickup(string weaponId, Core.Numerics.Vector3d position, Core.Numerics.Matrix3f orientation)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(weaponId);
+        return _content.Arsenal.Weapons.TryGetByScriptId(weaponId, out Game.Weapons.WeaponType weapon)
+            ? GunPickups.Lay(position, orientation, weapon)
+            : null;
     }
 
     /// <summary>
@@ -229,6 +253,11 @@ public sealed class Igi1GuestLevel
             _loop.Variables);
         soldiers.Arm(_content.Mission, arsenal.Weapons);
 
+        // A gun a soldier drops falls through the host's world into the level's pickups, for the player to take.
+        soldiers.UseDroppedWeaponPickups(GunPickups);
+        soldiers.SetWeaponDropSink((weapon, position, orientation, velocity) => GunPickups.Spawn(position, orientation, weapon, velocity));
+        soldiers.SetDroppedWeaponWorld(null, world.Cast);
+
         // Each soldier stands in the host's world as a human the host's rounds and sight meet, and takes their hits as its stand-in.
         HashSet<object> own = new(ReferenceEqualityComparer.Instance);
         Dictionary<HumanSoldierTask, Igi1StandIn> standIns = new(ReferenceEqualityComparer.Instance);
@@ -258,7 +287,7 @@ public sealed class Igi1GuestLevel
 
         LevelUpdateWalker walker = new(Root);
         soldiers.AttachTo(walker);
-        return new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player);
+        return new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player, GunPickups);
     }
 
     // The type a soldier's guns are made as: the game's levels declare it, and a guest session of it, which reads no level, has

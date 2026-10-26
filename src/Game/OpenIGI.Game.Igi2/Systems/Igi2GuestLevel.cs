@@ -336,9 +336,6 @@ public sealed class Igi2GuestLevel
         return true;
     }
 
-    /// <summary>The ticks a host's patrol animation pauses its soldier for: two seconds, about what a retail one takes.</summary>
-    public const int AnimationPauseTicks = 60;
-
     /// <summary>
     /// Adds a patrol path to the level under the id the host gives it, which a soldier's script sends it on by
     /// (<c>AIAction_Patrol</c>): its commands in order, each as I.G.I. 2 keeps one.
@@ -350,7 +347,7 @@ public sealed class Igi2GuestLevel
     /// I.G.I. 2 reads a command's node, its delay or its animation from its <c>Command Parameter</c>
     /// (<c>HumanAIContent_PatrolRunCB</c>), as Project I.G.I. reads its operand, so each command keeps its kind and operand. An
     /// animation is the host's own number, which names nothing of I.G.I. 2's: it is a pause of about the length a retail
-    /// patrol's animation takes instead (<see cref="AnimationPauseTicks"/>).
+    /// patrol's animation takes instead (<see cref="Igi2PatrolPathTask.AnimationPauseTicks"/>).
     /// </remarks>
     public Igi2PatrolPathTask? AddPatrolPath(int id, IEnumerable<AiPatrolCommand> commands)
     {
@@ -373,7 +370,7 @@ public sealed class Igi2GuestLevel
             Igi2PatrolPathCommandTask step = (Igi2PatrolPathCommandTask)New(path, Igi2PatrolPathCommandTask.TypeName);
             bool animation = command.Kind == AiPatrolCommandKind.Animation;
             step.CommandValue = animation ? (int)Igi2PatrolCommand.Delay : (int)command.Kind;
-            step.Parameter = animation ? AnimationPauseTicks : command.Operand;
+            step.Parameter = animation ? Igi2PatrolPathTask.AnimationPauseTicks : command.Operand;
         }
 
         return path;

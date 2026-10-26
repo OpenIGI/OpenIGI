@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -12,18 +13,19 @@ namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Project I.G.I.'s first-person view: the rig and the weapon in hand, or the optics that replace them, and the binoculars' range.</summary>
 /// <param name="device">The device it draws with.</param>
-/// <param name="gameplay">The first game's mission, whose player it draws.</param>
+/// <param name="player">The player it draws, whichever level it stands in; <see langword="null"/> while none stands.</param>
+/// <param name="solids">What the binoculars' range is read off, the placed objects; <see langword="null"/> for none.</param>
 /// <param name="logger">Where it reports the weapon it takes up.</param>
-internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay gameplay, IOpenIgiLogger logger) : IMissionFirstPersonView
+internal sealed class Igi1FirstPersonView(
+    IGraphicsDevice device, Func<PlayerCamera?> player, Func<ObjectCollisionIndex?> solids, IOpenIgiLogger logger) : IMissionFirstPersonView
 {
     private readonly IGraphicsDevice _device = device;
-    private readonly Igi1Gameplay _gameplay = gameplay;
     private readonly IOpenIgiLogger _logger = logger;
 
     /// <inheritdoc/>
     public FirstPersonResult Draw(in Camera3D eye, in FirstPersonFrame frame)
     {
-        MissionWorld mission = _gameplay.World;
+        Rig mission = new(player(), solids());
         // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
         // then ask the human where the weapon is and draw that. Only in player mode, because the
         // original draws it out of the human's own render and the free camera is not a human -- and
@@ -100,7 +102,7 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             // aspect-invariant. Dividing the tangent by the aspect instead (the world's widescreen
             // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
             // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
-            Matrix4f viewModelProjection = ViewModelProjection.Create(frame.ViewModelTanX, frame.FarPlane);
+            Matrix4f viewModelProjection = frame.Projection ?? ViewModelProjection.Create(frame.ViewModelTanX, frame.FarPlane);
 
             // Between-tick smoothing for everything the rig steps at 30 Hz: its origin (the eye
             // the body carried plus the clip's hold offset), its skin, and the weapon bone. The
@@ -186,12 +188,15 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
         return new FirstPersonResult(drewRig, binocularRangeMetres);
     }
 
+    // What one frame draws from: the player and the solids its binoculars range on.
+    private readonly record struct Rig(PlayerCamera? Player, ObjectCollisionIndex? Solids);
+
     /// <inheritdoc/>
     public void FollowHeldWeapon(IHeldWeaponPresenter held, LoadedMission loadedMission)
     {
         ArgumentNullException.ThrowIfNull(held);
         ArgumentNullException.ThrowIfNull(loadedMission);
-        if (_gameplay.World.Player is not { } candidate || !candidate.WeaponChanged)
+        if (player() is not { } candidate || !candidate.WeaponChanged)
         {
             return;
         }

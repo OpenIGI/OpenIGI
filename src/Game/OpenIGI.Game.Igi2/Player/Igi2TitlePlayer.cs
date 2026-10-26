@@ -158,10 +158,10 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public Game.Ai.IAiPlayer? StandIn => StoodFor?.StandIn as Game.Ai.IAiPlayer;
 
     /// <summary>
-    /// Gets or sets what runs the other game's player where the level's walk reaches the player's task (<see cref="StoodFor"/>),
-    /// in this player's stead.
+    /// Gets or sets the other game's player standing for this one (<see cref="StoodFor"/>): run with the tick's input where the
+    /// level's walk reaches the player's task, in this player's stead, and whose eyes the view is.
     /// </summary>
-    public Action? StandInRun { get; set; }
+    public ITitlePlayer? StandInPlayer { get; set; }
 
     /// <inheritdoc/>
     OpenIGI.Game.World.IExplosionScene? ITitleWorldModels.Explosions => Explosions;
@@ -236,16 +236,17 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public bool IsMenuEnabled => Flow?.IsMenuEnabled ?? true;
 
     /// <inheritdoc/>
-    public Vector3d Position => Human.Position;
+    public Vector3d Position => StandInPlayer?.Position ?? Human.Position;
 
     /// <inheritdoc/>
     /// <remarks>
     /// A cutscene's camera, while one is placed, outranks the player's eyes; a mounted gun's seat, while the view is overridden,
-    /// stands in for them (the human camera's mode 4).
+    /// stands in for them (the human camera's mode 4). Another game's player standing in has its own eyes.
     /// </remarks>
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.Position
+        : StandInPlayer is { } standIn ? standIn.EyePosition
         : Human.CameraMode is 3 or 5 ? _movementCamera.Position
         : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position;
 
@@ -273,6 +274,11 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
                 return OpenIGI.Game.Igi2.Computer.Igi2ComputerMap.Orientation;
             }
 
+            if (StandInPlayer is { } standIn)
+            {
+                return standIn.ViewOrientation;
+            }
+
             Matrix3f m = Human.CameraMode is 3 or 5 ? _movementCamera.Orientation
                 : Human.View.IsOverride ? Human.View.OverrideOrientation : Human.View.Orientation;
             return Matrix3f.FromRows(
@@ -286,17 +292,23 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <remarks>The view's <c>vFOV</c>, which a zoom steers; a cutscene camera's own while one is placed.</remarks>
     public float FieldOfViewScale => Level?.CutsceneView is { } cut ? cut.FieldOfView
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.FieldOfView
+        : StandInPlayer is { } standIn ? standIn.FieldOfViewScale
         : Human.CameraMode is 3 or 5 ? 1f : Human.View.FieldOfView;
 
     /// <inheritdoc/>
     /// <remarks>
     /// Built once a tick, on the first ask after it, from the view as the tick left it; none while a cutscene's camera is placed,
-    /// which is not the player's eyes.
+    /// which is not the player's eyes. Another game's player standing in holds its own, or none.
     /// </remarks>
     public TitleFirstPersonView? FirstPerson
     {
         get
         {
+            if (StandInPlayer is not null)
+            {
+                return Level?.CutsceneView is null && !IsComputerShown ? (StandInPlayer as ITitleFirstPerson)?.FirstPerson : null;
+            }
+
             if (Level?.CutsceneView is not null || Human.CameraMode != 1 || Human.IsThirdPerson || IsComputerShown)
             {
                 return null;
@@ -627,7 +639,17 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     {
         if (StoodFor is not null)
         {
-            StandInRun?.Invoke();
+            if (StandInPlayer is { } standIn)
+            {
+                standIn.Tick(_lookInput);
+
+                // The level's documents, key cards and disks are collected by the player standing in, as by this one.
+                if (StandIn is not { IsDead: true })
+                {
+                    Human.OfferGenericPickups(standIn.EyePosition);
+                }
+            }
+
             return;
         }
 

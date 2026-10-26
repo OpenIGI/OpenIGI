@@ -10,9 +10,8 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Project I.G.I.'s humans' cries and the sounds of rounds landing: which sample, and when it is allowed to play.</summary>
-/// <param name="mission">The mission, whose sound stream picks the samples and whose material table names them.</param>
-/// <param name="host">Where they play.</param>
-public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host) : IMissionCries
+/// <param name="stage">Where they play, whose sound stream picks the samples and whose material table names them.</param>
+public sealed class Igi1HumanSounds(IIgi1SoundStage stage) : IMissionCries
 {
     private int _impactQuietUntil;
     private int _ricochetQuietUntil;
@@ -33,16 +32,16 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// </remarks>
     public void PlayDeath(string prefix, int variants, Vector3d? positionInUnits)
     {
-        if (host.SoundOutput is not { } sounds)
+        if (!stage.IsHeard)
         {
             return;
         }
 
         bool faithful = AudioCVars.Preset.Value == AudioProfile.Vanilla;
-        string name = HumanVariantSound.Choose(prefix, variants, mission.SoundRandom, faithful);
+        string name = HumanVariantSound.Choose(prefix, variants, stage.SoundRandom, faithful);
 
         // Above an ordinary effect but below the score: a firefight must not drop the death that ends it.
-        sounds.PlayDefinition(name, positionInUnits, priority: 300);
+        stage.Play(name, positionInUnits, 1f, priority: 300);
     }
 
     /// <summary>Plays a human's grunt at being hit — the naming half of <c>0x4637C0</c>.</summary>
@@ -55,13 +54,13 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// </remarks>
     public void PlayHit(string prefix, int variants, Vector3d? positionInUnits)
     {
-        if (host.SoundOutput is not { } sounds)
+        if (!stage.IsHeard)
         {
             return;
         }
 
-        string name = HumanVariantSound.ChooseHit(prefix, variants, mission.SoundRandom);
-        sounds.PlayDefinition(name, positionInUnits, priority: 250);
+        string name = HumanVariantSound.ChooseHit(prefix, variants, stage.SoundRandom);
+        stage.Play(name, positionInUnits, 1f, priority: 250);
     }
 
     /// <summary>Plays what this tick's bullet impacts struck.</summary>
@@ -74,7 +73,7 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// </remarks>
     public void PlayPlayerImpacts()
     {
-        if (mission.Player is not { } player)
+        if (stage.Player is not { } player)
         {
             return;
         }
@@ -101,8 +100,8 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// </remarks>
     public void PlayWeaponDrop(GunPickupImpact impact)
     {
-        string sound = mission.SoundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
-        host.SoundOutput?.PlayDefinition(sound, impact.Position, priority: 50);
+        string sound = stage.SoundRandom.NextSingle() > 0.5f ? "weapondrop_01" : "weapondrop_02";
+        stage.Play(sound, impact.Position, 1f, priority: 50);
     }
 
     /// <summary>Plays a sound a marched round's contact asks for: its impact, its ricochet.</summary>
@@ -111,12 +110,12 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// <remarks>The pitch a sound definition plays at is the sound layer's own; the original draws nothing for it from the level stream.</remarks>
     public void PlayMarchedRoundSound(string definition, Vector3d position)
     {
-        if (definition.Length == 0 || !GameplayCVars.BallisticsImpactSounds.Value)
+        if (definition.Length == 0 || !GameplayCVars.BallisticsImpactSounds.Value || !stage.IsHeard)
         {
             return;
         }
 
-        host.SoundOutput?.PlayDefinition(definition, position, pitch: FootstepSounds.Pitch(_impactPitchRandom), priority: 45);
+        stage.Play(definition, position, FootstepSounds.Pitch(_impactPitchRandom), priority: 45);
     }
 
     // The pitch a marched round's sound plays at; the original's sound layer draws nothing from the level stream.
@@ -128,19 +127,19 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// <param name="surfaceMaterial">The surface's material, when it struck the world.</param>
     public void PlayBulletImpact(Vector3d position, bool struckHuman, int surfaceMaterial)
     {
-        if (host.SoundOutput is not { } sounds
-            || mission.Materials is null
+        if (!stage.IsHeard
+            || stage.Materials is not { } materials
             || !GameplayCVars.BallisticsImpactSounds.Value
-            || host.Game.Clock.TickCount < _impactQuietUntil)
+            || stage.Tick < _impactQuietUntil)
         {
             return;
         }
 
         string sound = BulletImpactSounds.PickForImpact(
-            mission.Materials,
+            materials,
             struckHuman,
             surfaceMaterial,
-            mission.SoundRandom);
+            stage.SoundRandom);
 
         // The quiet window opens on the CONTACT, not on the sample. 0x47BABE's jump skips only the
         // playback call: 0x47BAE1 timestamps and 0x47BAFB re-rolls the interval on the merge path, so a
@@ -148,15 +147,11 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
         // least half their slots -- Air, Water and Snow name a sound in one slot of six, and
         // HumanCollision, MetalLadder and MetalFence in none -- so returning early here would let a
         // burst into a ladder re-arm on every round and machine-gun the next surface it caught.
-        _impactQuietUntil = host.Game.Clock.TickCount + BulletImpactSounds.QuietTicks(mission.SoundRandom);
+        _impactQuietUntil = stage.Tick + BulletImpactSounds.QuietTicks(stage.SoundRandom);
 
         if (sound.Length > 0)
         {
-            sounds.PlayDefinition(
-                sound,
-                position,
-                pitch: FootstepSounds.Pitch(mission.SoundRandom),
-                priority: 45);
+            stage.Play(sound, position, FootstepSounds.Pitch(stage.SoundRandom), priority: 45);
         }
 
         // The second half of a retail impact. 0x47C330 runs on the merge path inside the material
@@ -176,16 +171,12 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// </remarks>
     public void PlayRicochet(Vector3d position)
     {
-        if (host.SoundOutput is not { } sounds || host.Game.Clock.TickCount < _ricochetQuietUntil)
+        if (!stage.IsHeard || stage.Tick < _ricochetQuietUntil)
         {
             return;
         }
 
-        _ricochetQuietUntil = host.Game.Clock.TickCount + BulletImpactSounds.QuietTicks(mission.SoundRandom);
-        sounds.PlayDefinition(
-            BulletImpactSounds.PickRicochet(mission.SoundRandom),
-            position,
-            pitch: FootstepSounds.Pitch(mission.SoundRandom),
-            priority: 45);
+        _ricochetQuietUntil = stage.Tick + BulletImpactSounds.QuietTicks(stage.SoundRandom);
+        stage.Play(BulletImpactSounds.PickRicochet(stage.SoundRandom), position, FootstepSounds.Pitch(stage.SoundRandom), priority: 45);
     }
 }

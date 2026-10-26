@@ -59,18 +59,21 @@ public static class MissionFixture
     /// <param name="mods">The mods its session runs with, or <see langword="null"/> for none.</param>
     /// <param name="difficulty">The difficulty the player and the soldiers play at.</param>
     /// <param name="root">The game's installation, or <see langword="null"/> for the test machine's.</param>
+    /// <param name="logger">Where the session and the mods report, or <see langword="null"/> to discard it.</param>
     /// <returns>The mission, its world built and its player not yet stood.</returns>
     /// <remarks>
     /// The session is the game's own content and the mods', started with where both games are installed, as the host starts it;
     /// the mission is read through the game's catalogue and built by its world builder, as the menu's preview builds one.
     /// </remarks>
-    public static Igi2Mission Igi2(int missionId, ModHarness? mods = null, AiDifficulty difficulty = AiDifficulty.Normal, string? root = null)
+    public static Igi2Mission Igi2(
+        int missionId, ModHarness? mods = null, AiDifficulty difficulty = AiDifficulty.Normal, string? root = null, IOpenIgiLogger? logger = null)
     {
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         string installation = root ?? GameDataSource.Igi2.RequireRoot();
         IGameTitleRuntime runtime = mods?.Extend(new Igi2Runtime()) ?? new Igi2Runtime();
         ServiceCatalog seed = new();
         seed.Provide<ITitleDataLocator>(new ModSession.InstalledGames());
-        GuestTitle guest = GuestTitle.Start(runtime, installation, NullLogger.Instance, seed);
+        GuestTitle guest = GuestTitle.Start(runtime, installation, log, seed);
         GameLoop loop = guest.Loop;
 
         Igi2MissionCatalogue missions = new();
@@ -81,7 +84,7 @@ public static class MissionFixture
         TerrainLoader terrain = new(guest.Resources, loop.Natives);
         LoadedMission loaded = new MissionLoader(missions, guest.FileSystem, guest.Resources, levels, null, terrain, soundBank: null, runtime.Formats)
             .Load(missionId);
-        new ConditionalContainerGate(loop.Variables, NullLogger.Instance).Prepare(level);
+        new ConditionalContainerGate(loop.Variables, log).Prepare(level);
 
         IServiceCatalog services = guest.Session.Services;
         WorldBuildRequest world = new(
@@ -89,7 +92,7 @@ public static class MissionFixture
             level,
             guest.Resources,
             services.TryGet(out MagicObjectRegistry? magic) ? magic : null,
-            NullLogger.Instance,
+            log,
             services.TryGet(out VehiclePhysicsRegistry? vehicles) ? vehicles : null,
             services);
         WorldBuildResult built = new Igi2WorldBuilder().Build(world);

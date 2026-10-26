@@ -18,7 +18,7 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
     public Igi1Gameplay(IMissionHostServices host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
-        Sounds = new Igi1HumanSounds(World, host);
+        Sounds = new Igi1HumanSounds(new Igi1MissionSoundStage(World, host));
         Audio = new Igi1MissionAudio(World, host);
         Impacts = new Igi1ImpactEffects(World, host);
         Impacts.Explosions.Sound = (sound, at, priority) => host.PlayDefinition(sound, at, priority);

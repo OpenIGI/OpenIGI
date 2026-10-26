@@ -19,6 +19,12 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="host">Where they play.</param>
 public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
+    /// <summary>The cue a gun the player picks up plays, at the listener, wherever the player stands.</summary>
+    public const string GunPickupSound = "weaponpickup_1";
+
+    /// <summary>The priority <see cref="GunPickupSound"/> plays at.</summary>
+    public const int GunPickupSoundPriority = 180;
+
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
 
@@ -289,7 +295,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public void PlayGunPickupSound(GunPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
-        host.SoundOutput?.PlayDefinition("weaponpickup_1", priority: 180);
+        host.SoundOutput?.PlayDefinition(GunPickupSound, priority: GunPickupSoundPriority);
     }
 
     /// <summary>Awards and plays an authored item that has reached the player.</summary>

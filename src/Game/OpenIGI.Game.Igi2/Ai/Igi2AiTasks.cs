@@ -319,8 +319,38 @@ public sealed partial class Igi2PatrolPathTask : Igi2Task
     [ScriptParam(ScriptParamType.Int32, "Graph ID")]
     public int GraphId { get; set; }
 
+    /// <summary>
+    /// The ticks a patrol's animation pauses its soldier for where the other game's animations name nothing of this one's: two
+    /// seconds, about what a retail one takes.
+    /// </summary>
+    public const int AnimationPauseTicks = 60;
+
     /// <summary>Gets the commands, in the order they run.</summary>
     public IReadOnlyList<Igi2PatrolPathCommandTask> Commands => [.. Children.OfType<Igi2PatrolPathCommandTask>()];
+
+    /// <summary>The commands in terms both games share, for another game's soldier to walk the path by.</summary>
+    /// <returns>Each command its kind and operand, in order.</returns>
+    /// <remarks>
+    /// The two games number the commands they share alike and read a command's node, delay or animation from its parameter; the
+    /// inverse of <see cref="Systems.Igi2GuestLevel.AddPatrolPath"/>. An animation is this game's own number, which names nothing
+    /// of the other game's: it is a pause of about its length instead (<see cref="AnimationPauseTicks"/>). The commands only this
+    /// game has -- waiting for a person or an expression, an upper body's animation -- are left out.
+    /// </remarks>
+    public IEnumerable<AiPatrolCommand> SharedCommands()
+    {
+        foreach (Igi2PatrolPathCommandTask step in Commands)
+        {
+            switch (step.Command)
+            {
+                case Igi2PatrolCommand.Animation:
+                    yield return new AiPatrolCommand(AiPatrolCommandKind.Delay, AnimationPauseTicks);
+                    break;
+                case > Igi2PatrolCommand.None and <= Igi2PatrolCommand.SetSpeed:
+                    yield return new AiPatrolCommand((AiPatrolCommandKind)step.CommandValue, step.Parameter);
+                    break;
+            }
+        }
+    }
 
     /// <summary>Finds a command's position without allocating a command snapshot and a second list.</summary>
     /// <param name="command">The command to find, or null for none.</param>

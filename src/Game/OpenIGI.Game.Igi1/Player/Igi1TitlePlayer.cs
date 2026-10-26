@@ -14,10 +14,14 @@ namespace OpenIGI.Game.Igi1.Player;
 /// </remarks>
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
-public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground) : ITitlePlayer
+public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground) : ITitlePlayer, ITitleFirstPerson
 {
+
     /// <summary>Gets the player.</summary>
     public Igi1HumanPlayer Human { get; } = human ?? throw new ArgumentNullException(nameof(human));
+
+    /// <summary>Gets the ticks the player has run.</summary>
+    public long Ticks { get; private set; }
 
     /// <inheritdoc/>
     public Vector3d Position => Human.Rig.PositionUnits;
@@ -27,6 +31,18 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
 
     /// <inheritdoc/>
     public Matrix3f ViewOrientation => Human.Rig.Camera.Orientation;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The rig holds what the game's own view model draws from -- the arms' pose, the weapon's bones, its magazine and moving part,
+    /// the shot it fired -- and the game's presenter draws from the rig itself: this says when there is anything to draw, from
+    /// where, and at the width the rig's view holds it (a scope's zoom narrows it). Nothing while dead, nor before the rig has a
+    /// clip, nor while the binoculars or a scope replace the view.
+    /// </remarks>
+    public TitleFirstPersonView? FirstPerson =>
+        Human.Life.IsDead || Human.Rig is { IsBinocularsOpen: true } or { IsSniperScoped: true } || Human.Rig.View is not { IsPosed: true } view
+            ? null
+            : new TitleFirstPersonView(Human.Rig.EyeUnits, Human.Rig.Camera.Orientation, view.ViewModelTanX, Ticks, []);
 
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
@@ -39,5 +55,6 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
         Human.Rig.LookSettings = MouseLookSettings.FromSensitivity(input.MouseSensitivity, input.InvertMouse);
         Human.Rig.Look(input.MouseX, input.MouseY);
         Human.Rig.Tick(input.Held, ground);
+        Ticks++;
     }
 }

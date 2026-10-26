@@ -531,6 +531,9 @@ public sealed class Igi2AiGraphs
             }
 
             file.PlaceNodes(node => graph.Node(node)?.Position);
+
+            // This game searches its graphs as it walks them, and ships no route table: the first game's walkers look one up.
+            file.RouteFromLinks();
             if (file.DiscardedNodeIds.Count > 0)
             {
                 log.Warning(LogCategory, $"AIGraph {id} has {file.DiscardedNodeIds.Count} node(s) past the id limit, which are dropped.");

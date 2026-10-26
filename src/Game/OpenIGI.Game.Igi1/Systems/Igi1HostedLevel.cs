@@ -37,9 +37,11 @@ public sealed class Igi1HostedLevel
         IReadOnlyDictionary<HumanSoldierTask, Igi1StandIn> standIns,
         IReadOnlyList<Igi1HumanLineCollider> colliders,
         IHostCollisionWorld world,
-        IAiPlayer player)
+        IAiPlayer player,
+        GunPickupRegistry gunPickups)
     {
         _tasks = tasks;
+        GunPickups = gunPickups;
         Root = root;
         Soldiers = soldiers;
         _walker = walker;
@@ -52,6 +54,9 @@ public sealed class Igi1HostedLevel
 
     /// <summary>Gets the level's root, in the guest's task tree.</summary>
     public LevelTask Root { get; }
+
+    /// <summary>Gets the game's guns lying in the host's level: those laid in the host's own's stead, and those the soldiers drop.</summary>
+    public GunPickupRegistry GunPickups { get; }
 
     /// <summary>Gets the soldiers' simulation.</summary>
     public SoldierSimulation Soldiers { get; }
