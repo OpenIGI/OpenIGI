@@ -227,7 +227,7 @@ fn vertexMain( _S2 : vertexInput_0) -> Varyings_0
     }
     if(_S6)
     {
-        _S6 = (dot(sunModel_0, sunModel_0)) > 0.25f;
+        _S6 = (dot(sunModel_0, sunModel_0)) > 9.99999993922529029e-09f;
     }
     else
     {

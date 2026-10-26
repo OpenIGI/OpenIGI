@@ -200,9 +200,10 @@ Varyings vertexMain(VertexInput input)
 
     // The sun on an object with no bake, as Direct3D's vertex pipeline computed it for I.G.I. 2
     // (Direct3DRender_SetGenericStateRigid, igi2ed 0x56CA90): the global ambient plus the
-    // light's diffuse times the cosine to the normal, saturated to one.
+    // light's diffuse times the cosine to the normal, saturated to one. The direction's length is the
+    // material's diffuse, one for a model and a trunk's grey for a tree (ForestRender_SetGenericState_Trunk).
     float3 sunModel = push.normalKey0.xyz;
-    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)
+    if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 1e-8)
     {
         float normalLength = length(localNormal);
         float facing = normalLength > 0.0 ? dot(localNormal / normalLength, sunModel) : 0.0;

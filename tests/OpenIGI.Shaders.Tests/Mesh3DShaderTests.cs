@@ -89,7 +89,7 @@ public sealed class Mesh3DShaderTests
     {
         Assert.Contains("float3 sunModel = push.normalKey0.xyz;", Source, StringComparison.Ordinal);
         Assert.Contains(
-            "if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 0.25)",
+            "if (abs(push.markerExposure.x) > 0.5 && terrain < 0.5 && push.normalKey0.w >= 0.0 && dot(sunModel, sunModel) > 1e-8)",
             Source,
             StringComparison.Ordinal);
         Assert.Contains("output.color.rgb *= clamp(sunlight, 0.0, 1.0);", Source, StringComparison.Ordinal);

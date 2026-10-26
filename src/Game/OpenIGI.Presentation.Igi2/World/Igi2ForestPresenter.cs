@@ -190,11 +190,13 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     public void Draw(in ForestFrame frame)
     {
         _retailLook = frame.RetailLook;
+        _towardsSun = frame.TowardsSun;
         Draw(frame.Camera, frame.HorizontalHalfTangent, frame.VerticalHalfTangent);
     }
 
-    // Whether this frame draws the trees with the original's states.
+    // Whether this frame draws the trees with the original's states, and the sun they are lit by.
     private bool _retailLook;
+    private Vector3f _towardsSun;
 
     /// <summary>Draws every tree the stand's index and the view distance keep.</summary>
     /// <param name="camera">Where the world is seen from.</param>
@@ -268,7 +270,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         if (_retailLook)
         {
             _device.SetAlphaReference(RetailAlphaReference);
-            Issue(camera, static s => s.Trunk, BlendMode.Opaque, doubled: false);
+            IssueLitTrunks(camera);
             if (HighQualityForests?.Invoke() != true)
             {
                 Issue(camera, static s => s.Foliage, BlendMode.Opaque, doubled: true);
@@ -467,6 +469,34 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         {
             _device.SetLightmapModulates(false);
         }
+    }
+
+    // ForestRender_Draw with ForestRender_SetGenericState_Trunk: a trunk is lit, its diffuse the grey of the tree's bake (the mean of its
+    // three channels) and its ambient one, so it is the texture times the scene's ambient plus the sun's colour by the cosine and that
+    // grey. The grey rides as the length of the sun's direction in the tree's own frame.
+    private void IssueLitTrunks(in Camera3D camera)
+    {
+        foreach (Visible visible in _visible)
+        {
+            Stand stand = _stands[visible.Stand];
+            if (stand.Trunk.Length == 0)
+            {
+                continue;
+            }
+
+            Igi2Tree tree = stand.Trees[visible.Tree];
+            Matrix3f orientation = OrientationOf(tree);
+            float grey = ((float)tree.Light.R + tree.Light.G + tree.Light.B) / (3f * 255f);
+            Vector3f sun = orientation.Transform(_towardsSun).NormalizedOrSelf() * grey;
+            _device.SetVertexSun(sun);
+            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), orientation);
+            foreach (Part part in stand.Trunk)
+            {
+                _device.DrawMesh(stand.Mesh, part.Subset.IndexOffset, part.Subset.IndexCount, modelView, part.Texture, TextureHandle.None, BlendMode.Opaque);
+            }
+        }
+
+        _device.SetVertexSun(Vector3f.Zero);
     }
 
     private void IssueTrees(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled)

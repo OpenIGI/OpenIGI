@@ -198,7 +198,8 @@ public sealed partial class GameHost
                 eye,
                 MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
                 MathF.Tan(verticalFieldOfView * 0.5f),
-                retailForest));
+                retailForest,
+                _world.Shading.Sun?.Direction ?? Vector3f.Zero));
             if (retailForest && retailFog && _forest is not null)
             {
                 _device.SetFog(RetailAir(_globalLight.ObjectFog));

@@ -53,6 +53,7 @@ public readonly record struct ScenePresentationRequest(
 /// <param name="HorizontalHalfTangent">The tangent of half the horizontal field of view.</param>
 /// <param name="VerticalHalfTangent">The tangent of half the vertical field of view.</param>
 /// <param name="RetailLook">Whether the trees are drawn with the original's states, the original's look's way.</param>
+/// <param name="TowardsSun">The world direction towards the level's fixed-function sun, or zero for none.</param>
 /// <remarks>
 /// Half-tangents rather than an angle and an aspect ratio, because that is the form the culling wants:
 /// the planes a forest tests its stands against are built straight out of them, and converting an angle
@@ -62,7 +63,8 @@ public readonly record struct ForestFrame(
     Camera3D Camera,
     float HorizontalHalfTangent,
     float VerticalHalfTangent,
-    bool RetailLook = false);
+    bool RetailLook = false,
+    Vector3f TowardsSun = default);
 
 /// <summary>What one frame needs in order to draw a title's water.</summary>
 /// <param name="Camera">Where the water is seen from.</param>

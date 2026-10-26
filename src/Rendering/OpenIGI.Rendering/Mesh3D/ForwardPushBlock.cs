@@ -210,7 +210,7 @@ public static class ForwardPushBlock
         // branches.
         // Nor does one the fixed-function sun lights: Direct3D's vertex lighting already summed the ambient with the
         // sun's diffuse, and the flat light is only what a model is lit by when there is no sun to light it.
-        bool sunLit = Vector3f.Dot(state.VertexSun, state.VertexSun) > 0.25f;
+        bool sunLit = Vector3f.Dot(state.VertexSun, state.VertexSun) > 1e-8f;
         Vector3f tint = hasLightmap || sunLit ? Vector3f.One : state.ModelAmbient;
         block[24] = tint.X;
         block[25] = tint.Y;
