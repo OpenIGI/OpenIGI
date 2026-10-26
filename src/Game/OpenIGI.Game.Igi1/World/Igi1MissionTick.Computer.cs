@@ -54,7 +54,11 @@ public sealed partial class Igi1MissionTick
         }
 
         computer.MapEnabled = host.MapComputerEnabled;
-        if (player.TickMapComputer(host.ViewInput))
+        ComputerPointerInput mouse = host.TakeComputerInput();
+
+        // 0x40E3C0: the map key closes it. The open computer holds the window's input, so the key comes with the mouse.
+        bool mapKey = player.TickMapComputer(host.ViewInput) | mouse.MapKey;
+        if (mapKey)
         {
             computer.Close();
             player.SetMapComputerOpen(false);
@@ -62,7 +66,7 @@ public sealed partial class Igi1MissionTick
             return;
         }
 
-        computer.Run(ComputerInput(host.TakeComputerInput(), host.InputProfile), paused: false);
+        computer.Run(ComputerInput(mouse, host.InputProfile), paused: false);
     }
 
     // 0x45E060's first two channels: the mouse's counts over 255 at the profile's sensitivity, the second inverted when the

@@ -325,6 +325,8 @@ public sealed partial class GameHost
     private float _computerCountsY;
     private int _computerButtons;
     private int _computerWheel;
+    private bool _computerMapKey;
+    private long _computerOpenedFrame = -1;
 
     private void GatherComputerInput()
     {
@@ -342,6 +344,8 @@ public sealed partial class GameHost
         }
 
         _computerWheel += Math.Sign(mouse.WheelDelta);
+        // Not the press that opened it, which the same frame can read again once the tick has opened it.
+        _computerMapKey |= _computerOpen && _loop.Clock.FrameCount != _computerOpenedFrame && ComputerKeyPressed();
     }
 
     /// <summary>Hands the computer the mouse since the last tick and starts gathering the next.</summary>
@@ -359,7 +363,8 @@ public sealed partial class GameHost
             _computerWheel++;
         }
 
-        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons);
+        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey);
+        _computerMapKey = false;
         _computerCountsX = 0f;
         _computerCountsY = 0f;
         _computerButtons = 0;
@@ -370,6 +375,11 @@ public sealed partial class GameHost
     private void MissionComputerChanged(bool open)
     {
         _computerOpen = open;
+        _computerMapKey = false;
+        if (open)
+        {
+            _computerOpenedFrame = _loop.Clock.FrameCount;
+        }
 
         // The computer draws its own pointer; the platform's would be a second one over it.
         _window.CursorVisible = false;

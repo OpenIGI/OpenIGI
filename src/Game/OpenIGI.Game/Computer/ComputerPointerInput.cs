@@ -4,4 +4,8 @@ namespace OpenIGI.Game.Computer;
 /// <param name="CountsX">The counts it moved across since the last tick.</param>
 /// <param name="CountsY">The counts it moved down.</param>
 /// <param name="Buttons">Left <c>0x1</c>, right <c>0x2</c>, and one notch of the wheel: away <c>0x100</c>, back <c>0x200</c>.</param>
-public readonly record struct ComputerPointerInput(float CountsX, float CountsY, int Buttons);
+/// <param name="MapKey">
+/// Whether the map key went down since the last tick. Read by the host as it gathers the mouse, because the open computer
+/// holds the keyboard from everything else.
+/// </param>
+public readonly record struct ComputerPointerInput(float CountsX, float CountsY, int Buttons, bool MapKey = false);
