@@ -80,7 +80,7 @@ public sealed class ImpactParticleRendererTests
         Assert.True(explosions.Load(mission));
 
         // The FireBall's face group is transparent and additive (0x49EC70 draws it at ONE, ONE).
-        Assert.Equal(BlendMode.Additive, explosions.RetailFireballBlend);
+        Assert.Equal(BlendMode.AddColour, explosions.RetailFireballBlend);
         Assert.Equal(26, explosions.RetailFireballModelFrameCount);
 
         // A camera lens's blast: the flame adds. Its pieces are drawn with a round's chips, its smoke as particle systems.
@@ -88,7 +88,7 @@ public sealed class ImpactParticleRendererTests
         _ = scene.Spawn(new Igi1ExplosionRequest(new Vector3d(8192d, 8192d, 8192d), 1, 0, 0.25f, 2048f, 0f, 7, 3, string.Empty));
         explosions.Draw(scene, Camera3D.Default, Matrix4f.Identity, alpha: 1f);
 
-        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
+        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.AddColour);
         Assert.DoesNotContain(device.MeshDraws, draw => draw.Blend == BlendMode.AlphaBlend);
         explosions.Release();
     }
@@ -101,10 +101,11 @@ public sealed class ImpactParticleRendererTests
         Matrix3f old = RetailExplosionEffects.FacingEye(
             Vector3d.Zero, new Vector3d(10d, 0d, 0d), across: 1f, depth: 1f);
 
-        // The dome's own axis (its third row) points at the eye and carries the depth.
-        Assert.Equal(0.01f, young.M31, 5);
-        Assert.Equal(1f, old.M31, 5);
-        Assert.Equal(0f, young.M11 * young.M31, 5);
+        // The dome's own axis (its third column, 0x480790 transposing the rows it builds) points at the eye and carries the
+        // depth; the across axis is square to it.
+        Assert.Equal(0.01f, young.M13, 5);
+        Assert.Equal(1f, old.M13, 5);
+        Assert.Equal(0f, (young.M11 * young.M13) + (young.M21 * young.M23) + (young.M31 * young.M33), 5);
     }
 
     [RequiresGameDataFact]

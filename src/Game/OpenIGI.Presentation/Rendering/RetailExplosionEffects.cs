@@ -89,7 +89,8 @@ public sealed class RetailExplosionEffects
                 ReleaseRetailFireballModel();
                 _retailFireballGeometry = geometry;
                 _retailFireballFrameTextures = frames;
-                _retailFireballBlend = BlendOf(model);
+                // Project I.G.I.'s own model: its additive face group adds at full strength (0x49EC70).
+                _retailFireballBlend = BlendOf(model) == BlendMode.Additive ? BlendMode.AddColour : BlendOf(model);
             }
         }
 
@@ -163,7 +164,7 @@ public sealed class RetailExplosionEffects
             _device.SetProjection(projection);
             _device.SetCullMode(CullMode.None);
             _device.SetDepthState(_retailFireballBlend == BlendMode.Opaque ? DepthState.TestAndWrite : DepthState.TestOnly);
-            _device.SetMaterialOverride(_retailFireballBlend == BlendMode.Additive ? ImpactParticleRenderer.GlowMaterial : SurfaceMaterial.Default);
+            _device.SetMaterialOverride(_retailFireballBlend is BlendMode.Additive or BlendMode.AddColour ? ImpactParticleRenderer.GlowMaterial : SurfaceMaterial.Default);
 
             int frames = _retailFireballFrameTextures.Length;
             foreach (ExplosionFireBall fireball in scene.FireBalls)
@@ -214,8 +215,10 @@ public sealed class RetailExplosionEffects
 
     /// <summary>Builds the FireBall's eye-facing, scaled orientation.</summary>
     /// <remarks>
-    /// The rows are the model's axes: across the view <c>(-f.y, f.x, 0)</c>, then <c>f x across</c>,
-    /// then the direction to the eye <c>f</c>, which is the dome's own axis.
+    /// <c>0x480790</c> builds three rows -- across the view <c>(-f.y, f.x, 0)</c>, then <c>f x across</c>, then the direction to the
+    /// eye <c>f</c>, the dome's own axis -- and then takes their transpose as the model's frame, so in this engine's terms they
+    /// are its columns. Used as rows, the dome's axis lay across the view and the flame showed edge on, a thin ring behind
+    /// whatever exploded.
     /// </remarks>
     internal static Matrix3f FacingEye(Vector3d positionMetres, Vector3d eyeMetres, float across, float depth)
     {
@@ -237,7 +240,7 @@ public sealed class RetailExplosionEffects
             up = Vector3f.Cross(f, side).Normalized();
         }
 
-        return Matrix3f.FromRows(side * across, up * across, f * depth);
+        return Matrix3f.FromRows(side * across, up * across, f * depth).Transposed();
     }
 
     private void ReleaseRetailFireballModel()

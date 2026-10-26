@@ -102,7 +102,7 @@ public readonly record struct SceneFog(Vector3f Colour, float DensityPerMetre)
     /// its own colour from what is behind it, so black is what fades it out too: fogged towards the level's colour it would
     /// leave a dim square in the haze.
     /// </remarks>
-    public Vector3f ColourFor(BlendMode blend) => blend is BlendMode.Additive or BlendMode.Darken ? default : Colour;
+    public Vector3f ColourFor(BlendMode blend) => blend is BlendMode.Additive or BlendMode.AddColour or BlendMode.Darken ? default : Colour;
 
     /// <summary>What 127 out of 255 is, which is the half <c>TerrainRender_SetBlendMode</c> writes.</summary>
     /// <remarks>
