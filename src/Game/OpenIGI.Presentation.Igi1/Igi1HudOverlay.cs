@@ -130,7 +130,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         batch.Begin();
         retailStatus.DrawPlayerStatus(
             batch,
-            mission.PlayerHealth.RemainingFraction,
+            mission.PlayerLife.Health.RemainingFraction,
             retailPlayer.InteractionProgress,
             mission.Objectives?.InterfaceTimerRemainingTicks,
             frame.Width,
@@ -150,7 +150,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
     // when the arms and the HUD are gone but the last thing the screen showed is still red.
     float flashStrength = Math.Clamp(HudCVars.DamageFlash.Value, 0f, 1f);
-    if (mission.DamageFlash.IsActive && flashStrength > 0f)
+    if (mission.PlayerLife.DamageFlash.IsActive && flashStrength > 0f)
     {
         float flashWidth = frame.Width;
         float flashHeight = frame.Height;
@@ -166,10 +166,10 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         batch.Begin();
         batch.DrawQuad(
             TextureHandle.None,
-            new Vertex2D(0f, 0f, 0f, 0f, Red(mission.DamageFlash.TopLeft)),
-            new Vertex2D(flashWidth, 0f, 1f, 0f, Red(mission.DamageFlash.TopRight)),
-            new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(mission.DamageFlash.BottomRight)),
-            new Vertex2D(0f, flashHeight, 0f, 1f, Red(mission.DamageFlash.BottomLeft)));
+            new Vertex2D(0f, 0f, 0f, 0f, Red(mission.PlayerLife.DamageFlash.TopLeft)),
+            new Vertex2D(flashWidth, 0f, 1f, 0f, Red(mission.PlayerLife.DamageFlash.TopRight)),
+            new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(mission.PlayerLife.DamageFlash.BottomRight)),
+            new Vertex2D(0f, flashHeight, 0f, 1f, Red(mission.PlayerLife.DamageFlash.BottomLeft)));
         batch.End();
     }
 
@@ -177,10 +177,10 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
     // when the eye is inside the grenade radius (2) and still fully white at the first
     // frame of the 25 m visible effect (1); the close field simply keeps the quad opaque
     // for longer. This pass follows the red damage wash so the retail flash wins.
-    if (mission.FlashbangFlash.IsActive)
+    if (mission.PlayerLife.FlashbangFlash.IsActive)
     {
         byte whiteAlpha = (byte)Math.Clamp(
-            (int)(Math.Min(mission.FlashbangFlash.Strength, 1f) * 255f),
+            (int)(Math.Min(mission.PlayerLife.FlashbangFlash.Strength, 1f) * 255f),
             0,
             255);
         Bgra32 white = new(255, 255, 255, whiteAlpha);

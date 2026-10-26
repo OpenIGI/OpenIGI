@@ -65,20 +65,8 @@ public class MissionState : IInspectableMission
     /// <summary>Gets or sets the difficulty the player's damage is scaled by.</summary>
     public int PlayerDifficulty { get; set; }
 
-    /// <summary>Gets or sets the player's full health.</summary>
-    public float PlayerMaximumHealth { get; set; }
-
-    /// <summary>Gets or sets how far the player's body animations carry it, the human type's delta translation scale.</summary>
-    public float PlayerDeltaTranslationScale { get; set; } = HumanMotion.DefaultDeltaTranslationScale;
-
-    /// <summary>Gets or sets the player's health.</summary>
-    public HumanHealth PlayerHealth { get; set; } = null!;
-
     /// <summary>Gets or sets a value indicating whether the player has died.</summary>
-    public bool IsPlayerDead { get; set; }
-
-    /// <summary>Gets or sets the tick the player may grunt at being hit again — <c>0x4637C0</c>'s per-human gate.</summary>
-    public int PlayerHitQuietUntil { get; set; }
+    public virtual bool IsPlayerDead { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the soldiers update inside the level walk.</summary>
     public bool SoldiersInWalk { get; set; }
@@ -191,9 +179,6 @@ public class MissionState : IInspectableMission
     /// <summary>Gets the engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes and the other draws that share its stream.</summary>
     public IgiRandom SoundRandom { get; } = new();
 
-    /// <summary>Gets or sets the red wash a hit on the player raises, which the HUD draws.</summary>
-    public HumanDamageFlash DamageFlash { get; set; } = null!;
-
     /// <summary>Drops the level's runtimes as the mission is left: the objectives, the cutscenes, the walk and the cameras.</summary>
     public void ReleaseRuntimes()
     {
@@ -221,42 +206,16 @@ public class MissionState : IInspectableMission
         VehiclePhysics = services.TryGet(out VehiclePhysicsRegistry? vehicles) ? vehicles : null;
     }
 
-    /// <summary>Starts the player's life afresh: full health, alive, and no wash on the screen.</summary>
+    /// <summary>Starts the player's life afresh at a difficulty: alive, and what the title keeps of its life reset.</summary>
     /// <param name="difficulty">The profile difficulty the player's own hits are scaled by.</param>
     public virtual void ResetPlayerLife(int difficulty)
     {
-        // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
-        // soldiers' 100 -- humanplayer.qvm overrides the executable's default. The player's
-        // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
-        // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
         PlayerDifficulty = difficulty;
-
-        // 0x489C30 supplies the universal base value first. Mission loading replaces it with argument 7
-        // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
-        // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
-        PlayerMaximumHealth = HumanHitZoneTable.MaximumHealth;
-        PlayerHealth = new(HumanHitZoneTable.Player, PlayerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(PlayerDifficulty),
-        };
         IsPlayerDead = false;
-
-        // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
-        // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
-        // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
-        DamageFlash = new();
     }
 
-    /// <summary>Starts a fresh life at the same difficulty: the last one's death and its wash do not carry over.</summary>
-    public virtual void StartFreshLife()
-    {
-        PlayerHealth = new(HumanHitZoneTable.Player, PlayerMaximumHealth)
-        {
-            DamageScale = HumanHealth.DifficultyDamageScale(PlayerDifficulty),
-        };
-        IsPlayerDead = false;
-        DamageFlash = new();
-    }
+    /// <summary>Starts a fresh life at the same difficulty: the last one's death does not carry over.</summary>
+    public virtual void StartFreshLife() => IsPlayerDead = false;
 
     /// <summary>Forgets the title's own player, as another takes the level or the level goes.</summary>
     public virtual void ForgetPlayer()

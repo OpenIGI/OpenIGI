@@ -25,8 +25,11 @@ public sealed class MissionWorld : MissionState
     /// </summary>
     public Vector3d? AmbienceListener { get; set; }
 
-    /// <summary>Gets or sets the damage factor an electric fence deals the player each tick it is touched.</summary>
-    public float ElectricFenceDose { get; set; } = ElectricFenceContact.DefaultDamageFactor;
+    /// <summary>Gets the player's life: its health, its death, and what a hit leaves on the screen.</summary>
+    public Igi1PlayerLife PlayerLife { get; } = new();
+
+    /// <inheritdoc/>
+    public override bool IsPlayerDead { get => PlayerLife.IsDead; set => PlayerLife.IsDead = value; }
 
     /// <summary>Gets or sets what the soldiers read the player as, asked each tick.</summary>
     public Func<SoldierEnemy>? CurrentEnemy { get; set; }
@@ -105,7 +108,7 @@ public sealed class MissionWorld : MissionState
         bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
         {
             hit = default;
-            if (PlayerHealth.IsDead)
+            if (PlayerLife.Health.IsDead)
             {
                 return false;
             }
@@ -144,9 +147,6 @@ public sealed class MissionWorld : MissionState
         VehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
 
-    /// <summary>Gets or sets the white-out a flashbang raises, which the screen draws.</summary>
-    public FlashbangScreenFlash FlashbangFlash { get; set; } = null!;
-
     /// <inheritdoc/>
     public override void AdoptTitleServices(IServiceCatalog services)
     {
@@ -159,15 +159,14 @@ public sealed class MissionWorld : MissionState
     public override void ResetPlayerLife(int difficulty)
     {
         base.ResetPlayerLife(difficulty);
-        ElectricFenceDose = ElectricFenceContact.DefaultDamageFactor;
-        FlashbangFlash = new();
+        PlayerLife.Reset(difficulty);
     }
 
     /// <inheritdoc/>
     public override void StartFreshLife()
     {
         base.StartFreshLife();
-        FlashbangFlash = new();
+        PlayerLife.StartFresh(PlayerDifficulty);
     }
 
     /// <inheritdoc/>

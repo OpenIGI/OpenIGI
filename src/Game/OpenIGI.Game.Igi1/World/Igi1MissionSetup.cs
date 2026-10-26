@@ -338,7 +338,7 @@ public sealed class Igi1MissionSetup(
             soldiers.SetHitSound((prefix, variants, position) => sounds.PlayHit(prefix, variants, position));
             soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(mission.SoundRandom));
             soldiers.SetMeleeStrikeSink(harm.StrikePlayer);
-            soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerDeltaTranslationScale);
+            soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerLife.DeltaTranslationScale);
 
             // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
             // HumanAI's current position. Both begin at the same live position; the backend owns any voice

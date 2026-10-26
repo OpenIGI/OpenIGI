@@ -52,7 +52,7 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
             return;
         }
 
-        HumanHealth health = mission.PlayerHealth;
+        HumanHealth health = mission.PlayerLife.Health;
         HumanHit struck = round.Hit;
         health.Apply(struck.Zone, round.DamageFactor);
         sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
@@ -71,7 +71,7 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
         }
 
         harm.InstallPlayerHitShake();
-        mission.DamageFlash.Hit(viewIncoming, mission.SoundRandom.NextSingle());
+        mission.PlayerLife.DamageFlash.Hit(viewIncoming, mission.SoundRandom.NextSingle());
 
         // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
         // handler (0x412440) normalises the round's direction and adds x/y x 189.62962

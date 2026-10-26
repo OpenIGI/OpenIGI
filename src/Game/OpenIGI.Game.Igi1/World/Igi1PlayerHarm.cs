@@ -42,12 +42,12 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
     /// </remarks>
     public void PlayPlayerGrunt()
     {
-        if (host.Game.Clock.TickCount < mission.PlayerHitQuietUntil)
+        if (host.Game.Clock.TickCount < mission.PlayerLife.HitQuietUntil)
         {
             return;
         }
 
-        mission.PlayerHitQuietUntil = host.Game.Clock.TickCount + HumanVariantSound.HitCooldownTicks(mission.SoundRandom);
+        mission.PlayerLife.HitQuietUntil = host.Game.Clock.TickCount + HumanVariantSound.HitCooldownTicks(mission.SoundRandom);
         sounds.PlayHit(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
     }
 
@@ -76,8 +76,8 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
         int zone = facing < 0.0 ? PlayerBluntFrontZone : PlayerBluntBackZone;
 
-        mission.PlayerHealth.Apply(zone, damage);
-        if (!mission.PlayerHealth.IsDead)
+        mission.PlayerLife.Health.Apply(zone, damage);
+        if (!mission.PlayerLife.Health.IsDead)
         {
             PlayPlayerGrunt();
             host.PlayDefinition(
@@ -87,13 +87,13 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         }
 
         InstallPlayerHitShake();
-        mission.DamageFlash.HitEveryCorner(
+        mission.PlayerLife.DamageFlash.HitEveryCorner(
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle());
 
-        if (mission.PlayerHealth.IsDead)
+        if (mission.PlayerLife.Health.IsDead)
         {
             // A close-combat blow is melee, not a round.
             BeginPlayerDeath(attacker, zone, bone: -1, WeaponCategory.Knife);
@@ -205,13 +205,13 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
 
         // PlayerBody has already added the direct, difficulty-independent dose to the shared health.
         // Raise the desktop wash that the render pass actually draws rather than the body's standalone one.
-        mission.DamageFlash.Hit(Vector3f.Zero, mission.SoundRandom.NextSingle());
+        mission.PlayerLife.DamageFlash.Hit(Vector3f.Zero, mission.SoundRandom.NextSingle());
         host.Logger.Information(
             "Player",
             $"Fall impact {impact.SpeedMetresPerSecond:F2} m/s dealt {impact.Damage:F3} "
-                + $"({mission.PlayerHealth.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
+                + $"({mission.PlayerLife.Health.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
 
-        if (mission.PlayerHealth.IsDead)
+        if (mission.PlayerLife.Health.IsDead)
         {
             // Zone 13 is the retail fall bucket. With no external attacker the source is the feet,
             // leaving the death fall aligned to the player's current facing.
@@ -226,33 +226,33 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
     /// <summary>Applies one native electric-fence shock after the player's 45-tick guard permits it.</summary>
     public void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence)
     {
-        if (mission.PlayerHealth.IsDead)
+        if (mission.PlayerLife.Health.IsDead)
         {
             return;
         }
 
-        float healthBefore = mission.PlayerHealth.RemainingFraction;
+        float healthBefore = mission.PlayerLife.Health.RemainingFraction;
         host.Logger.Information(
             "Player.Fence",
             $"contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
                 + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
                 + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
 
-        ElectricFenceShock shock = ElectricFenceContact.Shock(mission.PlayerHealth, mission.ElectricFenceDose);
+        ElectricFenceShock shock = ElectricFenceContact.Shock(mission.PlayerLife.Health, mission.PlayerLife.ElectricFenceDose);
         float dealt = shock.Damage;
         if (dealt <= 0f)
         {
             host.Logger.Warning(
                 "Player.Fence",
                 $"contact produced no damage task={fence.Task.Id} "
-                    + $"health={mission.PlayerHealth.RemainingFraction:P0} hits={mission.PlayerHealth.Hits}.");
+                    + $"health={mission.PlayerLife.Health.RemainingFraction:P0} hits={mission.PlayerLife.Health.Hits}.");
             return;
         }
 
         // 0x412F80: the full shake for forty-five ticks, and four separate corner draws.
         player.InstallViewShake(
             HumanViewShake.HitPositionUnits, HumanViewShake.HitAngleRadians, HumanViewShake.FenceTicks);
-        mission.DamageFlash.HitEveryCorner(
+        mission.PlayerLife.DamageFlash.HitEveryCorner(
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
@@ -265,7 +265,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
 
         host.Logger.Information(
             "Player",
-            $"Electric fence shock dealt {dealt:F3} ({mission.PlayerHealth.RemainingFraction:P0} left).");
+            $"Electric fence shock dealt {dealt:F3} ({mission.PlayerLife.Health.RemainingFraction:P0} left).");
 
         if (shock.IsLethal)
         {

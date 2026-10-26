@@ -106,7 +106,7 @@ public sealed class GuardRounds
             return;
         }
 
-        HumanHealth health = _mission.PlayerHealth;
+        HumanHealth health = _mission.PlayerLife.Health;
         Random random = _mission.ShotRandom;
 
         // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
@@ -460,7 +460,7 @@ public sealed class GuardRounds
     // the shove). Returns whether it killed the player.
     private bool StrikePlayerWith(HumanHit struck, Vector3d from, Vector3d to, WeaponType weapon, float damageFactor, SoldierView? shooter)
     {
-        HumanHealth health = _mission.PlayerHealth;
+        HumanHealth health = _mission.PlayerLife.Health;
         HitsOnPlayer++;
         Igi1WeaponHit round = new(struck, from, to, damageFactor, weapon.Category, shooter, FromPlayer: false);
         if (_mission.PlayerTask is { } task)
@@ -541,7 +541,7 @@ public sealed class GuardRounds
             // The player is visible to a round only from another side, and only through the evaluate's two rolls of the
             // shooter's probability: the visit's gate and the narrow contact's (0x45F53D, 0x4D76DA).
             if (mission.Player is { } player
-                && !mission.PlayerHealth.IsDead
+                && !mission.PlayerLife.Health.IsDead
                 && side != rounds._soldiers.PlayerTeam
                 && rounds._soldiers.TryCastPlayerBody(start, limit, player.Body.Position, player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> crossings)
                 && crossings.Count > 0

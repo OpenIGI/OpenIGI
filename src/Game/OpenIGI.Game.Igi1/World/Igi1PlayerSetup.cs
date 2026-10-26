@@ -305,23 +305,10 @@ public sealed class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(candidate);
         try
         {
+            // Its delta translation scale, its full health and a powered fence's dose (Igi1PlayerLife.Tune).
             if (Igi1PlayerRig.Tune(candidate, host.Game, host.Resources, host.Logger) is { } tuning)
             {
-                // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
-                mission.PlayerDeltaTranslationScale = tuning.DeltaTranslationScale;
-
-                // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
-                // 3.0 in retail, and the single number that sets the player's time-to-kill.
-                mission.PlayerMaximumHealth = tuning.MaximumHealth;
-
-                // Argument 8 is the dose one powered fence contact adds (0x412F80's fmul against
-                // the human's damage scale) -- 0.5 in retail. Read it for the same reason argument
-                // 7 is read: a retuned humanplayer.qvm owns its own shock, not the shipped number.
-                mission.ElectricFenceDose = tuning.ElectricFenceDose;
-                mission.PlayerHealth = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
-                {
-                    DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
-                };
+                mission.PlayerLife.Tune(tuning, mission.PlayerDifficulty);
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
@@ -335,7 +322,7 @@ public sealed class Igi1PlayerSetup(
         // default health exists for standalone physics use; the desktop must give it the exact
         // accumulator the HUD, guard hits and death state already share. The sink crosses the
         // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
-        candidate.UseHealth(mission.PlayerHealth);
+        candidate.UseHealth(mission.PlayerLife.Health);
         candidate.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(candidate, impact));
     }
 
@@ -429,7 +416,7 @@ public sealed class Igi1PlayerSetup(
         // about a metre over the feet standing and half that crouched -- not the eye.
         // The rig, or another game's player standing in its stead: where its feet are and whether it keeps low.
         (Vector3d Feet, bool Low)? Target() =>
-            mission.IsPlayerDead || mission.PlayerHealth.IsDead ? null
+            mission.IsPlayerDead || mission.PlayerLife.Health.IsDead ? null
             : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
             : (player.Body.Position, player.Body.IsCrouched);
         runtime.VehicleCombatTarget = () => Target() is { } aim
@@ -524,7 +511,7 @@ public sealed class Igi1PlayerSetup(
         candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
         {
             bool found = soldierProximity(center, radiusUnits, out target);
-            if (!mission.PlayerHealth.IsDead)
+            if (!mission.PlayerLife.Health.IsDead)
             {
                 double distance = Vector3d.Distance(center, candidate.Body.Position);
                 if (distance <= radiusUnits && (!found || distance < target.Distance))

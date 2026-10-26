@@ -226,8 +226,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     {
         // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
         // fixed tick, for the same determinism reason the bodies are.
-        mission.DamageFlash.Tick();
-        mission.FlashbangFlash.Tick();
+        mission.PlayerLife.DamageFlash.Tick();
+        mission.PlayerLife.FlashbangFlash.Tick();
         host.StepScreen();
 
         // The player's eye is what the guards' view cones are tested against -- and in the
@@ -609,9 +609,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
-        mission.PlayerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
+        mission.PlayerLife.Health.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
         host.Logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
-        if (mission.PlayerHealth.IsDead)
+        if (mission.PlayerLife.Health.IsDead)
         {
             Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
                 ? metres * WorldScene.UnitsPerMetre

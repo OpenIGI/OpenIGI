@@ -88,7 +88,7 @@ public sealed class Igi1Blasts(
                 // flash event never turns into a zero-strength (but still scheduled) screen flash.
                 if (visible > 0f || close > 0f)
                 {
-                    mission.FlashbangFlash.Apply(visible, close);
+                    mission.PlayerLife.FlashbangFlash.Apply(visible, close);
                 }
                 continue;
             }
@@ -337,7 +337,7 @@ public sealed class Igi1Blasts(
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
     public void BlastPlayer(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
     {
-        if (mission.Player is null || mission.PlayerHealth.IsDead)
+        if (mission.Player is null || mission.PlayerLife.Health.IsDead)
         {
             return;
         }
@@ -351,12 +351,12 @@ public sealed class Igi1Blasts(
             damageFactor);
         if (dose > 0f)
         {
-            mission.PlayerHealth.Apply(ExplosionDamage.Zone, dose);
+            mission.PlayerLife.Health.Apply(ExplosionDamage.Zone, dose);
             FlashPlayerForBlast();
 
             // A blast that zeroes the health kills exactly the way a bullet does -- without this the player stood at
             // zero for ever.
-            if (mission.PlayerHealth.IsDead)
+            if (mission.PlayerLife.Health.IsDead)
             {
                 harm.BeginPlayerDeath(position, ExplosionDamage.Zone, -1, killedBy);
             }
@@ -382,7 +382,7 @@ public sealed class Igi1Blasts(
     /// </remarks>
     private void ReachPlayerWithBlast(Vector3d blastPosition, float radiusUnits, float falloffUnits)
     {
-        if (mission.Player is null || mission.PlayerHealth.IsDead || radiusUnits <= 0f)
+        if (mission.Player is null || mission.PlayerLife.Health.IsDead || radiusUnits <= 0f)
         {
             return;
         }
@@ -409,7 +409,7 @@ public sealed class Igi1Blasts(
 
     /// <summary>The flash a damaging blast raises — <c>0x412990</c>'s four independent corner draws.</summary>
     private void FlashPlayerForBlast() =>
-        mission.DamageFlash.HitEveryCorner(
+        mission.PlayerLife.DamageFlash.HitEveryCorner(
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),

@@ -92,7 +92,7 @@ public static class Igi1HudTheme
         }
 
         model.Show = HudParts.Status | HudParts.Weapon | HudParts.Actions | HudParts.Progress | HudParts.Crosshair | said;
-        model.Health = mission.PlayerHealth.RemainingFraction;
+        model.Health = mission.PlayerLife.Health.RemainingFraction;
         model.HeadingRadians = player.Yaw;
         model.PitchRadians = player.Pitch;
 
