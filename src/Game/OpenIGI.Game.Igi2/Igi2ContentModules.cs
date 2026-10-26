@@ -593,7 +593,7 @@ public sealed class Igi2MagicObjContentModule : IContentModule
     }
 }
 
-/// <summary>The model LOD settings: the game's file at start-up (<see cref="World.Igi2ModelLodTable"/>), and the types a level's adds.</summary>
+/// <summary>The model LOD settings: the game's file at start-up (<see cref="OpenIGI.Game.World.ModelLodTable"/>), and the types a level's adds.</summary>
 public sealed class Igi2ModelLodContentModule : IContentModule
 {
     /// <inheritdoc/>
@@ -606,7 +606,7 @@ public sealed class Igi2ModelLodContentModule : IContentModule
         context.Types.Register<World.Igi2ModelLodSettingsContainerTask>(World.Igi2ModelLodSettingsContainerTask.TypeName);
         context.Types.Register<World.Igi2LocalModelLodSettingsContainerTask>(World.Igi2LocalModelLodSettingsContainerTask.TypeName);
         context.Types.Register<World.Igi2ModelLodSettingsTask>(World.Igi2ModelLodSettingsTask.TypeName);
-        context.Services.GetOrProvide(static () => new World.Igi2ModelLodTable());
+        context.Services.GetOrProvide(static () => new OpenIGI.Game.World.ModelLodTable());
     }
 
     /// <inheritdoc/>
@@ -614,9 +614,9 @@ public sealed class Igi2ModelLodContentModule : IContentModule
     public void LoadTables(ContentLoadContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        World.Igi2ModelLodTable table = context.Services.Require<World.Igi2ModelLodTable>();
+        OpenIGI.Game.World.ModelLodTable table = context.Services.Require<OpenIGI.Game.World.ModelLodTable>();
         Engine.Tasks.GameTask container = context.Tasks.New(context.Tasks.Root, context.Tasks.Types.Get(World.Igi2ModelLodSettingsContainerTask.TypeName));
-        table.Load(container, World.Igi2ModelLodTable.GameFile, context.Resources, context.Natives);
+        table.Load(container, World.Igi2ModelLodScript.GameFile, context.Resources, context.Natives);
         table.KeepAsGame();
     }
 }

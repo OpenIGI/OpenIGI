@@ -51,7 +51,7 @@ public sealed class Igi2ScreenTasksTests
     [Fact]
     public void A_setting_keeps_its_distances_in_order()
     {
-        Igi2ModelLodTable table = new();
+        OpenIGI.Game.World.ModelLodTable table = new();
         Igi2ModelLodSettingsTask setting = new() { Model = "123_45_6  ", ToLod2 = 10f, ToLod3 = 5f, ToLod4 = 20f, ToLod5 = 1f, ToCutoff = 30f };
         setting.Apply(table);
         Assert.True(table.TryGet("123_45_6", out IReadOnlyList<float> distances));
@@ -63,7 +63,7 @@ public sealed class Igi2ScreenTasksTests
     public void The_games_settings_load_at_start_up()
     {
         Igi2Session session = Igi2Session.Start();
-        Assert.True(session.Require<Igi2ModelLodTable>().Count > 0);
+        Assert.True(session.Require<OpenIGI.Game.World.ModelLodTable>().Count > 0);
     }
 
     private static Igi2LevelRun Level()
