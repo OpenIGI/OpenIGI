@@ -48,6 +48,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public ObjectShading Shading { get; set; } = ObjectShading.Default;
 
+    /// <inheritdoc/>
+    public ModelLodPolicy? Lod { get; set; }
+
     // The glass pass's own order, rebuilt per frame. See the comment where it is filled.
     private readonly List<int> _glassOrder = [];
     private PlacementPose? _drawPoses;
@@ -362,12 +365,32 @@ public sealed partial class WorldRenderer : IWorldPresenter
             order = CollectionsMarshal.AsSpan(_glassOrder);
         }
 
+        // The view's horizontal half-angle tangent, which a level of detail is picked against.
+        float lodFieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
         foreach (int index in order)
         {
             ref WorldFrameEntry entry = ref frame[index];
             if (entry.Skip || entry.Model is not { } model)
             {
                 continue;
+            }
+
+            // The level this view draws the model at, as the original picks it for each view (0x4CFCB0); beyond its cutoff
+            // it is not drawn at all.
+            WorldPlacement displayed = entry.Displayed!;
+            if (Lod is { } lod && !entry.HasRotor && displayed.BentGeometry is null && entry.Variant < 0 && !entry.WasDestroyed)
+            {
+                int level = lod.Select(scene.Placements[index], entry.Position, camera, lodFieldOfView);
+                if (level < 0)
+                {
+                    continue;
+                }
+
+                if (level > 0 && lod.Level(displayed, level) is { } lower && _subsets.ResolveLevel(lower) is { } lowerModel)
+                {
+                    displayed = lower;
+                    model = lowerModel;
+                }
             }
 
             // Each pass takes only the half of the placements it is for: the rotors blend against the
@@ -415,7 +438,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure
                 // built only from what the frustum passed can never hold it.
                 SubmitTracedOnly(
-                    scene, model, entry.Displayed!, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
+                    scene, model, displayed, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
                     tracedOnly);
                 continue;
             }
@@ -456,7 +479,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                         // Hidden from the camera is not hidden from a ray. A wall standing between the
                         // two is exactly what a window reflects around.
                         SubmitTracedOnly(
-                            scene, model, entry.Displayed!, baseModelView,
+                            scene, model, displayed, baseModelView,
                             viewX, viewY, viewZ, bounds.Radius, tracedOnly);
                         continue;
                     }
@@ -468,7 +491,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 continue;
             }
 
-            WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, entry.Displayed!);
+            WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, displayed);
 
             CullMode cull = cullBackFaces && model.CanCullBackFaces ? CullMode.CounterClockwise : CullMode.None;
             if (cull != appliedCull)

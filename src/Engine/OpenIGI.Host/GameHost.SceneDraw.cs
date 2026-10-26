@@ -46,6 +46,12 @@ public sealed partial class GameHost
         // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
         // same authored haze through the froxel volume instead, and their models are lit by the
         // G-buffer pass rather than by this one.
+        // The original's levels of detail, on its own look only: the other presets draw every model whole.
+        if (_world is { } detailedWorld)
+        {
+            detailedWorld.Lod = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null;
+        }
+
         bool retailFog = FogCVars.RetailFog.Value;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
         _device.SetModelAmbient(

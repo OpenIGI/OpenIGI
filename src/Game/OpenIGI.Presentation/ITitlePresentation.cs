@@ -93,6 +93,12 @@ public interface IWorldPresenter : IDisposable
     /// </remarks>
     ObjectShading Shading { get; set; }
 
+    /// <summary>
+    /// Gets or sets which level of detail each model is drawn at from each view, or <see langword="null"/> to draw every model
+    /// whole, which is what every preset but the original's look does.
+    /// </summary>
+    Rendering.ModelLodPolicy? Lod { get; set; }
+
     /// <summary>Gets or sets the live rotating world objects, or null for a title with none.</summary>
     /// <remarks>
     /// Radar dishes and the authored <c>Rotating</c> tasks. The scene walk places them; this turns them,

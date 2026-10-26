@@ -43,7 +43,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay) : null)
             .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
-                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps })
+                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps, Sun = request.Sun })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<ViewModelPresentationRequest, IViewModelPresenter>(CreateViewModel)
@@ -158,6 +158,33 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         return DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings sun)
             ? new ObjectShading(ObjectShading.Default.LightmapGain, new FixedFunctionSun(GlobalLightSettings.Read(levelRoot).ObjectAmbient, sun.Colour, sun.Direction))
             : null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The level's <c>LODSettings</c> for rigid models (<c>0x4EDAA0</c>: percentages times 0.02, the ideal radius in
+    /// metres) and the game's own per-model distances, which <c>LOCAL:lod.qsc</c> makes as <c>ModelLODSettings</c>
+    /// (<c>0x4EDB60</c>: made ascending, in metres).
+    /// </remarks>
+    public ModelLodPolicy? ReadModelLod(GameTask levelRoot, Engine.Resources.ResourceRegistry resources)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        ArgumentNullException.ThrowIfNull(resources);
+        DeclaredTask? lod = levelRoot.Descendants().OfType<DeclaredTask>().FirstOrDefault(static t => t.Type.Name == "LODSettings");
+        if (lod is null)
+        {
+            return null;
+        }
+
+        ModelLodSettings settings = new(
+            Real(lod, "Distance to first switch, relative to object radius (Rigid Objects)") * ModelLodSettings.Percent,
+            Real(lod, "Cutoff distance, relative to object radius (Rigid Objects)") * ModelLodSettings.Percent,
+            Real(lod, "Degree to which radius affects LOD"),
+            Real(lod, "Ideal radius") * 4096f);
+        return new ModelLodPolicy(settings, Igi1ModelLodTable.Read(resources));
+
+        static float Real(DeclaredTask task, string name) =>
+            task.TryGetValue(name, out object? value) ? Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture) : 0f;
     }
 
     /// <inheritdoc/>

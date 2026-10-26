@@ -254,6 +254,9 @@ public sealed partial class GameHost : IDisposable
     private ICameraStatusLightPresenter? _cameraStatusLights;
     private IGrenadePresenter? _grenadeRenderer;
     private IMissilePresenter? _missileRenderer;
+
+    // How the level's models give up detail with distance, or none.
+    private ModelLodPolicy? _modelLod;
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
     private ISoldierBodies? _soldiers;
