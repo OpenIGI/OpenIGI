@@ -36,4 +36,11 @@ public enum BlendMode
     /// the ground the material passes left, once -- white leaves it as it was.
     /// </remarks>
     Modulate,
+
+    /// <summary>Darkening: <c>dst * (1 - src)</c>, the frame dimmed by the brightness of what is drawn.</summary>
+    /// <remarks>
+    /// Project I.G.I.'s sprites flagged <c>0x10</c> (<c>D3DQVertex_SetBlendStates</c>, <c>0x50E000</c>: <c>ZERO, INVSRCCOLOR</c>): an
+    /// explosion's black smoke, whose faint colour takes a little of the light behind it rather than painting it out.
+    /// </remarks>
+    Darken,
 }

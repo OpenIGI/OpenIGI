@@ -94,13 +94,15 @@ public readonly record struct SceneFog(Vector3f Colour, float DensityPerMetre)
 
     /// <summary>Gets the colour a draw of this blend fogs towards.</summary>
     /// <param name="blend">The blend the draw is submitted with.</param>
-    /// <returns>The level's colour for an opaque or translucent draw, black for an additive one.</returns>
+    /// <returns>The level's colour for an opaque or translucent draw, black for an additive or a darkening one.</returns>
     /// <remarks>
     /// An additive pass must add nothing at full fog or the ground would be fogged once per material
     /// pass; black is what makes the passes sum to one fogged surface. <c>sub_5144E0</c> sets exactly
-    /// this, blend by blend, and it is why the terrain's several passes come out fogged like one.
+    /// this, blend by blend, and it is why the terrain's several passes come out fogged like one. A darkening draw takes
+    /// its own colour from what is behind it, so black is what fades it out too: fogged towards the level's colour it would
+    /// leave a dim square in the haze.
     /// </remarks>
-    public Vector3f ColourFor(BlendMode blend) => blend == BlendMode.Additive ? default : Colour;
+    public Vector3f ColourFor(BlendMode blend) => blend is BlendMode.Additive or BlendMode.Darken ? default : Colour;
 
     /// <summary>What 127 out of 255 is, which is the half <c>TerrainRender_SetBlendMode</c> writes.</summary>
     /// <remarks>
