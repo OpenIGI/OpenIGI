@@ -56,6 +56,12 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
     /// <summary>Gets the namespace the level's expressions resolve in.</summary>
     public NativeRegistry Natives { get; }
 
+    /// <summary>
+    /// Gets another game's humans joined to the level: struck by its blasts, told its AI events, and seen by its detectors as
+    /// its own are.
+    /// </summary>
+    public Game.World.LevelJoiners Joined { get; } = new();
+
     /// <summary>Gets the natives the level's script text may call.</summary>
     public Igi2ScriptFunctions Functions { get; }
 

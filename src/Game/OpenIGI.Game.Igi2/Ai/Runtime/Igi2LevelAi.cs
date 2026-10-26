@@ -196,6 +196,7 @@ public static class Igi2LevelAi
             object thing = task switch
             {
                 Igi2HumanSoldierTask { Body: { } body } => body,
+                Igi2HumanSoldierTask { StandIn: { } standIn } => standIn,
                 Player.Igi2HumanPlayerTask => player,
                 _ => task,
             };
