@@ -242,4 +242,17 @@ public sealed class LauncherServicesTests
         Assert.Same(beta, await client.FetchAsync(service, ReleaseChannel.Beta, null, CancellationToken.None));
         Assert.Equal("\"b\"", server.Requests[2].Headers.IfNoneMatch.Single().Tag);
     }
+
+    [Fact]
+    public void The_site_lists_recent_releases_and_the_launcher_keeps_the_ones_since_its_own()
+    {
+        static ReleaseManifest Release(string version) => new(
+            ReleaseManifest.CurrentSchema, version, ReleaseChannel.Stable, DateTimeOffset.UnixEpoch, "commit", [], []);
+        ChannelFeed feed = new(ReleaseChannel.Stable, Release("0.3.0"), [Release("0.3.0"), Release("0.2.1"), Release("0.2.0")]);
+
+        Assert.Equal(["0.3.0", "0.2.1"], ReleaseFeedClient.Since(feed, "0.2.0").Releases.Select(static r => r.Version));
+        Assert.Empty(ReleaseFeedClient.Since(feed, "0.3.0+abcdef").Releases);
+        Assert.Equal(["0.3.0"], ReleaseFeedClient.Since(feed, null).Releases.Select(static r => r.Version));
+        Assert.Empty(ReleaseFeedClient.Since(new ChannelFeed(ReleaseChannel.Stable, null, []), null).Releases);
+    }
 }

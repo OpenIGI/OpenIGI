@@ -1,9 +1,9 @@
-# Publishes the versions a merge adds to OpenIGI's download store.
+# Publishes the versions a merge adds to OpenIGI's content store (OpenIGI/openigi-content's releases).
 #
 # In two jobs, so the mods' code never runs where the publishing key is: the first builds each version from its
-# source, with only a read token, on a GitHub-hosted runner; the second, in the mods-publish environment that holds the key
-# and needs a maintainer's approval, only chunks and uploads what the first built. The source and commit a listing
-# names come from the index, never from the package.
+# source, with only a read token; the second, in the mods-publish environment that holds the publisher app's key,
+# only chunks and uploads what the first built, then starts OpenIGI's site build, which lists it. The source and
+# commit a listing names come from the index, never from the package.
 name: Publish
 
 on:
@@ -90,26 +90,25 @@ jobs:
           name: packages
           path: packages
 
-      # The publisher key the release VM's dispatcher accepts (deploy/vm/bootstrap.sh), which can run its verbs alone.
-      - name: Reach the store
-        env:
-          KEY: ${{ secrets.MODS_PUBLISH_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.MODS_PUBLISH_KNOWN_HOSTS }}
-          HOST: ${{ vars.MODS_PUBLISH_HOST }}
-        run: |
-          install -d -m 0700 "$RUNNER_TEMP/ssh"
-          printf '%s\n' "$KEY" > "$RUNNER_TEMP/ssh/key" && chmod 0600 "$RUNNER_TEMP/ssh/key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
-          printf 'Host store\n  HostName %s\n  User deploy\n  IdentityFile %s\n  UserKnownHostsFile %s\n  IdentitiesOnly yes\n' \
-            "$HOST" "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts" > "$RUNNER_TEMP/ssh/config"
-          mkdir -p ~/.ssh && cp "$RUNNER_TEMP/ssh/config" ~/.ssh/config
+      # The publisher app's token, for the content store's releases and OpenIGI's site build alone. An app's key does not
+      # expire, as a personal token would.
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.PUBLISH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_KEY }}
+          owner: OpenIGI
+          repositories: openigi-content,OpenIGI
+          permission-contents: write
+          permission-actions: write
 
       - name: Publish
         env:
           ADDED: ${{ needs.build.outputs.added }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           tool="dotnet openigi/tools/OpenIGI.Tools.Release/bin/Release/net10.0/OpenIGI.Tools.Release.dll"
           printf '%s' "$ADDED" | tr ';' '\n' | while read -r id version; do
             [ -n "$id" ] || continue
-            $tool mods-index publish index "$id" "$version" --package "packages/$id/$version" --ssh store
+            $tool mods-index publish index "$id" "$version" --package "packages/$id/$version"
           done

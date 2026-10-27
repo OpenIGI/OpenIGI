@@ -1,0 +1,77 @@
+name: Site
+
+# Builds openigi.com and publishes it on GitHub Pages: the browser build of the newest stable release at the root and
+# of the newest release at /beta/, and the files the launcher and the site's buttons read (tools/OpenIGI.Tools.Release,
+# `site build`): the update feeds, the content and mods indexes and manifests, the packs' pictures and the download
+# links. Everything comes from the releases (their release.json and openigi-web tarball) and the content store
+# (OpenIGI/openigi-content's releases), so a build can be run again at any time and gives the same site.
+#
+# Run by a release (release.yml) and a web-only deploy (deploy-web.yml) once their files are on GitHub, by a content
+# or mod publish (`content publish` starts it), and by Run workflow.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: read
+  pages: write
+  id-token: write
+
+# One build at a time, each from what is published when it starts; a newer one waiting replaces an older one waiting.
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: .nuget/packages
+          key: nuget-site-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Build the site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dotnet run --project tools/OpenIGI.Tools.Release --configuration Release -- site build --out "$RUNNER_TEMP/site"
+          {
+            echo "### openigi.com"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/site/healthz"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,39 +1,23 @@
-using System.Security.Cryptography;
-using System.Text;
 using OpenIGI.Releases;
 
-namespace OpenIGI.Services;
+namespace OpenIGI.Tools.Release;
 
-/// <summary>Every published release, newest first, and the answers the endpoints give from them.</summary>
-/// <remarks>
-/// Immutable: the scanner builds a new one when the store changes and swaps it in, so a request never sees
-/// half a scan. The tag is a hash over what every answer is built from, which is what a client's
-/// <c>If-None-Match</c> is compared against.
-/// </remarks>
+/// <summary>Every published release, newest first, and the feeds and download links the site serves from them.</summary>
 internal sealed class ReleaseIndex
 {
     private readonly IReadOnlyList<ReleaseManifest> _releases;
 
     /// <summary>Initializes a new instance of the <see cref="ReleaseIndex"/> class.</summary>
     /// <param name="releases">The releases found, in any order, each with the store folder it is in.</param>
-    /// <param name="downloadUrl">The download address template (see <see cref="ReleaseOptions.DownloadUrl"/>).</param>
+    /// <param name="downloadUrl">
+    /// Where an archive is downloaded from: <c>{folder}</c> (the release's folder), <c>{tag}</c> (its git tag),
+    /// <c>{version}</c> and <c>{name}</c> are replaced per asset.
+    /// </param>
     public ReleaseIndex(IEnumerable<(ReleaseManifest Release, string Folder)> releases, string downloadUrl)
     {
         _releases = [.. releases
             .Select(found => WithUrls(found.Release, found.Folder, downloadUrl))
             .OrderByDescending(static release => release.ParsedVersion)];
-
-        StringBuilder identity = new(downloadUrl);
-        foreach (ReleaseManifest release in _releases)
-        {
-            identity.Append('|').Append(release.ReleaseTag);
-            foreach (ReleaseAsset asset in release.Assets)
-            {
-                identity.Append(':').Append(asset.Sha256);
-            }
-        }
-
-        Tag = $"\"{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity.ToString())))[..16]}\"";
     }
 
     /// <summary>Initializes a new instance of the <see cref="ReleaseIndex"/> class, each release in the folder named for its version.</summary>
@@ -47,30 +31,21 @@ internal sealed class ReleaseIndex
     /// <summary>Gets an index with no releases in it.</summary>
     public static ReleaseIndex Empty { get; } = new(Array.Empty<ReleaseManifest>(), string.Empty);
 
-    /// <summary>Gets the entity tag of this index, quoted as HTTP wants it.</summary>
-    public string Tag { get; }
-
     /// <summary>Gets how many releases the index holds.</summary>
     public int Count => _releases.Count;
 
-    /// <summary>Answers what one channel offers.</summary>
+    /// <summary>Answers what one channel offers to every caller at once, as a file the site serves.</summary>
     /// <param name="channel">The channel.</param>
-    /// <param name="since">The version the caller has; releases newer than it are listed.</param>
-    /// <returns>The channel's newest release and the releases the caller has not got.</returns>
+    /// <param name="keep">How many of the channel's newest releases are listed.</param>
+    /// <returns>The channel's newest release and its <paramref name="keep"/> newest releases.</returns>
     /// <remarks>
-    /// The beta channel offers stable releases too, so a beta player is never left behind a stable release
-    /// that came after their last beta. A release of the launcher alone is never a game update.
+    /// A static file cannot answer <c>?since=</c>, so it lists the recent releases and the launcher keeps the ones
+    /// newer than its own; a launcher further behind than <paramref name="keep"/> releases sees the newest notes only.
     /// </remarks>
-    public ChannelFeed Feed(ReleaseChannel channel, string? since)
+    public ChannelFeed Published(ReleaseChannel channel, int keep)
     {
-        List<ReleaseManifest> offered = [.. _releases.Where(release => Offers(channel, release))];
-        ReleaseManifest? latest = offered.FirstOrDefault();
-
-        IReadOnlyList<ReleaseManifest> releases = ReleaseVersion.TryParse(since, out ReleaseVersion installed)
-            ? [.. offered.Where(release => release.ParsedVersion > installed)]
-            : latest is null ? [] : [latest];
-
-        return new ChannelFeed(channel, latest, releases, NewestLauncher());
+        List<ReleaseManifest> offered = [.. _releases.Where(release => Offers(channel, release)).Take(keep)];
+        return new ChannelFeed(channel, offered.FirstOrDefault(), offered, NewestLauncher());
     }
 
     /// <summary>The newest stable release with a launcher; for one runtime when one is named.</summary>

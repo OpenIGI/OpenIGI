@@ -9,12 +9,12 @@ using OpenIGI.Tools.Release;
 //       --version 0.2.0-beta.3 --channel beta --commit <sha>
 //       --notes <git-cliff --context output> --assets <folder of downloads> [--tag <git tag>]
 //
-// The manifest (release.json) is what the update service serves and the launcher installs from; the same
+// The manifest (release.json) is what the site's feeds are built from and the launcher installs from; the same
 // run also writes SHA256SUMS, so an archive downloaded by hand can be checked with sha256sum -c.
 
 //   dotnet run --project tools/OpenIGI.Tools.Release -- content publish <pack folder>
 //       --pack hd-textures --version 1.0.0 --title <name> --summary <text> --game igi1
-//       [--min-game 0.2.0-beta.1] [--ssh deploy@sh-de | --to-dir <store folder> | --upload-file <tar.gz>] [--remote <command>]
+//       [--min-game 0.2.0-beta.1] [--github OpenIGI/openigi-content [--no-site] | --to-dir <store folder>]
 //       [--cache <folder>] [--dry-run]
 //
 // Publishes a version of an optional content pack: cuts its files into chunks, asks the store which of them
@@ -28,6 +28,13 @@ using OpenIGI.Tools.Release;
 // What the community mods index's workflows run (see ModsIndex): a pull request is checked against the index's rules and
 // its author's ownership, each version it adds is built (a mod with code from its source), and once merged published
 // with content publish --kind mod.
+
+//   dotnet run --project tools/OpenIGI.Tools.Release -- site build --out <folder>
+//       [--repo OpenIGI/OpenIGI] [--content-repo OpenIGI/openigi-content] [--releases <folder>] [--content <folder>] [--no-web]
+//
+// Builds openigi.com as GitHub Pages serves it (see SiteCommand): the browser build of the newest stable release at
+// the root and of the newest release at /beta/, and the update feeds, content and mods indexes and download links
+// the launcher and the site's buttons read, from the releases and the content store.
 
 return ToolHost.Run("Release", args, Run);
 
@@ -44,11 +51,17 @@ static int Run(ToolContext ctx)
         return ModsIndexCommand.Run(ctx, [.. args.Skip(1)]);
     }
 
+    if (args.Count >= 1 && args[0] == "site")
+    {
+        return SiteCommand.Run(ctx, [.. args.Skip(1)]);
+    }
+
     if (args.Count == 0 || args[0] != "manifest")
     {
         return ctx.Usage(
             ContentCommand.Usage + "\n"
             + ModsIndexCommand.Usage + "\n"
+            + SiteCommand.Usage + "\n"
             + "usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
     }
 

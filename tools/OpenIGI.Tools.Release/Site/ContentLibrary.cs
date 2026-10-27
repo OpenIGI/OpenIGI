@@ -1,14 +1,11 @@
-using System.Security.Cryptography;
-using System.Text;
 using OpenIGI.Releases;
 
-namespace OpenIGI.Services;
+namespace OpenIGI.Tools.Release;
 
-/// <summary>Every published version of every optional content pack, as of one scan of the content store.</summary>
+/// <summary>Every published version of every optional content pack, as the site serves them.</summary>
 /// <remarks>
-/// Immutable, so a scan builds a new one and swaps it in whole. The manifests are kept as the JSON they were
-/// read from, which is what the service hands out: a pack's manifest lists every chunk of every file, and
-/// serializing it again for each request would cost more than the request.
+/// The manifests are kept as the JSON they were read from, which is what the site hands out: the store's own
+/// bytes, never a reserialization that could drift from what was published.
 /// </remarks>
 internal sealed class ContentLibrary
 {
@@ -30,7 +27,6 @@ internal sealed class ContentLibrary
 
         _manifests = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         Dictionary<string, ContentManifest> newest = new(StringComparer.Ordinal);
-        StringBuilder identity = new(chunkUrl);
 
         foreach ((ContentManifest manifest, string json) in versions)
         {
@@ -40,7 +36,6 @@ internal sealed class ContentLibrary
             }
 
             byVersion[manifest.Version] = json;
-            identity.Append('|').Append(manifest.Id).Append('@').Append(manifest.Version);
 
             if (!newest.TryGetValue(manifest.Id, out ContentManifest? current)
                 || manifest.ParsedVersion > current.ParsedVersion)
@@ -62,7 +57,6 @@ internal sealed class ContentLibrary
             if (packs?.GetValueOrDefault(manifest.Id) is { } info)
             {
                 listing = info.Apply(listing, Picture);
-                identity.Append('|').Append(info.Title).Append('|').Append(info.Summary).Append('|').Append(info.Thumbnail);
             }
 
             listed.Add(listing);
@@ -72,7 +66,6 @@ internal sealed class ContentLibrary
         Index = new ContentIndex(chunkUrl, [.. listed.Where(static pack => pack.Kind != ContentKind.Mod)]);
         Mods = new ContentIndex(chunkUrl, [.. listed.Where(static pack => pack.Kind == ContentKind.Mod)]);
         Count = _manifests.Values.Sum(static versions => versions.Count);
-        Tag = $"\"{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity.ToString())))[..16]}\"";
     }
 
     /// <summary>Gets a library with nothing in it, for before the first scan.</summary>
@@ -87,8 +80,9 @@ internal sealed class ContentLibrary
     /// <summary>Gets how many pack versions there are.</summary>
     public int Count { get; }
 
-    /// <summary>Gets an entity tag that changes whenever a version is published or removed.</summary>
-    public string Tag { get; }
+    /// <summary>Gets every version of every pack, with its manifest's JSON.</summary>
+    public IEnumerable<(string Id, string Version, string Json)> Versions =>
+        _manifests.SelectMany(static pack => pack.Value.Select(version => (pack.Key, version.Key, version.Value)));
 
     /// <summary>Finds a manifest's JSON.</summary>
     /// <param name="id">The pack.</param>

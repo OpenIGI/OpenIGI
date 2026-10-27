@@ -8,10 +8,13 @@ namespace OpenIGI.Tools.Release;
 /// <summary>The <c>content</c> command line: publishing, listing, describing and deleting optional content packs.</summary>
 internal static class ContentCommand
 {
-    /// <summary>The SSH destination when none is given: the release VM's deploy user.</summary>
-    private const string DefaultSsh = "deploy@sh-de";
+    /// <summary>The repository whose releases hold the published store when none is given.</summary>
+    internal const string DefaultRepository = "OpenIGI/openigi-content";
 
-    internal const string Store = "[--ssh <host> [--remote <cmd>] [--service <url>] | --to-dir <dir> | --upload-file <tar.gz>]";
+    /// <summary>The repository whose site lists the published store.</summary>
+    internal const string SiteRepository = "OpenIGI/OpenIGI";
+
+    internal const string Store = "[--github <owner/repo> [--no-site] | --to-dir <dir>]";
 
     // What a mod's mod.json says of it, which the command line may not say otherwise.
     private static readonly string[] ModManifestOptions = ["--pack", "--version", "--title", "--summary", "--game", "--min-game", "--platform"];
@@ -40,7 +43,7 @@ internal static class ContentCommand
         Dictionary<string, string> options = new(StringComparer.Ordinal);
         for (int i = verb == "list" ? 1 : 2; i < args.Count; i++)
         {
-            if (args[i] is "--dry-run" or "--yes" or "--no-thumbnail")
+            if (args[i] is "--dry-run" or "--yes" or "--no-thumbnail" or "--no-site")
             {
                 flags.Add(args[i]);
             }
@@ -56,7 +59,7 @@ internal static class ContentCommand
 
         try
         {
-            IContentStore store = OpenStore(options);
+            IContentStore store = OpenStore(options, flags);
             return verb switch
             {
                 "publish" => Publish(context, subject!, options, flags, store),
@@ -74,16 +77,13 @@ internal static class ContentCommand
         }
     }
 
-    /// <summary>Opens the store the options name: the release VM over SSH (the default), a folder, or an upload file.</summary>
+    /// <summary>Opens the store the options name: the published one on GitHub (the default), or a folder.</summary>
     /// <param name="options">The command line's options.</param>
+    /// <param name="flags">The command line's flags; <c>--no-site</c> leaves rebuilding the site to the caller.</param>
     /// <returns>The store.</returns>
-    internal static IContentStore OpenStore(Dictionary<string, string> options) =>
+    internal static IContentStore OpenStore(Dictionary<string, string> options, HashSet<string> flags) =>
         options.TryGetValue("--to-dir", out string? directory) ? new FolderStore(directory)
-        : options.TryGetValue("--upload-file", out string? tarball) ? new TarballStore(tarball)
-        : new SshStore(
-            options.GetValueOrDefault("--ssh") ?? DefaultSsh,
-            options.GetValueOrDefault("--remote") ?? string.Empty,
-            new Uri((options.GetValueOrDefault("--service") ?? "https://api.openigi.com/").TrimEnd('/') + "/"));
+        : new GitHubStore(options.GetValueOrDefault("--github") ?? DefaultRepository, flags.Contains("--no-site") ? null : SiteRepository);
 
     private static int Publish(ToolContext context, string folder, Dictionary<string, string> options, HashSet<string> flags, IContentStore store)
     {
@@ -172,8 +172,8 @@ internal static class ContentCommand
             throw new ArgumentException("--thumbnail and --no-thumbnail cannot both be given.");
         }
 
-        ContentPack? current = store is TarballStore ? null : store.List().FirstOrDefault(p => p.Id == id);
-        if (current is null && store is not TarballStore)
+        ContentPack? current = store.List().FirstOrDefault(p => p.Id == id);
+        if (current is null)
         {
             throw new InvalidOperationException($"There is no pack {id}; publish a version first.");
         }

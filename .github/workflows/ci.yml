@@ -9,7 +9,7 @@ on:
     branches: [develop]
   workflow_dispatch:
 
-# One runner does everything, so a newer commit supersedes the run in flight for its pull request or branch.
+# A newer commit supersedes the run in flight for its pull request or branch.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -21,9 +21,8 @@ permissions:
 env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
-# Where the jobs run is one repository variable, CI_RUNS_ON (a JSON runs-on value). Unset, it is the
-# self-hosted runner; set it to "ubuntu-latest" once the repository is public and GitHub's runners are free.
-# A pull request from a fork never runs on the self-hosted machine: it is arbitrary code from outside.
+# Every job runs on GitHub's own runners, which a public repository has for free, so a pull request from a fork is
+# built and tested like any other.
 # Steps run in bash everywhere: a job container's default shell is sh, which has no arrays or ${x::n}.
 defaults:
   run:
@@ -32,8 +31,7 @@ defaults:
 jobs:
   build:
     name: build-and-test
-    if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
       image: ghcr.io/openigi/ci:latest
@@ -80,8 +78,7 @@ jobs:
   # slangc can still build; this is what stops either going stale against its source.
   generated:
     name: generated-artifacts
-    if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
       image: ghcr.io/openigi/ci:latest
@@ -132,8 +129,7 @@ jobs:
   # the assemblies enters the native table, including ones the browser's WebGPU shim does not provide.
   web:
     name: web-publish
-    if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
       image: ghcr.io/openigi/ci:latest

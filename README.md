@@ -150,9 +150,8 @@ src/
   Audio/      OpenAL and Web Audio
   Platform/   windowing and input for desktop and browser
   UI/         the UI framework used by the menus and the launcher
-services/   the update and content service behind api.openigi.com
 sdk/        the modding SDK, the project template and the community index's rules
-tools/      asset extraction, QVM disassembly, shader build, release tooling
+tools/      asset extraction, QVM disassembly, shader build, release and site tooling
 tests/      xUnit test projects
 ```
 

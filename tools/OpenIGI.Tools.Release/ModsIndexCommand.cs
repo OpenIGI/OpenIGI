@@ -100,7 +100,7 @@ internal static class ModsIndexCommand
                     string cache = options.GetValueOrDefault("--cache") ?? Path.Combine(Path.GetTempPath(), "openigi-content-cache", details.Id);
                     ContentPublish.Chunked chunked = ContentPublish.Chunk(package, details, cache, DateTimeOffset.UtcNow);
                     bool dryRun = options.GetValueOrDefault("--dry-run") == "true";
-                    IContentStore store = ContentCommand.OpenStore(options);
+                    IContentStore store = ContentCommand.OpenStore(options, []);
                     ContentPublish.Publish(chunked, store, dryRun, context.Out);
 
                     // The picture beside the mod's entry, when it has one, as the mod's own description.
