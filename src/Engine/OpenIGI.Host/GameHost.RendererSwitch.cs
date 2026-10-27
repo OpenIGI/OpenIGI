@@ -146,12 +146,6 @@ public sealed partial class GameHost
                 Flying: false);
         }
 
-        if (_playerMode && HostedPlayer is { } player)
-        {
-            Vector3d feet = player.Body.Position / WorldScene.UnitsPerMetre;
-            return new RendererSwitchPose(feet, player.Body.Yaw, player.Body.Pitch, Flying: false);
-        }
-
         return _camera is { } camera
             ? new RendererSwitchPose(camera.Position, camera.Yaw, camera.Pitch, Flying: true)
             : null;
@@ -199,14 +193,10 @@ public sealed partial class GameHost
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
         }
-        else if (TitlePlayer is not null && _titleFeatures?.Placement is { } placement)
+        else if (TitlePlayer is not null && _titleFeatures?.Placement is { } placement
+            && placement.TryPlace(pose.Position * TitleUnitsPerMetre, pose.Yaw))
         {
             // Back on its feet where it stood, the way it faced; its look's pitch is its own to set again.
-            _playerMode = placement.TryPlace(pose.Position * TitleUnitsPerMetre, pose.Yaw);
-        }
-        else if (HostedPlayer is { } player && player.Place(_mission.Ground, pose.Position, pose.Yaw))
-        {
-            player.Body.Pitch = pose.Pitch;
             _playerMode = true;
         }
         else

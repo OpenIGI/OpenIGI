@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
 public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? ground)
-    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitleBallisticImpacts, ITitlePlayerPlacement
+    : ITitlePlayer, ITitleFirstPerson, ITitlePlayerLook, ITitleBallisticImpacts, ITitlePlayerPlacement, IWeaponWheelPlayer
 {
     private TitleLookPreview? _look;
 
@@ -52,6 +52,15 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
 
     /// <inheritdoc/>
     public Matrix3f ViewOrientation => IsDeathViewActive ? _death.Camera.Orientation : Human.Rig.Camera.Orientation;
+
+    /// <inheritdoc/>
+    public WeaponWheel Wheel => Human.Rig.Wheel;
+
+    /// <inheritdoc/>
+    public (IReadOnlyList<string> Choices, int Current) WheelChoices() => Human.Rig.WheelChoices();
+
+    /// <inheritdoc/>
+    public void ChooseFromWheel(string choice) => Human.Rig.ChooseFromWheel(choice);
 
     /// <inheritdoc/>
     /// <remarks>The rig's own placement: a teleport, onto the ground below.</remarks>

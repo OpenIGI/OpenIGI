@@ -246,8 +246,7 @@ public sealed partial class GameHost
             _entry.Update(
                 entryElapsed,
                 liveOrbit,
-                TitlePlayer is { } titleStanding ? CameraPose.FromCamera(TitleCamera(titleStanding))
-                    : HostedPlayer is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
+                TitlePlayer is { } titleStanding ? CameraPose.FromCamera(TitleCamera(titleStanding)) : null);
 
             // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
             // where the one frame the promotion still costs is least visible. What it used to cost --
@@ -291,16 +290,12 @@ public sealed partial class GameHost
             {
                 if (_entry.ShowPlayerBody && TitlePlayer is { Heading: { } heading } titleBody)
                 {
-                    bodies.StandPlayerBodyAt(titleBody.Position, -heading);
-                }
-                else if (_entry.ShowPlayerBody && HostedPlayer is { } standingBody)
-                {
-                    // Minus the yaw, for the reason the third-person follow states at length: a
+                    // Minus the heading, for the reason the third-person follow states at length: a
                     // heading is a gamma and turns the other way. This shot has always faced the
                     // character the wrong way about; it went unnoticed because the dive ends inside
                     // their head and the level's own spawn heading is often near zero, where the
                     // mirror shows nothing.
-                    bodies.StandPlayerBodyAt(standingBody.Body.Position, -standingBody.Body.Yaw);
+                    bodies.StandPlayerBodyAt(titleBody.Position, -heading);
                 }
                 else
                 {

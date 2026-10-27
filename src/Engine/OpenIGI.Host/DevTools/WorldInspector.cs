@@ -126,8 +126,8 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     /// <inheritdoc/>
     public bool TryTeleportPlayerTo(int id) =>
-        game.Player is not null && TryResolvePosition(id, out Vector3d position) &&
-        game.Player.Place(game.Ground, position, game.Player.Body.Yaw);
+        game.Player is ITitlePlayerPlacement placement && TryResolvePosition(id, out Vector3d position) &&
+        placement.TryPlace(position * WorldScene.UnitsPerMetre, game.Player.Heading ?? 0f);
 
     /// <inheritdoc/>
     public bool TryMoveCameraTo(int id)
@@ -252,12 +252,14 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 
     /// <summary>Gets where the reader is looking from, which distances are measured against.</summary>
     /// <remarks>
-    /// <c>game.Player.Position</c>, not <c>game.Player.Body.Position</c>: the body keeps its position in the
-    /// level's own units and the camera converts, so reading the body here put every distance out by
+    /// In metres: the player keeps its position in the level's own units, so reading it unconverted put every distance out by
     /// a factor of four thousand — reported as soldiers a hundred million metres away.
     /// </remarks>
     private Vector3d ViewpointPosition() =>
-        game.PlayerMode && game.Player is not null ? game.Player.Position : game.Camera?.Position ?? default;
+        game.PlayerMode && game.Player is not null ? PlayerMetres(game.Player) : game.Camera?.Position ?? default;
+
+    // Where a player stands, in metres.
+    private static Vector3d PlayerMetres(ITitlePlayer player) => player.Position / WorldScene.UnitsPerMetre;
 
     // ---- Listing ----
 
@@ -268,7 +270,7 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
             return;
         }
 
-        Vector3d at = game.Player.Position;
+        Vector3d at = PlayerMetres(game.Player);
         into.Add(new InspectableEntity(
             KindPlayer * KindStride,
             "player",
@@ -561,10 +563,11 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
             return;
         }
 
-        into.Add(Position(game.Player.Position));
-        into.Add(Line($"yaw {game.Player.Body.Yaw:0.00}   pitch {game.Player.Body.Pitch:0.00}"));
-        into.Add(Line($"eye {game.Player.Camera.Position.Z:0.0} m   mode {(game.PlayerMode ? "walking" : "free camera")}"));
-        into.Add(Line($"dead {(game.PlayerDead ? "yes" : "no")}   ladder {(game.Player.IsOnLadder ? "yes" : "no")}"));
+        into.Add(Position(PlayerMetres(game.Player)));
+        float pitch = MathF.Asin(Math.Clamp(game.Player.ViewOrientation.Row3.Z, -1f, 1f));
+        into.Add(Line($"yaw {game.Player.Heading ?? 0f:0.00}   pitch {pitch:0.00}"));
+        into.Add(Line($"eye {game.Player.EyePosition.Z / WorldScene.UnitsPerMetre:0.0} m   mode {(game.PlayerMode ? "walking" : "free camera")}"));
+        into.Add(Line($"dead {(game.PlayerDead ? "yes" : "no")}   orbit {(game.PlayerViewOrbits ? "yes" : "no")}"));
     }
 
     private void DetailSoldier(List<string> into, int index)
@@ -818,8 +821,11 @@ internal sealed class WorldInspector(IInspectedWorld game) : IWorldInspector
 /// <summary>What the <see cref="WorldInspector"/> reads of the running game.</summary>
 internal interface IInspectedWorld
 {
-    /// <summary>Gets the player's rig, when one stands in the level.</summary>
-    IHostedPlayer? Player { get; }
+    /// <summary>Gets the player, when one stands in the level.</summary>
+    ITitlePlayer? Player { get; }
+
+    /// <summary>Gets a value indicating whether the view orbits the player's body: on a ladder, or in a world interaction.</summary>
+    bool PlayerViewOrbits { get; }
 
     /// <summary>Gets whether the view is the player's rather than the free camera's.</summary>
     bool PlayerMode { get; }

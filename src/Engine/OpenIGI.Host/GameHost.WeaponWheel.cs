@@ -34,7 +34,7 @@ public sealed partial class GameHost
     private bool _wheelSteered;
 
     /// <summary>Gets the player whose weapons the wheel offers, the title's own or the game's.</summary>
-    private IWeaponWheelPlayer? WheelPlayer => (TitlePlayer as IWeaponWheelPlayer) ?? (HostedPlayer as IWeaponWheelPlayer);
+    private IWeaponWheelPlayer? WheelPlayer => TitlePlayer as IWeaponWheelPlayer;
 
     /// <summary>Gets a value indicating whether the wheel holds the player's input this frame.</summary>
     private bool WheelHoldsInput => WheelPlayer?.Wheel.IsOpen == true;

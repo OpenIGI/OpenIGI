@@ -151,12 +151,6 @@ public sealed partial class GameHost
 
         public TerrainData? Terrain => host._mission.Terrain;
 
-        public Formats.Animation.BoneAnimationSet? ReadSharedAnimations()
-        {
-            host.ReadSharedAnimations();
-            return host._playerBodyAnimations;
-        }
-
         public void EndStage(string what) => host.EndStage(what);
 
 

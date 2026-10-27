@@ -161,12 +161,16 @@ public sealed partial class GameHost
         ForgetTitleInput();
         _playerMode = !_options.StartFlying;
 
+        // The eye, spelled the way the capture flags take it. Walking and flying are supposed to draw the same picture from the
+        // same place, and the only way to check that is to put the free camera exactly where the walking eye is.
         Vector3d eye = player.EyePosition;
         _logger.Information(
             "Player",
-            FormattableString.Invariant($"The title's player stands at {player.Position}; eye at -campos ")
+            FormattableString.Invariant($"The title's player stands at {player.Position}; F1 for the free camera; eye at -campos ")
                 + FormattableString.Invariant(
-                    $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}."));
+                    $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}")
+                + (player.Heading is { } heading ? FormattableString.Invariant($" -yaw {heading:F4}") : string.Empty)
+                + ".");
     }
 
     /// <summary>Forgets what the mouse and the keys did since the title's player last ticked.</summary>

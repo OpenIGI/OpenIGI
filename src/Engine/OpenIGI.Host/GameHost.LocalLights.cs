@@ -38,10 +38,6 @@ public sealed partial class GameHost
         {
             people.Add(WorldScene.ToMetres(title.Position));
         }
-        else if (HostedPlayer is { } player)
-        {
-            people.Add(WorldScene.ToMetres(player.Body.Position));
-        }
 
         if (_soldiers is { } soldiers)
         {

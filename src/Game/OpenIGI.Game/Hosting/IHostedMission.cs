@@ -42,6 +42,12 @@ public interface IHostedMission : IMissionGameplay
     /// <summary>Gets the mission's own impact effects.</summary>
     IMissionImpacts Impacts { get; }
 
+    /// <summary>
+    /// Starts reading, on a worker, what every mission of the game stands its player with -- the animation sets under its
+    /// installation's common data -- so the first mission does not wait on it.
+    /// </summary>
+    void Prefetch();
+
     /// <summary>Starts bringing up a level's player.</summary>
     /// <returns>The bring-up, whose rig is made by <see cref="IPlayerBringUp.Begin"/>.</returns>
     IPlayerBringUp NewPlayerSetup();
@@ -157,8 +163,6 @@ public interface IPlayerBringUp
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
     WeaponTypeRegistry Weapons { get; }
 
-    /// <summary>Gets the rig being brought up, as the host steers it.</summary>
-    IHostedPlayer Player { get; }
 
     /// <summary>Makes the player's rig and reads the tables it and the soldiers use.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
@@ -175,9 +179,12 @@ public interface IPlayerBringUp
     /// <summary>Tunes the rig from the title's player script.</summary>
     void Configure();
 
-    /// <summary>Gives the rig its first-person rig.</summary>
-    /// <param name="animations">The first-person rig's animation set.</param>
-    void UseViewRig(BoneAnimationSet animations);
+    /// <summary>Gets the animation set the player's body walks on, which its third-person body is built from; none without it.</summary>
+    BoneAnimationSet? BodyAnimations { get; }
+
+    /// <summary>Gives the rig its first-person rig, where the game has one to give.</summary>
+    /// <returns>Whether it has one: what the arms are drawn on and a weapon hangs off.</returns>
+    bool UseViewRig();
 
     /// <summary>Hands the rig what the level declares it carries.</summary>
     /// <param name="levelRoot">The level's task tree.</param>

@@ -313,7 +313,7 @@ public sealed partial class GameHost
         // Started rather than done: at start-up the thing between the player and the first frame is this
         // thread, and the read needs nothing from it. The first mission waits for the result, by when it
         // has been sitting finished for several seconds.
-        BeginReadingSharedAnimations();
+        _hosted.Prefetch();
 
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally

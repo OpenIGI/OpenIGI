@@ -101,7 +101,7 @@ public sealed partial class GameHost
         {
             float tanX = view.Sight.TanX;
             shown = new RemasteredBinocularView(
-                TitlePlayer?.Heading ?? HostedPlayer?.Body.Yaw ?? 0f,
+                TitlePlayer?.Heading ?? 0f,
                 tanX > 1e-4f ? HumanView.DefaultTanX / tanX : 1f,
                 _binocularContacts,
                 _binocularOptics.Seconds,

@@ -62,27 +62,5 @@ public sealed partial class GameHost
         {
             ToggleTitlePlayer();
         }
-        else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F1) && HostedPlayer is not null && _camera is not null)
-        {
-            _playerMode = !_playerMode;
-            if (_playerMode)
-            {
-                if (!HostedPlayer.Place(_mission.Ground, _camera.Position, _camera.Yaw))
-                {
-                    _playerMode = false;
-                    _logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
-                }
-                else
-                {
-                    // Place() drops the player's presentation pair because this is a teleport.
-                }
-            }
-            else
-            {
-                _camera.MoveTo(HostedPlayer.Camera.Position, HostedPlayer.Body.Yaw, HostedPlayer.Body.Pitch);
-            }
-
-            _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
-        }
     }
 }
