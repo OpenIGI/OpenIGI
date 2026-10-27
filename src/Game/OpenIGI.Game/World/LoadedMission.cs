@@ -90,6 +90,45 @@ public sealed record LoadedMission(
         return false;
     }
 
+    /// <summary>Finds the instance a model is placed as, across the packs, with the pack that holds it.</summary>
+    /// <param name="name">The instance's name, for example <c>003_01_1</c>.</param>
+    /// <param name="pack">Receives the pack.</param>
+    /// <param name="instance">Receives the instance.</param>
+    /// <param name="modelled">Whether only an instance whose pack holds its model will do, as a weapon's part needs.</param>
+    /// <param name="commonFirst">Whether the common pack is asked before the level's, as the first-person arms are read.</param>
+    /// <returns><see langword="false"/> when no pack places it.</returns>
+    /// <remarks>
+    /// The same precedence <see cref="TryGetModel(string, out MefModel?)"/> uses -- the level's pack, the common one, then any other
+    /// the mission opened -- so a body found in another pack is drawn with that pack's textures.
+    /// </remarks>
+    public bool TryFindInstance(
+        string name,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out LoadedPack? pack,
+        out MtpInstance instance,
+        bool modelled = false,
+        bool commonFirst = false)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        LoadedPack first = commonFirst ? CommonPack : LevelPack;
+        LoadedPack second = commonFirst ? LevelPack : CommonPack;
+        foreach (LoadedPack candidate in OtherPacks.Prepend(second).Prepend(first))
+        {
+            foreach (MtpInstance placed in candidate.Instances)
+            {
+                if (string.Equals(placed.Name, name, StringComparison.OrdinalIgnoreCase) && (!modelled || candidate.TryGetModel(placed, out MefModel? _)))
+                {
+                    pack = candidate;
+                    instance = placed;
+                    return true;
+                }
+            }
+        }
+
+        pack = null;
+        instance = default;
+        return false;
+    }
+
     /// <summary>Resolves the diffuse texture a model's material slot samples, across the packs.</summary>
     /// <param name="model">The model's name, as level data spells it.</param>
     /// <param name="materialSlot">The draw record's material slot.</param>

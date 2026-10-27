@@ -36,6 +36,9 @@ public sealed class Igi1GuestLevel
     private readonly GameLoop _loop;
     private readonly GuestTaskIds _ids;
 
+    // The player standing in the host's level, once one does: its rig and what it is hurt and heard in.
+    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings)? _player;
+
     private Igi1GuestLevel(Igi1GuestContent content, LevelTask root)
     {
         _content = content;
@@ -154,6 +157,13 @@ public sealed class Igi1GuestLevel
         Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
         rig.Humans = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
 
+        if (start.Surroundings is Igi1GuestPlayerSurroundings heard)
+        {
+            heard.Stage.Player = rig;
+        }
+
+        _player = (rig, start.Surroundings);
+
         // It takes the game's guns lying in the level as it reaches them, with the game's cue.
         rig.UseGunPickups(GunPickups);
         rig.GunPickedUp += _ => start.Surroundings.PlayDefinition(Igi1MissionAudio.GunPickupSound, Igi1MissionAudio.GunPickupSoundPriority);
@@ -167,7 +177,15 @@ public sealed class Igi1GuestLevel
         task.Events = human;
         task.StandIn = task;
         world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
-        return new Igi1TitlePlayer(human, world.Ground);
+        Igi1TitlePlayer player = new(human, world.Ground);
+
+        // As it dies, the camera pulls back from where it falls, kept off the host's walls.
+        if (start.Surroundings is Igi1GuestPlayerSurroundings surroundings)
+        {
+            surroundings.DeathCamera = (feet, facing) => player.BeginDeathView(feet, facing, world.Cast);
+        }
+
+        return player;
     }
 
     /// <summary>Lays one of the game's guns where the host laid one of its own, for the player to take.</summary>
@@ -253,6 +271,11 @@ public sealed class Igi1GuestLevel
             _loop.Variables);
         soldiers.Arm(_content.Mission, arsenal.Weapons);
 
+        // Their steps sound through the host's audio, on the ground they walk.
+        Igi1HostedLevel? hosted = null;
+        Igi1GuestSoundStage steps = new(start.Audio, arsenal.Materials, start.Random, () => hosted?.Ticks ?? 0, static () => default);
+        soldiers.SetFootstepSound(step => Igi1HumanSounds.PlayFootstep(steps, step, raining: false));
+
         // A gun a soldier drops falls through the host's world into the level's pickups, for the player to take.
         soldiers.UseDroppedWeaponPickups(GunPickups);
         soldiers.SetWeaponDropSink((weapon, position, orientation, velocity) => GunPickups.Spawn(position, orientation, weapon, velocity));
@@ -287,7 +310,35 @@ public sealed class Igi1GuestLevel
 
         LevelUpdateWalker walker = new(Root);
         soldiers.AttachTo(walker);
-        return new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player, GunPickups);
+        hosted = new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player, GunPickups);
+        if (_player is { } player)
+        {
+            HearPlayer(hosted, player.Rig, player.Surroundings, steps);
+        }
+
+        return hosted;
+    }
+
+    // The soldiers hear the player standing in the host's level as the game's own hear theirs: its rounds landing, the noises its
+    // doings make, its gunfire and its steps, each tick as the level's closes, and its landings; and its steps and its rounds'
+    // impacts are heard by the player.
+    private static void HearPlayer(Igi1HostedLevel hosted, PlayerCamera rig, IIgi1PlayerSurroundings surroundings, Igi1GuestSoundStage steps)
+    {
+        SoldierSimulation soldiers = hosted.Soldiers;
+        Igi1PlayerHearing.Attach(rig, soldiers);
+        Igi1GuestPlayerSurroundings? heard = surroundings as Igi1GuestPlayerSurroundings;
+        heard?.Heard = (feet, radius) => soldiers.NotifyGroundImpact(feet, feet, radius);
+        hosted.EachTick(() =>
+        {
+            Igi1PlayerHearing.Gunshot(rig, soldiers);
+            if (rig.TakeFootstep() is { } step)
+            {
+                Igi1HumanSounds.PlayFootstep(steps, step, raining: false);
+                Igi1PlayerHearing.Step(rig, step, soldiers);
+            }
+
+            heard?.Sounds.PlayPlayerImpacts();
+        });
     }
 
     // The type a soldier's guns are made as: the game's levels declare it, and a guest session of it, which reads no level, has

@@ -19,6 +19,9 @@ namespace OpenIGI.Game.Igi1.Systems;
 /// </remarks>
 public sealed class Igi1GuestPlayerSurroundings(Igi1GuestSoundStage stage, IOpenIgiLogger logger) : IIgi1PlayerSurroundings
 {
+    /// <summary>Gets where the player's sounds play.</summary>
+    public Igi1GuestSoundStage Stage => stage;
+
     /// <summary>Gets the player's sounds: its cries, and its rounds' impacts, played each tick (<see cref="Igi1HumanSounds.PlayPlayerImpacts"/>).</summary>
     public Igi1HumanSounds Sounds { get; } = new(stage);
 

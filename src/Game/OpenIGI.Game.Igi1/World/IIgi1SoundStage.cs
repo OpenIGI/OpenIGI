@@ -34,7 +34,8 @@ public interface IIgi1SoundStage
     /// <param name="positionInUnits">Where, in world units, or <see langword="null"/> at the listener -- the player's own.</param>
     /// <param name="pitch">The pitch, one for the definition's own.</param>
     /// <param name="priority">How much it outranks others when voices run short.</param>
-    void Play(string definition, Vector3d? positionInUnits, float pitch, int priority);
+    /// <param name="gain">How loud, one for the definition's own.</param>
+    void Play(string definition, Vector3d? positionInUnits, float pitch, int priority, float gain = 1f);
 }
 
 /// <summary>One of the game's own missions as its humans' sounds play in it: its sound stream and materials, the host's sound output.</summary>
@@ -58,6 +59,6 @@ public sealed class Igi1MissionSoundStage(MissionWorld mission, IMissionSoundHos
     public PlayerCamera? Player => mission.Player;
 
     /// <inheritdoc/>
-    public void Play(string definition, Vector3d? positionInUnits, float pitch, int priority) =>
-        host.SoundOutput?.PlayDefinition(definition, positionInUnits, priority: priority, pitch: pitch);
+    public void Play(string definition, Vector3d? positionInUnits, float pitch, int priority, float gain = 1f) =>
+        host.SoundOutput?.PlayDefinition(definition, positionInUnits, gain: gain, priority: priority, pitch: pitch);
 }

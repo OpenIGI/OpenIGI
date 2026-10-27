@@ -517,14 +517,7 @@ public sealed class Igi1PlayerSetup(
 
             return found;
         };
-        // A round's impact, which another game's humans tell from a landing by its flight from the eye.
-        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(
-            impact,
-            candidate.Body.Position,
-            flight: new Vector3f(
-                (float)(impact.X - candidate.Body.Eye.X), (float)(impact.Y - candidate.Body.Eye.Y), (float)(impact.Z - candidate.Body.Eye.Z)));
-        candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
-            noise, candidate.Body.Position, candidate.Body.Position);
+        Igi1PlayerHearing.Attach(candidate, guards.Simulation);
 
         // A glancing round whizzes where it turned, on the ricochet sound's own limit --
         // 0x47BD7B sounds it there directly rather than through the material's window.

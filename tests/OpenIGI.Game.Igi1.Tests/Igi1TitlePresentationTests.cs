@@ -69,4 +69,34 @@ public sealed class Igi1TitlePresentationTests
         batch.End();
         Assert.True(device.Draws.Count > before);
     }
+
+    [RequiresGameDataFact]
+    public void A_guest_player_struck_dead_watches_from_the_death_camera_pulled_back_off_its_eye()
+    {
+        Igi1GuestContent content = Igi1GuestContent.Load(GameData.RequireRoot(), []);
+        Igi1GuestLevel level = Igi1GuestLevel.Open(content);
+        GameLoop host = new(new ManualTimeSource());
+        PlayerTaskTypes.RegisterAll(host.Types);
+        GameTask root = host.Tasks.New(host.Tasks.Root, host.Types.Get(EngineTaskTypes.Level));
+        HumanPlayerTask task = (HumanPlayerTask)host.Tasks.New(root, host.Types.Get(PlayerTaskTypes.HumanPlayer));
+        Igi1GuestSoundStage stage = new(null, content.Arsenal.Materials, new IgiRandom(), static () => 0, static () => default);
+        Igi1TitlePlayer player = level.AddPlayer(new Igi2CollisionWorld([], null), new Igi1GuestPlayerStart(
+            task, ObjectCollisionIndex.Build([]), AiDifficulty.Normal, new Igi1GuestPlayerSurroundings(stage, NullLogger.Instance)));
+        player.Tick(new TitlePlayerInput(0f, 0f, default, default, 1f, false));
+        Vector3d eye = player.EyePosition;
+
+        for (int round = 0; round < 20 && !player.Human.Life.IsDead; round++)
+        {
+            task.WeaponHit(new Game.Weapons.WeaponHit(eye, new Vector3f(1f, 0f, 0f), 1f, new Vector3f(-1f, 0f, 0f), null, null));
+        }
+
+        Assert.True(player.Human.Life.IsDead);
+        for (int tick = 0; tick < 30; tick++)
+        {
+            player.Tick(new TitlePlayerInput(0f, 0f, default, default, 1f, false));
+        }
+
+        Assert.True(player.IsDeathViewActive);
+        Assert.True(Vector3d.Distance(player.EyePosition, eye) > 1024.0, "the camera pulled back from where the eyes were");
+    }
 }

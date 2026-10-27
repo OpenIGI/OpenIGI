@@ -104,6 +104,32 @@ public sealed class Igi1HumanSounds(IIgi1SoundStage stage) : IMissionCries
         stage.Play(sound, impact.Position, 1f, priority: 50);
     }
 
+    /// <summary>Plays a human's step on the ground it took it on, and in the rain the wet layer as well.</summary>
+    /// <param name="stage">Where it plays.</param>
+    /// <param name="step">The step.</param>
+    /// <param name="raining">Whether the level's weather is rain.</param>
+    /// <remarks>
+    /// One pitch for the whole step: <c>0x463920</c> computes it once and hands the same value to the material voice and to the rain
+    /// voice, so the two halves of a wet step stay together. The wet layer is played as well as the material's own sound, never
+    /// instead of it; its gate is <c>0x416FB0</c>, a single global byte -- the level's weather flag rather than a shelter test. Only
+    /// the material's voice is quietened for a crouch (<c>0x463920</c>, <c>0x45A7F0</c>): the wet one keeps its full volume.
+    /// </remarks>
+    public static void PlayFootstep(IIgi1SoundStage stage, in Footstep step, bool raining)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+        if (!stage.IsHeard || step.Sound.Length == 0)
+        {
+            return;
+        }
+
+        float pitch = FootstepSounds.Pitch(stage.SoundRandom);
+        stage.Play(step.Sound, step.PositionInUnits, pitch, priority: 40, gain: step.VolumeScale);
+        if (raining)
+        {
+            stage.Play(FootstepSounds.RainSoundName(step.CycleSlot), step.PositionInUnits, pitch, priority: 40);
+        }
+    }
+
     /// <summary>Plays a sound a marched round's contact asks for: its impact, its ricochet.</summary>
     /// <param name="definition">The sound definition.</param>
     /// <param name="position">Where, in world units.</param>

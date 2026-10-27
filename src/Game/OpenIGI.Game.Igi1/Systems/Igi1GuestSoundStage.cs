@@ -35,9 +35,9 @@ public sealed class Igi1GuestSoundStage(ITitleAudio? audio, GameMaterialRegistry
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The host's audio plays a definition at its own pitch and priority. A sound with no position is the player's own, played
+    /// The host's audio plays a definition at its own pitch, priority and gain. A sound with no position is the player's own, played
     /// where the listener stands: no distance, so full gain and no pan, as the game attaches it to the listener.
     /// </remarks>
-    public void Play(string definition, Vector3d? positionInUnits, float pitch, int priority) =>
+    public void Play(string definition, Vector3d? positionInUnits, float pitch, int priority, float gain = 1f) =>
         audio?.Play(definition, positionInUnits ?? listener());
 }

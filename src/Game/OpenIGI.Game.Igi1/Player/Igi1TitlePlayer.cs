@@ -10,7 +10,8 @@ namespace OpenIGI.Game.Igi1.Player;
 /// </summary>
 /// <remarks>
 /// As I.G.I. 2's own (<c>Igi2TitlePlayer</c>): the player the level's walk runs where it reaches the player's task, whichever
-/// level it stands in. A dead player takes no input, as the original's death state takes none.
+/// level it stands in. A dead player takes no input, as the original's death state takes none, but the mouse still turns the death
+/// camera about the body (<see cref="BeginDeathView"/>), whose eye the view is then.
 /// </remarks>
 /// <param name="human">The player.</param>
 /// <param name="ground">The ground it walks on.</param>
@@ -20,6 +21,9 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     /// <summary>Gets the player.</summary>
     public Igi1HumanPlayer Human { get; } = human ?? throw new ArgumentNullException(nameof(human));
 
+    private readonly Igi1HumanCamera _death = new();
+    private Vector3d _deathFeet;
+
     /// <summary>Gets the ticks the player has run.</summary>
     public long Ticks { get; private set; }
 
@@ -27,10 +31,23 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     public Vector3d Position => Human.Rig.PositionUnits;
 
     /// <inheritdoc/>
-    public Vector3d EyePosition => Human.Rig.EyeUnits;
+    public Vector3d EyePosition => IsDeathViewActive ? _death.Camera.Position * WorldScene.UnitsPerMetre : Human.Rig.EyeUnits;
 
     /// <inheritdoc/>
-    public Matrix3f ViewOrientation => Human.Rig.Camera.Orientation;
+    public Matrix3f ViewOrientation => IsDeathViewActive ? _death.Camera.Orientation : Human.Rig.Camera.Orientation;
+
+    /// <summary>Gets a value indicating whether the death camera has the view: the player is dead and its camera pulled back.</summary>
+    public bool IsDeathViewActive => Human.Life.IsDead && _death.IsActive;
+
+    /// <summary>Pulls the camera back from the player's body as it falls (the human camera's mode 5).</summary>
+    /// <param name="feet">Where the body lies, in world units.</param>
+    /// <param name="facing">The facing the body falls along; the orbit starts behind it.</param>
+    /// <param name="walls">What the camera keeps off, or <see langword="null"/> for nothing.</param>
+    public void BeginDeathView(Vector3d feet, float facing, WorldRayCast? walls)
+    {
+        _deathFeet = feet;
+        _death.Begin(EyeOver(feet), feet, facing, walls, death: true);
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -49,6 +66,14 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
     {
         if (Human.Life.IsDead)
         {
+            if (_death.IsActive)
+            {
+                _death.LookSettings = MouseLookSettings.FromSensitivity(input.MouseSensitivity, input.InvertMouse);
+                _death.Control(input.MouseX, input.MouseY);
+                _death.Tick(EyeOver(_deathFeet), _deathFeet);
+                _death.Present(1f);
+            }
+
             return;
         }
 
@@ -57,4 +82,7 @@ public sealed class Igi1TitlePlayer(Igi1HumanPlayer human, IGroundHeightField? g
         Human.Rig.Tick(input.Held, ground);
         Ticks++;
     }
+
+    // The eye of a body standing on these feet, which the death camera orbits and looks at.
+    private static Vector3d EyeOver(Vector3d feet) => new(feet.X, feet.Y, feet.Z + PlayerBody.StandingEyeHeight);
 }
