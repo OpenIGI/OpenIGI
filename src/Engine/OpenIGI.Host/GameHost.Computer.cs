@@ -115,7 +115,7 @@ public sealed partial class GameHost
     /// objectives; the mission's own computer, laid over the level the player stands in, does.
     /// </remarks>
     private bool TitleUsesMissionComputer =>
-        HostedPlayer is null && TitlePlayer is not null && TacticalComputer is not null && ComputerObjectives is not null;
+        !_mission.HasOwnPlayer && TitlePlayer is not null && TacticalComputer is not null && ComputerObjectives is not null;
 
     /// <summary>
     /// Gets what the computer lists: the mission's own objectives where it has them -- Project I.G.I.'s, whoever plays them --
@@ -133,24 +133,17 @@ public sealed partial class GameHost
     /// <summary>The player the computer serves, where it stands in engine units and the eye it looks through; or none.</summary>
     /// <returns>The mission's own player, else a title's player using the mission's computer.</returns>
     private ComputerSubjectView? ComputerSubject() =>
-        HostedPlayer is { } hosted ? new ComputerSubjectView(hosted.Body.Position, hosted.Camera)
-        : TitleUsesMissionComputer && _playerMode && TitlePlayer is { } title ? new ComputerSubjectView(title.Position, TitleCamera(title))
+        TitlePlayer is { } title && (_mission.HasOwnPlayer || (TitleUsesMissionComputer && _playerMode))
+            ? new ComputerSubjectView(title.Position, TitleCamera(title))
+        : HostedPlayer is { } hosted ? new ComputerSubjectView(hosted.Body.Position, hosted.Camera)
         : null;
 
     /// <summary>Gets where the player the computer serves stands, in engine units, or none.</summary>
     private Vector3d? ComputerBodyUnits => ComputerSubject()?.BodyUnits;
 
-    /// <summary>Whether the computer's key went down this frame, by the mission player's own bindings or the profile's.</summary>
-    private bool ComputerKeyPressed()
-    {
-        if (HostedPlayer is { } hosted)
-        {
-            hosted.InputProfile = _configuration.Active;
-            return hosted.WasActionPressed(_window.Input, PlayerAction.MapComputer);
-        }
-
-        return PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(PlayerAction.MapComputer));
-    }
+    /// <summary>Whether the computer's key went down this frame, by the profile's bindings.</summary>
+    private bool ComputerKeyPressed() =>
+        PlayerProfileInputBindings.WasPressed(_configuration.Active, _window.Input, PlayerInputBindings.ConfigName(PlayerAction.MapComputer));
 
     /// <summary>The player the computer serves: where it stands, in engine units, and the eye the computer climbs from.</summary>
     /// <param name="BodyUnits">Where it stands.</param>
@@ -214,7 +207,7 @@ public sealed partial class GameHost
                 {
                     _computerOpen = true;
                     tacticalComputer.Open(subject.BodyUnits);
-                    HostedPlayer?.SetMapComputerOpen(true);
+                    _mission.SetPlayerComputerOpen(true);
                     _computerFlight.BeginOpen(
                         eye,
                         gameplayFieldOfView,
@@ -261,13 +254,13 @@ public sealed partial class GameHost
                     {
                         _computerOpen = false;
                         _computerFlight.Reset();
-                        HostedPlayer?.SetMapComputerOpen(false);
+                        _mission.SetPlayerComputerOpen(false);
                     }
 
                     _window.Input.Captured = true;
                 }
             }
-            else if (_mapComputer is { IsReady: true } retailComputer && HostedPlayer is not null)
+            else if (_mapComputer is { IsReady: true } retailComputer && _mission.HasOwnPlayer)
             {
                 // The original's own computer is the mission's: its tick opens it from the weapon's idle state and closes it
                 // on the key, and it reads the mouse the frames gather here. Escape does not close it.
@@ -388,7 +381,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Gets a value indicating whether the title's own computer is in use rather than the tactical one.</summary>
-    private bool UsesMissionComputer => TacticalComputer is null && _mapComputer is { IsReady: true } && HostedPlayer is not null;
+    private bool UsesMissionComputer => TacticalComputer is null && _mapComputer is { IsReady: true } && _mission.HasOwnPlayer;
 
     /// <summary>Gets the display the computer lays its screens across: the back buffer at the interface's magnification.</summary>
     private (int Width, int Height) ComputerDisplaySize

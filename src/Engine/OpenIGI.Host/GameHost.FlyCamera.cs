@@ -91,8 +91,7 @@ public sealed partial class GameHost
                 // settling one and the re-lock's re-centring is absorbed rather than aimed with.
                 ReleasePlayerLook();
             }
-            else if (HostedPlayer is { IsOnLadder: true }
-                or { IsInWorldInteraction: true, IsMountedStationaryGun: false })
+            else if (Viewpoint?.OrbitsBody == true)
             {
                 // A mounted gun is not among these: its look turns the barrel, so it falls through
                 // to the ordinary first-person look below.

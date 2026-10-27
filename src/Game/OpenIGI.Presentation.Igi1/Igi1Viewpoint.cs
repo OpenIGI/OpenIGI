@@ -46,6 +46,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool IsInteractionViewActive => _interaction.IsActive;
 
     /// <inheritdoc/>
+    public bool OrbitsBody => gameplay.World.Player is { IsOnLadder: true } or { IsInWorldInteraction: true, IsMountedStationaryGun: false };
+
+    /// <inheritdoc/>
     public bool ShowsViewModel => _thirdPerson.ShowsViewModel;
 
     /// <inheritdoc/>

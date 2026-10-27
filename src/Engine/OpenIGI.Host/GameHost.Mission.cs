@@ -664,7 +664,7 @@ public sealed partial class GameHost
     {
         // A level that declared no loadout never built a presenter for the hand, so the first granted
         // weapon would be carried but never drawn.
-        if (_heldWeapon is null && HostedPlayer?.View is not null
+        if (_heldWeapon is null && _mission.HasOwnPlayer
             && _presentation.Presenters.Create<ViewModelPresentationRequest, IHeldWeaponPresenter>(ViewModelRequest()) is { } presenter)
         {
             presenter.Materials = _materials;
@@ -695,8 +695,6 @@ public sealed partial class GameHost
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
     private void PresentPlayerImpacts()
     {
-        IHostedPlayer player = HostedPlayer!;
-
         // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
         // material table, where the round arrived rather than where it was fired.
         _hosted.Sounds.PlayPlayerImpacts();
@@ -716,7 +714,14 @@ public sealed partial class GameHost
 
         // The launcher rockets in the air lay their smoke trail, one column of puffs per
         // segment they crossed this tick.
-        _effects.SpawnMissileTrails(player.Missiles, _mission.VehicleMissiles);
+        if (_mission.PlayerMissiles is { } missiles)
+        {
+            _effects.SpawnMissileTrails(missiles, _mission.VehicleMissiles);
+        }
+        else
+        {
+            _effects.SpawnMissileTrails(_mission.VehicleMissiles);
+        }
     }
 
     /// <summary>

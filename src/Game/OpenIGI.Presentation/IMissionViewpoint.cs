@@ -43,6 +43,12 @@ public interface IMissionViewpoint
     /// <summary>Gets a value indicating whether the orbit around a climbing or interacting body has the view.</summary>
     bool IsInteractionViewActive { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether the mouse orbits the player's body rather than turning its head: on a ladder, or in a
+    /// world interaction other than a mounted gun, whose look turns the barrel.
+    /// </summary>
+    bool OrbitsBody { get; }
+
     /// <summary>Gets a value indicating whether the first-person arms and weapon are drawn this frame.</summary>
     bool ShowsViewModel { get; }
 

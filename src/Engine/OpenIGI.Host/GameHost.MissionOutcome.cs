@@ -38,7 +38,7 @@ public sealed partial class GameHost
         {
             host._computerOpen = false;
             host._computerFlight.Reset();
-            host.HostedPlayer?.SetMapComputerOpen(false);
+            host._mission.SetPlayerComputerOpen(false);
         }
 
         public void HoldPlayerStill() => host.HoldPlayerStill();
