@@ -135,6 +135,17 @@ public sealed partial class GameHost
             return null;
         }
 
+        if (_playerMode && TitlePlayer is { } title)
+        {
+            // The title's player's feet, and the way its eyes look.
+            Vector3f forward = TitleCamera(title).Orientation.Row3;
+            return new RendererSwitchPose(
+                title.Position / TitleUnitsPerMetre,
+                title.Heading ?? MathF.Atan2(forward.X, forward.Y),
+                MathF.Asin(Math.Clamp(forward.Z, -1f, 1f)),
+                Flying: false);
+        }
+
         if (_playerMode && HostedPlayer is { } player)
         {
             Vector3d feet = player.Body.Position / WorldScene.UnitsPerMetre;
@@ -187,6 +198,11 @@ public sealed partial class GameHost
             _camera ??= new FreeCamera(pose.Position, pose.Yaw, pose.Pitch);
             _camera.MoveTo(pose.Position, pose.Yaw, pose.Pitch);
             _playerMode = false;
+        }
+        else if (TitlePlayer is not null && _titleFeatures?.Placement is { } placement)
+        {
+            // Back on its feet where it stood, the way it faced; its look's pitch is its own to set again.
+            _playerMode = placement.TryPlace(pose.Position * TitleUnitsPerMetre, pose.Yaw);
         }
         else if (HostedPlayer is { } player && player.Place(_mission.Ground, pose.Position, pose.Yaw))
         {

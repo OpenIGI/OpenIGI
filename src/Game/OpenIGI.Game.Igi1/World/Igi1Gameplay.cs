@@ -1,4 +1,6 @@
+using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Hosting;
+using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Level;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Player;
@@ -9,7 +11,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
+public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, ITitleGameplay
 {
     private readonly IMissionHostServices _host;
 
@@ -64,6 +66,35 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
 
     /// <summary>Gets the mission's tick.</summary>
     public Igi1MissionTick Tick { get; }
+
+    /// <inheritdoc/>
+    /// <remarks>None of its own: the player reads the host's actions.</remarks>
+    public IReadOnlyList<TitleInputBinding> InputBindings => [];
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The mission's own player on the host's title path, where <see cref="GameplayCVars.MissionTitlePlayer"/> has it there: the
+    /// player the mission stood, ticked inside the mission's steps around it (<see cref="Igi1MissionTick.StepPlayer"/>). A tick the
+    /// mission refuses -- the player dead, the mission failed -- is not the player's, so nothing it would have set in motion is
+    /// resolved. Off, or with no player stood, the mission ticks its player itself.
+    /// </remarks>
+    public ITitlePlayer? CreatePlayer(in TitlePlayerRequest request)
+    {
+        if (!GameplayCVars.MissionTitlePlayer.Value || World.Human is not { } human || World.Player is null)
+        {
+            return null;
+        }
+
+        return new Igi1TitlePlayer(human, request.Built.Ground)
+        {
+            Step = tick =>
+            {
+                bool stepped = Tick.StepPlayer(tick);
+                World.PlayerTicked &= stepped;
+                return stepped;
+            },
+        };
+    }
 
     /// <inheritdoc/>
     MissionState IHostedMission.World => World;

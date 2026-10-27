@@ -41,7 +41,7 @@ public sealed partial class GameHost
             host.HostedPlayer?.SetMapComputerOpen(false);
         }
 
-        public void HoldPlayerStill() => host.HostedPlayer?.HoldStill();
+        public void HoldPlayerStill() => host.HoldPlayerStill();
 
         public void SaveConfiguration() => HostConfiguration.Save(host._configuration, host._logger);
 

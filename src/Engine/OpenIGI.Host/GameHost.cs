@@ -170,6 +170,33 @@ public sealed partial class GameHost : IDisposable
     // The player the host steers and looks through, when the mission has one.
     private IHostedPlayer? HostedPlayer => _hosted.Player;
 
+    // Holds the standing player still while something else has the pointer: nothing the mouse or the keys did since the last
+    // tick goes through, and taking the cursor back is not read as aim.
+    private void HoldPlayerStill()
+    {
+        if (TitlePlayer is not null)
+        {
+            ForgetTitleInput();
+            _titleFeatures?.Look?.ResetLook();
+        }
+
+        HostedPlayer?.HoldStill();
+    }
+
+    // Lets go of the standing player's look while another camera has the mouse, so handing it back is not read as aim.
+    private void ReleasePlayerLook()
+    {
+        _titleFeatures?.Look?.ResetLook();
+        HostedPlayer?.ReleaseLook();
+    }
+
+    // Whether a player stands in the mission: a title's, or the mission's own.
+    private bool PlayerStands => TitlePlayer is not null || HostedPlayer is not null;
+
+    // Where the standing player's ballistic rounds landed this tick; null where no player stands or its rounds are not ballistic.
+    private IReadOnlyList<Game.Weapons.Ballistics.BallisticImpact>? PlayerBallisticImpacts =>
+        TitlePlayer is { } title ? (title as ITitleBallisticImpacts)?.BallisticImpacts : HostedPlayer?.Ballistics.Impacts;
+
     // The console's handle on the content layers.
     private readonly ContentLayerCommands _contentLayers;
 

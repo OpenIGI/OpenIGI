@@ -57,7 +57,7 @@ public sealed partial class GameHost
                 // The system cursor stays hidden: the console draws its own, as the shell does,
                 // so the pointer looks the same everywhere and is drawn over the panels rather
                 // than by the compositor on top of them.
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = false;
             }
             else if (MenuOwnsPointer(_menuFlow.PauseMenu, _session.FailedMenu))
@@ -75,7 +75,7 @@ public sealed partial class GameHost
                 // cursor each frame and the branch below re-took it, which is the pointer that
                 // flashed and would not move. Standing every camera branch down is what actually
                 // settles it; excluding them one at a time only moves the fight further down.
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = false;
             }
             else if (Viewpoint?.IsDeathViewActive == true)
@@ -89,7 +89,7 @@ public sealed partial class GameHost
                 // The look is not driving the view this frame, so it must not consider itself
                 // capturing: whenever the orbit hands control back, the first frame of look is a
                 // settling one and the re-lock's re-centring is absorbed rather than aimed with.
-                HostedPlayer?.ReleaseLook();
+                ReleasePlayerLook();
             }
             else if (HostedPlayer is { IsOnLadder: true }
                 or { IsInWorldInteraction: true, IsMountedStationaryGun: false })
@@ -102,7 +102,7 @@ public sealed partial class GameHost
                 // you can look around while you climb rather than being locked behind the character.
                 Viewpoint?.ControlInteractionView(rawX, rawY);
                 _window.CursorLocked = !state.CaptureMode;
-                HostedPlayer?.ReleaseLook();
+                ReleasePlayerLook();
             }
             else if (_computerOpen)
             {
@@ -110,18 +110,18 @@ public sealed partial class GameHost
                 // closing it from throwing the view: dropping the lock restores the desktop pointer,
                 // and taking it back re-centres the backend's virtual one.
                 _window.CursorLocked = false;
-                HostedPlayer?.ReleaseLook();
+                ReleasePlayerLook();
             }
             else if (_mission.Cutscenes?.IsPlaying == true)
             {
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = false;
             }
             else if (_playerMode && SteerWeaponWheel(rawX, rawY))
             {
                 // The weapon wheel has the mouse: it steers the wheel, and the view holds where it was. The settling
                 // frame is re-armed so letting go does not throw the view with the travel the wheel took.
-                HostedPlayer?.HoldStill();
+                HoldPlayerStill();
                 _window.CursorLocked = !state.CaptureMode;
             }
             else if (_playerMode && TitlePlayer is not null)

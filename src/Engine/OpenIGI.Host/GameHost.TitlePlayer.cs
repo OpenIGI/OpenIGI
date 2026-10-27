@@ -96,10 +96,12 @@ public sealed partial class GameHost
             _standingGameplay = provided;
             RestoreTitleInputBindings();
         }
-        else if (_gameplay is not null)
+        else if ((_gameplay ?? _hosted as ITitleGameplay) is { } titleGameplay)
         {
-            player = _gameplay.CreatePlayer(request);
-            _standingGameplay = _gameplay;
+            // The title's gameplay, or where the title brings none, the hosted mission's own, which stands its player on this path
+            // when g_mission_title_player is on.
+            player = titleGameplay.CreatePlayer(request);
+            _standingGameplay = titleGameplay;
             if (player is null)
             {
                 _logger.Warning("Player", "The level places no player for the title to stand.");
@@ -113,7 +115,11 @@ public sealed partial class GameHost
         }
 
         _titleFeatures = new TitlePlayerFeatures(player);
-        _titleHud = _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
+
+        // The hosted mission's own player is still the mission's: the mission keeps it, and while its HUD and arms are the
+        // mission's presenters the title's are not made beside them.
+        bool missionsOwn = ReferenceEquals(_standingGameplay, _hosted);
+        _titleHud = missionsOwn ? null : _presentation.Presenters.Create<HudPresentationRequest, ITitleHudPresenter>(new HudPresentationRequest(_device, _logger));
         _titleHud?.Load(_resources.FileSystem);
         _titleTickMilliseconds = 0;
         _titleTickMaximumMilliseconds = 0;
@@ -121,9 +127,15 @@ public sealed partial class GameHost
         _titleLastLiveLook = false;
         _titleLastCameraMatches = false;
         _titlePresentation.Reset(_titleFeatures);
-        _mission.ForgetPlayer();
-        _world?.Motions = player.Motions;
-        _world?.Destruction = player.Destruction;
+        if (!missionsOwn)
+        {
+            _mission.ForgetPlayer();
+
+            // What moves and breaks in the level is the title's player's world's, as it brings its own.
+            _world?.Motions = player.Motions;
+            _world?.Destruction = player.Destruction;
+        }
+
         if (player.Visibility is { } visibility)
         {
             _world?.Visibility = visibility;
@@ -134,7 +146,7 @@ public sealed partial class GameHost
         }
 
         // What the title's player holds in front of its eyes, drawn from the title's own packs.
-        if (_titleFeatures.FirstPerson is not null)
+        if (_titleFeatures.FirstPerson is not null && !missionsOwn)
         {
             _titleArms = _presentation.Presenters.Create<ViewModelPresentationRequest, ITitleViewModelPresenter>(ViewModelRequest());
             if (_titleArms is not null && !_titleArms.Load(loaded))
@@ -146,10 +158,7 @@ public sealed partial class GameHost
             // Lit as the world's unbaked objects are: the arms and the weapon carry no lightmap.
             _titleArms?.Shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
         }
-        _titleMouseX = 0f;
-        _titleMouseY = 0f;
-        _titlePressed = default;
-        _titleExtraPressed = 0;
+        ForgetTitleInput();
         _playerMode = !_options.StartFlying;
 
         Vector3d eye = player.EyePosition;
@@ -158,6 +167,15 @@ public sealed partial class GameHost
             FormattableString.Invariant($"The title's player stands at {player.Position}; eye at -campos ")
                 + FormattableString.Invariant(
                     $"{eye.X / TitleUnitsPerMetre:F3},{eye.Y / TitleUnitsPerMetre:F3},{eye.Z / TitleUnitsPerMetre:F3}."));
+    }
+
+    /// <summary>Forgets what the mouse and the keys did since the title's player last ticked.</summary>
+    private void ForgetTitleInput()
+    {
+        _titleMouseX = 0f;
+        _titleMouseY = 0f;
+        _titlePressed = default;
+        _titleExtraPressed = 0;
     }
 
     /// <summary>Gathers a frame's input for the title's player: the mouse adds up and presses are kept until a tick.</summary>
@@ -221,10 +239,7 @@ public sealed partial class GameHost
         if (still)
         {
             held = default;
-            _titlePressed = default;
-            _titleExtraPressed = 0;
-            _titleMouseX = 0f;
-            _titleMouseY = 0f;
+            ForgetTitleInput();
         }
 
         PlayerProfile? profile = _configuration.Active;
@@ -253,11 +268,8 @@ public sealed partial class GameHost
         _titleTickMilliseconds += milliseconds;
         _titleTickMaximumMilliseconds = Math.Max(_titleTickMaximumMilliseconds, milliseconds);
         _titleMeasuredTicks++;
-        _titleMouseX = 0f;
-        _titleMouseY = 0f;
+        ForgetTitleInput();
         _titleWheel = 0f;
-        _titlePressed = default;
-        _titleExtraPressed = 0;
         return true;
     }
 
@@ -519,10 +531,7 @@ public sealed partial class GameHost
             }
         }
 
-        _titleMouseX = 0f;
-        _titleMouseY = 0f;
-        _titlePressed = default;
-        _titleExtraPressed = 0;
+        ForgetTitleInput();
         _titleFeatures?.Look?.ResetLook();
 
         _logger.Information("Player", _playerMode ? "Walking." : "Flying.");

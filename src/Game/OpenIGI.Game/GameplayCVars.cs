@@ -62,6 +62,20 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "Simulate the dead instead of playing the original's canned death animations.");
 
+    /// <summary>
+    /// Whether a mission whose game brings no player of its own on the host's title path stands its own player there: ticked,
+    /// looked and drawn as a title's player is.
+    /// </summary>
+    /// <remarks>
+    /// The path Project I.G.I.'s own missions are moving to, a feature at a time; off until it plays as the mission's own player
+    /// does, and not saved. Read as a mission stands its player.
+    /// </remarks>
+    public static readonly BoolCVar MissionTitlePlayer = CVar.Bool(
+        "g_mission_title_player",
+        false,
+        CVarOptions.None,
+        "Stand the mission's own player on the host's title-player path (in development).");
+
     /// <summary>Whether a dropped weapon falls as a real rigid body or the way the original drops it.</summary>
     /// <remarks>
     /// <para>

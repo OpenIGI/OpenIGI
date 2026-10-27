@@ -556,17 +556,33 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1Blasts bla
             return;
         }
 
-        if (mission.PlayerTicked
-            || mission.Cutscenes?.IsPlaying == true
-            || !host.PlayerMode
-            || mission.Player is not { } player
-            || mission.IsPlayerDead
-            || host.FailedMenu)
+        if (mission.PlayerTicked || mission.Cutscenes?.IsPlaying == true || !host.PlayerMode || !CanStepPlayer)
         {
             return;
         }
 
         mission.PlayerTicked = true;
+        StepPlayer(player => player.Tick(host.ViewInput, host.Ground));
+    }
+
+    /// <summary>
+    /// The mission's part of its player's tick, around the rig's own (<paramref name="tick"/>): what the rig meets is published
+    /// first, and what its walk set in motion -- the map computer, the vehicles' rockets, being run over, the grenades' AI
+    /// events -- follows it, whether the mission ticks its player or the host does on its title path.
+    /// </summary>
+    /// <param name="tick">The rig's tick, with the input it is given.</param>
+    /// <returns><see langword="false"/> where the player does not tick: none stands, it is dead, or the mission has failed.</returns>
+    /// <remarks>
+    /// Whoever drives the tick -- the mission, or the host on its title path -- has taken it for this tick already
+    /// (<see cref="MissionState.PlayerTicked"/>), in player mode and out of a cutscene.
+    /// </remarks>
+    public bool StepPlayer(Action<PlayerCamera> tick)
+    {
+        ArgumentNullException.ThrowIfNull(tick);
+        if (!CanStepPlayer || mission.Player is not { } player)
+        {
+            return false;
+        }
 
         // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
         mission.Soldiers?.PublishCollisionBodies();
@@ -578,7 +594,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1Blasts bla
         }
         else
         {
-            player.Tick(host.ViewInput, host.Ground);
+            tick(player);
 
             // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
             // Do not advance the same registry again after the walk.
@@ -592,7 +608,11 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1Blasts bla
         // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
         // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
         NotifyGrenadeAiEvents();
+        return true;
     }
+
+    // Whether there is a living player to step, and no failure screen over it.
+    private bool CanStepPlayer => mission.Player is not null && !mission.IsPlayerDead && !host.FailedMenu;
 
     /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
     private void CheckRunOver()
