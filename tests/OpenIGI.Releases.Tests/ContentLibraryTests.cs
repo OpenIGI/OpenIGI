@@ -1,9 +1,8 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using OpenIGI.Releases;
+using OpenIGI.Tools.Release;
 using Xunit;
 
-namespace OpenIGI.Services.Tests;
+namespace OpenIGI.Releases.Tests;
 
 public sealed class ContentLibraryTests : IDisposable
 {
@@ -24,9 +23,9 @@ public sealed class ContentLibraryTests : IDisposable
         File.WriteAllText(Path.Combine(path, ContentManifest.FileName), ReleaseJson.Write(manifest));
     }
 
-    private ContentStore Store() => new(
-        Options.Create(new ContentOptions { Root = _root, ChunkUrl = ChunkUrl }),
-        NullLogger<ContentStore>.Instance);
+    private const string ThumbnailUrl = "https://dl.test/content/{pack}/{name}";
+
+    private ContentLibrary Scan(string? root = null) => StoreScan.Content(root ?? _root, ChunkUrl, ThumbnailUrl, static (_, _) => { });
 
     [Fact]
     public void The_index_lists_each_pack_at_its_newest_version_with_ten_after_nine()
@@ -64,23 +63,17 @@ public sealed class ContentLibraryTests : IDisposable
     }
 
     [Fact]
-    public void A_scan_finds_published_versions_and_its_tag_changes_with_each_publish()
+    public void A_scan_finds_published_versions()
     {
-        ContentStore store = Store();
-        store.Scan();
-        Assert.Empty(store.Current.Index.Packs);
-        string empty = store.Current.Tag;
+        Assert.Empty(Scan().Index.Packs);
 
         Publish(Manifest("hd-textures", "1.0.0"));
-        store.Scan();
-        Assert.Equal("1.0.0", Assert.Single(store.Current.Index.Packs).Version);
-        string first = store.Current.Tag;
+        Assert.Equal("1.0.0", Assert.Single(Scan().Index.Packs).Version);
 
         Publish(Manifest("hd-textures", "1.0.1"));
-        store.Scan();
-        Assert.Equal("1.0.1", Assert.Single(store.Current.Index.Packs).Version);
-        Assert.NotEqual(empty, first);
-        Assert.NotEqual(first, store.Current.Tag);
+        ContentLibrary library = Scan();
+        Assert.Equal("1.0.1", Assert.Single(library.Index.Packs).Version);
+        Assert.Equal(["1.0.0", "1.0.1"], library.Versions.Select(static v => v.Version).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -91,34 +84,24 @@ public sealed class ContentLibraryTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_root, "hd-textures", "1.0.2"));
         Directory.CreateDirectory(Path.Combine(_root, "chunks", "aa"));
 
-        ContentStore store = Store();
-        store.Scan();
+        ContentLibrary library = Scan();
 
-        Assert.Equal(1, store.Current.Count);
-        Assert.Equal("1.0.0", Assert.Single(store.Current.Index.Packs).Version);
+        Assert.Equal(1, library.Count);
+        Assert.Equal("1.0.0", Assert.Single(library.Index.Packs).Version);
     }
 
     [Fact]
     public void A_pack_description_renames_and_pictures_a_pack_without_a_new_version()
     {
         Publish(Manifest("hd-textures", "1.0.0"));
-        ContentStore store = new(
-            Options.Create(new ContentOptions { Root = _root, ChunkUrl = ChunkUrl, ThumbnailUrl = "https://dl.test/content/{pack}/{name}" }),
-            NullLogger<ContentStore>.Instance);
-        store.Scan();
-        string before = store.Current.Tag;
-
         File.WriteAllText(
             Path.Combine(_root, "hd-textures", ContentPackInfo.FileName),
             ReleaseJson.Write(new ContentPackInfo(1, "hd-textures", "HD Textures", null, "thumbnail-0123456789ab.png")));
-        store.Scan();
-
-        ContentPack pack = Assert.Single(store.Current.Index.Packs);
+        ContentPack pack = Assert.Single(Scan().Index.Packs);
         Assert.Equal("HD Textures", pack.Title);
         Assert.Equal("Summary", pack.Summary);
         Assert.Equal("1.0.0", pack.Version);
         Assert.Equal("https://dl.test/content/hd-textures/thumbnail-0123456789ab.png", pack.Thumbnail);
-        Assert.NotEqual(before, store.Current.Tag);
     }
 
     [Fact]
@@ -136,22 +119,18 @@ public sealed class ContentLibraryTests : IDisposable
     [Fact]
     public void An_empty_store_still_says_where_chunks_come_from()
     {
-        ContentStore store = Store();
-        store.Scan();
+        ContentLibrary library = Scan();
 
-        Assert.Empty(store.Current.Index.Packs);
-        Assert.Equal(ChunkUrl, store.Current.Index.ChunkUrl);
+        Assert.Empty(library.Index.Packs);
+        Assert.Equal(ChunkUrl, library.Index.ChunkUrl);
     }
 
     [Fact]
     public void A_store_that_does_not_exist_yet_is_an_empty_index()
     {
-        ContentStore store = new(
-            Options.Create(new ContentOptions { Root = Path.Combine(_root, "missing"), ChunkUrl = ChunkUrl }),
-            NullLogger<ContentStore>.Instance);
-        store.Scan();
+        ContentLibrary library = Scan(Path.Combine(_root, "missing"));
 
-        Assert.Empty(store.Current.Index.Packs);
-        Assert.Equal(ChunkUrl, store.Current.Index.ChunkUrl);
+        Assert.Empty(library.Index.Packs);
+        Assert.Equal(ChunkUrl, library.Index.ChunkUrl);
     }
 }

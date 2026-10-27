@@ -1,7 +1,3 @@
-using System.Diagnostics;
-using System.Formats.Tar;
-using System.IO.Compression;
-using System.Text;
 using OpenIGI.Releases;
 
 namespace OpenIGI.Tools.Release;
@@ -34,32 +30,7 @@ internal interface IContentStore
     void Delete(string pack, string? version);
 }
 
-/// <summary>Writes the uploads the VM's dispatcher takes.</summary>
-internal static class ContentUploads
-{
-    /// <summary>Writes a pack description's upload: <c>pack.json</c> and, when there is one, the picture.</summary>
-    /// <param name="info">The description.</param>
-    /// <param name="picture">The picture's file, or <see langword="null"/>.</param>
-    /// <param name="output">Where the gzipped tarball is written.</param>
-    internal static void WriteDescription(ContentPackInfo info, string? picture, Stream output)
-    {
-        using GZipStream gzip = new(output, CompressionLevel.Fastest, leaveOpen: true);
-        using TarWriter tar = new(gzip, TarEntryFormat.Pax, leaveOpen: true);
-        if (picture is not null)
-        {
-            tar.WriteEntry(picture, info.Thumbnail!);
-        }
-
-        PaxTarEntry entry = new(TarEntryType.RegularFile, ContentPackInfo.FileName)
-        {
-            DataStream = new MemoryStream(Encoding.UTF8.GetBytes(ReleaseJson.Write(info) + "\n")),
-            Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
-        };
-        tar.WriteEntry(entry);
-    }
-}
-
-/// <summary>A content store in a local folder, laid out as the release VM's.</summary>
+/// <summary>A content store in a local folder, laid out as the site's build unpacks the published one (<see cref="GitHubStore.Unpack"/>).</summary>
 /// <param name="root">The store: <c>chunks/</c> and <c>&lt;pack&gt;/&lt;version&gt;/</c>.</param>
 internal sealed class FolderStore(string root) : IContentStore
 {
@@ -76,7 +47,7 @@ internal sealed class FolderStore(string root) : IContentStore
             throw new InvalidOperationException($"{chunked.Manifest.Id} {chunked.Manifest.Version} is already published.");
         }
 
-        // Chunks first and the manifest last, as the VM's dispatcher does.
+        // Chunks first and the manifest last, as the published store takes them.
         foreach (ContentChunk chunk in upload)
         {
             string name = ContentPublish.Chunked.StoredName(chunk.Hash);
@@ -152,7 +123,7 @@ internal sealed class FolderStore(string root) : IContentStore
 
         Directory.Delete(target, recursive: true);
 
-        // Chunks no remaining version's manifest names go, as the dispatcher's collection does. A manifest that
+        // Chunks no remaining version's manifest names go, as the published store's collection does. A manifest that
         // cannot be read stops it: every chunk would otherwise look unused.
         HashSet<string> named = [.. Directory.EnumerateDirectories(root)
             .Where(static d => ContentManifest.IsValidId(Path.GetFileName(d)))
@@ -172,137 +143,4 @@ internal sealed class FolderStore(string root) : IContentStore
             }
         }
     }
-}
-
-/// <summary>The release VM's content store, through the deploy dispatcher over SSH, and its update service.</summary>
-/// <param name="target">The SSH destination, such as <c>deploy@sh-de</c>.</param>
-/// <param name="remote">
-/// What runs the dispatcher on the far side, or empty when the key is pinned to it (the deploy user's keys
-/// are, so the verb alone is sent and the forced command reads it).
-/// </param>
-/// <param name="service">The update service, which lists the packs as players see them.</param>
-internal sealed class SshStore(string target, string remote, Uri service) : IContentStore
-{
-    /// <inheritdoc/>
-    public HashSet<string> Missing(IEnumerable<string> hashes)
-    {
-        string list = string.Concat(hashes.Select(static hash => hash + "\n"));
-        string output = Run("content-have", input => input.Write(Encoding.ASCII.GetBytes(list)));
-        return [.. output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-    }
-
-    /// <inheritdoc/>
-    public void Publish(ContentPublish.Chunked chunked, IReadOnlyList<ContentChunk> upload)
-    {
-        // Written to a file first: the upload is checked whole on the far side, and a stream cut by a
-        // failure here would only be thrown away there.
-        string tarball = Path.Combine(chunked.Cache, $"upload-{chunked.Manifest.Id}-{chunked.Manifest.Version}.tar.gz");
-        try
-        {
-            using (FileStream file = File.Create(tarball))
-            {
-                ContentPublish.WriteUpload(chunked, upload, file);
-            }
-
-            Run($"content {chunked.Manifest.Id} {chunked.Manifest.Version}", input =>
-            {
-                using FileStream file = File.OpenRead(tarball);
-                file.CopyTo(input);
-            });
-        }
-        finally
-        {
-            File.Delete(tarball);
-        }
-    }
-
-    /// <inheritdoc/>
-    public IReadOnlyList<ContentPack> List()
-    {
-        using HttpClient http = new();
-        List<ContentPack> packs = [.. ReleaseJson.ReadContentIndex(
-            http.GetStringAsync(new Uri(service, "v1/content")).GetAwaiter().GetResult()).Packs];
-
-        // A service from before mods has no mods index, and so no mods.
-        try
-        {
-            packs.AddRange(ReleaseJson.ReadContentIndex(
-                http.GetStringAsync(new Uri(service, ModPacks.IndexPath)).GetAwaiter().GetResult()).Packs);
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-        }
-
-        return packs;
-    }
-
-    /// <inheritdoc/>
-    public void Describe(ContentPackInfo info, string? picture)
-    {
-        using MemoryStream upload = new();
-        ContentUploads.WriteDescription(info, picture, upload);
-        Run($"content-info {info.Id}", input => input.Write(upload.GetBuffer(), 0, (int)upload.Length));
-    }
-
-    /// <inheritdoc/>
-    public void Delete(string pack, string? version) =>
-        Run(version is null ? $"content-delete {pack}" : $"content-delete {pack} {version}", static _ => { });
-
-    private string Run(string verb, Action<Stream> write)
-    {
-        ProcessStartInfo start = new("ssh")
-        {
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = false,
-            UseShellExecute = false,
-        };
-        start.ArgumentList.Add("-o");
-        start.ArgumentList.Add("BatchMode=yes");
-        start.ArgumentList.Add(target);
-        start.ArgumentList.Add(string.IsNullOrWhiteSpace(remote) ? verb : $"{remote} {verb}");
-
-        using Process ssh = Process.Start(start) ?? throw new IOException("ssh could not be started.");
-        Task<string> output = ssh.StandardOutput.ReadToEndAsync();
-        write(ssh.StandardInput.BaseStream);
-        ssh.StandardInput.Close();
-        ssh.WaitForExit();
-
-        return ssh.ExitCode == 0
-            ? output.GetAwaiter().GetResult()
-            : throw new IOException($"'{verb}' on {target} failed with exit code {ssh.ExitCode}.");
-    }
-}
-
-/// <summary>
-/// Writes the upload a publish (or a description) would send to a file instead, every chunk in it: for carrying
-/// it to the VM by hand (<c>openigi-deploy content &lt;pack&gt; &lt;version&gt; &lt; file</c>, or
-/// <c>content-info &lt;pack&gt;</c>), or for trying the dispatcher.
-/// </summary>
-/// <param name="path">The tarball to write.</param>
-internal sealed class TarballStore(string path) : IContentStore
-{
-    /// <inheritdoc/>
-    public HashSet<string> Missing(IEnumerable<string> hashes) => [.. hashes];
-
-    /// <inheritdoc/>
-    public void Publish(ContentPublish.Chunked chunked, IReadOnlyList<ContentChunk> upload)
-    {
-        using FileStream file = File.Create(path);
-        ContentPublish.WriteUpload(chunked, upload, file);
-    }
-
-    /// <inheritdoc/>
-    public IReadOnlyList<ContentPack> List() => throw new NotSupportedException("An upload file has no packs to list.");
-
-    /// <inheritdoc/>
-    public void Describe(ContentPackInfo info, string? picture)
-    {
-        using FileStream file = File.Create(path);
-        ContentUploads.WriteDescription(info, picture, file);
-    }
-
-    /// <inheritdoc/>
-    public void Delete(string pack, string? version) =>
-        throw new NotSupportedException("Deleting runs on the store itself: use --ssh or --to-dir.");
 }

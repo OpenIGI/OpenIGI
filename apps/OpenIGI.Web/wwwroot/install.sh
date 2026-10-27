@@ -30,7 +30,7 @@ main() {
     exit 1
   fi
 
-  local api="https://api.openigi.com/download"
+  local site="https://openigi.com/download"
   local releases="https://github.com/OpenIGI/OpenIGI/releases/download"
   local name="OpenIGI Launcher"
 
@@ -81,13 +81,13 @@ main() {
   # shellcheck disable=SC2064 # expanded now, on purpose
   trap "rm -rf '$work'" EXIT
 
-  # The newest launcher is where the service redirects to: a file in its release folder, which names the
-  # version and holds the checksums. An older one is asked of its GitHub release by name.
-  local url
+  # The newest launcher's address is what the site's download link for the runtime holds: a file of its GitHub
+  # release, whose tag names the version and which holds the checksums. An older one is asked for by name.
+  local url=""
   if [ "$target" = latest ]; then
     step "Finding the latest release"
-    url="$(redirect_of "$api/$rid" "$work")"
-    [ -n "$url" ] || fail "Could not find the latest launcher for $rid (is $api reachable?)."
+    download "$site/$rid/url" "$work/url" && url="$(tr -d '\r\n' < "$work/url")"
+    [ -n "$url" ] || fail "Could not find the latest launcher for $rid (is $site reachable?)."
   else
     step "Finding release $target"
     local extension=""
@@ -96,7 +96,7 @@ main() {
   fi
   local file="${url##*/}"
   local folder="${url%/*}"
-  # The folder is a GitHub release tag (launcher-v0.4.1) or a download store folder (launcher-0.4.1).
+  # The folder is the GitHub release's tag (launcher-v0.4.1).
   local version="${folder##*/launcher-}"
   version="${version#v}"
   # Anything else (an error page, a moved store) stops here rather than becoming a path.
@@ -241,19 +241,6 @@ download() {
       wget -q -O "$2" "$1"
     fi
   fi
-}
-
-# The Location a URL redirects to, without following it. From the headers rather than curl's -w, which
-# some builds of curl 8.8.0 fail on.
-redirect_of() {
-  local url="$1" work="$2"
-  if [ "$DOWNLOADER" = curl ]; then
-    curl -fsS -D "$work/headers" -o "$work/redirect" "$url" >/dev/null 2>&1 || return 0
-  else
-    # wget exits non-zero on a redirect it is told not to follow; the headers are what is wanted.
-    wget -q -S --max-redirect=0 -O "$work/redirect" "$url" 2>"$work/headers" || true
-  fi
-  awk 'tolower($1) == "location:" { print $2 }' "$work/headers" | tr -d '\r' | tail -n 1
 }
 
 setup_colours() {

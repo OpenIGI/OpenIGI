@@ -31,7 +31,7 @@ defaults:
 jobs:
   cut:
     name: cut ${{ inputs.channel }}
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
       image: ghcr.io/openigi/ci:latest
@@ -89,13 +89,15 @@ jobs:
             git merge --abort; exit 0; }
           git push origin develop
 
-  # A called workflow gets no more than its caller grants, and the release trades an OIDC token for its nuget.org key.
+  # A called workflow gets no more than its caller grants, and the release trades an OIDC token for its nuget.org key
+  # and for publishing the site on GitHub Pages.
   release:
     needs: cut
     permissions:
       contents: write
       packages: read
       id-token: write
+      pages: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.cut.outputs.tag }}

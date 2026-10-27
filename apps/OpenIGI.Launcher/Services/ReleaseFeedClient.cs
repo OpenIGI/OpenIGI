@@ -4,18 +4,19 @@ using OpenIGI.Releases;
 
 namespace OpenIGI.Launcher.Services;
 
-/// <summary>Asks the update service what is newest on a channel.</summary>
+/// <summary>Asks the site what is newest on a channel.</summary>
 /// <remarks>
-/// Asked once a minute, so it is a conditional GET: the service tags every answer, and an unchanged one
+/// Asked once a minute, so it is a conditional GET: the host tags every answer, and an unchanged one
 /// comes back as a bodiless 304. Each channel's last answer is kept, so changing channel shows what that
-/// channel offered at once while the fresh answer is fetched. The address can be pointed elsewhere with
-/// <c>OPENIGI_UPDATE_URL</c>, which is how a local copy of the service is tried against a real launcher.
+/// channel offered at once while the fresh answer is fetched. The feed is a static file listing the channel's
+/// recent releases, so the ones newer than the installed version are picked here. The address can be pointed
+/// elsewhere with <c>OPENIGI_UPDATE_URL</c>, which is how a locally built site is tried against a real launcher.
 /// </remarks>
 internal sealed class ReleaseFeedClient(HttpClient http)
 {
-    /// <summary>The update service's address.</summary>
+    /// <summary>The site's address, which serves the update feeds.</summary>
     public static Uri DefaultService { get; } = new(
-        Environment.GetEnvironmentVariable("OPENIGI_UPDATE_URL") is { Length: > 0 } custom ? custom.TrimEnd('/') + "/" : "https://api.openigi.com/");
+        Environment.GetEnvironmentVariable("OPENIGI_UPDATE_URL") is { Length: > 0 } custom ? custom.TrimEnd('/') + "/" : "https://openigi.com/");
 
     private readonly Dictionary<string, (string? Tag, ChannelFeed Feed)> _answers = new(StringComparer.Ordinal);
 
@@ -44,7 +45,7 @@ internal sealed class ReleaseFeedClient(HttpClient http)
 
         response.EnsureSuccessStatusCode();
         string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        ChannelFeed feed = ReleaseJson.ReadFeed(json);
+        ChannelFeed feed = Since(ReleaseJson.ReadFeed(json), installed);
         lock (_answers)
         {
             _answers[query] = (response.Headers.ETag?.ToString(), feed);
@@ -58,6 +59,17 @@ internal sealed class ReleaseFeedClient(HttpClient http)
     /// <param name="installed">The version installed, as it would be asked with.</param>
     /// <returns>The feed, or <see langword="null"/> when that channel has not been asked about yet.</returns>
     public ChannelFeed? Cached(ReleaseChannel channel, string? installed) => Answer(Query(channel, installed))?.Feed;
+
+    /// <summary>Keeps the releases of a feed that are newer than the installed version.</summary>
+    /// <param name="feed">The feed, as the site lists it.</param>
+    /// <param name="installed">The version installed, or <see langword="null"/> for none.</param>
+    /// <returns>The feed with every release since <paramref name="installed"/>, or with the newest alone for none.</returns>
+    internal static ChannelFeed Since(ChannelFeed feed, string? installed) => feed with
+    {
+        Releases = ReleaseVersion.TryParse(installed, out ReleaseVersion version)
+            ? [.. feed.Releases.Where(release => release.ParsedVersion > version)]
+            : feed.Latest is { } latest ? [latest] : [],
+    };
 
     private static string Query(ReleaseChannel channel, string? installed) =>
         $"v1/channels/{channel.Name()}" + (installed is null ? string.Empty : $"?since={Uri.EscapeDataString(installed)}");

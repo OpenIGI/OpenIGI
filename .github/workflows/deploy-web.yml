@@ -1,30 +1,28 @@
 name: Deploy web
 
-# Builds the browser build alone and deploys it to openigi.com (stable) or beta.openigi.com (beta), without a
-# release: no desktop downloads, no GitHub release, nothing new for the launcher. For a web-only fix between
-# releases. The site is deployed under a release version (by default the newest one on the branch), and
-# replaces that version's earlier deploy; `openigi-deploy rollback <channel>` still switches back one deploy.
+# Builds the browser build alone and puts it on the site, without a release: no desktop downloads, nothing new for
+# the launcher. For a web-only fix between releases. The build replaces the browser build of a release already
+# published (by default the newest one on the branch) and the site is built again; the site shows the newest stable
+# release's browser build at openigi.com and the newest release's at openigi.com/beta/, so which of the two this
+# changes follows from the version. Replacing it again with the release's own tag rebuilt is the way back.
 #
-# Run it with Run workflow: stable from master, beta from develop or master, as releases are.
+# Run it with Run workflow: a stable version from master, a beta version from develop or master, as releases are.
 on:
   workflow_dispatch:
     inputs:
-      channel:
-        description: The site to deploy to
-        type: choice
-        options: [stable, beta]
-        default: stable
       version:
-        description: The release version to deploy under (empty for the newest release tag on the branch)
+        description: The release version whose browser build is replaced (empty for the newest release tag on the branch)
         type: string
         required: false
 
 permissions:
-  contents: read
+  contents: write
   packages: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: deploy-web-${{ inputs.channel }}
+  group: deploy-web
   cancel-in-progress: false
 
 env:
@@ -35,9 +33,9 @@ defaults:
     shell: bash
 
 jobs:
-  deploy:
-    name: deploy web (${{ inputs.channel }})
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+  build:
+    name: build web
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
       image: ghcr.io/openigi/ci:latest
@@ -52,31 +50,26 @@ jobs:
       - name: Read the target
         id: target
         env:
-          CHANNEL: ${{ inputs.channel }}
           VERSION: ${{ inputs.version }}
           BRANCH: ${{ github.ref_name }}
         run: |
-          # The same rule as a release: the stable site shows master, the beta site develop (or master).
-          case "$CHANNEL/$BRANCH" in
-            stable/master | beta/develop | beta/master) ;;
-            *) echo "::error::The $CHANNEL site deploys from $([ "$CHANNEL" = stable ] && echo master || echo 'develop or master'), not $BRANCH."; exit 1 ;;
-          esac
-
-          # The newest release on the branch: a stable tag for the stable site, a stable or beta tag for beta.
+          # The newest release on the branch: a stable tag on master, a stable or beta tag on develop.
           if [ -z "$VERSION" ]; then
-            pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
-            [ "$CHANNEL" = beta ] && pattern='^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$'
+            pattern='^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$'
             tag="$(git tag --merged HEAD --sort=-v:refname -l 'v*' | grep -E "$pattern" | head -n 1 || true)"
             [ -n "$tag" ] || { echo "::error::No release tag on $BRANCH to deploy under; give a version."; exit 1; }
             VERSION="${tag#v}"
           fi
-          # What the VM accepts (deploy/vm/deploy.sh, VERSION_RE).
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo "::error::'$VERSION' is not a release version."; exit 1; }
 
-          host=openigi.com; [ "$CHANNEL" = beta ] && host=beta.openigi.com
+          # The same rule as a release: what players of a stable release see comes from master.
+          case "$VERSION/$BRANCH" in
+            *-beta.*/develop | */master) ;;
+            *) echo "::error::$VERSION deploys from $([[ "$VERSION" == *-beta.* ]] && echo 'develop or master' || echo master), not $BRANCH."; exit 1 ;;
+          esac
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "host=$host" >> "$GITHUB_OUTPUT"
-          echo "Deploying $(git rev-parse --short HEAD) on $BRANCH to $host as $VERSION." >> "$GITHUB_STEP_SUMMARY"
+          echo "Replacing the browser build of v$VERSION with $(git rev-parse --short HEAD) on $BRANCH." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/cache@v6
         with:
@@ -89,46 +82,13 @@ jobs:
           rm -rf artifacts/web
           tools/release/package.sh web browser-wasm "${{ steps.target.outputs.version }}"
 
-      # As release.yml: ssh reads ~/.ssh from the account's home, which a job container does not share, so
-      # everything lives in the job's temp folder and every call passes -F.
-      - name: Connect to the release VM
+      - name: Replace the release's browser build
         env:
-          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          dir="$RUNNER_TEMP/ssh"
-          mkdir -p "$dir" && chmod 700 "$dir"
-          printf '%s\n' "$KEY" > "$dir/deploy" && chmod 600 "$dir/deploy"
-          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
-          cat > "$dir/config" <<EOF
-          Host release-vm
-            HostName ${{ vars.DEPLOY_HOST }}
-            User deploy
-            IdentityFile $dir/deploy
-            IdentitiesOnly yes
-            UserKnownHostsFile $dir/known_hosts
-            StrictHostKeyChecking yes
-            ControlMaster auto
-            ControlPath $dir/cm-%C
-            ControlPersist 10m
-            ServerAliveInterval 30
-          EOF
-          echo "VM_SSH=ssh -F $dir/config" >> "$GITHUB_ENV"
-          ssh -F "$dir/config" release-vm status
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.target.outputs.version }}
+        run: gh release upload "v$VERSION" "artifacts/web/openigi-web-$VERSION.tar.gz" --clobber --repo "$GITHUB_REPOSITORY"
 
-      - name: Deploy the web build
-        run: |
-          $VM_SSH release-vm web "${{ inputs.channel }}" "${{ steps.target.outputs.version }}" \
-            < "artifacts/web/openigi-web-${{ steps.target.outputs.version }}.tar.gz"
-
-      # The page names its runtime by fingerprint, so the live page naming this build's is this build.
-      - name: Check the site serves it
-        run: |
-          built="$(grep -o '_framework/dotnet\.[a-z0-9]*\.js' artifacts/stage/web/publish/wwwroot/index.html | head -n 1)"
-          for attempt in 1 2 3 4 5 6; do
-            live="$(curl -fsS "https://${{ steps.target.outputs.host }}/?deploy=${{ github.run_id }}" | grep -o '_framework/dotnet\.[a-z0-9]*\.js' | head -n 1 || true)"
-            [ -n "$built" ] && [ "$live" = "$built" ] && { echo "${{ steps.target.outputs.host }} serves $built"; exit 0; }
-            sleep 10
-          done
-          echo "::error::${{ steps.target.outputs.host }} serves '${live:-nothing}', not '$built'."
-          exit 1
+  site:
+    needs: build
+    uses: ./.github/workflows/site.yml
+    secrets: inherit
