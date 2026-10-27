@@ -1,8 +1,5 @@
-using System.Formats.Tar;
 using System.Globalization;
-using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text;
 using OpenIGI.Core.Content;
 using OpenIGI.Releases;
 
@@ -17,9 +14,8 @@ namespace OpenIGI.Tools.Release;
 /// upload. A pack rebuilt with a few textures changed uploads a few chunks; a first publish uploads them all.
 /// </para>
 /// <para>
-/// The store is the release VM's, reached through its deploy dispatcher over SSH (<see cref="SshStore"/>),
-/// or a folder laid out the same way (<see cref="FolderStore"/>), which is how the whole path is tried
-/// without a server.
+/// The store is the published one on a GitHub repository's releases (<see cref="GitHubStore"/>), or a folder
+/// laid out as the site unpacks it (<see cref="FolderStore"/>), which is how the whole path is tried offline.
 /// </para>
 /// </remarks>
 internal static class ContentPublish
@@ -329,29 +325,6 @@ internal static class ContentPublish
         return upload;
     }
 
-    /// <summary>Writes what one upload carries: the chunks it sends, their checksums, and the version's manifest.</summary>
-    /// <param name="chunked">The chunked pack.</param>
-    /// <param name="upload">The chunks the store lacks.</param>
-    /// <param name="output">Where the gzipped tarball is written.</param>
-    internal static void WriteUpload(Chunked chunked, IReadOnlyList<ContentChunk> upload, Stream output)
-    {
-        using GZipStream gzip = new(output, CompressionLevel.Fastest, leaveOpen: true);
-        using TarWriter tar = new(gzip, TarEntryFormat.Pax, leaveOpen: true);
-
-        StringBuilder sums = new();
-        foreach (ContentChunk chunk in upload)
-        {
-            string name = Chunked.StoredName(chunk.Hash);
-            string source = Path.Combine(chunked.Cache, name);
-            tar.WriteEntry(source, name);
-            using FileStream stored = File.OpenRead(source);
-            sums.Append(Convert.ToHexStringLower(SHA256.HashData(stored))).Append("  ").Append(name).Append('\n');
-        }
-
-        AddText(tar, "SHA256SUMS", sums.ToString());
-        AddText(tar, ContentManifest.FileName, ReleaseJson.Write(chunked.Manifest) + "\n");
-    }
-
     private static List<ContentChunk> ChunkFile(byte[] data, string cache)
     {
         List<(int Offset, int Length)> cuts = [];
@@ -389,16 +362,6 @@ internal static class ContentPublish
         });
 
         return [.. chunks];
-    }
-
-    private static void AddText(TarWriter tar, string name, string text)
-    {
-        PaxTarEntry entry = new(TarEntryType.RegularFile, name)
-        {
-            DataStream = new MemoryStream(Encoding.UTF8.GetBytes(text)),
-            Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
-        };
-        tar.WriteEntry(entry);
     }
 
     private static string Mib(long bytes) => string.Create(CultureInfo.InvariantCulture, $"{bytes / 1048576.0:F1} MiB");

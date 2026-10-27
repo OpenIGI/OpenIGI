@@ -259,14 +259,14 @@ See the mods index's [CONTRIBUTING.md](mods-index/CONTRIBUTING.md). In short:
 2. Open a pull request adding `mods/<id>/index.json` (its owners and repository) and `mods/<id>/<version>.json`
    (the commit).
 3. CI checks it and builds it from that commit, and a maintainer reviews the source and merges it.
-4. The merge publishes it to the download store, and every launcher lists it within a minute.
+4. The merge publishes it to the content store, and every launcher lists it once the site is rebuilt, within minutes.
 
 For maintainers, the release tool does each step by hand:
 
 ```sh
 dotnet run --project tools/OpenIGI.Tools.Release -- mods-index check <index> [--base <ref> --author <login>]
 dotnet run --project tools/OpenIGI.Tools.Release -- mods-index build <index> <id> <version> --out <dir>
-dotnet run --project tools/OpenIGI.Tools.Release -- mods-index publish <index> <id> <version> --package <dir> [--ssh <host> | --to-dir <dir>]
+dotnet run --project tools/OpenIGI.Tools.Release -- mods-index publish <index> <id> <version> --package <dir> [--github <owner/repo> | --to-dir <dir>]
 ```
 
 `content publish <mod folder> --kind mod --source <repository> --commit <sha>` publishes a package that was built

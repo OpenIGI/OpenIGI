@@ -1,7 +1,7 @@
 # Checks a pull request to the index and builds every version it adds.
 #
 # Untrusted: a pull request's mod is built here, and MSBuild runs what a project tells it to. So this runs on a
-# GitHub-hosted runner, never the release VM's self-hosted one, with read-only tokens and no other secret.
+# GitHub-hosted runner, with read-only tokens and no other secret.
 name: Validate
 
 on:

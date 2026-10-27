@@ -3,14 +3,12 @@ name: Publish release
 # Builds, tests, packages and publishes one tagged release:
 #   - every download (the game in two flavours for Windows, Linux and macOS; or, for a launcher release,
 #     the launcher alone) on the GitHub release, with the changelog as its notes;
-#   - the same archives and their manifest on the download store, which the update service indexes, so the
-#     launcher offers the release within a minute;
-#   - the web build on openigi.com (stable) or beta.openigi.com (beta).
+#   - the release's manifest (release.json) and its browser build (openigi-web-<version>.tar.gz) beside them;
+#   - then the site (site.yml), which reads those back: the feeds the launcher polls, so it offers the release
+#     within minutes, and the browser build on openigi.com (stable) or openigi.com/beta/ (both).
 #
 # Run by the Release button (release-cut.yml), by pushing a vX.Y.Z / vX.Y.Z-beta.N tag by hand, or, for a tag
-# already pushed, by Run workflow with its name (a tag push does not always start a run). One job,
-# because everything happens on one machine and the archives would otherwise be stored as workflow
-# artefacts in between, which a private repository's storage cannot hold.
+# already pushed, by Run workflow with its name (a tag push does not always start a run).
 on:
   push:
     tags:
@@ -32,8 +30,9 @@ on:
 permissions:
   contents: write
   packages: read
-  # nuget.org's Trusted Publishing: the job's OIDC token is traded for a short-lived push key.
+  # nuget.org's Trusted Publishing: the job's OIDC token is traded for a short-lived push key; GitHub Pages trades it too.
   id-token: write
+  pages: write
 
 concurrency:
   group: publish-${{ inputs.tag || github.ref_name }}
@@ -52,13 +51,17 @@ defaults:
 jobs:
   publish:
     name: publish ${{ inputs.tag || github.ref_name }}
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     container:
       image: ghcr.io/openigi/ci:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      product: ${{ steps.tag.outputs.product }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -184,10 +187,13 @@ jobs:
           title="OpenIGI $VERSION"; flags=(--latest)
           [ "$CHANNEL" = beta ] && flags=(--prerelease --latest=false)
           [ "$PRODUCT" = launcher ] && { title="OpenIGI Launcher $VERSION"; flags=(--latest=false); }
+          # The browser build rides along for the site to read back; it is not one of the downloads release.json lists.
+          files=(artifacts/release/*)
+          [ "$PRODUCT" = game ] && files+=("artifacts/web/openigi-web-$VERSION.tar.gz")
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" artifacts/release/* --clobber
+            gh release upload "$TAG" "${files[@]}" --clobber
           else
-            gh release create "$TAG" artifacts/release/* --verify-tag "${flags[@]}" \
+            gh release create "$TAG" "${files[@]}" --verify-tag "${flags[@]}" \
               --title "$title" --notes-file "$RUNNER_TEMP/notes/release.md"
           fi
 
@@ -221,65 +227,10 @@ jobs:
               --source https://api.nuget.org/v3/index.json --skip-duplicate; } \
             || echo "::warning::The modding SDK did not publish."
 
-      # ssh reads ~/.ssh from the account's home in the password database, not from $HOME, and inside a job
-      # container the two differ; so everything lives in the job's temp folder and every call passes -F.
-      - name: Connect to the release VM
+      - name: Summarise
         env:
-          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          dir="$RUNNER_TEMP/ssh"
-          mkdir -p "$dir" && chmod 700 "$dir"
-          printf '%s\n' "$KEY" > "$dir/deploy" && chmod 600 "$dir/deploy"
-          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
-          # One multiplexed connection for every command: the VM rate-limits new SSH connections.
-          cat > "$dir/config" <<EOF
-          Host release-vm
-            HostName ${{ vars.DEPLOY_HOST }}
-            User deploy
-            IdentityFile $dir/deploy
-            IdentitiesOnly yes
-            UserKnownHostsFile $dir/known_hosts
-            StrictHostKeyChecking yes
-            ControlMaster auto
-            ControlPath $dir/cm-%C
-            ControlPersist 10m
-            ServerAliveInterval 30
-          EOF
-          echo "VM_SSH=ssh -F $dir/config" >> "$GITHUB_ENV"
-          ssh -F "$dir/config" release-vm status
-
-      - name: Publish the downloads
-        run: |
-          verb=release; [ "${{ steps.tag.outputs.product }}" = launcher ] && verb=launcher
-          tar -C artifacts/release --exclude CHANGELOG.md -czf - . \
-            | $VM_SSH release-vm "$verb" "${{ steps.tag.outputs.version }}"
-
-      - name: Deploy the web build
-        if: steps.tag.outputs.product == 'game'
-        run: |
-          $VM_SSH release-vm web "${{ steps.tag.outputs.channel }}" "${{ steps.tag.outputs.version }}" \
-            < "artifacts/web/openigi-web-${{ steps.tag.outputs.version }}.tar.gz"
-
-      - name: Drop old betas
-        if: steps.tag.outputs.channel == 'beta'
-        run: $VM_SSH release-vm prune
-
-      # The point of all this: the launcher sees it. The service rescans every 15 s.
-      - name: Check the update service offers it
-        env:
-          VERSION: ${{ steps.tag.outputs.version }}
           CHANNEL: ${{ steps.tag.outputs.channel }}
-          PRODUCT: ${{ steps.tag.outputs.product }}
         run: |
-          # A game release must be the channel's newest; a launcher release the feed's launcher.
-          field=.latest.version; [ "$PRODUCT" = launcher ] && field=.launcher.version
-          for attempt in $(seq 1 12); do
-            latest=$(curl -fsS "https://api.openigi.com/v1/channels/$CHANNEL" | jq -r "$field // empty" || true)
-            [ "$latest" = "$VERSION" ] && { echo "api.openigi.com offers $VERSION on $CHANNEL"; break; }
-            [ "$attempt" = 12 ] && { echo "::error::the update service still offers '${latest:-nothing}' on $CHANNEL"; exit 1; }
-            sleep 10
-          done
           {
             echo "### Released $TAG on the $CHANNEL channel"
             echo
@@ -289,3 +240,32 @@ jobs:
             echo
             cat "$RUNNER_TEMP/notes/notes.md"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The site lists what is now on GitHub: the feeds, and for a game release its browser build.
+  site:
+    needs: publish
+    uses: ./.github/workflows/site.yml
+    secrets: inherit
+
+  # The point of all this: the launcher sees it.
+  check:
+    needs: [publish, site]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the site offers it
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          CHANNEL: ${{ needs.publish.outputs.channel }}
+          PRODUCT: ${{ needs.publish.outputs.product }}
+        run: |
+          # A game release must be the channel's newest; a launcher release the feed's launcher. GitHub Pages caches
+          # for up to ten minutes, which the cache-busting query sidesteps.
+          field=.latest.version; [ "$PRODUCT" = launcher ] && field=.launcher.version
+          for attempt in $(seq 1 30); do
+            latest=$(curl -fsSL "https://openigi.com/v1/channels/$CHANNEL?release=${{ github.run_id }}-$attempt" | jq -r "$field // empty" || true)
+            [ "$latest" = "$VERSION" ] && { echo "openigi.com offers $VERSION on $CHANNEL"; exit 0; }
+            sleep 20
+          done
+          echo "::error::openigi.com still offers '${latest:-nothing}' on $CHANNEL"
+          exit 1

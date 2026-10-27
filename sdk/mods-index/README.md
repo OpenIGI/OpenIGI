@@ -6,7 +6,8 @@ mods are played in.
 
 This repository holds no mods. It holds a small JSON file per mod, saying who may publish it and where its source
 is, and one per version, naming the commit it is built from. When a maintainer merges a new version, it is built
-here from that commit and published to OpenIGI's download store, and the launcher offers it within a minute.
+here from that commit and published to OpenIGI's content store, and the launcher offers it within minutes, once
+openigi.com is rebuilt.
 
 ## How a mod appears on the launcher
 
