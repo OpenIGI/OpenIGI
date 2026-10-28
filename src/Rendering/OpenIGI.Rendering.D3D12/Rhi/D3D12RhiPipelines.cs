@@ -281,7 +281,22 @@ internal sealed unsafe class D3D12RootSignature : IDisposable
 
             ID3D10Blob* blob = null;
             ID3D10Blob* error = null;
-            int serialised = device.Api.SerializeVersionedRootSignature(&description, &blob, &error);
+            // The serialiser must be the Agility runtime's, which the device's configuration interface is. The
+            // exported D3D12SerializeVersionedRootSignature is the in-box d3d12.dll's, and an older Windows
+            // refuses CbvSrvUavHeapDirectlyIndexed there although the device runs it.
+            ID3D12DeviceConfiguration* configuration = null;
+            Guid configurationIid = ID3D12DeviceConfiguration.Guid;
+            int serialised;
+            if (((IUnknown*)device.Native)->QueryInterface(&configurationIid, (void**)&configuration) >= 0 && configuration is not null)
+            {
+                serialised = configuration->SerializeVersionedRootSignature(&description, &blob, &error);
+                configuration->Release();
+            }
+            else
+            {
+                serialised = device.Api.SerializeVersionedRootSignature(&description, &blob, &error);
+            }
+
             if (serialised < 0)
             {
                 string message = error is null
