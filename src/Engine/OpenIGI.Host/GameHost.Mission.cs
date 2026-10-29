@@ -485,6 +485,8 @@ public sealed partial class GameHost
         _loop = preview.Loop;
         _resourceFileSystem = preview.FileSystem;
         _resources = preview.Resources;
+        // Built before a change of language, it holds the old one's text.
+        MountLanguage(_resources);
         _session.Begin(chosen, preview.LevelRoot);
 
         // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the

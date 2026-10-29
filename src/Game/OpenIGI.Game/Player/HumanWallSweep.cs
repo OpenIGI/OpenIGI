@@ -210,8 +210,21 @@ public static class HumanWallSweep
             // Slide already re-anchors at the hit and steps out along the normal by the skin, which is
             // the original's `*a3 = v43 * 10.24 + *a3` after its projection. Pushing again here would
             // hold the body a centimetre off every wall and let it squeeze through thin gaps.
-            destination = HumanWallProbe.Slide(destination, wallPoint, wallNormal);
+            Vector3d slid = HumanWallProbe.Slide(destination, wallPoint, wallNormal);
             touchedWall = true;
+
+            // A slide that leaves the destination where it was has met the same plane again: the ray, a skin longer than the
+            // move, ends exactly on the face it was pushed a skin off. The original's rays are float and leave such a hit past
+            // their end, so it stops there and the body arrives against the wall (retail, mission 1, running into a wall); in
+            // doubles the hit stays, and ten more identical slides would end in the refusal below. Stop instead.
+            bool unchanged = Math.Abs(slid.X - destination.X) < 1e-3
+                && Math.Abs(slid.Y - destination.Y) < 1e-3
+                && Math.Abs(slid.Z - destination.Z) < 1e-3;
+            destination = slid;
+            if (unchanged)
+            {
+                break;
+            }
 
             // Ten casts and it gives up - and when it does, the body does not move at all. A corner
             // tight enough to need an eleventh is one the original refuses to enter.

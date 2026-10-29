@@ -49,7 +49,7 @@ public sealed class SoldierLevelOfDetailTests
     }
 
     [RequiresGameDataFact]
-    public void A_soldier_gives_up_detail_with_distance_and_is_not_drawn_past_its_cutoff()
+    public void A_soldier_gives_up_detail_with_distance_and_keeps_its_last_level_past_the_cutoff()
     {
         ModelLodPolicy lod = new(default, new Dictionary<string, float[]>(), bones: Bones);
         Assert.True(LoadRetailMission().TryGetModel("000_01_1", out MefModel? body));
@@ -61,7 +61,8 @@ public sealed class SoldierLevelOfDetailTests
         Assert.Equal(0, Level(5d));
         Assert.True(Level(60d) > 0);
         Assert.True(Level(60d) <= Level(150d));
-        Assert.Equal(-1, Level(2000d));
+        // The original stops drawing the body here; every look draws it at its last level instead.
+        Assert.Equal(triangles.Length - 1, Level(2000d));
 
         // Without the level's settings for bone objects every body is drawn whole.
         ModelLodPolicy rigidOnly = new(default, new Dictionary<string, float[]>());

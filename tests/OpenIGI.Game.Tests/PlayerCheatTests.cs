@@ -290,10 +290,14 @@ public sealed class PlayerCheatTests
             frame[(int)PlayerInputSlot.Fire] = (uint)action;
         }
 
-        input.Accept(frame);
-        weapons.Tick(input, clipEnded: true, onGround: true);
-        weapons.Sway.Advance();
-        weapons.ResolveFire(default, new Vector3f(0f, 1f, 0f), new Vector3f(1f, 0f, 0f), new Vector3f(0f, 0f, 1f));
+        // Two ticks of trigger: the fire state's entry tick (0x40EF60) asks nothing of the gun, the next one fires.
+        for (int tick = 0; tick < 2; tick++)
+        {
+            input.Accept(frame);
+            weapons.Tick(input, clipEnded: true, onGround: true);
+            weapons.Sway.Advance();
+            weapons.ResolveFire(default, new Vector3f(0f, 1f, 0f), new Vector3f(1f, 0f, 0f), new Vector3f(0f, 0f, 1f));
+        }
     }
 
     // Enough ticks for the test weapon to come off its between-rounds cooldown with room to spare.

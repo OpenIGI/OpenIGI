@@ -666,6 +666,9 @@ public sealed partial class GameHost : IDisposable
                 ReopenFrontEndForTitle(state);
             }
 
+            // A change of language, at the same boundary: it swaps the archives the menus are drawing from.
+            ApplyLanguageIfDue(state);
+
             // The frame's input and its world, in the order each one has to see the keys and the clock.
             BeginFramePass(state);
             UpdateShell(state);
@@ -687,9 +690,13 @@ public sealed partial class GameHost : IDisposable
             // The cinematic shell always renders uncapped so the menu is smooth whatever the render preset's
             // r_smooth is; the orbit and the tweens run on real time and want every frame the display offers.
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
+            // A -capturerate above the tick rate lifts it under lockstep too: its clock advances a fraction of a tick per
+            // frame, so with the latch held no frame between two ticks could render and the clock -- counted in rendered
+            // frames -- would never reach the next tick.
             _loop.Clock.UncappedRenders = _options.IsBenchmark
                 || _menuFlow.MenuMode
-                || (!_options.Lockstep && FrameCVars.SmoothPresentation.Value);
+                || (!_options.Lockstep && FrameCVars.SmoothPresentation.Value)
+                || (_options.Lockstep && _options.CaptureRate > _loop.Clock.TickRate);
 
             // The level's own half of the pause, and the reason the frozen picture behind the menu really is
             // frozen: with this set the level task forwards nothing to its subtree, so the scripts, the

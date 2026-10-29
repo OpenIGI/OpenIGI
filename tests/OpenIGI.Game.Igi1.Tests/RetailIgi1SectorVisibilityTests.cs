@@ -98,6 +98,25 @@ public sealed class RetailIgi1SectorVisibilityTests
         Assert.Contains(m.Scene.Placements, p => p.Owner.Name == "Building_3083" && p.Instance.Name == "424_02_1" && m.Visibility.IsVisible(p));
     }
 
+    /// <summary>
+    /// From inside the office the office's rooms enclose the eye and stay two-sided; the garage's rooms, whose white inner walls
+    /// lie in the planes of its doors, do not, so they are culled as the original culls every model and stop showing through.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void Only_the_eyes_own_building_encloses_it()
+    {
+        Setup m = Mission1.Value;
+        m.Visibility.Decide(
+            new Camera3D(ReportedEye, Camera3D.LookRotation(ReportedYaw * MathF.PI / 180f, ReportedPitch * MathF.PI / 180f)),
+            Projection());
+
+        Assert.All(m.Scene.Placements.Where(static p => p.Owner.Name == "Building_1118" && p.Model.IsSector), p => Assert.True(m.Visibility.EnclosesEye(p)));
+        IEnumerable<WorldPlacement> garage = m.Scene.Placements.Where(static p => p.Owner.Name == "Building_1107" && p.Model.IsSector);
+        Assert.NotEmpty(garage);
+        Assert.All(garage, p => Assert.False(m.Visibility.EnclosesEye(p)));
+        Assert.True(m.Visibility.EnclosesEye(m.Fence), "a placement that is no building's part has no opinion");
+    }
+
     /// <summary>Mission 1 places 26 buildings, 21 rooms among them.</summary>
     [RequiresGameDataFact]
     public void Mission_one_places_its_buildings_and_their_rooms()

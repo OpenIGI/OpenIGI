@@ -41,6 +41,31 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(before - 1, held.Gun.RoundsInClip);
     }
 
+    /// <summary>
+    /// 0x40EF60 only installs 0x40EF70, which reads the trigger from the next tick: retail, mission 1, a one-tick press of the
+    /// MP5 entered the fire state and fired no round, the magazine still 32 thirty ticks on.
+    /// </summary>
+    [Fact]
+    public void AOneTickTapEntersTheFireStateButFiresNothing()
+    {
+        PlayerWeapons weapons = new([7]);
+        weapons.Carry(Mp5Sd, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 0);
+        Equip(weapons);
+        int before = weapons.InHand!.Value.Gun.RoundsInClip;
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: false);
+        Assert.Equal(HumanWeaponState.Firing, weapons.State);
+        for (int tick = 0; tick < 30; tick++)
+        {
+            Tick(weapons, input, Frame(), clipEnded: false);
+            Assert.False(weapons.FiredThisTick);
+        }
+
+        Assert.Equal(before, weapons.InHand!.Value.Gun.RoundsInClip);
+    }
+
     [Fact]
     public void TheGlockFiresEveryFourTicksWhenTapped()
     {
@@ -53,7 +78,8 @@ public sealed class PlayerWeaponsTests
         weapons.Ammunition.Add(NineMillimetre.AmmoId, 200);
         Equip(weapons);
 
-        List<int> spacing = Spacing(weapons, tapEvery: 1, ticks: 60);
+        // Two ticks down, two up: the fire state's entry tick fires nothing (0x40EF60), the next one does.
+        List<int> spacing = Spacing(weapons, tapEvery: 2, ticks: 60);
         Assert.NotEmpty(spacing);
         Assert.All(spacing, gap => Assert.Equal(4, gap));
     }
@@ -90,6 +116,8 @@ public sealed class PlayerWeaponsTests
         PlayerInputState input = new();
         Tick(weapons, input, Frame(PlayerInputSlot.Fire));
         Assert.Equal(HumanWeaponState.Firing, weapons.State);
+        Assert.False(weapons.FiredThisTick);
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
         Assert.True(weapons.FiredThisTick);
 
         weapons.StopForDeath();
@@ -157,6 +185,11 @@ public sealed class PlayerWeaponsTests
         Assert.False(weapons.HideFirstPersonWeapon);
         Assert.Equal(0, held.Gun.RoundsInClip);
 
+        // 0x40F180's first call starts the reload clip; its end is waited for from the next tick.
+        Tick(weapons, new PlayerInputState(), Frame());
+        Assert.Equal(WeaponAction.Reload, weapons.RequestedAction);
+        Assert.Equal(0, held.Gun.RoundsInClip);
+
         Tick(weapons, new PlayerInputState(), Frame(), clipEnded: true);
         Assert.False(weapons.HideFirstPersonWeapon);
         Assert.Equal(17, held.Gun.RoundsInClip);
@@ -197,6 +230,9 @@ public sealed class PlayerWeaponsTests
         PlayerInputState input = new();
         Tick(weapons, input, Frame(PlayerInputSlot.Reload));
         Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+
+        // The entry installs the reload; the gun's handler opens the tube on its first call, the next tick.
+        Tick(weapons, input, Frame());
         Assert.Equal(WeaponAction.ShellReloadOpen, weapons.RequestedAction);
         Assert.Equal(new WeaponAnimations(61, -1, false, false, WeaponAnimationTable.DefaultBlendSeconds, 0f),
             WeaponAnimationTable.Select(held.Weapon, WeaponAction.ShellReloadOpen));
@@ -236,6 +272,7 @@ public sealed class PlayerWeaponsTests
 
         PlayerInputState input = new();
         Tick(weapons, input, Frame());
+        Tick(weapons, input, Frame());
         Tick(weapons, input, Frame(), clipEnded: true);
         Tick(weapons, input, Frame(), clipEnded: true);
         Tick(weapons, input, Frame(), clipEnded: true);
@@ -261,8 +298,10 @@ public sealed class PlayerWeaponsTests
         CarriedWeapon held = weapons.InHand!.Value;
         held.Gun.State.RoundsInClip = 0;
         Tick(weapons, new PlayerInputState(), Frame());
-
         Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+
+        // The reload clip starts on 0x40F180's first call, the tick after the entry.
+        Tick(weapons, new PlayerInputState(), Frame());
         Assert.Equal(WeaponAction.Reload, weapons.RequestedAction);
         Assert.False(weapons.HideFirstPersonWeapon);
     }
@@ -325,7 +364,11 @@ public sealed class PlayerWeaponsTests
         Vector3d eye = new(1000, 2000, 3000);
         Vector3f forward = new(0f, 1f, 0f);
 
+        // The melee entry asks nothing of the gun (0x40FA60); the held trigger strikes on the next tick.
         PlayerInputState input = new();
+        input.Accept(Frame(PlayerInputSlot.Fire));
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.False(weapons.ResolveFire(eye, forward, new Vector3f(1f, 0f, 0f), new Vector3f(0f, 0f, 1f)));
         input.Accept(Frame(PlayerInputSlot.Fire));
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.ResolveFire(eye, forward, new Vector3f(1f, 0f, 0f), new Vector3f(0f, 0f, 1f)));
@@ -380,13 +423,13 @@ public sealed class PlayerWeaponsTests
         weapons.Ammunition.Add(NineMillimetre.AmmoId, 100);
         Equip(weapons);
 
-        Run(weapons, fire: true, ticks: 1);
+        Run(weapons, fire: true, ticks: 2);
         float afterOne = weapons.RecoilPitch;
         Assert.True(afterOne > 0f);
 
         // No further round for three ticks -- the cooldown is four -- so the only thing happening is
         // the 0.9 damping.
-        Equip(weapons);
+        Tick(weapons, new PlayerInputState(), Frame());
         Assert.Equal(afterOne * PlayerWeapons.RecoilDamping, weapons.RecoilPitch, 6);
     }
 
@@ -414,6 +457,42 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
         Assert.Equal(rifleRounds, weapons.InHand!.Value.Gun.RoundsInClip);
         Assert.Empty(weapons.Shots);
+    }
+
+    /// <summary>
+    /// 0x40F4A0 launches once and leaves the state on 0x40FD70's wait: the launch clip plays out, a second press launches
+    /// nothing, and the outgoing clip's ended flag on the launch tick does not end it.
+    /// </summary>
+    [Fact]
+    public void M203LaunchHoldsItsClipUntilItEndsAndLaunchesOnce()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(M203Ammo.AmmoId, 3);
+        weapons.SetM203Ammunition(M203Ammo);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.AlternateFire), clipEnded: true);
+        Assert.Equal(HumanWeaponState.AlternateFire, weapons.State);
+        Assert.Single(weapons.M203Shots);
+        Assert.Equal(2, weapons.Ammunition.Count(M203Ammo.AmmoId));
+
+        // Pressed again while the launch clip plays: still waiting, nothing launched, the clip not replaced.
+        Tick(weapons, input, Frame(), clipEnded: false);
+        Tick(weapons, input, Frame(PlayerInputSlot.AlternateFire), clipEnded: false);
+        Assert.Equal(HumanWeaponState.AlternateFire, weapons.State);
+        Assert.Empty(weapons.M203Shots);
+        Assert.Null(weapons.RequestedAction);
+        Assert.Equal(2, weapons.Ammunition.Count(M203Ammo.AmmoId));
+
+        // The clip ends: back to the ready hub, and the next press is a new launch.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Tick(weapons, input, Frame(PlayerInputSlot.AlternateFire), clipEnded: false);
+        Assert.Single(weapons.M203Shots);
+        Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
     }
 
     [Fact]
@@ -454,14 +533,15 @@ public sealed class PlayerWeaponsTests
             Assert.False(weapons.FiredThisTick);
         }
 
-        Assert.Equal(12, weapons.ThrowChargeTicks);
+        // The entry tick is 0x40F4F0's and counts nothing; the per-tick counts the eleven after it.
+        Assert.Equal(11, weapons.ThrowChargeTicks);
 
         // The release is the throw: one round leaves on that very tick.
         Tick(weapons, input, Frame());
         Assert.True(weapons.FiredThisTick);
         GunProjectile shot = Assert.Single(weapons.Shots);
         Assert.Equal(2, weapons.InHand?.Gun.RoundsInClip);
-        float held = 12f;
+        float held = 11f;
         float curve = MathF.Pow(held * 50f, 0.7f) + (held * 0.1f);
         float tap = MathF.Pow(3f * 50f, 0.7f) + 0.3f;
         float fullCharge = MathF.Pow(60f * 50f, 0.7f) + 6f;

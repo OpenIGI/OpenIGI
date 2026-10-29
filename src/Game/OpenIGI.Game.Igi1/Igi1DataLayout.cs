@@ -59,15 +59,13 @@ public sealed class Igi1DataLayout : ITitleDataLayout
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The map computer's own three, which it reads its screens, objectives and messages from. English
-    /// only, as the port is: the original picks the directory from its language setting, and nothing
-    /// here has one yet.
+    /// The map computer's own three, which it reads its screens, objectives and messages from.
     /// </remarks>
-    public IReadOnlyList<string> StringArchives { get; } =
+    public IReadOnlyList<string> StringArchives(string language) =>
     [
-        "LOCAL:language/english/computer.res",
-        "LOCAL:language/english/objectives.res",
-        "LOCAL:language/english/messages.res",
+        $"LOCAL:language/{language}/computer.res",
+        $"LOCAL:language/{language}/objectives.res",
+        $"LOCAL:language/{language}/messages.res",
     ];
 
     /// <inheritdoc/>

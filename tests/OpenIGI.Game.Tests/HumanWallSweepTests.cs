@@ -234,6 +234,35 @@ public sealed class HumanWallSweepTests
     }
 
     /// <summary>An infinite plane through <paramref name="through"/> with the given normal.</summary>
+    /// <summary>
+    /// A wall the slide puts the destination a skin off, which the next ray -- a skin longer than the move -- meets exactly at
+    /// its end. Retail, mission 1: running into a wall arrives against it; sliding onto the same plane again must not use up
+    /// the ten casts and refuse the move.
+    /// </summary>
+    [Fact]
+    public void ASlideOntoTheSamePlaneAgainArrivesAgainstTheWall()
+    {
+        const double wallY = 559.5;
+        WorldRayCast endInclusive = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            hit = default;
+            if (origin.Y >= wallY || end.Y < wallY)
+            {
+                return false;
+            }
+
+            double t = (wallY - origin.Y) / (end.Y - origin.Y);
+            Vector3d at = new(origin.X + ((end.X - origin.X) * t), wallY, origin.Z + ((end.Z - origin.Z) * t));
+            hit = new WorldRayHit(at, new Vector3f(0f, -1f, 0.002f), (at - origin).Length);
+            return true;
+        };
+
+        HumanWallSweepResult result = HumanWallSweep.Sweep(default, new Vector3d(0.0, 600.0, 0.0), true, false, endInclusive);
+
+        Assert.True(result.TouchedWall);
+        Assert.Equal(wallY - HumanWallSweep.SkinInUnits, result.Destination.Y, 0.5);
+    }
+
     private static WorldRayCast Plane(Vector3f normal, Vector3d through) =>
         (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
             Cast(origin, end, normal, through, double.MinValue, double.MaxValue, out hit);

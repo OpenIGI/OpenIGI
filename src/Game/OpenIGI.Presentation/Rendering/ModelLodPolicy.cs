@@ -58,10 +58,18 @@ public sealed class ModelLodPolicy
     /// <param name="positionMetres">Where the body's origin is drawn this frame, metres.</param>
     /// <param name="camera">The view.</param>
     /// <param name="fieldOfView">The view's horizontal half-angle tangent.</param>
-    /// <returns>The level, or <c>-1</c> when it is beyond its cutoff.</returns>
+    /// <returns>The level; beyond the original's cutoff, the last.</returns>
     /// <remarks>
+    /// <para>
     /// Against a rigid model's pick, the radius is the body's own (<c>MESH+0x78</c>, which the body keeps from its model) rather
     /// than the render sphere's, the detail scale is not applied, and the level's settings are the ones for bone objects.
+    /// </para>
+    /// <para>
+    /// <b>A body is never culled, a deliberate departure.</b> The original returns -1 past the cutoff and
+    /// <c>Direct3DRender_DrawBoneMesh</c> then draws nothing: logged on the retail build in mission 1, guards at 89 to 147 m
+    /// vanished while the scenery around them stood. A soldier who can see and shoot the player is drawn at any distance in
+    /// every look, so past the cutoff the body keeps its last level instead.
+    /// </para>
     /// </remarks>
     public int SelectBone(string name, MefModel first, ReadOnlySpan<int> triangles, Vector3d positionMetres, in Camera3D camera, float fieldOfView)
     {
@@ -77,7 +85,8 @@ public sealed class ModelLodPolicy
         Matrix3f o = camera.Orientation;
         double depth = (o.M31 * (at.X - eye.X + centre.X)) + (o.M32 * (at.Y - eye.Y + centre.Y)) + (o.M33 * (at.Z - eye.Z + centre.Z));
         float[] distances = _distances.TryGetValue(name, out float[]? own) ? own : [];
-        return ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0, Math.Min(fieldOfView, Rules.FieldOfViewCeiling), _bones, triangles, distances);
+        int level = ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0, Math.Min(fieldOfView, Rules.FieldOfViewCeiling), _bones, triangles, distances);
+        return level < 0 ? Math.Max(0, triangles.Length - 1) : level;
     }
 
     /// <summary>Picks the level a placement is drawn at from a view.</summary>

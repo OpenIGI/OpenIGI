@@ -54,9 +54,10 @@ public sealed class GuestTitle
     /// <param name="runtime">The game.</param>
     /// <param name="dataRoot">Where the game is installed.</param>
     /// <param name="logger">Where its diagnostics go; defaults to a sink that discards them.</param>
+    /// <param name="language">The language folder its text is read from, for example <c>english</c>.</param>
     /// <returns>The guest, its tables loaded.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public static GuestTitle Start(IGameTitleRuntime runtime, string dataRoot, IOpenIgiLogger? logger = null)
+    public static GuestTitle Start(IGameTitleRuntime runtime, string dataRoot, IOpenIgiLogger? logger = null, string language = "english")
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrEmpty(dataRoot);
@@ -69,7 +70,7 @@ public sealed class GuestTitle
 
         // The game's own text, as the host registers a playing title's (its layout's string archives), so what a guest shows reads
         // in its own words.
-        foreach (string archive in runtime.Layout.StringArchives)
+        foreach (string archive in runtime.Layout.StringArchives(language))
         {
             if (fileSystem.Exists(archive))
             {

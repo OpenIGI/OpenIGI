@@ -197,6 +197,56 @@ public sealed class PlayerBodyTests
         Assert.Equal(floorZ, player.Position.Z);
     }
 
+    /// <summary>
+    /// The sweep's rays meet the terrain as well as the placed objects (<c>0x461A70</c> casts <c>Coll_LinesEx</c> with every
+    /// flag, the terrain's <c>0x80000000</c> among them): ground steeper than the wall limit stops a body as a wall does.
+    /// </summary>
+    [Fact]
+    public void TheWallSweepStopsAtTerrainSteepEnoughToBeAWall()
+    {
+        const double floorZ = 1000.0;
+        const double cliffX = 2500.0;
+        PlayerBody player = new()
+        {
+            Position = new Vector3d(2000.0, 3000.0, floorZ),
+            Walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            {
+                hit = default;
+                if (end.Z >= origin.Z || origin.Z < floorZ || end.Z > floorZ)
+                {
+                    return false;
+                }
+
+                hit = new WorldRayHit(new Vector3d(origin.X, origin.Y, floorZ), new Vector3f(0f, 0f, 1f), origin.Z - floorZ);
+                return true;
+            },
+            TerrainWalls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            {
+                hit = default;
+                if (origin.X >= cliffX || end.X < cliffX)
+                {
+                    return false;
+                }
+
+                double t = (cliffX - origin.X) / (end.X - origin.X);
+                Vector3d at = origin + ((end - origin) * t);
+                hit = new WorldRayHit(at, new Vector3f(-1f, 0f, 0f), (at - origin).Length);
+                return true;
+            },
+        };
+        Assert.True(player.PlaceOnGround(terrain: null));
+
+        // Facing +X (yaw a quarter turn), a step of a metre at a time, into a cliff half a metre on.
+        player.Yaw = MathF.PI / 2f;
+        for (int tick = 0; tick < 4; tick++)
+        {
+            player.Tick(default, terrain: null, rootDelta: new Vector3f(0f, 4096f, 0f));
+        }
+
+        Assert.True(player.Position.X < cliffX);
+        Assert.True(player.TouchedWall);
+    }
+
     [RequiresGameDataFact]
     public void InteractionSnapFindsThePlacedFloorBelowAnAuthoredRoot()
     {

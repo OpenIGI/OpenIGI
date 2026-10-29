@@ -20,6 +20,8 @@ internal static class PlayerWeaponsDriver
             Tick(weapons, input, Frame(), clipEnded);
             if (weapons.State == HumanWeaponState.Ready && weapons.InHand is not null)
             {
+                // And the ready hub's first per-tick (0x40E9C0), which the entry does not run: it puts the stand pose back.
+                Tick(weapons, input, Frame(), clipEnded);
                 return;
             }
         }

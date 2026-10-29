@@ -69,7 +69,7 @@ public sealed class Igi2GuestContent
         ArgumentException.ThrowIfNullOrEmpty(dataRoot);
         ArgumentNullException.ThrowIfNull(models);
         IOpenIgiLogger log = logger ?? NullLogger.Instance;
-        GuestTitle guest = GuestTitle.Start(new Igi2Runtime(), dataRoot, log);
+        GuestTitle guest = GuestTitle.Start(new Igi2Runtime(), dataRoot, log, LanguageCVars.Directory);
 
         List<LoadedPack> packs =
         [

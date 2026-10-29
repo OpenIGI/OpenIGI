@@ -805,7 +805,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         bool m203Launched = player.M203LaunchedThisTick;
         _weaponSounds?.Tick(
             player.FiredThisTick && !m203Launched && weaponForSound is not null,
-            weaponForSound);
+            weaponForSound,
+            triggerHeld: !m203Launched && weaponForSound is not null && player.Weapons?.TriggerHeldThisTick == true);
         if (m203Launched)
         {
             // GunM16A2's native callback (0x473510) plays this launch report itself; it is

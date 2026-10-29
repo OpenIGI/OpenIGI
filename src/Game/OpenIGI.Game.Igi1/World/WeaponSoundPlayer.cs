@@ -43,7 +43,12 @@ public sealed class WeaponSoundPlayer
     /// <param name="firedThisTick">Whether a round left the barrel this tick.</param>
     /// <param name="weapon">The weapon in hand, or <see langword="null"/> when there is none.</param>
     /// <param name="positionInUnits">The world emitter for an AI weapon; null for the player's gun.</param>
-    public void Tick(bool firedThisTick, WeaponType? weapon, Vector3d? positionInUnits = null)
+    /// <param name="triggerHeld">
+    /// The gun's trigger as its fire handler gated it, where the caller knows it. An automatic's loop then runs while the
+    /// trigger is held and ends, with its tail, on the first tick it is not -- <c>0x478BA0</c>'s rule -- rather than after a
+    /// cadence's worth of quiet.
+    /// </param>
+    public void Tick(bool firedThisTick, WeaponType? weapon, Vector3d? positionInUnits = null, bool? triggerHeld = null)
     {
         _positionInUnits = positionInUnits;
 
@@ -64,6 +69,21 @@ public sealed class WeaponSoundPlayer
             if (firedThisTick)
             {
                 Play(weapon.FireSound);
+            }
+
+            return;
+        }
+
+        if (triggerHeld is bool trigger)
+        {
+            if (trigger && _looping is null)
+            {
+                _loop = Play(weapon.FireSound, looping: true);
+                _looping = _loop.IsValidHandle ? weapon : null;
+            }
+            else if (!trigger && _looping is not null)
+            {
+                EndLoop();
             }
 
             return;

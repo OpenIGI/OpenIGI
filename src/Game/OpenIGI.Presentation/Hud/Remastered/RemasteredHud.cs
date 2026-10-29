@@ -185,11 +185,6 @@ public sealed class RemasteredHud : IDisposable
             HudReadouts.DrawCrosshair(context, model, frame.CrosshairSpread);
         }
 
-        if (frame.CrosshairSpread > 0f)
-        {
-            HudAlerts.DrawAmmoArc(context, model, frame.CrosshairSpread);
-        }
-
         painter.PopOpacity();
         context.Behind = 1f;
 

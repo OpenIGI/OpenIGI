@@ -50,6 +50,23 @@ public sealed class BoneObject
     private readonly BoneClip?[] _blendFrom;
     private readonly float[] _blendElapsed;
     private readonly float[] _blendDuration;
+
+    // A fade still running when the next one started. 0x4D5EC0 does not cut it short: the live blend node becomes the new node's
+    // outgoing branch whole, and goes on ramping its own weight inside it, so the outgoing side is the older clip fading into
+    // _blendFrom. One level is kept; a third fade begun inside both drops the oldest clip.
+    private readonly BoneClip?[] _nestedFrom;
+    private readonly float[] _nestedElapsed;
+    private readonly float[] _nestedDuration;
+    private readonly BoneClip?[] _nestedFromResolved;
+    private readonly BoneClip?[] _nestedFromInherited;
+    private readonly float[] _nestedWeightResolved;
+    private readonly float[] _nestedWeightInherited;
+
+    // The root's step over the last tick as 0x4D3020 gives it: the two branches' steps mixed by the fade's weight.
+    private Vector3f _blendedRootDelta;
+
+    // And the root's place, mixed by the same weight; null until the first tick.
+    private Vector3f? _blendedRootPosition;
     private readonly BoneClip?[] _blendFromResolved;
     private readonly BoneClip?[] _blendFromInherited;
     private readonly float[] _blendWeightResolved;
@@ -93,6 +110,13 @@ public sealed class BoneObject
         _blendFromInherited = new BoneClip?[bones];
         _blendWeightResolved = new float[bones];
         _blendWeightInherited = new float[bones];
+        _nestedFrom = new BoneClip?[bones];
+        _nestedElapsed = new float[bones];
+        _nestedDuration = new float[bones];
+        _nestedFromResolved = new BoneClip?[bones];
+        _nestedFromInherited = new BoneClip?[bones];
+        _nestedWeightResolved = new float[bones];
+        _nestedWeightInherited = new float[bones];
     }
 
     /// <summary>Gets the animation set backing this object.</summary>
@@ -187,6 +211,17 @@ public sealed class BoneObject
         float blendTicks = blendSeconds * (4800f / BoneAnimation.FrameStep);
         if (_own[bone] is { } outgoing && blendTicks >= 1f)
         {
+            if (_blendDuration[bone] > 0f && _blendFrom[bone] is { } running)
+            {
+                _nestedFrom[bone] = running;
+                _nestedElapsed[bone] = _blendElapsed[bone];
+                _nestedDuration[bone] = _blendDuration[bone];
+            }
+            else
+            {
+                ClearNested(bone);
+            }
+
             _blendFrom[bone] = outgoing;
             _blendElapsed[bone] = 0f;
             _blendDuration[bone] = blendTicks;
@@ -196,6 +231,7 @@ public sealed class BoneObject
             _blendFrom[bone] = null;
             _blendElapsed[bone] = 0f;
             _blendDuration[bone] = 0f;
+            ClearNested(bone);
         }
 
         _own[bone] = clip;
@@ -216,7 +252,21 @@ public sealed class BoneObject
         _blendFrom[bone] = null;
         _blendElapsed[bone] = 0f;
         _blendDuration[bone] = 0f;
+        ClearNested(bone);
     }
+
+    private void ClearNested(int bone)
+    {
+        _nestedFrom[bone] = null;
+        _nestedElapsed[bone] = 0f;
+        _nestedDuration[bone] = 0f;
+    }
+
+    // The outgoing side's root place: the outgoing clip's, or a running fade's two clips mixed by its weight.
+    private Vector3f OutgoingRoot(BoneClip from) =>
+        _nestedFrom[0] is { } older && _nestedDuration[0] > 0f
+            ? Vector3f.Lerp(older.SampleRoot(), from.SampleRoot(), _nestedElapsed[0] / _nestedDuration[0])
+            : from.SampleRoot();
 
     /// <summary>Gets the clip attached to a bone itself, ignoring inheritance.</summary>
     /// <param name="bone">The bone.</param>
@@ -273,7 +323,7 @@ public sealed class BoneObject
         // Blend the hold offset alongside the pose so the weapon does not jump to its new resting spot
         // on the tick the source swaps; the position eases over the same weight as the rotations.
         float weight = _blendElapsed[0] / _blendDuration[0];
-        Vector3f outgoing = from.SampleRoot();
+        Vector3f outgoing = OutgoingRoot(from);
         return new Vector3f(
             outgoing.X + ((incoming.X - outgoing.X) * weight),
             outgoing.Y + ((incoming.Y - outgoing.Y) * weight),
@@ -284,6 +334,23 @@ public sealed class BoneObject
     /// <returns>The per-tick root-motion delta, in engine units.</returns>
     public Vector3f RootMotionDelta() => _own[0]?.RootDelta ?? default;
 
+    /// <summary>The root's step over the last tick with a cross-fade mixed in, <c>BoneBlend_GetMotion</c> (<c>0x4D3020</c>).</summary>
+    /// <returns>The per-tick root-motion delta, in engine units.</returns>
+    /// <remarks>
+    /// While a clip fades in over another, the root's step is the two clips' steps mixed by the fade's weight as it stood when
+    /// the tick began: none of the new clip's on the tick it was started, a sixth of it the next on a six-tick fade, and all of
+    /// it once the fade is done. So a run started from a stand gathers pace over the blend instead of leaving at full stride.
+    /// </remarks>
+    public Vector3f BlendedRootMotionDelta() => _blendedRootDelta;
+
+    /// <summary>The root's place after the last tick, the two clips mixed by the weight the tick began with.</summary>
+    /// <returns>The root's position in the object's own space.</returns>
+    /// <remarks>
+    /// What the ground probe stands a human's origin on (<c>0x462390</c> reads bone 0): a crouch fades the origin down over
+    /// its six ticks, a tick behind the fade's own count, as the step does.
+    /// </remarks>
+    public Vector3f BlendedRootPosition() => _blendedRootPosition ?? SampleRootMotion();
+
     /// <summary>Advances every distinct clip on the object by one tick.</summary>
     /// <remarks>
     /// Each clip is ticked once however many bones inherit it — a clip is one clock, and ticking it per
@@ -292,6 +359,13 @@ public sealed class BoneObject
     public void Tick()
     {
         ChangedThisTick = false;
+
+        // The root's fade weight as the tick begins, which is the one 0x4D3020 mixes the steps by.
+        float rootWeight = _blendDuration.Length > 0 && _blendDuration[0] > 0f ? _blendElapsed[0] / _blendDuration[0] : 1f;
+        BoneClip? rootFrom = _blendFrom.Length > 0 ? _blendFrom[0] : null;
+        BoneClip? rootOlder = _nestedFrom.Length > 0 && _nestedDuration[0] > 0f ? _nestedFrom[0] : null;
+        float olderWeight = rootOlder is null ? 1f : _nestedElapsed[0] / _nestedDuration[0];
+
         for (int bone = 0; bone < _own.Length; bone++)
         {
             BoneClip? clip = _own[bone];
@@ -313,13 +387,39 @@ public sealed class BoneObject
             _blendFrom[bone]?.Tick();
             _blendElapsed[bone] += 1f;
             ChangedThisTick = true;
+            if (_nestedDuration[bone] > 0f)
+            {
+                _nestedFrom[bone]?.Tick();
+                _nestedElapsed[bone] += 1f;
+                if (_nestedElapsed[bone] >= _nestedDuration[bone])
+                {
+                    ClearNested(bone);
+                }
+            }
+
             if (_blendElapsed[bone] >= _blendDuration[bone])
             {
                 _blendFrom[bone] = null;
                 _blendElapsed[bone] = 0f;
                 _blendDuration[bone] = 0f;
+                ClearNested(bone);
             }
         }
+
+        Vector3f incoming = _own.Length > 0 ? _own[0]?.RootDelta ?? default : default;
+        Vector3f place = _own.Length > 0 && _own[0] is { } root ? root.SampleRoot() : default;
+        if (rootWeight >= 1f || rootFrom is null)
+        {
+            _blendedRootDelta = incoming;
+            _blendedRootPosition = place;
+            return;
+        }
+
+        // The outgoing side: the outgoing clip, or the fade it was still running, mixed by that fade's own weight.
+        Vector3f outgoingDelta = rootOlder is null ? rootFrom.RootDelta : Vector3f.Lerp(rootOlder.RootDelta, rootFrom.RootDelta, olderWeight);
+        Vector3f outgoingPlace = rootOlder is null ? rootFrom.SampleRoot() : Vector3f.Lerp(rootOlder.SampleRoot(), rootFrom.SampleRoot(), olderWeight);
+        _blendedRootDelta = Vector3f.Lerp(outgoingDelta, incoming, rootWeight);
+        _blendedRootPosition = Vector3f.Lerp(outgoingPlace, place, rootWeight);
     }
 
     /// <summary>Poses the skeleton.</summary>
@@ -347,9 +447,18 @@ public sealed class BoneObject
             // outgoing, 1 = fully incoming). 0x4D5EC0's blend node, flattened to one branch per bone.
             BoneClip? from = _blendFromResolved[bone];
             float weight = _blendWeightResolved[bone];
-            Quaternion32 local = from is not null && weight < 1f && bone < from.Animation.BoneCount
-                ? BoneRotationSampler.Slerp(from.SampleRotation(bone), incoming, weight)
-                : incoming;
+            Quaternion32 local = incoming;
+            if (from is not null && weight < 1f && bone < from.Animation.BoneCount)
+            {
+                // A fade the outgoing side was still running blends inside it first.
+                Quaternion32 outgoing = from.SampleRotation(bone);
+                if (_nestedFromResolved[bone] is { } older && bone < older.Animation.BoneCount)
+                {
+                    outgoing = BoneRotationSampler.Slerp(older.SampleRotation(bone), outgoing, _nestedWeightResolved[bone]);
+                }
+
+                local = BoneRotationSampler.Slerp(outgoing, incoming, weight);
+            }
 
             // The bend goes on the LEFT, after the cross-fade rather than inside it: it is not a pose
             // being blended between but a frame the blended pose is expressed in.
@@ -386,6 +495,7 @@ public sealed class BoneObject
         {
             Advance(_own[bone]);
             Advance(_blendFrom[bone]);
+            Advance(_nestedFrom[bone]);
             if (_blendDuration[bone] > 0f)
             {
                 _blendElapsed[bone] = Math.Min(_blendElapsed[bone] + 1f, _blendDuration[bone]);
@@ -423,18 +533,24 @@ public sealed class BoneObject
                 _inherited[bone] = null;
                 _blendFromInherited[bone] = null;
                 _blendWeightInherited[bone] = 1f;
+                _nestedFromInherited[bone] = null;
+                _nestedWeightInherited[bone] = 1f;
             }
             else if (_propagate[parent])
             {
                 _inherited[bone] = _resolved[parent];
                 _blendFromInherited[bone] = _blendFromResolved[parent];
                 _blendWeightInherited[bone] = _blendWeightResolved[parent];
+                _nestedFromInherited[bone] = _nestedFromResolved[parent];
+                _nestedWeightInherited[bone] = _nestedWeightResolved[parent];
             }
             else
             {
                 _inherited[bone] = _inherited[parent];
                 _blendFromInherited[bone] = _blendFromInherited[parent];
                 _blendWeightInherited[bone] = _blendWeightInherited[parent];
+                _nestedFromInherited[bone] = _nestedFromInherited[parent];
+                _nestedWeightInherited[bone] = _nestedWeightInherited[parent];
             }
 
             if (_own[bone] is not null)
@@ -446,12 +562,17 @@ public sealed class BoneObject
                 bool blending = _blendDuration[bone] > 0f;
                 _blendFromResolved[bone] = blending ? _blendFrom[bone] : null;
                 _blendWeightResolved[bone] = blending ? _blendElapsed[bone] / _blendDuration[bone] : 1f;
+                bool nested = blending && _nestedDuration[bone] > 0f;
+                _nestedFromResolved[bone] = nested ? _nestedFrom[bone] : null;
+                _nestedWeightResolved[bone] = nested ? _nestedElapsed[bone] / _nestedDuration[bone] : 1f;
             }
             else
             {
                 _resolved[bone] = _inherited[bone];
                 _blendFromResolved[bone] = _blendFromInherited[bone];
                 _blendWeightResolved[bone] = _blendWeightInherited[bone];
+                _nestedFromResolved[bone] = _nestedFromInherited[bone];
+                _nestedWeightResolved[bone] = _nestedWeightInherited[bone];
             }
         }
     }

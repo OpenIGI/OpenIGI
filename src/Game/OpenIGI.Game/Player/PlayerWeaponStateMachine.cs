@@ -24,12 +24,12 @@ internal sealed class PlayerWeaponStateMachine
     private readonly PlayerWeaponSelector _selector;
     private bool _wantFire;
     private bool _wantAlternateFire;
+    private bool _reloadStarting;
     private int _throwChargeTicks;
     private bool _throwReleased;
     private bool _placingFirePending;
     private bool _actionComplete;
     private bool _medipackUsed;
-    private bool _medipackAdvanced;
     private bool _medipackAwaitingRelease;
     private bool _medipackInjectionLoopStarted;
     private bool _medipackClosing;
@@ -279,22 +279,22 @@ internal sealed class PlayerWeaponStateMachine
     private bool OutOfThrowables() =>
         InHand is not { } held || (held.Gun.RoundsInClip <= 0 && held.Gun.Reserve(Ammunition) <= 0);
 
+    // 0x4EC1E0: the state's per-tick runs once a tick, and a transition calls only the target's ENTRY, which installs the
+    // target's per-tick and returns (0x40E9B0, 0x40EF60, 0x40F170 and every sibling). So the new state's per-tick first runs on
+    // the next tick, against that tick's input and clip flags -- never against the outgoing clip's. Measured against retail on
+    // mission 1: a one-tick tap of the MP5 enters the fire state and fires nothing; a reload under a held trigger finishes
+    // into the ready hub, not straight into the fire state; the reload clip starts the tick after the press.
     private void Step(PlayerInputState input)
     {
-        // A transition runs its target's entry immediately, so the loop is bounded rather than
-        // recursive; the graph is a star and cannot cycle more than a couple of hops in one tick.
-        for (int guard = 0; guard <= HumanWeaponGraph.StateCount; guard++)
+        HumanWeaponState next = Advance(input);
+        if (next == State)
         {
-            HumanWeaponState next = Advance(input);
-            if (next == State)
-            {
-                return;
-            }
-
-            PreviousState = State;
-            State = next;
-            Enter(next);
+            return;
         }
+
+        PreviousState = State;
+        State = next;
+        Enter(next);
     }
 
     private HumanWeaponState Advance(PlayerInputState input) => State switch
@@ -411,16 +411,10 @@ internal sealed class PlayerWeaponStateMachine
         return HumanWeaponState.Ready;
     }
 
-    /// <summary>Raises one M203 callback request and returns to the ready hub.</summary>
-    private HumanWeaponState AlternateFireState()
-    {
-        _wantAlternateFire = true;
-        // IGI1's 0x40F4A0 callback calls the animation dispatcher with the M16A2's
-        // FireAnimation2 field (0x4137E0 action 8, variant 1). That is clip 39 in
-        // WEAPONS/M16A2/WEAPON.QVM; variant 0 is the ordinary rifle shot (clip 4).
-        Request(WeaponAction.Fire, fireVariant: 1);
-        return HumanWeaponState.Ready;
-    }
+    // 0x40FD70, the wait 0x40F4A0 leaves the state on: back to the ready hub when the launch clip has ended, and nothing else
+    // -- no second launch, no stand pose over the clip.
+    private HumanWeaponState AlternateFireState() =>
+        Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : HumanWeaponState.AlternateFire;
 
     // 0x40EF70. It does not fire; it asks, on every tick the trigger is down.
     private HumanWeaponState Firing(PlayerInputState input)
@@ -560,6 +554,20 @@ internal sealed class PlayerWeaponStateMachine
     // all, which is a good example of a field that exists for the HUD.
     private HumanWeaponState Reloading()
     {
+        // 0x40F180's first call: the gun's handler starts the reload clip -- the SPAS-12's opens its tube -- and the clip's end
+        // is waited for from the next tick on.
+        if (_reloadStarting)
+        {
+            _reloadStarting = false;
+            if (InHand is { } first && LoadsByTheShell(first.Weapon))
+            {
+                return LoadingShells(first.Gun);
+            }
+
+            Request(WeaponAction.Reload);
+            return HumanWeaponState.Reloading;
+        }
+
         if (InHand is { } shotgun && LoadsByTheShell(shotgun.Weapon))
         {
             return LoadingShells(shotgun.Gun);
@@ -624,15 +632,6 @@ internal sealed class PlayerWeaponStateMachine
 
     private HumanWeaponState Medipack()
     {
-        // ClipEnded belongs to the outgoing animation on the tick that enters this state. Let the
-        // medipack advance once before accepting that flag, otherwise a completed outgoing clip
-        // prevents the newly requested healing animation from being used.
-        if (!_medipackAdvanced)
-        {
-            _medipackAdvanced = true;
-            return HumanWeaponState.Medipack;
-        }
-
         // 0x40FB90 waits for the entry clip to end, then starts FireAnimation2 with the native loop
         // flag. The loop is kept in this state; a clip wrap must not create another medipack action.
         if (!_medipackInjectionLoopStarted)
@@ -757,33 +756,33 @@ internal sealed class PlayerWeaponStateMachine
                 FireVariant = 0;
                 break;
 
-            // 0x40F4F0. Zeroed here: a transition runs its target's step in the same tick, and that
-            // step counts this first held tick to one. The entry also plays the weapon's first fire
-            // animation -- the pin-and-wind-up the hand holds while the throw charges -- exactly as
-            // the retail entry plays record +1668.
+            // 0x40F4F0. Zeroed here; the per-tick counts the held ticks from the next one on. The entry also plays the
+            // weapon's first fire animation -- the pin-and-wind-up the hand holds while the throw charges -- exactly as the
+            // retail entry plays record +1668.
             case HumanWeaponState.Throwing:
                 _throwChargeTicks = 0;
                 _throwReleased = false;
                 Request(WeaponAction.Fire);
                 break;
 
+            // 0x40F930 raises the fire request itself, so the mine goes down on the entry tick; the per-tick only waits on it.
             case HumanWeaponState.Placing:
                 _placingFirePending = true;
+                _wantFire = true;
                 Request(WeaponAction.Fire);
                 Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
                 break;
 
+            // 0x40F4A0: raises the launch marker once and plays the weapon's FireAnimation2 (0x4137E0 action 8, variant 1) --
+            // clip 39 in WEAPONS/M16A2/WEAPON.QVM; variant 0 is the ordinary rifle shot (clip 4). The M203 object is created
+            // after the view has been committed, in ResolveFire, exactly like the 0x462E50 bridge.
             case HumanWeaponState.AlternateFire:
-                // Native 0x40F4A0 lowers/raises the weapon through the alternate-fire animation and
-                // sets the callback marker. The actual M203 object is created after the view has been
-                // committed, in ResolveFire, exactly like the 0x462E50 bridge.
                 _wantAlternateFire = true;
-                Request(WeaponAction.Fire);
+                Request(WeaponAction.Fire, fireVariant: 1);
                 break;
 
             case HumanWeaponState.Medipack:
                 _medipackUsed = false;
-                _medipackAdvanced = false;
                 _medipackInjectionLoopStarted = false;
                 _medipackClosing = false;
                 _medipackCloseAdvanced = false;
@@ -795,9 +794,9 @@ internal sealed class PlayerWeaponStateMachine
                 Request(WeaponAction.Fire);
                 break;
 
-            // 0x479990's first call; the SPAS-12's handler plays its own clips instead.
-            case HumanWeaponState.Reloading when InHand is not { } held || !LoadsByTheShell(held.Weapon):
-                Request(WeaponAction.Reload);
+            // 0x40F170 only installs 0x40F180; the reload starts on its first call (Reloading).
+            case HumanWeaponState.Reloading:
+                _reloadStarting = true;
                 break;
 
             // Play the stand pose and start tipping the rig out of the frame. Nothing is exchanged

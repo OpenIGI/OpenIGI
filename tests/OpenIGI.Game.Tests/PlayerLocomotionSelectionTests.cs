@@ -32,9 +32,13 @@ public sealed class PlayerLocomotionSelectionTests
     [InlineData(false)]
     public void CrouchingForwardUsesTheSeparateCrouchPathRegardlessOfGait(bool run)
     {
-        HumanLocomotionAnimator animator = Tick(new PlayerCommand(1f, 0f, 0f, 0f, Run: run, Crouch: true, Jump: false));
+        // State 0 tests the directions before the crouch key, and an entry does not run its state's per-tick: the first tick
+        // steps into the gait, the second crouches it.
+        PlayerCommand command = new(1f, 0f, 0f, 0f, Run: run, Crouch: true, Jump: false);
+        HumanLocomotionAnimator animator = Tick(command);
+        Assert.Equal(run ? 1 : 9, animator.State);
 
-        AssertStateAndTorsoAction(animator, state: 20, WeaponAction.CrouchRun);
+        AssertStateAndTorsoAction(Tick(command, command), state: 20, WeaponAction.CrouchRun);
     }
 
     [Fact]
@@ -59,12 +63,18 @@ public sealed class PlayerLocomotionSelectionTests
     [InlineData(-1f, 0f, true)]
     public void AnyStandingJumpReachesTheJumpState(float forward, float strafe, bool run)
     {
-        // State 0 tests its directions before the jump edge, but the movement state it hands to tests
-        // the jump edge as its next branch and is called in the same tick -- so a moving jump ends in
-        // 28 just as a stationary one does.
+        // Jump pressed in the gait the keys already hold: every standing state tests the edge. (From a standstill the
+        // directions win: state 0 tests them first, and the gait it enters does not run until the next tick.)
+        PlayerCommand moving = new(forward, strafe, 0f, 0f, run, Crouch: false, Jump: false);
         Assert.Equal(
             HumanLocomotionGraph.Jump,
-            Tick(new PlayerCommand(forward, strafe, 0f, 0f, run, Crouch: false, Jump: true)).State);
+            Tick(moving, moving with { Jump = true }).State);
+    }
+
+    [Fact]
+    public void AJumpPressedAsTheFirstStepIsTakenAsTheStep()
+    {
+        Assert.Equal(1, Tick(new PlayerCommand(1f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: true)).State);
     }
 
     [Theory]
@@ -74,7 +84,8 @@ public sealed class PlayerLocomotionSelectionTests
     public void ACrouchedJumpIsRefusedBecauseNoCrouchStateNamesTwentyEight(float forward, float strafe)
     {
         // Rows 19 and 20-27 of the recovered graph contain no 28. The crouch keeps its own state.
-        int state = Tick(new PlayerCommand(forward, strafe, 0f, 0f, Run: true, Crouch: true, Jump: true)).State;
+        PlayerCommand crouched = new(forward, strafe, 0f, 0f, Run: true, Crouch: true, Jump: false);
+        int state = Tick(crouched, crouched, crouched, crouched with { Jump = true }).State;
 
         Assert.NotEqual(HumanLocomotionGraph.Jump, state);
         Assert.True(state == HumanLocomotionStates.CrouchingIdle || (state >= 20 && state <= 27));
@@ -102,7 +113,7 @@ public sealed class PlayerLocomotionSelectionTests
         Assert.Equal(expectedAction, action);
     }
 
-    private static HumanLocomotionAnimator Tick(PlayerCommand command)
+    private static HumanLocomotionAnimator Tick(params PlayerCommand[] commands)
     {
         PlayerBody body = new()
         {
@@ -113,7 +124,11 @@ public sealed class PlayerLocomotionSelectionTests
 
         HumanLocomotionAnimator animator = new(BoneAnimationSet.Create(
             BoneSkeleton.Create([BoneSkeleton.NoParent], [default])));
-        body.TickAnimated(command, terrain: null, animator);
+        foreach (PlayerCommand command in commands)
+        {
+            body.TickAnimated(command, terrain: null, animator);
+        }
+
         return animator;
     }
 
