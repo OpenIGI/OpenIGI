@@ -301,6 +301,249 @@ export async function fromUrl(base) {
   };
 }
 
+// --- The hosted installation -------------------------------------------------------------------------------
+//
+// The game's files served beside the site, packed by tools/web-data/pack.py into a few bundles: "base", read
+// before the game starts, and one per mission with its large files, read when the mission is chosen. A bundle
+// is named by its hash, so once downloaded it is kept in the page's Cache Storage and never fetched again;
+// index.json, the one file that changes, is asked for afresh each visit and kept too, for a visit offline.
+
+const DATA_CACHE = 'openigi-data';
+const INDEX = 'index.json';
+
+/** The page's cache of downloaded bundles, or null where the browser keeps none (no secure context). */
+async function dataCache() {
+  try {
+    return globalThis.caches ? await caches.open(DATA_CACHE) : null;
+  } catch {
+    return null;
+  }
+}
+
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function sha256(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A bundle's bytes as served, downloaded whole. A dropped connection -- a phone between masts, a laptop
+ * waking -- is picked up where it stopped with a Range request, a few times, waiting longer each time.
+ * @param {(got: number) => void} report How many bytes are in so far.
+ */
+async function download(url, size, report) {
+  const chunks = [];
+  let got = 0;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const reply = await fetch(url, { cache: 'no-store', headers: got ? { Range: `bytes=${got}-` } : {} });
+      if (!reply.ok) throw new Error(`${reply.status}`);
+      if (got && reply.status !== 206) {
+        // The server sent it all again rather than the rest.
+        chunks.length = 0;
+        got = 0;
+      }
+      const reader = reply.body.getReader();
+      for (let part = await reader.read(); !part.done; part = await reader.read()) {
+        chunks.push(part.value);
+        got += part.value.length;
+        report(got);
+      }
+      if (got >= size) break;
+      throw new Error(`ended at ${got} of ${size} bytes`);
+    } catch (error) {
+      if (attempt >= 6) throw new Error(`${url} could not be downloaded: ${error.message}`);
+      await pause(Math.min(1000 * 2 ** attempt, 15000));
+    }
+  }
+
+  const bytes = new Uint8Array(got);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return bytes;
+}
+
+async function gunzip(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** The hosted index: fetched afresh, or the one kept from the last visit when the network has none. */
+async function hostedIndex(base) {
+  const cache = await dataCache();
+  const url = new URL(INDEX, base).href;
+  try {
+    const reply = await fetch(url, { cache: 'no-cache' });
+    if (!reply.ok) throw new Error(`${reply.status}`);
+    await cache?.put(url, reply.clone()).catch(() => {});
+    return await reply.json();
+  } catch (error) {
+    const kept = await cache?.match(url);
+    if (kept) return kept.json();
+    throw new InstallationError(`The game's files could not be fetched (${error.message}). Check the connection and try again.`);
+  }
+}
+
+/** The bundles a page still holds from an earlier index, deleted. */
+async function forgetStale(base, index) {
+  const cache = await dataCache();
+  if (!cache) return;
+  const keep = new Set([INDEX, ...Object.values(index.bundles).map(b => b.url)].map(name => new URL(name, base).href));
+  for (const request of await cache.keys()) {
+    if (request.url.startsWith(base) && !keep.has(request.url)) await cache.delete(request);
+  }
+}
+
+/**
+ * What playing the hosted game needs to download now, in bytes: the bundle read before the game starts, all
+ * of them less what is already kept, and all of them. Null when the files cannot be reached.
+ */
+export async function hostedStatus(base) {
+  try {
+    const index = await hostedIndex(base);
+    const cache = await dataCache();
+    const kept = async b => Boolean(await cache?.match(new URL(b.url, base).href));
+    let start = 0;
+    let all = 0;
+    let total = 0;
+    for (const [name, bundle] of Object.entries(index.bundles)) {
+      total += bundle.size;
+      if (await kept(bundle)) continue;
+      all += bundle.size;
+      if (name === 'base') start += bundle.size;
+    }
+    return { start, all, total };
+  } catch {
+    return null;
+  }
+}
+
+/** Deletes every downloaded bundle. */
+export async function clearHosted() {
+  try {
+    await globalThis.caches?.delete(DATA_CACHE);
+  } catch {
+    // Nothing kept, or nothing can be.
+  }
+}
+
+/**
+ * The installation the site hosts.
+ * @param {string} base The URL of the folder holding index.json, ending in a slash.
+ */
+export async function fromHosted(base) {
+  const index = await hostedIndex(base);
+  forgetStale(base, index).catch(() => {});
+  navigator.storage?.persist?.().catch(() => {});
+
+  const kept = new Map(); // Bundle name -> promise of its served bytes being in the cache (or in hand).
+  const unpacked = new Map(); // Bundle name -> promise of its files' bytes, while files are left to read.
+  const left = new Map(); // Bundle name -> how many of its files are still to be read.
+  for (const file of index.files) left.set(file.bundle, (left.get(file.bundle) ?? 0) + 1);
+
+  const source = {
+    name: 'openigi.com',
+    hosted: true,
+    /** Called as a bundle comes in: (bundle name, bytes so far, its size). */
+    onDownload: null,
+
+    async list() { return index.files; },
+
+    async read(file) {
+      if (!unpacked.has(file.bundle)) unpacked.set(file.bundle, fetchBundle(file.bundle).then(gunzip));
+      const bytes = await unpacked.get(file.bundle);
+      const part = bytes.slice(file.offset, file.offset + file.size);
+      // The last of a bundle's files read: its bytes are let go.
+      const remaining = left.get(file.bundle) - 1;
+      left.set(file.bundle, remaining);
+      if (remaining === 0) unpacked.delete(file.bundle);
+      return part;
+    },
+
+    /**
+     * Downloads every mission's bundle into the cache, one after another, while the game is played -- so a
+     * mission chosen later starts at once. Skipped when the browser says data is to be saved.
+     */
+    async prefetch() {
+      const connection = navigator.connection;
+      if (connection?.saveData || /(^|-)(2g|3g)$/.test(connection?.effectiveType ?? '')) return;
+      const order = name => Number(name.match(/(\d+)$/)?.[1] ?? 0);
+      const names = Object.keys(index.bundles).filter(name => name !== 'base').sort((a, b) => order(a) - order(b));
+      for (const name of names) {
+        try {
+          await keep(name);
+        } catch (error) {
+          console.warn(`Downloading ahead stopped: ${error.message}`);
+          return;
+        }
+      }
+    },
+  };
+
+  /** A bundle's served bytes: from the cache, or downloaded, checked and put in it. */
+  async function fetchBundle(name) {
+    const bundle = index.bundles[name];
+    const url = new URL(bundle.url, base).href;
+    const cache = await dataCache();
+    const hit = await cache?.match(url);
+    if (hit) return new Uint8Array(await hit.arrayBuffer());
+
+    // Downloaded ahead already, or being: wait for that rather than downloading it twice.
+    if (kept.has(name)) {
+      const held = await kept.get(name).catch(() => null);
+      if (held) return held;
+      const again = await cache?.match(url);
+      if (again) return new Uint8Array(await again.arrayBuffer());
+    }
+
+    const bytes = await downloadChecked(name);
+    await store(url, bytes);
+    return bytes;
+  }
+
+  /** A bundle put in the cache without being unpacked; resolves to its bytes only where none can be kept. */
+  function keep(name) {
+    if (!kept.has(name)) {
+      kept.set(name, (async () => {
+        const url = new URL(index.bundles[name].url, base).href;
+        const cache = await dataCache();
+        if (await cache?.match(url)) return null;
+        const bytes = await downloadChecked(name);
+        return (await store(url, bytes)) ? null : bytes;
+      })());
+      kept.get(name).catch(() => kept.delete(name));
+    }
+    return kept.get(name);
+  }
+
+  async function downloadChecked(name) {
+    const bundle = index.bundles[name];
+    const url = new URL(bundle.url, base).href;
+    const bytes = await download(url, bundle.size, got => source.onDownload?.(name, got, bundle.size));
+    if ((await sha256(bytes)) !== bundle.sha256) throw new Error(`${bundle.url} arrived damaged; reload to try again.`);
+    return bytes;
+  }
+
+  /** Whether the bytes were kept: a full disk or a private window keeps nothing, and the game plays on. */
+  async function store(url, bytes) {
+    const cache = await dataCache();
+    if (!cache) return false;
+    try {
+      await cache.put(url, new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream' } }));
+      return true;
+    } catch (error) {
+      console.warn(`A downloaded bundle could not be kept: ${error.message}`);
+      return false;
+    }
+  }
+
+  return source;
+}
+
 let fs = null;
 let root = '/game';
 let source = null;

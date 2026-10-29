@@ -751,6 +751,44 @@ public static class PlayerProfileInputBindings
         return null;
     }
 
+    /// <summary>Finds the key or mouse button an action is bound to, for something that has to press it: a touch screen's button.</summary>
+    /// <param name="profile">The player's profile, or <see langword="null"/> for the shipped defaults.</param>
+    /// <param name="action">The action's config name, as <c>PlayerInputBindings.ConfigName</c> spells it.</param>
+    /// <param name="key">The first bound key, or <see cref="KeyCode.None"/>.</param>
+    /// <param name="button">The first bound mouse button, where no key is bound before it.</param>
+    /// <returns>Whether anything that can be pressed is bound; a wheel is not.</returns>
+    public static bool TryBoundControl(PlayerProfile? profile, string action, out KeyCode key, out MouseButton? button)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(action);
+
+        key = KeyCode.None;
+        button = null;
+        IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
+        foreach (InputBinding binding in bindings)
+        {
+            if (!string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(binding.Device, InputBindingKeyNames.KeyboardDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out key))
+            {
+                return true;
+            }
+
+            if (string.Equals(binding.Device, InputBindingKeyNames.MouseDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseMouseButton(binding.Key, out MouseButton mouse))
+            {
+                button = mouse;
+                return true;
+            }
+        }
+
+        key = KeyCode.None;
+        return false;
+    }
+
     private static bool Resolve(PlayerProfile? profile, InputState input, string action, bool pressed)
     {
         ArgumentNullException.ThrowIfNull(input);

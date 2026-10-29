@@ -13,12 +13,22 @@ namespace OpenIGI.Presentation.Igi1;
 /// <summary>Project I.G.I.'s mission HUD over the finished frame: the weapon readout or the optics, the status, the washes and the remaster's HUD.</summary>
 /// <param name="device">The device it draws with.</param>
 /// <param name="gameplay">The first game's mission, whose player and objectives it reads.</param>
-internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gameplay) : IMissionHudOverlay
+internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gameplay) : IMissionHudOverlay, ITouchHudSource
 {
     private readonly IGraphicsDevice _device = device;
     private readonly Igi1Gameplay _gameplay = gameplay;
     private readonly HudModel _model = new();
     private RemasteredHud? _remastered;
+    private IHudIconSource? _icons;
+
+    /// <inheritdoc/>
+    public HudTheme Theme => Igi1HudTheme.Theme;
+
+    /// <inheritdoc/>
+    public IHudIconSource? Icons => _icons;
+
+    /// <inheritdoc/>
+    public HudModel Model => _model;
 
     /// <inheritdoc/>
     public void DrawWeaponHud(SpriteBatch batch, in MissionHudFrame frame)
@@ -242,6 +252,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         && frame.Hud is IHudIconSource icons
         && (_remastered ??= CreateRemastered()).IsReady)
     {
+        _icons = icons;
         Igi1HudTheme.Build(mission, frame.WorldInteractionPrompt, StatusScreenRenderer.IconFor, _model, messages: frame.TacticalMessages);
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();

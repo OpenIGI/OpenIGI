@@ -1,0 +1,29 @@
+# data.openigi.com: the browser build's game files, packed by pack.py, served by the release VM's Caddy
+# (/srv/openigi/config/Caddyfile, with /srv/openigi/data mounted read-only at /srv/data) behind Cloudflare.
+#
+# Upload with index.json last, so it never names a bundle that is not there yet:
+#   scp <pack output>/*.bin.gz shahriyar@sh-de:/srv/openigi/data/igi1/
+#   scp <pack output>/index.json shahriyar@sh-de:/srv/openigi/data/igi1/
+#
+# The bundles are served as the bytes they are -- the page checks each one's hash and unzips it itself -- so
+# nothing here may encode them. Old bundles stay until no page can still hold the index that named them.
+
+data.openigi.com {
+	root * /srv/data
+	file_server
+
+	header Access-Control-Allow-Origin "*"
+	header Access-Control-Expose-Headers "Content-Length, Content-Range"
+
+	@bundles path *.bin.gz
+	header @bundles Content-Type application/octet-stream
+	header @bundles Cache-Control "public, max-age=31536000, immutable"
+
+	@index path */index.json
+	header @index Cache-Control "no-cache"
+
+	header {
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

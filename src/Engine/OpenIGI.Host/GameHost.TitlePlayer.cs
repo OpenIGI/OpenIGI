@@ -303,13 +303,14 @@ public sealed partial class GameHost
 
     /// <summary>Whether the title's cutscene break key is down this tick.</summary>
     /// <remarks>
-    /// Escape, read as the key's state, as retail's <c>LevelFlow_GetBreakCutSceneKey</c> reads it. With cinematics off it is
-    /// held, the same path the host's own intro skip takes: the level's scripts end every cutscene the way the key does.
+    /// Escape held until the skip ring fills (<see cref="Services.CutsceneSkipHold"/>), then read as held until the cutscene
+    /// ends, as retail's <c>LevelFlow_GetBreakCutSceneKey</c> reads the key's state. With cinematics off it is held, the same
+    /// path the host's own intro skip takes: the level's scripts end every cutscene the way the key does.
     /// <c>OPENIGI_BREAK_CUTSCENE=1</c> holds it too, for a lockstep run.
     /// </remarks>
     private bool TitleBreakKey() =>
         !_options.PlayCutscenes
-        || _window.Input.Keyboard.IsDown(OpenIGI.Input.KeyCode.Escape)
+        || _cutsceneSkip.Breaking
         || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"), "1", StringComparison.Ordinal);
 
     /// <summary>Registers the console's hold on the title player's controls, for a capture to drive it without keys.</summary>

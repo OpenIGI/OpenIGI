@@ -375,6 +375,9 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        DrawTouchControls(state);
+        DrawCutsceneSkip(state);
+
         _device.EndStageTiming();
 
         _debugOverlays.Draw(state, eye, cameraIndoors);

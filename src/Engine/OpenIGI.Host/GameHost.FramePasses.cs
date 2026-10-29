@@ -99,6 +99,7 @@ public sealed partial class GameHost
         _device.BeginLatencyFrame();
 
         _window.PumpEvents();
+        ApplyTouchControls();
 
         // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.
         // The setting is read here rather than captured at construction so that turning
@@ -372,9 +373,11 @@ public sealed partial class GameHost
         }
     }
 
-    /// <summary>Lets Escape skip a cutscene or bring the pause menu up over the level.</summary>
+    /// <summary>Lets Escape, held, skip a cutscene, or bring the pause menu up over the level.</summary>
     private void HandleEscape(FrameLoopState state)
     {
+        UpdateCutsceneSkip(state);
+
         // Escape brings the shell up over the level as a pause menu. It goes AFTER the shell's own
         // update, so the frame that opens the menu is not also the frame the menu reads a back press
         // on -- and after it the shell has marked the frame captured, which is what stops the Escape
@@ -383,16 +386,6 @@ public sealed partial class GameHost
         // It also goes BEFORE the handheld computer below, which owns Escape while it is open: closing
         // the computer clears the flag, so a check placed after it would see a closed computer and a
         // still-pressed Escape and pause the game in the same breath.
-        if (!_menuFlow.MenuMode
-            && !state.Console.IsOpen
-            && _mission.Cutscenes?.IsPlaying == true
-            && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
-        {
-            _mission.Cutscenes.RequestBreak();
-            _cutsceneSounds.StopAll();
-            _mission.Objectives?.ClearCutsceneMessages();
-        }
-
         if (!_menuFlow.MenuMode
             && !state.Console.IsOpen
             && !_computerOpen

@@ -34,6 +34,9 @@ public enum WebInputEventKind
 
     /// <summary>The page is going away.</summary>
     Close,
+
+    /// <summary>A finger came down, moved or lifted: <see cref="WebInputEvent.Code"/> says which, its position in X and Y, its id in Z.</summary>
+    Touch,
 }
 
 /// <summary>One event from the page's queue.</summary>
@@ -91,6 +94,8 @@ public readonly record struct WebInputEvent(
             "focus" when words.Length == 1 => new WebInputEvent(WebInputEventKind.Focus, Down: Flag(words[0])),
             "lock" when words.Length == 1 => new WebInputEvent(WebInputEventKind.PointerLock, Down: Flag(words[0])),
             "close" => new WebInputEvent(WebInputEventKind.Close),
+            "touch" when words.Length == 4 && words[1] is "down" or "move" or "up" => new WebInputEvent(
+                WebInputEventKind.Touch, words[1], X: Number(words[2]), Y: Number(words[3]), Z: Number(words[0])),
             _ => new WebInputEvent(WebInputEventKind.Unknown, line),
         };
     }

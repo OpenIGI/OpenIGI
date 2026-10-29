@@ -76,6 +76,11 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
 
     private Igi1Computer? Computer => _game?.World.Computer;
 
+    /// <inheritdoc/>
+    public ComputerPointer? Pointer => Computer is { IsOpen: true } computer
+        ? new ComputerPointer(computer.PointerX, computer.PointerY, computer.IsDragging, computer.Width)
+        : null;
+
     public bool Load(VirtualFileSystem fileSystem)
     {
         try

@@ -19,6 +19,10 @@ public sealed class InputState
     /// <summary>Gets the primary game controller.</summary>
     public GamepadState Gamepad { get; } = new();
 
+    /// <summary>Gets the fingers on a touch screen.</summary>
+    /// <remarks>Not suppressed with the rest: the screen's own controls read it, and skipping a cutscene is one of them.</remarks>
+    public TouchState Touch { get; } = new();
+
     /// <summary>Gets or sets a value indicating whether input is suppressed.</summary>
     /// <remarks>
     /// The original zeroes its key array while a global disable flag is set — during loading screens
@@ -62,6 +66,7 @@ public sealed class InputState
     public void BeginFrame()
     {
         Captured = false;
+        Touch.BeginFrame();
 
         if (Suppressed)
         {
