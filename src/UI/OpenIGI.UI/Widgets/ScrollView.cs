@@ -27,6 +27,9 @@ public class ScrollView : UiElement, IWheelScrollable
     private float _contentHeight;
     private float _arrangedOffset;
 
+    // How far below the thumb's top the pointer holds it during a scrollbar drag, in pixels.
+    private float _grab;
+
     /// <summary>Initializes a new instance of the <see cref="ScrollView"/> class.</summary>
     /// <param name="theme">The theme, for the scrollbar colour.</param>
     /// <exception cref="ArgumentNullException"><paramref name="theme"/> is <see langword="null"/>.</exception>
@@ -81,6 +84,44 @@ public class ScrollView : UiElement, IWheelScrollable
 
         ScrollOffset -= notches * Px(WheelStep);
         return true;
+    }
+
+    /// <summary>Gets or sets the width of the strip along the right edge that grabs the scrollbar, in design units.</summary>
+    /// <remarks>Wider than the drawn track, which is too thin to hit; content keeps a margin clear of it.</remarks>
+    public float ScrollbarHitWidth { get; set; } = 18f;
+
+    /// <summary>Gets a value indicating whether a point lies on the scrollbar, when there is one.</summary>
+    /// <param name="point">The point in pixels.</param>
+    /// <returns><see langword="true"/> when a press there should take the scrollbar.</returns>
+    public bool IsOverScrollbar(UiVec2 point) =>
+        MaxScroll > 0f && Bounds.Contains(point) && point.X >= Bounds.Right - Px(ScrollbarHitWidth);
+
+    /// <summary>Starts dragging the scrollbar from a press on it.</summary>
+    /// <param name="point">Where the press landed, in pixels.</param>
+    /// <remarks>
+    /// A press on the thumb holds it where it was taken; a press on the track beside it centres the thumb on the
+    /// pointer first, as a desktop scrollbar's does, and the drag carries on from there.
+    /// </remarks>
+    public void BeginScrollbarDrag(UiVec2 point)
+    {
+        (float thumbY, float thumbHeight) = Thumb(ScrollOffset);
+        _grab = point.Y >= thumbY && point.Y < thumbY + thumbHeight ? point.Y - thumbY : thumbHeight * 0.5f;
+        DragScrollbar(point);
+    }
+
+    /// <summary>Moves the content with the scrollbar being dragged.</summary>
+    /// <param name="point">The pointer, in pixels.</param>
+    /// <remarks>The offset is snapped, not sprung, so the thumb stays under the pointer.</remarks>
+    public void DragScrollbar(UiVec2 point)
+    {
+        float travel = Bounds.Height - Thumb(ScrollOffset).Height;
+        if (travel <= 0f)
+        {
+            return;
+        }
+
+        ScrollOffset = (point.Y - _grab - Bounds.Y) / travel * MaxScroll;
+        _offset.SnapTo(ScrollOffset);
     }
 
     /// <summary>Brings a rectangle inside the viewport into view, scrolling the least distance that does it.</summary>
@@ -162,13 +203,18 @@ public class ScrollView : UiElement, IWheelScrollable
         // A slim thumb on the right, its length and position tracking what fraction is shown.
         float trackW = painter.Context.Px(4f);
         float x = Bounds.Right - trackW;
-        float visibleFraction = Bounds.Height / _contentHeight;
-        float thumbHeight = MathF.Max(painter.Context.Px(24f), Bounds.Height * visibleFraction);
-        float offset = Math.Clamp(_offset.Value, 0f, MaxScroll);
-        float thumbY = Bounds.Y + ((Bounds.Height - thumbHeight) * (offset / MaxScroll));
+        (float thumbY, float thumbHeight) = Thumb(_offset.Value);
 
         painter.FillRect(new UiRect(x, Bounds.Y, trackW, Bounds.Height), _theme.Border.WithAlpha(40), UiBlend.AlphaBlend);
         painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Accent.WithAlpha(160), UiBlend.AlphaBlend);
+    }
+
+    // The thumb's top and length in pixels at a scroll offset: its length the fraction of the content shown.
+    private (float Y, float Height) Thumb(float offset)
+    {
+        float height = MathF.Max(Px(24f), Bounds.Height * (Bounds.Height / _contentHeight));
+        float y = Bounds.Y + ((Bounds.Height - height) * (Math.Clamp(offset, 0f, MaxScroll) / MaxScroll));
+        return (y, height);
     }
 
     // Design units to pixels, falling back to the raw number before the first measure has run.

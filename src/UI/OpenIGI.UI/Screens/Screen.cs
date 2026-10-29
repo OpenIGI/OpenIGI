@@ -77,6 +77,9 @@ public abstract class Screen
 
     // The control holding the pointer through a drag, or null; see Control.CapturesPointer.
     private Control? _captured;
+
+    // The viewport whose scrollbar is being dragged, or null. It holds the pointer as _captured does.
+    private ScrollView? _scrollbarDrag;
     private Control? _tooltipTarget;
     private UiVec2 _tooltipAnchor;
     private float _tooltipDwell;
@@ -456,6 +459,28 @@ public abstract class Screen
             return false;
         }
 
+        if (_scrollbarDrag is { } dragged)
+        {
+            if (mouse.IsDown(MouseButton.Left) && !nav.Back)
+            {
+                dragged.DragScrollbar(pointer);
+            }
+            else
+            {
+                _scrollbarDrag = null;
+            }
+
+            return false;
+        }
+
+        // A press on a viewport's scrollbar takes the scrollbar, before anything under it can take the click.
+        if (mouse.WasPressed(MouseButton.Left) && ScrollbarAt(pointer) is { } scrollbar)
+        {
+            _scrollbarDrag = scrollbar;
+            scrollbar.BeginScrollbarDrag(pointer);
+            return false;
+        }
+
         // Hover: the control under the pointer is told the pointer is on it (and where), so a tab strip or
         // a list can light the one target the click is about to land on rather than the whole widget.
         UpdateHover(pointer);
@@ -509,7 +534,7 @@ public abstract class Screen
 
     /// <summary>Gets a value indicating whether a control is holding the pointer through a drag.</summary>
     /// <remarks>A screen that adds its own keys checks this, so a drag is not interrupted by a page change.</remarks>
-    protected bool IsPointerCaptured => _captured is not null;
+    protected bool IsPointerCaptured => _captured is not null || _scrollbarDrag is not null;
 
     /// <summary>Moves focus in a direction, by default by spatial traversal.</summary>
     /// <param name="direction">The direction pressed.</param>
@@ -564,6 +589,20 @@ public abstract class Screen
                 return;
             }
         }
+    }
+
+    private ScrollView? ScrollbarAt(UiVec2 pointer)
+    {
+        // The innermost viewport whose scrollbar strip is under the pointer.
+        for (UiElement? element = Root?.HitTest(pointer); element is not null; element = element.Parent)
+        {
+            if (element is ScrollView viewport && viewport.IsOverScrollbar(pointer))
+            {
+                return viewport;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Called once after the widget tree is (re)built.</summary>

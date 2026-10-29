@@ -218,7 +218,9 @@ public sealed class SettingsScreen : ShellScreen
         layout.Add(header, 0, 0);
         layout.Add(content, 1, 0);
         layout.Add(footer, 2, 0);
-        var promptLayer = new Panel();
+        // Transparent to the pointer where no question is shown: the empty layer spans the page and would otherwise
+        // answer every hit test, so the wheel never found the category's viewport under it.
+        var promptLayer = new Panel { IsHitTestTransparent = true };
         var root = new Panel();
         root.AddChild(layout);
         root.AddChild(promptLayer);
