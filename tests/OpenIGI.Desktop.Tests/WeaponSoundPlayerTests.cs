@@ -55,6 +55,37 @@ public sealed class WeaponSoundPlayerTests
         Assert.True(device.Played[1].Parameters.IsPositional);
     }
 
+    /// <summary>
+    /// Given the gun's trigger, an automatic's loop follows it (<c>0x478BA0</c>): the tail plays on the first tick it is let go,
+    /// inside the round cadence. Retail, mission 1: the MP5's loop end on the tick the trigger came up.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AnAutomaticsLoopEndsTheTickItsTriggerIsLetGo()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        SoundBank bank = new(fileSystem, null);
+        bank.MountDirectory("LOCAL:common/sounds");
+
+        RecordingAudioDevice device = new();
+        using SoundSystem sounds = new(device, bank, fileSystem, null);
+        WeaponSoundPlayer player = new(sounds);
+        WeaponType weapon = new()
+        {
+            FireSound = "ak47_loop",
+            FireLoopEndSound = "ak47_loop_e",
+            MaximumRoundsPerBurst = 30,
+            RoundsPerMinute = 600,
+        };
+
+        player.Tick(firedThisTick: true, weapon, triggerHeld: true);
+        player.Tick(firedThisTick: false, weapon, triggerHeld: true);
+        Assert.Single(device.Played);
+
+        player.Tick(firedThisTick: false, weapon, triggerHeld: false);
+        Assert.Equal(2, device.Played.Count);
+    }
+
     [RequiresGameDataFact]
     public void ResetImmediatelyStopsAnAutomaticLoop()
     {

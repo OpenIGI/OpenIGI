@@ -214,6 +214,10 @@ public sealed class SoundSystem : IDisposable
     /// </remarks>
     public ISoundDefinitionLookup? Definitions { get; set; }
 
+    /// <summary>Gets or sets a diagnostic observer told every definition asked for by name, before it is resolved.</summary>
+    /// <remarks>What a differential trace sets to line the port's sounds up with the original's <c>Sound_Play</c> (<c>0x4E6B00</c>).</remarks>
+    public Action<string>? DefinitionPlayed { get; set; }
+
     /// <summary>Plays a sound the way game code names it — through the definition layer.</summary>
     /// <param name="name">The definition name, such as <c>ai_death_1</c> or <c>jump_1</c>.</param>
     /// <param name="positionInUnits">
@@ -246,6 +250,7 @@ public sealed class SoundSystem : IDisposable
         float pitch = 1f,
         bool? looping = null)
     {
+        DefinitionPlayed?.Invoke(name);
         if (Definitions is null || !Definitions.TryResolve(name, out SoundDefinition? definition) || definition is null)
         {
             if (_reportedMissing.Add(name ?? string.Empty))

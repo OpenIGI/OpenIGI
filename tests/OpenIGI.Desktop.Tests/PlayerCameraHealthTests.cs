@@ -220,6 +220,10 @@ public sealed class PlayerCameraHealthTests
         Assert.Equal(HumanWeaponState.Reloading, camera.Weapons.State);
         Assert.False(camera.Weapons.HideFirstPersonWeapon);
 
+        // The reload clip starts on 0x40F180's first call, the tick after the entry.
+        input.BeginFrame();
+        camera.Tick(input, terrain: null);
+
         BoneClip clip = Assert.IsType<BoneClip>(camera.View!.Bones.SourceOf(0));
         Assert.Equal(5, clip.Animation.Id);
         Assert.False(clip.Loops);
@@ -251,6 +255,9 @@ public sealed class PlayerCameraHealthTests
 
         camera.Weapons.InHand!.Value.Gun.State.RoundsInClip = 0;
 
+        // The entry tick, then the reload clip's first.
+        input.BeginFrame();
+        camera.Tick(input, terrain: null);
         input.BeginFrame();
         camera.Tick(input, terrain: null);
         BoneClip first = Assert.IsType<BoneClip>(camera.View!.Bones.SourceOf(0));

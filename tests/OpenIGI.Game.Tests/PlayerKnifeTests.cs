@@ -13,18 +13,33 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class PlayerKnifeTests
 {
+    /// <summary>
+    /// Holding the button keeps the knife swinging: 0x40FA80 goes back to the ready hub at the clip's end, and the ready tick and
+    /// the melee entry ask nothing of the gun, which resets its one-round burst. Retail, mission 1: a 90-tick hold swung every
+    /// 24 ticks, 23 in the melee state and one in ready.
+    /// </summary>
     [Fact]
-    public void HoldingFireWithTheKnifeGivesExactlyOneSwing()
+    public void HoldingFireWithTheKnifeKeepsSwingingAtTheClipsPace()
     {
-        // Maximum Rounds/Burst is 1 and the burst counter only resets when the trigger is released, so
-        // leaning on the button does nothing after the first strike.
         PlayerWeapons weapons = new([20]);
         weapons.Carry(Knife);
-
         Equip(weapons);
-        int rounds = Run(weapons, fire: true, ticks: 90);
 
-        Assert.Equal(1, rounds);
+        PlayerInputState input = new();
+        List<int> swings = [];
+        for (int tick = 0; tick < 90; tick++)
+        {
+            // A 23-tick swing clip, ended on its last tick.
+            bool ended = weapons.State == HumanWeaponState.Striking && swings.Count > 0 && tick - swings[^1] == 22;
+            Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: ended);
+            if (weapons.FiredThisTick)
+            {
+                swings.Add(tick);
+            }
+        }
+
+        Assert.True(swings.Count >= 3, $"{swings.Count} swings in 90 ticks.");
+        Assert.All(swings.Zip(swings.Skip(1), static (a, b) => b - a), static gap => Assert.Equal(24, gap));
     }
 
     [Fact]
@@ -38,7 +53,8 @@ public sealed class PlayerKnifeTests
         weapons.Carry(Knife);
         Equip(weapons);
 
-        List<int> spacing = Spacing(weapons, tapEvery: 1, ticks: 200);
+        // Six ticks down, six up: the swing's own clock, not the tapping, sets the pace.
+        List<int> spacing = Spacing(weapons, tapEvery: 6, ticks: 200);
         Assert.NotEmpty(spacing);
         Assert.All(spacing, gap => Assert.Equal(12, gap));
     }
@@ -55,7 +71,7 @@ public sealed class PlayerKnifeTests
         CarriedWeapon held = weapons.InHand!.Value;
         Assert.False(held.Gun.ConsumesAmmunition);
 
-        int rounds = Spacing(weapons, tapEvery: 1, ticks: 400).Count + 1;
+        int rounds = Spacing(weapons, tapEvery: 6, ticks: 400).Count + 1;
         Assert.True(rounds > 10, $"only {rounds} strikes in 400 ticks.");
         Assert.Equal(-1, held.Gun.RoundsInClip);
     }

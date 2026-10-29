@@ -159,6 +159,10 @@ public sealed class PlayerWeapons
     /// <summary>Gets the accumulated view kick in pitch, in radians — <c>HumanView+296</c>.</summary>
     public float RecoilPitch { get; private set; }
 
+    /// <summary>Gets whether the gun's trigger stood held this tick, after its burst and magazine gates (<c>0x478BA0</c>).</summary>
+    /// <remarks>What an automatic's fire loop follows: it runs while this holds and ends, with its tail, the tick it does not.</remarks>
+    public bool TriggerHeldThisTick { get; private set; }
+
     /// <summary>Gets the accumulated view kick in yaw, in radians — <c>HumanView+308</c>.</summary>
     public float RecoilYaw { get; private set; }
 
@@ -517,6 +521,7 @@ public sealed class PlayerWeapons
         _shots.Clear();
         _m203Shots.Clear();
         _firedThisTick = false;
+        TriggerHeldThisTick = false;
 
         if (InHand is not { } held)
         {
@@ -586,6 +591,10 @@ public sealed class PlayerWeapons
             : null;
         GunFireResult result = held.Gun.Fire(_machine.WantFire, eye, forward, right, up, _random, speedOverride);
         _firedThisTick = result.Fired;
+
+        // 0x478BA0 clears its trigger for a finished burst and an empty magazine, but not for the cooldown between rounds.
+        TriggerHeldThisTick = _machine.WantFire
+            && result.Block is not (GunFireBlock.BurstComplete or GunFireBlock.Empty or GunFireBlock.TriggerReleased);
 
         if (result.Fired && held.Weapon.Category == (WeaponCategory)PlacedCategory)
         {

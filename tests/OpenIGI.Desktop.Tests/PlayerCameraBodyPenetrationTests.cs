@@ -117,6 +117,10 @@ public sealed class PlayerCameraBodyPenetrationTests
             input.Mouse.SetButton(MouseButton.Left, down: true);
             camera.Tick(input, terrain: null);
 
+            // The fire state's entry tick asks nothing of the gun (0x40EF60); the trigger still down the next tick fires.
+            input.BeginFrame();
+            camera.Tick(input, terrain: null);
+
             Assert.True(camera.FiredThisTick);
             Assert.Equal([2.0 * Metre, 5.0 * Metre], damagedAt);
             Assert.Equal(2, camera.HumanHits);
