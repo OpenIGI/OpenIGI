@@ -355,6 +355,47 @@ $('install-copy').addEventListener('click', async event => {
   setTimeout(() => { button.textContent = 'Copy'; }, 1500);
 });
 
+// --- The community -------------------------------------------------------------------------------------
+//
+// The Discord server's own live numbers -- its name, who is online, a few faces, its invite -- read from the
+// server's widget feed and drawn in the page's look rather than in Discord's frame. The cards link out
+// already; this only fills them in, and leaves them as they are when a feed cannot be read.
+
+const DISCORD_GUILD = '1534217331478106193';
+
+async function showDiscord() {
+  const reply = await fetch(`https://discord.com/api/guilds/${DISCORD_GUILD}/widget.json`);
+  if (!reply.ok) return;
+  const server = await reply.json();
+
+  if (server.instant_invite) {
+    for (const link of document.querySelectorAll('[data-discord-link]')) link.href = server.instant_invite;
+  }
+  if (server.name) $('discord-name').textContent = server.name;
+  if (Number.isFinite(server.presence_count)) {
+    $('discord-online').textContent = `${server.presence_count} online`;
+    $('discord-online').hidden = false;
+  }
+
+  const faces = $('discord-avatars');
+  for (const member of (server.members ?? []).filter(m => m.avatar_url).slice(0, 5)) {
+    const img = Object.assign(document.createElement('img'), { src: member.avatar_url, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer' });
+    faces.append(img);
+  }
+}
+
+async function showGitHub() {
+  const reply = await fetch('https://api.github.com/repos/OpenIGI/OpenIGI');
+  if (!reply.ok) return;
+  const { stargazers_count: stars } = await reply.json();
+  if (!Number.isFinite(stars)) return;
+  $('github-stars').textContent = `★ ${stars}`;
+  $('github-stars').hidden = false;
+}
+
+showDiscord().catch(() => {});
+showGitHub().catch(() => {});
+
 // What the header says about the browser, as soon as it is known.
 adapterReady.then(({ adapter }) => {
   $('gpu').dataset.state = adapter ? 'ok' : 'no';

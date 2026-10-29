@@ -6,8 +6,12 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OpenIGI">
+  <meta name="application-name" content="OpenIGI">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <meta name="color-scheme" content="dark">
   <meta name="description" content="Project I.G.I. in the browser, on a computer or a phone, with nothing to install.">
   <title>OpenIGI</title>
@@ -195,6 +199,45 @@
     }
     .install button:hover { color: var(--text); border-color: rgba(236, 235, 230, 0.4); }
 
+    .header-right { display: flex; align-items: center; gap: 14px; }
+    .social { display: inline-flex; width: 18px; height: 18px; color: var(--muted); transition: color 0.15s ease; }
+    .social:hover { color: var(--text); }
+    .social svg { width: 100%; height: 100%; }
+
+    /* The community row: two slim cards of the paths' glass, the server's live count and faces on Discord's. */
+    .community { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; max-width: 980px; }
+    .link-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid rgba(236, 235, 230, 0.14);
+      border-radius: 14px;
+      background: rgba(11, 12, 11, 0.62);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      color: var(--text);
+      text-decoration: none;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .link-card:hover { border-color: rgba(236, 235, 230, 0.32); background: rgba(20, 22, 20, 0.7); }
+    .badge { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: rgba(236, 235, 230, 0.08); color: var(--text); }
+    .badge svg { width: 22px; height: 22px; }
+    .badge.discord { background: rgba(88, 101, 242, 0.22); color: #c9cdfb; }
+    .link-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+    .link-title { font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-sub { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .live { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font: 11.5px/1.4 var(--mono); }
+    .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(127, 194, 140, 0.18); }
+    .live[hidden], #github-stars[hidden] { display: none; }
+    #github-stars { color: var(--note); font: 11.5px/1.4 var(--mono); }
+    .avatars { display: flex; flex: none; }
+    .avatars img { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #121412; margin-left: -8px; background: #222; }
+    .avatars img:first-child { margin-left: 0; }
+    .link-go { flex: none; color: var(--muted); font: 12px/1 var(--mono); letter-spacing: 0.06em; }
+    .link-card:hover .link-go { color: var(--text); }
+    @media (max-width: 480px) { .avatars { display: none; } }
+
     footer {
       display: flex;
       justify-content: space-between;
@@ -221,7 +264,11 @@
     <div class="page">
       <header class="mono">
         <span class="name">OpenIGI</span>
-        <span class="gpu" id="gpu" data-state="checking">Checking…</span>
+        <span class="header-right">
+          <a class="social" href="https://github.com/OpenIGI/OpenIGI" target="_blank" rel="noopener" aria-label="OpenIGI on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5Z"/></svg></a>
+          <a class="social" data-discord-link href="https://discord.gg/35E72ascqg" target="_blank" rel="noopener" aria-label="OpenIGI on Discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18.2 18.2 0 0 0-5.6 0L8.6 3a19.6 19.6 0 0 0-4.9 1.5C.6 9.1-.3 13.7.1 18.2a19.8 19.8 0 0 0 6 3l1.3-2.1a12.8 12.8 0 0 1-2-1l.5-.4a14.1 14.1 0 0 0 12.2 0l.5.4a12.8 12.8 0 0 1-2 1l1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.7-13.8ZM8.3 15.5c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></a>
+          <span class="gpu" id="gpu" data-state="checking">Checking…</span>
+        </span>
       </header>
 
       <div class="content">
@@ -289,6 +336,27 @@
               </span>
             </div>
           </section>
+        </div>
+
+        <!-- Where the people are: the server's own live numbers, drawn in the page's look. -->
+        <div class="community">
+          <a class="link-card" id="discord" data-discord-link href="https://discord.gg/35E72ascqg" target="_blank" rel="noopener">
+            <span class="badge discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18.2 18.2 0 0 0-5.6 0L8.6 3a19.6 19.6 0 0 0-4.9 1.5C.6 9.1-.3 13.7.1 18.2a19.8 19.8 0 0 0 6 3l1.3-2.1a12.8 12.8 0 0 1-2-1l.5-.4a14.1 14.1 0 0 0 12.2 0l.5.4a12.8 12.8 0 0 1-2 1l1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.7-13.8ZM8.3 15.5c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></span>
+            <span class="link-body">
+              <span class="link-title" id="discord-name">Discord</span>
+              <span class="link-sub"><span class="live" id="discord-online" hidden></span><span id="discord-sub">Talk to the players and the people making it.</span></span>
+            </span>
+            <span class="avatars" id="discord-avatars" aria-hidden="true"></span>
+            <span class="link-go" aria-hidden="true">Join →</span>
+          </a>
+          <a class="link-card" href="https://github.com/OpenIGI/OpenIGI" target="_blank" rel="noopener">
+            <span class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5Z"/></svg></span>
+            <span class="link-body">
+              <span class="link-title">GitHub</span>
+              <span class="link-sub"><span id="github-stars" hidden></span>The source, the issues and every release.</span>
+            </span>
+            <span class="link-go" aria-hidden="true">Open →</span>
+          </a>
         </div>
       </div>
 
