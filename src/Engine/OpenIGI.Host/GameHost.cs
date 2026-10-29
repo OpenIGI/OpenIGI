@@ -666,6 +666,9 @@ public sealed partial class GameHost : IDisposable
                 ReopenFrontEndForTitle(state);
             }
 
+            // A change of language, at the same boundary: it swaps the archives the menus are drawing from.
+            ApplyLanguageIfDue(state);
+
             // The frame's input and its world, in the order each one has to see the keys and the clock.
             BeginFramePass(state);
             UpdateShell(state);

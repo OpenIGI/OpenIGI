@@ -67,7 +67,7 @@ public sealed class Igi2DataLayout : ITitleDataLayout
     /// The two the game's own text is read from, the status messages' and the computer's (<see cref="Flow.Igi2Strings"/>).
     /// Its tree ships <c>LANGUAGE/</c> in upper case beside <c>MISSIONS</c>; the local device finds either casing.
     /// </remarks>
-    public IReadOnlyList<string> StringArchives { get; } = Flow.Igi2Strings.Archives;
+    public IReadOnlyList<string> StringArchives(string language) => Flow.Igi2Strings.Archives(language);
 
     /// <inheritdoc/>
     /// <remarks>

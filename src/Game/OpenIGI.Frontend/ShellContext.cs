@@ -108,8 +108,9 @@ public sealed class ShellContext
     /// </remarks>
     public string ActiveTitleId { get; }
 
-    /// <summary>Gets the campaign's missions, resolved for display.</summary>
-    public IReadOnlyList<MissionInfo> Missions { get; }
+    /// <summary>Gets or sets the campaign's missions, resolved for display.</summary>
+    /// <remarks>Replaced when the language changes; a screen reads it as it is built.</remarks>
+    public IReadOnlyList<MissionInfo> Missions { get; set; }
 
     /// <summary>Gets the CVar registry the settings screen binds to.</summary>
     public CVarRegistry Cvars { get; }

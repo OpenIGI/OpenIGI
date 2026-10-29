@@ -97,7 +97,7 @@ internal sealed record RetailIgi2Mission1(Igi2Level Level, Igi2LevelRun Run, Igi
         }
 
         ResourceRegistry resources = new(files);
-        foreach (string archive in Igi2Strings.Archives)
+        foreach (string archive in Igi2Strings.Archives("english"))
         {
             resources.Register(archive, files.ReadAllBytes(archive));
         }

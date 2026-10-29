@@ -18,18 +18,17 @@ namespace OpenIGI.Game.Igi2.Flow;
 /// </para>
 /// </remarks>
 /// <param name="resources">The registry the archives were registered into.</param>
-/// <param name="language">The language's name, <c>Config_azGameLanguage</c>'s entry.</param>
-public sealed class Igi2Strings(ResourceRegistry resources, string language = Igi2Strings.DefaultLanguage)
+/// <param name="language">The language's name, <c>Config_azGameLanguage</c>'s entry; by default the one the player has chosen now.</param>
+public sealed class Igi2Strings(ResourceRegistry resources, string? language = null)
 {
-    /// <summary>The language a retail English game resolves its keys under.</summary>
-    public const string DefaultLanguage = "ENGLISH";
-
-    /// <summary>The archives the game's own text is read from, for the default language.</summary>
-    public static IReadOnlyList<string> Archives { get; } =
+    /// <summary>The archives the game's own text is read from.</summary>
+    /// <param name="language">The language folder, for example <c>english</c>.</param>
+    /// <returns>The archives' resource names.</returns>
+    public static IReadOnlyList<string> Archives(string language) =>
     [
-        "LOCAL:language/english/messages.res",
-        "LOCAL:language/english/objectives.res",
-        "LOCAL:language/english/computer.res",
+        $"LOCAL:language/{language}/messages.res",
+        $"LOCAL:language/{language}/objectives.res",
+        $"LOCAL:language/{language}/computer.res",
     ];
 
     private readonly ResourceRegistry _resources = resources ?? throw new ArgumentNullException(nameof(resources));
@@ -48,7 +47,7 @@ public sealed class Igi2Strings(ResourceRegistry resources, string language = Ig
         ArgumentNullException.ThrowIfNull(key);
         // Only what is loaded is looked in (Resource_IsLoadedInternal): a key is never read from a loose file.
         if (_resources.TryGetEntry("GLOBAL:" + key, out ResourceEntry? entry)
-            || _resources.TryGetEntry("LOCAL:" + language + "/" + key, out entry))
+            || _resources.TryGetEntry("LOCAL:" + (language ?? LanguageCVars.Directory) + "/" + key, out entry))
         {
             ReadOnlySpan<byte> bytes = entry.Data.Span;
             int end = bytes.IndexOf((byte)0);

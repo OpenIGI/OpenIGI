@@ -81,8 +81,20 @@ public sealed class MenuStringTable
         LanguageDirectory = languageDirectory.Replace('\\', '/').Trim('/');
     }
 
-    /// <summary>Gets the directory keys are resolved under.</summary>
-    public string LanguageDirectory { get; }
+    /// <summary>Gets or sets the directory keys are resolved under.</summary>
+    /// <remarks>Set when the player changes language, once the new language's archives are registered.</remarks>
+    public string LanguageDirectory
+    {
+        get;
+        set
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(value);
+            field = value.Replace('\\', '/').Trim('/');
+
+            // A key the old language lacked may be in the new one.
+            _missing.Clear();
+        }
+    }
 
     /// <summary>Gets the number of keys that failed to resolve.</summary>
     public int MissingCount => _missing.Count;

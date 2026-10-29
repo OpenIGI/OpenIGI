@@ -24,6 +24,9 @@ public sealed class Shell
     private readonly Spring _blur = new(0f, smoothTime: 0.18f);
     private float _scale = 1f;
 
+    /// <summary>Gets the context the screens share.</summary>
+    public ShellContext Context => _context;
+
     /// <summary>Initializes a new instance of the <see cref="Shell"/> class rooted at the main menu.</summary>
     /// <param name="context">The shared context: theme, host and game data.</param>
     /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>

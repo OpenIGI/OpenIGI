@@ -12,6 +12,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
+using OpenIGI.Game;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -251,22 +252,10 @@ public sealed partial class GameHost
         // console has started and the player's log verbosity is in force.
         _overrideScan = _overrides.Rescan();
 
-        foreach (string archive in new[]
-        {
-            MenuStringTable.GetArchiveName(),
-            MenuStringTable.GetMissionArchiveName(),
-        }.Concat(_titleRuntime.Layout.StringArchives))
-        {
-            if (_fileSystem.Exists(archive))
-            {
-                byte[] bytes = _fileSystem.ReadAllBytes(archive);
-                _sessionArchives[archive] = bytes;
-                _resources.Register(archive, bytes);
-            }
-        }
-
-        MenuStringTable strings = new(_resources);
-        _menuStrings = strings;
+        // The text, in the language the player chose (GameHost.Language.cs).
+        _textResources = _resources;
+        _menuStrings = new MenuStringTable(_resources);
+        MountLanguage();
     }
 
     /// <summary>
@@ -386,7 +375,8 @@ public sealed partial class GameHost
             _scheduler,
             _missionState,
             _detailMaps,
-            _sessionArchives,
+            // A copy: a change of language rewrites the session's while a worker may be registering these.
+            new Dictionary<string, byte[]>(_sessionArchives),
             _overrides,
             _lampManifest,
             _sdfCache,

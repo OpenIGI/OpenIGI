@@ -102,6 +102,7 @@ public sealed partial class GameHost
         // The window's mode and size as saved, and the API: r_renderer was read by the composition root
         // before there was a device, and from here a change to it rebuilds the game over the one it names.
         ApplyDisplaySettings();
+        WatchLanguage();
 
         WhenChanged(WeatherCVars.WeatherEnabled, ApplyWeatherSettings);
         WhenChanged(WeatherCVars.WeatherStyle, ApplyWeatherSettings);

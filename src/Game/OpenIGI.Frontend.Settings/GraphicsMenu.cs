@@ -617,6 +617,20 @@ public static class GraphicsMenu
             "The most frames a second the game draws. A cap a little under your display's rate keeps the "
                 + "motion even and the GPU cooler. Held by NVIDIA Reflex where it runs, which keeps the delay "
                 + "low while it does."),
+        new GraphicsSetting(
+            "language",
+            "Language",
+            "The language of the game's own text -- mission names and briefings, objectives, messages and the "
+                + "mission computer -- read from the game's language folders.",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["english"] = "English",
+                ["usa"] = "English (US)",
+                ["german"] = "Deutsch",
+                ["french"] = "Français",
+                ["italian"] = "Italiano",
+                ["spanish"] = "Español",
+            }),
     ];
 
     /// <summary>Gets the frame-rate caps the Display page offers, in frames a second; nought is none.</summary>
