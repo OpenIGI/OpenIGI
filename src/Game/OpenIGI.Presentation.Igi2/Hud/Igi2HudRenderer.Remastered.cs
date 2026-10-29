@@ -13,11 +13,20 @@ namespace OpenIGI.Presentation.Igi2.Hud;
 /// (<see cref="Igi2HudTheme"/>), in place of the retail status display, inventory, action row and messages. The computer, the
 /// cutscene framing, the scopes and the aim's sight stay the original's.
 /// </content>
-public sealed partial class Igi2HudRenderer
+public sealed partial class Igi2HudRenderer : ITouchHudSource
 {
     private readonly HudModel _model = new();
     private RemasteredHud? _remastered;
     private Igi2HudIcons? _icons;
+
+    /// <inheritdoc/>
+    public HudTheme Theme => Igi2HudTheme.Theme;
+
+    /// <inheritdoc/>
+    public IHudIconSource? Icons => _icons;
+
+    /// <inheritdoc/>
+    public HudModel Model => _model;
 
     /// <summary>Gets a value indicating whether the remastered display draws this frame: chosen, and able to.</summary>
     private bool RemasteredChosen => HudCVars.RemasteredHud.Value && (_remastered ??= CreateRemastered()).IsReady;

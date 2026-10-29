@@ -36,7 +36,6 @@ function pointerPosition(e) {
 }
 
 function applyPointer() {
-  touch.setLocked(wantLock);
   canvas.style.cursor = pointerVisible && !wantLock ? 'default' : 'none';
   if (wantLock && document.pointerLockElement !== canvas) lock();
   if (!wantLock && document.pointerLockElement === canvas) document.exitPointerLock();

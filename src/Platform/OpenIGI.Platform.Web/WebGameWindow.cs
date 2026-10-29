@@ -311,6 +311,7 @@ public sealed class WebGameWindow : IGameWindow
                     // their release, and would stay latched down until pressed again.
                     Input.Keyboard.Release();
                     Input.Mouse.Reset();
+                    Input.Touch.Release();
                 }
 
                 break;
@@ -328,6 +329,23 @@ public sealed class WebGameWindow : IGameWindow
 
             case WebInputEventKind.Close:
                 Close();
+                break;
+
+            case WebInputEventKind.Touch:
+                int finger = (int)input.Z;
+                switch (input.Code)
+                {
+                    case "down":
+                        Input.Touch.Down(finger, input.X, input.Y);
+                        break;
+                    case "move":
+                        Input.Touch.Move(finger, input.X, input.Y);
+                        break;
+                    default:
+                        Input.Touch.Up(finger, input.X, input.Y);
+                        break;
+                }
+
                 break;
         }
     }
