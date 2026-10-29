@@ -25,6 +25,9 @@ const args = (query.get('args') ?? '').split(' ').filter(Boolean);
 
 const HINT = 'The folder with IGI.exe in it, usually pc inside the installation.';
 
+/** Where the site hosts the game's files (tools/web-data/pack.py); ?data-host=<url> points elsewhere. */
+const HOSTED_DATA = new URL(query.get('data-host') ?? 'https://data.openigi.com/igi1/', location.href).href.replace(/\/?$/, '/');
+
 // --- The landing page ----------------------------------------------------------------------------------
 
 /** The action under the text: the button's label, the line below it, and whether a folder can be changed. */
@@ -107,10 +110,29 @@ async function pickFolder() {
   });
 }
 
+/** On a phone or a tablet: the page goes fullscreen and sideways as Play is pressed, while the press allows it. */
+const touchDevice = matchMedia('(pointer: coarse)').matches;
+
+function takeTheScreen() {
+  if (!touchDevice || document.fullscreenElement) return;
+  document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })
+    .then(() => screen.orientation?.lock?.('landscape'))
+    .catch(() => {});
+}
+
+const megabytes = n => (n / 1048576).toFixed(0);
+
+/** What the line under Play says about the hosted files: what is left to download, or that nothing is. */
+function hostedLine(status) {
+  if (status.start === 0 && status.all === 0) return 'The game is downloaded. Ready.';
+  if (status.start === 0) return `Ready. The other missions download as you play (${megabytes(status.all)} MB).`;
+  return `Downloads ${megabytes(status.start)} MB to start, ${megabytes(status.all)} MB in all, once.`;
+}
+
 /**
  * The installation to play, settled on the landing page: ?data=<url> at once when given (for automated
- * runs); otherwise the person picks the folder, or plays the one remembered from their last visit, and
- * presses Play. Nothing starts until they do.
+ * runs); otherwise the files the site hosts, or -- when asked for, or when the site's cannot be reached --
+ * the person's own folder, picked or remembered from their last visit. Nothing starts until Play is pressed.
  */
 async function chooseSource() {
   const data = query.get('data');
@@ -119,15 +141,31 @@ async function chooseSource() {
   const { adapter, reason } = await adapterReady;
   if (!adapter) {
     play.disabled = true;
-    offer('Choose game folder', reason, 'error');
+    offer('Play now', reason, 'error');
     return new Promise(() => {}); // Nothing can be played here.
   }
 
-  // What Play would start now: a folder just picked and found to be the game, or one remembered.
+  const own = $('own');
+  const clear = $('clear');
+  const hosted = await files.hostedStatus(HOSTED_DATA);
+  // The site's files unless the person chooses their own folder.
+  let folderMode = hosted === null;
+
+  // What Play would start now in folder mode: a folder just picked and found to be the game, or one remembered.
   let ready = null;
   let remembered = await files.rememberedFolder();
-  if (remembered) offer('Play game', `Game folder: /${remembered.name}`, 'neutral', true);
-  else offer('Choose game folder', HINT);
+  const offerFolder = () => {
+    if (remembered) offer('Play game', `Game folder: /${remembered.name}`, 'neutral', true);
+    else offer('Choose game folder', hosted === null ? `The game's files could not be reached. ${HINT}` : HINT);
+    own.hidden = true;
+  };
+  const offerHosted = status => {
+    offer('Play now', hostedLine(status), status.start === 0 ? 'ok' : 'neutral');
+    own.hidden = false;
+    clear.hidden = status.all === status.total;
+  };
+  if (folderMode) offerFolder();
+  else offerHosted(hosted);
 
   return new Promise((settle, fail) => {
     // Once the installation is settled the buttons are the page's again (Play again, Reload).
@@ -141,6 +179,11 @@ async function chooseSource() {
       busy = true;
       play.disabled = true;
       try {
+        if (!choose && !folderMode) {
+          resolve(await files.fromHosted(HOSTED_DATA));
+          return;
+        }
+
         if (!choose && ready) {
           resolve(ready);
           return;
@@ -174,15 +217,26 @@ async function chooseSource() {
           reject(error);
           return;
         }
-        offer(ready || remembered ? 'Play game' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
+        if (!folderMode) offer('Play now', error.message, 'error');
+        else offer(ready || remembered ? 'Play game' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
       } finally {
         busy = false;
         play.disabled = false;
       }
     };
 
-    play.addEventListener('click', () => act(false), { signal: listening.signal });
+    play.addEventListener('click', () => { takeTheScreen(); act(false); }, { signal: listening.signal });
     change.addEventListener('click', () => act(true), { signal: listening.signal });
+    own.addEventListener('click', () => {
+      folderMode = true;
+      clear.hidden = true;
+      offerFolder();
+    }, { signal: listening.signal });
+    clear.addEventListener('click', async () => {
+      await files.clearHosted();
+      clear.hidden = true;
+      if (!folderMode) offerHosted((await files.hostedStatus(HOSTED_DATA)) ?? hosted);
+    }, { signal: listening.signal });
   });
 }
 
@@ -223,10 +277,20 @@ async function start() {
   const fs = runtime.Module.FS;
   await writeHostAssets(fs);
 
-  const mb = n => (n / 1048576).toFixed(0);
+  if (source.hosted) {
+    // The bundle read before the game starts comes in first, with how fast; a mission's comes in when the
+    // mission is chosen, with the game's own wait for it on the screen.
+    const began = performance.now();
+    source.onDownload = (name, got, size) => {
+      if (name !== 'base') return;
+      const rate = got / Math.max(0.001, (performance.now() - began) / 1000);
+      progress('Downloading game files', got / size, `${megabytes(got)} of ${megabytes(size)} MB · ${(rate / 1048576).toFixed(1)} MB/s`);
+    };
+  }
   const read = await files.load(source, fs, GAME_ROOT, (done, total) =>
-    progress('Reading game files', total ? done / total : 0, `${mb(done)} of ${mb(total)} MB`));
+    progress(source.hosted ? 'Unpacking game files' : 'Reading game files', total ? done / total : 0, `${megabytes(done)} of ${megabytes(total)} MB`));
   console.log(`Read ${read.files} files; ${read.deferred} wait for their missions.`);
+  if (source.hosted) source.onDownload = null;
 
   platform.install(canvas);
   runtime.setModuleImports('openigi-platform', platform.imports);
@@ -246,6 +310,9 @@ async function start() {
   // Frames stepped so far and the state of the sound, for anyone measuring from outside (an automated
   // run, the console).
   globalThis.openigi = { frames: 0, audio: audio.diagnostics };
+
+  // The missions' files, downloaded ahead while the menu is up, so the first mission chosen starts at once.
+  if (source.hosted) setTimeout(() => source.prefetch(), 3000);
 
   const frame = () => {
     let going;

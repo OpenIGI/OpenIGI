@@ -5,6 +5,8 @@
 // frame. So every handler here only writes a line to a queue -- 'key KeyW 1', 'move 3 -1 640 360' -- and
 // WebGameWindow (C#) reads the queue in PumpEvents. The words are what WebInputEvent.Parse reads.
 
+import * as touch from './touch.js';
+
 let canvas = null;
 let queue = [];
 let listening = null;
@@ -12,7 +14,11 @@ let resizes = null;
 let wantLock = false;
 let pointerVisible = true;
 
-const ratio = () => window.devicePixelRatio || 1;
+// A phone's screen is three or more device pixels to the CSS pixel, more than its graphics can fill at a
+// playable rate; drawn at one and a half, the picture is scaled up by the browser and hardly looks softer.
+const TOUCH_RATIO = 1.5;
+const touchScreen = matchMedia('(pointer: coarse)').matches;
+const ratio = () => Math.min(window.devicePixelRatio || 1, touchScreen ? TOUCH_RATIO : Infinity);
 const drawable = () => {
   const box = canvas.getBoundingClientRect();
   return [Math.max(1, Math.round(box.width * ratio())), Math.max(1, Math.round(box.height * ratio()))];
@@ -30,6 +36,7 @@ function pointerPosition(e) {
 }
 
 function applyPointer() {
+  touch.setLocked(wantLock);
   canvas.style.cursor = pointerVisible && !wantLock ? 'default' : 'none';
   if (wantLock && document.pointerLockElement !== canvas) lock();
   if (!wantLock && document.pointerLockElement === canvas) document.exitPointerLock();
@@ -96,6 +103,8 @@ export function install(target) {
   document.addEventListener('visibilitychange', () => queue.push(`focus ${document.hidden ? 0 : 1}`), { signal });
   window.addEventListener('pagehide', () => queue.push('close'), { signal });
 
+  touch.install(canvas, line => queue.push(line), pointerPosition);
+
   resizes = new ResizeObserver(() => {
     const [width, height] = drawable();
     queue.push(`resize ${width} ${height}`);
@@ -108,6 +117,7 @@ export function install(target) {
  * queued for a game that will never take it.
  */
 export function uninstall() {
+  touch.uninstall();
   listening?.abort();
   resizes?.disconnect();
   listening = null;
@@ -137,7 +147,8 @@ export const imports = {
     applyPointer();
   },
   requestFullscreen: fullscreen => {
-    if (fullscreen && !document.fullscreenElement) canvas.requestFullscreen?.().catch(() => {});
+    // The page rather than the canvas, so the touch controls laid over the canvas come along.
+    if (fullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
     if (!fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },

@@ -8,5 +8,8 @@
     <Content Include="$(MSBuildThisFileDirectory)platform.js"
              Link="wwwroot/platform.js"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)touch.js"
+             Link="wwwroot/touch.js"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

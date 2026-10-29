@@ -37,9 +37,6 @@ public static partial class Program
     /// <summary>Where the page puts the installation.</summary>
     public const string GameRoot = "/game";
 
-    /// <summary>How many missions, from the start of the campaign, the browser build offers.</summary>
-    public const int CampaignMissionLimit = 6;
-
     private static GameHost? _game;
 
     /// <summary>Nothing: the page boots the game once its files are in place.</summary>
@@ -59,12 +56,10 @@ public static partial class Program
 
         // The browser's developer console, plus the in-game console once the game attaches it.
         LogRouter logger = new LogRouter().AddSink(new ConsoleSink());
-        // The browser build is the original's picture and the opening of the campaign: the preset is held
-        // on Vanilla whatever was saved, and only the first missions can be played.
+        // The browser build is the original's picture: the preset is held on Vanilla whatever was saved.
         HostOptions options = HostOptions.Parse(args ?? []) with
         {
             LockedPreset = GraphicsPreset.Vanilla,
-            CampaignMissionLimit = CampaignMissionLimit,
         };
         IGameTitleRuntime runtime = TitleCatalog.Default;
 
