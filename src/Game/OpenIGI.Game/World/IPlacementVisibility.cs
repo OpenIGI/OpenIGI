@@ -46,6 +46,21 @@ public interface IPlacementVisibility
     ViewClip? ClipOf(WorldPlacement placement) => null;
 
     /// <summary>
+    /// Gets a value indicating whether the eye stands inside the enclosure a placement is part of this frame -- or whether the
+    /// title cannot say, which answers the same.
+    /// </summary>
+    /// <param name="placement">The placement as the walk produced it.</param>
+    /// <returns><see langword="false"/> only for a part of a building the eye is outside of.</returns>
+    /// <remarks>
+    /// A building's rooms are drawn two-sided, because their faces, wound to their normals, do not all face into the room the
+    /// eye stands in. From outside that costs the picture: each room's walls lie in the planes of the shell's, facing the other
+    /// way, and two-sided they fight it for every pixel -- a garage's white inner wall flickering through its door. The original
+    /// culls them (<c>Direct3DRender_SetLitState</c> and its siblings set <c>D3DCULL_CCW</c> for every model), so from outside
+    /// the renderer culls them too.
+    /// </remarks>
+    bool EnclosesEye(WorldPlacement placement) => true;
+
+    /// <summary>
     /// Gets the part of the view the world outside the buildings -- the terrain and the forests -- is drawn through this frame, or
     /// <see langword="null"/> for all of it.
     /// </summary>

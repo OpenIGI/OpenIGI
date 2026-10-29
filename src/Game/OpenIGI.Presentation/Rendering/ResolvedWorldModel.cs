@@ -17,7 +17,12 @@ internal sealed class ResolvedWorldModel(MeshGeometry geometry, MeshHandle mesh,
     /// the prop optimization erases mission 2's cave. IGI1 sectors likewise enclose the viewer.
     /// Evaluate once at residency, rather than scanning vertices in every render pass.
     /// </remarks>
-    public bool CanCullBackFaces { get; } = !isSector && Array.TrueForAll(
+    public bool CanCullBackFaces => !isSector && _hasNormals;
+
+    /// <summary>Whether this is an interior sector whose winding repair has usable normals: culled while the eye is outside it.</summary>
+    public bool CanCullFromOutside => isSector && _hasNormals;
+
+    private readonly bool _hasNormals = Array.TrueForAll(
         geometry.Vertices, vertex => float.IsFinite(vertex.Normal.LengthSquared) && vertex.Normal.LengthSquared > 0.000001f);
 
     public WorldSubsetDraw[]? Subsets { get; set; }

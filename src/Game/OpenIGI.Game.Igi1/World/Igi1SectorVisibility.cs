@@ -282,6 +282,13 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
     }
 
     /// <inheritdoc/>
+    public bool EnclosesEye(WorldPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return !_parts.TryGetValue(placement, out Sector? sector) || ReferenceEquals(sector.Building, _inside);
+    }
+
+    /// <inheritdoc/>
     /// <remarks>
     /// The outside's window, for every placement beyond the inside sphere while the camera stands in a building that sees out:
     /// <c>QCube_CallHandlers</c> narrows the display area to it before calling such an object, and the rigid mesh's triangles are
