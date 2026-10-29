@@ -420,8 +420,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
-    public void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
-        where T : unmanaged
+    public void WriteBuffer(IRhiBuffer buffer, ulong offset, ReadOnlySpan<byte> data)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ThrowIfDisposed();
@@ -435,7 +434,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         }
 
         // Queued ahead of the next submission rather than sent and waited on: see VulkanRhiDevice.Submission.
-        QueueUpload(target.Buffer.Handle, offset, System.Runtime.InteropServices.MemoryMarshal.AsBytes(data));
+        QueueUpload(target.Buffer.Handle, offset, data);
     }
 
     /// <inheritdoc/>

@@ -35,7 +35,7 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     public const double ProbeBelowInUnits = 16385.0;
 
     /// <summary>This frame's ground-snap results by queried position; see <see cref="SnapToGround"/>.</summary>
-    private readonly Dictionary<(double X, double Y, double Z), double> _groundSnaps = [];
+    private readonly Dictionary<Vector3d, double> _groundSnaps = [];
 
     /// <summary>Gets where the soldiers report.</summary>
     public IOpenIgiLogger Logger { get; } = logger;
@@ -180,7 +180,7 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         // cascades and the geometry pass each resolve every soldier's feet from the same positions,
         // and this query was being paid once per pass. Cleared in BeginFrame, so a moved soldier is
         // re-queried the moment the simulation actually moved it.
-        (double X, double Y, double Z) key = (x, y, declaredZ);
+        Vector3d key = new(x, y, declaredZ);
         if (_groundSnaps.TryGetValue(key, out double cached))
         {
             return cached;

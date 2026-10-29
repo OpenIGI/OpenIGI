@@ -146,6 +146,9 @@ internal sealed class SoldierMember(SoldierAgent agent, MeshHandle mesh)
     /// <summary>Its world 3×3 this frame.</summary>
     public Matrix3f DrawnOrientation { get; set; } = Matrix3f.Identity;
 
+    /// <summary>The ground found under its shadow on the last tick it was drawn.</summary>
+    public ShadowGround ShadowGround;
+
     /// <summary>Where it was drawn LAST frame — the rigid half of its motion vector.</summary>
     public (Vector3d Where, Matrix3f Orientation)? PreviousDrawn { get; set; }
 

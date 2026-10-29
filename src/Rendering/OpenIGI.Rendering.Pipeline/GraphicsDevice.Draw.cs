@@ -268,6 +268,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (_meshTable.Remove(mesh.Id, out RhiMesh? resource))
         {
+            if (_lastMeshId == mesh.Id)
+            {
+                _lastMesh = null;
+            }
+
             TracedWorld?.Forget(mesh.Id);
             _retired.Retire(resource);
         }
@@ -599,10 +604,26 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         return new MeshHandle(id);
     }
 
-    private RhiMesh Resolve(MeshHandle mesh) =>
-        _meshTable.TryGetValue(mesh.Id, out RhiMesh? resource)
-            ? resource
-            : throw new ArgumentException($"There is no mesh {mesh.Id}.", nameof(mesh));
+    // The mesh last resolved: a model's subsets and a terrain chunk's layers come one after another.
+    private uint _lastMeshId;
+    private RhiMesh? _lastMesh;
+
+    private RhiMesh Resolve(MeshHandle mesh)
+    {
+        if (_lastMesh is { } last && _lastMeshId == mesh.Id)
+        {
+            return last;
+        }
+
+        if (!_meshTable.TryGetValue(mesh.Id, out RhiMesh? resource))
+        {
+            throw new ArgumentException($"There is no mesh {mesh.Id}.", nameof(mesh));
+        }
+
+        _lastMeshId = mesh.Id;
+        _lastMesh = resource;
+        return resource;
+    }
 
     private void DisposeMeshes()
     {
@@ -612,5 +633,6 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         }
 
         _meshTable.Clear();
+        _lastMesh = null;
     }
 }

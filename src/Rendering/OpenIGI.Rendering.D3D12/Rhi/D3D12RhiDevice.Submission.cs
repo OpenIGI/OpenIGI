@@ -106,35 +106,33 @@ internal sealed unsafe partial class D3D12RhiDevice
     }
 
     /// <inheritdoc/>
-    public void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
-        where T : unmanaged
+    public void WriteBuffer(IRhiBuffer buffer, ulong offset, ReadOnlySpan<byte> data)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ThrowIfDisposed();
 
         D3D12RhiBuffer target = (D3D12RhiBuffer)buffer;
-        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(data);
-        if (bytes.IsEmpty)
+        if (data.IsEmpty)
         {
             return;
         }
 
         if (target.Mapped is not null && target.Heap != HeapType.Readback)
         {
-            bytes.CopyTo(new Span<byte>(target.Mapped + offset, bytes.Length));
+            data.CopyTo(new Span<byte>(target.Mapped + offset, data.Length));
             return;
         }
 
-        (D3D12RhiBuffer chunk, ulong at) = Stage((ulong)bytes.Length, 16);
-        bytes.CopyTo(new Span<byte>(chunk.Mapped + at, bytes.Length));
+        (D3D12RhiBuffer chunk, ulong at) = Stage((ulong)data.Length, 16);
+        data.CopyTo(new Span<byte>(chunk.Mapped + at, data.Length));
 
         // Two copies into one buffer are not ordered on their own, and the later write is the one promised:
         // the tracker puts a barrier between them.
         D3D12RhiCommandEncoder upload = OpenUpload();
         upload.Use(target, D3D12Use.CopyDest);
         upload.FlushBarriers();
-        upload.List->CopyBufferRegion(target.Resource, target.Offset + offset, chunk.Resource, chunk.Offset + at, (ulong)bytes.Length);
-        Uploaded((ulong)bytes.Length);
+        upload.List->CopyBufferRegion(target.Resource, target.Offset + offset, chunk.Resource, chunk.Offset + at, (ulong)data.Length);
+        Uploaded((ulong)data.Length);
     }
 
     /// <inheritdoc/>

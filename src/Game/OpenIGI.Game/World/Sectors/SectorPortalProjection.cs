@@ -124,7 +124,7 @@ public static class SectorPortalProjection
         bool anyInFront = false;
         for (int i = 0; i < portal.VertexCount; i++)
         {
-            vertices[i] = Project(modelView.TransformPoint(set.Vertices[portal.FirstVertex + i]), projection);
+            vertices[i] = Project(modelView.TransformPoint(set.VertexSpan[portal.FirstVertex + i]), projection);
             anyInFront |= (vertices[i].Code & Outcode.Near) == 0;
         }
 
@@ -141,7 +141,7 @@ public static class SectorPortalProjection
 
         for (int f = 0; f < portal.FaceCount; f++)
         {
-            MefPortalFace face = set.Faces[portal.FirstFace + f];
+            MefPortalFace face = set.FaceSpan[portal.FirstFace + f];
             int a = face.Vertex0 - portal.FirstVertex;
             int b = face.Vertex1 - portal.FirstVertex;
             int c = face.Vertex2 - portal.FirstVertex;
@@ -180,7 +180,7 @@ public static class SectorPortalProjection
         // The sign is load-bearing below, and MefPortalSet.NormalOf now carries the original's -- it
         // used to cross from vertex 1, which for a triangle is the negation, so this reproduced the
         // maths locally rather than trust it. It is one implementation again.
-        Vector3f p0 = set.Vertices[set.Faces[portal.FirstFace].Vertex0];
+        Vector3f p0 = set.VertexSpan[set.FaceSpan[portal.FirstFace].Vertex0];
         Vector3f normal = rotate.Transform(set.NormalOf(portal)).Normalized();
 
         Vector3f rotatedP0 = rotate.Transform(p0);

@@ -151,6 +151,36 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
             && indexOffset + indexCount <= mesh.IndexCapacity;
     }
 
+    // The materials lately bound, by the handles that named them, in a small table indexed by those handles: three
+    // texture lookups and a group lookup a draw were a tenth of a browser's frame, and a frame binds a few dozen
+    // materials thousands of times. Emptied whenever the cache lets a group go.
+    private const int RecentMaterials = 64;
+    private readonly RecentMaterial[] _recent = new RecentMaterial[RecentMaterials];
+    private int _recentGeneration;
+
+    private IRhiBindGroup Material(TextureHandle diffuse, TextureHandle lightmap, TextureHandle detail)
+    {
+        if (_materials.Generation != _recentGeneration)
+        {
+            Array.Clear(_recent);
+            _recentGeneration = _materials.Generation;
+        }
+
+        uint hash = (diffuse.Id * 0x9E3779B1u) ^ (lightmap.Id * 0x85EBCA77u) ^ (detail.Id * 0xC2B2AE3Du);
+        ref RecentMaterial slot = ref _recent[(int)(hash >> 26)];
+        if (slot.Group is { } known && slot.Diffuse == diffuse && slot.Lightmap == lightmap && slot.Detail == detail)
+        {
+            return known;
+        }
+
+        IRhiBindGroup group = _materials.Get(_textures.Resolve(diffuse), _textures.Resolve(lightmap), _textures.Resolve(detail));
+        slot = new RecentMaterial(diffuse, lightmap, detail, group);
+        return group;
+    }
+
+    private readonly record struct RecentMaterial(
+        TextureHandle Diffuse, TextureHandle Lightmap, TextureHandle Detail, IRhiBindGroup? Group);
+
     private bool Bind(
         IRhiRenderPassEncoder pass,
         IRhiRenderPipeline pipeline,
@@ -172,10 +202,7 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
 
         pass.SetPipeline(pipeline);
 
-        pass.SetBindGroup(0, _materials.Get(
-            _textures.Resolve(call.Diffuse),
-            _textures.Resolve(call.Lightmap),
-            _textures.Resolve(call.Detail)));
+        pass.SetBindGroup(0, Material(call.Diffuse, call.Lightmap, call.Detail));
 
         if (frameGroup is not null)
         {

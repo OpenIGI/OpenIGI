@@ -49,6 +49,9 @@ public sealed class Mesh3DPipelineCache : IDisposable
     private readonly bool _bakesFog;
     private Environment _environment;
     private Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> _pipelines = [];
+    private Mesh3DPipelineKey _lastKey;
+    private Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline>? _lastSet;
+    private IRhiRenderPipeline? _lastPipeline;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="Mesh3DPipelineCache"/> class.</summary>
@@ -165,13 +168,21 @@ public sealed class Mesh3DPipelineCache : IDisposable
 
         Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference, reflective);
 
-        if (_pipelines.TryGetValue(key, out IRhiRenderPipeline? existing))
+        // Draws come in runs of one state; the last answer, from the set it came from, skips the lookup.
+        if (_lastPipeline is { } last && key == _lastKey && ReferenceEquals(_lastSet, _pipelines))
         {
-            return existing;
+            return last;
         }
 
-        IRhiRenderPipeline pipeline = Create(key);
-        _pipelines[key] = pipeline;
+        if (!_pipelines.TryGetValue(key, out IRhiRenderPipeline? pipeline))
+        {
+            pipeline = Create(key);
+            _pipelines[key] = pipeline;
+        }
+
+        _lastKey = key;
+        _lastSet = _pipelines;
+        _lastPipeline = pipeline;
         return pipeline;
     }
 

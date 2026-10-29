@@ -29,6 +29,20 @@ const dv = () => {
   return view;
 };
 
+// The heap as 32-bit words, for the dynamic offsets a draw binds with: handed to setBindGroup as they lie, rather
+// than copied into a fresh array on every one of a frame's thousands of binds.
+let words = null;
+const heapWords = () => {
+  const buffer = heap().buffer;
+  if (words === null || words.buffer !== buffer) {
+    words = new Uint32Array(buffer);
+  }
+  return words;
+};
+
+// A 64-bit size the queue carries as two words, all ones meaning the rest of the buffer.
+const wholeOrSize = (lo, hi) => (lo === U32_UNDEFINED && hi === U32_UNDEFINED ? undefined : lo + hi * 0x100000000);
+
 const u8 = p => dv().getUint8(p);
 const u16 = p => dv().getUint16(p, true);
 const u32 = p => dv().getUint32(p, true);
@@ -499,7 +513,8 @@ const calls = {
 
   setPipeline: (pass, pipeline) => { get(pass).setPipeline(get(pipeline)); return 0; },
   setBindGroup: (pass, index, group, count, offsetsPtr) => {
-    get(pass).setBindGroup(index, get(group), array(offsetsPtr, count, 4, u32));
+    if (count === 0) get(pass).setBindGroup(index, get(group));
+    else get(pass).setBindGroup(index, get(group), heapWords(), offsetsPtr >>> 2, count);
     return 0;
   },
   dispatch: (pass, x, y, z) => { get(pass).dispatchWorkgroups(x, y, z); return 0; },
@@ -511,16 +526,8 @@ const calls = {
   popDebugGroup: pass => { get(pass).popDebugGroup(); return 0; },
   end: pass => { get(pass).end(); return 0; },
 
-  setVertexBufferHandle: (pass, slot, buffer) => { passState(pass).vertex = buffer; return 0; },
-  setIndexBufferHandle: (pass, buffer, format) => { Object.assign(passState(pass), { index: buffer, format }); return 0; },
-  draw: (pass, vertices, instances, first, firstInstance) => { get(pass).draw(vertices, instances, first, firstInstance); return 0; },
-  drawIndexed: (pass, indices, instances, first, base, firstInstance) => {
-    get(pass).drawIndexed(indices, instances, first, base | 0, firstInstance);
-    return 0;
-  },
   drawIndirect: (pass, buffer, offset) => { get(pass).drawIndirect(get(buffer), offset); return 0; },
   drawIndexedIndirect: (pass, buffer, offset) => { get(pass).drawIndexedIndirect(get(buffer), offset); return 0; },
-  setScissorRect: (pass, x, y, width, height) => { get(pass).setScissorRect(x, y, width, height); return 0; },
   setBlendConstant: (pass, color) => {
     get(pass).setBlendConstant({ r: f64(at(color, 'WGPUColor.r')), g: f64(at(color, 'WGPUColor.g')), b: f64(at(color, 'WGPUColor.b')), a: f64(at(color, 'WGPUColor.a')) });
     return 0;
@@ -593,15 +600,6 @@ const doubleCalls = {
     get(enc).resolveQuerySet(get(set), first, count, get(dst), offset);
     return 0;
   },
-  setVertexBuffer: (pass, slot, offset, size) => {
-    get(pass).setVertexBuffer(slot, get(passState(pass).vertex), offset, size < 0 ? undefined : size);
-    return 0;
-  },
-  setIndexBuffer: (pass, unused, offset, size) => {
-    const { index, format } = passState(pass);
-    get(pass).setIndexBuffer(get(index), E.IndexFormat[format], offset, size < 0 ? undefined : size);
-    return 0;
-  },
   setViewport: (pass, x, y, width, height) => { passState(pass).viewport = [x, y, width, height]; return 0; },
   setViewportDepth: (pass, min, max) => { get(pass).setViewport(...passState(pass).viewport, min, max); return 0; },
 };
@@ -626,6 +624,60 @@ globalThis.OpenIgiWebGpu = {
     const fn = doubleCalls[name(namePointer)];
     if (!fn) throw new Error(`The WebGPU bridge has no ${name(namePointer)}.`);
     return fn(a >>> 0, b, c, d, e) ?? 0;
+  },
+  /**
+   * Replays the render pass commands wgpu_native.c queued, in the order they were recorded (see its Q_ list).
+   * @param {number} at Where the words start in wasm memory.
+   * @param {number} count How many words there are.
+   */
+  replay(at, count) {
+    const w = heapWords();
+    let i = at >>> 2;
+    const end = i + count;
+    let passHandle = 0;
+    let pass = null;
+    while (i < end) {
+      const op = w[i];
+      if (w[i + 1] !== passHandle) {
+        passHandle = w[i + 1];
+        pass = get(passHandle);
+      }
+      switch (op) {
+        case 1:
+          pass.setPipeline(get(w[i + 2]));
+          i += 3;
+          break;
+        case 2: {
+          const n = w[i + 4];
+          if (n === 0) pass.setBindGroup(w[i + 2], get(w[i + 3]));
+          else pass.setBindGroup(w[i + 2], get(w[i + 3]), w, i + 5, n);
+          i += 5 + n;
+          break;
+        }
+        case 3:
+          pass.setVertexBuffer(w[i + 2], get(w[i + 3]), w[i + 4] + w[i + 5] * 0x100000000, wholeOrSize(w[i + 6], w[i + 7]));
+          i += 8;
+          break;
+        case 4:
+          pass.setIndexBuffer(get(w[i + 2]), E.IndexFormat[w[i + 3]], w[i + 4] + w[i + 5] * 0x100000000, wholeOrSize(w[i + 6], w[i + 7]));
+          i += 8;
+          break;
+        case 5:
+          pass.draw(w[i + 2], w[i + 3], w[i + 4], w[i + 5]);
+          i += 6;
+          break;
+        case 6:
+          pass.drawIndexed(w[i + 2], w[i + 3], w[i + 4], w[i + 5] | 0, w[i + 6]);
+          i += 7;
+          break;
+        case 7:
+          pass.setScissorRect(w[i + 2], w[i + 3], w[i + 4], w[i + 5]);
+          i += 6;
+          break;
+        default:
+          throw new Error(`The WebGPU bridge was sent an unknown queued command ${op}.`);
+      }
+    }
   },
   pop(out) {
     const next = completions.shift();

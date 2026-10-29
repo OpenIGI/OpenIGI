@@ -74,6 +74,10 @@ public readonly record struct MefPortalFace(int Vertex0, int Vertex1, int Vertex
 /// </remarks>
 public sealed class MefPortalSet
 {
+    private readonly MefPortal[] _portals;
+    private readonly MefPortalFace[] _faces;
+    private readonly Vector3f[] _vertices;
+
     private MefPortalSet(
         IReadOnlyList<MefPortal> portals,
         IReadOnlyList<MefPortalFace> faces,
@@ -82,6 +86,9 @@ public sealed class MefPortalSet
         Portals = portals;
         Faces = faces;
         Vertices = vertices;
+        _portals = [.. portals];
+        _faces = [.. faces];
+        _vertices = [.. vertices];
     }
 
     /// <summary>An empty set, for the models that enclose no space.</summary>
@@ -96,6 +103,19 @@ public sealed class MefPortalSet
 
     /// <summary>Gets every portal vertex in the model, in the model's own space.</summary>
     public IReadOnlyList<Vector3f> Vertices { get; }
+
+    /// <summary>Gets <see cref="Portals"/> as a span, for the per-frame portal tests.</summary>
+    /// <remarks>
+    /// The browser's ahead-of-time compiler cannot instantiate an <see cref="IReadOnlyList{T}"/> of a struct over an
+    /// array, so every read through the list ran in its interpreter -- a frame's portal projection among them.
+    /// </remarks>
+    public ReadOnlySpan<MefPortal> PortalSpan => _portals;
+
+    /// <summary>Gets <see cref="Faces"/> as a span, for the same reason as <see cref="PortalSpan"/>.</summary>
+    public ReadOnlySpan<MefPortalFace> FaceSpan => _faces;
+
+    /// <summary>Gets <see cref="Vertices"/> as a span, for the same reason as <see cref="PortalSpan"/>.</summary>
+    public ReadOnlySpan<Vector3f> VertexSpan => _vertices;
 
     /// <summary>Gets a value indicating whether the model encloses space.</summary>
     public bool IsSector => Portals.Count > 0;
@@ -204,10 +224,10 @@ public sealed class MefPortalSet
             return default;
         }
 
-        MefPortalFace face = Faces[portal.FirstFace];
-        Vector3f origin = Vertices[face.Vertex0];
-        Vector3f a = Vertices[face.Vertex1] - origin;
-        Vector3f b = Vertices[face.Vertex2] - origin;
+        MefPortalFace face = _faces[portal.FirstFace];
+        Vector3f origin = _vertices[face.Vertex0];
+        Vector3f a = _vertices[face.Vertex1] - origin;
+        Vector3f b = _vertices[face.Vertex2] - origin;
 
         return new Vector3f(
             (a.Y * b.Z) - (a.Z * b.Y),

@@ -441,7 +441,7 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
         }
 
         _requested[sector.Index] = window;
-        foreach (MefPortal portal in sector.Portals.Portals)
+        foreach (MefPortal portal in sector.Portals.PortalSpan)
         {
             if (!SectorPortalProjection.TryGetPortalBounds(
                     _eye, _projection, sector.Position, sector.Orientation, sector.Portals, portal, window, out SectorScreenRect box))
@@ -457,7 +457,7 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
                     continue;
                 }
 
-                foreach (MefPortal other in candidate.Portals.Portals)
+                foreach (MefPortal other in candidate.Portals.PortalSpan)
                 {
                     if (other.Slot == portal.Slot)
                     {
