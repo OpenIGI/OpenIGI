@@ -152,7 +152,7 @@ public sealed partial class GameHost
         {
             state.LockstepClock.Milliseconds = _options.IsBenchmark
                 ? BenchmarkSchedule.MillisecondsForFrame(_loop.Clock.FrameCount)
-                : (int)(((_loop.Clock.FrameCount + 1L) * 1000L) / GameClock.DefaultTickRate);
+                : (int)(((_loop.Clock.FrameCount + 1L) * 1000L) / (_options.CaptureRate ?? GameClock.DefaultTickRate));
 
             // A capture must not be able to see the mouse. The window grabs the cursor in player mode,
             // so moving the mouse in another application changed what got captured -- which is exactly
@@ -606,7 +606,9 @@ public sealed partial class GameHost
         // -entrycam writes its frames the same way, so the shot can be flipped through afterwards.
         // A camera move is the one thing a single still cannot show, and the entry is the one camera
         // move nobody can trigger at a repeatable moment by hand.
-        if ((_options.HasFlight || (_options.EntryCamMission > 0 && _entry.IsRunning))
+        // -computercam writes one too, from the frame it opens the computer on: its "whole transition as a sequence".
+        bool computerSequence = _options.ComputerCamFrame > 0 && _loop.Clock.FrameCount >= _options.ComputerCamFrame;
+        if ((_options.HasFlight || (_options.EntryCamMission > 0 && _entry.IsRunning) || computerSequence)
             && _options.ScreenshotPath is { } flightPath
             && _scene is not null)
         {

@@ -279,6 +279,14 @@ public readonly record struct HostOptions(
     /// </remarks>
     public int FlightDelay { get; init; }
 
+    /// <summary>Gets the frames per second a lockstep capture is rendered at, or <see langword="null"/> for one frame per tick.</summary>
+    /// <remarks>
+    /// Above the simulation's own rate the synthetic clock advances by a fraction of a tick per frame and the presentation
+    /// blends between ticks, as it does in play, so a 60 fps capture moves smoothly and still depends only on its arguments.
+    /// Set by <c>-capturerate</c>.
+    /// </remarks>
+    public int? CaptureRate { get; init; }
+
     /// <summary>
     /// Gets the amplitude in degrees of a per-frame camera shake laid over whatever else the camera is
     /// doing, or zero for none. Set by <c>-camshake</c>.
@@ -442,6 +450,8 @@ public readonly record struct HostOptions(
                            to judge the temporal filters (GI, TAA) in motion. Pair with -frames.
           -yawend <rad>    Yaw the flight ends on. Defaults to the opening yaw (-yaw).
           -pitchend <rad>  Pitch the flight ends on. Defaults to the opening pitch (-pitch).
+          -capturerate N   Render a -lockstep capture at N frames per second (60 for video) instead of one
+                           frame per 30 Hz tick; the frames between ticks are blended as in play.
           -flightframes N  Finish the flight in N frames and hold the end pose for the rest of the
                            capture. Defaults to spreading the flight over every frame.
           -camswing <deg>  Add this much yaw on every other frame, so frames N and N+2 show the same view:

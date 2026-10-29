@@ -99,7 +99,7 @@ public sealed partial class GameHost
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
         bool smoothPresentation = !_menuFlow.PauseMenu
             && _mission.Cutscenes?.IsPlaying != true
-            && !_options.Lockstep
+            && (!_options.Lockstep || _options.CaptureRate > _loop.Clock.TickRate)
             && FrameCVars.SmoothPresentation.Value;
         double pacingWall = _loop.Clock.FrameInstantMilliseconds;
         float tickBlend = smoothPresentation

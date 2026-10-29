@@ -57,6 +57,7 @@ internal static class HostOptionsParser
         float? cameraPitchEnd = null;
         int? flightFrames = null;
         int flightDelay = 0;
+        int? captureRate = null;
         float cameraShake = 0f;
         float cameraSwing = 0f;
         int exitAfterFrames = 0;
@@ -234,6 +235,11 @@ internal static class HostOptionsParser
             {
                 flightDelay = NextInt(
                     args, ref i, "flightdelay", 0, "a non-negative frame count", CultureInfo.InvariantCulture);
+            }
+            else if (arg.Equals("capturerate", StringComparison.OrdinalIgnoreCase))
+            {
+                captureRate = NextInt(
+                    args, ref i, "capturerate", 1, "a positive frame rate", CultureInfo.InvariantCulture);
             }
             else if (arg.Equals("flightframes", StringComparison.OrdinalIgnoreCase))
             {
@@ -479,6 +485,7 @@ internal static class HostOptionsParser
             CameraPitchEnd = cameraPitchEnd,
             FlightFrames = flightFrames,
             FlightDelay = flightDelay,
+            CaptureRate = captureRate,
             CameraShake = cameraShake,
             CameraSwing = cameraSwing,
             Difficulty = difficulty,
