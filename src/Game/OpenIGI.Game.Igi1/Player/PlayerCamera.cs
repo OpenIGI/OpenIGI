@@ -434,6 +434,18 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
         _mapComputerOpen = open;
         _weapons?.SetMapComputerOpen(open);
+
+        if (!open)
+        {
+            // The open computer holds the window's input, so the frames this player was given while it was up were
+            // empty -- and the key that closed it is most likely still down on the next one. Against an empty frame
+            // that reads as a fresh press, and the ready state opens the computer again the moment it closes. Entered
+            // as held, the key has to be let go before it can open the computer; one already let go is no worse off.
+            PlayerInputFrame keyHeld = _input.Current;
+            keyHeld[(int)PlayerInputSlot.MapComputer] = 1f;
+            _input.Accept(keyHeld);
+        }
+
         _locomotion.Animator?.Enter(open ? 45 : HumanLocomotionStates.Idle);
 
         if (open && _weapons?.InHand is { } held)
