@@ -22,6 +22,10 @@ namespace OpenIGI.Formats.World;
 /// </remarks>
 public sealed class MtpPack
 {
+    // Materials, as an array: an IReadOnlyList of a struct is read in the browser's interpreter, and a draw looks
+    // its material up every frame.
+    private readonly MtpMaterial[] _materials;
+
     private MtpPack(
         MtpFile file,
         IReadOnlyList<string> animationSetNames,
@@ -42,6 +46,7 @@ public sealed class MtpPack
         PaletteNames = paletteNames;
         Materials = materials;
         Instances = instances;
+        _materials = [.. materials];
     }
 
     /// <summary>Gets the underlying chunk list.</summary>
@@ -131,7 +136,7 @@ public sealed class MtpPack
         }
 
         int lookup = instance.MaterialIndices.Span[materialSlot];
-        if (lookup < 0 || lookup >= Materials.Count)
+        if (lookup < 0 || lookup >= _materials.Length)
         {
             material = default;
             return false;
@@ -143,7 +148,7 @@ public sealed class MtpPack
         // only indexed GTT for the palette, which is self-inconsistent; it produced the right answer
         // because GTT's texture half is the identity mapping in all 50 packs the two games ship, which
         // RetailMtpMaterialTests pins so the equivalence stays a measurement rather than an assumption.
-        material = Materials[lookup];
+        material = _materials[lookup];
         return !material.Texture.IsNone && material.Texture.Index < TextureNames.Count;
     }
 

@@ -48,6 +48,9 @@ public sealed class MaterialBindGroupCache(
     /// <summary>Gets how many groups are being kept.</summary>
     public int Count => _groups.Count;
 
+    /// <summary>Gets a number that changes whenever a group may have gone, so a caller may keep the last one it got.</summary>
+    public int Generation { get; private set; }
+
     /// <summary>Gets the group binding a material, building it on first use.</summary>
     /// <param name="diffuse">The diffuse texture.</param>
     /// <param name="lightmap">The baked lightmap.</param>
@@ -98,6 +101,7 @@ public sealed class MaterialBindGroupCache(
     /// </remarks>
     public int Forget(uint textureId)
     {
+        Generation++;
         if (!_byTexture.Remove(textureId, out List<MaterialKey>? naming))
         {
             return 0;

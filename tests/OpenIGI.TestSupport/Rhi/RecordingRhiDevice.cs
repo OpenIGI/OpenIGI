@@ -234,19 +234,16 @@ public sealed class RecordingRhiDevice : IRhiDevice
     public void Flush() => _commands.Add(new RecordedRhiCommand.Flush());
 
     /// <inheritdoc/>
-    public void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
-        where T : unmanaged
+    public void WriteBuffer(IRhiBuffer buffer, ulong offset, ReadOnlySpan<byte> data)
     {
         ArgumentNullException.ThrowIfNull(buffer);
 
-        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(data);
-
         if (buffer is RecordedBuffer recorded)
         {
-            bytes.CopyTo(recorded.Contents.AsSpan((int)offset));
+            data.CopyTo(recorded.Contents.AsSpan((int)offset));
         }
 
-        _commands.Add(new RecordedRhiCommand.WriteBuffer(buffer.Label, offset, bytes.Length));
+        _commands.Add(new RecordedRhiCommand.WriteBuffer(buffer.Label, offset, data.Length));
     }
 
     /// <inheritdoc/>

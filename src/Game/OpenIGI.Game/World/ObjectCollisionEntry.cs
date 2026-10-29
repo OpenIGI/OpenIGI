@@ -10,6 +10,10 @@ namespace OpenIGI.Game.World;
 /// </summary>
 internal sealed class ObjectCollisionEntry
 {
+    // How far past a cast's own box a face may lie and still be tested: a world unit, a quarter of a millimetre, which
+    // is orders above the rounding of any coordinate a level has.
+    private const double CastBoxSlack = 1.0;
+
     private readonly Vector3f[] _localVertices;
     private readonly Vector3d[] _closedVertices;
     private readonly Vector3f _rootCentre;
@@ -305,6 +309,16 @@ internal sealed class ObjectCollisionEntry
         bool found = false;
         Vector3d[] vertices = useClosedTransform ? _closedVertices : _vertices;
 
+        // The segment's box, a little wider than rounding could ever carry a crossing. A face wholly to one side
+        // of it cannot be met, and most of a building's faces are: a ground probe or a sight line passes a handful
+        // of them, and the full test on the rest was most of what a cast cost.
+        double lowX = Math.Min(origin.X, origin.X + direction.X) - CastBoxSlack;
+        double highX = Math.Max(origin.X, origin.X + direction.X) + CastBoxSlack;
+        double lowY = Math.Min(origin.Y, origin.Y + direction.Y) - CastBoxSlack;
+        double highY = Math.Max(origin.Y, origin.Y + direction.Y) + CastBoxSlack;
+        double lowZ = Math.Min(origin.Z, origin.Z + direction.Z) - CastBoxSlack;
+        double highZ = Math.Max(origin.Z, origin.Z + direction.Z) + CastBoxSlack;
+
         foreach (MefCollisionFace face in Mesh.Faces)
         {
             // Portal polygons are visibility boundaries, not solid building geometry. Generic
@@ -333,6 +347,13 @@ internal sealed class ObjectCollisionEntry
             Vector3d a = vertices[face.I0];
             Vector3d b = vertices[face.I1];
             Vector3d c = vertices[face.I2];
+
+            if ((a.X < lowX && b.X < lowX && c.X < lowX) || (a.X > highX && b.X > highX && c.X > highX)
+                || (a.Y < lowY && b.Y < lowY && c.Y < lowY) || (a.Y > highY && b.Y > highY && c.Y > highY)
+                || (a.Z < lowZ && b.Z < lowZ && c.Z < lowZ) || (a.Z > highZ && b.Z > highZ && c.Z > highZ))
+            {
+                continue;
+            }
 
             if (!RayTriangle.Intersect(origin, direction, a, b, c, out double t) || t >= nearest)
             {

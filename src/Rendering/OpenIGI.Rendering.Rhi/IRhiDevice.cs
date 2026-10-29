@@ -168,16 +168,21 @@ public interface IRhiDevice : IDisposable
     void Flush();
 
     /// <summary>Writes host data into a buffer.</summary>
-    /// <typeparam name="T">The element type.</typeparam>
     /// <param name="buffer">The buffer.</param>
     /// <param name="offset">Where the write starts.</param>
     /// <param name="data">The data.</param>
     /// <remarks>
+    /// <para>
     /// The queue's own write, not a mapping: both backends have one, and it is the only upload path that
     /// does not need the caller to know whether the memory is visible to the host.
+    /// </para>
+    /// <para>
+    /// Bytes, not a generic element: a generic method on an interface is one the browser's ahead-of-time
+    /// compiler cannot instantiate for a struct, so every skinned body's upload ran in its interpreter. The
+    /// typed write is <see cref="RhiDeviceWrites.WriteBuffer{T}"/>, which only reinterprets the span.
+    /// </para>
     /// </remarks>
-    void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
-        where T : unmanaged;
+    void WriteBuffer(IRhiBuffer buffer, ulong offset, ReadOnlySpan<byte> data);
 
     /// <summary>Writes host data into a texture.</summary>
     /// <typeparam name="T">The element type.</typeparam>

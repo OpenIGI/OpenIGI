@@ -875,6 +875,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _sim.FinishTick();
+        _shadowTick++;
 
         _frames.StepRagdolls();
 

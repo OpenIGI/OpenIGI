@@ -215,20 +215,19 @@ public sealed unsafe partial class WebGpuRhiDevice
     }
 
     /// <inheritdoc/>
-    public void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
-        where T : unmanaged
+    public void WriteBuffer(IRhiBuffer buffer, ulong offset, ReadOnlySpan<byte> data)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ThrowIfDisposed();
 
-        fixed (T* first = data)
+        fixed (byte* first = data)
         {
             WebGpuHotCalls.wgpuQueueWriteBuffer(
                 _context.Queue.Handle,
                 ((WebGpuBuffer)buffer).Handle.Handle,
                 offset,
                 first,
-                (nuint)(data.Length * sizeof(T)));
+                (nuint)data.Length);
         }
     }
 

@@ -34,14 +34,60 @@ EM_JS(void, oiw_attach, (void), {
 
 EM_JS(void, oiw_field, (const char* name, int offset), { globalThis.OpenIgiWebGpu.field(name, offset); });
 
-EM_JS(uint32_t, oiw_call, (const char* name, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e,
+EM_JS(uint32_t, oiw_call_now, (const char* name, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e,
                            uint32_t f),
       { return globalThis.OpenIgiWebGpu.call(name, a, b, c, d, e, f) >>> 0; });
 
-EM_JS(double, oiw_call_d, (const char* name, uint32_t a, double b, double c, double d, double e),
+EM_JS(double, oiw_call_d_now, (const char* name, uint32_t a, double b, double c, double d, double e),
       { return globalThis.OpenIgiWebGpu.callD(name, a, b, c, d, e); });
 
 EM_JS(int, oiw_pop, (uint32_t* out), { return globalThis.OpenIgiWebGpu.pop(out); });
+
+EM_JS(void, oiw_replay, (const uint32_t* words, uint32_t count), { globalThis.OpenIgiWebGpu.replay(words, count); });
+
+// ---------------------------------------------------------------------------------------------------
+// The render pass's hot commands, queued. A frame records thousands of binds and draws, and each one crossing
+// into JavaScript on its own cost more than the browser's own work for it. They are written here as words and
+// replayed in one crossing; every other call into the bridge sends the queue first, so the browser sees exactly
+// the order the backend recorded.
+
+enum {
+  Q_PIPELINE = 1,  // pass, pipeline
+  Q_BIND = 2,      // pass, index, group, count, offsets...
+  Q_VERTEX = 3,    // pass, slot, buffer, offset lo, hi, size lo, hi (all ones: the rest)
+  Q_INDEX = 4,     // pass, buffer, format, offset lo, hi, size lo, hi
+  Q_DRAW = 5,      // pass, vertices, instances, first vertex, first instance
+  Q_INDEXED = 6,   // pass, indices, instances, first index, base vertex, first instance
+  Q_SCISSOR = 7,   // pass, x, y, width, height
+};
+
+#define QUEUE_WORDS 16384
+static uint32_t queue_words[QUEUE_WORDS];
+static uint32_t queued;
+
+static void send_queue(void) {
+  if (queued != 0) {
+    oiw_replay(queue_words, queued);
+    queued = 0;
+  }
+}
+
+static uint32_t* reserve(uint32_t words) {
+  if (queued + words > QUEUE_WORDS) send_queue();
+  uint32_t* at = queue_words + queued;
+  queued += words;
+  return at;
+}
+
+static uint32_t oiw_call(const char* name, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f) {
+  send_queue();
+  return oiw_call_now(name, a, b, c, d, e, f);
+}
+
+static double oiw_call_d(const char* name, uint32_t a, double b, double c, double d, double e) {
+  send_queue();
+  return oiw_call_d_now(name, a, b, c, d, e);
+}
 
 // The fields the bridge reads. One line each: the struct, the field.
 #define F(type, field) oiw_field(#type "." #field, (int)offsetof(type, field))
@@ -226,6 +272,7 @@ static const WGPUStringView EMPTY = {NULL, 0};
 void wgpuInstanceProcessEvents(WGPUInstance instance) {
   (void)instance;
   uint32_t out[3];
+  send_queue();
   while (oiw_pop(out)) {
     pending_op op = ops[out[0]];
     ops[out[0]].kind = 0;
@@ -540,34 +587,45 @@ void wgpuComputePassEncoderEnd(WGPUComputePassEncoder pass) { CALL("end", H(pass
 // The render pass.
 
 void wgpuRenderPassEncoderSetPipeline(WGPURenderPassEncoder pass, WGPURenderPipeline pipeline) {
-  CALL("setPipeline", H(pass), H(pipeline), 0, 0, 0, 0);
+  uint32_t* q = reserve(3);
+  q[0] = Q_PIPELINE; q[1] = H(pass); q[2] = H(pipeline);
 }
 
 void wgpuRenderPassEncoderSetBindGroup(WGPURenderPassEncoder pass, uint32_t index, WGPUBindGroup group, size_t count,
                                        uint32_t const* offsets) {
-  CALL("setBindGroup", H(pass), index, H(group), (uint32_t)count, H(offsets), 0);
+  // The offsets are copied in: they live on the caller's stack, gone long before the queue is sent.
+  uint32_t* q = reserve(5 + (uint32_t)count);
+  q[0] = Q_BIND; q[1] = H(pass); q[2] = index; q[3] = H(group); q[4] = (uint32_t)count;
+  for (size_t i = 0; i < count; i++) q[5 + i] = offsets[i];
 }
 
 void wgpuRenderPassEncoderSetVertexBuffer(WGPURenderPassEncoder pass, uint32_t slot, WGPUBuffer buffer, uint64_t offset,
                                           uint64_t size) {
-  CALL("setVertexBufferHandle", H(pass), slot, H(buffer), 0, 0, 0);
-  oiw_call_d("setVertexBuffer", H(pass), (double)slot, (double)offset, WHOLE(size), 0);
+  uint32_t* q = reserve(8);
+  q[0] = Q_VERTEX; q[1] = H(pass); q[2] = slot; q[3] = H(buffer);
+  q[4] = (uint32_t)offset; q[5] = (uint32_t)(offset >> 32);
+  q[6] = (uint32_t)size; q[7] = (uint32_t)(size >> 32);
 }
 
 void wgpuRenderPassEncoderSetIndexBuffer(WGPURenderPassEncoder pass, WGPUBuffer buffer, WGPUIndexFormat format,
                                          uint64_t offset, uint64_t size) {
-  CALL("setIndexBufferHandle", H(pass), H(buffer), (uint32_t)format, 0, 0, 0);
-  oiw_call_d("setIndexBuffer", H(pass), 0, (double)offset, WHOLE(size), 0);
+  uint32_t* q = reserve(8);
+  q[0] = Q_INDEX; q[1] = H(pass); q[2] = H(buffer); q[3] = (uint32_t)format;
+  q[4] = (uint32_t)offset; q[5] = (uint32_t)(offset >> 32);
+  q[6] = (uint32_t)size; q[7] = (uint32_t)(size >> 32);
 }
 
 void wgpuRenderPassEncoderDraw(WGPURenderPassEncoder pass, uint32_t vertices, uint32_t instances, uint32_t firstVertex,
                                uint32_t firstInstance) {
-  CALL("draw", H(pass), vertices, instances, firstVertex, firstInstance, 0);
+  uint32_t* q = reserve(6);
+  q[0] = Q_DRAW; q[1] = H(pass); q[2] = vertices; q[3] = instances; q[4] = firstVertex; q[5] = firstInstance;
 }
 
 void wgpuRenderPassEncoderDrawIndexed(WGPURenderPassEncoder pass, uint32_t indices, uint32_t instances, uint32_t firstIndex,
                                       int32_t baseVertex, uint32_t firstInstance) {
-  CALL("drawIndexed", H(pass), indices, instances, firstIndex, (uint32_t)baseVertex, firstInstance);
+  uint32_t* q = reserve(7);
+  q[0] = Q_INDEXED; q[1] = H(pass); q[2] = indices; q[3] = instances; q[4] = firstIndex; q[5] = (uint32_t)baseVertex;
+  q[6] = firstInstance;
 }
 
 void wgpuRenderPassEncoderDrawIndirect(WGPURenderPassEncoder pass, WGPUBuffer buffer, uint64_t offset) {
@@ -585,7 +643,8 @@ void wgpuRenderPassEncoderSetViewport(WGPURenderPassEncoder pass, float x, float
 }
 
 void wgpuRenderPassEncoderSetScissorRect(WGPURenderPassEncoder pass, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-  CALL("setScissorRect", H(pass), x, y, width, height, 0);
+  uint32_t* q = reserve(6);
+  q[0] = Q_SCISSOR; q[1] = H(pass); q[2] = x; q[3] = y; q[4] = width; q[5] = height;
 }
 
 void wgpuRenderPassEncoderSetBlendConstant(WGPURenderPassEncoder pass, WGPUColor const* color) {

@@ -494,15 +494,16 @@ public sealed partial class ObjectCollisionIndex
         ref WorldRayHit hit,
         Vector3d? retailEnd = null)
     {
-        if (GenericPickups?.IsCollected(entry.Owner) == true
-            || IsRetired(entry)
-            || _passable.Contains(entry.Owner)
-            || !ConditionalContainerGate.IsTaskActive(entry.Owner))
+        // The sphere first: it is arithmetic, the filters are lookups, and most entries a cast visits miss it.
+        if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
         {
             return false;
         }
 
-        if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
+        if (GenericPickups?.IsCollected(entry.Owner) == true
+            || IsRetired(entry)
+            || _passable.Contains(entry.Owner)
+            || !ConditionalContainerGate.IsTaskActive(entry.Owner))
         {
             return false;
         }

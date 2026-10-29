@@ -290,7 +290,7 @@ public sealed class Igi2PortalCulling
             _discarded.Add(index);
             Igi2Sector sector = graph.Sectors[index];
 
-            foreach (MefPortal portal in sector.Portals.Portals)
+            foreach (MefPortal portal in sector.Portals.PortalSpan)
             {
                 if (isPortalOpen is not null && !isPortalOpen(index, portal.Slot))
                 {
@@ -319,7 +319,7 @@ public sealed class Igi2PortalCulling
                     continue;
                 }
 
-                foreach (MefPortal other in candidate.Portals.Portals)
+                foreach (MefPortal other in candidate.Portals.PortalSpan)
                 {
                     if (other.Slot == slot)
                     {

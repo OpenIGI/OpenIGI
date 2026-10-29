@@ -86,7 +86,13 @@ function makeVoice() {
 function setParam(param, value) {
   // A panner's or listener's position is an AudioParam in every current browser; the setter methods are
   // the older API that Safari kept longest.
-  if (param !== undefined) param.value = value;
+  //
+  // Only a change is written. Each write is an event on the parameter's automation timeline, which only
+  // the running audio thread clears -- so the listener, set every frame, grew a timeline without end
+  // while the context waited for a gesture, and the writes alone came to a tenth of the frame.
+  if (param === undefined || param.openigiValue === value) return;
+  param.openigiValue = value;
+  param.value = value;
 }
 
 /** Decodes interleaved PCM -- 8-bit unsigned or 16-bit signed -- into an AudioBuffer, or null. */
@@ -210,7 +216,9 @@ export const imports = {
   },
 
   setListener: (x, y, z, forwardX, forwardY, forwardZ, upX, upY, upZ) => {
-    if (context === null) return;
+    // Nothing is heard before the context runs, and the game sets the listener again every frame, so the
+    // first frame after the gesture places it.
+    if (context === null || context.state !== 'running') return;
     const listener = context.listener;
     if (listener.positionX !== undefined) {
       setParam(listener.positionX, x);
