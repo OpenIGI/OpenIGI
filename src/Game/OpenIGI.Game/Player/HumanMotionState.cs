@@ -36,6 +36,12 @@ public enum HumanMotionState : uint
     /// </summary>
     OnGround = 0x4,
 
+    /// <summary>
+    /// A ceiling within 1.8 m of the feet, the roof bit the ground probe raises (<c>0x462390</c>): a crouched body cannot
+    /// stand up under it.
+    /// </summary>
+    UnderRoof = 0x10,
+
     /// <summary>Strafing left — the action mask's <c>MoveLeft</c>, shifted up five.</summary>
     MoveLeft = 0x20,
 

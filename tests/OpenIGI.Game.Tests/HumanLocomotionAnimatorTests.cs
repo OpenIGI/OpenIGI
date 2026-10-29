@@ -27,6 +27,8 @@ public sealed class HumanLocomotionAnimatorTests
         Vector3f start = BoneTrackSampler.Sample(clip.Translation, 0f);
         Vector3f end = BoneTrackSampler.Sample(clip.Translation, clip.Duration);
 
+        // The entry tick holds the clip at its start and covers nothing; the cycle's ticks follow it.
+        Assert.Equal(default, animator.Advance());
         int ticks = (int)Math.Round(clip.Duration / HumanLocomotionAnimator.TimePerTick);
         Vector3f total = default;
         for (int i = 0; i < ticks; i++)
@@ -86,6 +88,7 @@ public sealed class HumanLocomotionAnimatorTests
         Assert.True(animator.Loops);
 
         int perCycle = (int)Math.Round(clip.Duration / HumanLocomotionAnimator.TimePerTick);
+        animator.Advance();
         double one = 0.0;
         for (int i = 0; i < perCycle; i++)
         {
@@ -116,8 +119,9 @@ public sealed class HumanLocomotionAnimatorTests
         animator.Enter(1);
         Assert.Equal(time, animator.Time);
 
-        // A different state does restart it.
+        // A different state does restart it, standing at its start once its entry tick is done.
         animator.Enter(4);
+        animator.Advance();
         Assert.Equal(0f, animator.Time);
     }
 

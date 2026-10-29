@@ -34,14 +34,23 @@ public readonly record struct PlayerCommand(
 /// rotation, the tick rate, the eye height, the ground query, the wall sweep and the slope slide are
 /// all read from the game — the tunables from <see cref="Parameters"/>, which is the script's own.
 /// What is <i>not</i> is the broad phase: <see cref="Walls"/> walks a flat list of placed objects
-/// rather than the octree <c>0x4C6940</c> commits into. It finds the same surfaces. The locomotion
-/// state machine drives the direction (<see cref="HumanLocomotionStates.ForDirection"/>) but not yet
-/// the full 49-state graph.
+/// rather than the octree <c>0x4C6940</c> commits into. It finds the same surfaces.
+/// <see cref="HumanBodyStateMachine"/> walks states 0 to 29 of the original's graph; the others belong to the systems that
+/// own them (ladder, wire, uses, death).
 /// </para>
 /// </remarks>
 public sealed class PlayerBody
 {
     private float? _pendingLandingVelocityZ;
+
+    // Set while TickAnimated runs the tick: the state machine has decided the crouch and the jump, and the pose the origin
+    // height. A tick without an animator decides them from the command.
+    private bool _stateDriven;
+    private bool _jumpEntered;
+    private double _rootHeight = StandingOriginHeight;
+
+    // The root height the last tick stood the origin on, for the airborne move: see Tick.
+    private double _previousRootHeight = StandingOriginHeight;
     private Vector3f? _pendingWalkOffVelocity;
 
     // Set as the body lets go of a ladder: the tick it is let go in is state 0's, which only finds the ground gone.
@@ -69,13 +78,17 @@ public sealed class PlayerBody
     /// </remarks>
     public const double CrouchingEyeHeight = 1753.8 + 1433.6;
 
-    /// <summary>How fast the eye moves between standing and crouched, in units per tick.</summary>
-    /// <remarks>
-    /// <b>Divergence, deliberate.</b> The original drives the crouch through the locomotion state
-    /// machine and its animations; with those not yet driving the body, the eye is eased at a fixed
-    /// rate so the view does not snap. Nothing depends on the value.
-    /// </remarks>
-    public const double CrouchEaseUnitsPerTick = 400.0;
+    /// <summary>How far the eye sits over the origin standing, <c>Human_GetEyePos</c> (<c>0x465820</c>): 0.69 m.</summary>
+    public const double StandingEyeOverOrigin = 2826.24;
+
+    /// <summary>How far the eye sits over the origin crouched: 0.35 m.</summary>
+    public const double CrouchingEyeOverOrigin = 1433.6;
+
+    /// <summary>How far the origin stands over the feet crouched still, the crouch clip's root.</summary>
+    public const double CrouchingOriginHeight = 1753.8;
+
+    /// <summary>How far up from the origin the roof probe reaches, <c>0x462390</c>'s 8192 units.</summary>
+    private const double RoofProbeUnits = 8192.0;
 
     /// <summary>Gets or sets the tuning <c>humanplayer.qvm</c> publishes.</summary>
     /// <remarks>
@@ -226,6 +239,15 @@ public sealed class PlayerBody
     /// </remarks>
     public WorldRayCast? Walls { get; set; }
 
+    /// <summary>Gets or sets the terrain's ray cast, which the wall sweep meets as well as the placed objects.</summary>
+    /// <remarks>
+    /// <c>0x461A70</c>'s rays are <c>Coll_LinesEx</c> over the whole world, the ground included: a slope steeper than the
+    /// wall limit stops a body as a wall does, rather than being climbed and then slid off.
+    /// </remarks>
+    public WorldRayCast? TerrainWalls { get; set; }
+
+    private WorldRayCast? _sweepCast;
+
     /// <summary>Gets whether the last tick's move was stopped by a wall.</summary>
     /// <remarks>Flag <c>0x8</c> in <c>Human+756</c>, raised by <c>0x461A70</c> when it slides.</remarks>
     public bool TouchedWall { get; private set; }
@@ -280,8 +302,16 @@ public sealed class PlayerBody
     /// <summary>Gets whether the player is crouched.</summary>
     public bool IsCrouched { get; private set; }
 
-    /// <summary>Gets where the eye currently is, easing between the two heights.</summary>
+    /// <summary>Gets how far the eye stands over the feet: the origin's height in the pose, and the stance's offset over it.</summary>
+    /// <remarks>
+    /// <c>Human_GetEyePos</c> (<c>0x465820</c>) puts the eye 0.69 m over the origin, 0.35 m crouched -- a step, with the crouch
+    /// byte. The origin stands on the root bone's height in the pose (<c>0x462390</c>), which fades with the clips, so the eye
+    /// sinks over the crouch's six-tick blend and rides a crouch-walk 0.22 m higher than a crouch held still.
+    /// </remarks>
     public double EyeHeight { get; private set; } = StandingEyeHeight;
+
+    /// <summary>Gets whether a ceiling is within 1.8 m of the feet, the roof bit (<c>0x10</c>) the last tick's probe raised.</summary>
+    public bool UnderRoof { get; private set; }
 
     /// <summary>Gets the eye's world position — where the view is taken from.</summary>
     public Vector3d Eye => new(Position.X, Position.Y, Position.Z + EyeHeight);
@@ -289,9 +319,9 @@ public sealed class PlayerBody
     /// <summary>How far the Human's origin (<c>+32</c>) stands above the feet: 3877.2 units, measured.</summary>
     public const double StandingOriginHeight = 3877.2;
 
-    /// <summary>Gets the Human's origin (<c>+32</c>): 3877.2 units above the feet standing, 1753.8 crouched.</summary>
+    /// <summary>Gets the Human's origin (<c>+32</c>): the root bone's height in the pose over the feet -- 3877.2 standing, 1753.8 crouched.</summary>
     /// <remarks>The point AreaActivate's CRITERIA_HUMAN callback (<c>0x460A10</c>) tests against a volume.</remarks>
-    public Vector3d Origin => new(Position.X, Position.Y, Position.Z + (IsCrouched ? 1753.8 : StandingOriginHeight));
+    public Vector3d Origin => new(Position.X, Position.Y, Position.Z + _rootHeight);
 
     /// <summary>Hands a finished fence vault to the fall, from the origin animation 171 left the human at.</summary>
     /// <param name="origin">Where the clip's root motion carried the Human's origin (<c>+32</c>).</param>
@@ -341,9 +371,9 @@ public sealed class PlayerBody
             Position.Y + animationDelta.Y + Velocity.Y,
             Position.Z + animationDelta.Z + Velocity.Z);
 
-        if (Walls is not null)
+        if (Walls is not null || TerrainWalls is not null)
         {
-            HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, false, IsCrouched, Walls);
+            HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, false, IsCrouched, _sweepCast ??= SweepCast);
             next = swept.Destination;
             TouchedWall = swept.TouchedWall;
             ApplyOverhangResponse(swept);
@@ -414,9 +444,14 @@ public sealed class PlayerBody
         Yaw += command.YawDelta;
         Pitch = Math.Clamp(Pitch + command.PitchDelta, -PitchLimit, PitchLimit);
 
-        IsCrouched = command.Crouch;
-        double targetEye = IsCrouched ? CrouchingEyeHeight : StandingEyeHeight;
-        EyeHeight += Math.Clamp(targetEye - EyeHeight, -CrouchEaseUnitsPerTick, CrouchEaseUnitsPerTick);
+        if (!_stateDriven)
+        {
+            IsCrouched = command.Crouch;
+            _rootHeight = IsCrouched ? CrouchingOriginHeight : StandingOriginHeight;
+            _previousRootHeight = _rootHeight;
+        }
+
+        EyeHeight = _rootHeight + (IsCrouched ? CrouchingEyeOverOrigin : StandingEyeOverOrigin);
 
         // Root motion: the animation's own delta, scaled and turned by the body's facing. There is no
         // speed constant - see HumanMotion.ApplyRootMotion.
@@ -442,9 +477,10 @@ public sealed class PlayerBody
         bool tookOff = false;
         TookOffThisTick = false;
 
-        // Crouching blocks the take-off outright rather than merely changing the pose: the velocity in
-        // 0x40BA70 is state 28's entry, and no crouched state can transition into 28.
-        if (IsGrounded && command.Jump && !command.Crouch)
+        // The take-off is state 28's entry (0x40BA70), and no crouched state can transition into 28. A tick without the state
+        // machine stands in for it with the command.
+        bool jumping = _stateDriven ? _jumpEntered : command.Jump && !command.Crouch;
+        if (IsGrounded && jumping)
         {
             // A jump takes the direction you are ALREADY moving, normalised, at a fixed horizontal
             // speed - it does not read the keys again. So the arc is set by the step you were mid-way
@@ -507,11 +543,19 @@ public sealed class PlayerBody
             next = new Vector3d(next.X + Velocity.X, next.Y + Velocity.Y, next.Z + Velocity.Z);
         }
 
+        // The original moves the ORIGIN (0x4614B0) and hangs the feet under it at THIS tick's root height (0x462390): its
+        // wall rays and its ground probe start from last tick's origin less the new root (kWall - foot[2]), and in the air the
+        // origin rides the velocity while the pose lifts or lowers the feet. The port keeps the feet, so it moves them by the
+        // change in the root first: a crouch-walk starting casts its rays ~120 units lower a tick, as retail's do.
+        double rootShift = _previousRootHeight - _rootHeight;
+        Vector3d start = new(Position.X, Position.Y, Position.Z + rootShift);
+        next = new Vector3d(next.X, next.Y, next.Z + rootShift);
+
         // The walls, then the ground. 0x4614B0 runs the world sweep (0x461A70) before the ground query
         // (0x462390) for the same reason: sliding along a wall changes where you land.
-        if (Walls is not null)
+        if (Walls is not null || TerrainWalls is not null)
         {
-            HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, IsGrounded, IsCrouched, Walls);
+            HumanWallSweepResult swept = HumanWallSweep.Sweep(start, next, IsGrounded, IsCrouched, _sweepCast ??= SweepCast);
             next = swept.Destination;
             TouchedWall = swept.TouchedWall;
             ApplyOverhangResponse(swept);
@@ -523,7 +567,8 @@ public sealed class PlayerBody
 
         bool wasAirborne = !IsGrounded;
         float landingVelocityZ = Velocity.Z;
-        Settle(ref next, terrain, Position);
+        Settle(ref next, terrain, start);
+        UnderRoof = ProbeRoof(next);
         if (wasAirborne && IsGrounded)
         {
             // Reaching the ground is where 0x40BE40 zeroes all six velocity words -- Human+1636 through
@@ -563,6 +608,7 @@ public sealed class PlayerBody
         // at the previous one. Keep the same one-tick lag so a state entry next tick reads what the
         // original would have read.
         _previousStep = step;
+        _previousRootHeight = _rootHeight;
 
         Position = next;
         DamageFlash.Tick();
@@ -574,53 +620,73 @@ public sealed class PlayerBody
     /// <param name="animator">The locomotion animator, which supplies the delta translation.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
-    /// <para>
-    /// The faithful path: the input becomes motion flags, the flags pick a locomotion state
-    /// (<c>HumanIdleTransitions</c>, transcribed from state zero's own per-tick), the state names
-    /// an animation, and the animation's root-motion track says how far the body moved. No speed
-    /// constant is consulted anywhere.
-    /// </para>
-    /// <para>
-    /// <b>What is still missing:</b> only the transitions <i>out of idle</i> are driven. The full
-    /// 49-state graph — the turns, the transitions between movement states, the stance changes — is
-    /// mapped in <see cref="HumanLocomotionGraph"/> and not yet walked, so a direction change restarts
-    /// a cycle rather than blending through the state the original would pass through.
-    /// </para>
+    /// The input becomes the input word, the state's per-tick moves the body on at most one state
+    /// (<see cref="HumanBodyStateMachine"/>), the entry plays the new state's clip -- faded in, keeping the step where the
+    /// original keeps it -- and sets the crouch byte, and the clip's root-motion track says how far the body moved and how high
+    /// its origin stands. No speed constant is consulted anywhere.
     /// </remarks>
     public void TickAnimated(in PlayerCommand command, IGroundHeightField? terrain, HumanLocomotionAnimator animator)
     {
         ArgumentNullException.ThrowIfNull(animator);
 
-        animator.Enter(SelectState(command));
-        Tick(command, terrain, animator.Advance());
-    }
-
-    /// <summary>Turns this tick's intent into the locomotion state the original would be in.</summary>
-    /// <remarks>
-    /// <para>
-    /// Airborne first, then the four movement bits. A running command selects states 1–8 and a walking
-    /// command selects 9–16; crouch bypasses both gait sets for states 19–27.
-    /// </para>
-    /// <para>
-    /// <b>Correction.</b> This used to take the first movement bit that matched, on the reading that
-    /// state zero's per-tick only reaches the four cardinals. It does — but only because from a
-    /// standstill you can start in one direction; the diagonals are reached a tick later, from the
-    /// movement states themselves. Resolving forward-and-right to state 1 meant holding W and D walked
-    /// straight ahead. It resolves to state 2.
-    /// </para>
-    /// </remarks>
-    private int SelectState(in PlayerCommand command)
-    {
-        if (!IsGrounded)
+        int state = animator.State;
+        int next = HumanBodyStateMachine.Next(state, InputWord(command), command.Jump);
+        _jumpEntered = false;
+        if (next != state || !animator.HasStarted)
         {
-            return HumanLocomotionGraph.Falling;
+            animator.Play(next, HumanBodyStateMachine.BlendFor(next, state), HumanBodyStateMachine.KeepsPhase(next, state));
+            IsCrouched = HumanBodyStateMachine.Crouches(next);
+            if (next == HumanBodyStateMachine.Jump)
+            {
+                animator.SetSpeed(HumanBodyStateMachine.JumpClipSpeed);
+                _jumpEntered = true;
+            }
         }
 
-        HumanMotionState flags = HumanMotionState.OnGround;
+        Vector3f delta = animator.Advance();
+        _rootHeight = !animator.HasClip
+            ? (IsCrouched ? CrouchingOriginHeight : StandingOriginHeight)
+            : animator.RootHeight;
+        if (!animator.HasClip)
+        {
+            // No clip poses the body, so there is no root for the feet to follow: the fixed heights step, the feet stay.
+            _previousRootHeight = _rootHeight;
+        }
+
+        _stateDriven = true;
+        try
+        {
+            Tick(command, terrain, delta);
+        }
+        finally
+        {
+            _stateDriven = false;
+        }
+    }
+
+    /// <summary>The input word the state machine reads, <c>0x4105C0</c>'s, from the command and what the last move found.</summary>
+    /// <remarks>A clear walking byte selects the running set (states 1 to 8); a set one the walking set (9 to 16).</remarks>
+    private HumanMotionState InputWord(in PlayerCommand command)
+    {
+        HumanMotionState flags = HumanMotionState.None;
+        if (IsGrounded)
+        {
+            flags |= HumanMotionState.OnGround;
+        }
+
+        if (UnderRoof)
+        {
+            flags |= HumanMotionState.UnderRoof;
+        }
 
         if (!command.Run)
         {
             flags |= HumanMotionState.Walking;
+        }
+
+        if (command.Crouch)
+        {
+            flags |= HumanMotionState.Crouch;
         }
 
         if (command.Forward > 0f)
@@ -641,19 +707,43 @@ public sealed class PlayerBody
             flags |= HumanMotionState.MoveLeft;
         }
 
-        int state = command.Crouch
-            ? HumanLocomotionStates.CrouchingForDirection(flags)
-            : HumanLocomotionStates.ForDirection(flags);
+        return flags;
+    }
 
-        // Every standing state reaches 28 on the jump edge within the tick, moving or not. State 0
-        // tests its four directions first, but the movement state it hands off to tests the jump edge
-        // as its very next branch (0x408AA0, state 1: falling, the two deaths, the run/walk toggle,
-        // then the jump), and a transition calls its target straight away -- so the tick still ends in
-        // 28. No crouched state has a jump branch at all: 19 and 20 through 27 never name it, which is
-        // why a crouched player cannot jump in the original.
-        return command.Jump && !command.Crouch
-            ? HumanLocomotionGraph.Jump
-            : state;
+    // The sweep's cast: the placed objects and the terrain, the nearer hit kept.
+    private bool SweepCast(Vector3d origin, Vector3d end, out WorldRayHit hit)
+    {
+        hit = default;
+        bool found = Walls is { } objects && objects(origin, end, out hit);
+
+        if (TerrainWalls is { } ground
+            && ground(origin, end, out WorldRayHit terrainHit)
+            && (!found || terrainHit.Distance < hit.Distance))
+        {
+            hit = terrainHit;
+            found = true;
+        }
+
+        return found;
+    }
+
+    /// <summary>Whether a ceiling is low over the body: <c>0x462390</c>'s second probe.</summary>
+    /// <remarks>
+    /// A point dropped 2 m <i>up</i> from the origin; an underside it meets closer than 1.8 m to the feet -- the origin's height
+    /// plus the distance to the hit -- raises the roof bit, and a crouched body then stays down.
+    /// </remarks>
+    private bool ProbeRoof(Vector3d feet)
+    {
+        if (Walls is null)
+        {
+            return false;
+        }
+
+        Vector3d origin = new(feet.X, feet.Y, feet.Z + _rootHeight);
+        Vector3d top = new(origin.X, origin.Y, origin.Z + RoofProbeUnits);
+        return Walls(origin, top, out WorldRayHit hit)
+            && hit.Normal.Z < 0f
+            && HumanGroundQuery.IsUnderRoof(hit.Position.Z - feet.Z);
     }
 
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>

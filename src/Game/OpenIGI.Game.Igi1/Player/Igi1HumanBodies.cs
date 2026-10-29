@@ -29,7 +29,7 @@ public sealed class Igi1PlayerBody(MissionWorld mission) : IHumanBodyState
     }
 
     /// <inheritdoc/>
-    public bool IsKeepingLow => mission.Player?.Body is { IsCrouched: true } body && body.EyeHeight <= PlayerBody.CrouchingEyeHeight;
+    public bool IsKeepingLow => mission.Player?.Body.IsCrouched == true;
 
     /// <inheritdoc/>
     /// <remarks>

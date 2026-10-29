@@ -178,7 +178,15 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public WorldTraceCast? MissileTrace { get => _shots.MissileTrace; set => _shots.MissileTrace = value; }
 
     /// <inheritdoc cref="PlayerShotResolver.TerrainTrace"/>
-    public WorldTraceCast? TerrainTrace { get => _shots.TerrainTrace; set => _shots.TerrainTrace = value; }
+    public WorldTraceCast? TerrainTrace
+    {
+        get => _shots.TerrainTrace;
+        set
+        {
+            _shots.TerrainTrace = value;
+            _body.TerrainWalls = value is null ? null : WorldTrace.AsRayCast(value);
+        }
+    }
 
     /// <inheritdoc cref="PlayerShotResolver.Humans"/>
     public HumanShot? Humans { get => _shots.Humans; set => _shots.Humans = value; }

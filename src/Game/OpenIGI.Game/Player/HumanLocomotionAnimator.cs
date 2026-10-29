@@ -29,11 +29,9 @@ public sealed class HumanLocomotionAnimator
     /// </remarks>
     public const float TimePerTick = BoneAnimation.FrameStep;
 
-    private readonly BoneAnimationSet _set;
-    private float _intervalStart;
-    private float _intervalEnd;
-    private bool _intervalWrapped;
-    private bool _hasInterval;
+    // The body's own bone object, track 0 of which the locomotion plays on: 0x4D61D0's cross-fade, the clip's clock and its
+    // root track are the shared ones every human uses, so the player's pose blends exactly as a soldier's does.
+    private readonly BoneObject _bones;
 
     /// <summary>Initializes a new instance of the <see cref="HumanLocomotionAnimator"/> class.</summary>
     /// <param name="set">The animation set the human's skeleton uses.</param>
@@ -41,24 +39,43 @@ public sealed class HumanLocomotionAnimator
     public HumanLocomotionAnimator(BoneAnimationSet set)
     {
         ArgumentNullException.ThrowIfNull(set);
-        _set = set;
+        _bones = new BoneObject(set);
     }
 
     /// <summary>Gets the locomotion state being played.</summary>
     public int State { get; private set; }
 
     /// <summary>Gets the animation the state names, or <see cref="HumanLocomotionStates.NoAnimation"/>.</summary>
-    public int AnimationId { get; private set; }
+    public int AnimationId { get; private set; } = HumanLocomotionStates.NoAnimation;
 
     /// <summary>Gets where the clock has reached within the animation.</summary>
-    public float Time { get; private set; }
+    public float Time => Clip?.Time ?? 0f;
 
     /// <summary>Gets whether the current animation loops.</summary>
     /// <remarks>
     /// A state's mode of 1 is the looping one; the movement states all carry it, which is what lets a
     /// walk cycle repeat and keep covering ground.
     /// </remarks>
-    public bool Loops { get; private set; }
+    public bool Loops { get; private set; } = true;
+
+    /// <summary>Gets whether a state has been played since the animator was made.</summary>
+    public bool HasStarted { get; private set; }
+
+    /// <summary>Gets how far through its clip the animation is, <c>Anim_GetPhase</c> (<c>0x4D6520</c>): time over length.</summary>
+    public float Phase => Clip is { } clip && clip.Animation.Duration > 0f ? clip.Time / clip.Animation.Duration : 0f;
+
+    /// <summary>Gets the height of the root bone in the pose as blended now, in world units.</summary>
+    /// <remarks>
+    /// Bone 0's place, which the ground probe (<c>0x462390</c>) stands the origin on: 3877.2 units over the feet in the stand,
+    /// 3812 running, 1753.8 crouched still and 2669 crouch-walking. While a state's clip fades in, it is the two clips' roots
+    /// mixed by the fade, so the body sinks into a crouch over the six ticks of its blend rather than dropping.
+    /// </remarks>
+    public float RootHeight => _bones.BlendedRootPosition().Z;
+
+    /// <summary>Gets whether a clip is playing: the state names one and the set holds it.</summary>
+    public bool HasClip => Clip is not null;
+
+    private BoneClip? Clip => _bones.SourceOf(0);
 
     /// <summary>Switches to a state, restarting its animation when the state changes.</summary>
     /// <param name="state">The locomotion state.</param>
@@ -68,16 +85,52 @@ public sealed class HumanLocomotionAnimator
     /// </remarks>
     public void Enter(int state)
     {
-        if (state == State && AnimationId != HumanLocomotionStates.NoAnimation)
+        if (HasStarted && state == State && AnimationId != HumanLocomotionStates.NoAnimation)
         {
             return;
         }
 
+        Play(state, 0f, keepPhase: false);
+    }
+
+    /// <summary>Plays a state's clip as a state entry does, <c>Human_PlayAnimSlot</c> (<c>0x489E70</c>).</summary>
+    /// <param name="state">The locomotion state.</param>
+    /// <param name="blendSeconds">How long the new clip fades in over the old: 0.2 s for most entries, none after a jump.</param>
+    /// <param name="keepPhase">
+    /// Whether the new clip starts as far through itself as the old one was, the entries' <c>Anim_SetTime(length · phase)</c>,
+    /// so a turn between two gaits keeps the feet in step.
+    /// </param>
+    public void Play(int state, float blendSeconds, bool keepPhase)
+    {
+        float phase = Phase;
         State = state;
+        HasStarted = true;
         HumanLocomotionState binding = HumanLocomotionStates.For(state);
         AnimationId = binding.AnimationId;
         Loops = binding.Mode == 1;
-        Time = 0f;
+
+        if (AnimationId == HumanLocomotionStates.NoAnimation
+            || _bones.Play(0, AnimationId, Loops, blendSeconds: blendSeconds) is not { } clip)
+        {
+            _bones.Stop(0);
+            return;
+        }
+
+        // A clip does not advance on the tick it is started: the entry runs inside the state machine, after this tick's
+        // animation step has been taken. Held a step back, it stands at its start -- or the kept phase -- once the tick is done,
+        // its first step covers nothing, and an event authored at that time fires on the entry tick.
+        float start = keepPhase ? clip.Animation.Duration * phase : 0f;
+        clip.SetTime(start - clip.Rate);
+    }
+
+    /// <summary>Sets the clip's speed as a multiple of its authored rate, <c>Anim_SetSpeed</c> (<c>0x4D6580</c>).</summary>
+    /// <param name="speed">The multiple: 0.4 for the jump.</param>
+    public void SetSpeed(float speed)
+    {
+        if (Clip is { } clip)
+        {
+            clip.Rate = BoneAnimation.FrameStep * speed;
+        }
     }
 
     /// <summary>Advances the animation one tick and returns the ground it covered.</summary>
@@ -86,114 +139,25 @@ public sealed class HumanLocomotionAnimator
     /// <see cref="HumanMotion.DefaultDeltaTranslationScale"/> is applied.
     /// </returns>
     /// <remarks>
-    /// <para>
-    /// The delta is the difference between the track sampled at the new time and at the old one, which
-    /// is what makes it independent of where in the cycle the animation happens to be.
-    /// </para>
-    /// <para>
-    /// A looping clip wraps, and the wrap is where the extra key past the duration earns its keep: the
-    /// travel across the seam is the end key minus the start key, so a loop does not lose the last
-    /// frame's ground or jump backwards when it repeats.
-    /// </para>
+    /// The root's step (<c>0x4D2FB0</c>): while a clip fades in, its step and the outgoing clip's mixed by the fade's weight.
+    /// A loop's step across its seam is the tail of one cycle plus the head of the next, as <see cref="BoneClip.Tick"/> keeps it.
     /// </remarks>
     public Vector3f Advance()
     {
-        if (AnimationId == HumanLocomotionStates.NoAnimation || !_set.TryGet(AnimationId, out BoneAnimation animation))
-        {
-            return default;
-        }
-
-        if (animation.Translation.Length == 0)
-        {
-            Time += TimePerTick;
-            return default;
-        }
-
-        float previous = Time;
-        float next = Time + TimePerTick;
-        float duration = animation.Duration;
-        _intervalStart = previous;
-        _intervalEnd = next;
-        _intervalWrapped = false;
-        _hasInterval = true;
-
-        Vector3f before = BoneTrackSampler.Sample(animation.Translation, previous);
-
-        if (Loops && duration > 0f && next >= duration)
-        {
-            // Across the seam: what is left of this cycle, then what the next one has already covered.
-            Vector3f atEnd = BoneTrackSampler.Sample(animation.Translation, duration);
-            float carried = next - duration;
-            Vector3f atStart = BoneTrackSampler.Sample(animation.Translation, 0f);
-            Vector3f afterWrap = BoneTrackSampler.Sample(animation.Translation, carried);
-
-            Time = carried;
-            _intervalEnd = carried;
-            _intervalWrapped = true;
-
-            return new Vector3f(
-                (atEnd.X - before.X) + (afterWrap.X - atStart.X),
-                (atEnd.Y - before.Y) + (afterWrap.Y - atStart.Y),
-                (atEnd.Z - before.Z) + (afterWrap.Z - atStart.Z));
-        }
-
-        if (!Loops && duration > 0f && next > duration)
-        {
-            next = duration;
-            _intervalEnd = next;
-        }
-
-        Time = next;
-        Vector3f after = BoneTrackSampler.Sample(animation.Translation, next);
-
-        return new Vector3f(after.X - before.X, after.Y - before.Y, after.Z - before.Z);
+        _bones.Tick();
+        return _bones.BlendedRootMotionDelta();
     }
 
     /// <summary>Whether the last <see cref="Advance"/> stepped over an animation event.</summary>
     /// <param name="eventId">The event id, such as <see cref="World.FootstepSounds.EventId"/>.</param>
     /// <returns><see langword="true"/> when the tick just advanced crossed it.</returns>
     /// <remarks>
-    /// The same rule <c>BoneClip</c> applies, and for the same reason: an event is dispatched over the
-    /// <b>interval a tick covers</b>, not at a point, so a clip running fast enough to step past a
-    /// footstep still fires it. The interval is open at the old clock and closed at the new one, and a
-    /// looping wrap is tested as two pieces so the seam neither drops an event nor fires it twice.
-    /// This rig only ever plays forwards, so the backwards arm <c>BoneClip</c> carries is not needed.
+    /// An event is dispatched over the <b>interval a tick covers</b>, not at a point, so a clip running fast enough to step past
+    /// a footstep still fires it (<see cref="BoneClip.CrossedEvent"/>).
     /// </remarks>
-    public bool CrossedEvent(int eventId)
-    {
-        if (!_hasInterval
-            || AnimationId == HumanLocomotionStates.NoAnimation
-            || !_set.TryGet(AnimationId, out BoneAnimation animation))
-        {
-            return false;
-        }
-
-        foreach (BoneAnimationEvent animationEvent in animation.Events)
-        {
-            if (animationEvent.EventId != eventId)
-            {
-                continue;
-            }
-
-            float time = animationEvent.Time;
-            bool crossed = _intervalWrapped
-                ? time > _intervalStart || time <= _intervalEnd
-                : time > _intervalStart && time <= _intervalEnd;
-
-            if (crossed)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    public bool CrossedEvent(int eventId) => Clip?.CrossedEvent(eventId) ?? false;
 
     /// <summary>Whether a one-shot animation has played out.</summary>
     /// <remarks>A looping state never finishes, which is what the caller uses to decide when to leave one.</remarks>
-    public bool HasFinished =>
-        !Loops
-        && AnimationId != HumanLocomotionStates.NoAnimation
-        && _set.TryGet(AnimationId, out BoneAnimation animation)
-        && Time >= animation.Duration;
+    public bool HasFinished => !Loops && Clip is { } clip && clip.Time >= clip.Animation.Duration;
 }
