@@ -86,10 +86,10 @@
     .gpu[data-state="ok"]::before { background: var(--ok); }
     .gpu[data-state="no"]::before { background: var(--error); }
 
-    .content { align-self: end; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 32px; }
+    .content { align-self: end; display: flex; flex-direction: column; gap: 28px; }
 
-    main { display: flex; flex-direction: column; gap: 28px; max-width: 520px; }
-    main .mono { color: var(--muted); }
+    .intro { display: flex; flex-direction: column; gap: 18px; max-width: 640px; }
+    .intro .mono { color: var(--muted); }
     h1 {
       margin: 0;
       font-size: clamp(44px, 5.6vw, 80px);
@@ -99,6 +99,29 @@
       letter-spacing: -0.015em;
     }
     .lead { margin: 0; font-size: 17px; line-height: 1.55; color: var(--soft); text-wrap: pretty; }
+
+    /* The two ways to play, side by side and of equal weight; one above the other on a narrow screen. */
+    .paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; max-width: 980px; }
+    .path {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 24px;
+      border: 1px solid rgba(236, 235, 230, 0.14);
+      border-radius: 14px;
+      background: rgba(11, 12, 11, 0.62);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+    }
+    .path-head { display: flex; flex-direction: column; gap: 6px; }
+    .path-head .kicker { color: var(--ok); }
+    .path-head .platforms { color: var(--faint); font-size: 10.5px; }
+    h2 { margin: 0; font-size: 30px; line-height: 1.05; font-weight: 700; font-stretch: 85%; }
+    .points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; color: var(--note); font-size: 14.5px; line-height: 1.5; }
+    .points li { position: relative; padding-left: 18px; }
+    .points li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 8px; height: 1px; background: var(--muted); }
+    .path .action { margin-top: auto; }
+    .play { text-decoration: none; }
 
     .action { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
     .action[hidden] { display: none; }
@@ -148,35 +171,19 @@
     @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
     .loading .status { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
 
-    .note {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      max-width: 300px;
-      padding: 12px 14px;
-      border: 1px solid rgba(236, 235, 230, 0.1);
-      border-radius: 10px;
-      background: rgba(11, 12, 11, 0.55);
-      -webkit-backdrop-filter: blur(8px);
-      backdrop-filter: blur(8px);
-      color: var(--note);
-      font: 11.5px/1.6 var(--mono);
-    }
-    .note span:first-child { color: var(--text); }
-    .note span:last-child { color: var(--dim); }
-    .note a { color: var(--text); text-underline-offset: 3px; }
-    .note .install { display: flex; flex-direction: column; gap: 4px; color: var(--note); }
-    .note .install > .label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--note); }
-    .note .command {
-      padding: 6px 8px;
+    .install { display: flex; flex-direction: column; gap: 6px; width: 100%; color: var(--muted); font: 11.5px/1.6 var(--mono); }
+    .install > .label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--note); }
+    .command {
+      padding: 8px 10px;
       border: 1px solid rgba(236, 235, 230, 0.12);
       border-radius: 6px;
       background: rgba(0, 0, 0, 0.35);
       color: var(--text);
       font: inherit;
       user-select: all;
+      overflow-wrap: anywhere;
     }
-    .note .install button {
+    .install button {
       flex: none;
       padding: 0 6px;
       border: 1px solid rgba(236, 235, 230, 0.2);
@@ -186,7 +193,7 @@
       font: inherit;
       cursor: pointer;
     }
-    .note .install button:hover { color: var(--text); border-color: rgba(236, 235, 230, 0.4); }
+    .install button:hover { color: var(--text); border-color: rgba(236, 235, 230, 0.4); }
 
     footer {
       display: flex;
@@ -218,49 +225,76 @@
       </header>
 
       <div class="content">
-        <main>
-          <span class="mono">Browser edition</span>
+        <section class="intro">
+          <span class="mono">An independent reimplementation</span>
           <h1>Project I.G.I.</h1>
-          <p class="lead">Played in the browser, on a computer or a phone. The game's files download once and are kept for the next visit.</p>
+          <p class="lead">Two ways to play: straight away in the browser, on a computer or a phone, or with the desktop build, which has the whole remaster.</p>
+        </section>
 
-          <!-- Choosing the folder, playing, and what happened last. -->
-          <div class="action" id="action" aria-live="polite">
-            <button class="play" id="play" type="button"><span id="play-label">Choose game folder</span><span aria-hidden="true">→</span></button>
-            <span class="status" id="status">The folder with IGI.exe in it, usually pc inside the installation.</span>
-            <span class="others">
-              <button class="change" id="change" type="button" hidden>Choose another folder</button>
-              <button class="change" id="own" type="button" hidden>Play from my own game folder</button>
-              <button class="change" id="clear" type="button" hidden>Delete the downloaded files</button>
-            </span>
-          </div>
+        <div class="paths">
+          <!-- In the browser. -->
+          <section class="path" aria-labelledby="browser-title">
+            <div class="path-head">
+              <span class="mono kicker">Play now</span>
+              <h2 id="browser-title">In the browser</h2>
+              <span class="mono platforms">Chrome, Edge, Safari · computers and phones</span>
+            </div>
+            <ul class="points">
+              <li>Nothing to install: the game's files download once and are kept for the next visit.</li>
+              <li>Touch controls on phones and tablets.</li>
+              <li>The original's look, the vanilla graphics preset.</li>
+            </ul>
 
-          <!-- Starting up. -->
-          <div class="loading" id="loading" aria-live="polite" hidden>
-            <div class="progress indeterminate" id="progress"><div></div></div>
-            <span class="status"><span id="progress-label">Starting</span><span id="progress-value"></span></span>
-          </div>
-        </main>
+            <!-- Choosing the files, playing, and what happened last. -->
+            <div class="action" id="action" aria-live="polite">
+              <button class="play" id="play" type="button"><span id="play-label">Play now</span><span aria-hidden="true">→</span></button>
+              <span class="status" id="status">Checking the browser…</span>
+              <span class="others">
+                <button class="change" id="change" type="button" hidden>Choose another folder</button>
+                <button class="change" id="own" type="button" hidden>Play from my own game folder</button>
+                <button class="change" id="clear" type="button" hidden>Delete the downloaded files</button>
+              </span>
+            </div>
 
-        <aside class="note">
-          <span>Screenshot from the desktop build. The launcher installs it and keeps it up to date:</span>
-          <span class="downloads" id="downloads">
-            <a href="/download/win-x64/" data-rid="win-x64">Download for Windows</a>
-          </span>
-          <!-- macOS and Linux install from a terminal: a browser's download of the ad-hoc signed macOS app
-               is quarantined, which Gatekeeper refuses as "damaged"; install.sh fetches it with curl. -->
-          <span class="install">
-            <span class="label">
-              macOS and Linux, in a terminal:
-              <button type="button" id="install-copy" aria-label="Copy the install command">Copy</button>
-            </span>
-            <code class="command" id="install-command">curl -fsSL https://openigi.com/install.sh | bash</code>
-          </span>
-          <span>In the browser, only the vanilla graphics preset is available.</span>
-        </aside>
+            <!-- Starting up. -->
+            <div class="loading" id="loading" aria-live="polite" hidden>
+              <div class="progress indeterminate" id="progress"><div></div></div>
+              <span class="status"><span id="progress-label">Starting</span><span id="progress-value"></span></span>
+            </div>
+          </section>
+
+          <!-- The desktop build. -->
+          <section class="path" aria-labelledby="desktop-title">
+            <div class="path-head">
+              <span class="mono kicker">Full remaster</span>
+              <h2 id="desktop-title">Desktop launcher</h2>
+              <span class="mono platforms">Windows · macOS · Linux</span>
+            </div>
+            <ul class="points">
+              <li>Every graphics preset, up to ray-traced lighting and upscaling on supported cards.</li>
+              <li>HD texture packs and mods, installed from the launcher.</li>
+              <li>Keeps the game up to date by itself.</li>
+            </ul>
+
+            <div class="action">
+              <a class="play" href="/download/win-x64/" data-rid="win-x64"><span>Download for Windows</span><span aria-hidden="true">↓</span></a>
+              <!-- macOS and Linux install from a terminal: a browser's download of the ad-hoc signed macOS app
+                   is quarantined, which Gatekeeper refuses as "damaged"; install.sh fetches it with curl. -->
+              <span class="install">
+                <span class="label">
+                  macOS and Linux, in a terminal:
+                  <button type="button" id="install-copy" aria-label="Copy the install command">Copy</button>
+                </span>
+                <code class="command" id="install-command">curl -fsSL https://openigi.com/install.sh | bash</code>
+              </span>
+            </div>
+          </section>
+        </div>
       </div>
 
       <footer>
         <span>An independent reimplementation, not affiliated with the game's publishers.</span>
+        <span>Background: a screenshot from the desktop build.</span>
       </footer>
     </div>
   </div>

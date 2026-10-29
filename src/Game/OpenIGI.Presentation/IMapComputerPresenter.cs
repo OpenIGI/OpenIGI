@@ -91,6 +91,10 @@ public interface IMapComputerPresenter : IDisposable
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     void DrawMissionFailed(SpriteBatch batch, int screenWidth, int screenHeight);
+
+    /// <summary>Gets the computer's own pointer while it is open, for a touch screen that has to steer it to a finger.</summary>
+    /// <remarks>The original's computer moves its pointer by the mouse's counts alone, never to a place; see <see cref="ComputerPointer"/>.</remarks>
+    ComputerPointer? Pointer => null;
 }
 
 /// <summary>Draws the modern alternative to a title's map computer.</summary>
@@ -201,3 +205,10 @@ public readonly record struct ComputerMapHighlight(Vector3d Position, string Tit
 /// detail of one title.
 /// </remarks>
 public readonly record struct MapSceneView(Camera3D Camera, float FieldOfView, Viewport Viewport);
+
+/// <summary>Where the original's computer has its pointer, in its own display's pixels (the window over the interface's scale).</summary>
+/// <param name="X">Across.</param>
+/// <param name="Y">Down.</param>
+/// <param name="Dragging">Whether the map is being dragged, which holds the pointer still and turns the map by the counts instead.</param>
+/// <param name="Width">The computer display's width, which a count's travel is measured against.</param>
+public readonly record struct ComputerPointer(float X, float Y, bool Dragging, float Width);

@@ -14,11 +14,9 @@ let resizes = null;
 let wantLock = false;
 let pointerVisible = true;
 
-// A phone's screen is three or more device pixels to the CSS pixel, more than its graphics can fill at a
-// playable rate; drawn at one and a half, the picture is scaled up by the browser and hardly looks softer.
-const TOUCH_RATIO = 1.5;
-const touchScreen = matchMedia('(pointer: coarse)').matches;
-const ratio = () => Math.min(window.devicePixelRatio || 1, touchScreen ? TOUCH_RATIO : Infinity);
+// Every device pixel, a phone's three to the CSS pixel included: drawn at fewer, the browser scaled the picture up and
+// the menus' small type smeared past reading.
+const ratio = () => window.devicePixelRatio || 1;
 const drawable = () => {
   const box = canvas.getBoundingClientRect();
   return [Math.max(1, Math.round(box.width * ratio())), Math.max(1, Math.round(box.height * ratio()))];

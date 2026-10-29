@@ -1,5 +1,8 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Player;
 using OpenIGI.Input;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.Presentation.Hud.Remastered.Touch;
 using OpenIGI.UI.Layout;
@@ -19,6 +22,7 @@ public sealed partial class GameHost
     private readonly HashSet<KeyCode> _touchKeysWanted = [];
     private readonly HashSet<MouseButton> _touchButtons = [];
     private readonly HashSet<MouseButton> _touchButtonsWanted = [];
+    private (bool Up, bool Down, bool Left, bool Right) _touchStickHeld;
 
     /// <summary>The action each button holds, as the profile names it.</summary>
     private static string? TouchAction(TouchButton button) => button switch
@@ -35,6 +39,7 @@ public sealed partial class GameHost
         TouchButton.Binoculars => "Binoculars",
         TouchButton.ZoomIn => "ZoomIn",
         TouchButton.ZoomOut => "ZoomOut",
+        TouchButton.Close => "MapComputer",
         _ => null,
     };
 
@@ -46,7 +51,15 @@ public sealed partial class GameHost
             return TouchControlMode.Cutscene;
         }
 
-        return _window.CursorLocked && !_menuFlow.MenuMode ? TouchControlMode.Play : TouchControlMode.Pointer;
+        if (_computerOpen && !_menuFlow.MenuMode)
+        {
+            return TouchControlMode.Computer;
+        }
+
+        // Play is read from what is on the screen rather than from the cursor lock, which the look gives up and takes back for a
+        // frame at a time (a settling frame, the weapon wheel): each change of mode lets every finger go, and the stick with it.
+        bool play = _playerMode && !_menuFlow.MenuMode && !_computerOpen && !_session.FailedMenu;
+        return play ? TouchControlMode.Play : TouchControlMode.Pointer;
     }
 
     /// <summary>Reads the frame's fingers and presses what they hold. Called straight after the window's events are taken.</summary>
@@ -64,6 +77,17 @@ public sealed partial class GameHost
         _touchButtonsWanted.Clear();
         PlayerProfile? profile = _configuration.Active;
 
+        if (mode == TouchControlMode.Computer)
+        {
+            foreach (TouchButton button in _touchControls.Held)
+            {
+                if (TouchAction(button) is { } action)
+                {
+                    Want(profile, action);
+                }
+            }
+        }
+
         if (mode == TouchControlMode.Play)
         {
             foreach (TouchButton button in _touchControls.Held)
@@ -78,23 +102,31 @@ public sealed partial class GameHost
                 }
             }
 
+            // Each direction is taken past the dead zone and let go only back inside the smaller release zone.
             UiVec2 stick = _touchControls.Stick;
-            if (stick.Y < -TouchControls.StickDeadZone)
+            static bool Hold(bool held, float along) =>
+                along > (held ? TouchControls.StickReleaseZone : TouchControls.StickDeadZone);
+            _touchStickHeld = (
+                Hold(_touchStickHeld.Up, -stick.Y),
+                Hold(_touchStickHeld.Down, stick.Y),
+                Hold(_touchStickHeld.Left, -stick.X),
+                Hold(_touchStickHeld.Right, stick.X));
+            if (_touchStickHeld.Up)
             {
                 Want(profile, "MoveUp");
             }
 
-            if (stick.Y > TouchControls.StickDeadZone)
+            if (_touchStickHeld.Down)
             {
                 Want(profile, "MoveDown");
             }
 
-            if (stick.X < -TouchControls.StickDeadZone)
+            if (_touchStickHeld.Left)
             {
                 Want(profile, "MoveLeft");
             }
 
-            if (stick.X > TouchControls.StickDeadZone)
+            if (_touchStickHeld.Right)
             {
                 Want(profile, "MoveRight");
             }
@@ -108,10 +140,12 @@ public sealed partial class GameHost
         if (_touchControls.Pointer is { } pointer)
         {
             input.Mouse.SetPosition(pointer.At.X, pointer.At.Y);
-            if (pointer.Down)
+            if (mode == TouchControlMode.Computer && TacticalComputer is null && _mapComputer?.Pointer is { } computer)
             {
-                _touchButtonsWanted.Add(MouseButton.Left);
+                SteerComputerPointer(input, pointer, computer, profile);
             }
+
+            _touchButtonsWanted.Add(MouseButton.Left);
         }
 
         // Only what the touches pressed is let go: a key the keyboard holds at the same time stays the keyboard's.
@@ -153,6 +187,30 @@ public sealed partial class GameHost
         _touchButtons.UnionWith(_touchButtonsWanted);
     }
 
+    /// <summary>Moves the original computer's pointer under the finger.</summary>
+    /// <remarks>
+    /// The computer moves its pointer by the mouse's counts alone (<c>0x46AC30</c>: half its width for 255 counts at the
+    /// profile's sensitivity), so the finger's place is turned into the counts that carry the pointer there, less those already
+    /// gathered for the next tick. While the map is dragged the pointer holds still and the counts turn the map, so then the
+    /// finger's own travel is passed on, as a mouse's would be.
+    /// </remarks>
+    private void SteerComputerPointer(InputState input, TouchPointer finger, ComputerPointer computer, PlayerProfile? profile)
+    {
+        float scale = Math.Max(1, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+        float sensitivity = MathF.Max(0.05f, profile?.MouseSensitivity ?? MouseLookSettings.DefaultSensitivity);
+        float countsPerPixel = 2f * 255f / (MathF.Max(1f, computer.Width) * sensitivity);
+
+        if (computer.Dragging)
+        {
+            input.Mouse.AddMotion(finger.Delta.X / scale * countsPerPixel, finger.Delta.Y / scale * countsPerPixel);
+            return;
+        }
+
+        float wantX = ((finger.At.X / scale) - computer.X) * countsPerPixel;
+        float wantY = ((finger.At.Y / scale) - computer.Y) * countsPerPixel;
+        input.Mouse.AddMotion(wantX - _computerCountsX, wantY - _computerCountsY);
+    }
+
     private void Want(PlayerProfile? profile, string action)
     {
         if (!PlayerProfileInputBindings.TryBoundControl(profile, action, out KeyCode key, out MouseButton? button))
@@ -174,7 +232,7 @@ public sealed partial class GameHost
     /// <param name="state">The frame loop's state, whose sprite batch they draw into.</param>
     private void DrawTouchControls(FrameLoopState state)
     {
-        if (!_window.Input.Touch.InUse || _touchControls.Mode != TouchControlMode.Play || _computerOpen)
+        if (!_window.Input.Touch.InUse || _touchControls.Mode is not (TouchControlMode.Play or TouchControlMode.Computer))
         {
             return;
         }
@@ -183,7 +241,13 @@ public sealed partial class GameHost
         _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
         state.Batch.Begin();
         TouchControlsRenderer.Draw(
-            state.Batch, new LayoutContext(_window.Width, _window.Height), _touchControls, source?.Theme, source?.Icons, source?.Model);
+            state.Batch,
+            new LayoutContext(_window.Width, _window.Height),
+            _touchControls,
+            source?.Theme,
+            source?.Icons,
+            source?.Model,
+            _shellType?.Heading);
         state.Batch.End();
     }
 }

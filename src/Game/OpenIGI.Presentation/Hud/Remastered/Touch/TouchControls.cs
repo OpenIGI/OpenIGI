@@ -18,6 +18,9 @@ public enum TouchControlMode
 
     /// <summary>A cutscene: a finger held anywhere skips it, which the host reads from the touches themselves.</summary>
     Cutscene,
+
+    /// <summary>The map computer: a finger is its pointer, and a button in the corner closes it.</summary>
+    Computer,
 }
 
 /// <summary>A button on the screen in play, and the player's action it holds.</summary>
@@ -61,22 +64,32 @@ public enum TouchButton
 
     /// <summary>Zoom out.</summary>
     ZoomOut,
+
+    /// <summary>Closes the map computer.</summary>
+    Close,
 }
 
-/// <summary>Where a button sits and how big it is: a round one by its centre and radius, a chip along the top by its box.</summary>
+/// <summary>The finger that is the pointer: where it is, how far it moved this frame, and whether it came down this frame.</summary>
+/// <param name="At">Where it is, in window pixels.</param>
+/// <param name="Delta">How far it moved this frame, in window pixels.</param>
+/// <param name="Began">Whether it came down this frame.</param>
+public readonly record struct TouchPointer(UiVec2 At, UiVec2 Delta, bool Began);
+
+/// <summary>Where a button sits and how big it is: a round one by its centre and radius, the weapon's card by its box.</summary>
 /// <param name="Button">The button.</param>
 /// <param name="Centre">Its centre, in window pixels.</param>
-/// <param name="Radius">Its radius, or half the chip's height, in window pixels.</param>
-/// <param name="Chip">Whether it is a chip along the top rather than a round button.</param>
-public readonly record struct TouchButtonSpot(TouchButton Button, UiVec2 Centre, float Radius, bool Chip)
+/// <param name="Radius">Its radius, or half the card's height, in window pixels.</param>
+/// <param name="Card">Whether it is a wide card rather than a round button.</param>
+/// <param name="Aims">Whether dragging it also turns the view: the right-hand fire button, so one thumb aims and shoots.</param>
+public readonly record struct TouchButtonSpot(TouchButton Button, UiVec2 Centre, float Radius, bool Card = false, bool Aims = false)
 {
-    /// <summary>Gets a chip's box.</summary>
-    public UiRect Box => new(Centre.X - (Radius * 1.35f), Centre.Y - Radius, Radius * 2.7f, Radius * 2f);
+    /// <summary>Gets a card's box.</summary>
+    public UiRect Box => new(Centre.X - (Radius * 2.4f), Centre.Y - Radius, Radius * 4.8f, Radius * 2f);
 
     /// <summary>Whether a finger landing at a point presses it: a little generous, as a thumb is not a pointer.</summary>
     public bool Hit(float x, float y)
     {
-        if (Chip)
+        if (Card)
         {
             UiRect box = Box;
             float slack = Radius * 0.25f;
@@ -107,20 +120,28 @@ public sealed class TouchControls
     public const float LookCountsPerPixel = 4.5f;
 
     /// <summary>The share of its reach the stick moves before it holds a direction.</summary>
-    public const float StickDeadZone = 0.3f;
+    public const float StickDeadZone = 0.35f;
+
+    /// <summary>The share of its reach the stick comes back under before it lets a direction go: below <see cref="StickDeadZone"/>, so a
+    /// thumb resting at the edge does not flick the key on and off from frame to frame.</summary>
+    public const float StickReleaseZone = 0.22f;
 
     /// <summary>The stick's reach, in design units.</summary>
     public const float StickReach = 120f;
 
-    private const float FireRadius = 125f;
-    private const float ButtonRadius = 72f;
-    private const float ChipRadius = 38f;
+    private const float FireRadius = 110f;
+    private const float LeftFireRadius = 68f;
+    private const float ButtonRadius = 62f;
+    private const float SmallRadius = 50f;
+    private const float CornerRadius = 36f;
 
     private readonly Dictionary<int, Role> _roles = [];
     private readonly List<TouchButtonSpot> _layout = [];
+    private readonly List<TouchButtonSpot> _computerLayout = [];
     private readonly HashSet<TouchButton> _held = [];
     private (float Width, float Height) _laidOutFor;
     private TouchControlMode _mode;
+    private UiVec2 _lastLook;
 
     private enum RoleKind
     {
@@ -131,8 +152,8 @@ public sealed class TouchControls
         Ignored,
     }
 
-    /// <summary>Gets the buttons in play, where they are; laid out again when the screen changes size.</summary>
-    public IReadOnlyList<TouchButtonSpot> Layout => _layout;
+    /// <summary>Gets the buttons on the screen in the current mode, where they are; laid out again when the screen changes size.</summary>
+    public IReadOnlyList<TouchButtonSpot> Layout => _mode == TouchControlMode.Computer ? _computerLayout : _layout;
 
     /// <summary>Gets the buttons held this frame. A tap is held for the frame it lands in.</summary>
     public IReadOnlySet<TouchButton> Held => _held;
@@ -152,8 +173,8 @@ public sealed class TouchControls
     /// <summary>Gets how far the view is to turn this frame, in mouse counts.</summary>
     public UiVec2 Look { get; private set; }
 
-    /// <summary>Gets where the pointer finger is and whether it is down, or null when none is.</summary>
-    public (UiVec2 At, bool Down)? Pointer { get; private set; }
+    /// <summary>Gets the finger that is the pointer, or null when none is down.</summary>
+    public TouchPointer? Pointer { get; private set; }
 
     /// <summary>Gets the mode the controls were last read in.</summary>
     public TouchControlMode Mode => _mode;
@@ -176,6 +197,7 @@ public sealed class TouchControls
         {
             // A menu opening over play, play resuming: every finger down starts again from nothing, and lifts first.
             _mode = mode;
+            _lastLook = default;
             _roles.Clear();
             foreach (TouchPoint point in touch.Points)
             {
@@ -205,7 +227,7 @@ public sealed class TouchControls
         UiVec2 look = default;
         UiVec2 stick = default;
         UiVec2? stickOrigin = null;
-        (UiVec2, bool)? pointer = null;
+        TouchPointer? pointer = null;
 
         foreach (TouchPoint point in touch.Points)
         {
@@ -230,27 +252,44 @@ public sealed class TouchControls
                     break;
                 case RoleKind.Button when role.Button is { } button:
                     _held.Add(button);
-                    if (button == TouchButton.Fire)
+                    if (role.Aims)
                     {
                         look += new UiVec2(point.DeltaX, point.DeltaY);
                     }
 
                     break;
                 case RoleKind.Pointer:
-                    pointer = (new UiVec2(point.X, point.Y), true);
+                    pointer = new TouchPointer(new UiVec2(point.X, point.Y), new UiVec2(point.DeltaX, point.DeltaY), point.Began);
                     break;
             }
         }
 
         Stick = stick;
         StickOrigin = stickOrigin;
-        Look = new UiVec2(look.X * LookCountsPerPixel, look.Y * LookCountsPerPixel);
+
+        // A phone reports a finger's movement on its own clock, not the frame's: one frame takes two reports and the next none,
+        // and turned as it came the view lurched and stalled by turns at a steady frame rate. Each frame turns by the mean of its
+        // drag and the last one's, which evens those out and still turns the view by exactly as far as the finger went.
+        UiVec2 smoothed = new((look.X + _lastLook.X) * 0.5f, (look.Y + _lastLook.Y) * 0.5f);
+        _lastLook = look;
+        Look = new UiVec2(smoothed.X * LookCountsPerPixel, smoothed.Y * LookCountsPerPixel);
         Pointer = pointer;
     }
 
     private Role Assign(in TouchPoint point, TouchControlMode mode, LayoutContext context)
     {
-        if (mode == TouchControlMode.Pointer)
+        if (mode == TouchControlMode.Computer)
+        {
+            foreach (TouchButtonSpot spot in _computerLayout)
+            {
+                if (spot.Hit(point.StartX, point.StartY))
+                {
+                    return new Role(RoleKind.Button, spot.Button);
+                }
+            }
+        }
+
+        if (mode is TouchControlMode.Pointer or TouchControlMode.Computer)
         {
             // One pointer: a second finger on a menu is ignored rather than clicking somewhere else.
             foreach (Role other in _roles.Values)
@@ -273,7 +312,7 @@ public sealed class TouchControls
         {
             if (spot.Hit(point.StartX, point.StartY))
             {
-                return new Role(RoleKind.Button, spot.Button);
+                return new Role(RoleKind.Button, spot.Button, spot.Aims);
             }
         }
 
@@ -292,39 +331,42 @@ public sealed class TouchControls
         _laidOutFor = (context.Viewport.X, context.Viewport.Y);
         _layout.Clear();
         UiRect safe = context.SafeRect;
+        float Px(float design) => context.Px(design);
+        void Round(TouchButton button, float right, float bottom, float radius, bool aims = false) =>
+            _layout.Add(new TouchButtonSpot(button, new UiVec2(safe.Right - Px(right), safe.Bottom - Px(bottom)), Px(radius), Aims: aims));
 
-        StickReachPixels = context.Px(StickReach);
-        StickRest = new UiVec2(safe.X + context.Px(260f), safe.Bottom - context.Px(250f));
+        StickReachPixels = Px(StickReach);
+        StickRest = new UiVec2(safe.X + Px(250f), safe.Bottom - Px(230f));
 
-        // Fire in the lower right corner, the buttons a thumb reaches from it fanned about it in two rows.
-        float fire = context.Px(FireRadius);
-        float small = context.Px(ButtonRadius);
-        UiVec2 centre = new(safe.Right - context.Px(210f), safe.Bottom - context.Px(210f));
-        _layout.Add(new TouchButtonSpot(TouchButton.Fire, centre, fire, Chip: false));
+        // The right thumb's cluster, as shooters on a phone lay it out: fire large in the corner, the sight and the reload
+        // within a thumb's roll of it, jump above, and the stances in a column along the edge.
+        Round(TouchButton.Fire, 300f, 230f, FireRadius, aims: true);
+        Round(TouchButton.Scope, 470f, 400f, ButtonRadius);
+        Round(TouchButton.Reload, 505f, 190f, ButtonRadius);
+        Round(TouchButton.Jump, 300f, 430f, ButtonRadius);
+        Round(TouchButton.Crouch, 110f, 170f, SmallRadius);
+        Round(TouchButton.Peek, 110f, 315f, SmallRadius);
+        Round(TouchButton.ZoomIn, 110f, 600f, CornerRadius);
+        Round(TouchButton.ZoomOut, 110f, 495f, CornerRadius);
 
-        void Around(TouchButton button, float distance, float degrees)
+        // The left thumb's fire, above the stick, for shooting while the right one aims.
+        _layout.Add(new TouchButtonSpot(TouchButton.Fire, new UiVec2(safe.X + Px(250f), safe.Bottom - Px(540f)), Px(LeftFireRadius)));
+
+        // The weapon in hand on a card at the bottom's middle, and the use button above it, where a prompt would be.
+        float cardRadius = Px(52f);
+        _layout.Add(new TouchButtonSpot(TouchButton.Weapon, new UiVec2(safe.X + (safe.Width * 0.5f), safe.Bottom - Px(90f)), cardRadius, Card: true));
+        _layout.Add(new TouchButtonSpot(TouchButton.Use, new UiVec2(safe.X + (safe.Width * 0.5f), safe.Bottom - Px(250f)), Px(SmallRadius)));
+
+        // The computer's way out, where a window's close button is.
+        _computerLayout.Clear();
+        _computerLayout.Add(new TouchButtonSpot(TouchButton.Close, new UiVec2(safe.Right - Px(90f), safe.Y + Px(90f)), Px(ButtonRadius)));
+
+        // The few that are not reached for in a fight, small along the top right.
+        float y = safe.Y + Px(80f);
+        TouchButton[] corner = [TouchButton.Pause, TouchButton.Map, TouchButton.Binoculars];
+        for (int i = 0; i < corner.Length; i++)
         {
-            float a = degrees * MathF.PI / 180f;
-            float d = context.Px(distance);
-            _layout.Add(new TouchButtonSpot(button, new UiVec2(centre.X + (MathF.Cos(a) * d), centre.Y - (MathF.Sin(a) * d)), small, Chip: false));
-        }
-
-        Around(TouchButton.Scope, 225f, 90f);
-        Around(TouchButton.Reload, 225f, 128f);
-        Around(TouchButton.Jump, 225f, 166f);
-        Around(TouchButton.Crouch, 225f, 204f);
-        Around(TouchButton.Use, 395f, 112f);
-        Around(TouchButton.Weapon, 395f, 140f);
-        Around(TouchButton.Peek, 395f, 168f);
-
-        // The chips along the top right, the pause menu in the corner.
-        float chip = context.Px(ChipRadius);
-        float step = chip * 3.1f;
-        float y = safe.Y + context.Px(70f);
-        TouchButton[] chips = [TouchButton.Pause, TouchButton.Map, TouchButton.Binoculars, TouchButton.ZoomIn, TouchButton.ZoomOut];
-        for (int i = 0; i < chips.Length; i++)
-        {
-            _layout.Add(new TouchButtonSpot(chips[i], new UiVec2(safe.Right - context.Px(80f) - (i * step), y), chip, Chip: true));
+            _layout.Add(new TouchButtonSpot(corner[i], new UiVec2(safe.Right - Px(80f) - (i * Px(CornerRadius * 2.6f)), y), Px(CornerRadius)));
         }
     }
 
@@ -341,5 +383,5 @@ public sealed class TouchControls
         return false;
     }
 
-    private readonly record struct Role(RoleKind Kind, TouchButton? Button);
+    private readonly record struct Role(RoleKind Kind, TouchButton? Button, bool Aims = false);
 }
