@@ -43,8 +43,22 @@ public sealed partial class Igi2Gameplay
         }
 
         spawn = new PlayerSpawnPoint(point.Position, point.Gamma, model, TeamRoster.Good);
+
+        // The level's own systems are built around its player's task (Igi2LevelBuild), so the map is given one where its
+        // player stands, as a campaign level declares it; a client's player is made when it joins, as the original makes all.
+        if (root.Tree.New(root, root.Tree.Types.Get(PlayerTaskTypeName)) is HumanPlayerTask task)
+        {
+            task.SpawnPosition = point.Position;
+            task.SpawnGamma = point.Gamma;
+            task.PlayerModel = model;
+            task.PlayerTeam = TeamRoster.Good;
+        }
+
         return true;
     }
+
+    /// <summary>The script name the player's task is registered under.</summary>
+    private const string PlayerTaskTypeName = "HumanPlayer";
 
     /// <summary>Gets the first body of a team's table the level's packs hold.</summary>
     /// <param name="team">The team.</param>
