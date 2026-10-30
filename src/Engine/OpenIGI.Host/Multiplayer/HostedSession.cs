@@ -14,8 +14,9 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="Map">The map.</param>
 /// <param name="Version">The build it runs.</param>
 /// <param name="IncludesHost">Whether the host's own player plays too: a listen server rather than a dedicated one.</param>
+/// <param name="HostName">The name the host's own player plays under, when it plays.</param>
 public sealed record HostedSessionOptions(
-    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost);
+    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones");
 
 /// <summary>A server's session run inside the host: a dedicated server's, or a listen server's beside the host's own player.</summary>
 /// <remarks>
@@ -84,7 +85,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
             }
 
             _world = replicated.CreateReplicatedWorld(_options.IncludesHost);
-            _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? "host" : null);
+            _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null);
             _logger.Information(LogCategory, $"The level is up; players may join on port {_net.LocalAddress.Port}.");
         }
 

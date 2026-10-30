@@ -63,7 +63,7 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
         string map = options.StartMission.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return new HostedSession(
             UdpTransport.Open(session.Port),
-            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true),
+            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName),
             title.Id,
             OpenIGI.Engine.Time.GameClock.DefaultTickRate,
             logger);
