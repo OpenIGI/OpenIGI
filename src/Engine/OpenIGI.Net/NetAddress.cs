@@ -16,6 +16,9 @@ public enum NetAddressKind : byte
 
     /// <summary>A stream connection a server accepted, such as a WebSocket; <see cref="NetAddress.Host"/> is its id.</summary>
     Stream,
+
+    /// <summary>A WebRTC peer met through a room; <see cref="NetAddress.Host"/> is its number in the room, the host's zero.</summary>
+    Peer,
 }
 
 /// <summary>Where a datagram came from or goes to, on any transport, as a value the connection tables can key on.</summary>
@@ -28,6 +31,11 @@ public readonly record struct NetAddress(NetAddressKind Kind, UInt128 Host, int 
     /// <param name="port">The endpoint's number.</param>
     /// <returns>The address.</returns>
     public static NetAddress Loopback(int port) => new(NetAddressKind.Loopback, UInt128.Zero, port);
+
+    /// <summary>Gets a room peer's address.</summary>
+    /// <param name="id">The peer's number in its room; the room's host is zero.</param>
+    /// <returns>The address.</returns>
+    public static NetAddress Peer(int id) => new(NetAddressKind.Peer, (UInt128)(uint)id, 0);
 
     /// <summary>Gets an IPv4 address, stored IPv4-mapped.</summary>
     /// <param name="a">The first octet.</param>
@@ -66,6 +74,8 @@ public readonly record struct NetAddress(NetAddressKind Kind, UInt128 Host, int 
         {
             case NetAddressKind.Loopback:
                 return string.Create(CultureInfo.InvariantCulture, $"loopback:{Port}");
+            case NetAddressKind.Peer:
+                return string.Create(CultureInfo.InvariantCulture, $"peer:{(uint)Host}");
             case NetAddressKind.Stream:
                 return string.Create(CultureInfo.InvariantCulture, $"stream:{(ulong)Host}");
             case NetAddressKind.Ip when IsIPv4:
