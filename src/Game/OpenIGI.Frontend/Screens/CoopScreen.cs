@@ -125,7 +125,7 @@ public sealed class CoopScreen : ShellScreen
         panel.VerticalAlignment = VerticalAlignment.Bottom;
         panel.HorizontalAlignment = HorizontalAlignment.Right;
         panel.Width = 420f;
-        panel.Margin = new Thickness(0f, 0f, 0f, 24f);
+        panel.Margin = new Thickness(0f, 0f, 0f, 64f);
         return panel;
     }
 
