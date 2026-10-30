@@ -31,6 +31,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="resetInputBindings">Restores the active title's control defaults.</param>
 /// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
 /// <param name="playedMods">The mods that change play the running title is played with.</param>
+/// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -48,7 +49,8 @@ public sealed class ShellHost(
     Func<string, string?>? inputBindingLabel = null,
     Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null,
     Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null,
-    Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null) : IShellHost
+    Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null,
+    Func<bool>? touchScreen = null) : IShellHost
 {
     /// <inheritdoc/>
     public IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => playedMods?.Invoke() ?? [];
@@ -104,6 +106,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
+
+    /// <inheritdoc/>
+    public bool TouchScreen => touchScreen?.Invoke() ?? false;
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>

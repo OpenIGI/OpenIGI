@@ -155,6 +155,35 @@ public sealed class WebGameWindowTests
     }
 
     [Fact]
+    public void The_phone_turning_is_added_up_for_the_frame_and_gone_the_next()
+    {
+        using WebGameWindow window = Open();
+
+        _page.Queue("gyro 0.01 0.02", "gyro 0.03 -0.01");
+        window.PumpEvents();
+        Assert.Equal(0.04f, window.Input.Motion.Yaw, 5);
+        Assert.Equal(0.01f, window.Input.Motion.Pitch, 5);
+
+        window.PumpEvents();
+        Assert.Equal(0f, window.Input.Motion.Yaw);
+        Assert.Equal(0f, window.Input.Motion.Pitch);
+    }
+
+    [Fact]
+    public void The_gyroscope_is_asked_of_the_page_only_when_wanting_it_changes()
+    {
+        WebGameWindow window = Open();
+
+        window.SetMotionSensors(true);
+        window.SetMotionSensors(true);
+        window.SetMotionSensors(false);
+        window.SetMotionSensors(true);
+        window.Dispose();
+
+        Assert.Equal([true, false, true, false], _page.GyroRequests);
+    }
+
+    [Fact]
     public void The_page_going_away_asks_the_game_to_close_once()
     {
         using WebGameWindow window = Open();

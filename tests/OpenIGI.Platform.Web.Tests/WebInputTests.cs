@@ -42,6 +42,7 @@ public sealed class WebInputTests
         Assert.Equal(new WebInputEvent(WebInputEventKind.Resize, X: 800, Y: 600), WebInputEvent.Parse("resize 800 600"));
         Assert.Equal(new WebInputEvent(WebInputEventKind.PointerLock, Down: true), WebInputEvent.Parse("lock 1"));
         Assert.Equal(WebInputEventKind.Close, WebInputEvent.Parse("close").Kind);
+        Assert.Equal(new WebInputEvent(WebInputEventKind.Gyro, X: 0.0125f, Y: -0.004f), WebInputEvent.Parse("gyro 0.0125 -0.004"));
     }
 
     /// <summary>A typed space is the character after the word, not a separator.</summary>

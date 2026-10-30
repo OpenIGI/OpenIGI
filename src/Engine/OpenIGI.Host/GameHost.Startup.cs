@@ -712,7 +712,8 @@ public sealed partial class GameHost
                     TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
                 },
                 displayResolutions: DisplayResolutions,
-                playedMods: () => _titleRuntime.Mods);
+                playedMods: () => _titleRuntime.Mods,
+                touchScreen: () => _window.Input.Touch.InUse);
 
             state.ShellHostForEntryCam = state.ShellHost;
 

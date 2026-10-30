@@ -37,4 +37,8 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public void RequestFullscreen(bool fullscreen) => FullscreenRequests.Add(fullscreen);
 
     public void WriteClipboard(string text) => Clipboard = text;
+
+    public List<bool> GyroRequests { get; } = [];
+
+    public void SetGyro(bool wanted) => GyroRequests.Add(wanted);
 }

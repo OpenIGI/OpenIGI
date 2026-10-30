@@ -37,6 +37,9 @@ public enum WebInputEventKind
 
     /// <summary>A finger came down, moved or lifted: <see cref="WebInputEvent.Code"/> says which, its position in X and Y, its id in Z.</summary>
     Touch,
+
+    /// <summary>The device turned: right in X and up in Y, in radians, in the screen's terms.</summary>
+    Gyro,
 }
 
 /// <summary>One event from the page's queue.</summary>
@@ -96,6 +99,7 @@ public readonly record struct WebInputEvent(
             "close" => new WebInputEvent(WebInputEventKind.Close),
             "touch" when words.Length == 4 && words[1] is "down" or "move" or "up" => new WebInputEvent(
                 WebInputEventKind.Touch, words[1], X: Number(words[2]), Y: Number(words[3]), Z: Number(words[0])),
+            "gyro" when words.Length == 2 => new WebInputEvent(WebInputEventKind.Gyro, X: Number(words[0]), Y: Number(words[1])),
             _ => new WebInputEvent(WebInputEventKind.Unknown, line),
         };
     }

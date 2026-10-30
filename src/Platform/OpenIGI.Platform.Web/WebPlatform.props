@@ -11,5 +11,8 @@
     <Content Include="$(MSBuildThisFileDirectory)touch.js"
              Link="wwwroot/touch.js"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)gyro.js"
+             Link="wwwroot/gyro.js"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

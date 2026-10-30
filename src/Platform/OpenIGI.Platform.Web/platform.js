@@ -5,6 +5,7 @@
 // frame. So every handler here only writes a line to a queue -- 'key KeyW 1', 'move 3 -1 640 360' -- and
 // WebGameWindow (C#) reads the queue in PumpEvents. The words are what WebInputEvent.Parse reads.
 
+import * as gyro from './gyro.js';
 import * as touch from './touch.js';
 
 let canvas = null;
@@ -109,6 +110,7 @@ export function install(target) {
   window.addEventListener('pagehide', () => queue.push('close'), { signal });
 
   touch.install(canvas, line => queue.push(line), pointerPosition);
+  gyro.install(canvas);
 
   resizes = new ResizeObserver(() => {
     const [width, height] = drawable();
@@ -122,6 +124,7 @@ export function install(target) {
  * queued for a game that will never take it.
  */
 export function uninstall() {
+  gyro.uninstall();
   touch.uninstall();
   listening?.abort();
   resizes?.disconnect();
@@ -141,6 +144,8 @@ export const imports = {
   hasFocus: () => document.hasFocus(),
   isFullscreen: () => document.fullscreenElement !== null,
   takeEvents: () => {
+    const turned = gyro.take();
+    if (turned) queue.push(turned);
     const taken = queue;
     queue = [];
     return taken;
@@ -157,4 +162,5 @@ export const imports = {
     if (!fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },
+  setGyro: wanted => gyro.setWanted(wanted),
 };

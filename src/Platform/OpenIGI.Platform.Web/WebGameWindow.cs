@@ -37,6 +37,7 @@ public sealed class WebGameWindow : IGameWindow
     private WindowMode _mode;
     private bool _cursorVisible;
     private bool _cursorLocked;
+    private bool _gyroWanted;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGameWindow"/> class.</summary>
@@ -172,6 +173,17 @@ public sealed class WebGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
+    /// <remarks>Asked of the page only when it changes: the host says it every frame.</remarks>
+    public void SetMotionSensors(bool wanted)
+    {
+        if (_gyroWanted != wanted && !_disposed)
+        {
+            _gyroWanted = wanted;
+            _page.SetGyro(wanted);
+        }
+    }
+
+    /// <inheritdoc/>
     /// <remarks>The canvas is on the page already.</remarks>
     public void Show() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -225,6 +237,10 @@ public sealed class WebGameWindow : IGameWindow
 
         _disposed = true;
         _page.SetPointer(visible: true, locked: false);
+        if (_gyroWanted)
+        {
+            _page.SetGyro(false);
+        }
     }
 
     private void Apply(in WebInputEvent input)
@@ -346,6 +362,10 @@ public sealed class WebGameWindow : IGameWindow
                         break;
                 }
 
+                break;
+
+            case WebInputEventKind.Gyro:
+                Input.Motion.Add(input.X, input.Y);
                 break;
         }
     }
