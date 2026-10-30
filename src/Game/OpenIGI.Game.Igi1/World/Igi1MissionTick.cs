@@ -28,21 +28,16 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     private bool _reportedShot;
     private int _reportedHumanHits;
 
-    // Whether the player's ladder climb or world interaction has begun its body animation, and whether the
-    // press that mounted the ladder has been let go, so that it does not become the slide on the next tick.
-    private bool _climbActive;
-    private bool _climbSlideArmed;
+    // The mission's own player's ladder, climbed on the body the frame draws.
+    private readonly LadderClimb _ownClimb = new();
 
-    // Animation 170's end, seen on the tick it ends and acted on the tick after (see the top transitions below).
-    private bool _ladderTopOffEnded;
+    // Whether the player's world interaction has begun its body animation.
     private bool _worldInteractionActive;
 
     /// <summary>Forgets a climb or an interaction in progress, as a new mission starts.</summary>
     public void ResetClimbs()
     {
-        _climbActive = false;
-        _climbSlideArmed = false;
-        _ladderTopOffEnded = false;
+        _ownClimb.Reset();
         _worldInteractionActive = false;
     }
 
@@ -368,125 +363,18 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         if (mission.Player is not null && mission.Player.IsOnLadder)
         {
             mission.Player.InputProfile = host.InputProfile;
-            bool climbUp = mission.Player.IsActionDown(host.Input, PlayerAction.MoveUp);
-            bool climbDown = mission.Player.IsActionDown(host.Input, PlayerAction.MoveDown);
-            bool climbUse = mission.Player.IsActionDown(host.Input, PlayerAction.Activate);
-
-            // Mount and use share E. The release gate is a shell detail that prevents the mounting press
-            // from becoming state 40 on the immediately following tick.
-            if (!_climbActive)
-            {
-                _climbActive = true;
-                _climbSlideArmed = false;
-                if (mission.Player.LadderPhase == LadderTraversalPhase.GettingOnTop)
-                {
-                    soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
-                }
-                else
-                {
-                    StartLadderClimbAnimation(soldiers);
-                }
-            }
-
-            if (!climbUse)
-            {
-                _climbSlideArmed = true;
-            }
-
-            bool climbSlide = climbUse && _climbSlideArmed;
-            LadderStepResult decision = mission.Player.DecideLadderStep(climbUp, climbDown, climbSlide);
-            switch (decision)
-            {
-                case LadderStepResult.SteppingUp:
-                case LadderStepResult.SteppingDown:
-                    mission.Soldiers?.SetPlayerLadderPlaybackDirection(mission.Player.LadderDirection);
-                    break;
-
-                case LadderStepResult.ReachedTop:
-                    soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderTopAnimation, loops: false);
-                    break;
-
-                case LadderStepResult.Sliding:
-                    soldiers?.StartPlayerLadderAnimation(
-                        PlayerCamera.LadderSlideAnimation, loops: true);
-                    break;
-            }
-
-            if (mission.Player.IsOnLadder && soldiers is not null)
-            {
-                switch (mission.Player.LadderPhase)
-                {
-                    case LadderTraversalPhase.Climbing when mission.Player.LadderDirection != 0:
-                        soldiers.AdvancePlayerLadderAnimation(
-                            mission.Player.LadderFacing,
-                            out Vector3d climbDelta,
-                            out float? rungEventTime,
-                            out _);
-                        mission.Player.MoveLadder(climbDelta);
-                        if (TakeLadderRungEvent(rungEventTime))
-                        {
-                            mission.Player.CompleteLadderStep();
-                            soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
-                        }
-
-                        break;
-
-                    case LadderTraversalPhase.GettingOffTop when _ladderTopOffEnded:
-                        // State 39 (0x40DA80) reads the clip-done bit the previous tick's advance set, in the state machine
-                        // ahead of this tick's advance: it lets go of the ladder a tick after animation 170 ends, the clip
-                        // held on its last frame meanwhile.
-                        _ladderTopOffEnded = false;
-                        mission.Player.CompleteLadderTopTransition();
-                        break;
-
-                    case LadderTraversalPhase.GettingOnTop:
-                    case LadderTraversalPhase.GettingOffTop:
-                        soldiers.AdvancePlayerLadderAnimation(
-                            mission.Player.LadderFacing,
-                            out Vector3d topDelta,
-                            out float? topEventTime,
-                            out bool topAnimationEnded);
-                        mission.Player.MoveLadder(topDelta);
-                        TakeLadderRungEvent(topEventTime);
-
-                        if (topAnimationEnded && mission.Player.LadderPhase == LadderTraversalPhase.GettingOffTop)
-                        {
-                            _ladderTopOffEnded = true;
-                        }
-                        else if (topAnimationEnded)
-                        {
-                            mission.Player.CompleteLadderTopTransition();
-                            if (mission.Player.LadderPhase == LadderTraversalPhase.Climbing)
-                            {
-                                StartLadderClimbAnimation(soldiers);
-                            }
-                        }
-
-                        break;
-
-                    case LadderTraversalPhase.SlidingDown:
-                        soldiers.AdvancePlayerLadderAnimation(
-                            mission.Player.LadderFacing,
-                            out Vector3d slideDelta,
-                            out _,
-                            out _);
-                        // State 40's entry only installs animation 169 and the sound. Its damped
-                        // velocity function first runs on the following tick.
-                        if (decision != LadderStepResult.Sliding)
-                        {
-                            mission.Player.TickLadderSlide(slideDelta, host.Ground!);
-                        }
-
-                        break;
-                }
-            }
+            _ownClimb.Tick(
+                mission.Player,
+                soldiers is null ? null : new PresentedLadderBody(soldiers),
+                mission.Player.IsActionDown(host.Input, PlayerAction.MoveUp),
+                mission.Player.IsActionDown(host.Input, PlayerAction.MoveDown),
+                mission.Player.IsActionDown(host.Input, PlayerAction.Activate),
+                host.Ground!,
+                LadderRung);
 
             // All four states stay in third person until their actual deinitialization signal.
             if (mission.Player.IsOnLadder)
             {
-                soldiers?.PlacePlayerBodyClimbing(mission.Player.LadderFeet, mission.Player.LadderFacing);
                 if (!host.IsInteractionViewActive)
                 {
                     WorldRayCast? cameraCast = mission.Solids?.Caster();
@@ -572,12 +460,11 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         if ((mission.Player is null || (!mission.Player.IsOnLadder && !mission.Player.IsInWorldInteraction))
-            && (_climbActive || _worldInteractionActive || host.IsInteractionViewActive))
+            && (_ownClimb.IsActive || _worldInteractionActive || host.IsInteractionViewActive))
         {
             mission.Soldiers?.HidePlayerBodyClimbing();
             host.ResetInteractionView();
-            _climbActive = false;
-            _ladderTopOffEnded = false;
+            _ownClimb.Reset();
             _worldInteractionActive = false;
         }
     }
@@ -594,7 +481,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         mission.PartnersTicked = true;
         foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
         {
-            other.Run(mission.PlayerTicks, host.Ground);
+            other.Run(mission.PlayerTicks, host.Ground, LadderRung);
         }
 
         mission.PlayerTicks++;
@@ -847,50 +734,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     }
 
     // A camera's head collides where its update left it.
-    /// <summary>Enters state 37's clip: animation 168's first frame, then held at the mount event.</summary>
-    /// <param name="soldiers">The bodies, which draw the player's.</param>
-    /// <remarks>
-    /// <para>
-    /// The entry <c>0x40D660</c> starts animation 168 as a new clip node: a full frame step forward
-    /// (<c>0x4D4F60</c>), flagged <c>0x8000</c> so its first tick also reports the event at its start
-    /// time (<c>0x4D4B60</c>). <c>HumanPlayer_Update</c> ticks that clip and moves the human by it in
-    /// the same update, and the next update's state 37 finds event 8 at zero against the latch its entry
-    /// cleared: it pauses the clip, commits nothing, and plays a rung sound. That is the sound of getting
-    /// on — from the foot, or at the end of the top mount.
-    /// </para>
-    /// <para>
-    /// The port takes all of it here, in one go, so the pause is in place before any input can start a
-    /// rung; otherwise the mount event would land on the first rung's tick and commit it.
-    /// </para>
-    /// </remarks>
-    private void StartLadderClimbAnimation(ISoldierPresenter? soldiers)
-    {
-        if (soldiers is null || mission.Player is not { } player)
-        {
-            return;
-        }
-
-        soldiers.StartPlayerLadderAnimation(PlayerCamera.LadderClimbAnimation, loops: true);
-        soldiers.AdvancePlayerLadderAnimation(player.LadderFacing, out Vector3d entryDelta, out float? mountEventTime, out _);
-        player.MoveLadderEntryFrame(entryDelta);
-        TakeLadderRungEvent(mountEventTime);
-        soldiers.Simulation.SetPlayerLadderPlaybackDirection(0);
-    }
-
-    /// <summary>Sounds a ladder state's crossing of event 8, when the latch lets it count.</summary>
-    /// <param name="eventTime">The crossed event's time, or null when the clip crossed none.</param>
-    /// <returns><see langword="true"/> when the crossing counted, so state 37 should commit its rung.</returns>
-    private bool TakeLadderRungEvent(float? eventTime)
-    {
-        if (mission.Player is not { } player || eventTime is not { } time || !player.AcceptLadderRungEvent(time))
-        {
-            return false;
-        }
-
-        audio.PlayLadderStepSound(player.TakeLadderStep(), player.LadderFeet);
-        return true;
-    }
-
+    // A rung the mission's own player crossed, sounded where it stands.
+    private void LadderRung(PlayerCamera player) => audio.PlayLadderStepSound(player.TakeLadderStep(), player.LadderFeet);
     private void CarryCameraHead(SecurityCamera camera)
     {
         if (mission.Solids is { } cameraSolids)
@@ -1130,6 +975,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 // Their guns heard as a soldier's are, each on a voice of its own.
                 foreach (PartnerBody partner in bodies)
                 {
+                    ShowPartnerShot(partner);
                     audio.TickSoldierWeaponSound(PartnerVoiceBase - (partner.Key.GetHashCode() & 0xFFFFFF), partner.Fired, partner.Weapon, partner.Feet);
                 }
             }

@@ -91,8 +91,51 @@ public sealed class Igi1CoopSessionTests
         Assert.False(capture.Game.World.PlayerHealth.IsDead);
     }
 
+    [RequiresGameDataFact]
+    public void A_partners_shots_are_shown_to_the_others()
+    {
+        bool fired = false;
+        int shots = 0;
+        double bestAlignment = -2;
+        int lines = 0;
+        (Capture capture, _, _) = Play(
+            1200,
+            (game, frame) =>
+            {
+                if (game.World.NetworkPlayers.Count == 0 || game.World.PartnerBodies is not { } bodies)
+                {
+                    return;
+                }
+
+                fired |= bodies().Any(static b => b.Fired);
+                Igi1NetworkPlayer partner = game.World.NetworkPlayers[0];
+                shots = partner.Player.Weapons?.ShotSequence ?? 0;
+
+                // Its shots leave lines along where it looks (the camera's forward is its look rotation's third row).
+                Core.Numerics.Matrix3f look = partner.Player.Camera.Orientation;
+                Core.Numerics.Vector3d forward = new(look.M31, look.M32, look.M33);
+                foreach (Game.Igi1.Weapons.GunShotTracer line in game.World.Soldiers?.GunShotTracers ?? [])
+                {
+                    if (ReferenceEquals(line.Shooter, partner))
+                    {
+                        lines++;
+                        Core.Numerics.Vector3d along = line.End - line.Start;
+                        bestAlignment = Math.Max(bestAlignment, ((along.X * forward.X) + (along.Y * forward.Y) + (along.Z * forward.Z)) / along.Length);
+                    }
+                }
+            },
+            fire: frame => frame > 700 && frame % 20 < 10,
+            press: frame => frame is >= 640 and < 644 ? PlayerInputSlot.WeaponCategory2 : null);
+
+        Assert.NotNull(capture.Game);
+        Assert.True(shots > 0, "the partner never fired");
+        Assert.True(fired, $"the partner fired {shots} rounds but its body never said so");
+        Assert.True(lines > 0, "the partner's shots left no line");
+        Assert.True(bestAlignment > 0.95, $"the partner's line points {bestAlignment} along its look");
+    }
+
     // Mission 1 hosted headless with one client walking forwards, for the frames given; onFrame sees each frame once the game is up.
-    private static (Capture Capture, ClientSession Client, Core.Numerics.Vector3d? Start) Play(int frames, Action<Igi1Gameplay, int>? onFrame, Func<int, float>? turn = null)
+    private static (Capture Capture, ClientSession Client, Core.Numerics.Vector3d? Start) Play(int frames, Action<Igi1Gameplay, int>? onFrame, Func<int, float>? turn = null, Func<int, bool>? fire = null, Func<int, PlayerInputSlot?>? press = null)
     {
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string root = GameDataSource.Igi1.RequireRoot();
@@ -133,7 +176,18 @@ public sealed class Igi1CoopSessionTests
                 connected = true;
             }
 
+            walk[(int)PlayerInputSlot.Fire] = fire?.Invoke(frame) == true ? 1f : 0f;
+            PlayerInputSlot? pressed = press?.Invoke(frame);
+            if (pressed is { } key)
+            {
+                walk[(int)key] = 1f;
+            }
+
             Igi1Command.Pack(walk, (capture.Game.World.Player?.Body.Yaw ?? 0f) + (turn?.Invoke(frame) ?? 0f), 0f, forwards);
+            if (pressed is { } released)
+            {
+                walk[(int)released] = 0f;
+            }
             client.Receive(now);
             client.SendCommand(forwards, now);
             client.Flush(now);

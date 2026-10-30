@@ -124,5 +124,6 @@ public sealed partial class PlayerCamera
         // After the fire has (possibly) started a new clip, so the pair describes what this tick
         // actually shows.
         CaptureViewTickState();
+        ViewError.Tick();
     }
 }

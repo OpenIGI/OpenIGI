@@ -66,7 +66,18 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
     /// <summary>Runs its tick on its client's command for the tick: the look set, then the frame run as the mission's player runs its own.</summary>
     /// <param name="tick">The tick being run.</param>
     /// <param name="ground">The level's ground.</param>
-    public void Run(long tick, IGroundHeightField? ground)
+    public void Run(long tick, IGroundHeightField? ground) => Run(tick, ground, static _ => { });
+
+    /// <summary>Gets the partner's ladder, climbed on a body of its own that only the simulation keeps.</summary>
+    public World.LadderClimb Climb { get; } = new();
+
+    private SimulatedLadderBody? _ladderBody;
+
+    /// <summary>Runs the partner a tick on its client's command for the tick, its ladder climbed as the mission's own player's is.</summary>
+    /// <param name="tick">The tick.</param>
+    /// <param name="ground">The ground.</param>
+    /// <param name="rung">Sounds a rung it crossed.</param>
+    public void Run(long tick, IGroundHeightField? ground, Action<PlayerCamera> rung)
     {
         Commands.Take(tick, _channels);
         if (IsDead)
@@ -78,5 +89,24 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
         Player.Body.Yaw = yaw;
         Player.Body.Pitch = Math.Clamp(pitch, -PlayerBody.PitchLimit, PlayerBody.PitchLimit);
         Player.TickFrame(frame, ground);
+
+        if (!Player.IsOnLadder)
+        {
+            Climb.Reset();
+            return;
+        }
+
+        if (ground is not null)
+        {
+            _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
+            Climb.Tick(
+                Player,
+                _ladderBody,
+                frame[(int)PlayerInputSlot.MoveUp] > 0.5f,
+                frame[(int)PlayerInputSlot.MoveDown] > 0.5f,
+                frame[(int)PlayerInputSlot.Activate] > 0.5f,
+                ground,
+                rung);
+        }
     }
 }

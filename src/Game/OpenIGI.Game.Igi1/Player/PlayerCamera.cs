@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
@@ -531,7 +531,24 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     }
 
     /// <inheritdoc cref="PlayerLocomotion.Use"/>
-    public void UseAnimations(BoneAnimationSet set) => _locomotion.Use(set);
+    public void UseAnimations(BoneAnimationSet set)
+    {
+        BodyAnimations = set;
+        _locomotion.Use(set);
+    }
+
+    /// <summary>Gets the body's animation set, skeleton 0, once given; a co-op partner's ladder climbs on it.</summary>
+    public BoneAnimationSet? BodyAnimations { get; private set; }
+
+    /// <summary>Gets the ladder clip the climb is in, or -1 off a ladder: what another player's window draws it doing.</summary>
+    public int LadderAnimation => !IsOnLadder
+        ? -1
+        : LadderPhase switch
+        {
+            LadderTraversalPhase.SlidingDown => LadderSlideAnimation,
+            LadderTraversalPhase.GettingOnTop or LadderTraversalPhase.GettingOffTop => LadderTopAnimation,
+            _ => LadderClimbAnimation,
+        };
 
     /// <inheritdoc cref="PlayerShotResolver.MarkProbe"/>
     public WorldRayCast? MarkProbe => _shots.MarkProbe;
@@ -767,6 +784,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         CaptureViewTickState();
         return close;
     }
+
+    /// <summary>Gets the difference a co-op server's correction left between the eye and the body, fading.</summary>
+    public OpenIGI.Game.Multiplayer.PredictionErrorSmoothing ViewError { get; } = new();
 
     /// <summary>Takes the held-weapon machine out of death, as a co-op player is brought back.</summary>
     public void ReviveWeapons() => _weapons?.Revive();

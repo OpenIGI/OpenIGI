@@ -32,12 +32,13 @@ public readonly record struct PartnerBody(
     public static PartnerBody Of(object key, PlayerCamera player)
     {
         ArgumentNullException.ThrowIfNull(player);
+        bool climbing = player.LadderAnimation >= 0;
         return new PartnerBody(
             key,
-            player.Body.Position,
-            -player.Body.Yaw,
-            player.LocomotionAnimation,
-            player.LocomotionAnimationLoops,
+            climbing ? player.LadderFeet : player.Body.Position,
+            climbing ? player.LadderFacing : -player.Body.Yaw,
+            climbing ? player.LadderAnimation : player.LocomotionAnimation,
+            climbing || player.LocomotionAnimationLoops,
             new PlayerBodyPose(
                 player.UpperBodyAnimation,
                 player.UpperBodyAnimationLoops,

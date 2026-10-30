@@ -125,6 +125,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         if (_game.World.Player is { } player)
         {
             player.Body.Position += offset;
+            player.ViewError.Note(offset);
         }
     }
 

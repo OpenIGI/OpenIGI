@@ -113,7 +113,11 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
             return null;
         }
 
-        return smooth && player.HasViewTickPair ? player.SmoothedCamera(tickBlend) : player.Camera;
+        Camera3D eye = smooth && player.HasViewTickPair ? player.SmoothedCamera(tickBlend) : player.Camera;
+
+        // A co-op client's correction from the server moved the body at once; the eye catches up over a tenth of a second.
+        Vector3d eased = player.ViewError.Offset(tickBlend);
+        return eased == default ? eye : new Camera3D(eye.Position + eased, eye.Orientation);
     }
 
     /// <inheritdoc/>

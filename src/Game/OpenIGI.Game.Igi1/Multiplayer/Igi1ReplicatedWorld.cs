@@ -202,11 +202,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         return new ReplicatedHuman(
             id,
-            Int3.From(player.Body.Position),
+            Int3.From(player.LadderAnimation >= 0 ? player.LadderFeet : player.Body.Position),
             default,
-            Quantize.AngleToBits(player.Body.Yaw),
+
+            // On a ladder the body faces the ladder (its gamma, the yaw negated) and plays the climb's clip.
+            Quantize.AngleToBits(player.LadderAnimation >= 0 ? -player.LadderFacing : player.Body.Yaw),
             Quantize.AngleToBits(player.Body.Pitch),
-            (ushort)Math.Clamp(player.LocomotionAnimation + 1, 0, ushort.MaxValue),
+            (ushort)Math.Clamp((player.LadderAnimation >= 0 ? player.LadderAnimation : player.LocomotionAnimation) + 1, 0, ushort.MaxValue),
             (ushort)Math.Clamp(player.UpperBodyAnimation + 1, 0, ushort.MaxValue),
             (ushort)Math.Clamp((player.Weapons?.InHand?.Weapon.WeaponId ?? -1) + 1, 0, ushort.MaxValue),
             (byte)Math.Round(Math.Clamp(health?.RemainingFraction ?? 1f, 0f, 1f) * 255),

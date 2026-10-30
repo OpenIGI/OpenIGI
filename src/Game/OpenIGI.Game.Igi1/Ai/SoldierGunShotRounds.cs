@@ -30,6 +30,21 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
     // ticks them in.
     private readonly Dictionary<SoldierView, GunShotTask> _gunShots = [];
     private readonly List<(SoldierView View, GunShotTask Task)> _gunShotOrder = [];
+    private readonly List<GunShotTracer> _filed = [];
+
+    /// <summary>Files a round's line that no soldier's gun marched: a co-op partner's shot, drawn as a guard's is.</summary>
+    /// <param name="tracer">The line.</param>
+    public void FileTracer(GunShotTracer tracer)
+    {
+        ArgumentNullException.ThrowIfNull(tracer);
+        if (_filed.Count < MaxFiledTracers)
+        {
+            _filed.Add(tracer);
+        }
+    }
+
+    // As many lines as four partners' automatic fire leaves alive at once.
+    private const int MaxFiledTracers = 64;
     private IGunShotWorld? _gunShotWorld;
     private GunShotSoundWindows? _gunShotSounds;
     private Action? _afterGunShots;
@@ -45,6 +60,11 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
     {
         get
         {
+            foreach (GunShotTracer filed in _filed)
+            {
+                yield return filed;
+            }
+
             foreach ((SoldierView _, GunShotTask task) in _gunShotOrder)
             {
                 foreach (GunShotTracer tracer in task.Tracers)
@@ -93,6 +113,13 @@ internal sealed class SoldierGunShotRounds(SoldierContext context, SoldierSightQ
     /// </summary>
     public void MarchRounds()
     {
+        // The lines filed from outside the soldiers' guns age as a gun's do: drawn, then freed (0x47C560).
+        _filed.RemoveAll(static tracer => tracer.Life == 0);
+        foreach (GunShotTracer filed in _filed)
+        {
+            filed.Life--;
+        }
+
         if (_gunShotWorld is not { } world || _gunShotSounds is not { } sounds)
         {
             return;

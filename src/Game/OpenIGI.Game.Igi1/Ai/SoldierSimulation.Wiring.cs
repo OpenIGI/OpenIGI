@@ -142,6 +142,9 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierGunShotRounds.GunShotTracers"/>
     public IEnumerable<GunShotTracer> GunShotTracers => _rounds.GunShotTracers;
 
+    /// <inheritdoc cref="SoldierGunShotRounds.FileTracer"/>
+    public void FileTracer(GunShotTracer tracer) => _rounds.FileTracer(tracer);
+
     /// <inheritdoc cref="SoldierDamage.BloodSpray"/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get => _damage.BloodSpray; set => _damage.BloodSpray = value; }
 
