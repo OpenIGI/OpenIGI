@@ -1,7 +1,9 @@
 using System.Globalization;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -9,24 +11,25 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The co-op section: host a mission for friends to join by its room's code, join a friend's by theirs, or pick a public
-/// room from the list -- and choose the look to play in, shown standing in the level beside the page. The same on the
-/// desktop and in the browser, which play each other.
+/// The co-op section, laid out as the campaign's: down the left, the room this player is in, a friend's room to join by
+/// its code and the public rooms as list cards; on the right, the look this player plays in standing in the level, and
+/// at its foot one strip of glass choosing what to host beside the button that hosts it. The same on the desktop and in
+/// the browser, which play each other.
 /// </summary>
 public sealed class CoopScreen : ShellScreen
 {
-    private const float CyclerHeight = 84f;
+    // A cycler fills the height it is given; the strip's cells are the campaign's height.
+    private const float CellHeight = 96f;
 
     private static readonly string[] Difficulties = AiDifficultyNames.All;
+    private static readonly string[] Listings = ["Public", "Private"];
 
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
     private string _code = string.Empty;
     private int _mission;
     private int _difficulty = -1;
-    private bool _listed = true;
-    private OptionCycler? _missionCycler;
-    private OptionCycler? _difficultyCycler;
+    private int _listing;
 
     /// <summary>Initializes a new instance of the <see cref="CoopScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -39,7 +42,7 @@ public sealed class CoopScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Coop;
 
     /// <inheritdoc/>
-    /// <remarks>The level stays sharp: the look being chosen stands in it, to the right of the page's panels.</remarks>
+    /// <remarks>The level stays sharp: the look being chosen stands in it.</remarks>
     public override float BackdropBlur => 0f;
 
     private ICoopRooms? Coop => Context.Host.Coop;
@@ -48,46 +51,20 @@ public sealed class CoopScreen : ShellScreen
     protected override UiElement? BuildContent(LayoutContext context)
     {
         UiTheme theme = Context.Theme;
-        var page = new Grid { RowSpacing = 28f, Padding = new Thickness(SideMargin, 48f, SideMargin, 0f) };
-        page.ColumnDefinitions.Add(GridLength.Star);
-        page.RowDefinitions.Add(GridLength.Auto);
-        page.RowDefinitions.Add(GridLength.Auto);
-        page.RowDefinitions.Add(GridLength.Star);
-        page.Add(new SectionTitle(theme, "Together", "Co-op") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
-
         if (Coop is not { } coop)
         {
-            var (unavailable, text) = Group(theme, "Not on this build");
-            text.AddChild(Body(theme, "Co-op needs this build's WebRTC library, which isn't beside the game.", theme.TextMuted));
-            page.Add(unavailable, 1, 0);
-            return page;
+            var notHere = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f, Margin = new Thickness(SideMargin, 56f) };
+            notHere.AddChild(new SectionTitle(theme, "Together", "Co-op") { HorizontalAlignment = HorizontalAlignment.Left });
+            notHere.AddChild(Body(theme, "Co-op needs this build's WebRTC library, which isn't beside the game.", theme.TextMuted));
+            return notHere;
         }
 
         _shown = coop.Status;
         _shownListing = coop.Listing;
 
-        // The panels down the left; the right is the level, where the chosen look stands, its picker beneath it.
-        var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 20f };
-        stack.AddChild(BuildStatus(theme, _shown));
-        var pair = new Grid { ColumnSpacing = 20f, VerticalAlignment = VerticalAlignment.Top };
-        pair.RowDefinitions.Add(GridLength.Auto);
-        pair.ColumnDefinitions.Add(GridLength.Star);
-        pair.ColumnDefinitions.Add(GridLength.Star);
-        pair.Add(BuildHost(theme, coop), 0, 0);
-        pair.Add(BuildJoin(theme, coop), 0, 1);
-        stack.AddChild(pair);
-        stack.AddChild(BuildRooms(theme, coop));
-        var scroll = new ScrollView(theme);
-        scroll.SetContent(stack);
-
-        var halves = new Grid { ColumnSpacing = 32f };
-        halves.RowDefinitions.Add(GridLength.Star);
-        halves.ColumnDefinitions.Add(GridLength.Stars(1.35f));
-        halves.ColumnDefinitions.Add(GridLength.Star);
-        halves.Add(scroll, 0, 0);
-        halves.Add(BuildLook(theme, coop), 0, 1);
-        page.RowDefinitions[2] = GridLength.Star;
-        page.Add(halves, 1, 0);
+        var page = new Canvas();
+        page.Add(BuildRooms(theme, coop), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(SideMargin, 56f, -(SideMargin + 560f), 48f)));
+        page.Add(BuildHosting(theme, coop), new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(720f, 0f, SideMargin, 48f)));
         return page;
     }
 
@@ -101,34 +78,6 @@ public sealed class CoopScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnExit() => Coop?.PreviewLook(null);
 
-    // The look to play in: a picker at the foot of the right half, under where the look stands in the level.
-    private GlassPanel BuildLook(UiTheme theme, ICoopRooms coop)
-    {
-        List<PlayerSkin> looks = [.. PlayerSkins.All];
-        int chosen = Math.Max(0, looks.FindIndex(s => s.Id == PlayerSkins.Of(PlayerSkins.Chosen.Value).Id));
-        var cycler = new OptionCycler(theme, "Operative", [.. looks.Select(static s => s.Name)], chosen)
-        {
-            Height = CyclerHeight,
-            ContentWidth = 260f,
-            Tooltip = "How you appear to the others in co-op.",
-        };
-        cycler.SelectionChanged += index =>
-        {
-            PlayerSkins.Chosen.Value = looks[index].Id;
-            Context.Host.SaveSettings();
-            coop.PreviewLook(looks[index].Id);
-        };
-
-        var (panel, content) = Group(theme, "Your look");
-        content.AddChild(cycler);
-        content.AddChild(Body(theme, "Shown here as the others will see you.", theme.TextMuted));
-        panel.VerticalAlignment = VerticalAlignment.Bottom;
-        panel.HorizontalAlignment = HorizontalAlignment.Right;
-        panel.Width = 420f;
-        panel.Margin = new Thickness(0f, 0f, 0f, 64f);
-        return panel;
-    }
-
     /// <inheritdoc/>
     /// <remarks>The room and the list change in the background; the page is rebuilt when either does.</remarks>
     protected override void OnUpdate(float elapsedSeconds)
@@ -139,13 +88,31 @@ public sealed class CoopScreen : ShellScreen
         }
     }
 
+    // The left column: the page's title, the room this player is in, a code to join by, and the open rooms.
+    private Grid BuildRooms(UiTheme theme, ICoopRooms coop)
+    {
+        var layout = new Grid { RowSpacing = 28f };
+        layout.ColumnDefinitions.Add(GridLength.Star);
+        layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Star);
+
+        layout.Add(new SectionTitle(theme, "Together", "Co-op") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
+        layout.Add(BuildStatus(theme, coop.Status), 1, 0);
+        layout.Add(BuildJoin(theme, coop), 2, 0);
+        layout.Add(BuildList(theme, coop), 3, 0);
+        return layout;
+    }
+
+    // Where this player is: nowhere yet, opening or finding a room, in one (its code large when it hosts), or turned away.
     private GlassPanel BuildStatus(UiTheme theme, CoopStatus status)
     {
         var (panel, content) = Group(theme, "Your room");
         switch (status.Phase)
         {
             case CoopPhase.Playing when status.Hosting:
-                content.AddChild(new Label(theme.Heading, $"ROOM  {status.Code}", 40f, theme.Accent) { Margin = new Thickness(0f, 4f) });
+                content.AddChild(new Label(theme.Heading, status.Code ?? string.Empty, 44f, theme.Accent) { Margin = new Thickness(0f, 2f, 0f, 0f) });
                 content.AddChild(Body(theme, "Friends join with this code, on the desktop or at openigi.com.", theme.TextMuted));
                 break;
             case CoopPhase.Playing:
@@ -164,7 +131,7 @@ public sealed class CoopScreen : ShellScreen
 
         if (status.Phase is CoopPhase.Playing or CoopPhase.Connecting)
         {
-            var leave = new Button(theme, "LEAVE ROOM") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(22f, 12f) };
+            var leave = new Button(theme, "LEAVE ROOM") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(22f, 12f), HorizontalAlignment = HorizontalAlignment.Left };
             leave.Activated += _ => Coop?.Leave();
             content.AddChild(leave);
         }
@@ -172,76 +139,51 @@ public sealed class CoopScreen : ShellScreen
         return panel;
     }
 
-    private GlassPanel BuildHost(UiTheme theme, ICoopRooms coop)
+    // A friend's room by its code: the box and its button on one line.
+    private StackPanel BuildJoin(UiTheme theme, ICoopRooms coop)
     {
-        var (panel, content) = Group(theme, "Host");
-        IReadOnlyList<MissionInfo> missions = Context.Missions;
-        _mission = Math.Clamp(_mission, 0, Math.Max(0, missions.Count - 1));
-        if (_difficulty < 0)
-        {
-            _difficulty = Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
-        }
-
-        if (missions.Count == 0)
-        {
-            content.AddChild(Body(theme, "No missions to host.", theme.TextMuted));
-            return panel;
-        }
-
-        // A cycler fills the height it is offered, as it does in the campaign's strip; a stack offers it all, so each gets
-        // the strip's height here.
-        _missionCycler = new OptionCycler(
-            theme, "Mission", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission)
-        {
-            Height = CyclerHeight,
-            ContentWidth = 300f,
-        };
-        content.AddChild(_missionCycler);
-        _difficultyCycler = new OptionCycler(theme, "Difficulty", Difficulties, _difficulty) { Height = CyclerHeight };
-        content.AddChild(_difficultyCycler);
-        var listed = new Toggle(theme, "List publicly", _listed) { Tooltip = "Anyone can find a listed room; otherwise only those you give the code to." };
-        listed.ValueChanged += value => _listed = value;
-        content.AddChild(listed);
-
-        var host = new Button(theme, "HOST MISSION") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
-        host.Activated += _ =>
-        {
-            _mission = _missionCycler.SelectedIndex;
-            _difficulty = _difficultyCycler.SelectedIndex;
-            coop.Host(missions[_mission].Id, _difficulty, _listed);
-        };
-        content.AddChild(host);
-        return panel;
-    }
-
-    private GlassPanel BuildJoin(UiTheme theme, ICoopRooms coop)
-    {
-        var (panel, content) = Group(theme, "Join");
-        content.AddChild(Body(theme, "The six-letter code your friend's game shows.", theme.TextMuted));
-        var code = new TextBox(theme) { Id = "room-code", Placeholder = "ROOM CODE", MaxLength = 6 };
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 12f };
+        column.AddChild(new GroupHeader(theme, "Join with a code"));
+        var line = new Grid { ColumnSpacing = 12f };
+        line.RowDefinitions.Add(GridLength.Auto);
+        line.ColumnDefinitions.Add(GridLength.Star);
+        line.ColumnDefinitions.Add(GridLength.Auto);
+        var code = new TextBox(theme) { Id = "room-code", Placeholder = "ROOM CODE", MaxLength = 6, VerticalAlignment = VerticalAlignment.Center };
         code.Text = _code;
         code.TextChanged += text => _code = text;
-        content.AddChild(code);
-        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
+        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(34f, 14f) };
         join.Activated += _ => coop.Join(_code);
-        content.AddChild(join);
-        return panel;
+        line.Add(code, 0, 0);
+        line.Add(join, 0, 1);
+        column.AddChild(line);
+        return column;
     }
 
-    private GlassPanel BuildRooms(UiTheme theme, ICoopRooms coop)
+    // The public rooms, each a card as the campaign's missions are: how full on the badge, its name and mission.
+    private Grid BuildList(UiTheme theme, ICoopRooms coop)
     {
-        var (panel, content) = Group(theme, "Open rooms");
+        var layout = new Grid { RowSpacing = 8f };
+        layout.ColumnDefinitions.Add(GridLength.Star);
+        layout.ColumnDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Star);
+        layout.Add(new GroupHeader(theme, "Open rooms"), 0, 0);
+        var refresh = new Button(theme, "REFRESH") { Accent = ButtonAccent.Text, TextSize = 15f, Tracking = 0.18f, Padding = new Thickness(8f, 4f), VerticalAlignment = VerticalAlignment.Center };
+        refresh.Activated += _ => coop.RefreshListing();
+        layout.Add(refresh, 0, 1);
+
+        var rows = new StackPanel { Orientation = Orientation.Vertical };
         if (coop.Listing is not { } rooms)
         {
-            content.AddChild(Body(theme, "Looking…", theme.TextMuted));
+            rows.AddChild(Body(theme, "Looking for rooms…", theme.TextMuted));
         }
         else if (coop.ListingError is { } error)
         {
-            content.AddChild(Body(theme, $"Couldn't list rooms: {error}.", theme.Danger));
+            rows.AddChild(Body(theme, $"Couldn't list rooms: {error}.", theme.Danger));
         }
         else if (rooms.Count == 0)
         {
-            content.AddChild(Body(theme, "No public rooms right now. Host one!", theme.TextMuted));
+            rows.AddChild(Body(theme, "No public rooms right now. Host one.", theme.TextMuted));
         }
         else
         {
@@ -250,33 +192,114 @@ public sealed class CoopScreen : ShellScreen
                 string mission = Context.Missions.FirstOrDefault(m => m.Id == room.MissionId) is { } m
                     ? m.Name
                     : string.Create(CultureInfo.InvariantCulture, $"Mission {room.MissionId}");
-                var entry = new Button(theme, string.Create(CultureInfo.InvariantCulture, $"{room.Name}  ·  {mission}  ·  {room.Players}/{room.MaxPlayers}"))
+                var card = new ListCard(
+                    theme,
+                    string.Create(CultureInfo.InvariantCulture, $"{room.Players}/{room.MaxPlayers}"),
+                    $"{room.Name}  ·  {mission}")
                 {
-                    Accent = ButtonAccent.Ghost,
-                    TextSize = 16f,
-                    Padding = new Thickness(18f, 12f),
                     IsEnabled = room.Players < room.MaxPlayers,
                 };
-                string code = room.Code;
-                entry.Activated += _ => coop.Join(code);
-                content.AddChild(entry);
+                string join = room.Code;
+                card.Activated += _ => coop.Join(join);
+                rows.AddChild(card);
             }
         }
 
-        var refresh = new Button(theme, "REFRESH") { Accent = ButtonAccent.Text, TextSize = 15f, Tracking = 0.18f, Padding = new Thickness(0f, 10f) };
-        refresh.Activated += _ => coop.RefreshListing();
-        content.AddChild(refresh);
-        return panel;
+        var scroll = new ScrollView(theme);
+        scroll.SetContent(rows);
+        layout.Add(scroll, 1, 0, columnSpan: 2);
+        return layout;
     }
 
-    private static Label Body(UiTheme theme, string text, OpenIGI.Core.Graphics.Bgra32 colour) =>
+    // The right: the look, standing in the level above; at its foot the operative strip, then what to host beside HOST.
+    private StackPanel BuildHosting(UiTheme theme, ICoopRooms coop)
+    {
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f, VerticalAlignment = VerticalAlignment.Bottom };
+
+        List<PlayerSkin> looks = [.. PlayerSkins.All];
+        int chosen = Math.Max(0, looks.FindIndex(s => s.Id == PlayerSkins.Of(PlayerSkins.Chosen.Value).Id));
+        var operative = new OptionCycler(theme, "Operative", [.. looks.Select(static s => s.Name)], chosen)
+        {
+            Height = CellHeight,
+            ContentWidth = 240f,
+            Tooltip = "How you appear to the others in co-op, shown standing here.",
+        };
+        operative.SelectionChanged += index =>
+        {
+            PlayerSkins.Chosen.Value = looks[index].Id;
+            Context.Host.SaveSettings();
+            coop.PreviewLook(looks[index].Id);
+        };
+        column.AddChild(Strip(theme, operative));
+
+        IReadOnlyList<MissionInfo> missions = Context.Missions;
+        if (missions.Count == 0)
+        {
+            return column;
+        }
+
+        _mission = Math.Clamp(_mission, 0, missions.Count - 1);
+        if (_difficulty < 0)
+        {
+            _difficulty = Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
+        }
+
+        var mission = new OptionCycler(
+            theme, "Mission", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission)
+        {
+            Height = CellHeight,
+            ContentWidth = 230f,
+        };
+        mission.SelectionChanged += index => _mission = index;
+        var difficulty = new OptionCycler(theme, "Difficulty", Difficulties, _difficulty) { Height = CellHeight };
+        difficulty.SelectionChanged += index => _difficulty = index;
+        var listing = new OptionCycler(theme, "Listing", Listings, _listing)
+        {
+            Height = CellHeight,
+            ContentWidth = 120f,
+            Tooltip = "Public rooms show under Open rooms; a private one only lets in those you give the code to.",
+        };
+        listing.SelectionChanged += index => _listing = index;
+
+        var host = new PrimaryAction(theme, "Host") { Width = 300f };
+        host.Activated += _ => coop.Host(missions[_mission].Id, _difficulty, listed: _listing == 0);
+
+        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Height = CellHeight, HorizontalAlignment = HorizontalAlignment.Left };
+        actions.Add(Strip(theme, mission, difficulty, listing));
+        actions.Add(host);
+        column.AddChild(actions);
+        return column;
+    }
+
+    // One strip of glass holding cyclers side by side, as the campaign's conditions are held.
+    private static GlassPanel Strip(UiTheme theme, params OptionCycler[] cells)
+    {
+        var strip = new GlassPanel(theme)
+        {
+            Tint = Bgra32.FromRgba(18, 20, 22, 184),
+            TintBottom = Bgra32.FromRgba(10, 12, 13, 184),
+            Blur = 20f,
+            BorderEdges = UiEdges.Top | UiEdges.Left | UiEdges.Bottom,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        var row = new FlexPanel { Orientation = Orientation.Horizontal };
+        foreach (OptionCycler cell in cells)
+        {
+            row.Add(cell);
+        }
+
+        strip.AddChild(row);
+        return strip;
+    }
+
+    private static Label Body(UiTheme theme, string text, Bgra32 colour) =>
         new(theme.Body, text, 17f, colour) { Wrap = true, Margin = new Thickness(0f, 4f, 0f, 8f) };
 
     private static (GlassPanel Panel, StackPanel Content) Group(UiTheme theme, string title)
     {
         var content = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
         content.AddChild(new GroupHeader(theme, title));
-        var panel = new GlassPanel(theme) { Padding = new Thickness(28f, 28f, 28f, 20f), VerticalAlignment = VerticalAlignment.Top };
+        var panel = new GlassPanel(theme) { Padding = new Thickness(28f, 24f, 28f, 18f), VerticalAlignment = VerticalAlignment.Top };
         panel.AddChild(content);
         return (panel, content);
     }
