@@ -129,7 +129,7 @@ public static class Igi2LevelAi
         world.LevelTick = setup.LevelTick;
         world.Difficulty = setup.Difficulty;
         world.Detection = setup.Detection;
-        world.Player = setup.Player;
+        world.Players.Set(setup.Player);
         world.Graphs = setup.Graphs ?? Igi2AiGraphs.Build(setup.Root, setup.Resources, setup.Natives, setup.Functions, setup.Logger);
         if (setup.SectorAt is { } sectorAt)
         {

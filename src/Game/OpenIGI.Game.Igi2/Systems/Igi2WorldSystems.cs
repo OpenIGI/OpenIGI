@@ -186,7 +186,7 @@ internal static class Igi2WorldSystems
             {
                 smoke.Particles = particles;
                 smoke.Stream = smokeRandom;
-                smoke.Player = player.Human;
+                smoke.Players.Set(player.Human);
                 smoke.Prepare();
             }
         }

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
 
@@ -146,8 +147,8 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
     /// <summary>Gets or sets the humans of the level, <c>Human_ptQTaskList</c>, in its order.</summary>
     public IReadOnlyList<IIgi2AreaOccupant> Humans { get; set; } = [];
 
-    /// <summary>Gets or sets the level's task 0 when it is the player, or <see langword="null"/>.</summary>
-    public IIgi2AreaOccupant? Player { get; set; }
+    /// <summary>Gets the level's players: the original's task 0 when it is the player, a roster of one.</summary>
+    public PlayerRoster<IIgi2AreaOccupant> Players { get; } = new();
 
     /// <summary>Gets or sets where the game screen's camera stands, or <see langword="null"/> while there is none.</summary>
     public Func<Vector3d?> CameraPosition { get; set; } = static () => null;
@@ -227,7 +228,16 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
         int hits = 0;
         if (criterion == Igi2AreaCriteria.HumanPlayer)
         {
-            return Player is { } player && IsInside(player.RootPosition) ? 1 : 0;
+            // The original's one player counts once; of several, the area is satisfied by any inside.
+            foreach (IIgi2AreaOccupant player in Players)
+            {
+                if (IsInside(player.RootPosition))
+                {
+                    return 1;
+                }
+            }
+
+            return 0;
         }
 
         if (criterion == Igi2AreaCriteria.Camera)

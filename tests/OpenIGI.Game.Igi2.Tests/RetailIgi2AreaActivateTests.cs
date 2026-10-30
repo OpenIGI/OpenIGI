@@ -72,7 +72,7 @@ public sealed class RetailIgi2AreaActivateTests
             new Occupant(1, false, false, true, inside),
             new Occupant(0, false, true, true, outside),
         ];
-        area.Player = player;
+        area.Players.Set(player);
 
         Assert.Equal(2, Count(m, area, "CRITERIA_HUMAN0"));
         // Each team bit runs the team's count again, over every team in the mask: two bits count the three twice.
@@ -143,7 +143,7 @@ public sealed class RetailIgi2AreaActivateTests
         foreach (Igi2AreaActivateTask area in m.Tree.OfType<Igi2AreaActivateTask>())
         {
             area.Humans = [human];
-            area.Player = human;
+            area.Players.Set(human);
         }
     }
 
@@ -156,10 +156,10 @@ public sealed class RetailIgi2AreaActivateTests
             Dimensions = area.Dimensions,
             Criteria = criteria,
             Humans = area.Humans,
-            Player = area.Player,
             CameraPosition = () => camera,
             VehiclePositions = () => vehicles ?? [],
         };
+        probe.Players.Set(area.Players.Primary);
         probe.Prepare();
         probe.Run(m.Run);
         return probe.Active;

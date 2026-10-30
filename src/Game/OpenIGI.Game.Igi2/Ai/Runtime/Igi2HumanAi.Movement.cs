@@ -762,8 +762,9 @@ public sealed partial class Igi2HumanAi
         int status = door.UseState;
         if (own is { StopOnCollision: true, HoldTimer: not 0 } && status != 0)
         {
-            if (_movementQueue.Count > 1 && World.Player is { } player
-                && Igi2AiMath.Distance(player.Position, Soldier.Position) < 12288f)
+            // The original listens for its one player; of several, the nearest in earshot is heard.
+            if (_movementQueue.Count > 1
+                && World.Players.Nearest(p => Igi2AiMath.Distance(p.Position, Soldier.Position) is var d && d < 12288f ? d : null) is { } player)
             {
                 Igi2AiEvent heard = new(39, player.Team, 0, 614400f, _movementQueue[1].Position, default, player, null);
                 Receive(heard);

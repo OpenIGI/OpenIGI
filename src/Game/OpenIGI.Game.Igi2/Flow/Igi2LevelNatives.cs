@@ -5,6 +5,7 @@ using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Igi2.Scripting;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Flow;
@@ -21,8 +22,11 @@ public sealed class Igi2LevelNatives
     /// <summary>The primary weapon category, <c>WEAPONCATEGORY_PRIMARY</c>.</summary>
     public const int PrimaryCategory = 3;
 
-    /// <summary>Gets the player of the level running, or <see langword="null"/> between levels.</summary>
-    public Igi2HumanPlayer? Player { get; private set; }
+    /// <summary>Gets the player the <c>HumanPlayer_*</c> natives address, the roster's first, or <see langword="null"/> between levels.</summary>
+    public Igi2HumanPlayer? Player => Players.Primary;
+
+    /// <summary>Gets the players of the level running; the original's one player is a roster of one.</summary>
+    public PlayerRoster<Igi2HumanPlayer> Players { get; } = new();
 
     private Func<int, object?> _taskById = static _ => null;
 
@@ -39,7 +43,7 @@ public sealed class Igi2LevelNatives
     public void Bind(Igi2HumanPlayer? player, Func<int, object?> taskById, Igi2LevelFlowTask? levelFlow)
     {
         ArgumentNullException.ThrowIfNull(taskById);
-        Player = player;
+        Players.Set(player);
         _taskById = taskById;
         LevelFlow = levelFlow;
         LaserDesignator.Reset();
@@ -83,8 +87,8 @@ public sealed class Igi2LevelNatives
             return QvmValue.Zero;
         }, 0);
 
-        // HumanPlayer_isDeadCB: one with no player or a dead one, as a real.
-        functions.Register(natives, "HumanPlayer_isDead", _ => QvmValue.FromDouble(Player is not { IsDead: false } ? 1.0 : 0.0), 1);
+        // HumanPlayer_isDeadCB: one with no player or a dead one, as a real; of several, one when none is left alive.
+        functions.Register(natives, "HumanPlayer_isDead", _ => QvmValue.FromDouble(Players.Nearest(static p => p.IsDead ? null : 0) is null ? 1.0 : 0.0), 1);
 
         functions.Register(natives, "HumanPlayer_GetPrimaryWeaponModel", _ => QvmValue.FromString(PrimaryWeapon()?.FixedModel ?? string.Empty), 0);
         functions.Register(natives, "HumanPlayer_GetPrimaryWeaponID", _ => QvmValue.FromString(PrimaryWeapon()?.WeaponId ?? string.Empty), 0);
