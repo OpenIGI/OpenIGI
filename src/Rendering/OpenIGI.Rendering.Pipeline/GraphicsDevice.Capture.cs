@@ -103,8 +103,10 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        int width = CurrentMode.Width;
-        int height = CurrentMode.Height;
+        // The image being drawn, not the mode: a resize takes effect in the mode at once, while this frame still draws
+        // into the image it acquired at the old size. Copying the new size out of it read past its end.
+        int width = Math.Min(CurrentMode.Width, _frame.Target.Texture.Width);
+        int height = Math.Min(CurrentMode.Height, _frame.Target.Texture.Height);
 
         if (width <= 0 || height <= 0)
         {
@@ -185,8 +187,9 @@ public sealed partial class GraphicsDevice
         // then lands directly on top, which is the same picture.
         ComposeLayers();
 
-        int frameWidth = CurrentMode.Width;
-        int frameHeight = CurrentMode.Height;
+        // The image's size, which lags the mode for the frame a resize lands in (see RecordCapture).
+        int frameWidth = Math.Min(CurrentMode.Width, _frame.Target.Texture.Width);
+        int frameHeight = Math.Min(CurrentMode.Height, _frame.Target.Texture.Height);
 
         if (frameWidth <= 0 || frameHeight <= 0 || !FrameReadable)
         {
