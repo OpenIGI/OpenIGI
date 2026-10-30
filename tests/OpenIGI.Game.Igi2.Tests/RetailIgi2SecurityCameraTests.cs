@@ -12,6 +12,7 @@ using Xunit;
 using Fpu = OpenIGI.Core.Numerics.X87Single;
 using OpenIGI.Presentation.Igi2.ViewModel;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

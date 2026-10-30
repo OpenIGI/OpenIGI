@@ -7,6 +7,7 @@ using OpenIGI.TestSupport;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
 

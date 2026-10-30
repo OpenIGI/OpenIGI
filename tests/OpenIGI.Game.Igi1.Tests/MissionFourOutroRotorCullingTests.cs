@@ -16,6 +16,7 @@ using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Game.Igi1.Tests;
 

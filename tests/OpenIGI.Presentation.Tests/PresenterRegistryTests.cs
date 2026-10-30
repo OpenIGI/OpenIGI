@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Presentation.Tests;
 

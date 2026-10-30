@@ -1,16 +1,17 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
+    /// <summary>Gets the mesh draws, in order.</summary>
     public List<MeshDrawCall> MeshDraws { get; } = [];
 
     /// <summary>Gets every <see cref="DrawWater"/>: the mesh, its transform, the cube and what it was lit by.</summary>
     public List<(MeshHandle Mesh, int IndexCount, Matrix4f ModelView, TextureHandle Cube, WaterShading Shading)> WaterDraws { get; } = [];
 
+    /// <inheritdoc/>
     public void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -22,10 +23,10 @@ public sealed partial class RecordingGraphicsDevice
     {
         if (ObjectMotion)
         {
-            MovingDraws.Add(mesh);
+            Record(MovingDraws, mesh);
         }
 
-        MeshDraws.Add(new MeshDrawCall(
+        Record(MeshDraws, new MeshDrawCall(
             mesh,
             indexOffset,
             indexCount,
@@ -42,6 +43,7 @@ public sealed partial class RecordingGraphicsDevice
             FogTarget));
     }
 
+    /// <inheritdoc/>
     public void DrawWater(
         MeshHandle mesh,
         int indexOffset,
@@ -49,8 +51,9 @@ public sealed partial class RecordingGraphicsDevice
         in Matrix4f modelView,
         TextureHandle cube,
         in WaterShading shading) =>
-        WaterDraws.Add((mesh, indexCount, modelView, cube, shading));
+        Record(WaterDraws, (mesh, indexCount, modelView, cube, shading));
 
+    /// <inheritdoc/>
     public void DrawMeshRanges(
         MeshHandle mesh,
         ReadOnlySpan<MeshDrawRange> ranges,
@@ -102,5 +105,6 @@ public sealed partial class RecordingGraphicsDevice
         LastSilhouetteGroup = group;
     }
 
+    /// <summary>Gets how many mesh ranges were drawn in batches.</summary>
     public int MeshBatchDrawCount { get; private set; }
 }

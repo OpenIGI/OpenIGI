@@ -1,6 +1,4 @@
-using OpenIGI.Rendering;
-
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 /// <summary>A begin or compose of the remastered heads-up display's layer, with how many 2D draws had been recorded.</summary>
 /// <param name="Composed">Whether this was the compose rather than the begin.</param>
@@ -27,7 +25,7 @@ public sealed partial class RecordingGraphicsDevice
         }
 
         _hudLayerOpen = true;
-        HudLayerEvents.Add(new HudLayerEvent(false, Draws.Count, HudFxSettings.None));
+        Record(HudLayerEvents, new HudLayerEvent(false, Draws.Count, HudFxSettings.None));
         return true;
     }
 
@@ -40,6 +38,6 @@ public sealed partial class RecordingGraphicsDevice
         }
 
         _hudLayerOpen = false;
-        HudLayerEvents.Add(new HudLayerEvent(true, Draws.Count, fx));
+        Record(HudLayerEvents, new HudLayerEvent(true, Draws.Count, fx));
     }
 }

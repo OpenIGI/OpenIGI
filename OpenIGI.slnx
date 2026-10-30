@@ -3,6 +3,7 @@
     <Project Path="apps/OpenIGI.Composition/OpenIGI.Composition.csproj" />
     <Project Path="apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" />
     <Project Path="apps/OpenIGI.Launcher/OpenIGI.Launcher.csproj" />
+    <Project Path="apps/OpenIGI.Server/OpenIGI.Server.csproj" />
     <Project Path="apps/OpenIGI.Web/OpenIGI.Web.csproj">
       <Build Project="false" />
     </Project>

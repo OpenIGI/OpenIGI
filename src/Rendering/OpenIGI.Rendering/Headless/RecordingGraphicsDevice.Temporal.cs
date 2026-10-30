@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -13,13 +12,13 @@ public sealed partial class RecordingGraphicsDevice
         in TemporalAaSettings settings,
         in Matrix4f projection,
         Vector3d cameraPosition,
-        Matrix3f viewToWorld) => Temporal.Add(settings);
+        Matrix3f viewToWorld) => Record(Temporal, settings);
 
     /// <summary>Every history reset asked for, in order.</summary>
     public List<HistoryResetReason> HistoryResets { get; } = [];
 
     /// <inheritdoc/>
-    public void ResetHistory(HistoryResetReason reason) => HistoryResets.Add(reason);
+    public void ResetHistory(HistoryResetReason reason) => Record(HistoryResets, reason);
 
     /// <summary>Every reconstruction plan asked for, in order.</summary>
     public List<ReconstructionRequest> ReconstructionRequests { get; } = [];
@@ -30,7 +29,7 @@ public sealed partial class RecordingGraphicsDevice
     /// <inheritdoc/>
     public ReconstructionPlan PlanReconstruction(in ReconstructionRequest request)
     {
-        ReconstructionRequests.Add(request);
+        Record(ReconstructionRequests, request);
         return ReconstructionAnswer(request);
     }
 

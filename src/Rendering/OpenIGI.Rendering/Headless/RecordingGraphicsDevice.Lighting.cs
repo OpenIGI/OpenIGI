@@ -1,14 +1,14 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
     /// <summary>The lighting each frame was set to, in order.</summary>
     public List<SceneLighting> Lightings { get; } = [];
 
+    /// <inheritdoc/>
     public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
 
     /// <inheritdoc/>
@@ -32,7 +32,7 @@ public sealed partial class RecordingGraphicsDevice
 
         foreach (DeferredLocalLight light in lights)
         {
-            LocalLights.Add(light);
+            Record(LocalLights, light);
         }
     }
 
@@ -40,16 +40,16 @@ public sealed partial class RecordingGraphicsDevice
     public List<FlashlightLight> Flashlights { get; } = [];
 
     /// <inheritdoc/>
-    public void SetFlashlight(in FlashlightLight light) => Flashlights.Add(light);
+    public void SetFlashlight(in FlashlightLight light) => Record(Flashlights, light);
 
     /// <inheritdoc/>
-    public void SetLighting(in SceneLighting lighting) => Lightings.Add(lighting);
+    public void SetLighting(in SceneLighting lighting) => Record(Lightings, lighting);
 
     /// <summary>The surface caches handed over, in order.</summary>
     public List<SurfaceCacheBinding> SurfaceCaches { get; } = [];
 
     /// <inheritdoc/>
-    public void SetSurfaceCache(in SurfaceCacheBinding binding) => SurfaceCaches.Add(binding);
+    public void SetSurfaceCache(in SurfaceCacheBinding binding) => Record(SurfaceCaches, binding);
 
     /// <summary>The probe volumes handed over, in order; a null entry is a clear.</summary>
     public List<IrradianceVolume?> Volumes { get; } = [];
@@ -58,7 +58,7 @@ public sealed partial class RecordingGraphicsDevice
     public List<IrradianceVolumeSettings> VolumeSettings { get; } = [];
 
     /// <inheritdoc/>
-    public void SetIrradianceVolume(IrradianceVolume? volume) => Volumes.Add(volume);
+    public void SetIrradianceVolume(IrradianceVolume? volume) => Record(Volumes, volume);
 
     /// <inheritdoc/>
     public void SetRealtimeProbeVolume(
@@ -81,11 +81,11 @@ public sealed partial class RecordingGraphicsDevice
 
     /// <inheritdoc/>
     public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings) =>
-        VolumeSettings.Add(settings);
+        Record(VolumeSettings, settings);
 
     /// <summary>The occlusion settings each frame was given, in order.</summary>
     public List<AmbientOcclusionSettings> Occlusion { get; } = [];
 
     /// <inheritdoc/>
-    public void SetAmbientOcclusion(in AmbientOcclusionSettings settings) => Occlusion.Add(settings);
+    public void SetAmbientOcclusion(in AmbientOcclusionSettings settings) => Record(Occlusion, settings);
 }

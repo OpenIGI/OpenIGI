@@ -1,9 +1,8 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Numerics;
 
 using OpenIGI.Shaders;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -29,7 +28,7 @@ public sealed partial class RecordingGraphicsDevice
         ShaderVariant variant,
         string name)
     {
-        ComputeShaders.Add(name);
+        Record(ComputeShaders, name);
         return new ComputeShaderHandle(_nextComputeId++);
     }
 
@@ -77,15 +76,15 @@ public sealed partial class RecordingGraphicsDevice
 
     /// <inheritdoc/>
     public void Dispatch(ComputeShaderHandle shader, int groupsX, int groupsY = 1, int groupsZ = 1) =>
-        Dispatches.Add((shader, groupsX, groupsY, groupsZ));
+        Record(Dispatches, (shader, groupsX, groupsY, groupsZ));
 
     /// <inheritdoc/>
     public void DispatchIndirect(
         ComputeShaderHandle shader, StorageBufferHandle arguments, int offsetInBytes = 0) =>
-        Dispatches.Add((shader, -1, -1, -1));
+        Record(Dispatches, (shader, -1, -1, -1));
 
     /// <inheritdoc/>
-    public void MemoryBarrier(MemoryBarrierScope scope) => Barriers.Add(scope);
+    public void MemoryBarrier(MemoryBarrierScope scope) => Record(Barriers, scope);
 
     /// <inheritdoc/>
     public void SetComputeUniform(ComputeShaderHandle shader, string name, float value)

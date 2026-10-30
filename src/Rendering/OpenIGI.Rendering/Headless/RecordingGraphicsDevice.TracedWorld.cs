@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -10,7 +9,7 @@ public sealed partial class RecordingGraphicsDevice
 
     /// <inheritdoc/>
     public void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount) =>
-        ShadowCasters.Add((mesh, modelView, indexCount));
+        Record(ShadowCasters, (mesh, modelView, indexCount));
 
     /// <summary>Gets how many times the level's accumulated world has been released.</summary>
     public int WorldReleaseCount { get; private set; }

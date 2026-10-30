@@ -1,4 +1,5 @@
 using OpenIGI.Audio;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.TestSupport;
 

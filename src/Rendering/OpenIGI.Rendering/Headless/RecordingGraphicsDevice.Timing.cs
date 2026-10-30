@@ -1,6 +1,4 @@
-﻿using OpenIGI.Rendering;
-
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -10,8 +8,10 @@ public sealed partial class RecordingGraphicsDevice
     /// <inheritdoc/>
     public void SetStageTiming(bool enabled) => StageTimingEnabled = enabled;
 
+    /// <inheritdoc/>
     public void BeginStageTiming(RenderStage stage) { }
 
+    /// <inheritdoc/>
     public void EndStageTiming() { }
 
     /// <summary>The timings this device reports; empty, since nothing here runs on a GPU.</summary>

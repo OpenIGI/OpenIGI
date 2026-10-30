@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Graphics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -22,7 +21,7 @@ public sealed partial class RecordingGraphicsDevice
             throw new GraphicsDeviceException("A card capture is already in progress.");
         }
 
-        CardCaptures.Add((width, height));
+        Record(CardCaptures, (width, height));
         IsCapturingCards = true;
         CurrentPass = ScenePass.Card;
         return true;
@@ -36,7 +35,7 @@ public sealed partial class RecordingGraphicsDevice
             throw new GraphicsDeviceException("No card capture is in progress.");
         }
 
-        CardPages.Add((x, y, width, height));
+        Record(CardPages, (x, y, width, height));
     }
 
     /// <inheritdoc/>

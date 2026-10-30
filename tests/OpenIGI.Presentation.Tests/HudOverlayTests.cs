@@ -8,6 +8,7 @@ using OpenIGI.Presentation.Hud;
 using OpenIGI.TestSupport;
 using OpenIGI.UI.Layout;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Presentation.Tests;
 

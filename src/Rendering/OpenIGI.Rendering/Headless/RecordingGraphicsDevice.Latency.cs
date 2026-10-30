@@ -1,6 +1,4 @@
-﻿using OpenIGI.Rendering;
-
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -15,21 +13,21 @@ public sealed partial class RecordingGraphicsDevice
     {
         if (BeginsLatencyFrames)
         {
-            LatencyMarkers.Add(LatencyMarker.SimulationStart);
+            Record(LatencyMarkers, LatencyMarker.SimulationStart);
         }
 
         return BeginsLatencyFrames;
     }
 
     /// <inheritdoc/>
-    public void MarkLatency(LatencyMarker marker) => LatencyMarkers.Add(marker);
+    public void MarkLatency(LatencyMarker marker) => Record(LatencyMarkers, marker);
 
     /// <summary>Every low-latency setting applied, in order.</summary>
     public List<(LowLatencyMode Mode, int FrameLimit)> LowLatencySettings { get; } = [];
 
     /// <inheritdoc/>
     public void SetLowLatency(LowLatencyMode mode, int frameLimitFramesPerSecond) =>
-        LowLatencySettings.Add((mode, frameLimitFramesPerSecond));
+        Record(LowLatencySettings, (mode, frameLimitFramesPerSecond));
 
     /// <inheritdoc/>
     public string LowLatencyUnavailable { get; set; } = "not a real device";
@@ -43,7 +41,7 @@ public sealed partial class RecordingGraphicsDevice
     /// <inheritdoc/>
     public FrameGenerationStatus SetFrameGeneration(FrameGenerationMode mode, bool gameplay)
     {
-        FrameGenerationRequests.Add((mode, gameplay));
+        Record(FrameGenerationRequests, (mode, gameplay));
         return new FrameGenerationStatus(mode, false, 1, FrameGenerationUnavailable);
     }
 

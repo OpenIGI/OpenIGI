@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -26,7 +25,7 @@ public sealed partial class RecordingGraphicsDevice
         in ShadowSettings settings,
         ReadOnlySpan<ShadowCascade> cascades,
         in DepthUnprojection unprojection,
-        Matrix3f viewToWorld) => Shadows.Add(settings);
+        Matrix3f viewToWorld) => Record(Shadows, settings);
 
     /// <inheritdoc/>
     public bool BeginShadowCascade(int cascade)
@@ -42,7 +41,7 @@ public sealed partial class RecordingGraphicsDevice
         }
 
         CurrentPass = ScenePass.Shadow;
-        ShadowCascadesRendered.Add(cascade);
+        Record(ShadowCascadesRendered, cascade);
         return true;
     }
 

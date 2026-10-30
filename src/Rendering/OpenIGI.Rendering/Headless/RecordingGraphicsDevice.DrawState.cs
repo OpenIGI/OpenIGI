@@ -1,21 +1,23 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
+    /// <summary>Gets the projection last set.</summary>
     public Matrix4f Projection { get; private set; } = Matrix4f.Identity;
 
+    /// <summary>Gets the depth state last set.</summary>
     public DepthState DepthState { get; private set; } = DepthState.Disabled;
 
+    /// <summary>Gets the cull mode last set.</summary>
     public CullMode CullMode { get; private set; } = CullMode.None;
 
     /// <summary>The material each draw was made under, most recent last.</summary>
     public List<SurfaceMaterial> Materials { get; } = [];
 
     /// <inheritdoc/>
-    public void SetMaterialOverride(in SurfaceMaterial material) => Materials.Add(material);
+    public void SetMaterialOverride(in SurfaceMaterial material) => Record(Materials, material);
 
     /// <summary>Gets the lightmap scale the draws that follow carry.</summary>
     public float LightmapScale { get; private set; } = 1f;
@@ -30,7 +32,7 @@ public sealed partial class RecordingGraphicsDevice
     public void SetLightmapScale(float scale) => LightmapScale = scale;
 
     /// <inheritdoc/>
-    public void SetSceneSun(Vector3f ambient, Vector3f colour) => SceneSuns.Add((ambient, colour));
+    public void SetSceneSun(Vector3f ambient, Vector3f colour) => Record(SceneSuns, (ambient, colour));
 
     /// <inheritdoc/>
     public void SetVertexSun(Vector3f towardsSun) => VertexSun = towardsSun;
@@ -56,7 +58,7 @@ public sealed partial class RecordingGraphicsDevice
     public void SetAlphaReference(byte reference)
     {
         AlphaReference = reference;
-        AlphaReferences.Add(reference);
+        Record(AlphaReferences, reference);
     }
 
     /// <summary>Gets a value indicating whether the draws being recorded were marked first-person.</summary>
@@ -93,29 +95,37 @@ public sealed partial class RecordingGraphicsDevice
 
     /// <inheritdoc/>
     public void SetPoseInterpolation(float currentBlend, float previousBlend) =>
-        PoseInterpolations.Add((currentBlend, previousBlend));
+        Record(PoseInterpolations, (currentBlend, previousBlend));
 
     /// <inheritdoc/>
-    public void ClearPoseInterpolation() => PoseInterpolations.Add(null);
+    public void ClearPoseInterpolation() => Record(PoseInterpolations, null);
 
+    /// <inheritdoc/>
     public void SetDepthState(DepthState state) => DepthState = state;
 
+    /// <inheritdoc/>
     public void SetCullMode(CullMode mode) => CullMode = mode;
 
+    /// <inheritdoc/>
     public void SetProjection(in Matrix4f projection) => Projection = projection;
 
+    /// <inheritdoc/>
     public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha) =>
         DetailFade = (scale, offset, slope, fadeAlpha);
 
+    /// <inheritdoc/>
     public void ClearDetailFade() => DetailFade = null;
 
+    /// <inheritdoc/>
     public (float Scale, float Offset, float Slope, bool FadeAlpha)? DetailFade { get; private set; }
 
+    /// <inheritdoc/>
     public void SetFog(in SceneFog fog) => Fog = fog;
 
     /// <summary>Gets the fog the last <see cref="SetFog"/> asked for.</summary>
     public SceneFog Fog { get; private set; } = SceneFog.None;
 
+    /// <inheritdoc/>
     public void SetModelAmbient(Vector3f ambient) => ModelAmbient = ambient;
 
     /// <summary>Gets the flat model light the last <see cref="SetModelAmbient"/> asked for.</summary>

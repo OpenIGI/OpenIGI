@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Numerics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -15,26 +14,26 @@ public sealed partial class RecordingGraphicsDevice
     public void SetEnvironmentCube(TextureHandle cube)
     {
         EnvironmentCube = cube;
-        EnvironmentCubes.Add(cube);
+        Record(EnvironmentCubes, cube);
     }
 
     /// <summary>The reflection settings each frame was given, in order.</summary>
     public List<ReflectionSettings> Reflections { get; } = [];
 
     /// <inheritdoc/>
-    public void SetReflections(in ReflectionSettings settings) => Reflections.Add(settings);
+    public void SetReflections(in ReflectionSettings settings) => Record(Reflections, settings);
 
     /// <summary>The colour tables handed over, in order; a null entry is a clear.</summary>
     public List<ColourLookupTable?> ColourLookups { get; } = [];
 
     /// <inheritdoc/>
-    public void SetColourLookup(ColourLookupTable? table) => ColourLookups.Add(table);
+    public void SetColourLookup(ColourLookupTable? table) => Record(ColourLookups, table);
 
     /// <summary>The debug views asked for, in order.</summary>
     public List<DebugView> DebugViews { get; } = [];
 
     /// <inheritdoc/>
-    public void SetDebugView(DebugView view) => DebugViews.Add(view);
+    public void SetDebugView(DebugView view) => Record(DebugViews, view);
 
     /// <summary>The fog settings each frame was given, in order.</summary>
     public List<VolumetricFogSettings> Fogs { get; } = [];
@@ -46,15 +45,15 @@ public sealed partial class RecordingGraphicsDevice
     public List<(TextureHandle Map, ShelterMapTransform Transform)> ShelterMaps { get; } = [];
 
     /// <inheritdoc/>
-    public void SetWetness(in WetnessSettings wetness) => Wetness.Add(wetness);
+    public void SetWetness(in WetnessSettings wetness) => Record(Wetness, wetness);
 
     /// <inheritdoc/>
     public void SetShelterMap(TextureHandle map, in ShelterMapTransform transform) =>
-        ShelterMaps.Add((map, transform));
+        Record(ShelterMaps, (map, transform));
 
     /// <inheritdoc/>
     public void SetVolumetricFog(
         in VolumetricFogSettings fog,
         Vector3f cameraPosition,
-        ReadOnlySpan<LocalFogVolume> volumes) => Fogs.Add(fog);
+        ReadOnlySpan<LocalFogVolume> volumes) => Record(Fogs, fog);
 }

@@ -8,6 +8,7 @@ using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Presentation.Tests;
 

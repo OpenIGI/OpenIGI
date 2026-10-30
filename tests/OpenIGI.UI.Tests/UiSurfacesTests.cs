@@ -3,6 +3,7 @@ using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using OpenIGI.UI.Layout;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.UI.Tests;
 

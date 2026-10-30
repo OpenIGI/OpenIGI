@@ -16,6 +16,7 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats;
 using OpenIGI.Game.Igi1;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
 

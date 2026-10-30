@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Graphics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -10,8 +9,10 @@ public sealed partial class RecordingGraphicsDevice
 
     private uint _nextMesh = 1;
 
+    /// <inheritdoc/>
     public Dictionary<uint, (Vertex3D[] Vertices, ushort[] Indices)> Meshes { get; } = [];
 
+    /// <inheritdoc/>
     public MeshHandle CreateMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
     {
         MeshHandle handle = new(_nextMesh++);
@@ -25,6 +26,7 @@ public sealed partial class RecordingGraphicsDevice
     /// <summary>How many ranges each storage mesh received.</summary>
     public Dictionary<uint, int> MeshRangeUploads { get; } = [];
 
+    /// <inheritdoc/>
     public MeshHandle CreateMeshStorage(int vertexCapacity, int indexCapacity)
     {
         if (vertexCapacity <= 0 || indexCapacity <= 0)
@@ -48,6 +50,7 @@ public sealed partial class RecordingGraphicsDevice
         return handle;
     }
 
+    /// <inheritdoc/>
     public void UploadMeshRange(
         MeshHandle mesh,
         int vertexOffset,
@@ -90,18 +93,20 @@ public sealed partial class RecordingGraphicsDevice
     /// <summary>How many times each animated mesh was given a new pose.</summary>
     public Dictionary<uint, int> AnimatedMeshUpdates { get; } = [];
 
+    /// <inheritdoc/>
     public MeshHandle CreateAnimatedMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
     {
-        AnimatedMeshThreadIds.Add(Environment.CurrentManagedThreadId);
+        Record(AnimatedMeshThreadIds, Environment.CurrentManagedThreadId);
         MeshHandle handle = CreateMesh(vertices, indices);
         PreviousPoseStreams[handle.Id] = vertices.ToArray();
         AnimatedMeshUpdates[handle.Id] = 0;
         return handle;
     }
 
+    /// <inheritdoc/>
     public void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices)
     {
-        AnimatedMeshThreadIds.Add(Environment.CurrentManagedThreadId);
+        Record(AnimatedMeshThreadIds, Environment.CurrentManagedThreadId);
         if (!Meshes.TryGetValue(mesh.Id, out (Vertex3D[] Vertices, ushort[] Indices) entry))
         {
             throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
@@ -125,6 +130,7 @@ public sealed partial class RecordingGraphicsDevice
         AnimatedMeshUpdates[mesh.Id]++;
     }
 
+    /// <inheritdoc/>
     public void DestroyMesh(MeshHandle mesh)
     {
         Meshes.Remove(mesh.Id);

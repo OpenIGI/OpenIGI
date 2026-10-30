@@ -1,6 +1,4 @@
-﻿using OpenIGI.Rendering;
-
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -35,7 +33,7 @@ public sealed partial class RecordingGraphicsDevice
             return false;
         }
 
-        SceneCaptures.Add(description);
+        Record(SceneCaptures, description);
         IsCapturing = true;
         return true;
     }
@@ -74,7 +72,7 @@ public sealed partial class RecordingGraphicsDevice
         }
 
         CurrentPass = pass;
-        Passes.Add(pass);
+        Record(Passes, pass);
     }
 
     /// <inheritdoc/>
@@ -117,6 +115,6 @@ public sealed partial class RecordingGraphicsDevice
             throw new GraphicsDeviceException("Nothing has been captured this frame.");
         }
 
-        Resolves.Add(post);
+        Record(Resolves, post);
     }
 }

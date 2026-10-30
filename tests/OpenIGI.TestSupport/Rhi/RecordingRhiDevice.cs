@@ -1,6 +1,7 @@
 ﻿using System.Runtime.InteropServices;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.TestSupport.Rhi;
 

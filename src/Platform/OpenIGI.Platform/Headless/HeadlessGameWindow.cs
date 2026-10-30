@@ -1,7 +1,6 @@
 using OpenIGI.Input;
-using OpenIGI.Platform;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Platform.Headless;
 
 /// <summary>
 /// A game window with nothing behind it: a fixed size, no events of its own, and input only what a test

@@ -12,6 +12,7 @@ using Xunit;
 using OpenIGI.Presentation.Igi2.ViewModel;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

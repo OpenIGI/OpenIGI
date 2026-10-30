@@ -19,6 +19,7 @@ using System.Reflection;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
 

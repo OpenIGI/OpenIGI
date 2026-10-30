@@ -1,7 +1,6 @@
-﻿using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.Core.Graphics;
 
-namespace OpenIGI.TestSupport;
+namespace OpenIGI.Rendering.Headless;
 
 public sealed partial class RecordingGraphicsDevice
 {
@@ -16,20 +15,24 @@ public sealed partial class RecordingGraphicsDevice
     /// </remarks>
     public List<TextureDescription> Textures { get; } = [];
 
+    /// <inheritdoc/>
     public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels)
     {
-        Textures.Add(description);
+        Record(Textures, description);
         return new(_nextTexture++);
     }
 
+    /// <inheritdoc/>
     public void UpdateTexture(TextureHandle texture, int mipLevel, ReadOnlySpan<Bgra32> pixels)
     {
     }
 
+    /// <inheritdoc/>
     public void DestroyTexture(TextureHandle texture)
     {
     }
 
+    /// <inheritdoc/>
     public void SetTexture(int unit, TextureHandle texture)
     {
     }
@@ -39,7 +42,7 @@ public sealed partial class RecordingGraphicsDevice
 
     /// <inheritdoc/>
     public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail) =>
-        TextureDetails.Add((diffuse, detail));
+        Record(TextureDetails, (diffuse, detail));
 
     // Volumes share the texture handle space with 2D textures, so their counter starts well clear of
     // anything CreateTexture hands out -- a test that confuses the two would otherwise pass.
@@ -60,7 +63,7 @@ public sealed partial class RecordingGraphicsDevice
     public TextureHandle CreateStorageTexture(
         int width, int height, VolumeFormat format, string name)
     {
-        VolumeTextures.Add((name, width, height, 1, format));
+        Record(VolumeTextures, (name, width, height, 1, format));
         return new TextureHandle(_nextVolumeId++);
     }
 
@@ -68,7 +71,7 @@ public sealed partial class RecordingGraphicsDevice
     public TextureHandle CreateVolumeTexture(
         int width, int height, int depth, VolumeFormat format, string name, bool shaderWritten = true)
     {
-        VolumeTextures.Add((name, width, height, depth, format));
+        Record(VolumeTextures, (name, width, height, depth, format));
         return new TextureHandle(_nextVolumeId++);
     }
 
@@ -109,7 +112,7 @@ public sealed partial class RecordingGraphicsDevice
             throw new GraphicsDeviceException($"A cube's edge is {edge}, which is not a length.");
         }
 
-        CubeTextures.Add((name, edge));
+        Record(CubeTextures, (name, edge));
         _cubeEdges[_nextCubeId] = edge;
         return new TextureHandle(_nextCubeId++);
     }
@@ -131,18 +134,18 @@ public sealed partial class RecordingGraphicsDevice
                 $"A face of a {edge}-texel cube holds {edge * edge} texels, not {pixels.Length}.");
         }
 
-        CubeFaceUploads.Add((cube, face, pixels.ToArray()));
+        Record(CubeFaceUploads, (cube, face, pixels.ToArray()));
     }
 
     /// <summary>The texture-quality settings applied, in order.</summary>
     public List<int> TextureQuality { get; } = [];
 
     /// <inheritdoc/>
-    public void SetTextureQuality(int maxAnisotropy) => TextureQuality.Add(maxAnisotropy);
+    public void SetTextureQuality(int maxAnisotropy) => Record(TextureQuality, maxAnisotropy);
 
     /// <summary>Every texture mip bias set, in order.</summary>
     public List<float> TextureLodBiases { get; } = [];
 
     /// <inheritdoc/>
-    public void SetTextureLodBias(float bias) => TextureLodBiases.Add(bias);
+    public void SetTextureLodBias(float bias) => Record(TextureLodBiases, bias);
 }
