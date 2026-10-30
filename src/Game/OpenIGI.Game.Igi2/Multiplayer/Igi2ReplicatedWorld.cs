@@ -14,8 +14,9 @@ namespace OpenIGI.Game.Igi2.Multiplayer;
 /// player is entity <c>slot + 1</c>.
 /// </para>
 /// <para>
-/// Until the multiplayer maps' spawn areas are read, a client's player stands beside the level's own spawn, a pace apart per
-/// slot.
+/// On a multiplayer map a client is put on the fairer team (<see cref="Teams"/>) and stands at that team's spawn area's least
+/// lately used point (<see cref="Igi2SpawnSelector"/>); on a map without spawn areas, a campaign mission played together, it
+/// stands beside the level's own spawn, a pace apart per slot, on the level player's team.
 /// </para>
 /// </remarks>
 public sealed class Igi2ReplicatedWorld : IReplicatedWorld
@@ -39,6 +40,12 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
 
     /// <inheritdoc/>
     public LagCompensation? LagCompensation { get; set; }
+
+    /// <summary>Gets which team each client's player is on.</summary>
+    public TeamRoster Teams { get; } = new();
+
+    /// <summary>Gets which spawn point each player is put at.</summary>
+    public Igi2SpawnSelector Spawns { get; } = new();
 
     /// <summary>Gets or sets a value indicating whether the level's own player is a player of the session (a listen server).</summary>
     public bool IncludesHost { get; set; } = true;
@@ -64,11 +71,25 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         }
 
         Vector3d at = host.Position + new Vector3d(SpawnSpacing * (slot + 1), 0, 0);
-        if (_level.AddNetworkHuman(model.Name, at, host.Gamma, host.Team) is not { } human)
+        float gamma = host.Gamma;
+        int team = host.Team;
+        Igi2SpawnAreaTask[] areas = [.. _level.LevelTasks().OfType<Igi2SpawnAreaTask>()];
+        if (areas.Length > 0)
+        {
+            team = Teams.FairTeam();
+            if (Array.Find(areas, a => a.Team == team && a.Points().Any()) is { } area && Spawns.Pick(area) is { } point)
+            {
+                at = point.Position;
+                gamma = point.Gamma;
+            }
+        }
+
+        if (_level.AddNetworkHuman(model.Name, at, gamma, team) is not { } human)
         {
             return null;
         }
 
+        Teams.Assign(slot, team);
         _bySlot[slot] = human;
         return slot + 1;
     }
@@ -76,6 +97,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     /// <inheritdoc/>
     public void RemovePlayer(int slot)
     {
+        Teams.Remove(slot);
         if (_bySlot.Remove(slot, out Igi2NetworkHuman? human))
         {
             _level.RemoveNetworkHuman(human);

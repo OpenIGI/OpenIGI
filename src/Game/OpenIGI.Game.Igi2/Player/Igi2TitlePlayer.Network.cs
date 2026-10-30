@@ -45,6 +45,10 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
 
     private readonly List<Igi2NetworkHuman> _networkHumans = [];
 
+    /// <summary>Gets every task of the level running, or none between levels.</summary>
+    /// <returns>The level's tasks, in the tree's order.</returns>
+    public IEnumerable<Engine.Tasks.GameTask> LevelTasks() => Level?.Root.Descendants() ?? [];
+
     /// <summary>Gets the ticks the level has run, the clock a server's commands are stamped against.</summary>
     public long TickCount => _ticks;
 
