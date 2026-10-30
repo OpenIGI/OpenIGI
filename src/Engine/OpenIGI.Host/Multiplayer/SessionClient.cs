@@ -56,10 +56,10 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
     public int? LocalEntity => _session?.EntityId;
 
     /// <inheritdoc/>
-    public string Title => _session?.Map is { Length: > 0 } map ? $"{Where}  ·  {map}" : Where;
+    public string Title => _session?.Map is { Length: > 0 } map ? $"{Where}  ·  {HostedSession.MapName(map)}" : Where;
 
     // The server as a player knows it: a room by its code, otherwise by its address.
-    private string Where => _transport is RoomTransport room ? room.ToString() : _server.ToString();
+    private string Where => _transport is RoomTransport { Code: { } code } ? $"Room {code}" : _server.ToString();
 
     /// <inheritdoc/>
     public void BeforeTitleTick(object title)

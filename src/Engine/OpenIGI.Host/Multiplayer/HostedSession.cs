@@ -80,7 +80,15 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
     public int? LocalEntity => _options.IncludesHost ? ServerSession.HostEntity : null;
 
     /// <inheritdoc/>
-    public string Title => _room?.Code is { } code ? $"Room {code}  ·  {_options.Map}" : $"{_options.Name}  ·  {_options.Map}";
+    public string Title => _room?.Code is { } code ? $"Room {code}  ·  {MapName(_options.Map)}" : $"{_options.Name}  ·  {MapName(_options.Map)}";
+
+    /// <summary>A map as a player reads it: a mission by its number, anything else as it is.</summary>
+    /// <param name="map">The map.</param>
+    /// <returns>The name.</returns>
+    internal static string MapName(string map) =>
+        int.TryParse(map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int mission)
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Mission {mission}")
+            : map;
 
     /// <inheritdoc/>
     public void BeforeTitleTick(object title)
