@@ -236,6 +236,7 @@ public sealed partial class GameHost
             replaced |= PlayerAction.MapComputer;
         }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        TickObserver?.BeforeTitleTick(player);
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
@@ -248,6 +249,7 @@ public sealed partial class GameHost
             TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
+        TickObserver?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;

@@ -60,7 +60,7 @@ public sealed class RetailIgi2NetworkHumanTests
         Assert.Equal(level.Human, Assert.Single(level.Ai!.Players));
     }
 
-    private static Igi2TitlePlayer StandMission1()
+    internal static Igi2TitlePlayer StandMission1()
     {
         RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
         (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);

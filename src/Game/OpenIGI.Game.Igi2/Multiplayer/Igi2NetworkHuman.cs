@@ -2,6 +2,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Net;
 
 namespace OpenIGI.Game.Igi2.Multiplayer;
 
@@ -43,14 +44,50 @@ public sealed class Igi2NetworkHuman
     /// <summary>Gets the collision world its body stands in.</summary>
     internal Igi2CollisionWorld World { get; }
 
+    /// <summary>
+    /// Gets or sets where a client puts it: another player as the snapshots show it, or <see langword="null"/> on the server,
+    /// where it runs on its client's commands.
+    /// </summary>
+    /// <remarks>
+    /// A client has no other player's commands, only where the server had it. So its copy is a puppet: each tick its body
+    /// is put in the state the snapshot names and run with no controls, so the body's own states choose its clips as the
+    /// server's did, and then it is stood exactly where the snapshot puts it, facing and looking as it does.
+    /// </remarks>
+    public ReplicatedHuman? PuppetTarget { get; set; }
+
     /// <summary>Its delayed half on a tick: its zoom, its update on its client's command for the tick, and its delayed handler.</summary>
     /// <param name="tick">The tick being run.</param>
     internal void RunDelayed(long tick)
     {
+        if (PuppetTarget is { } target)
+        {
+            RunPuppet(tick, target);
+            return;
+        }
+
         Commands.Take(tick, _frame);
         Human.View.RunZoom();
         Human.Ticks = (int)tick;
         Human.Update(_frame);
         Human.RunDelayed();
+    }
+
+    private void RunPuppet(long tick, in ReplicatedHuman target)
+    {
+        Array.Clear(_frame);
+        if (Human.Locomotion.CurrentState != target.State)
+        {
+            Human.Locomotion.Enter(target.State, Human);
+        }
+
+        Human.Ticks = (int)tick;
+        Human.Update(_frame);
+        Human.Position = target.Position.ToVector();
+        Human.Speed = target.Velocity;
+        Human.Gamma = Quantize.AngleFromBits(target.Yaw);
+        Human.IdealGamma = Human.Gamma;
+        Human.View.Pitch = Quantize.AngleFromBits(target.Pitch);
+        Human.UpdateBody();
+        Human.UpdateViewBody(updateAnimation: false);
     }
 }

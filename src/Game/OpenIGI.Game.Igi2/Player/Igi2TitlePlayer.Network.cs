@@ -5,7 +5,9 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Multiplayer;
+using OpenIGI.Game.Igi2.ViewModel;
 using OpenIGI.Game.Igi2.Weapons;
+using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -30,9 +32,21 @@ internal sealed record Igi2PlayerSpawnKit(
     Engine.Titles.IServiceCatalog Services);
 
 /// <summary>The level's other players: those a server runs for its clients, beside the level's own.</summary>
-public sealed partial class Igi2TitlePlayer
+public sealed partial class Igi2TitlePlayer : IReplicatedTitle
 {
+    /// <inheritdoc/>
+    public IReplicatedWorld CreateReplicatedWorld(bool includesHost) => new Igi2ReplicatedWorld(this) { IncludesHost = includesHost };
+
+    /// <inheritdoc/>
+    public IReplicatedClientWorld CreateClientWorld() => new Igi2ClientWorld(this);
+
+    /// <summary>Gets the channel frame the level's own player ran on in its last tick: on a client, the command sent up.</summary>
+    public ReadOnlySpan<float> LastFrame => _frame;
+
     private readonly List<Igi2NetworkHuman> _networkHumans = [];
+
+    /// <summary>Gets the ticks the level has run, the clock a server's commands are stamped against.</summary>
+    public long TickCount => _ticks;
 
     /// <summary>Gets the players the server runs for its clients, in the order they joined; empty in a single-player level.</summary>
     public IReadOnlyList<Igi2NetworkHuman> NetworkHumans => _networkHumans;
@@ -119,6 +133,24 @@ public sealed partial class Igi2TitlePlayer
         }
 
         return true;
+    }
+
+    /// <summary>The other players' bodies, posed and dressed as the soldiers' are, to be drawn beside the level's own.</summary>
+    private IEnumerable<TitleWorldModel> NetworkModels()
+    {
+        foreach (Igi2NetworkHuman other in _networkHumans)
+        {
+            if (other.Human.Model is not { } model)
+            {
+                continue;
+            }
+
+            foreach (TitleWorldModel part in Igi2BodyFrame.Build(
+                other.Human, other.Human.BodyPose(), model.Name, other.Weapons?.Inventory.Current?.WeaponType.FixedModel, _ticks, other.Weapons?.Firing.Flashes))
+            {
+                yield return part;
+            }
+        }
     }
 
     /// <summary>The other players' shots of the last tick, traced where the level's own player's are.</summary>
