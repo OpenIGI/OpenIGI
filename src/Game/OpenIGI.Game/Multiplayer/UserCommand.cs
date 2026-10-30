@@ -15,4 +15,8 @@ namespace OpenIGI.Game.Multiplayer;
 /// </remarks>
 /// <param name="Tick">The server tick it is to run on.</param>
 /// <param name="Channels">The channel frame, the title's length; owned by the command.</param>
-public readonly record struct UserCommand(long Tick, float[] Channels);
+/// <param name="ViewTick">
+/// The server tick the client was drawing the others at when it made the command, or <see cref="long.MinValue"/> when not
+/// known: what a shot in it was aimed at, Source's <c>tick_count</c> less the client's interpolation.
+/// </param>
+public readonly record struct UserCommand(long Tick, float[] Channels, long ViewTick = long.MinValue);

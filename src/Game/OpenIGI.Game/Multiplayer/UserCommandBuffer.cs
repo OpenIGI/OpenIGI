@@ -16,6 +16,7 @@ namespace OpenIGI.Game.Multiplayer;
 public sealed class UserCommandBuffer
 {
     private readonly SortedDictionary<long, float[]> _pending = [];
+    private readonly Dictionary<long, long> _viewTicks = [];
     private readonly float[] _last;
     private long _lastTaken = long.MinValue;
 
@@ -42,6 +43,9 @@ public sealed class UserCommandBuffer
     /// <summary>Gets the newest tick a command has been run for, or <see cref="long.MinValue"/> before the first.</summary>
     public long LastTakenTick => _lastTaken;
 
+    /// <summary>Gets the tick the client was drawing at when it made the command last run, or <see cref="long.MinValue"/>.</summary>
+    public long LastViewTick { get; private set; } = long.MinValue;
+
     /// <summary>Gets how many ticks of commands wait beyond the last one run.</summary>
     public int Buffered => _pending.Count;
 
@@ -66,7 +70,10 @@ public sealed class UserCommandBuffer
             return;
         }
 
-        _pending.TryAdd(command.Tick, command.Channels);
+        if (_pending.TryAdd(command.Tick, command.Channels) && command.ViewTick != long.MinValue)
+        {
+            _viewTicks[command.Tick] = command.ViewTick;
+        }
         NewestTick = command.Tick;
     }
 
@@ -88,16 +95,21 @@ public sealed class UserCommandBuffer
             }
 
             _pending.Remove(first);
+            _viewTicks.Remove(first);
         }
 
         _pending.Remove(tick, out float[]? channels);
         if (channels is not null)
         {
             channels.CopyTo(_last, 0);
+            LastViewTick = _viewTicks.Remove(tick, out long view) ? view : long.MinValue;
         }
         else
         {
             Missed++;
+
+            // A repeated command was made no later than the one it repeats; it is aimed a tick on from where that was.
+            LastViewTick = LastViewTick == long.MinValue ? long.MinValue : LastViewTick + 1;
         }
 
         _last.CopyTo(frame);

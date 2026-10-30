@@ -29,6 +29,71 @@ public sealed class Igi1CoopSessionTests
     [RequiresGameDataFact]
     public void A_client_joins_mission_1_and_walks_its_partner_beside_the_hosts_player()
     {
+        (Capture capture, ClientSession client, Core.Numerics.Vector3d? start) = Play(4000, onFrame: null);
+        Assert.NotNull(capture.Game);
+        Igi1NetworkPlayer partner = Assert.Single(capture.Game.World.NetworkPlayers);
+        double walked = Math.Abs(partner.Player.Body.Position.X - start!.Value.X) + Math.Abs(partner.Player.Body.Position.Y - start.Value.Y);
+        Assert.True(walked > 2048, $"the partner walked {walked} units; missed {partner.Commands.Missed}");
+        Assert.Equal(1, client.EntityId);
+
+        // The frame is told to draw the partner where it stands.
+        Game.Igi1.Ai.PartnerBody shown = Assert.Single(capture.Game.World.PartnerBodies!());
+        Assert.Equal(partner.Player.Body.Position, shown.Feet);
+
+        // Walking on its own clips, and holding what the level arms its player with.
+        Assert.True(shown.Animation >= 0, $"the partner's legs are on clip {shown.Animation}");
+        Assert.False(string.IsNullOrEmpty(shown.Weapon?.GunModel), "the partner holds no weapon");
+    }
+
+    [RequiresGameDataFact]
+    public void The_hosts_player_dies_the_partner_plays_on_and_the_host_is_brought_back()
+    {
+        const int KillFrame = 600;
+        int? killedAt = null;
+        float yawAtDeath = 0f;
+        double turnedWhileDown = 0;
+        bool levelSawDeath = false;
+        bool deadSeen = false;
+
+        // The client turns once the host's player is down: its partner must turn with it, on its own commands.
+        (Capture capture, _, _) = Play(
+            4000,
+            (game, frame) =>
+            {
+                if (game.World.NetworkPlayers.Count == 0)
+                {
+                    return;
+                }
+
+                Igi1NetworkPlayer partner = game.World.NetworkPlayers[0];
+                if (killedAt is null && frame > KillFrame && game.World.Player is { } host)
+                {
+                    game.Harm.BeginPlayerDeath(host.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+                    killedAt = frame;
+                    yawAtDeath = partner.Player.Body.Yaw;
+                }
+
+                if (killedAt is not null && game.World.IsPlayerDead)
+                {
+                    deadSeen = true;
+                    turnedWhileDown = Math.Max(turnedWhileDown, Math.Abs(partner.Player.Body.Yaw - yawAtDeath));
+                    levelSawDeath |= game.World.LevelRoot?.Tree.FromId(0) is HumanPlayerTask { IsDead: true };
+                }
+            },
+            turn: frame => frame > KillFrame ? Math.Min(1f, (frame - KillFrame) * 0.02f) : 0f);
+
+        Assert.NotNull(capture.Game);
+        Assert.NotNull(killedAt);
+        Assert.True(deadSeen, "the host's player never lay dead");
+        Assert.True(turnedWhileDown > 0.5, $"the partner turned {turnedWhileDown} radians while the host's player was down");
+        Assert.False(levelSawDeath, "the level saw its player dead with a partner alive");
+        Assert.False(capture.Game.World.IsPlayerDead, "the host's player was not brought back");
+        Assert.False(capture.Game.World.PlayerHealth.IsDead);
+    }
+
+    // Mission 1 hosted headless with one client walking forwards, for the frames given; onFrame sees each frame once the game is up.
+    private static (Capture Capture, ClientSession Client, Core.Numerics.Vector3d? Start) Play(int frames, Action<Igi1Gameplay, int>? onFrame, Func<int, float>? turn = null)
+    {
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string root = GameDataSource.Igi1.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.For(GameTitle.Igi1);
@@ -36,7 +101,7 @@ public sealed class Igi1CoopSessionTests
         VirtualFileSystem files = new(NullLogger.Instance);
         files.RegisterDevice(new LocalFileDevice(root));
         FileSystemConfig.LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(files);
-        HostOptions options = HostOptions.Parse(["-mission", "1", "-skipcutscene", "-lockstep", "-frames", "4000"]);
+        HostOptions options = HostOptions.Parse(["-mission", "1", "-skipcutscene", "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         GameHost host = new(new HeadlessPlatformHost(), new HeadlessGameWindow(), device, NullAudioDeviceFactory.Instance,
             InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, options, root, NullLogger.Instance);
 
@@ -54,7 +119,7 @@ public sealed class Igi1CoopSessionTests
         bool connected = false;
         Core.Numerics.Vector3d? start = null;
         host.Start();
-        for (int frame = 0; frame < 4000 && host.Step(); frame++)
+        for (int frame = 0; frame < frames && host.Step(); frame++)
         {
             if (capture.Game is null)
             {
@@ -68,7 +133,7 @@ public sealed class Igi1CoopSessionTests
                 connected = true;
             }
 
-            Igi1Command.Pack(walk, capture.Game.World.Player?.Body.Yaw ?? 0f, 0f, forwards);
+            Igi1Command.Pack(walk, (capture.Game.World.Player?.Body.Yaw ?? 0f) + (turn?.Invoke(frame) ?? 0f), 0f, forwards);
             client.Receive(now);
             client.SendCommand(forwards, now);
             client.Flush(now);
@@ -76,22 +141,12 @@ public sealed class Igi1CoopSessionTests
             {
                 start = capture.Game.World.NetworkPlayers[0].Player.Body.Position;
             }
+
+            onFrame?.Invoke(capture.Game, frame);
         }
 
         host.Stop();
-        Assert.NotNull(capture.Game);
-        Igi1NetworkPlayer partner = Assert.Single(capture.Game.World.NetworkPlayers);
-        double walked = Math.Abs(partner.Player.Body.Position.X - start!.Value.X) + Math.Abs(partner.Player.Body.Position.Y - start.Value.Y);
-        Assert.True(walked > 2048, $"the partner walked {walked} units; missed {partner.Commands.Missed}");
-        Assert.Equal(1, client.EntityId);
-
-        // The frame is told to draw the partner where it stands.
-        Game.Igi1.Ai.PartnerBody shown = Assert.Single(capture.Game.World.PartnerBodies!());
-        Assert.Equal(partner.Player.Body.Position, shown.Feet);
-
-        // Walking on its own clips, and holding what the level arms its player with.
-        Assert.True(shown.Animation >= 0, $"the partner's legs are on clip {shown.Animation}");
-        Assert.False(string.IsNullOrEmpty(shown.Weapon?.GunModel), $"the partner holds no weapon: view {partner.Player.View is not null}, weapons {partner.Player.Weapons is not null}, carried {partner.Player.Weapons?.Carried.Count}, inhand {partner.Player.Weapons?.InHand}, state {partner.Player.Weapons?.State}; host carried {capture.Game.World.Player?.Weapons?.Carried.Count}, host inhand {capture.Game.World.Player?.Weapons?.InHand?.Weapon.ScriptId}");
+        return (capture, client, start);
     }
 
     private sealed class Capture(HostedSession session) : IHostTickObserver

@@ -71,8 +71,16 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets what tells the frame which co-op partners to draw each tick, or <see langword="null"/> playing alone.</summary>
     public Func<IReadOnlyList<Ai.PartnerBody>>? PartnerBodies { get; set; }
 
-    /// <summary>Gets or sets the ticks the mission's players have run, the clock a session's commands are stamped against.</summary>
+    /// <summary>Gets or sets the mission's simulation ticks, the clock a session's commands are stamped against.</summary>
+    /// <remarks>It runs whatever the mission's own player is doing: dead, in a cut-scene or at the computer.</remarks>
     public long PlayerTicks { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether this mission is a co-op client's, whose player's death the server decides.</summary>
+    /// <remarks>Its level never sees the player dead: the session respawns it, and the server's level decides the mission.</remarks>
+    public bool CoopClient { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a co-op session's partners have run this tick.</summary>
+    public bool PartnersTicked { get; set; }
 
     /// <summary>Gets or sets the computer the player carries, the original's own.</summary>
     public OpenIGI.Game.Igi1.Computer.Igi1Computer? Computer { get; set; }

@@ -176,6 +176,9 @@ public sealed partial class GameHost
         public void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls) =>
             host.Viewpoint?.BeginDeathView(position, facing, walls);
 
+        /// <inheritdoc/>
+        public void EndDeathCamera() => host.Viewpoint?.ResetDeathView();
+
         public int ScriptDifficulty => (int?)host._options.Difficulty ?? host._configuration.Active?.Difficulty ?? 1;
 
         public AiDifficulty Difficulty => host.EffectiveDifficulty();

@@ -22,6 +22,17 @@ public sealed class LagCompensationTests
     }
 
     [Fact]
+    public void A_command_carrying_its_view_tick_is_aimed_there_not_at_its_own_tick_less_the_delay()
+    {
+        // Stamped 6 ticks ahead of what the client drew (its lead plus the delay): the view tick is what it saw.
+        LagCompensation lag = new(new SnapshotInterpolator(), 30) { InterpolationDelay = 0.1, MaxUnlag = 1.0 };
+        Assert.Equal(94, lag.AimedAt(100, 94));
+        Assert.Equal(100, lag.AimedAt(100, 120));
+        Assert.Equal(70, lag.AimedAt(100, 10));
+        Assert.Equal(97, lag.AimedAt(100, long.MinValue));
+    }
+
+    [Fact]
     public void ATargetIsFoundWhereItStoodThen()
     {
         SnapshotInterpolator history = new();

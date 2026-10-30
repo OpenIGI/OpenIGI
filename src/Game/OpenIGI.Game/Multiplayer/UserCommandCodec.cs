@@ -17,6 +17,9 @@ public sealed class UserCommandCodec
     /// <summary>The most commands one packet carries.</summary>
     public const int MaxCommandsPerPacket = 8;
 
+    // The furthest behind its tick a command's view tick is carried; a further one is carried as this (Source caps at a second).
+    private const int MaxViewLag = 255;
+
     private const uint TagZero = 0;
     private const uint TagOne = 1;
     private const uint TagExact = 2;
@@ -63,6 +66,11 @@ public sealed class UserCommandCodec
             {
                 throw new ArgumentException($"A command has {ChannelCount} channels.", nameof(commands));
             }
+
+            // How far behind its own tick the client drew the world: nought for unknown, else one more than the gap.
+            writer.WriteVarUInt(command.ViewTick == long.MinValue
+                ? 0u
+                : (uint)Math.Clamp(command.Tick - command.ViewTick + 1, 1, MaxViewLag + 1));
 
             for (int c = 0; c < ChannelCount; c++)
             {
@@ -112,6 +120,14 @@ public sealed class UserCommandCodec
         float[]? previous = null;
         for (int i = 0; i < count; i++)
         {
+            long tick = newest - (count - 1 - i);
+            uint viewLag = reader.ReadVarUInt();
+            if (viewLag > MaxViewLag + 1)
+            {
+                return false;
+            }
+
+            long viewTick = viewLag == 0 ? long.MinValue : tick - (viewLag - 1);
             float[] channels = previous is null ? new float[ChannelCount] : (float[])previous.Clone();
             for (int c = 0; c < ChannelCount; c++)
             {
@@ -139,7 +155,7 @@ public sealed class UserCommandCodec
                 return false;
             }
 
-            read[i] = new UserCommand(newest - (count - 1 - i), channels);
+            read[i] = new UserCommand(tick, channels, viewTick);
             previous = channels;
         }
 

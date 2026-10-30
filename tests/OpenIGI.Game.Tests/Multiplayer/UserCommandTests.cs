@@ -31,6 +31,20 @@ public sealed class UserCommandTests
     }
 
     [Fact]
+    public void Codec_CarriesEachCommandsViewTick()
+    {
+        UserCommandCodec codec = new(Channels);
+        UserCommand[] sent = [Command(41), Command(42), Command(43)];
+        sent[0] = sent[0] with { ViewTick = 35 };
+        sent[2] = sent[2] with { ViewTick = 37 };
+        BitWriter writer = new(256);
+        codec.Write(writer, sent);
+        BitReader reader = new(writer.AsSpan().ToArray());
+        List<UserCommand> read = [];
+        Assert.True(codec.Read(ref reader, read));
+        Assert.Equal([35L, long.MinValue, 37L], read.Select(static c => c.ViewTick));
+    }
+    [Fact]
     public void Codec_SpendsLittleOnAnUnchangedFrame()
     {
         UserCommandCodec codec = new(Channels);
@@ -42,8 +56,8 @@ public sealed class UserCommandTests
         BitWriter two = new();
         codec.Write(two, [a, b]);
 
-        // The repeat costs a bit a channel.
-        Assert.Equal(Channels, two.BitCount - one.BitCount);
+        // The repeat costs a bit a channel, and a byte for the tick it was drawn at.
+        Assert.Equal(Channels + 8, two.BitCount - one.BitCount);
     }
 
     [Fact]

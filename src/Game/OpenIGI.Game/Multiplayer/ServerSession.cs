@@ -125,7 +125,7 @@ public sealed class ServerSession
             Match.Kill(SlotOf(death.Victim), death.Killer < 0 ? -1 : SlotOf(death.Killer), seconds);
         }
 
-        foreach (int slot in _clients.Keys)
+        foreach (int slot in _clients.Keys.Append(HostSlot))
         {
             if (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.DiedAt is { } died
                 && seconds - died >= RespawnDelay && Match.TrySpawn(slot, seconds))

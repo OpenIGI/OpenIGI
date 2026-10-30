@@ -113,6 +113,12 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     /// <remarks>The dead body is taken out and a new one made at a spawn point of the same team, as the original spawns afresh.</remarks>
     public void Respawn(int slot)
     {
+        // The listen server's own player is the level's, which this world does not stand again yet.
+        if (slot == ServerSession.HostSlot)
+        {
+            return;
+        }
+
         int team = Teams.TeamOf(slot);
         if (_bySlot.Remove(slot, out Igi2NetworkHuman? dead))
         {
@@ -231,7 +237,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         List<(Igi2HumanPlayer Human, Vector3d Was)> moved = [];
         void MoveBack(int id, Igi2HumanPlayer human)
         {
-            if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(commandTick, id, out ReplicatedHuman then))
+            if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(commandTick, shooter.Commands.LastViewTick, id, out ReplicatedHuman then))
             {
                 moved.Add((human, human.Position));
                 human.Position = then.Position.ToVector();

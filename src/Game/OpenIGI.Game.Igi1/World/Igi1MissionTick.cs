@@ -77,6 +77,9 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             UpdatePlayer();
         }
 
+        // The partners, when the mission's own player did not run them this tick.
+        RunPartners();
+
         if (mission.Cutscenes?.IsPlaying != true && host.PlayerMode && mission.Player is not null)
         {
             ResolvePlayerTick();
@@ -192,6 +195,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
     private void BeginTick()
     {
+        mission.PartnersTicked = false;
+
         // The storm steps here rather than inside the player's own block, where the impact
         // particles step: weather is ambient, and it has to keep falling in the free camera and
         // while the player is down.
@@ -224,7 +229,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             AreaOccupancy.AreaActivationOccupant(PlayerOrigin, areaCutsceneView, areaFreeView),
             mission.Soldiers?.PlayerTeam ?? 0,
             AreaOccupancy.AreaActivationExtraOccupant(PlayerOrigin, areaCutsceneView),
-            playerAlive: !mission.IsPlayerDead);
+            playerAlive: !mission.IsPlayerDead || mission.CoopClient || mission.NetworkPlayers.Any(static p => !p.IsDead));
         mission.PlayerTicked = false;
         mission.InteractionsTickedByPlayer = false;
         if (mission.SoldiersInWalk)
@@ -577,6 +582,24 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
     }
 
+    // A co-op session's other players, once a tick: after the mission's own when it runs, and by themselves when it is down,
+    // in a cut-scene or at the computer, so a partner never stands frozen because the host's player is.
+    private void RunPartners()
+    {
+        if (mission.PartnersTicked)
+        {
+            return;
+        }
+
+        mission.PartnersTicked = true;
+        foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
+        {
+            other.Run(mission.PlayerTicks, host.Ground);
+        }
+
+        mission.PlayerTicks++;
+    }
+
     /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
     /// <remarks>
     /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
@@ -621,12 +644,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         // A co-op session's other players, each on its client's command for this tick, after the mission's own.
-        foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
-        {
-            other.Run(mission.PlayerTicks, host.Ground);
-        }
-
-        mission.PlayerTicks++;
+        RunPartners();
         mission.TickVehicleMissiles();
         CheckRunOver();
 

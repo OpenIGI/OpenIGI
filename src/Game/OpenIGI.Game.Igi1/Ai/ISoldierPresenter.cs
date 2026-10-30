@@ -75,6 +75,11 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
         IEnumerable<string> weaponModels,
         Func<IEnumerable<VehicleGunVisual>> guns);
 
+    /// <summary>Stands the fallen player's body up again, as a co-op player is brought back.</summary>
+    void RevivePlayerBody()
+    {
+    }
+
     /// <summary>
     /// Poses the player's body with its death fall and starts drawing it — the player has died.
     /// </summary>

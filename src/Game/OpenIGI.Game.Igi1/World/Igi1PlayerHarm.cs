@@ -100,6 +100,31 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         }
     }
 
+    /// <summary>Brings a dead player back, as a co-op session respawns it: whole again, armed, and seen from its own eyes.</summary>
+    /// <param name="at">Where it stands up, or <see langword="null"/> where it fell.</param>
+    /// <param name="facing">Its heading there.</param>
+    /// <remarks>Not the original's: a single player's death ends the mission, a co-op partner's waits for the respawn.</remarks>
+    public void RevivePlayer(Vector3d? at, float facing)
+    {
+        if (mission.Player is not { } player || !mission.IsPlayerDead)
+        {
+            return;
+        }
+
+        mission.IsPlayerDead = false;
+        mission.PlayerHealth.Reset();
+        mission.DamageFlash = new();
+        if (at is { } feet)
+        {
+            player.Body.Position = feet;
+            player.Body.Yaw = facing;
+        }
+
+        player.ReviveWeapons();
+        mission.SoldierPresenter?.RevivePlayerBody();
+        host.EndDeathCamera();
+    }
+
     /// <summary>Puts the player through the whole death sequence, whatever killed them.</summary>
     /// <param name="from">Where the killing thing came from — the shooter's muzzle, or the blast.</param>
     /// <param name="zone">The zone the killing damage landed on.</param>

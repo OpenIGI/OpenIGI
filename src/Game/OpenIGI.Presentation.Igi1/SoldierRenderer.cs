@@ -652,6 +652,9 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
+    public void RevivePlayerBody() => _playerBody.Revive();
+
+    /// <inheritdoc/>
     public void KillPlayerBody(int deathAnimation, Vector3d feet, float gamma, int bone = -1, Vector3d travel = default, WeaponCategory category = WeaponCategory.Gun, Vector3d velocity = default) =>
         _playerBody.Kill(deathAnimation, feet, gamma, bone, travel, category, velocity);
 

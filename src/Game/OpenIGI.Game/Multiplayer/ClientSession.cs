@@ -125,6 +125,7 @@ public sealed class ClientSession
         }
 
         long tick = clock.CommandTick(now, connection.Statistics.RoundTripTime);
+        long viewTick = (long)Math.Floor(clock.InterpolationTick(now));
         if (_sent.Count > 0)
         {
             long last = _sent[^1].Tick;
@@ -142,7 +143,7 @@ public sealed class ClientSession
             // A tick skipped (a hitch on this side) is filled with the same controls, so the server's buffer has every tick.
             for (long missing = last + 1; missing < tick && missing <= last + UserCommandCodec.MaxCommandsPerPacket; missing++)
             {
-                Keep(new UserCommand(missing, channels.ToArray()));
+                Keep(new UserCommand(missing, channels.ToArray(), viewTick));
             }
 
             if (tick > last + UserCommandCodec.MaxCommandsPerPacket + 1)
@@ -151,7 +152,7 @@ public sealed class ClientSession
             }
         }
 
-        Keep(new UserCommand(tick, channels.ToArray()));
+        Keep(new UserCommand(tick, channels.ToArray(), viewTick));
         int count = Math.Clamp(CommandRedundancy, 1, UserCommandCodec.MaxCommandsPerPacket);
         int first = _sent.Count - 1;
         while (first > 0 && _sent.Count - first < count && _sent[first - 1].Tick == _sent[first].Tick - 1)

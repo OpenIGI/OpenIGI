@@ -768,6 +768,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         return close;
     }
 
+    /// <summary>Takes the held-weapon machine out of death, as a co-op player is brought back.</summary>
+    public void ReviveWeapons() => _weapons?.Revive();
+
     /// <summary>Stops the held-weapon machine because the player has died.</summary>
     /// <remarks>
     /// Death stops ordinary player ticks immediately, so this cannot wait for the next input frame to

@@ -215,6 +215,20 @@ internal sealed class PlayerBodyRenderer(
         }
     }
 
+    /// <summary>Stands the fallen body up again, as a co-op player is brought back: no corpse, no ragdoll.</summary>
+    public void Revive()
+    {
+        if (_state.View is not { } view)
+        {
+            return;
+        }
+
+        _ragdoll = null;
+        _active = false;
+        view.Respawn();
+        CaptureTickState(snap: true);
+    }
+
     /// <inheritdoc cref="ISoldierPresenter.TickPlayerBody"/>
     public void Tick()
     {

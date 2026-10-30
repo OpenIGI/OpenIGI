@@ -10,7 +10,8 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="UpperBody">Its torso's clip, or -1.</param>
 /// <param name="LookPitch">Its look's pitch, radians.</param>
 /// <param name="Alive">Whether it lives.</param>
-public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int Animation, int UpperBody, float LookPitch, bool Alive)
+/// <param name="Shots">Its shots so far, counted round in a byte: a change is a shot to flame and sound.</param>
+public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int Animation, int UpperBody, float LookPitch, bool Alive, byte Shots = 0)
 {
     /// <summary>Gets the heading an orientation turns a soldier to, the inverse of <see cref="Matrix3f.RotationZ"/>.</summary>
     /// <param name="orientation">The orientation.</param>
@@ -22,6 +23,11 @@ public readonly record struct SoldierPuppet(Vector3d Position, float Facing, int
 public sealed partial class SoldierSimulation
 {
     private readonly Dictionary<SoldierView, SoldierPuppet> _puppets = [];
+
+    /// <summary>Gets what a soldier holds and fires, or <see langword="null"/>.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>Its agent.</returns>
+    public SoldierAgent? AgentOf(SoldierView view) => _context.FindAgent(view);
 
     /// <summary>Gets the level's soldiers, in no set order.</summary>
     public IEnumerable<SoldierView> SoldierViews => Brains.Keys;
@@ -78,6 +84,20 @@ public sealed partial class SoldierSimulation
 
         view.LookAlong(puppet.LookPitch);
         view.Tick();
+
+        // The server's soldier fired since the last pose: this one's gun flames and is heard as its own would be.
+        if (_context.FindAgent(view) is { } agent && Brains.TryGetValue(view, out Igi1HumanAi? brain))
+        {
+            bool fired = unchecked((byte)agent.ShotSequence) != puppet.Shots;
+            if (fired)
+            {
+                agent.ShotSequence = puppet.Shots;
+                agent.FiredThisTick = true;
+            }
+
+            WeaponSound?.Invoke(brain.RuntimeId, fired, agent.WeaponType, brain.EyePosition());
+        }
+
         return true;
     }
 }

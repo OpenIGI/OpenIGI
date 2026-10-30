@@ -23,6 +23,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     {
         _game = game ?? throw new ArgumentNullException(nameof(game));
         game.World.PartnerBodies = PartnerBodies;
+        game.World.CoopClient = true;
     }
 
     // The partners the frame draws on a client: each where the snapshots put it, its legs and torso on the clips the server's ran
@@ -86,6 +87,25 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// </remarks>
     public void ApplyOwn(in ReplicatedHuman self)
     {
+        // Killed on the server: the fall, here. Brought back by the server's respawn: up again where it stood this one.
+        bool alive = (self.Flags & ReplicatedHumanCondition.Alive) != 0;
+        if (!alive && !_game.World.IsPlayerDead && _game.World.Player is { } falling)
+        {
+            _game.Harm.BeginPlayerDeath(falling.Body.Position, zone: 0, bone: -1, OpenIGI.Game.Weapons.WeaponCategory.Gun);
+            return;
+        }
+
+        if (alive && _game.World.IsPlayerDead)
+        {
+            _game.Harm.RevivePlayer(self.Position.ToVector(), Quantize.AngleFromBits(self.Yaw));
+            return;
+        }
+
+        if (!alive)
+        {
+            return;
+        }
+
         HumanHealth health = _game.World.PlayerHealth;
         float server = self.Health / 255f;
         float local = health.RemainingFraction;
@@ -123,7 +143,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                     human.State - 1,
                     human.Action - 1,
                     Quantize.AngleFromBits(human.Pitch),
-                    (human.Flags & ReplicatedHumanCondition.Alive) != 0));
+                    (human.Flags & ReplicatedHumanCondition.Alive) != 0,
+                    human.Shots));
             }
 
             return;

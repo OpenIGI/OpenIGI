@@ -124,7 +124,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
                     0,
                     255,
                     (byte)Math.Clamp(soldier.Soldier.Team, 0, 255),
-                    soldier.IsDead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive));
+                    soldier.IsDead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive,
+                    unchecked((byte)(soldiers.AgentOf(soldier)?.ShotSequence ?? 0))));
             }
         }
 
@@ -164,6 +165,18 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     /// <remarks>A fallen co-op partner comes back at full health beside the level's spawn.</remarks>
     public void Respawn(int slot)
     {
+        if (slot == ServerSession.HostSlot)
+        {
+            _game.Harm.RevivePlayer(at: null, facing: 0f);
+            if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
+            {
+                own.PlaceAt(_game.World.Ground, spawn);
+            }
+
+            _dead.Remove(HostEntity);
+            return;
+        }
+
         if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player))
         {
             player.Health.Reset();

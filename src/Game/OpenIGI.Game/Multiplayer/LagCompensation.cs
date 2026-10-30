@@ -41,4 +41,28 @@ public sealed class LagCompensation(SnapshotInterpolator history, int tickRate)
     /// <returns><see langword="false"/> when the history does not reach back that far for it.</returns>
     public bool TargetAt(long commandTick, int target, out ReplicatedHuman human) =>
         History.Sample(AimedAt(commandTick), target, out human);
+
+    /// <summary>Gets the moment a command was aimed at from the tick its client says it was drawing.</summary>
+    /// <param name="commandTick">The tick the shooter's command ran on.</param>
+    /// <param name="viewTick">The tick the client drew the others at, or <see cref="long.MinValue"/> when not known.</param>
+    /// <returns>The tick to sample the history at.</returns>
+    /// <remarks>
+    /// The command is stamped ahead of the server by the client's lead, so its own tick less the interpolation misses what the
+    /// shooter saw by that lead; the view tick it carries does not. A view tick from the future, or further back than
+    /// <see cref="MaxUnlag"/>, is not believed: the first is clamped to the command, the second to the limit, as Source clamps
+    /// its correction to <c>sv_maxunlag</c>.
+    /// </remarks>
+    public double AimedAt(long commandTick, long viewTick) =>
+        viewTick == long.MinValue
+            ? AimedAt(commandTick)
+            : Math.Clamp(viewTick, commandTick - (MaxUnlag * TickRate), commandTick);
+
+    /// <summary>Gets a player where the shooter's client drew it when it fired, from the view tick its command carried.</summary>
+    /// <param name="commandTick">The tick the shooter's command ran on.</param>
+    /// <param name="viewTick">The tick the client drew the others at, or <see cref="long.MinValue"/>.</param>
+    /// <param name="target">The player's entity id.</param>
+    /// <param name="human">It as it was then.</param>
+    /// <returns><see langword="false"/> when the history does not reach back that far or the player was not there.</returns>
+    public bool TargetAt(long commandTick, long viewTick, int target, out ReplicatedHuman human) =>
+        History.Sample(AimedAt(commandTick, viewTick), target, out human);
 }
