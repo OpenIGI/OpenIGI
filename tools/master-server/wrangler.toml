@@ -1,0 +1,14 @@
+name = "openigi-master"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# The whole list lives in one Durable Object; heartbeats keep it current, so nothing needs persisting.
+[[durable_objects.bindings]]
+name = "SERVER_LIST"
+class_name = "ServerList"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ServerList"]
+
+# Not deployed yet. Route it (e.g. master.openigi.com/v1/*) when the multiplayer branch ships.

@@ -24,6 +24,8 @@
     <Project Path="src/Engine/OpenIGI.Modding/OpenIGI.Modding.csproj" />
     <Project Path="src/Engine/OpenIGI.Modding.Loader/OpenIGI.Modding.Loader.csproj" />
     <Project Path="src/Engine/OpenIGI.Modding.Presentation/OpenIGI.Modding.Presentation.csproj" />
+    <Project Path="src/Engine/OpenIGI.Net/OpenIGI.Net.csproj" />
+    <Project Path="src/Engine/OpenIGI.Net.Udp/OpenIGI.Net.Udp.csproj" />
   </Folder>
   <Folder Name="/src/Game/">
     <Project Path="src/Game/OpenIGI.Frontend.Settings/OpenIGI.Frontend.Settings.csproj" />
@@ -80,6 +82,7 @@
     <Project Path="tests/OpenIGI.Launcher.Tests/OpenIGI.Launcher.Tests.csproj" />
     <Project Path="tests/OpenIGI.Modding.SampleMod/OpenIGI.Modding.SampleMod.csproj" />
     <Project Path="tests/OpenIGI.Modding.Tests/OpenIGI.Modding.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Net.Tests/OpenIGI.Net.Tests.csproj" />
     <Project Path="tests/OpenIGI.Platform.Web.Tests/OpenIGI.Platform.Web.Tests.csproj" />
     <Project Path="tests/OpenIGI.Presentation.Tests/OpenIGI.Presentation.Tests.csproj" />
     <Project Path="tests/OpenIGI.Releases.Tests/OpenIGI.Releases.Tests.csproj" />
