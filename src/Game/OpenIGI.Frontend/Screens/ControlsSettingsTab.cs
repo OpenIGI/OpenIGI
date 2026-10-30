@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
@@ -8,16 +9,43 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The settings page's Controls category: the mouse, then every key binding of the active profile, which
-/// it rebinds in place and persists as retail input symbols.
+/// The settings page's Controls category: the mouse, a touch screen's gyroscope where there is one, then every key binding
+/// of the active profile, which it rebinds in place and persists as retail input symbols.
 /// </summary>
 internal static class ControlsSettingsTab
 {
+    /// <summary>A touch screen's rows, shown once the screen has been touched.</summary>
+    private static readonly GraphicsSetting[] TouchSettings =
+    [
+        new GraphicsSetting(
+            "touch_gyro",
+            "Gyroscope Aim",
+            "Turning the phone turns the view, alongside the fingers. Scope aims with it only through a sight or the "
+                + "binoculars, where a small correction is hardest to make with a thumb. On an iPhone, the next tap "
+                + "asks leave to read the motion sensors.",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["off"] = "Off",
+                ["scope"] = "Scope",
+                ["always"] = "Always",
+            }),
+        new GraphicsSetting(
+            "touch_gyro_sensitivity",
+            "Gyroscope Sensitivity",
+            "How far the view turns for a turn of the phone. At 1 it turns exactly as far as the phone did; higher "
+                + "needs less wrist."),
+        new GraphicsSetting(
+            "touch_gyro_invert",
+            "Invert Gyroscope",
+            "Tilting the top of the phone away looks down instead of up."),
+    ];
+
     /// <summary>Builds the category's groups.</summary>
     /// <param name="context">The shared shell context.</param>
+    /// <param name="rowBuilder">What the touch screen's rows are built with.</param>
     /// <param name="theme">The theme.</param>
     /// <param name="resetBindings">What puts the bindings back to their defaults, for R; null without an active profile.</param>
-    public static List<SettingsGroup> Build(ShellContext context, UiTheme theme, out Action? resetBindings)
+    public static List<SettingsGroup> Build(ShellContext context, SettingsRowBuilder rowBuilder, UiTheme theme, out Action? resetBindings)
     {
         resetBindings = null;
         PlayerProfile? profile = context.Config.Active;
@@ -103,6 +131,11 @@ internal static class ControlsSettingsTab
         resetButton.Activated += _ => Reset();
 
         List<SettingsGroup> groups = [SettingsGroup.Of("Mouse", [sensitivity, invert, resetButton])];
+        if (context.Host.TouchScreen)
+        {
+            groups.Add(SettingsGroup.Of("Touch", rowBuilder.SettingRows(theme, TouchSettings)));
+        }
+
         groups.Add(SettingsGroup.Of("Key bindings", [.. bindingRows]));
         return groups;
     }

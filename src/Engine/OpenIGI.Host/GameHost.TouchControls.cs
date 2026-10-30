@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Game;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
@@ -13,7 +14,9 @@ namespace OpenIGI.Host;
 /// <remarks>
 /// Whatever has a touch screen -- the browser build on a phone, a tablet -- reports its fingers in <see cref="InputState.Touch"/>,
 /// and nothing is shown or pressed until the first one comes down. The keys and mouse buttons pressed are the ones the player's
-/// profile binds to each action, so a rebinding moves the button with it, and the game reads them as it reads a keyboard.
+/// profile binds to each action, so a rebinding moves the button with it, and the game reads them as it reads a keyboard. A
+/// phone's gyroscope (<see cref="InputState.Motion"/>) turns the view in play as a mouse would, when <see cref="TouchCVars.Gyro"/>
+/// asks for it.
 /// </remarks>
 public sealed partial class GameHost
 {
@@ -66,6 +69,7 @@ public sealed partial class GameHost
     private void ApplyTouchControls()
     {
         InputState input = _window.Input;
+        _window.SetMotionSensors(input.Touch.InUse && TouchCVars.Gyro.Value != GyroAim.Off);
         if (!input.Touch.InUse || _window.Width <= 0 || _window.Height <= 0)
         {
             return;
@@ -135,6 +139,8 @@ public sealed partial class GameHost
             {
                 input.Mouse.AddMotion(look.X, look.Y);
             }
+
+            ApplyGyro(input.Motion, profile);
         }
 
         if (_touchControls.Pointer is { } pointer)
@@ -186,6 +192,32 @@ public sealed partial class GameHost
         _touchButtons.Clear();
         _touchButtons.UnionWith(_touchButtonsWanted);
     }
+
+    /// <summary>Turns the view as far as the phone turned, as mouse counts, when the gyroscope aims.</summary>
+    /// <remarks>
+    /// The counts are the profile's own (<see cref="MouseLookSettings.RadiansPerCount"/>), so a turn of the phone turns the
+    /// view by the same angle whatever the mouse's sensitivity, times <see cref="TouchCVars.GyroSensitivity"/>; a sight's slower
+    /// look still applies on top, as it does to a finger's. The vertical is the gyroscope's own to invert: the look inverts
+    /// counts when the profile inverts the mouse, so they are turned back first.
+    /// </remarks>
+    private void ApplyGyro(MotionState motion, PlayerProfile? profile)
+    {
+        GyroAim aim = TouchCVars.Gyro.Value;
+        if ((motion.Yaw == 0f && motion.Pitch == 0f) || aim == GyroAim.Off || (aim == GyroAim.Scope && !Sighted()))
+        {
+            return;
+        }
+
+        float countsPerRadian = TouchCVars.GyroSensitivity.Value / MouseLookSettings.FromProfile(profile).RadiansPerCount;
+        bool invert = TouchCVars.GyroInvert.Value != (profile?.InvertMouse ?? false);
+        float down = -motion.Pitch * countsPerRadian;
+        _window.Input.Mouse.AddMotion(motion.Yaw * countsPerRadian, invert ? -down : down);
+    }
+
+    /// <summary>Whether the player looks through a sight or the binoculars: the view narrower than the eyes' own.</summary>
+    private bool Sighted() => TitlePlayer is { } title
+        ? title.FieldOfViewScale < 0.98f
+        : Viewpoint?.SightZoom(1f) is { } sight && sight.TanX < HumanView.DefaultTanX * 0.98f;
 
     /// <summary>Moves the original computer's pointer under the finger.</summary>
     /// <remarks>

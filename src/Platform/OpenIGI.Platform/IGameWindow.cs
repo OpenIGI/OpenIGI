@@ -114,6 +114,13 @@ public interface IGameWindow : IDisposable
     /// <summary>Gets the input state this window's message pump feeds.</summary>
     InputState Input { get; }
 
+    /// <summary>Says whether the device's motion sensors are wanted, for <see cref="InputState.Motion"/>.</summary>
+    /// <param name="wanted">Whether they are.</param>
+    /// <remarks>Nothing on a window without them; a phone's browser asks the player's leave first where it must.</remarks>
+    void SetMotionSensors(bool wanted)
+    {
+    }
+
     /// <summary>Makes the window visible.</summary>
     void Show();
 

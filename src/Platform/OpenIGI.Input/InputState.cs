@@ -23,6 +23,9 @@ public sealed class InputState
     /// <remarks>Not suppressed with the rest: the screen's own controls read it, and skipping a cutscene is one of them.</remarks>
     public TouchState Touch { get; } = new();
 
+    /// <summary>Gets how far the device itself turned this frame: a phone's gyroscope.</summary>
+    public MotionState Motion { get; } = new();
+
     /// <summary>Gets or sets a value indicating whether input is suppressed.</summary>
     /// <remarks>
     /// The original zeroes its key array while a global disable flag is set — during loading screens
@@ -67,6 +70,7 @@ public sealed class InputState
     {
         Captured = false;
         Touch.BeginFrame();
+        Motion.BeginFrame();
 
         if (Suppressed)
         {
