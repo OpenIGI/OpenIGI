@@ -109,6 +109,7 @@ internal static class Igi2FlowSystems
         {
             area.Humans = humans;
             area.Players.Set(player.Human);
+            player.AreaRosters.Add(area.Players);
             area.CameraPosition = () => player.EyePosition;
             area.VehiclePositions = () => levelCars.Select(static car => car.Position);
         }

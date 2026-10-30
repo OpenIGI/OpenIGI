@@ -610,6 +610,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     internal void RunPlayer()
     {
         Weapons?.RunGunShot();
+        RunNetworkGunShots();
         if (Level is { } level)
         {
             // The player's first child, HumanPlayerInput, reads the controls into the frame it sends up as the player's update.
@@ -633,6 +634,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
+        RunNetworkHumans();
 
         // The computer's menu, a task of the game screen, runs after the player, and its screens with it.
         RunComputerSaves();

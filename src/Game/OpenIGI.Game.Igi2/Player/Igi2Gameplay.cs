@@ -90,6 +90,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             player.Human.DeadBodySounds = deadBodySounds;
         }
 
+        player.SpawnKit = new Igi2PlayerSpawnKit(world, general, request.Difficulty, clips, models, tuning, sounds, request.Services);
         player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
         player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
         world.AddBody(player.Human.Collider);
