@@ -320,7 +320,37 @@ async function start() {
   // The missions' files, downloaded ahead while the menu is up, so the first mission chosen starts at once.
   if (source.hosted) setTimeout(() => source.prefetch(), 3000);
 
+  // In a room the game can't stop when its tab is hidden: a host that stopped would stop everyone's game, and a joiner
+  // that stopped would be dropped. A hidden tab gets no animation frames and its timers are held to one a second, but a
+  // worker's timers run on, so while hidden the next frame comes from a worker's tick instead.
+  const inRoom = args.includes('-host') || args.includes('-join');
+  let ticker = null;
+  let pending = 0;
+  const next = () => {
+    if (inRoom && document.hidden) {
+      if (!ticker) {
+        const tick = 'let t; onmessage = () => { clearTimeout(t); t = setTimeout(() => postMessage(0), 16); };';
+        ticker = new Worker(URL.createObjectURL(new Blob([tick], { type: 'text/javascript' })));
+        ticker.onmessage = () => frame();
+      }
+
+      ticker.postMessage(0);
+    } else {
+      pending = requestAnimationFrame(frame);
+    }
+  };
+
+  // Hidden with an animation frame still asked for: that frame won't come, so the worker takes over now.
+  document.addEventListener('visibilitychange', () => {
+    if (inRoom && document.hidden && pending) {
+      cancelAnimationFrame(pending);
+      pending = 0;
+      next();
+    }
+  });
+
   const frame = () => {
+    pending = 0;
     let going;
     try {
       globalThis.openigi.frames++;
@@ -333,7 +363,7 @@ async function start() {
     }
 
     if (going) {
-      requestAnimationFrame(frame);
+      next();
       return;
     }
 
@@ -344,7 +374,7 @@ async function start() {
     device.destroy();
     offerReload('Play again', 'The game has closed. Your settings are saved.', 'neutral');
   };
-  requestAnimationFrame(frame);
+  next();
 }
 
 // The macOS and Linux install command, copied by its button. The code is selectable by hand as well, for
