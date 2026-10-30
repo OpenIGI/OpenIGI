@@ -101,6 +101,7 @@ public sealed partial class GameHost
         _window.PumpEvents();
         ApplyTouchControls();
         _coop?.Update();
+        UpdateLookPreview();
 
         // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.
         // The setting is read here rather than captured at construction so that turning

@@ -385,6 +385,9 @@ public sealed partial class GameHost
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
                     bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma);
+
+                    // A co-op partner's look this level doesn't ship is borrowed from one that does.
+                    bodies.BorrowLevel = level => Borrow(loaded, _resources, level);
                 }
 
                 EndStage("standing the player up and building its third-person body");

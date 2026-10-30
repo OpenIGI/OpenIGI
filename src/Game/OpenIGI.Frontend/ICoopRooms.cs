@@ -63,4 +63,8 @@ public interface ICoopRooms
 
     /// <summary>Fetches the public rooms afresh into <see cref="Listing"/>.</summary>
     void RefreshListing();
+
+    /// <summary>Shows a look standing in the level behind the menu, as a player chooses it; <see langword="null"/> takes it away.</summary>
+    /// <param name="skinId">The look's id.</param>
+    void PreviewLook(string? skinId);
 }

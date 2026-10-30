@@ -275,6 +275,34 @@ public interface ISoldierBodies : IDisposable
     /// <returns>The tags; none outside a session.</returns>
     IReadOnlyList<WorldNameTag> NameTags() => [];
 
+    /// <summary>Gets or sets how another level is reached for a model this one doesn't ship: a view of the mission with that level's pack.</summary>
+    Func<int, OpenIGI.Game.World.LoadedMission?>? BorrowLevel
+    {
+        get => null;
+        set { }
+    }
+
+    /// <summary>Shows a look standing in the level, for a player choosing it; <see langword="null"/> takes it away.</summary>
+    /// <param name="mission">The level it stands in.</param>
+    /// <param name="model">Its model, or <see langword="null"/>.</param>
+    /// <param name="feet">Where it stands, in world units.</param>
+    /// <param name="facing">Its heading, a gamma.</param>
+    void ShowPreviewBody(OpenIGI.Game.World.LoadedMission mission, string? model, Vector3d feet, float facing)
+    {
+    }
+
+    /// <summary>Steps the shown look's idle a tick.</summary>
+    void TickPreviewBody()
+    {
+    }
+
+    /// <summary>Draws the shown look, and nothing else of this renderer's.</summary>
+    /// <param name="camera">The eye.</param>
+    /// <param name="projection">The lens.</param>
+    void DrawPreviewBody(in Camera3D camera, in Matrix4f projection)
+    {
+    }
+
     /// <summary>Gets the fallen teammates there are to revive, each marked where it lies.</summary>
     /// <returns>The marks.</returns>
     IReadOnlyList<ReviveMarker> ReviveMarkers() => [];

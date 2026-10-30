@@ -1,5 +1,6 @@
 using System.Globalization;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Multiplayer;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -9,7 +10,8 @@ namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
 /// The co-op section: host a mission for friends to join by its room's code, join a friend's by theirs, or pick a public
-/// room from the list. The same on the desktop and in the browser, which play each other.
+/// room from the list -- and choose the look to play in, shown standing in the level beside the page. The same on the
+/// desktop and in the browser, which play each other.
 /// </summary>
 public sealed class CoopScreen : ShellScreen
 {
@@ -36,6 +38,10 @@ public sealed class CoopScreen : ShellScreen
     /// <inheritdoc/>
     protected override ShellTab Tab => ShellTab.Coop;
 
+    /// <inheritdoc/>
+    /// <remarks>The level stays sharp: the look being chosen stands in it, to the right of the page's panels.</remarks>
+    public override float BackdropBlur => 0f;
+
     private ICoopRooms? Coop => Context.Host.Coop;
 
     /// <inheritdoc/>
@@ -59,25 +65,69 @@ public sealed class CoopScreen : ShellScreen
 
         _shown = coop.Status;
         _shownListing = coop.Listing;
-        page.Add(BuildStatus(theme, _shown), 1, 0);
 
-        var columns = new Grid { ColumnSpacing = 24f, VerticalAlignment = VerticalAlignment.Top };
-        columns.RowDefinitions.Add(GridLength.Auto);
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.Add(BuildHost(theme, coop), 0, 0);
-        columns.Add(BuildJoin(theme, coop), 0, 1);
-        columns.Add(BuildRooms(theme, coop), 0, 2);
-
+        // The panels down the left; the right is the level, where the chosen look stands, its picker beneath it.
+        var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 20f };
+        stack.AddChild(BuildStatus(theme, _shown));
+        var pair = new Grid { ColumnSpacing = 20f, VerticalAlignment = VerticalAlignment.Top };
+        pair.RowDefinitions.Add(GridLength.Auto);
+        pair.ColumnDefinitions.Add(GridLength.Star);
+        pair.ColumnDefinitions.Add(GridLength.Star);
+        pair.Add(BuildHost(theme, coop), 0, 0);
+        pair.Add(BuildJoin(theme, coop), 0, 1);
+        stack.AddChild(pair);
+        stack.AddChild(BuildRooms(theme, coop));
         var scroll = new ScrollView(theme);
-        scroll.SetContent(columns);
-        page.Add(scroll, 2, 0);
+        scroll.SetContent(stack);
+
+        var halves = new Grid { ColumnSpacing = 32f };
+        halves.RowDefinitions.Add(GridLength.Star);
+        halves.ColumnDefinitions.Add(GridLength.Stars(1.35f));
+        halves.ColumnDefinitions.Add(GridLength.Star);
+        halves.Add(scroll, 0, 0);
+        halves.Add(BuildLook(theme, coop), 0, 1);
+        page.RowDefinitions[2] = GridLength.Star;
+        page.Add(halves, 1, 0);
         return page;
     }
 
     /// <inheritdoc/>
-    protected override void OnEnter() => Coop?.RefreshListing();
+    protected override void OnEnter()
+    {
+        Coop?.RefreshListing();
+        Coop?.PreviewLook(PlayerSkins.Of(PlayerSkins.Chosen.Value).Id);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnExit() => Coop?.PreviewLook(null);
+
+    // The look to play in: a picker at the foot of the right half, under where the look stands in the level.
+    private GlassPanel BuildLook(UiTheme theme, ICoopRooms coop)
+    {
+        List<PlayerSkin> looks = [.. PlayerSkins.All];
+        int chosen = Math.Max(0, looks.FindIndex(s => s.Id == PlayerSkins.Of(PlayerSkins.Chosen.Value).Id));
+        var cycler = new OptionCycler(theme, "Operative", [.. looks.Select(static s => s.Name)], chosen)
+        {
+            Height = CyclerHeight,
+            ContentWidth = 260f,
+            Tooltip = "How you appear to the others in co-op.",
+        };
+        cycler.SelectionChanged += index =>
+        {
+            PlayerSkins.Chosen.Value = looks[index].Id;
+            Context.Host.SaveSettings();
+            coop.PreviewLook(looks[index].Id);
+        };
+
+        var (panel, content) = Group(theme, "Your look");
+        content.AddChild(cycler);
+        content.AddChild(Body(theme, "Shown here as the others will see you.", theme.TextMuted));
+        panel.VerticalAlignment = VerticalAlignment.Bottom;
+        panel.HorizontalAlignment = HorizontalAlignment.Right;
+        panel.Width = 420f;
+        panel.Margin = new Thickness(0f, 0f, 0f, 24f);
+        return panel;
+    }
 
     /// <inheritdoc/>
     /// <remarks>The room and the list change in the background; the page is rebuilt when either does.</remarks>

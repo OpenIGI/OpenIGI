@@ -70,10 +70,10 @@ public sealed partial class SoldierRenderer
         {
             present.Add(partner.Key);
 
-            // Its look's model where the level ships it; the level's own player's otherwise. A look changed (the
+            // Its look, from this level or the one that ships it; the level's own player's otherwise. A look changed (the
             // scoreboard naming it a moment after the body first showed) builds the body again.
-            string look = partner.Model is { Length: > 0 } wanted && load.Mission.TryGetModel(wanted, out _) ? wanted : load.Model;
-            BoneAnimationSet animations = AnimationsFor(look, load.Mission, load.Animations);
+            (LoadedMission lookMission, string look) = ResolveLook(load.Mission, partner.Model, load.Model);
+            BoneAnimationSet animations = AnimationsFor(look, lookMission, load.Animations);
             if (_partners.TryGetValue(partner.Key, out PlayerBodyRenderer? body) && _partnerModels.GetValueOrDefault(partner.Key) != look)
             {
                 body.Release();
@@ -85,7 +85,7 @@ public sealed partial class SoldierRenderer
             if (body is null)
             {
                 body = new PlayerBodyRenderer(this, _device, _sim, _logger, new SoldierPlayerBody());
-                if (!body.Load(load.Mission, look, animations, partner.Feet, partner.Facing))
+                if (!body.Load(lookMission, look, animations, partner.Feet, partner.Facing))
                 {
                     continue;
                 }
@@ -154,6 +154,28 @@ public sealed partial class SoldierRenderer
             _fallen.Remove(gone);
             _partnerModels.Remove(gone);
         }
+    }
+
+    /// <inheritdoc/>
+    public Func<int, LoadedMission?>? BorrowLevel { get; set; }
+
+    // Where a look's model comes from: this mission's packs, else the level the look's catalogue entry names as one that
+    // ships it (BorrowLevel, the host opening that level's own pack), else the fallback model of this mission.
+    private (LoadedMission Mission, string Model) ResolveLook(LoadedMission mission, string? wanted, string fallback)
+    {
+        if (wanted is not { Length: > 0 } || mission.TryGetModel(wanted, out _))
+        {
+            return (mission, wanted is { Length: > 0 } ? wanted : fallback);
+        }
+
+        if (OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == wanted) is { } skin
+            && BorrowLevel?.Invoke(skin.HomeLevel) is { } home
+            && home.TryGetModel(wanted, out _))
+        {
+            return (home, wanted);
+        }
+
+        return (mission, fallback);
     }
 
     // The clips a look's body plays: the player's own, on the look's own skeleton. Every human skeleton but one shares the

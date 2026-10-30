@@ -241,6 +241,10 @@ public sealed partial class GameHost
         _soldiers?.ObserveView(eye, projection);
         _soldiers?.Draw(eye, projection);
 
+        // A co-op look being chosen, standing in the level behind the menu.
+        _previewBodies?.ObserveView(eye, projection);
+        _previewBodies?.DrawPreviewBody(eye, projection);
+
         // Whatever the title, or a mod, draws for particular tasks of the level (PresenterRegistry.ForTask).
         foreach (ITaskPresenter taskPresenter in _taskPresenters)
         {
