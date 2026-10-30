@@ -8,17 +8,15 @@ namespace OpenIGI.Game.Multiplayer;
 /// <param name="Model">The character's model, as the levels name it.</param>
 /// <param name="HomeLevel">A level that ships the model, for a mission that doesn't to borrow it from.</param>
 /// <param name="Skeleton">
-/// The skeleton the model is skinned to, which names the animation set that can move it: the player's own body is 0, a
-/// soldier 1, an RPG soldier 2, a woman 6. Only a set of that skeleton may pose it.
+/// The skeleton the model is skinned to: the player's own body is 0, a soldier 1, an RPG soldier 2, a woman 6. They share
+/// the player's bones and differ in proportion, so a look plays the player's clips on its own skeleton's rest pose.
 /// </param>
 public sealed record PlayerSkin(string Id, string Name, string Model, int HomeLevel, int Skeleton);
 
 /// <summary>The looks a co-op player can choose between, and the choice itself.</summary>
 /// <remarks>
 /// The original's characters, by the model catalog's names. Jones ships with every level; the rest with some, and
-/// <see cref="PlayerSkin.HomeLevel"/> names one that has it. They are not all on the player's skeleton: a soldier's
-/// model is skinned to skeleton 1 and a woman's to 6, each moved by its own set with its own clip numbers, so a look
-/// on another skeleton than the body's set is drawn only once its clips are mapped from the player's.
+/// <see cref="PlayerSkin.HomeLevel"/> names one that has it.
 /// </remarks>
 [CVarContainer]
 public static class PlayerSkins

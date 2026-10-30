@@ -53,6 +53,9 @@ public sealed partial class SoldierRenderer
     // The model each partner's body was built from, so a change of look rebuilds it.
     private readonly Dictionary<object, string> _partnerModels = [];
 
+    // The player's clips on each look's own skeleton, by skeleton id: built once, shared by every body of that skeleton.
+    private readonly Dictionary<int, BoneAnimationSet> _lookAnimations = [];
+
     /// <inheritdoc/>
     public void FollowPartnerBodies(IReadOnlyList<PartnerBody> partners)
     {
@@ -69,14 +72,8 @@ public sealed partial class SoldierRenderer
 
             // Its look's model where the level ships it; the level's own player's otherwise. A look changed (the
             // scoreboard naming it a moment after the body first showed) builds the body again.
-            // A look on another skeleton than the body's set would be posed by clips of the wrong bones; until its
-            // clips are mapped from the player's, the level's own player model stands in for it.
-            string look = partner.Model is { Length: > 0 } wanted
-                && OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == wanted) is { } skin
-                && skin.Skeleton == load.Animations.Skeleton.Id
-                && load.Mission.TryGetModel(wanted, out _)
-                    ? wanted
-                    : load.Model;
+            string look = partner.Model is { Length: > 0 } wanted && load.Mission.TryGetModel(wanted, out _) ? wanted : load.Model;
+            BoneAnimationSet animations = AnimationsFor(look, load.Mission, load.Animations);
             if (_partners.TryGetValue(partner.Key, out PlayerBodyRenderer? body) && _partnerModels.GetValueOrDefault(partner.Key) != look)
             {
                 body.Release();
@@ -88,7 +85,7 @@ public sealed partial class SoldierRenderer
             if (body is null)
             {
                 body = new PlayerBodyRenderer(this, _device, _sim, _logger, new SoldierPlayerBody());
-                if (!body.Load(load.Mission, look, load.Animations, partner.Feet, partner.Facing))
+                if (!body.Load(load.Mission, look, animations, partner.Feet, partner.Facing))
                 {
                     continue;
                 }
@@ -157,6 +154,33 @@ public sealed partial class SoldierRenderer
             _fallen.Remove(gone);
             _partnerModels.Remove(gone);
         }
+    }
+
+    // The clips a look's body plays: the player's own, on the look's own skeleton. Every human skeleton but one shares the
+    // player's 33 bones and their order, and a clip is a root track and a rotation per bone, so the player's motion poses
+    // any of them -- each on its own proportions, which its skeleton's rest pose carries. A look whose skeleton the
+    // mission hasn't loaded, or one of another shape, keeps the player's set.
+    private BoneAnimationSet AnimationsFor(string model, LoadedMission mission, BoneAnimationSet player)
+    {
+        if (OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == model) is not { } skin || skin.Skeleton == player.Skeleton.Id)
+        {
+            return player;
+        }
+
+        if (_lookAnimations.TryGetValue(skin.Skeleton, out BoneAnimationSet? built))
+        {
+            return built;
+        }
+
+        BoneAnimationSet? own = mission.PacksInLoadOrder.SelectMany(static p => p.AnimationSets).FirstOrDefault(s => s.Skeleton.Id == skin.Skeleton);
+        if (own is null || own.Skeleton.BoneCount != player.Skeleton.BoneCount || !own.Skeleton.Parents.SequenceEqual(player.Skeleton.Parents))
+        {
+            return player;
+        }
+
+        built = BoneAnimationSet.Create(own.Skeleton, [.. player.Animations]);
+        _lookAnimations[skin.Skeleton] = built;
+        return built;
     }
 
     // The player's body was built from these; each partner's is built the same way.
