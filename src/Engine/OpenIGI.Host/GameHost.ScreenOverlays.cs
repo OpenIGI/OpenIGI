@@ -342,6 +342,27 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // A session's scoreboard, while its key is held: over everything but the console.
+        if (TickObserver is ISessionScoreboard session
+            && session.CurrentScoreboard is { } board
+            && _remasteredHud is { IsReady: true } boardHud
+            && ScoreboardHeld())
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            boardHud.DrawScoreboard(state.Batch, board, session.LocalEntity, session.Title, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The other players' names over their heads, on the same eye and lens as the marker.
+        if (_remasteredHud is { IsReady: true } tagHud && _soldiers?.NameTags() is { Count: > 0 } tags)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            tagHud.DrawNameTags(state.Batch, tags, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // In play the mission's messages are the remastered display's, each title's in its own look (Igi1HudOverlay and the
         // title's own display); the cards below stand in only for a cutscene's subtitles where the original's face is missing.
 

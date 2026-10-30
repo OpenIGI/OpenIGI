@@ -1,5 +1,18 @@
 namespace OpenIGI.Host;
 
+/// <summary>A session the host's frame can show the scoreboard of.</summary>
+public interface ISessionScoreboard
+{
+    /// <summary>Gets the scoreboard as this end knows it, or <see langword="null"/> before there is one.</summary>
+    Game.Multiplayer.Scoreboard? CurrentScoreboard { get; }
+
+    /// <summary>Gets this end's own player's entity, whose line is marked, or <see langword="null"/>.</summary>
+    int? LocalEntity { get; }
+
+    /// <summary>Gets what the board is headed with: the server's name and its map.</summary>
+    string Title { get; }
+}
+
 /// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>
 /// <remarks>
 /// The dedicated server is one: before the tick it takes in what the clients sent, so their commands are there when the

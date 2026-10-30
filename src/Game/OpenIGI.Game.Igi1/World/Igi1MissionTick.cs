@@ -481,6 +481,10 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         mission.PartnersTicked = true;
         foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
         {
+            // The same jump rule as the mission's own player, so the partner does what its client predicted in a lift.
+            other.Player.CanJump = mission.Elevators is { } lifts
+                ? () => !lifts.IsPlayerInsideElevator(other.Player.Body.Position, out _)
+                : null;
             other.Run(mission.PlayerTicks, host.Ground, LadderRung);
         }
 

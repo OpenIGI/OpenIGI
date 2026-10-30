@@ -10,7 +10,10 @@ namespace OpenIGI.Game.Multiplayer;
 /// <param name="Kills">The enemies the player has killed.</param>
 /// <param name="Deaths">The times the player has died.</param>
 /// <param name="IsAlive">Whether the player is alive.</param>
-public readonly record struct ScoreboardLine(int Slot, string Name, int Team, int Money, int Kills, int Deaths, bool IsAlive);
+/// <param name="Entity">The player's entity in the snapshots, or -1.</param>
+/// <param name="Ping">The player's round trip to the server, in milliseconds; nought for the server's own.</param>
+public readonly record struct ScoreboardLine(
+    int Slot, string Name, int Team, int Money, int Kills, int Deaths, bool IsAlive, int Entity = -1, int Ping = 0);
 
 /// <summary>The scoreboard a server sends its clients: every player's standing, the team scores and the round.</summary>
 /// <param name="Round">The round being played.</param>
@@ -22,7 +25,9 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
     /// <summary>Gets the scoreboard of a match now.</summary>
     /// <param name="match">The match.</param>
     /// <returns>The scoreboard.</returns>
-    public static Scoreboard Of(Match match)
+    /// <param name="entityOf">Each slot's entity in the snapshots, or -1; none named when omitted.</param>
+    /// <param name="pingOf">Each slot's round trip in milliseconds; nought when omitted.</param>
+    public static Scoreboard Of(Match match, Func<int, int>? entityOf = null, Func<int, int>? pingOf = null)
     {
         ArgumentNullException.ThrowIfNull(match);
         return new Scoreboard(
@@ -30,7 +35,8 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
             match.ScoreOf(TeamRoster.Good),
             match.ScoreOf(TeamRoster.Bad),
             [.. match.Players.Values.OrderBy(static p => p.Slot)
-                .Select(static p => new ScoreboardLine(p.Slot, p.Name, p.Team, p.Money, p.Kills, p.Deaths, p.IsAlive))]);
+                .Select(p => new ScoreboardLine(
+                    p.Slot, p.Name, p.Team, p.Money, p.Kills, p.Deaths, p.IsAlive, entityOf?.Invoke(p.Slot) ?? -1, pingOf?.Invoke(p.Slot) ?? 0))]);
     }
 
     /// <summary>Writes it after a message's kind.</summary>
@@ -51,6 +57,8 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
             writer.WriteVarUInt((uint)line.Kills);
             writer.WriteVarUInt((uint)line.Deaths);
             writer.WriteBool(line.IsAlive);
+            writer.WriteVarInt(line.Entity);
+            writer.WriteVarUInt((uint)Math.Clamp(line.Ping, 0, 9999));
         }
     }
 
@@ -73,7 +81,7 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
         {
             lines[i] = new ScoreboardLine(
                 (int)reader.ReadVarUInt(), reader.ReadString(JoinRequest.MaxNameBytes), reader.ReadVarInt(), reader.ReadVarInt(),
-                (int)reader.ReadVarUInt(), (int)reader.ReadVarUInt(), reader.ReadBool());
+                (int)reader.ReadVarUInt(), (int)reader.ReadVarUInt(), reader.ReadBool(), reader.ReadVarInt(), (int)reader.ReadVarUInt());
         }
 
         return reader.IsOverflowed ? null : new Scoreboard(round, good, bad, lines);

@@ -14,6 +14,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
     private readonly Dictionary<int, ReplicatedHuman> _shown = [];
 
+    // The other players' names, by entity, from the server's scoreboard.
+    private readonly Dictionary<int, string> _names = [];
+
     // Each partner's shot count as last drawn: a count moved on is a shot to flame and sound on this tick.
     private readonly Dictionary<int, byte> _shotsDrawn = [];
 
@@ -50,7 +53,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 gun,
                 h.Shots,
                 fired,
-                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null));
+                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null,
+                _names.GetValueOrDefault(h.Id)));
         }
 
         return bodies;
@@ -119,6 +123,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             health.ApplyDirect(0, (local - server) * health.MaximumHealth);
         }
     }
+
+    /// <inheritdoc/>
+    public void Name(int entity, string name) => _names[entity] = name;
 
     /// <inheritdoc/>
     public void MoveLocal(Vector3d offset)

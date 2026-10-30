@@ -271,6 +271,10 @@ public interface ISoldierBodies : IDisposable
     /// <returns>Their feet, in world units.</returns>
     IReadOnlyList<Vector3d> MapContacts();
 
+    /// <summary>Gets the other players' names and where they stand over the bodies drawn this frame.</summary>
+    /// <returns>The tags; none outside a session.</returns>
+    IReadOnlyList<WorldNameTag> NameTags() => [];
+
     /// <summary>Logs a summary of the soldiers' brains, as the game closes.</summary>
     void LogAiSummary();
 

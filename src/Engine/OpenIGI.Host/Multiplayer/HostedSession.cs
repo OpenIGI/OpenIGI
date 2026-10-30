@@ -23,7 +23,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, IDisposable
+public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -63,6 +63,15 @@ public sealed class HostedSession : IHostTickObserver, IDisposable
 
     /// <summary>Gets the session once the level is up, or <see langword="null"/>.</summary>
     public ServerSession? Session => _session;
+
+    /// <inheritdoc/>
+    public Scoreboard? CurrentScoreboard => _session?.CurrentScoreboard();
+
+    /// <inheritdoc/>
+    public int? LocalEntity => _options.IncludesHost ? ServerSession.HostEntity : null;
+
+    /// <inheritdoc/>
+    public string Title => $"{_options.Name}  ·  {_options.Map}";
 
     /// <inheritdoc/>
     public void BeforeTitleTick(object title)

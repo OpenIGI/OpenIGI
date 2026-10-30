@@ -54,6 +54,9 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
     /// <summary>Gets the rig.</summary>
     public PlayerCamera Player { get; } = player ?? throw new ArgumentNullException(nameof(player));
 
+    /// <summary>Gets or sets its player's name.</summary>
+    public string Name { get; set; } = string.Empty;
+
     /// <summary>Gets its health.</summary>
     public HumanHealth Health { get; } = health ?? throw new ArgumentNullException(nameof(health));
 

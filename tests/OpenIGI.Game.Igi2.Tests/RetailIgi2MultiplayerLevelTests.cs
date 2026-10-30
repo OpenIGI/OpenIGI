@@ -53,6 +53,6 @@ public sealed class RetailIgi2MultiplayerLevelTests
         int team = world.TeamOf(0);
         Assert.Contains(areas, a => a.Team == team
             && a.Points().Any(p => Math.Abs(p.Position.X - joined.Human.Position.X) + Math.Abs(p.Position.Y - joined.Human.Position.Y) < 4096));
-        Assert.Contains(client.Scoreboard!.Lines, l => l.Name == "Anya");
+        Assert.Contains(client.Scoreboard!.Lines, l => l.Name == "Anya" && l.Entity == client.EntityId);
     }
 }

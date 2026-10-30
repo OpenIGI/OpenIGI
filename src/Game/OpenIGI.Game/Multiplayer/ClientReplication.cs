@@ -35,6 +35,17 @@ public static class ClientReplication
         }
 
         session.Flush(now);
+        if (session.Scoreboard is { } board)
+        {
+            foreach (ScoreboardLine line in board.Lines)
+            {
+                if (line.Entity >= 0 && line.Entity != session.EntityId)
+                {
+                    world.Name(line.Entity, line.Name);
+                }
+            }
+        }
+
         if (session.Latest is not { } latest || session.Clock is not { HasSample: true } clock)
         {
             return;

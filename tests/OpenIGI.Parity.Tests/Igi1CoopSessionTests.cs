@@ -39,6 +39,7 @@ public sealed class Igi1CoopSessionTests
         // The frame is told to draw the partner where it stands.
         Game.Igi1.Ai.PartnerBody shown = Assert.Single(capture.Game.World.PartnerBodies!());
         Assert.Equal(partner.Player.Body.Position, shown.Feet);
+        Assert.Equal("Anya", shown.Name);
 
         // Walking on its own clips, and holding what the level arms its player with.
         Assert.True(shown.Animation >= 0, $"the partner's legs are on clip {shown.Animation}");

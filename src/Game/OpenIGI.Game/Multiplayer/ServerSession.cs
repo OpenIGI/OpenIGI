@@ -138,7 +138,7 @@ public sealed class ServerSession
         {
             _writer.Reset();
             _writer.WriteBits((uint)SessionMessage.Scoreboard, 8);
-            Scoreboard.Of(Match).Write(_writer);
+            CurrentScoreboard().Write(_writer);
             _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
         }
 
@@ -202,6 +202,20 @@ public sealed class ServerSession
             }
         }
     }
+
+    /// <summary>Gets the scoreboard as it stands: every player's standing, entity and round trip.</summary>
+    /// <returns>The scoreboard.</returns>
+    public Scoreboard CurrentScoreboard() => Scoreboard.Of(Match, EntityOfSlot, PingOfSlot);
+
+    // A player's round trip in milliseconds, by its slot: the listen server's own player has none.
+    private int PingOfSlot(int slot) =>
+        slot != HostSlot && _net.GetConnection(slot) is { } connection
+            ? (int)Math.Round(connection.Statistics.RoundTripTime * 1000)
+            : 0;
+
+    // A player's entity in the snapshots, by its slot: the listen server's own is the host entity.
+    private int EntityOfSlot(int slot) =>
+        slot == HostSlot ? HostEntity : _clients.TryGetValue(slot, out ClientState? client) ? client.Entity : -1;
 
     private void Join(int slot, string name)
     {

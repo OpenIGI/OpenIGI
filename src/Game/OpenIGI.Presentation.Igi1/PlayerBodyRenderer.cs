@@ -369,7 +369,7 @@ internal sealed class PlayerBodyRenderer(
             else
             {
                 view.PlayUpperBodyAnimation(
-                    pose.UpperBodyAnimation, pose.UpperBodyLoops, pose.UpperBodyBlendSeconds);
+                    pose.UpperBodyAnimation, pose.UpperBodyLoops, pose.UpperBodyBlendSeconds, restart: true);
             }
         }
 
@@ -440,6 +440,34 @@ internal sealed class PlayerBodyRenderer(
                 (where.Z * WorldScene.UnitsPerMetre) + turned.Z),
             orientation * handRotation);
     }
+
+    /// <summary>Gets where a name stands over this body's head as it is drawn this frame, in metres, or <see langword="null"/>.</summary>
+    /// <remarks>The head is the eye bone of the posed body, so a crouch or a climb carries the name with it.</remarks>
+    public Vector3d? HeadAnchorMetres()
+    {
+        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        if (_state.View is not { } view || (!_state.Following && !_state.Climbing))
+        {
+            return null;
+        }
+
+        BonePose pose = view.UnrotatedPose();
+        Vector3f head = HumanAttachPoints.AiEye < pose.BoneCount ? pose.Positions[HumanAttachPoints.AiEye] : new Vector3f(0f, 0f, 1.7f * (float)WorldScene.UnitsPerMetre);
+        (Vector3d where, Matrix3f orientation) = Placement();
+        if (_owner.FrameSmooth && _hasTickState)
+        {
+            where = Vector3d.Lerp(_prevTickWhere, _tickWhere, _owner.FrameAlpha);
+        }
+
+        Vector3f turned = orientation.Transposed().Transform(head);
+        return new Vector3d(
+            where.X + (turned.X / WorldScene.UnitsPerMetre),
+            where.Y + (turned.Y / WorldScene.UnitsPerMetre),
+            where.Z + (turned.Z / WorldScene.UnitsPerMetre) + HeadTagLiftMetres);
+    }
+
+    // How far over the eye a name stands: clear of the head.
+    private const double HeadTagLiftMetres = 0.42;
 
     /// <inheritdoc cref="ISoldierPresenter.StartPlayerLadderAnimation"/>
     public void StartLadderAnimation(

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.World;
 
@@ -10,6 +11,22 @@ namespace OpenIGI.Presentation.Igi1;
 public sealed partial class SoldierRenderer
 {
     private readonly Dictionary<object, PlayerBodyRenderer> _partners = [];
+    private readonly Dictionary<object, string> _partnerNames = [];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorldNameTag> NameTags()
+    {
+        List<WorldNameTag> tags = [];
+        foreach ((object key, PlayerBodyRenderer body) in _partners)
+        {
+            if (_partnerNames.TryGetValue(key, out string? name) && body.HeadAnchorMetres() is { } head)
+            {
+                tags.Add(new WorldNameTag(head, name));
+            }
+        }
+
+        return tags;
+    }
     private readonly Dictionary<object, (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired)> _partnerGuns = [];
     private (LoadedMission Mission, string Model, BoneAnimationSet Animations)? _partnerLoad;
 
@@ -51,6 +68,11 @@ public sealed partial class SoldierRenderer
                 body.Tick();
             }
 
+            if (partner.Name is { Length: > 0 } name)
+            {
+                _partnerNames[partner.Key] = name;
+            }
+
             int shots = _partnerGuns.TryGetValue(partner.Key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) before)
                 ? before.ShotSequence
                 : 0;
@@ -65,6 +87,7 @@ public sealed partial class SoldierRenderer
             _partners[gone].Release();
             _partners.Remove(gone);
             _partnerGuns.Remove(gone);
+            _partnerNames.Remove(gone);
         }
     }
 
@@ -120,6 +143,7 @@ public sealed partial class SoldierRenderer
 
         _partners.Clear();
         _partnerGuns.Clear();
+        _partnerNames.Clear();
         _partnerLoad = null;
     }
 }

@@ -41,7 +41,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     public Igi1ReplicatedWorld(Igi1Gameplay game)
     {
         _game = game ?? throw new ArgumentNullException(nameof(game));
-        _game.World.PartnerBodies = () => [.. _bySlot.Values.Where(static p => !p.IsDead).Select(static p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime))];
+        _game.World.PartnerBodies = () => [.. _bySlot.Values.Where(static p => !p.IsDead).Select(static p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with { Name = p.Name })];
     }
 
     /// <summary>Gets or sets a value indicating whether the mission's own player is a player of the session (a listen server).</summary>
@@ -75,7 +75,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             return null;
         }
 
-        Igi1NetworkPlayer player = new(made.Player, made.Health);
+        Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name };
         Stand(player, slot);
         _bySlot[slot] = player;
         _game.World.NetworkPlayers.Add(player);

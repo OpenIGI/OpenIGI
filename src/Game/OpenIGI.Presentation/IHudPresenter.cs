@@ -197,6 +197,36 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenHeight">The target height in pixels.</param>
     void Draw(SpriteBatch batch, in RemasteredHudSnapshot snapshot, int screenWidth, int screenHeight);
 
+    /// <summary>Draws a session's scoreboard over the picture, while its key is held.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="board">The scoreboard.</param>
+    /// <param name="localEntity">This end's own player's entity, whose line is marked, or <see langword="null"/>.</param>
+    /// <param name="title">What the board is headed with.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawScoreboard(SpriteBatch batch, Game.Multiplayer.Scoreboard board, int? localEntity, string title, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws other players' names over their heads, each standing in the level and turned to the eye.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="tags">The names and where they stand.</param>
+    /// <param name="eye">Where the world is seen from.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawNameTags(
+        SpriteBatch batch,
+        IReadOnlyList<Game.Ai.WorldNameTag> tags,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
     /// <summary>Draws the prompt for the action available where the player is looking.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="view">What the prompt should say and where it is anchored.</param>

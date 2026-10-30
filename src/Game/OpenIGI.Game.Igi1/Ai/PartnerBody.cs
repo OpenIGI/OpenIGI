@@ -15,6 +15,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="ShotSequence">Its shots so far, which tells a new shot from the one before.</param>
 /// <param name="Fired">Whether it fired this tick.</param>
 /// <param name="LadderTime">On a ladder, where its body is in <paramref name="Animation"/>; it is posed there, not played.</param>
+/// <param name="Name">Its player's name, shown over its head.</param>
 public readonly record struct PartnerBody(
     object Key,
     Vector3d Feet,
@@ -25,7 +26,8 @@ public readonly record struct PartnerBody(
     WeaponType? Weapon = null,
     int ShotSequence = 0,
     bool Fired = false,
-    float? LadderTime = null)
+    float? LadderTime = null,
+    string? Name = null)
 {
     /// <summary>Gets a partner's body from its rig, followed as the mission's own player's is.</summary>
     /// <param name="key">What the body follows.</param>
