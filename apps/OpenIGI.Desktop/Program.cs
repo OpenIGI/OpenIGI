@@ -13,7 +13,6 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Game.Multiplayer;
-using OpenIGI.Net.Rooms;
 using OpenIGI.Net.Udp;
 using OpenIGI.Net.WebRtc;
 using OpenIGI.Host;
@@ -49,44 +48,18 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
     string version = System.Reflection.Assembly.GetEntryAssembly()
         ?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev";
+    if (session.Join is not null || session.Host)
+    {
+        if (!DataChannelPeerFactory.IsAvailable())
+        {
+            logger.Warning("Session", "Rooms need libdatachannel beside the game (tools/native/build-datachannel.ps1); playing alone.");
+            return null;
+        }
+
+        return RoomSessions.Start(session, title.Id, options.StartMission, version, new DataChannelPeerFactory(logger), logger);
+    }
+
     JoinRequest join = new(session.PlayerName, version, session.Password);
-    if (session.Join is { } code)
-    {
-        if (!DataChannelPeerFactory.IsAvailable())
-        {
-            logger.Warning("Session", "Rooms need libdatachannel beside the game (tools/native/build-datachannel.ps1); playing alone.");
-            return null;
-        }
-
-        RoomTransport room = RoomTransport.Join(RoomTransport.DefaultMaster, code, new DataChannelPeerFactory(logger), logger);
-        return new SessionClient(room, RoomTransport.HostAddress, join, title.Id, logger);
-    }
-
-    if (session.Host)
-    {
-        if (!DataChannelPeerFactory.IsAvailable())
-        {
-            logger.Warning("Session", "Rooms need libdatachannel beside the game (tools/native/build-datachannel.ps1); playing alone.");
-            return null;
-        }
-
-        string mission = options.StartMission.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        HostedSessionOptions hosted = new(
-            session.ServerName, Math.Min(session.MaxPlayers, 32), session.Password, session.Mode, mission, version, IncludesHost: true, session.PlayerName);
-        RoomRequest request = new(
-            title.Id,
-            MultiplayerProtocol.IdFor(title.Id).ToString("x16", System.Globalization.CultureInfo.InvariantCulture),
-            session.ServerName,
-            mission,
-            session.Mode,
-            version,
-            Math.Clamp(session.MaxPlayers + 1, 2, 32),
-            session.Public,
-            session.Password.Length > 0);
-        RoomTransport room = RoomTransport.Host(RoomTransport.DefaultMaster, request, new DataChannelPeerFactory(logger), logger);
-        return new HostedSession(room, hosted, title.Id, OpenIGI.Engine.Time.GameClock.DefaultTickRate, logger);
-    }
-
     if (session.Connect is { } target)
     {
         if (UdpTransport.Parse(target, SessionArguments.DefaultPort) is not { } server)

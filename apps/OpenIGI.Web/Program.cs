@@ -9,6 +9,8 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Host;
 using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Multiplayer;
+using OpenIGI.Net.Browser;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Web;
 using OpenIGI.Rendering;
@@ -38,6 +40,7 @@ public static partial class Program
     public const string GameRoot = "/game";
 
     private static GameHost? _game;
+    private static IDisposable? _session;
 
     /// <summary>Nothing: the page boots the game once its files are in place.</summary>
     public static void Main()
@@ -56,8 +59,16 @@ public static partial class Program
 
         // The browser's developer console, plus the in-game console once the game attaches it.
         LogRouter logger = new LogRouter().AddSink(new ConsoleSink());
+        // The multiplayer options first, so the host's parser sees only its own. A page has no UDP socket: it plays
+        // with others through rooms alone (-host, -join <code>), over the page's own WebRTC.
+        SessionArguments session = SessionArguments.Parse(args ?? [], out string[] rest);
+        if (session.Connect is not null || session.Listen)
+        {
+            logger.Warning("Session", "The browser can't open a UDP port: host or join a room instead (-host, -join <code>).");
+        }
+
         // The browser build is the original's picture: the preset is held on Vanilla whatever was saved.
-        HostOptions options = HostOptions.Parse(args ?? []) with
+        HostOptions options = HostOptions.Parse(rest) with
         {
             LockedPreset = GraphicsPreset.Vanilla,
         };
@@ -102,6 +113,8 @@ public static partial class Program
             GameRoot,
             logger);
 
+        _session = RoomSessions.Start(session, runtime.Title.Id, options.StartMission, Version(), new BrowserRtcPeerFactory(), logger);
+        _game.TickObserver = _session as IHostTickObserver;
         _game.Start();
     }
 
@@ -123,6 +136,13 @@ public static partial class Program
         _game.Stop();
         _game.Dispose();
         _game = null;
+        _session?.Dispose();
+        _session = null;
         return false;
     }
+
+    private static string Version() =>
+        typeof(Program).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev";
 }

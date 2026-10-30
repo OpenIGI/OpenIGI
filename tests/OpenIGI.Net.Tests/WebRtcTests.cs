@@ -67,6 +67,41 @@ public sealed class WebRtcTests
     [LiveRoomFact]
     public void ARoomConnectsThroughTheRelay() => Session(relayOnly: true);
 
+    /// <summary>
+    /// Hosts a room and sends back whatever a browser sends it, for a browser on the other end to prove the two WebRTCs
+    /// meet: OPENIGI_ECHO_ROOM names a file the room's code is written to; the test waits for a joiner's datagram.
+    /// </summary>
+    [Fact]
+    public void EchoRoomForABrowser()
+    {
+        if (Environment.GetEnvironmentVariable("OPENIGI_ECHO_ROOM") is not { Length: > 0 } codeFile || !DataChannelPeerFactory.IsAvailable())
+        {
+            return;
+        }
+
+        DataChannelPeerFactory factory = new(NullLogger.Instance);
+        RoomRequest request = new("test", "test", "EchoRoom", "1", "coop", "0.0.0", 4, Public: false, Passworded: false);
+        using RoomTransport host = RoomTransport.Host(RoomTransport.DefaultMaster, request, factory, NullLogger.Instance);
+        byte[] buffer = new byte[NetConstants.MaxPacketSize];
+        Assert.True(Wait(() => { host.Poll(); return host.Status == RoomStatus.Open; }), "room never opened");
+        File.WriteAllText(codeFile, host.Code);
+
+        int echoed = 0;
+        Wait(
+            () =>
+            {
+                while (host.TryReceive(buffer, out NetAddress from, out int length))
+                {
+                    host.Send(from, buffer.AsSpan(0, length));
+                    echoed++;
+                }
+
+                return echoed >= 5;
+            },
+            seconds: 180);
+        Assert.True(echoed >= 5, $"echoed {echoed}");
+    }
+
     private static void Session(bool relayOnly)
     {
         DataChannelPeerFactory factory = new(NullLogger.Instance) { RelayOnly = relayOnly };

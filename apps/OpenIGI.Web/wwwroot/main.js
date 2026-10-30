@@ -9,6 +9,7 @@
 import { dotnet } from './_framework/dotnet.js';
 import './wgpu-bridge.js';
 import * as platform from './platform.js';
+import * as rtc from './rtc.js';
 import * as audio from './audio.js';
 import * as files from './game-files.js';
 
@@ -22,6 +23,10 @@ const change = $('change');
 
 const query = new URLSearchParams(location.search);
 const args = (query.get('args') ?? '').split(' ').filter(Boolean);
+// A friend's link: ?join=CODE plays in their room, ?host opens one; ?name= is who you play as.
+if (query.get('join')) args.push('-join', query.get('join'));
+if (query.has('host')) args.push('-host');
+if (query.get('name')) args.push('-name', query.get('name'));
 
 const HINT = 'The folder with IGI.exe in it, usually pc inside the installation.';
 
@@ -294,6 +299,7 @@ async function start() {
 
   platform.install(canvas);
   runtime.setModuleImports('openigi-platform', platform.imports);
+  runtime.setModuleImports('openigi-rtc', rtc.imports);
   runtime.setModuleImports('openigi-audio', audio.imports);
   runtime.setModuleImports('openigi-files', files.imports);
 

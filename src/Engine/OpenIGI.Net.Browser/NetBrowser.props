@@ -1,0 +1,9 @@
+<Project>
+  <!-- rtc.js, served beside the page, which registers its imports under BrowserRtcPeerFactory.ModuleName before the game
+       starts. -->
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)rtc.js"
+             Link="wwwroot/rtc.js"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
