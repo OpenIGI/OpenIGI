@@ -43,6 +43,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>Gets the room joined through, when the session is one.</summary>
+    public RoomTransport? Room => _transport as RoomTransport;
+
     /// <summary>Gets the session once connecting has started, or <see langword="null"/>.</summary>
     public ClientSession? Session => _session;
 

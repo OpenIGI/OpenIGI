@@ -115,6 +115,7 @@ public static partial class Program
 
         _session = RoomSessions.Start(session, runtime.Title.Id, options.StartMission, Version(), new BrowserRtcPeerFactory(), logger);
         _game.TickObserver = _session as IHostTickObserver;
+        _game.RoomPeers = new BrowserRtcPeerFactory();
         _game.Start();
     }
 

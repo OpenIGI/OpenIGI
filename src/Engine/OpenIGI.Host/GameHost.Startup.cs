@@ -492,6 +492,7 @@ public sealed partial class GameHost
             // so does this.
             state.Saves = new SaveSlotStore(SavesDirectory());
 
+            _coop ??= CreateCoop();
             state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
@@ -638,6 +639,8 @@ public sealed partial class GameHost
                 },
                 abandonMission: () =>
                 {
+                    // Out of the mission is out of its room.
+                    _coop?.Leave();
                     // Before it was ever shown, possibly. Counting the rest of the warm-up down would
                     // hold a loading panel over the campaign screen.
                     CancelMissionWarmUp();
@@ -712,9 +715,14 @@ public sealed partial class GameHost
                     TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
                 },
                 displayResolutions: DisplayResolutions,
-                playedMods: () => _titleRuntime.Mods);
+                playedMods: () => _titleRuntime.Mods,
+                coop: _coop);
 
             state.ShellHostForEntryCam = state.ShellHost;
+            if (_coop is not null)
+            {
+                _coop.Shell = state.ShellHost;
+            }
 
             state.Shell = new Shell(BuildShellContext(state.ShellHost, shellTheme, state.Saves));
 

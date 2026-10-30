@@ -11,7 +11,20 @@ namespace OpenIGI.Game.Multiplayer;
 public static class MultiplayerProtocol
 {
     /// <summary>The protocol version; raised whenever any message changes shape.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
+
+    /// <summary>A fingerprint of what a game plays with beyond the game itself: its title and the mods that change play.</summary>
+    /// <param name="titleId">The game's id.</param>
+    /// <param name="mods">The mods that change play, as <c>id@version</c>.</param>
+    /// <returns>Sixteen hex digits; the same for two games that will play the same.</returns>
+    public static string ContentFingerprint(string titleId, IEnumerable<string> mods)
+    {
+        ArgumentNullException.ThrowIfNull(titleId);
+        ArgumentNullException.ThrowIfNull(mods);
+        string played = string.Join('\n', mods.Order(StringComparer.Ordinal));
+        byte[] bytes = Encoding.UTF8.GetBytes($"{titleId}\n{played}");
+        return SipHash.Compute(0x4F70656E49474931UL, 0x436F6E74656E7473UL, bytes).ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
+    }
 
     /// <summary>Gets the protocol id of a game's sessions.</summary>
     /// <param name="titleId">The game's id, as <c>igi1</c> or <c>igi2</c>.</param>
@@ -75,7 +88,11 @@ public sealed record ServerInfo(
 /// <param name="PlayerName">The name it plays under.</param>
 /// <param name="Version">The build it runs.</param>
 /// <param name="Password">The password it was given, or empty.</param>
-public sealed record JoinRequest(string PlayerName, string Version, string Password)
+/// <param name="Content">
+/// What the client plays with beyond the game itself -- its title and the mods that change play -- as a short fingerprint,
+/// or empty when it doesn't say. Two games that differ there drift apart without a word, so a host refuses a mismatch.
+/// </param>
+public sealed record JoinRequest(string PlayerName, string Version, string Password, string Content = "")
 {
     /// <summary>The longest player name kept.</summary>
     public const int MaxNameBytes = 32;
@@ -89,6 +106,7 @@ public sealed record JoinRequest(string PlayerName, string Version, string Passw
         writer.WriteString(PlayerName, MaxNameBytes);
         writer.WriteString(Version, 32);
         writer.WriteString(Password, 64);
+        writer.WriteString(Content, 16);
         return writer.ToArray();
     }
 
@@ -103,7 +121,7 @@ public sealed record JoinRequest(string PlayerName, string Version, string Passw
             return null;
         }
 
-        JoinRequest request = new(reader.ReadString(MaxNameBytes), reader.ReadString(32), reader.ReadString(64));
+        JoinRequest request = new(reader.ReadString(MaxNameBytes), reader.ReadString(32), reader.ReadString(64), reader.ReadString(16));
         return reader.IsOverflowed ? null : request;
     }
 }

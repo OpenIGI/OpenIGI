@@ -16,8 +16,9 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="Version">The build it runs.</param>
 /// <param name="IncludesHost">Whether the host's own player plays too: a listen server rather than a dedicated one.</param>
 /// <param name="HostName">The name the host's own player plays under, when it plays.</param>
+/// <param name="Content">The host's <see cref="JoinRequest.Content"/> fingerprint, or empty to take any.</param>
 public sealed record HostedSessionOptions(
-    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones");
+    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "");
 
 /// <summary>A server's session run inside the host: a dedicated server's, or a listen server's beside the host's own player.</summary>
 /// <remarks>
@@ -79,7 +80,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
     public int? LocalEntity => _options.IncludesHost ? ServerSession.HostEntity : null;
 
     /// <inheritdoc/>
-    public string Title => $"{_options.Name}  ·  {_options.Map}";
+    public string Title => _room?.Code is { } code ? $"Room {code}  ·  {_options.Map}" : $"{_options.Name}  ·  {_options.Map}";
 
     /// <inheritdoc/>
     public void BeforeTitleTick(object title)
@@ -147,6 +148,11 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
         if (JoinRequest.Decode(request.Payload) is not { } join)
         {
             return NetAdmission.Reject("this client speaks another version of the protocol");
+        }
+
+        if (_options.Content.Length > 0 && join.Content.Length > 0 && !string.Equals(join.Content, _options.Content, StringComparison.Ordinal))
+        {
+            return NetAdmission.Reject("your game plays with different mods from the host's");
         }
 
         if (_options.Password.Length > 0 && !string.Equals(join.Password, _options.Password, StringComparison.Ordinal))

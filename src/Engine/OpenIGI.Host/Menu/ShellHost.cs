@@ -31,6 +31,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="resetInputBindings">Restores the active title's control defaults.</param>
 /// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
 /// <param name="playedMods">The mods that change play the running title is played with.</param>
+/// <param name="coop">Co-op through rooms, where the build can make WebRTC connections.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -48,8 +49,12 @@ public sealed class ShellHost(
     Func<string, string?>? inputBindingLabel = null,
     Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null,
     Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null,
-    Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null) : IShellHost
+    Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null,
+    ICoopRooms? coop = null) : IShellHost
 {
+    /// <inheritdoc/>
+    public ICoopRooms? Coop => coop;
+
     /// <inheritdoc/>
     public IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => playedMods?.Invoke() ?? [];
 

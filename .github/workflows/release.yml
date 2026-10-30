@@ -113,6 +113,10 @@ jobs:
           PRODUCT: ${{ steps.tag.outputs.product }}
         run: |
           rm -rf artifacts/release artifacts/web
+          if [ "$PRODUCT" != launcher ]; then
+            # Co-op through rooms needs libdatachannel beside the game; prebuilt by native-datachannel.yml.
+            tools/native/fetch-datachannel.sh $RUNTIMES
+          fi
           if [ "$PRODUCT" = launcher ]; then
             # The launcher alone, self-contained only: the one program a player starts with nothing installed.
             for rid in $RUNTIMES; do

@@ -19,16 +19,17 @@ public static class RoomSessions
     /// <param name="version">The build.</param>
     /// <param name="peers">Makes the WebRTC connections.</param>
     /// <param name="logger">Where the session's progress is told.</param>
+    /// <param name="content">This game's <see cref="JoinRequest.Content"/> fingerprint, or empty.</param>
     /// <returns>The session, or <see langword="null"/> when the options ask for no room.</returns>
     public static IDisposable? Start(
-        SessionArguments session, string titleId, int mission, string version, IRtcPeerFactory peers, IOpenIgiLogger logger)
+        SessionArguments session, string titleId, int mission, string version, IRtcPeerFactory peers, IOpenIgiLogger logger, string content = "")
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(titleId);
         if (session.Join is { } code)
         {
             RoomTransport room = RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger);
-            return new SessionClient(room, RoomTransport.HostAddress, new JoinRequest(session.PlayerName, version, session.Password), titleId, logger);
+            return new SessionClient(room, RoomTransport.HostAddress, new JoinRequest(session.PlayerName, version, session.Password, content), titleId, logger);
         }
 
         if (!session.Host)
@@ -39,7 +40,7 @@ public static class RoomSessions
         string map = mission.ToString(CultureInfo.InvariantCulture);
         int players = Math.Clamp(session.MaxPlayers, 1, 31);
         HostedSessionOptions options = new(
-            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName);
+            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content);
         RoomRequest request = new(
             titleId,
             MultiplayerProtocol.IdFor(titleId).ToString("x16", CultureInfo.InvariantCulture),

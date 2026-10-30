@@ -428,6 +428,7 @@ using (window)
             TitleCatalog.Catalog, titleRuntime.Title,
             fileSystem, runOptions with { Renderer = backend }, gamePath, logger);
         game.TickObserver = multiplayer as IHostTickObserver;
+        game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;
