@@ -52,6 +52,9 @@ public sealed class ClientSession
     /// <summary>Gets the newest snapshot that arrived, or <see langword="null"/>.</summary>
     public Snapshot? Latest { get; private set; }
 
+    /// <summary>Gets the newest scoreboard, or <see langword="null"/>.</summary>
+    public Scoreboard? Scoreboard { get; private set; }
+
     /// <summary>Gets why the session ended or never started, or <see langword="null"/> while it goes on.</summary>
     public string? EndReason { get; private set; }
 
@@ -172,6 +175,9 @@ public sealed class ClientSession
                 TickRate = (int)reader.ReadVarUInt();
                 Map = reader.ReadString(64);
                 Clock = new TickClockSync(Math.Max(1, TickRate));
+                break;
+            case SessionMessage.Scoreboard:
+                Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
                 break;
             case SessionMessage.Snapshot when Clock is { } clock:
                 if (!SnapshotCodec.Read(ref reader, Received.Get, out Snapshot? snapshot) || snapshot is null)

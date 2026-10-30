@@ -38,7 +38,25 @@ public interface IReplicatedWorld
     /// <param name="tick">The tick just run.</param>
     /// <returns>The snapshot.</returns>
     Snapshot Capture(long tick);
+
+    /// <summary>Gets the team a client's player is on.</summary>
+    /// <param name="slot">The client's slot.</param>
+    /// <returns>The team, or -1.</returns>
+    int TeamOf(int slot);
+
+    /// <summary>Takes the deaths since the last call: each player killed, and by whom, by entity id.</summary>
+    /// <returns>The deaths; the killer is -1 when nobody killed it.</returns>
+    IReadOnlyList<WorldDeath> TakeDeaths();
+
+    /// <summary>Puts a client's dead player back in the level at a spawn point, alive.</summary>
+    /// <param name="slot">The client's slot.</param>
+    void Respawn(int slot);
 }
+
+/// <summary>A player killed in the level.</summary>
+/// <param name="Victim">The entity id of the player killed.</param>
+/// <param name="Killer">The entity id of its killer, or -1 when nobody killed it.</param>
+public readonly record struct WorldDeath(int Victim, int Killer);
 
 /// <summary>A title's player that can host a session: it hands the session the level as an <see cref="IReplicatedWorld"/>.</summary>
 public interface IReplicatedTitle
@@ -92,4 +110,7 @@ public enum SessionMessage : byte
 
     /// <summary>Either way, reliable: a line of chat.</summary>
     Chat = 4,
+
+    /// <summary>Server to client, reliable: every player's standing, the team scores and the round.</summary>
+    Scoreboard = 5,
 }

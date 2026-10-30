@@ -75,7 +75,7 @@ public sealed class HostedSession : IHostTickObserver, IDisposable
             }
 
             _world = title.CreateReplicatedWorld(_options.IncludesHost);
-            _session = new ServerSession(_net, _world, _tickRate, _options.Map);
+            _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? "host" : null);
             _logger.Information(LogCategory, $"The level is up; players may join on port {_net.LocalAddress.Port}.");
         }
 

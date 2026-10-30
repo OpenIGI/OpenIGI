@@ -29,6 +29,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     private readonly Igi2TitlePlayer _level;
     private readonly SortedDictionary<int, Igi2NetworkHuman> _bySlot = [];
     private readonly List<ReplicatedHuman> _scratch = [];
+    private readonly HashSet<int> _dead = [];
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ReplicatedWorld"/> class.</summary>
     /// <param name="level">The level, as its own player holds it.</param>
@@ -62,7 +63,80 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     public Igi2NetworkHuman? PlayerOf(int slot) => _bySlot.GetValueOrDefault(slot);
 
     /// <inheritdoc/>
-    public int? AddPlayer(int slot, string name)
+    public int? AddPlayer(int slot, string name) => Place(slot, team: null);
+
+    /// <inheritdoc/>
+    public int TeamOf(int slot) => Teams.TeamOf(slot);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorldDeath> TakeDeaths()
+    {
+        List<WorldDeath> deaths = [];
+        void Check(int entity, Igi2HumanPlayer human)
+        {
+            if (!human.IsDead)
+            {
+                _dead.Remove(entity);
+                return;
+            }
+
+            if (_dead.Add(entity))
+            {
+                deaths.Add(new WorldDeath(entity, EntityOf(human.Killer)));
+            }
+        }
+
+        if (IncludesHost)
+        {
+            Check(HostEntity, _level.Human);
+        }
+
+        foreach ((int slot, Igi2NetworkHuman other) in _bySlot)
+        {
+            Check(slot + 1, other.Human);
+        }
+
+        return deaths;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The dead body is taken out and a new one made at a spawn point of the same team, as the original spawns afresh.</remarks>
+    public void Respawn(int slot)
+    {
+        int team = Teams.TeamOf(slot);
+        if (_bySlot.Remove(slot, out Igi2NetworkHuman? dead))
+        {
+            _level.RemoveNetworkHuman(dead);
+        }
+
+        _dead.Remove(slot + 1);
+        Place(slot, team < 0 ? null : team);
+    }
+
+    private int EntityOf(object? killer)
+    {
+        if (killer is null)
+        {
+            return -1;
+        }
+
+        if (ReferenceEquals(killer, _level.Human))
+        {
+            return IncludesHost ? HostEntity : -1;
+        }
+
+        foreach ((int slot, Igi2NetworkHuman other) in _bySlot)
+        {
+            if (ReferenceEquals(killer, other.Human))
+            {
+                return slot + 1;
+            }
+        }
+
+        return -1;
+    }
+
+    private int? Place(int slot, int? team)
     {
         Igi2HumanPlayer host = _level.Human;
         if (host.Model is not { } model)
@@ -72,24 +146,24 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
 
         Vector3d at = host.Position + new Vector3d(SpawnSpacing * (slot + 1), 0, 0);
         float gamma = host.Gamma;
-        int team = host.Team;
+        int side = team ?? host.Team;
         Igi2SpawnAreaTask[] areas = [.. _level.LevelTasks().OfType<Igi2SpawnAreaTask>()];
         if (areas.Length > 0)
         {
-            team = Teams.FairTeam();
-            if (Array.Find(areas, a => a.Team == team && a.Points().Any()) is { } area && Spawns.Pick(area) is { } point)
+            side = team ?? Teams.FairTeam();
+            if (Array.Find(areas, a => a.Team == side && a.Points().Any()) is { } area && Spawns.Pick(area) is { } point)
             {
                 at = point.Position;
                 gamma = point.Gamma;
             }
         }
 
-        if (_level.AddNetworkHuman(model.Name, at, gamma, team) is not { } human)
+        if (_level.AddNetworkHuman(model.Name, at, gamma, side) is not { } human)
         {
             return null;
         }
 
-        Teams.Assign(slot, team);
+        Teams.Assign(slot, side);
         _bySlot[slot] = human;
         return slot + 1;
     }

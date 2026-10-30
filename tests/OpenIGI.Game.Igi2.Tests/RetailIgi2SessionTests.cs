@@ -71,5 +71,28 @@ public sealed class RetailIgi2SessionTests
         }
 
         Assert.Equal(hostWas.X + 4096, level.Human.Position.X);
+
+        // A death: the client's player falls; the match counts it, the scoreboard tells the client, and once the respawn
+        // delay is over and the client can pay, a new body stands in the level.
+        player.Human.Damage.MaxDamage = 1f;
+        player.Human.HandleDamage(Humans.Igi2DamagePart.Head, 1000f, default);
+        for (int i = 0; i < 130; i++)
+        {
+            now += 1.0 / 30;
+            long tick = level.TickCount;
+            server.Receive(now, tick);
+            level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
+            server.Send(now, tick);
+            client.Receive(now);
+            client.SendCommand(new float[Igi2HumanChannels.Count], now);
+            client.Flush(now);
+        }
+
+        Assert.Equal(1, server.Match.Players[0].Deaths);
+        Assert.Contains(client.Scoreboard!.Lines, l => l.Slot == 0 && l.Deaths == 1);
+        Igi2NetworkHuman reborn = world.PlayerOf(0)!;
+        Assert.NotSame(player, reborn);
+        Assert.False(reborn.Human.IsDead);
+        Assert.True(server.Match.Players[0].IsAlive);
     }
 }

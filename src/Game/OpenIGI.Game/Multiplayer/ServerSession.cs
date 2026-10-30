@@ -29,7 +29,9 @@ public sealed class ServerSession
     /// <param name="world">The title's world.</param>
     /// <param name="tickRate">The world's ticks per second.</param>
     /// <param name="map">The map, told to each client as it joins.</param>
-    public ServerSession(NetServer net, IReplicatedWorld world, int tickRate, string map)
+    /// <param name="rules">The server's rules, or the original's defaults.</param>
+    /// <param name="hostName">The listen server's own player's name, or <see langword="null"/> on a dedicated server.</param>
+    public ServerSession(NetServer net, IReplicatedWorld world, int tickRate, string map, MultiplayerRules? rules = null, string? hostName = null)
     {
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _world = world ?? throw new ArgumentNullException(nameof(world));
@@ -38,7 +40,24 @@ public sealed class ServerSession
         Map = map ?? throw new ArgumentNullException(nameof(map));
         _codec = new UserCommandCodec(world.ChannelCount);
         world.LagCompensation = new LagCompensation(LagCompensationHistory, tickRate);
+        Match = new Match(rules ?? new MultiplayerRules());
+        if (hostName is not null)
+        {
+            Match.Join(HostSlot, hostName, TeamRoster.Good);
+        }
     }
+
+    /// <summary>The match slot of a listen server's own player, past every client's.</summary>
+    public const int HostSlot = 1000;
+
+    /// <summary>The entity id of a listen server's own player.</summary>
+    public const int HostEntity = 0;
+
+    /// <summary>Gets the match: money, kills, scores and rounds.</summary>
+    public Match Match { get; }
+
+    /// <summary>Gets or sets how long a dead player waits before the server respawns it, in seconds, once it can pay.</summary>
+    public double RespawnDelay { get; set; } = 3;
 
     /// <summary>Gets the world's ticks per second.</summary>
     public int TickRate { get; }
@@ -77,6 +96,7 @@ public sealed class ServerSession
                     if (_clients.Remove(e.Peer))
                     {
                         _world.RemovePlayer(e.Peer);
+                        Match.Leave(e.Peer);
                     }
 
                     break;
@@ -92,6 +112,29 @@ public sealed class ServerSession
     /// <param name="tick">The tick just run.</param>
     public void Send(double now, long tick)
     {
+        double seconds = (double)tick / TickRate;
+        foreach (WorldDeath death in _world.TakeDeaths())
+        {
+            Match.Kill(SlotOf(death.Victim), death.Killer < 0 ? -1 : SlotOf(death.Killer), seconds);
+        }
+
+        foreach (int slot in _clients.Keys)
+        {
+            if (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.DiedAt is { } died
+                && seconds - died >= RespawnDelay && Match.TrySpawn(slot, seconds))
+            {
+                _world.Respawn(slot);
+            }
+        }
+
+        if (tick % TickRate == 0)
+        {
+            _writer.Reset();
+            _writer.WriteBits((uint)SessionMessage.Scoreboard, 8);
+            Scoreboard.Of(Match).Write(_writer);
+            _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+        }
+
         Snapshot snapshot = _world.Capture(tick);
         LagCompensationHistory.Add(snapshot);
         if (tick % Math.Max(1, SnapshotInterval) == 0)
@@ -125,12 +168,27 @@ public sealed class ServerSession
         }
 
         _clients[slot] = new ClientState(name, entity.Value);
+        Match.Join(slot, name, _world.TeamOf(slot));
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Welcome, 8);
         _writer.WriteVarUInt((uint)entity.Value);
         _writer.WriteVarUInt((uint)TickRate);
         _writer.WriteString(Map, 64);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    // A client's player's entity is the session's own record; the listen server's player is entity 0.
+    private int SlotOf(int entity)
+    {
+        foreach ((int slot, ClientState client) in _clients)
+        {
+            if (client.Entity == entity)
+            {
+                return slot;
+            }
+        }
+
+        return entity == HostEntity ? HostSlot : -1;
     }
 
     private void ReadMessage(int slot, ClientState client, byte[] data, long serverTick)

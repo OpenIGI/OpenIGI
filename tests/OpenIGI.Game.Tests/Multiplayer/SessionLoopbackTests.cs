@@ -110,6 +110,14 @@ public sealed class SessionLoopbackTests
 
         public Player PlayerOf(int id) => _bySlot.Values.Single(p => p.Id == id);
 
+        public int TeamOf(int slot) => _bySlot.ContainsKey(slot) ? slot % 2 : -1;
+
+        public IReadOnlyList<WorldDeath> TakeDeaths() => [];
+
+        public void Respawn(int slot)
+        {
+        }
+
         public void Step(long tick)
         {
             float[] frame = new float[Channels];
