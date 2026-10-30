@@ -114,6 +114,10 @@ public sealed class SessionLoopbackTests
 
         public IReadOnlyList<WorldDeath> TakeDeaths() => [];
 
+        public IReadOnlyList<IRoundObjective> RoundObjectives => [];
+
+        public int CurrentObjective { get; set; }
+
         public void Respawn(int slot)
         {
         }

@@ -48,6 +48,12 @@ public interface IReplicatedWorld
     /// <returns>The deaths; the killer is -1 when nobody killed it.</returns>
     IReadOnlyList<WorldDeath> TakeDeaths();
 
+    /// <summary>Gets the map's round objectives, or none for a map played without them.</summary>
+    IReadOnlyList<IRoundObjective> RoundObjectives { get; }
+
+    /// <summary>Gets or sets the order of the objective being played, whose spawn areas new players stand in; zero for none.</summary>
+    int CurrentObjective { get; set; }
+
     /// <summary>Puts a client's dead player back in the level at a spawn point, alive.</summary>
     /// <param name="slot">The client's slot.</param>
     void Respawn(int slot);

@@ -75,7 +75,7 @@ public sealed class MatchTests
         Assert.Equal(1000 + 2250, match.Players[0].Money);
         Assert.Equal(1000 + 2250 + 1000, match.Players[1].Money);
         Assert.Equal(1000 + 1250, match.Players[2].Money);
-        Assert.Equal(1, match.ScoreOf(TeamRoster.Good));
+        Assert.Equal(0, match.ScoreOf(TeamRoster.Good));
     }
 
     [Fact]
@@ -84,11 +84,11 @@ public sealed class MatchTests
         Match match = NewMatch();
         for (int i = 0; i < 2; i++)
         {
-            match.ObjectiveWon(TeamRoster.Bad, -1);
+            match.RoundOver(TeamRoster.Bad);
         }
 
         Assert.False(match.IsMapOver(1));
-        match.ObjectiveWon(TeamRoster.Bad, -1);
+        match.RoundOver(TeamRoster.Bad);
         Assert.True(match.IsMapOver(1));
 
         match.NewMap();

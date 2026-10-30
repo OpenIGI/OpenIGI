@@ -56,6 +56,9 @@ public sealed class ServerSession
     /// <summary>Gets the match: money, kills, scores and rounds.</summary>
     public Match Match { get; }
 
+    /// <summary>Gets the round of objectives, once a map that has them is played, or <see langword="null"/>.</summary>
+    public ObjectiveRound? Round { get; private set; }
+
     /// <summary>Gets or sets how long a dead player waits before the server respawns it, in seconds, once it can pay.</summary>
     public double RespawnDelay { get; set; } = 3;
 
@@ -113,6 +116,7 @@ public sealed class ServerSession
     public void Send(double now, long tick)
     {
         double seconds = (double)tick / TickRate;
+        RunRound(tick);
         foreach (WorldDeath death in _world.TakeDeaths())
         {
             Match.Kill(SlotOf(death.Victim), death.Killer < 0 ? -1 : SlotOf(death.Killer), seconds);
@@ -175,6 +179,38 @@ public sealed class ServerSession
         _writer.WriteVarUInt((uint)TickRate);
         _writer.WriteString(Map, 64);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    // The map's objectives, taken in order; a new round puts every player back at its team's spawn.
+    private void RunRound(long tick)
+    {
+        if (Round is null)
+        {
+            if (_world.RoundObjectives.Count == 0)
+            {
+                return;
+            }
+
+            Round = new ObjectiveRound(_world.RoundObjectives, Match, TickRate);
+            Round.Start(tick);
+            _world.CurrentObjective = Round.Current;
+            return;
+        }
+
+        RoundEvent happened = Round.Tick(tick);
+        _world.CurrentObjective = Round.Current;
+        if (happened == RoundEvent.Restart)
+        {
+            foreach (int slot in _clients.Keys)
+            {
+                _world.Respawn(slot);
+                if (Match.Players.TryGetValue(slot, out MatchPlayer? player))
+                {
+                    player.IsAlive = true;
+                    player.DiedAt = null;
+                }
+            }
+        }
     }
 
     // A client's player's entity is the session's own record; the listen server's player is entity 0.

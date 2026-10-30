@@ -147,7 +147,8 @@ public sealed class Match
         return true;
     }
 
-    /// <summary>Records an objective resolved: its resolver and team paid as winners, the other team as losers, and a point.</summary>
+    /// <summary>Records an objective resolved: its resolver and team paid as winners, the other team as losers.</summary>
+    /// <remarks>The team's point comes with the mission, not the objective (<c>TeamManager_AddScore</c> in <c>NetMission_RunHandler</c>).</remarks>
     /// <param name="winningTeam">The team that won it.</param>
     /// <param name="resolver">The slot of the player who resolved it, or -1.</param>
     public void ObjectiveWon(int winningTeam, int resolver)
@@ -162,18 +163,18 @@ public sealed class Match
             hero.Objectives++;
             Pay(hero, Rules.MoneyObjectivePlayerWin);
         }
-
-        if ((uint)winningTeam < 2)
-        {
-            _teamScores[winningTeam]++;
-        }
     }
 
-    /// <summary>Records the end of a round: every player paid as a winner or a loser of the mission.</summary>
+    /// <summary>Records the end of a round: every player paid as a winner or a loser of the mission, and the winners' point.</summary>
     /// <param name="winningTeam">The team that won the round's mission.</param>
     public void RoundOver(int winningTeam)
     {
         Round++;
+        if ((uint)winningTeam < 2)
+        {
+            _teamScores[winningTeam]++;
+        }
+
         foreach (MatchPlayer player in _players.Values)
         {
             Pay(player, player.Team == winningTeam ? Rules.MoneyMissionWin : Rules.MoneyMissionLost);
