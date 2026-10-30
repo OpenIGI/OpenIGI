@@ -47,10 +47,14 @@ public sealed class Igi1CoopSessionTests
     }
 
     [RequiresGameDataFact]
-    public void The_hosts_player_dies_the_partner_plays_on_and_the_host_is_brought_back()
+    public void The_hosts_player_dies_the_partner_plays_on_and_revives_the_host_by_standing_beside_it()
     {
         const int KillFrame = 600;
+        const int AloneFrames = 600;
         int? killedAt = null;
+        int? besideFrom = null;
+        int? revivedAt = null;
+        bool downWhileAlone = false;
         float yawAtDeath = 0f;
         double turnedWhileDown = 0;
         bool levelSawDeath = false;
@@ -74,11 +78,27 @@ public sealed class Igi1CoopSessionTests
                     yawAtDeath = partner.Player.Body.Yaw;
                 }
 
-                if (killedAt is not null && game.World.IsPlayerDead)
+                if (killedAt is not null && game.World.IsPlayerDead && game.World.Player is { } body)
                 {
                     deadSeen = true;
                     turnedWhileDown = Math.Max(turnedWhileDown, Math.Abs(partner.Player.Body.Yaw - yawAtDeath));
                     levelSawDeath |= game.World.LevelRoot?.Tree.FromId(0) is HumanPlayerTask { IsDead: true };
+
+                    // Kept well away first, then stood a metre from the body: only that brings the host back.
+                    bool alone = frame < killedAt + AloneFrames;
+                    double off = alone ? 20 * 4096 : 4096;
+                    partner.Player.Body.Position = body.Body.Position + new Core.Numerics.Vector3d(off, 0, 0);
+                    if (alone && frame == killedAt + AloneFrames - 1)
+                    {
+                        downWhileAlone = true;
+                    }
+
+                    besideFrom ??= alone ? null : frame;
+                }
+
+                if (killedAt is not null && besideFrom is not null && revivedAt is null && !game.World.IsPlayerDead)
+                {
+                    revivedAt = frame;
                 }
             },
             turn: frame => frame > KillFrame ? Math.Min(1f, (frame - KillFrame) * 0.02f) : 0f);
@@ -88,6 +108,11 @@ public sealed class Igi1CoopSessionTests
         Assert.True(deadSeen, "the host's player never lay dead");
         Assert.True(turnedWhileDown > 0.5, $"the partner turned {turnedWhileDown} radians while the host's player was down");
         Assert.False(levelSawDeath, "the level saw its player dead with a partner alive");
+        Assert.True(downWhileAlone, "the host's player came back with nobody beside it");
+        Assert.NotNull(revivedAt);
+        Assert.True(
+            revivedAt - besideFrom >= Igi1ReplicatedWorld.ReviveTicks - 2,
+            $"revived {revivedAt - besideFrom} frames after the partner arrived; a revival takes {Igi1ReplicatedWorld.ReviveTicks}");
         Assert.False(capture.Game.World.IsPlayerDead, "the host's player was not brought back");
         Assert.False(capture.Game.World.PlayerHealth.IsDead);
     }

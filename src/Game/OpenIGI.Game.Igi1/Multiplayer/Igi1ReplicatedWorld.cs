@@ -32,6 +32,21 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
     private const double SpawnSpacing = 4096;
 
+    /// <summary>How long a teammate stands by a fallen player to bring it back, in ticks: five seconds.</summary>
+    public const int ReviveTicks = 5 * 30;
+
+    /// <summary>How near a teammate stands to a fallen player to revive it, in world units: two metres.</summary>
+    public const double ReviveReachUnits = 2 * 4096;
+
+    /// <summary>How much tougher the soldiers are for each player past the first: half as much health again.</summary>
+    public const float EnemyHealthPerExtraPlayer = 0.5f;
+
+    // Each fallen player's revival so far, in ticks, by entity.
+    private readonly Dictionary<int, int> _reviving = [];
+
+    // The scale the soldiers' health was last set to.
+    private float _enemyScale = 1f;
+
     private readonly Igi1Gameplay _game;
     private readonly SortedDictionary<int, Igi1NetworkPlayer> _bySlot = [];
     private readonly HashSet<int> _dead = [];
@@ -57,7 +72,14 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
                 }
             }
         };
-        _game.World.PartnerBodies = () => [.. _bySlot.Values.Where(static p => !p.IsDead).Select(static p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with { Name = p.Name })];
+        // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
+        _game.World.PartnerBodies = () =>
+            [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with
+            {
+                Name = p.Name,
+                Dead = p.IsDead,
+                Revive = p.IsDead ? ReviveProgressOf(p.Entity) : null,
+            })];
     }
 
     /// <summary>Gets or sets a value indicating whether the mission's own player is a player of the session (a listen server).</summary>
@@ -119,12 +141,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(Replicate(HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder ? _game.World.Soldiers?.PlayerLadderClipTime : null));
+            humans.Add(WithRevive(Replicate(HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder ? _game.World.Soldiers?.PlayerLadderClipTime : null)));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(Replicate(slot + 1, other.Player, other.Health, other.LadderClipTime));
+            humans.Add(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.LadderClipTime)));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -266,6 +288,114 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         return bits;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Co-op: a fallen player lies where it fell until a teammate stands by it for <see cref="ReviveTicks"/>.</remarks>
+    public bool HoldsTheDead => true;
+
+    /// <inheritdoc/>
+    public float? ReviveProgressOf(int entity)
+    {
+        bool down = entity == HostEntity ? IncludesHost && _game.World.IsPlayerDead : _bySlot.TryGetValue(entity - 1, out Igi1NetworkPlayer? p) && p.IsDead;
+        return down ? Math.Min(1f, _reviving.GetValueOrDefault(entity) / (float)ReviveTicks) : null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Each fallen player within <see cref="ReviveReachUnits"/> of a living one counts a tick towards its revival; one left
+    /// alone starts again from nothing. At <see cref="ReviveTicks"/> it stands up where it fell, at full health. The
+    /// soldiers' toughness is kept to the squad's size here too, once a tick.
+    /// </remarks>
+    public IReadOnlyList<int> TakeRevivals()
+    {
+        ScaleEnemies();
+
+        List<(int Entity, int Slot, Vector3d At)> down = [];
+        List<Vector3d> up = [];
+        if (IncludesHost && _game.World.Player is { } host)
+        {
+            if (_game.World.IsPlayerDead)
+            {
+                down.Add((HostEntity, ServerSession.HostSlot, host.Body.Position));
+            }
+            else
+            {
+                up.Add(host.Body.Position);
+            }
+        }
+
+        foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
+        {
+            if (other.IsDead)
+            {
+                down.Add((slot + 1, slot, other.Player.Body.Position));
+            }
+            else
+            {
+                up.Add(other.Player.Body.Position);
+            }
+        }
+
+        List<int> revived = [];
+        foreach ((int entity, int slot, Vector3d at) in down)
+        {
+            bool tended = up.Exists(p => Vector3d.Distance(p, at) <= ReviveReachUnits);
+            int ticks = tended ? _reviving.GetValueOrDefault(entity) + 1 : 0;
+            if (ticks < ReviveTicks)
+            {
+                _reviving[entity] = ticks;
+                continue;
+            }
+
+            _reviving.Remove(entity);
+            _dead.Remove(entity);
+            if (entity == HostEntity && _game.World.Player is { } own)
+            {
+                _game.Harm.RevivePlayer(at, own.Body.Yaw);
+            }
+            else if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? partner))
+            {
+                partner.Health.Reset();
+            }
+
+            revived.Add(slot);
+        }
+
+        foreach (int entity in _reviving.Keys.Where(e => !down.Exists(d => d.Entity == e)).ToArray())
+        {
+            _reviving.Remove(entity);
+        }
+
+        return revived;
+    }
+
+    // A fallen player's health byte carries its revival instead, for every client's prompt and panel to show.
+    private ReplicatedHuman WithRevive(ReplicatedHuman human) =>
+        (human.Flags & ReplicatedHumanCondition.Alive) != 0
+            ? human
+            : human with { Health = (byte)Math.Round((ReviveProgressOf(human.Id) ?? 0f) * 255f) };
+
+    // The soldiers made tougher for a bigger squad, keeping what has been taken from each in proportion.
+    private void ScaleEnemies()
+    {
+        int players = _bySlot.Count + (IncludesHost ? 1 : 0);
+        float scale = 1f + (EnemyHealthPerExtraPlayer * Math.Max(0, players - 1));
+        if (scale == _enemyScale || _game.World.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        foreach (Player.SoldierView soldier in soldiers.SoldierViews)
+        {
+            if (!soldier.IsDead)
+            {
+                OpenIGI.Game.Player.HumanHealth health = soldiers.HealthOf(soldier);
+                health.RescaleMaximumHealth(health.BaseMaximumHealth * scale);
+            }
+        }
+
+        _enemyScale = scale;
     }
 
     private void Stand(Igi1NetworkPlayer player, int slot)

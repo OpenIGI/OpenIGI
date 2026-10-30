@@ -43,6 +43,19 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc/>
+    public string? RoomCode => Room?.Code;
+
+    /// <inheritdoc/>
+    public string Place => _session?.Map is { Length: > 0 } map ? HostedSession.MapName(map) : string.Empty;
+
+    /// <inheritdoc/>
+    /// <remarks>A fallen player's health byte carries its revival, in the snapshots the server sends.</remarks>
+    public float? OwnRevive =>
+        _session is { EntityId: { } self, Latest: { } latest } && latest.TryGet(self, out ReplicatedHuman own) && (own.Flags & ReplicatedHumanCondition.Alive) == 0
+            ? own.Health / 255f
+            : null;
+
     /// <summary>Gets the room joined through, when the session is one.</summary>
     public RoomTransport? Room => _transport as RoomTransport;
 

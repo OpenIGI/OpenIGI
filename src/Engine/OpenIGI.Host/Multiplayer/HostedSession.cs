@@ -82,6 +82,12 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
     /// <inheritdoc/>
     public string Title => _room?.Code is { } code ? $"Room {code}  ·  {MapName(_options.Map)}" : $"{_options.Name}  ·  {MapName(_options.Map)}";
 
+    /// <inheritdoc/>
+    public string Place => MapName(_options.Map);
+
+    /// <inheritdoc/>
+    public float? OwnRevive => _options.IncludesHost ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
+
     /// <summary>A map as a player reads it: a mission by its number, anything else as it is.</summary>
     /// <param name="map">The map.</param>
     /// <returns>The name.</returns>

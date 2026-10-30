@@ -201,10 +201,20 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="board">The scoreboard.</param>
     /// <param name="localEntity">This end's own player's entity, whose line is marked, or <see langword="null"/>.</param>
-    /// <param name="title">What the board is headed with.</param>
+    /// <param name="roomCode">The room's code, when the session is played through one.</param>
+    /// <param name="place">Where it is played: the mission or map.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawScoreboard(SpriteBatch batch, Game.Multiplayer.Scoreboard board, int? localEntity, string title, int screenWidth, int screenHeight)
+    void DrawScoreboard(SpriteBatch batch, Game.Multiplayer.Scoreboard board, int? localEntity, string? roomCode, string place, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the panel a fallen co-op player sees while it waits for a teammate: its revival so far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="progress">How far the revival has gone, in <c>[0,1]</c>.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawDowned(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
     {
     }
 

@@ -57,6 +57,18 @@ public interface IReplicatedWorld
     /// <summary>Puts a client's dead player back in the level at a spawn point, alive.</summary>
     /// <param name="slot">The client's slot.</param>
     void Respawn(int slot);
+
+    /// <summary>Gets whether this world holds its dead until another player revives them, rather than respawning them.</summary>
+    bool HoldsTheDead => false;
+
+    /// <summary>Runs a tick of reviving and says who stood up: the slots whose players are alive again.</summary>
+    /// <returns>The revived slots.</returns>
+    IReadOnlyList<int> TakeRevivals() => [];
+
+    /// <summary>Gets how far a fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> when it is up.</summary>
+    /// <param name="entity">The player's entity.</param>
+    /// <returns>The progress.</returns>
+    float? ReviveProgressOf(int entity) => null;
 }
 
 /// <summary>A player killed in the level.</summary>

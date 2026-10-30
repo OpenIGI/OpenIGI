@@ -125,12 +125,27 @@ public sealed class ServerSession
             Match.Kill(SlotOf(death.Victim), death.Killer < 0 ? -1 : SlotOf(death.Killer), seconds);
         }
 
-        foreach (int slot in _clients.Keys.Append(HostSlot))
+        if (_world.HoldsTheDead)
         {
-            if (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.DiedAt is { } died
-                && seconds - died >= RespawnDelay && Match.TrySpawn(slot, seconds))
+            // Down until someone comes for them: the world says who was revived, and the match counts them alive.
+            foreach (int slot in _world.TakeRevivals())
             {
-                _world.Respawn(slot);
+                if (Match.Players.TryGetValue(slot, out MatchPlayer? revived))
+                {
+                    revived.IsAlive = true;
+                    revived.DiedAt = null;
+                }
+            }
+        }
+        else
+        {
+            foreach (int slot in _clients.Keys.Append(HostSlot))
+            {
+                if (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.DiedAt is { } died
+                    && seconds - died >= RespawnDelay && Match.TrySpawn(slot, seconds))
+                {
+                    _world.Respawn(slot);
+                }
             }
         }
 

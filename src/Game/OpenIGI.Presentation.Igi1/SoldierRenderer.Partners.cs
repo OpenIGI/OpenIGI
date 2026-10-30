@@ -13,13 +13,19 @@ public sealed partial class SoldierRenderer
     private readonly Dictionary<object, PlayerBodyRenderer> _partners = [];
     private readonly Dictionary<object, string> _partnerNames = [];
 
+    // The fallen partners: what lies where, and how far each one's revival has gone.
+    private readonly Dictionary<object, (Vector3d Feet, float Progress)> _fallen = [];
+
+    // A body lying a little above its feet: where a revive mark stands over it, in metres.
+    private const double ReviveMarkLift = 0.7;
+
     /// <inheritdoc/>
     public IReadOnlyList<WorldNameTag> NameTags()
     {
         List<WorldNameTag> tags = [];
         foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
-            if (_partnerNames.TryGetValue(key, out string? name) && body.HeadAnchorMetres() is { } head)
+            if (!_fallen.ContainsKey(key) && _partnerNames.TryGetValue(key, out string? name) && body.HeadAnchorMetres() is { } head)
             {
                 tags.Add(new WorldNameTag(head, name));
             }
@@ -27,6 +33,20 @@ public sealed partial class SoldierRenderer
 
         return tags;
     }
+    /// <inheritdoc/>
+    public IReadOnlyList<ReviveMarker> ReviveMarkers()
+    {
+        List<ReviveMarker> marks = [];
+        foreach ((object key, (Vector3d feet, float progress)) in _fallen)
+        {
+            Vector3d metres = feet / OpenIGI.Game.Ai.AiViewCone.UnitsPerMetre;
+            marks.Add(new ReviveMarker(
+                new Vector3d(metres.X, metres.Y, metres.Z + ReviveMarkLift), _partnerNames.GetValueOrDefault(key) ?? "Teammate", progress));
+        }
+
+        return marks;
+    }
+
     private readonly Dictionary<object, (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired)> _partnerGuns = [];
     private (LoadedMission Mission, string Model, BoneAnimationSet Animations)? _partnerLoad;
 
@@ -52,6 +72,29 @@ public sealed partial class SoldierRenderer
                 }
 
                 _partners[partner.Key] = body;
+            }
+
+            if (partner.Name is { Length: > 0 } fallenName)
+            {
+                _partnerNames[partner.Key] = fallenName;
+            }
+
+            // A fallen partner falls once and lies there; stood up again, it walks on from where it lay.
+            if (partner.Dead)
+            {
+                if (!_fallen.ContainsKey(partner.Key))
+                {
+                    body.Kill(OpenIGI.Game.Igi1.Player.HumanPlayerDeath.Choose(0, OpenIGI.Game.Player.HumanHitZoneTable.Player, 0), partner.Feet, partner.Facing);
+                }
+
+                _fallen[partner.Key] = (partner.Feet, partner.Revive ?? 0f);
+                body.Tick();
+                continue;
+            }
+
+            if (_fallen.Remove(partner.Key))
+            {
+                body.Revive();
             }
 
             // A climber is posed where its own ladder body is, on the climbing path the player's is drawn on: the clip
@@ -88,6 +131,7 @@ public sealed partial class SoldierRenderer
             _partners.Remove(gone);
             _partnerGuns.Remove(gone);
             _partnerNames.Remove(gone);
+            _fallen.Remove(gone);
         }
     }
 

@@ -49,11 +49,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         List<Ai.PartnerBody> bodies = [];
         foreach (ReplicatedHuman h in _shown.Values)
         {
-            if ((h.Flags & ReplicatedHumanCondition.Alive) == 0)
-            {
-                continue;
-            }
-
+            // A fallen partner still lies there, its health byte carrying its revival.
+            bool alive = (h.Flags & ReplicatedHumanCondition.Alive) != 0;
             bool fired = _shotsDrawn.TryGetValue(h.Id, out byte drawn) && drawn != h.Shots;
             _shotsDrawn[h.Id] = h.Shots;
             OpenIGI.Game.Weapons.WeaponType? gun =
@@ -67,7 +64,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 h.Shots,
                 fired,
                 (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null,
-                _names.GetValueOrDefault(h.Id)));
+                _names.GetValueOrDefault(h.Id),
+                !alive,
+                alive ? null : h.Health / 255f));
         }
 
         return bodies;

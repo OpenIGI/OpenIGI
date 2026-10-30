@@ -11,6 +11,15 @@ public interface ISessionScoreboard
 
     /// <summary>Gets what the board is headed with: the server's name and its map.</summary>
     string Title { get; }
+
+    /// <summary>Gets the room's code, when the session is played through one.</summary>
+    string? RoomCode => null;
+
+    /// <summary>Gets where the session is played: the mission or map, as a player reads it.</summary>
+    string Place => Title;
+
+    /// <summary>Gets how far this end's own fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> while it is up.</summary>
+    float? OwnRevive => null;
 }
 
 /// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>

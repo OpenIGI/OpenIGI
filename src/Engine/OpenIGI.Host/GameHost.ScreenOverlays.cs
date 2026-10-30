@@ -350,7 +350,45 @@ public sealed partial class GameHost
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            boardHud.DrawScoreboard(state.Batch, board, session.LocalEntity, session.Title, SafeWindowWidth, SafeWindowHeight);
+            boardHud.DrawScoreboard(state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The fallen teammates, each marked where it lies with the same prompt anything usable gets: its ring is the revival.
+        if (_remasteredHud is { IsReady: true } reviveHud && _soldiers?.ReviveMarkers() is { Count: > 0 } fallen)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            foreach (Game.Ai.ReviveMarker mark in fallen)
+            {
+                reviveHud.DrawInteractionPrompt(
+                    state.Batch,
+                    new InteractionPromptView(
+                        mark.AnchorMetres,
+                        1f,
+                        1f,
+                        "+",
+                        $"Revive {mark.Name}",
+                        mark.Progress > 0f
+                            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Reviving {mark.Progress * 100f:0}%, stay close")
+                            : "Stand beside them for 5 seconds",
+                        mark.Progress),
+                    eye,
+                    horizontalTangent,
+                    aspectRatio,
+                    SafeWindowWidth,
+                    SafeWindowHeight);
+            }
+
+            state.Batch.End();
+        }
+
+        // This player fallen in co-op: down, not out, and how far a teammate has got with bringing it back.
+        if (TickObserver is ISessionScoreboard { OwnRevive: { } revival } && _remasteredHud is { IsReady: true } downedHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            downedHud.DrawDowned(state.Batch, revival, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 

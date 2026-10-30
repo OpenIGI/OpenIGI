@@ -275,6 +275,10 @@ public interface ISoldierBodies : IDisposable
     /// <returns>The tags; none outside a session.</returns>
     IReadOnlyList<WorldNameTag> NameTags() => [];
 
+    /// <summary>Gets the fallen teammates there are to revive, each marked where it lies.</summary>
+    /// <returns>The marks.</returns>
+    IReadOnlyList<ReviveMarker> ReviveMarkers() => [];
+
     /// <summary>Logs a summary of the soldiers' brains, as the game closes.</summary>
     void LogAiSummary();
 
