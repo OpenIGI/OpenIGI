@@ -118,7 +118,11 @@ public sealed class QualityBindingTests
     public void Every_shipped_group_names_variables_the_renderer_actually_has()
     {
         CVarRegistry registry = CVarRegistry.Default;
-        _ = OpenIGI.Rendering.FrameCVars.VSync; // force the container's static initialiser
+
+        // Registered as the game registers them before it reads its settings (HostConsole): every container of the
+        // assemblies the menu's rows come from, not only the ones some other test happened to touch first.
+        OpenIGI.Rendering.Generated.CVarRegistrations.RegisterAll();
+        OpenIGI.Game.Generated.CVarRegistrations.RegisterAll();
 
         // CreateControl returns null if ANY variable a group names is unregistered, so a single typo in a
         // thirteen-name group does not produce a broken row -- it produces no row at all, silently. This
