@@ -4,9 +4,16 @@
 // at the address its heartbeat came from (CF-Connecting-IP), never at an address it claims, so nobody can list a
 // server on someone else's machine. One Durable Object holds the whole list: a few hundred entries at most.
 
+import { handleRooms } from "./rooms.js";
+
+export { Room } from "./rooms.js";
+
 const ENTRY_TTL_MS = 90_000;
 const MAX_SERVERS_PER_IP = 8;
 const MAX_FIELD = 64;
+
+// Live rooms one address may have open at once, public or not.
+const MAX_ROOMS_PER_IP = 4;
 
 export default {
   async fetch(request, env) {
@@ -15,11 +22,26 @@ export default {
       return cors(new Response(null, { status: 204 }));
     }
 
+    const list = env.SERVER_LIST.get(env.SERVER_LIST.idFromName("global"));
+    if (url.pathname === "/v1/rooms" && request.method === "POST") {
+      // An address with too many rooms open already is turned away before a code is spent on it.
+      const ip = request.headers.get("CF-Connecting-IP") ?? "";
+      const reserve = await list.fetch("https://list/rooms/reserve", { method: "POST", body: JSON.stringify({ ip }) });
+      if (!reserve.ok) {
+        return cors(reserve);
+      }
+    }
+
+    if (url.pathname.startsWith("/v1/rooms")) {
+      const response = await handleRooms(request, env, url);
+      // A WebSocket upgrade is passed back as it is; headers can't be added to it.
+      return response.status === 101 ? response : cors(response);
+    }
+
     if (!url.pathname.startsWith("/v1/servers")) {
       return cors(json({ error: "not found" }, 404));
     }
 
-    const list = env.SERVER_LIST.get(env.SERVER_LIST.idFromName("global"));
     return cors(await list.fetch(request));
   },
 };
@@ -28,6 +50,8 @@ export class ServerList {
   constructor(state) {
     this.state = state;
     this.servers = new Map();
+    // Rooms by code, public or not: the public ones are listed, and all of them count against their host's address.
+    this.rooms = new Map();
   }
 
   async fetch(request) {
@@ -38,10 +62,29 @@ export class ServerList {
     if (request.method === "GET" && url.pathname === "/v1/servers") {
       const title = url.searchParams.get("title");
       const protocol = url.searchParams.get("protocol");
-      const servers = [...this.servers.values()].filter(
-        (s) => (!title || s.title === title) && (!protocol || s.protocol === protocol),
-      );
-      return json({ servers: servers.map(publicView) });
+      const matches = (s) => (!title || s.title === title) && (!protocol || s.protocol === protocol);
+      const servers = [...this.servers.values()].filter(matches).map(publicView);
+      const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view)).map((r) => r.view);
+      return json({ servers: [...servers, ...rooms] });
+    }
+
+    // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers is).
+    if (request.method === "POST" && url.pathname === "/rooms/reserve") {
+      const { ip } = await request.json();
+      const open = [...this.rooms.values()].filter((r) => r.ip === ip).length;
+      return open >= MAX_ROOMS_PER_IP ? json({ error: "too many rooms from this address" }, 429) : json({ ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/rooms/update") {
+      const { view, ip, public: listed } = await request.json();
+      this.rooms.set(view.room, { view, ip, public: listed === true, lastSeen: now });
+      return json({ ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/rooms/remove") {
+      const { code } = await request.json();
+      this.rooms.delete(code);
+      return json({ ok: true });
     }
 
     if (request.method === "POST" && url.pathname === "/v1/servers/heartbeat") {
@@ -82,9 +125,11 @@ export class ServerList {
   }
 
   expire(now) {
-    for (const [key, entry] of this.servers) {
-      if (now - entry.lastSeen > ENTRY_TTL_MS) {
-        this.servers.delete(key);
+    for (const map of [this.servers, this.rooms]) {
+      for (const [key, entry] of map) {
+        if (now - entry.lastSeen > ENTRY_TTL_MS) {
+          map.delete(key);
+        }
       }
     }
   }

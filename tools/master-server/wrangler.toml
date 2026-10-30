@@ -2,13 +2,23 @@ name = "openigi-master"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-# The whole list lives in one Durable Object; heartbeats keep it current, so nothing needs persisting.
+# Where the game's WebRTC connections find STUN and TURN: coturn on the data.openigi.com VM (tools/turn). The relay's
+# shared secret is the Worker secret TURN_SECRET (`wrangler secret put TURN_SECRET`; `.dev.vars` locally), never here.
+[vars]
+TURN_HOST = "turn.openigi.com"
+
+# The whole list lives in one Durable Object; heartbeats keep it current, so nothing needs persisting. Each co-op room
+# is a Durable Object of its own, named by its code. SQLite-backed: the only kind the Workers free plan has.
 [[durable_objects.bindings]]
 name = "SERVER_LIST"
 class_name = "ServerList"
 
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
 [[migrations]]
 tag = "v1"
-new_classes = ["ServerList"]
+new_sqlite_classes = ["ServerList", "Room"]
 
 # Not deployed yet. Route it (e.g. master.openigi.com/v1/*) when the multiplayer branch ships.

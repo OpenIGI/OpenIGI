@@ -1,0 +1,21 @@
+# STUN and TURN for co-op over WebRTC: how two players behind routers find each other, and the relay between them when
+# their routers won't let them meet directly. Its own compose project beside the web stack, so neither restarts the
+# other. Installed to /srv/openigi-turn by install.sh.
+#
+# Host networking: a relay hands out a port per player from a range, and Docker publishing a range of hundreds of UDP
+# ports is slow and fragile. ufw opens exactly the ports turnserver.conf uses.
+name: openigi-turn
+
+services:
+  coturn:
+    image: coturn/coturn:4.7
+    restart: unless-stopped
+    network_mode: host
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
