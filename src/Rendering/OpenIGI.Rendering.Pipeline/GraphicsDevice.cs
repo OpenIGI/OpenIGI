@@ -61,6 +61,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
     // A present-mode change asked for while a frame was open; see VSyncEnabled.
     private bool _surfaceStale;
+    private bool _depthStale;
     private ulong _frameCounter;
     private bool _disposed;
 
@@ -257,8 +258,24 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         ThrowIfDisposed();
 
         CurrentMode = mode;
-        _device.ConfigureSurface(mode.Width, mode.Height, EffectiveVSync);
 
+        // A resize can land in the middle of a frame (the window is dragged or maximized between the frame's passes).
+        // Reconfiguring the surface then destroys the image the frame is still recording into, and the frame's last copy
+        // of it read freed memory; so, as a change of vertical sync does, it waits for the frame to be presented.
+        if (_inFrame)
+        {
+            _surfaceStale = true;
+            _depthStale = true;
+            return;
+        }
+
+        _device.ConfigureSurface(mode.Width, mode.Height, EffectiveVSync);
+        RetireDepth();
+    }
+
+    // The depth buffer is the surface's size; a new one is made at the new size when next asked for.
+    private void RetireDepth()
+    {
         if (_depth is { } depth)
         {
             _retired.Retire(depth);
@@ -393,6 +410,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         {
             _surfaceStale = false;
             _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, EffectiveVSync);
+        }
+
+        if (_depthStale)
+        {
+            _depthStale = false;
+            RetireDepth();
         }
         _frameCounter++;
         ArmRecordedWorkMarkers();
