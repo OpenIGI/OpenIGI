@@ -18,6 +18,21 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void A_climbers_clip_time_and_counters_ride_a_delta()
+    {
+        Snapshot before = new(10, [Human(1, 0, 0)]);
+        ReplicatedHuman climbing = Human(1, 0, 64) with
+        {
+            Flags = ReplicatedHumanCondition.Alive | ReplicatedHumanCondition.Climbing,
+            ClipTime = 1234,
+            Shots = 7,
+            ActionSequence = 3,
+        };
+        Snapshot after = new(11, [climbing]);
+        Assert.True(RoundTrip(after, before, out Snapshot? read));
+        Assert.Equal(climbing, Assert.Single(read!.Humans));
+    }
+    [Fact]
     public void ADeltaCarriesChangesArrivalsAndDepartures()
     {
         Snapshot before = new(10, [Human(1, 0, 0), Human(2, 500, 500), Human(4, 9000, 9000)]);

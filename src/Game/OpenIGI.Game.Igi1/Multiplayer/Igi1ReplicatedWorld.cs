@@ -21,6 +21,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     /// <summary>The entity id of the mission's own player.</summary>
     public const int HostEntity = 0;
 
+    /// <summary>How finely a clip's time is carried: sixteenths.</summary>
+    public const float ClipTimeScale = 16f;
+
     /// <summary>The entity id a soldier's task id is carried past in snapshots.</summary>
     public const int SoldierEntityBase = 100000;
 
@@ -38,7 +41,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     public Igi1ReplicatedWorld(Igi1Gameplay game)
     {
         _game = game ?? throw new ArgumentNullException(nameof(game));
-        _game.World.PartnerBodies = () => [.. _bySlot.Values.Where(static p => !p.IsDead).Select(static p => Ai.PartnerBody.Of(p, p.Player))];
+        _game.World.PartnerBodies = () => [.. _bySlot.Values.Where(static p => !p.IsDead).Select(static p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime))];
     }
 
     /// <summary>Gets or sets a value indicating whether the mission's own player is a player of the session (a listen server).</summary>
@@ -100,12 +103,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(Replicate(HostEntity, host, _game.World.PlayerHealth));
+            humans.Add(Replicate(HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder ? _game.World.Soldiers?.PlayerLadderClipTime : null));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(Replicate(slot + 1, other.Player, other.Health));
+            humans.Add(Replicate(slot + 1, other.Player, other.Health, other.LadderClipTime));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -190,11 +193,17 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     /// <param name="player">The rig.</param>
     /// <param name="health">Its health, or <see langword="null"/>.</param>
     /// <returns>Its replicated state.</returns>
-    public static ReplicatedHuman Replicate(int id, PlayerCamera player, HumanHealth? health)
+    /// <param name="ladderTime">Where its climbing body is in its ladder clip, or <see langword="null"/>.</param>
+    public static ReplicatedHuman Replicate(int id, PlayerCamera player, HumanHealth? health, float? ladderTime = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         bool dead = health?.IsDead == true;
         ReplicatedHumanCondition condition = dead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive;
+        if (player.LadderAnimation >= 0 && ladderTime is not null)
+        {
+            condition |= ReplicatedHumanCondition.Climbing;
+        }
+
         if (player.Weapons?.FiredThisTick == true)
         {
             condition |= ReplicatedHumanCondition.Firing;
@@ -215,7 +224,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             PlayerTeam,
             condition,
             unchecked((byte)(player.Weapons?.ShotSequence ?? 0)),
-            unchecked((byte)player.UpperBodySequence));
+            unchecked((byte)player.UpperBodySequence),
+            (ushort)Math.Clamp(Math.Round((ladderTime ?? 0f) * ClipTimeScale), 0, ushort.MaxValue));
     }
 
     private void Stand(Igi1NetworkPlayer player, int slot)

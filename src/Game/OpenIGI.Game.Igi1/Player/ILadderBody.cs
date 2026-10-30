@@ -81,6 +81,9 @@ public sealed class SimulatedLadderBody : ILadderBody
     /// <summary>Gets the clip it is playing.</summary>
     public int Animation => _view.CurrentAnimation;
 
+    /// <summary>Gets where it is in that clip.</summary>
+    public float ClipTime => _view.LadderClipTime;
+
     /// <inheritdoc/>
     public void StartLadderClip(int animation, bool loops, bool backwards = false) =>
         _view.StartLadderAnimation(animation, loops, backwards);

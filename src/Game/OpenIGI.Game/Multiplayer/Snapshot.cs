@@ -57,7 +57,7 @@ public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans)
 /// </remarks>
 public static class SnapshotCodec
 {
-    private const int FieldCount = 12;
+    private const int FieldCount = 13;
     private const uint AllFields = (1u << FieldCount) - 1;
 
     /// <summary>Writes a snapshot.</summary>
@@ -181,6 +181,7 @@ public static class SnapshotCodec
         if (a.Flags != b.Flags) { mask |= 1u << 9; }
         if (a.Shots != b.Shots) { mask |= 1u << 10; }
         if (a.ActionSequence != b.ActionSequence) { mask |= 1u << 11; }
+        if (a.ClipTime != b.ClipTime) { mask |= 1u << 12; }
         return mask;
     }
 
@@ -215,6 +216,7 @@ public static class SnapshotCodec
         if ((mask & (1u << 9)) != 0) { writer.WriteBits((uint)human.Flags, 8); }
         if ((mask & (1u << 10)) != 0) { writer.WriteBits(human.Shots, 8); }
         if ((mask & (1u << 11)) != 0) { writer.WriteBits(human.ActionSequence, 8); }
+        if ((mask & (1u << 12)) != 0) { writer.WriteBits(human.ClipTime, 16); }
     }
 
     private static ReplicatedHuman ReadFields(ref BitReader reader, uint mask, ReplicatedHuman human)
@@ -245,6 +247,7 @@ public static class SnapshotCodec
         if ((mask & (1u << 9)) != 0) { human = human with { Flags = (ReplicatedHumanCondition)reader.ReadBits(8) }; }
         if ((mask & (1u << 10)) != 0) { human = human with { Shots = (byte)reader.ReadBits(8) }; }
         if ((mask & (1u << 11)) != 0) { human = human with { ActionSequence = (byte)reader.ReadBits(8) }; }
+        if ((mask & (1u << 12)) != 0) { human = human with { ClipTime = (ushort)reader.ReadBits(16) }; }
         return human;
     }
 }

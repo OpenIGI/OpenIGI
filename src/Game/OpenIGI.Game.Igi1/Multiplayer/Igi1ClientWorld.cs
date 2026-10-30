@@ -49,7 +49,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 new Ai.PlayerBodyPose(h.Action - 1, true, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
                 gun,
                 h.Shots,
-                fired));
+                fired,
+                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null));
         }
 
         return bodies;

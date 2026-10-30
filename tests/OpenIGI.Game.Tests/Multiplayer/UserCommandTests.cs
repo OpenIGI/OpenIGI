@@ -81,50 +81,75 @@ public sealed class UserCommandTests
     }
 
     [Fact]
-    public void Queue_RunsEachCommandOnItsOwnTickWhateverOrderItArrivedIn()
+    public void Queue_RunsEachCommandOnceInTheClientsOrderWhateverOrderItArrivedIn()
     {
         UserCommandBuffer queue = new(Channels);
-        queue.Push(Command(12, look: 0.12f), serverTick: 10);
-        queue.Push(Command(10, look: 0.10f), serverTick: 10);
-        queue.Push(Command(11, look: 0.11f), serverTick: 10);
-        queue.Push(Command(11, look: 9f), serverTick: 10);
+        queue.Push(Command(12, look: 0.12f));
+        queue.Push(Command(10, look: 0.10f));
+        queue.Push(Command(11, look: 0.11f));
+        queue.Push(Command(11, look: 9f));
 
         float[] frame = new float[Channels];
         for (long tick = 10; tick <= 12; tick++)
         {
-            Assert.True(queue.Take(tick, frame));
+            Assert.Equal(1, queue.Due());
+            Assert.True(queue.TryTake(frame));
             Assert.Equal(tick / 100f, frame[0], 5);
+            Assert.Equal(tick, queue.LastTakenTick);
         }
 
         Assert.Equal(0, queue.Missed);
     }
 
     [Fact]
-    public void Queue_HoldsTheLastCommandThroughAGapAndCountsIt()
+    public void Queue_WaitsForItsBufferAndRunsNothingWhenDryRatherThanRepeat()
     {
-        UserCommandBuffer queue = new(Channels);
-        queue.Push(Command(1, look: 0.5f, fire: 1), serverTick: 1);
+        UserCommandBuffer queue = new(Channels) { TargetDepth = 2 };
         float[] frame = new float[Channels];
-        queue.Take(1, frame);
+        queue.Push(Command(1, look: 0.5f, fire: 1));
+        Assert.Equal(0, queue.Due());
 
-        Assert.False(queue.Take(2, frame));
-        Assert.Equal(0.5f, frame[0]);
-        Assert.Equal(1f, frame[1]);
+        queue.Push(Command(2, look: 0.6f));
+        Assert.Equal(1, queue.Due());
+        Assert.True(queue.TryTake(frame));
+        Assert.Equal(1, queue.Due());
+        Assert.True(queue.TryTake(frame));
+
+        // Dry: nothing to run, and the client's next command is run when it comes, not skipped over.
+        Assert.Equal(0, queue.Due());
         Assert.Equal(1, queue.Missed);
+        queue.Push(Command(3, look: 0.7f));
+        queue.Push(Command(4, look: 0.8f));
+        Assert.Equal(1, queue.Due());
+        Assert.True(queue.TryTake(frame));
+        Assert.Equal(3, queue.LastTakenTick);
     }
 
     [Fact]
-    public void Queue_DropsACommandForATickAlreadyRun()
+    public void Queue_CatchesUpTwoATickWhenTheClientRunsAhead()
     {
-        UserCommandBuffer queue = new(Channels);
-        float[] frame = new float[Channels];
-        queue.Take(20, frame);
-        queue.Push(Command(19, look: 1f), serverTick: 21);
+        UserCommandBuffer queue = new(Channels) { TargetDepth = 1, MaxDepth = 3 };
+        for (long tick = 1; tick <= 5; tick++)
+        {
+            queue.Push(Command(tick));
+        }
 
-        Assert.Equal(1, queue.Late);
-        Assert.Equal(0, queue.Buffered);
+        Assert.Equal(2, queue.Due());
     }
 
+    [Fact]
+    public void Queue_DropsARepeatOfACommandAlreadyRun()
+    {
+        UserCommandBuffer queue = new(Channels) { TargetDepth = 1 };
+        float[] frame = new float[Channels];
+        queue.Push(Command(20, look: 1f));
+        queue.Due();
+        queue.TryTake(frame);
+        queue.Push(Command(20, look: 1f));
+        queue.Push(Command(19, look: 1f));
+
+        Assert.Equal(0, queue.Buffered);
+    }
     [Fact]
     public void Roster_OfOneAnswersAsTheOriginalsPointerDid()
     {

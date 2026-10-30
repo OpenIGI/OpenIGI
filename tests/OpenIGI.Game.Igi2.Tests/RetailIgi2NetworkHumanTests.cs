@@ -40,7 +40,7 @@ public sealed class RetailIgi2NetworkHumanTests
         {
             float[] channels = new float[Igi2HumanChannels.Count];
             channels[(int)Igi2HumanChannel.MoveForwards] = 1f;
-            other.Commands.Push(new UserCommand(300 + i, channels), serverTick: 300 + i);
+            other.Commands.Push(new UserCommand(300 + i, channels));
             level.Tick(RetailIgi2Mission1.Idle with { BreakCutscene = true });
         }
         double moved = Math.Sqrt(Math.Pow(other.Human.Position.X - before.X, 2) + Math.Pow(other.Human.Position.Y - before.Y, 2));

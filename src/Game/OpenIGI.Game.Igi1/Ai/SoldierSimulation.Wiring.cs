@@ -230,6 +230,9 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierPlayerBody.View"/>
     internal SoldierView? PlayerBodyView { get => _playerBody.View; set => _playerBody.View = value; }
 
+    /// <summary>Gets where the player's climbing body is in its ladder clip, or <see langword="null"/> off a ladder.</summary>
+    public float? PlayerLadderClipTime => _playerBody.Climbing ? _playerBody.View?.LadderClipTime : null;
+
     /// <inheritdoc cref="SoldierPlayerBody.Model"/>
     internal SoldierBodyModel? PlayerBodyModel { get => _playerBody.Model; set => _playerBody.Model = value; }
 

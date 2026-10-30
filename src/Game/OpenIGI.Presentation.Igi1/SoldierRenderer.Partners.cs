@@ -37,9 +37,20 @@ public sealed partial class SoldierRenderer
                 _partners[partner.Key] = body;
             }
 
-            PlayerBodyPose pose = partner.Pose;
-            body.Follow(partner.Feet, partner.Facing, partner.Animation, partner.Loops, in pose);
-            body.Tick();
+            // A climber is posed where its own ladder body is, on the climbing path the player's is drawn on: the clip
+            // held at its time, its root height the ladder's. Anyone else walks as the player's body follows the player.
+            if (partner.LadderTime is { } time)
+            {
+                body.PoseClimbing(partner.Animation, time, partner.Feet, partner.Facing);
+            }
+            else
+            {
+                body.StopClimbing();
+                PlayerBodyPose pose = partner.Pose;
+                body.Follow(partner.Feet, partner.Facing, partner.Animation, partner.Loops, in pose);
+                body.Tick();
+            }
+
             int shots = _partnerGuns.TryGetValue(partner.Key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) before)
                 ? before.ShotSequence
                 : 0;

@@ -43,7 +43,7 @@ public sealed class LagCompensation(SnapshotInterpolator history, int tickRate)
         History.Sample(AimedAt(commandTick), target, out human);
 
     /// <summary>Gets the moment a command was aimed at from the tick its client says it was drawing.</summary>
-    /// <param name="commandTick">The tick the shooter's command ran on.</param>
+    /// <param name="commandTick">The server's tick the shot is traced on.</param>
     /// <param name="viewTick">The tick the client drew the others at, or <see cref="long.MinValue"/> when not known.</param>
     /// <returns>The tick to sample the history at.</returns>
     /// <remarks>
@@ -58,7 +58,7 @@ public sealed class LagCompensation(SnapshotInterpolator history, int tickRate)
             : Math.Clamp(viewTick, commandTick - (MaxUnlag * TickRate), commandTick);
 
     /// <summary>Gets a player where the shooter's client drew it when it fired, from the view tick its command carried.</summary>
-    /// <param name="commandTick">The tick the shooter's command ran on.</param>
+    /// <param name="commandTick">The server's tick the shot is traced on.</param>
     /// <param name="viewTick">The tick the client drew the others at, or <see cref="long.MinValue"/>.</param>
     /// <param name="target">The player's entity id.</param>
     /// <param name="human">It as it was then.</param>

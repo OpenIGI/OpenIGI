@@ -454,7 +454,7 @@ internal sealed class PlayerBodyRenderer(
             return;
         }
 
-        _sim.StartPlayerTraversalAnimation(
+        _state.StartTraversalAnimation(
             view, animation, loops, backwards, paused, suppressRootHeight: true, visualLift: 0.0);
 
         // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
@@ -482,7 +482,7 @@ internal sealed class PlayerBodyRenderer(
             return;
         }
 
-        _sim.StartPlayerTraversalAnimation(
+        _state.StartTraversalAnimation(
             view,
             animation,
             loops,
@@ -538,6 +538,37 @@ internal sealed class PlayerBodyRenderer(
 
         // The caller places the body with the delta straight after; the placement call captures the
         // tick state, so nothing is recorded here off a stale position.
+    }
+
+    /// <summary>Poses a climbing co-op partner exactly where the server's ladder body is: its clip, held at a time.</summary>
+    /// <param name="animation">The ladder clip.</param>
+    /// <param name="time">Where it is in the clip.</param>
+    /// <param name="feet">The climber's feet, in world units.</param>
+    /// <param name="facing">The ladder's facing.</param>
+    public void PoseClimbing(int animation, float time, Vector3d feet, float facing)
+    {
+        if (_state.View is not { } view)
+        {
+            return;
+        }
+
+        if (!_state.Climbing || view.CurrentAnimation != animation)
+        {
+            StartLadderAnimation(animation, loops: animation != PlayerCamera.LadderTopAnimation);
+        }
+
+        view.HoldLadderClip(time);
+        AdvanceLadderAnimation(facing, out _, out _, out _);
+        PlaceClimbing(feet, facing);
+    }
+
+    /// <summary>Lets go of a climb, as a co-op partner steps off its ladder.</summary>
+    public void StopClimbing()
+    {
+        if (_state.Climbing)
+        {
+            _state.HideClimbing();
+        }
     }
 
     /// <inheritdoc cref="ISoldierPresenter.PlacePlayerBodyClimbing"/>

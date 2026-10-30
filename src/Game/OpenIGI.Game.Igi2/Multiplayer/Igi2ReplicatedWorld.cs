@@ -237,7 +237,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         List<(Igi2HumanPlayer Human, Vector3d Was)> moved = [];
         void MoveBack(int id, Igi2HumanPlayer human)
         {
-            if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(commandTick, shooter.Commands.LastViewTick, id, out ReplicatedHuman then))
+            if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(CurrentTick, shooter.Commands.LastViewTick, id, out ReplicatedHuman then))
             {
                 moved.Add((human, human.Position));
                 human.Position = then.Position.ToVector();

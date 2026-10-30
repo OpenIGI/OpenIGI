@@ -73,18 +73,31 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
 
     private SimulatedLadderBody? _ladderBody;
 
+    /// <summary>Gets where the partner is in its ladder clip, or <see langword="null"/> off a ladder.</summary>
+    public float? LadderClipTime => Player.IsOnLadder ? _ladderBody?.ClipTime : null;
+
     /// <summary>Runs the partner a tick on its client's command for the tick, its ladder climbed as the mission's own player's is.</summary>
     /// <param name="tick">The tick.</param>
     /// <param name="ground">The ground.</param>
     /// <param name="rung">Sounds a rung it crossed.</param>
+    /// <remarks>
+    /// Each of its client's commands is run once, in order, so the partner goes exactly where its client predicted it: none
+    /// on a tick the queue is dry (the partner waits), two on a tick it is catching up.
+    /// </remarks>
     public void Run(long tick, IGroundHeightField? ground, Action<PlayerCamera> rung)
     {
-        Commands.Take(tick, _channels);
-        if (IsDead)
+        for (int due = Commands.Due(); due > 0 && Commands.TryTake(_channels); due--)
         {
-            return;
+            if (!IsDead)
+            {
+                RunCommand(ground, rung);
+            }
         }
+    }
 
+    // One of its client's commands.
+    private void RunCommand(IGroundHeightField? ground, Action<PlayerCamera> rung)
+    {
         PlayerInputFrame frame = Igi1Command.Unpack(_channels, out float yaw, out float pitch);
         Player.Body.Yaw = yaw;
         Player.Body.Pitch = Math.Clamp(pitch, -PlayerBody.PitchLimit, PlayerBody.PitchLimit);

@@ -1,129 +1,151 @@
 namespace OpenIGI.Game.Multiplayer;
 
-/// <summary>The server's buffer of one client's commands, by the tick each is for.</summary>
+/// <summary>The server's queue of one client's commands, run each exactly once and in the order the client made them.</summary>
 /// <remarks>
 /// <para>
-/// Commands arrive several to a packet, repeated, early and out of order; the buffer keeps one per tick and gives the
-/// server, each tick, the command for exactly that tick. A command for a tick already run is late and is dropped. When
-/// the command for a tick has not arrived, the client's last one is run again, its held channels held, as Source does
-/// when a client's command is missing, and the miss is counted so the client can be told to send further ahead.
+/// A client makes one command a tick and predicts its own player on it. The server must run that same sequence, no command
+/// twice, none left out and none made up, or its copy of the player goes somewhere the client never went and the client is
+/// corrected: the "step back". So nothing here is keyed to the server's own tick. Commands arrive several to a packet,
+/// repeated, early and out of order; the queue keeps each once and hands them out in order.
 /// </para>
 /// <para>
-/// The client stamps its commands ahead of the server by its half round trip and a small buffer (see
-/// <see cref="Net.TickClockSync.CommandTick"/>), so in a steady session each arrives a tick or two before it is run.
+/// The arrival of packets jitters, so a queue that ran a command the moment one arrived would starve every other tick. It
+/// waits, as Source's does, until <see cref="TargetDepth"/> are queued before it starts (and again after it ran dry), and
+/// from then gives one a tick. A client whose clock runs a little fast fills it; past <see cref="MaxDepth"/> it gives two a
+/// tick until it is back down. Starved, it gives none: the player waits for its client rather than move on controls nobody
+/// pressed, and the ticks it waited are counted in <see cref="Missed"/>.
 /// </para>
 /// </remarks>
 public sealed class UserCommandBuffer
 {
-    private readonly SortedDictionary<long, float[]> _pending = [];
-    private readonly Dictionary<long, long> _viewTicks = [];
+    private readonly SortedDictionary<long, (float[] Channels, long ViewTick)> _pending = [];
     private readonly float[] _last;
-    private long _lastTaken = long.MinValue;
+    private bool _primed;
 
     /// <summary>Initializes a new instance of the <see cref="UserCommandBuffer"/> class.</summary>
     /// <param name="channelCount">The title's channel frame length.</param>
-    /// <param name="maxAhead">How many ticks ahead of the server a command may be and still be kept.</param>
-    public UserCommandBuffer(int channelCount, int maxAhead = 64)
+    /// <param name="maxQueued">How many commands may wait before more are refused, so a client cannot fill the server.</param>
+    public UserCommandBuffer(int channelCount, int maxQueued = 64)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(channelCount, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxAhead, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxQueued, 1);
         _last = new float[channelCount];
-        MaxAhead = maxAhead;
+        MaxQueued = maxQueued;
     }
 
-    /// <summary>Gets how many ticks ahead of the server a command may be and still be kept.</summary>
-    public int MaxAhead { get; }
+    /// <summary>Gets how many commands may wait before more are refused.</summary>
+    public int MaxQueued { get; }
 
-    /// <summary>Gets the ticks whose command had not arrived when it was needed.</summary>
+    /// <summary>Gets or sets how many commands the queue waits for before it starts handing them out.</summary>
+    public int TargetDepth { get; set; } = 2;
+
+    /// <summary>Gets or sets past how many waiting commands the queue gives two a tick.</summary>
+    public int MaxDepth { get; set; } = 6;
+
+    /// <summary>Gets the ticks the queue had nothing to give.</summary>
     public long Missed { get; private set; }
 
-    /// <summary>Gets the commands that arrived for a tick already run.</summary>
+    /// <summary>Gets the commands that arrived after one made later had already run.</summary>
     public long Late { get; private set; }
 
-    /// <summary>Gets the newest tick a command has been run for, or <see cref="long.MinValue"/> before the first.</summary>
-    public long LastTakenTick => _lastTaken;
+    /// <summary>Gets the stamp of the newest command run, or <see cref="long.MinValue"/> before the first.</summary>
+    public long LastTakenTick { get; private set; } = long.MinValue;
 
     /// <summary>Gets the tick the client was drawing at when it made the command last run, or <see cref="long.MinValue"/>.</summary>
     public long LastViewTick { get; private set; } = long.MinValue;
 
-    /// <summary>Gets how many ticks of commands wait beyond the last one run.</summary>
+    /// <summary>Gets the stamp of the command that arrived last (a packet carries its newest last).</summary>
+    public long NewestTick { get; private set; } = long.MinValue;
+
+    /// <summary>Gets how many commands wait to be run.</summary>
     public int Buffered => _pending.Count;
 
     /// <summary>Takes a command that arrived.</summary>
     /// <param name="command">The command.</param>
-    /// <param name="serverTick">The tick the server is about to run.</param>
-    public void Push(in UserCommand command, long serverTick)
+    public void Push(in UserCommand command)
     {
         if (command.Channels is null || command.Channels.Length != _last.Length)
         {
             return;
         }
 
-        if (command.Tick <= _lastTaken || command.Tick < serverTick)
+        // A repeat of one already run is what the packets' redundancy sends; one older than the newest run came too late.
+        if (command.Tick <= LastTakenTick)
         {
-            Late++;
+            if (command.Tick < LastTakenTick - 8)
+            {
+                Late++;
+            }
+
             return;
         }
 
-        if (command.Tick - serverTick > MaxAhead)
+        if (_pending.Count >= MaxQueued)
         {
             return;
         }
 
-        if (_pending.TryAdd(command.Tick, command.Channels) && command.ViewTick != long.MinValue)
-        {
-            _viewTicks[command.Tick] = command.ViewTick;
-        }
+        _pending.TryAdd(command.Tick, (command.Channels, command.ViewTick));
         NewestTick = command.Tick;
     }
 
-    /// <summary>Gets the tick of the command that arrived last (a packet carries its newest last), or <see cref="long.MinValue"/> before the first.</summary>
-    public long NewestTick { get; private set; } = long.MinValue;
-
-    /// <summary>Gives the command for a tick, or repeats the last one when it has not arrived.</summary>
-    /// <param name="tick">The tick being run.</param>
-    /// <param name="frame">Where the channels go.</param>
-    /// <returns><see langword="true"/> when the client's own command for the tick was there.</returns>
-    public bool Take(long tick, Span<float> frame)
+    /// <summary>Gets how many commands to run this tick, and counts a tick the queue is dry.</summary>
+    /// <returns>Nought, one, or two while catching up.</returns>
+    public int Due()
     {
-        while (_pending.Count > 0)
+        if (!_primed)
         {
-            long first = FirstKey();
-            if (first >= tick)
+            if (_pending.Count < TargetDepth)
             {
-                break;
+                Missed += LastTakenTick == long.MinValue ? 0 : 1;
+                return 0;
             }
 
-            _pending.Remove(first);
-            _viewTicks.Remove(first);
+            _primed = true;
         }
 
-        _pending.Remove(tick, out float[]? channels);
-        if (channels is not null)
+        if (_pending.Count == 0)
         {
-            channels.CopyTo(_last, 0);
-            LastViewTick = _viewTicks.Remove(tick, out long view) ? view : long.MinValue;
-        }
-        else
-        {
+            _primed = false;
             Missed++;
-
-            // A repeated command was made no later than the one it repeats; it is aimed a tick on from where that was.
-            LastViewTick = LastViewTick == long.MinValue ? long.MinValue : LastViewTick + 1;
+            return 0;
         }
 
-        _last.CopyTo(frame);
-        _lastTaken = tick;
-        return channels is not null;
+        return _pending.Count > MaxDepth ? 2 : 1;
     }
 
-    private long FirstKey()
+    /// <summary>Takes the next command in the client's order.</summary>
+    /// <param name="frame">Where the channels go.</param>
+    /// <returns><see langword="false"/> when none waits.</returns>
+    public bool TryTake(Span<float> frame)
     {
-        foreach (long key in _pending.Keys)
+        if (_pending.Count == 0)
         {
-            return key;
+            return false;
         }
 
-        return long.MaxValue;
+        (long tick, (float[] channels, long viewTick)) = _pending.First();
+        _pending.Remove(tick);
+        channels.CopyTo(_last, 0);
+        _last.CopyTo(frame);
+        LastTakenTick = tick;
+        LastViewTick = viewTick;
+        return true;
+    }
+
+    /// <summary>Gives the next command if one waits, else repeats the last: for a player that must be run every tick.</summary>
+    /// <param name="frame">Where the channels go.</param>
+    /// <returns><see langword="true"/> when a command of the client's own was given.</returns>
+    /// <remarks>A repeated command is input the client never gave, which its prediction then disagrees with; prefer <see cref="Due"/>.</remarks>
+    public bool TakeOrRepeat(Span<float> frame)
+    {
+        if (TryTake(frame))
+        {
+            return true;
+        }
+
+        Missed++;
+        _last.CopyTo(frame);
+        return false;
     }
 }

@@ -163,9 +163,8 @@ public sealed class ServerSession
         UserCommandBuffer? commands = _world.CommandsFor(slot);
         long ran = commands?.LastTakenTick ?? -1;
 
-        // How far ahead of this tick the client's newest command arrived, so it can steer its stamps (0x8000: none yet).
-        long newest = commands?.NewestTick ?? long.MinValue;
-        int lead = newest == long.MinValue ? short.MinValue : (int)Math.Clamp(newest - tick, short.MinValue + 1, short.MaxValue);
+        // How many of the client's commands wait to be run: the delay its queue adds, for its net graph (0x8000: none yet).
+        int lead = commands is not { LastTakenTick: not long.MinValue } ? short.MinValue : Math.Min(commands.Buffered, short.MaxValue);
 
         for (int parts = 1; parts <= MaxSnapshotParts; parts++)
         {
@@ -289,7 +288,7 @@ public sealed class ServerSession
         {
             foreach (UserCommand command in _commands)
             {
-                buffer.Push(command, serverTick);
+                buffer.Push(command);
             }
         }
     }

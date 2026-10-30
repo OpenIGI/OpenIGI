@@ -14,6 +14,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="Weapon">The weapon in its hand, or <see langword="null"/> for none.</param>
 /// <param name="ShotSequence">Its shots so far, which tells a new shot from the one before.</param>
 /// <param name="Fired">Whether it fired this tick.</param>
+/// <param name="LadderTime">On a ladder, where its body is in <paramref name="Animation"/>; it is posed there, not played.</param>
 public readonly record struct PartnerBody(
     object Key,
     Vector3d Feet,
@@ -23,13 +24,15 @@ public readonly record struct PartnerBody(
     PlayerBodyPose Pose,
     WeaponType? Weapon = null,
     int ShotSequence = 0,
-    bool Fired = false)
+    bool Fired = false,
+    float? LadderTime = null)
 {
     /// <summary>Gets a partner's body from its rig, followed as the mission's own player's is.</summary>
     /// <param name="key">What the body follows.</param>
     /// <param name="player">The rig.</param>
+    /// <param name="ladderTime">Where its climbing body is in its ladder clip, or <see langword="null"/>.</param>
     /// <returns>The body.</returns>
-    public static PartnerBody Of(object key, PlayerCamera player)
+    public static PartnerBody Of(object key, PlayerCamera player, float? ladderTime = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         bool climbing = player.LadderAnimation >= 0;
@@ -47,6 +50,7 @@ public readonly record struct PartnerBody(
                 player.AimPitch),
             player.Weapons?.InHand?.Weapon,
             player.Weapons?.ShotSequence ?? 0,
-            player.FiredThisTick);
+            player.FiredThisTick,
+            climbing ? ladderTime : null);
     }
 }

@@ -65,7 +65,8 @@ public sealed class Igi2NetworkHuman
             return;
         }
 
-        Commands.Take(tick, _frame);
+        // The sequel's human is one of the level's and runs every tick, so a dry queue repeats the last command.
+        Commands.TakeOrRepeat(_frame);
         Human.View.RunZoom();
         Human.Ticks = (int)tick;
         Human.Update(_frame);

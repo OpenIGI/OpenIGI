@@ -19,7 +19,6 @@ public sealed class TickClockSync
 {
     private bool _hasSample;
     private double _offsetTicks;
-    private double _leadAdjustTicks;
 
     /// <summary>Initializes a new instance of the <see cref="TickClockSync"/> class.</summary>
     /// <param name="tickRate">The server's ticks per second.</param>
@@ -79,21 +78,6 @@ public sealed class TickClockSync
     /// <param name="roundTripTime">The connection's round trip, in seconds.</param>
     /// <returns>The tick the server should run it on.</returns>
     public long CommandTick(double now, double roundTripTime) =>
-        (long)Math.Ceiling(ServerTick(now) + (roundTripTime * 0.5 * TickRate) + CommandBufferTicks + _leadAdjustTicks);
+        (long)Math.Ceiling(ServerTick(now) + (roundTripTime * 0.5 * TickRate) + CommandBufferTicks);
 
-    /// <summary>Takes how far ahead of its tick the server says this client's newest command arrived.</summary>
-    /// <param name="leadTicks">The lead, in ticks.</param>
-    /// <remarks>
-    /// The round trip the stamps are reckoned from carries both ends' frame time, so it overstates the wire; steered by what
-    /// the server sees, the commands settle <see cref="CommandBufferTicks"/> ahead whatever the estimate's error, as Source
-    /// has the server tell a client its commands' slack.
-    /// </remarks>
-    public void ReportCommandLead(double leadTicks)
-    {
-        _leadAdjustTicks += (CommandBufferTicks - leadTicks) * LeadSteering;
-        _leadAdjustTicks = Math.Clamp(_leadAdjustTicks, -TickRate, TickRate);
-    }
-
-    /// <summary>Gets or sets how much of the error in a reported lead each report corrects, 0 to 1.</summary>
-    public double LeadSteering { get; set; } = 0.1;
 }

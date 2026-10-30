@@ -64,6 +64,50 @@ public sealed class SessionLoopbackTests
         Assert.True(seen.Position.X > earlier.Position.X);
     }
 
+    [Theory]
+    [InlineData(0.0, 0.0)]
+    [InlineData(0.08, 0.04)]
+    [InlineData(0.2, 0.06)]
+    public void A_client_predicting_its_player_as_the_server_runs_it_is_never_corrected(double latency, double jitter)
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, latency, jitter, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, latency, jitter, 0, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        // Walking on and off, so a command run twice, out of order or never would show as a position the client never had.
+        float[] frame = new float[ToyWorld.Channels];
+        long predicted = 0;
+        for (long tick = 0; tick < 12 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            if (client.EntityId is { } self && client.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own))
+            {
+                client.Reconciler.Check(client.LastRunCommandTick, own.Position.ToVector());
+            }
+
+            frame[0] = tick % 45 < 30 ? 1f : 0f;
+            if (client.SendCommand(frame, now) is { } sent)
+            {
+                predicted += (int)(frame[0] * 100);
+                client.Reconciler.Record(sent, new Core.Numerics.Vector3d(predicted, 0, 0));
+            }
+
+            client.Flush(now);
+        }
+
+        ToyWorld.Player moved = world.PlayerOf(client.EntityId!.Value);
+        Assert.True(moved.Position.X > 100 * 100, $"walked only {moved.Position.X}");
+        Assert.Equal(0, client.Reconciler.Corrections);
+        Assert.Equal(0, moved.Commands.Late);
+    }
     [Fact]
     public void A_world_too_big_for_one_packet_arrives_in_parts_and_whole()
     {
@@ -166,9 +210,11 @@ public sealed class SessionLoopbackTests
             float[] frame = new float[Channels];
             foreach (Player player in _bySlot.Values)
             {
-                player.Commands.Take(tick, frame);
-                player.Speed = frame[0] * 100;
-                player.Position = player.Position with { X = player.Position.X + (int)player.Speed };
+                for (int due = player.Commands.Due(); due > 0 && player.Commands.TryTake(frame); due--)
+                {
+                    player.Speed = frame[0] * 100;
+                    player.Position = player.Position with { X = player.Position.X + (int)player.Speed };
+                }
             }
         }
 

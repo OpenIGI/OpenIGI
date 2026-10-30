@@ -334,6 +334,22 @@ public sealed class SoldierView
         return true;
     }
 
+    /// <summary>Gets where the whole-body clip is, in its own time: a climbing player's place on the ladder clip.</summary>
+    public float LadderClipTime => _bones.SourceOf(0)?.Time ?? 0f;
+
+    /// <summary>Holds the whole-body clip still at a time, as another player's window poses a climber from the server's.</summary>
+    /// <param name="time">The clip's time.</param>
+    public void HoldLadderClip(float time)
+    {
+        if (_bones.SourceOf(0) is { } clip)
+        {
+            clip.Rate = 0f;
+            clip.SetTime(time);
+            _pose = null;
+            _unrotatedPose = null;
+        }
+    }
+
     /// <summary>Sets animation 168's time scale to −1, 0 or +1 authoring frame per tick.</summary>
     /// <param name="direction">The requested sign, clamped to −1, 0 or +1.</param>
     public void SetLadderPlaybackDirection(int direction)

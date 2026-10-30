@@ -23,6 +23,9 @@ public enum ReplicatedHumanCondition : byte
 
     /// <summary>It is looking through a zoom.</summary>
     Zoomed = 16,
+
+    /// <summary>On a ladder: <see cref="ReplicatedHuman.State"/> is the climb's clip and <see cref="ReplicatedHuman.ClipTime"/> where it is.</summary>
+    Climbing = 32,
 }
 
 /// <summary>One human as a snapshot carries it: everything a client needs to draw another player and hit-test it.</summary>
@@ -51,6 +54,7 @@ public enum ReplicatedHumanCondition : byte
 /// <param name="Flags">Its flags.</param>
 /// <param name="Shots">Its shots so far, counted round in a byte: a change is a shot, whichever snapshot carries it.</param>
 /// <param name="ActionSequence">How often its upper-body action has started, counted round in a byte: a change starts it again.</param>
+/// <param name="ClipTime">Where a whole-body clip the others must pose exactly is, in sixteenths of its time; a climb's.</param>
 public readonly record struct ReplicatedHuman(
     int Id,
     Int3 Position,
@@ -64,7 +68,8 @@ public readonly record struct ReplicatedHuman(
     byte Team,
     ReplicatedHumanCondition Flags,
     byte Shots = 0,
-    byte ActionSequence = 0);
+    byte ActionSequence = 0,
+    ushort ClipTime = 0);
 
 /// <summary>A point in whole world units.</summary>
 /// <param name="X">X.</param>

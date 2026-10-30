@@ -68,10 +68,7 @@ public sealed class ClientSession
     /// <summary>Gets the newest tick whose command the server has run for this client, as of the newest snapshot.</summary>
     public long LastRunCommandTick { get; private set; } = long.MinValue;
 
-    // How far behind the last stamp a command must be steered before ticks already sent are stamped again.
-    private const int RestampTicks = 3;
-
-    /// <summary>Gets how far ahead of the server's tick this client's newest command last arrived, in ticks.</summary>
+    /// <summary>Gets how many of this client's commands the server last said were waiting to be run: its added delay, in ticks.</summary>
     public int CommandLead { get; private set; }
 
     /// <summary>Gets what keeps this client's own player where the server has it.</summary>
@@ -124,34 +121,10 @@ public sealed class ClientSession
             return null;
         }
 
-        long tick = clock.CommandTick(now, connection.Statistics.RoundTripTime);
+        // One command for each tick this client ran, numbered on from the last: the server runs exactly these, in this order,
+        // so its copy of the player goes where this one went. Only the first is placed by the clock.
+        long tick = _sent.Count > 0 ? _sent[^1].Tick + 1 : clock.CommandTick(now, connection.Statistics.RoundTripTime);
         long viewTick = (long)Math.Floor(clock.InterpolationTick(now));
-        if (_sent.Count > 0)
-        {
-            long last = _sent[^1].Tick;
-
-            // Steered well behind what was sent (the lead was too long): stamp those ticks again from here, and stop
-            // repeating the old ones, so the server runs this client's controls that much sooner (the ticks it already holds keep their first copy).
-            if (tick <= last - RestampTicks)
-            {
-                _sent.RemoveAll(sent => sent.Tick >= tick);
-                last = _sent.Count > 0 ? _sent[^1].Tick : tick - 1;
-            }
-
-            tick = Math.Max(tick, last + 1);
-
-            // A tick skipped (a hitch on this side) is filled with the same controls, so the server's buffer has every tick.
-            for (long missing = last + 1; missing < tick && missing <= last + UserCommandCodec.MaxCommandsPerPacket; missing++)
-            {
-                Keep(new UserCommand(missing, channels.ToArray(), viewTick));
-            }
-
-            if (tick > last + UserCommandCodec.MaxCommandsPerPacket + 1)
-            {
-                _sent.Clear();
-            }
-        }
-
         Keep(new UserCommand(tick, channels.ToArray(), viewTick));
         int count = Math.Clamp(CommandRedundancy, 1, UserCommandCodec.MaxCommandsPerPacket);
         int first = _sent.Count - 1;
@@ -258,7 +231,6 @@ public sealed class ClientSession
                     if (!reader.IsOverflowed && lead != short.MinValue)
                     {
                         CommandLead = lead;
-                        clock.ReportCommandLead(lead);
                     }
                 }
 
