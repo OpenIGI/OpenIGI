@@ -13,6 +13,8 @@ namespace OpenIGI.Frontend.Screens;
 /// </summary>
 public sealed class CoopScreen : ShellScreen
 {
+    private const float CyclerHeight = 84f;
+
     private static readonly string[] Difficulties = AiDifficultyNames.All;
 
     private CoopStatus _shown;
@@ -136,10 +138,16 @@ public sealed class CoopScreen : ShellScreen
             return panel;
         }
 
+        // A cycler fills the height it is offered, as it does in the campaign's strip; a stack offers it all, so each gets
+        // the strip's height here.
         _missionCycler = new OptionCycler(
-            theme, "Mission", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission);
+            theme, "Mission", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission)
+        {
+            Height = CyclerHeight,
+            ContentWidth = 300f,
+        };
         content.AddChild(_missionCycler);
-        _difficultyCycler = new OptionCycler(theme, "Difficulty", Difficulties, _difficulty);
+        _difficultyCycler = new OptionCycler(theme, "Difficulty", Difficulties, _difficulty) { Height = CyclerHeight };
         content.AddChild(_difficultyCycler);
         var listed = new Toggle(theme, "List publicly", _listed) { Tooltip = "Anyone can find a listed room; otherwise only those you give the code to." };
         listed.ValueChanged += value => _listed = value;
