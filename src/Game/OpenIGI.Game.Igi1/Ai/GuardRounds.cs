@@ -496,6 +496,9 @@ public sealed class GuardRounds
     /// <summary>What a contact on the player's body carries to the strike.</summary>
     private sealed record PlayerContact(HumanHit Hit);
 
+    /// <summary>What a contact on a co-op partner's body carries to the strike.</summary>
+    private sealed record PartnerContact(Multiplayer.Igi1NetworkPlayer Partner, HumanHit Hit);
+
     /// <summary>The world a soldier's marched round is cast through: placed objects and terrain, the soldiers, the player.</summary>
     // A grenade or laid mine a guard's round met.
     private sealed record ExplosiveContact(object Target);
@@ -571,7 +574,27 @@ public sealed class GuardRounds
                 HumanBodyCrossing first = crossings[0];
                 HumanHit hit = first.Hit with { Material = first.Material, IsExit = !first.Entering };
                 contact = BodyContact(hit, new PlayerContact(hit));
+                best = hit.Distance;
                 found = true;
+            }
+
+            // A co-op session's other players are bodies of the player's side like the player, met the same way.
+            foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+            {
+                if (!partner.IsDead
+                    && side != rounds._soldiers.PlayerTeam
+                    && rounds._soldiers.TryCastPlayerBody(start, limit, partner.Player.Body.Position, partner.Player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> partnerCrossings)
+                    && partnerCrossings.Count > 0
+                    && partnerCrossings[0].Hit.Distance < best
+                    && mission.SoundRandom.NextDouble() <= round.Probability
+                    && mission.SoundRandom.NextDouble() <= round.Probability)
+                {
+                    HumanBodyCrossing first = partnerCrossings[0];
+                    HumanHit hit = first.Hit with { Material = first.Material, IsExit = !first.Entering };
+                    contact = BodyContact(hit, new PartnerContact(partner, hit));
+                    best = hit.Distance;
+                    found = true;
+                }
             }
 
             return found;
@@ -588,6 +611,9 @@ public sealed class GuardRounds
                     break;
                 case PlayerContact player:
                     rounds.StrikePlayerWith(player.Hit, round.Origin, end, round.Weapon, round.DamageFactor, round.Shooter as SoldierView);
+                    break;
+                case PartnerContact partner:
+                    partner.Partner.Health.Apply(partner.Hit.Zone, round.DamageFactor);
                     break;
                 case WorldTraceHit surface:
                     rounds._blasts.ApplyRoundContact(surface.Position, surface.Owner, surface.Placement, round.DamageFactor);

@@ -634,6 +634,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         // on screen LAST frame. Doing it per draw would make a body cast three shadows' worth of history
         // and report itself as never having moved.
         _playerBody.ResolveFrameState();
+        ResolvePartnerFrameStates();
     }
 
     /// <inheritdoc/>
@@ -644,8 +645,11 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool LoadPlayerBody(LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma) =>
-        _playerBody.Load(mission, model, animations, position, gamma);
+    public bool LoadPlayerBody(LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma)
+    {
+        RememberPartnerLoad(mission, model, animations);
+        return _playerBody.Load(mission, model, animations, position, gamma);
+    }
 
     /// <inheritdoc/>
     public void KillPlayerBody(int deathAnimation, Vector3d feet, float gamma, int bone = -1, Vector3d travel = default, WeaponCategory category = WeaponCategory.Gun, Vector3d velocity = default) =>
@@ -684,8 +688,11 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _playerBody.PlaceClimbing(taskPosition, facing);
 
     /// <inheritdoc/>
-    public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection) =>
+    public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection)
+    {
         _playerBody.Draw(in camera, in projection);
+        DrawPartners(in camera, in projection);
+    }
 
     /// <inheritdoc/>
     public void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
@@ -807,6 +814,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _sim.RagdollRigs.Clear();
         _sim.RagdollWorld = null;
         _playerBody.Release();
+        ReleasePartners();
         Count = 0;
     }
 

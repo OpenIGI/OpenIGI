@@ -93,6 +93,10 @@ public interface IReplicatedClientWorld
     /// <param name="offset">How far, in world units.</param>
     void MoveLocal(Vector3d offset);
 
+    /// <summary>Takes what the server says of the client's own player that the client cannot know itself: what it was hurt by.</summary>
+    /// <param name="self">The client's own player as the newest snapshot has it.</param>
+    void ApplyOwn(in ReplicatedHuman self);
+
     /// <summary>Shows another player where a snapshot has it, making it the first time.</summary>
     /// <param name="human">The player, sampled at the moment drawn.</param>
     void Show(in ReplicatedHuman human);

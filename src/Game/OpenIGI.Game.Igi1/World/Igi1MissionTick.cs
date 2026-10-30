@@ -117,7 +117,37 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         bool body = Walking();
         Vector3d eye = body ? PlayerEye : host.FreeCameraPosition ?? PlayerEyeIfAny ?? default;
         Vector3d feet = body ? PlayerFeet : eye;
-        return new SoldierEnemy(eye, !mission.IsPlayerDead && mission.Cutscenes?.IsPlaying != true, feet, body && PlayerCrouched);
+        SoldierEnemy own = new(eye, !mission.IsPlayerDead && mission.Cutscenes?.IsPlaying != true, feet, body && PlayerCrouched);
+        return mission.NetworkPlayers.Count == 0 ? own : NearestEnemy(own);
+    }
+
+    // A co-op session: the original's soldiers know one enemy, so each is given the living player nearest to it as it updates.
+    private SoldierEnemy NearestEnemy(SoldierEnemy own)
+    {
+        if (mission.Soldiers is not { } soldiers || mission.Cutscenes?.IsPlaying == true)
+        {
+            return own;
+        }
+
+        Vector3d at = soldiers.TickingSoldierPosition;
+        SoldierEnemy best = own;
+        double bestDistance = own.Alive ? Vector3d.DistanceSquared(own.Feet ?? own.Eye, at) : double.PositiveInfinity;
+        foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
+        {
+            if (other.IsDead)
+            {
+                continue;
+            }
+
+            double distance = Vector3d.DistanceSquared(other.Player.Body.Position, at);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = new SoldierEnemy(other.Player.Body.Eye, true, other.Player.Body.Position, other.Player.IsCrouched);
+            }
+        }
+
+        return best;
     }
 
     /// <summary>The player as an area counts it at the moment the area updates.</summary>
@@ -587,6 +617,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             OpenMapComputer(player);
         }
 
+        // A co-op session's other players, each on its client's command for this tick, after the mission's own.
+        foreach (Multiplayer.Igi1NetworkPlayer other in mission.NetworkPlayers)
+        {
+            other.Run(mission.PlayerTicks, host.Ground);
+        }
+
+        mission.PlayerTicks++;
         mission.TickVehicleMissiles();
         CheckRunOver();
 
@@ -1061,6 +1098,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             else
             {
                 followedBody.Simulation.HidePlayerBodyFollowing();
+            }
+
+            // A co-op session's partners, followed on the same tick the player's body is.
+            if (mission.PartnerBodies is { } partners)
+            {
+                followedBody.FollowPartnerBodies(partners());
             }
         }
     }

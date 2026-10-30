@@ -691,7 +691,20 @@ public sealed partial class GameHost
     private void TickMission(FrameLoopState state, FrameOutcome outcome)
     {
         _missionHost.State = state;
+
+        // A mission that serves a session itself (I.G.I.) is observed around its tick; a title's own player is observed around
+        // its own (GameHost.TitlePlayer), so neither is seen twice.
+        bool observed = outcome == FrameOutcome.Tick && _hosted is Game.Multiplayer.IReplicatedTitle && TickObserver is not null;
+        if (observed)
+        {
+            TickObserver!.BeforeTitleTick(_hosted);
+        }
+
         _hosted.Tick.Run(outcome == FrameOutcome.Tick);
+        if (observed)
+        {
+            TickObserver!.AfterTitleTick(_hosted);
+        }
     }
 
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>

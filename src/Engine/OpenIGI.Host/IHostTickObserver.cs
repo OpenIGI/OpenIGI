@@ -1,21 +1,19 @@
-using OpenIGI.Game.Player;
-
 namespace OpenIGI.Host;
 
-/// <summary>Something run either side of each tick of the title's player: a multiplayer session reads before and sends after.</summary>
+/// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>
 /// <remarks>
 /// The dedicated server is one: before the tick it takes in what the clients sent, so their commands are there when the
 /// level runs; after it, it captures the level and sends each client its snapshot.
 /// </remarks>
 public interface IHostTickObserver
 {
-    /// <summary>Called just before the title's player runs a tick.</summary>
-    /// <param name="player">The title's player.</param>
-    void BeforeTitleTick(ITitlePlayer player);
+    /// <summary>Called just before the game runs a tick.</summary>
+    /// <param name="title">What is ticking: a title's own player (I.G.I. 2) or the hosted mission (I.G.I.).</param>
+    void BeforeTitleTick(object title);
 
-    /// <summary>Called just after the title's player has run a tick.</summary>
-    /// <param name="player">The title's player.</param>
-    void AfterTitleTick(ITitlePlayer player);
+    /// <summary>Called just after the game has run a tick.</summary>
+    /// <param name="title">What ticked.</param>
+    void AfterTitleTick(object title);
 }
 
 /// <summary>The host's observers.</summary>

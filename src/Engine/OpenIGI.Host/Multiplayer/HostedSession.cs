@@ -65,16 +65,16 @@ public sealed class HostedSession : IHostTickObserver, IDisposable
     public ServerSession? Session => _session;
 
     /// <inheritdoc/>
-    public void BeforeTitleTick(ITitlePlayer player)
+    public void BeforeTitleTick(object title)
     {
         if (_session is null)
         {
-            if (player is not IReplicatedTitle title)
+            if (title is not IReplicatedTitle replicated)
             {
                 return;
             }
 
-            _world = title.CreateReplicatedWorld(_options.IncludesHost);
+            _world = replicated.CreateReplicatedWorld(_options.IncludesHost);
             _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? "host" : null);
             _logger.Information(LogCategory, $"The level is up; players may join on port {_net.LocalAddress.Port}.");
         }
@@ -84,7 +84,7 @@ public sealed class HostedSession : IHostTickObserver, IDisposable
     }
 
     /// <inheritdoc/>
-    public void AfterTitleTick(ITitlePlayer player) => _session?.Send(_clock.Elapsed.TotalSeconds, _world!.CurrentTick - 1);
+    public void AfterTitleTick(object title) => _session?.Send(_clock.Elapsed.TotalSeconds, _world!.CurrentTick - 1);
 
     /// <summary>Gets the server list's line for this server now.</summary>
     /// <returns>The line.</returns>

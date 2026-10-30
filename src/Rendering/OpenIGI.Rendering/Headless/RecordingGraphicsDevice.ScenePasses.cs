@@ -5,6 +5,9 @@ public sealed partial class RecordingGraphicsDevice
     /// <summary>The scene targets that were asked for, in order.</summary>
     public List<SceneTargetDescription> SceneCaptures { get; } = [];
 
+    // Whether a scene has been captured, kept apart from the list so a device that records nothing still knows.
+    private bool _sceneCaptured;
+
     /// <summary>The passes that were opened, in order.</summary>
     public List<ScenePass> Passes { get; } = [];
 
@@ -34,6 +37,7 @@ public sealed partial class RecordingGraphicsDevice
         }
 
         Record(SceneCaptures, description);
+        _sceneCaptured = true;
         IsCapturing = true;
         return true;
     }
@@ -110,7 +114,7 @@ public sealed partial class RecordingGraphicsDevice
             throw new GraphicsDeviceException("The scene capture has not been ended.");
         }
 
-        if (SceneCaptures.Count == 0)
+        if (!_sceneCaptured)
         {
             throw new GraphicsDeviceException("Nothing has been captured this frame.");
         }

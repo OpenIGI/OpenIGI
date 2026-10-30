@@ -46,22 +46,22 @@ public sealed class SessionClient : IHostTickObserver, IDisposable
     public ClientSession? Session => _session;
 
     /// <inheritdoc/>
-    public void BeforeTitleTick(ITitlePlayer player)
+    public void BeforeTitleTick(object title)
     {
     }
 
     /// <inheritdoc/>
-    public void AfterTitleTick(ITitlePlayer player)
+    public void AfterTitleTick(object title)
     {
         double now = _clock.Elapsed.TotalSeconds;
         if (_session is null)
         {
-            if (player is not IReplicatedTitle title)
+            if (title is not IReplicatedTitle replicated)
             {
                 return;
             }
 
-            _world = title.CreateClientWorld();
+            _world = replicated.CreateClientWorld();
             _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId));
             _session = new ClientSession(_netClient, _world.LocalFrame.Length);
             _session.Connect(_server, _request, now);

@@ -75,6 +75,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
 
     private readonly SoldierPlayerBody _playerBody = new();
 
+    /// <summary>Gets the player's body's state, which its renderer and the soldiers' code share.</summary>
+    internal SoldierPlayerBody PlayerBodyState => _playerBody;
+
     private readonly HashSet<SoldierView> _combatClipMissing = [];
 
     private readonly HashSet<GameTask> _unwalkedSoldiers = new(ReferenceEqualityComparer.Instance);
@@ -117,6 +120,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
     /// <summary>Gets or sets where the player is, read by each soldier as it updates (<see cref="BeginTick"/>).</summary>
     internal Func<SoldierEnemy>? Enemy { get; set; }
 
+    /// <summary>Gets where the soldier updating now stands, which its enemy is read for: of a co-op session's players, the nearest.</summary>
+    public Vector3d TickingSoldierPosition { get; private set; }
+
     /// <summary>Gets the bodies that have updated this tick, so none updates twice and the tick's close can find any the walk missed.</summary>
     internal HashSet<SoldierView> Ticked { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -137,7 +143,13 @@ public sealed partial class SoldierSimulation : IHumanEvents
             return;
         }
 
+        if (TickPuppet(view))
+        {
+            return;
+        }
+
         TickingSoldierId = view.Soldier.Id;
+        TickingSoldierPosition = view.Position;
 
         bool collectDiagnostics = CollectDiagnostics;
         SoldierEnemy enemy = Enemy?.Invoke() ?? default;
@@ -811,7 +823,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         }
     }
 
-    private SoldierView? SoldierById(int id)
+    internal SoldierView? SoldierById(int id)
     {
         foreach (SoldierModelGroup group in Roster)
         {

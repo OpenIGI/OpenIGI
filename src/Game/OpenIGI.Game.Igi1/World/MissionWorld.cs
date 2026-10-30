@@ -65,6 +65,15 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
     public PlayerCamera? Player { get; set; }
 
+    /// <summary>Gets a co-op session's other players, run after the mission's own each tick; empty when playing alone.</summary>
+    public List<Multiplayer.Igi1NetworkPlayer> NetworkPlayers { get; } = [];
+
+    /// <summary>Gets or sets what tells the frame which co-op partners to draw each tick, or <see langword="null"/> playing alone.</summary>
+    public Func<IReadOnlyList<Ai.PartnerBody>>? PartnerBodies { get; set; }
+
+    /// <summary>Gets or sets the ticks the mission's players have run, the clock a session's commands are stamped against.</summary>
+    public long PlayerTicks { get; set; }
+
     /// <summary>Gets or sets the computer the player carries, the original's own.</summary>
     public OpenIGI.Game.Igi1.Computer.Igi1Computer? Computer { get; set; }
 

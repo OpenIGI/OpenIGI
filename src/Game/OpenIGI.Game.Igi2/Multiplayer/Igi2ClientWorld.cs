@@ -25,6 +25,12 @@ public sealed class Igi2ClientWorld : IReplicatedClientWorld
     public Vector3d LocalPosition => _level.Human.Position;
 
     /// <inheritdoc/>
+    /// <remarks>Not yet: an I.G.I. 2 client's player is hurt only by what its own level does.</remarks>
+    public void ApplyOwn(in ReplicatedHuman self)
+    {
+    }
+
+    /// <inheritdoc/>
     public void MoveLocal(Vector3d offset)
     {
         _level.Human.Position += offset;

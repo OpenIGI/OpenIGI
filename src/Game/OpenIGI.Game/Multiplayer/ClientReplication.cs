@@ -19,10 +19,14 @@ public static class ClientReplication
         session.Receive(now);
 
         // The server's word on where this client's player was after its newest command it has run, against the prediction.
-        if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own)
-            && session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector()) is { } correction)
+        if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own))
         {
-            world.MoveLocal(correction);
+            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector()) is { } correction)
+            {
+                world.MoveLocal(correction);
+            }
+
+            world.ApplyOwn(own);
         }
 
         if (session.SendCommand(world.LocalFrame, now) is { } sent)
