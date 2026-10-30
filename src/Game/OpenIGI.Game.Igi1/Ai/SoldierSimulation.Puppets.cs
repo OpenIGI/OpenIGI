@@ -24,6 +24,22 @@ public sealed partial class SoldierSimulation
 {
     private readonly Dictionary<SoldierView, SoldierPuppet> _puppets = [];
 
+    // The puppets that fired since the last call to TakePuppetShots, for the mission to trace their rounds.
+    private readonly List<(SoldierView View, OpenIGI.Game.Weapons.WeaponType? Weapon, float Facing, float Pitch)> _puppetShots = [];
+
+    /// <summary>Takes the shots the puppeted soldiers fired since the last call: who, with what, and which way.</summary>
+    /// <returns>The shots.</returns>
+    /// <remarks>
+    /// A client's soldiers fire no rounds of their own -- the server's do, and land them -- but each shot still draws its
+    /// line through the air, which the mission traces from these.
+    /// </remarks>
+    public IReadOnlyList<(SoldierView View, OpenIGI.Game.Weapons.WeaponType? Weapon, float Facing, float Pitch)> TakePuppetShots()
+    {
+        var shots = _puppetShots.ToArray();
+        _puppetShots.Clear();
+        return shots;
+    }
+
     /// <summary>Gets what a soldier holds and fires, or <see langword="null"/>.</summary>
     /// <param name="view">The soldier.</param>
     /// <returns>Its agent.</returns>
@@ -98,10 +114,13 @@ public sealed partial class SoldierSimulation
         if (_context.FindAgent(view) is { } agent && Brains.TryGetValue(view, out Igi1HumanAi? brain))
         {
             bool fired = unchecked((byte)agent.ShotSequence) != puppet.Shots;
+
+            // Lit for the tick it fired and out again after: left set, the flame burned on every tick that followed.
+            agent.FiredThisTick = fired;
             if (fired)
             {
                 agent.ShotSequence = puppet.Shots;
-                agent.FiredThisTick = true;
+                _puppetShots.Add((view, agent.WeaponType, puppet.Facing, puppet.LookPitch));
             }
 
             WeaponSound?.Invoke(brain.RuntimeId, fired, agent.WeaponType, brain.EyePosition());

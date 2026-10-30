@@ -14,8 +14,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
     private readonly Dictionary<int, ReplicatedHuman> _shown = [];
 
-    // The other players' names, by entity, from the server's scoreboard.
+    // The other players' names and looks, by entity, from the server's scoreboard.
     private readonly Dictionary<int, string> _names = [];
+    private readonly Dictionary<int, string> _skins = [];
 
     // Each partner's shot count as last drawn: a count moved on is a shot to flame and sound on this tick.
     private readonly Dictionary<int, byte> _shotsDrawn = [];
@@ -66,7 +67,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null,
                 _names.GetValueOrDefault(h.Id),
                 !alive,
-                alive ? null : h.Health / 255f));
+                alive ? null : h.Health / 255f,
+                PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model));
         }
 
         return bodies;
@@ -140,6 +142,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     public void Name(int entity, string name) => _names[entity] = name;
 
     /// <inheritdoc/>
+    public void Skin(int entity, string skin) => _skins[entity] = skin;
+
+    /// <inheritdoc/>
     public void MoveLocal(Vector3d offset)
     {
         if (_game.World.Player is { } player)
@@ -202,6 +207,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         if (snapshot.Tick > _impactsShown)
         {
             _impactsShown = snapshot.Tick;
+            // What the server's handlers made this client's player feel -- a round, a blow, a blast -- felt here by the
+            // same senses the player's own handlers use.
+            foreach (ReplicatedSense sense in snapshot.Senses ?? [])
+            {
+                if (sense.Entity == ownEntity)
+                {
+                    RemotePlayerSenses.Replay(sense, _game.Harm.Own.Senses);
+                }
+            }
+
             foreach (ReplicatedImpact impact in snapshot.Impacts ?? [])
             {
                 if (impact.Source != ownEntity)

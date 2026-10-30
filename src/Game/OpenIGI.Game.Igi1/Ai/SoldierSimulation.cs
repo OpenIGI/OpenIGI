@@ -774,7 +774,8 @@ public sealed partial class SoldierSimulation : IHumanEvents
                 {
                     if (brain.PlayerIsEnemy)
                     {
-                        MeleeStrikeSink?.Invoke(brain.Position, damage);
+                        // The player this soldier is fighting: the one it was handed as it updated.
+                        MeleeStrikeSink?.Invoke(Enemy?.Invoke().Player, brain.Position, damage);
                     }
                 }
                 else if (SoldierById(brain.TargetId) is { } struck)

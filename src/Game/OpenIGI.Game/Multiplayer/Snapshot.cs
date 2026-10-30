@@ -11,7 +11,9 @@ namespace OpenIGI.Game.Multiplayer;
 /// <see langword="null"/> where the world sends none.
 /// </param>
 /// <param name="Impacts">The rounds that landed since the server's last snapshot, for every client to show.</param>
-public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans, byte[]? Doors = null, ReplicatedImpact[]? Impacts = null)
+/// <param name="Senses">What players felt since the server's last snapshot, for each one's own game to feel.</param>
+public sealed record Snapshot(
+    long Tick, ReplicatedHuman[] Humans, byte[]? Doors = null, ReplicatedImpact[]? Impacts = null, ReplicatedSense[]? Senses = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -139,6 +141,19 @@ public static class SnapshotCodec
         {
             impacts[i].Write(writer);
         }
+
+        // What players felt: events too, written whole.
+        ReplicatedSense[] senses = snapshot.Senses ?? [];
+        int firstSense = Math.Max(0, senses.Length - ReplicatedSense.MaxPerSnapshot);
+        writer.WriteBool(senses.Length > firstSense);
+        if (senses.Length > firstSense)
+        {
+            writer.WriteVarUInt((uint)(senses.Length - firstSense));
+            for (int i = firstSense; i < senses.Length; i++)
+            {
+                senses[i].Write(writer);
+            }
+        }
     }
 
     /// <summary>Reads a snapshot.</summary>
@@ -229,12 +244,24 @@ public static class SnapshotCodec
             impacts![i] = ReplicatedImpact.Read(ref reader);
         }
 
+        uint senseCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
+        if (reader.IsOverflowed || senseCount > ReplicatedSense.MaxPerSnapshot)
+        {
+            return false;
+        }
+
+        ReplicatedSense[]? senses = senseCount == 0 ? null : new ReplicatedSense[senseCount];
+        for (int i = 0; i < senseCount; i++)
+        {
+            senses![i] = ReplicatedSense.Read(ref reader);
+        }
+
         if (reader.IsOverflowed)
         {
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors, impacts);
+        snapshot = new Snapshot(tick, humans, doors, impacts, senses);
         return true;
     }
 

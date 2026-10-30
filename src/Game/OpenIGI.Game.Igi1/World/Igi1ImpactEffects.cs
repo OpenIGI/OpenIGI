@@ -140,7 +140,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
         ArgumentNullException.ThrowIfNull(bloodOwner);
         Vector3d at = impact.Position.ToVector();
         Vector3f along = impact.Direction;
-        if (impact.Blood)
+        if (impact.Kind == OpenIGI.Game.Multiplayer.ImpactKind.Blood)
         {
             SpawnBlood(bloodOwner, at, along);
             return;
@@ -176,7 +176,11 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     }
 
     private void Record(bool blood, Vector3d position, Vector3f direction) =>
-        Recorded?.Invoke(new OpenIGI.Game.Multiplayer.ReplicatedImpact(blood, mission.ImpactSource, OpenIGI.Game.Multiplayer.Int3.From(position), direction));
+        Recorded?.Invoke(new OpenIGI.Game.Multiplayer.ReplicatedImpact(
+            blood ? OpenIGI.Game.Multiplayer.ImpactKind.Blood : OpenIGI.Game.Multiplayer.ImpactKind.Surface,
+            mission.ImpactSource,
+            OpenIGI.Game.Multiplayer.Int3.From(position),
+            direction));
 
     /// <summary>Runs the struck material's own <c>GunShotEffect</c> for whatever the player's rounds landed on this tick.</summary>
     public void SpawnPlayerImpacts()

@@ -38,7 +38,7 @@ public sealed partial class SoldierSimulation
 
     internal Action<int, bool, WeaponType?, Vector3d>? WeaponSound;
 
-    internal Action<Vector3d, float>? MeleeStrikeSink;
+    internal Action<World.IHarmedPlayer?, Vector3d, float>? MeleeStrikeSink;
 
     internal AnimTriggerRegistry? AnimationTriggers;
 
@@ -354,7 +354,7 @@ public sealed partial class SoldierSimulation
     /// Strikes against non-player targets are consumed and discarded at the tick site: NPC-on-NPC
     /// melee has no victim pipeline yet (issue #235 follow-up).
     /// </remarks>
-    public void SetMeleeStrikeSink(Action<Vector3d, float>? report) => MeleeStrikeSink = report;
+    public void SetMeleeStrikeSink(Action<World.IHarmedPlayer?, Vector3d, float>? report) => MeleeStrikeSink = report;
 
     /// <summary>Supplies the authored animation triggers from <c>animtrigger/animtrigger.qvm</c>.</summary>
     public void SetAnimationTriggers(AnimTriggerRegistry? triggers) => AnimationTriggers = triggers;

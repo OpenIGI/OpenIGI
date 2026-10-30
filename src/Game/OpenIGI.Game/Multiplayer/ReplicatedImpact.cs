@@ -3,8 +3,18 @@ using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;
 
-/// <summary>One round's mark on the world, as the server sends it for every client to show: a hit on a wall, or a wound.</summary>
-/// <param name="Blood">A wound's blood, rather than a hit on a surface.</param>
+/// <summary>What a <see cref="ReplicatedImpact"/> is.</summary>
+public enum ImpactKind : byte
+{
+    /// <summary>A round met a surface: its mark and dust.</summary>
+    Surface,
+
+    /// <summary>A round met a body: its blood.</summary>
+    Blood,
+}
+
+/// <summary>One round landing, as the server sends it for every client to show: a hit on a wall, or a wound.</summary>
+/// <param name="Kind">What it is.</param>
 /// <param name="Source">The entity whose round it was; the client that fired it already showed it, and skips it.</param>
 /// <param name="Position">Where it landed, in whole world units.</param>
 /// <param name="Direction">The round's travel, a unit vector.</param>
@@ -12,7 +22,7 @@ namespace OpenIGI.Game.Multiplayer;
 /// Only where and which way: a client traces the short stretch through the point in its own copy of the level, and finds
 /// the surface, its material, its mark and its dust there, as it would for a round of its own.
 /// </remarks>
-public readonly record struct ReplicatedImpact(bool Blood, int Source, Int3 Position, Vector3f Direction)
+public readonly record struct ReplicatedImpact(ImpactKind Kind, int Source, Int3 Position, Vector3f Direction)
 {
     /// <summary>The most a snapshot carries; past it, the newest are kept.</summary>
     public const int MaxPerSnapshot = 64;
@@ -24,7 +34,7 @@ public readonly record struct ReplicatedImpact(bool Blood, int Source, Int3 Posi
     public void Write(BitWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        writer.WriteBool(Blood);
+        writer.WriteBool(Kind == ImpactKind.Blood);
         writer.WriteVarUInt((uint)(Source + 1));
         writer.WriteVarInt(Position.X);
         writer.WriteVarInt(Position.Y);
@@ -39,11 +49,11 @@ public readonly record struct ReplicatedImpact(bool Blood, int Source, Int3 Posi
     /// <returns>It.</returns>
     public static ReplicatedImpact Read(ref BitReader reader)
     {
-        bool blood = reader.ReadBool();
+        ImpactKind kind = reader.ReadBool() ? ImpactKind.Blood : ImpactKind.Surface;
         int source = (int)reader.ReadVarUInt() - 1;
         Int3 position = new(reader.ReadVarInt(), reader.ReadVarInt(), reader.ReadVarInt());
         Vector3f direction = new(
             reader.ReadQuantized(-1f, 1f, DirectionBits), reader.ReadQuantized(-1f, 1f, DirectionBits), reader.ReadQuantized(-1f, 1f, DirectionBits));
-        return new ReplicatedImpact(blood, source, position, direction);
+        return new ReplicatedImpact(kind, source, position, direction);
     }
 }

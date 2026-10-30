@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Multiplayer;
 public static class MultiplayerProtocol
 {
     /// <summary>The protocol version; raised whenever any message changes shape.</summary>
-    public const int Version = 5;
+    public const int Version = 8;
 
     /// <summary>A fingerprint of what a game plays with beyond the game itself: its title and the mods that change play.</summary>
     /// <param name="titleId">The game's id.</param>
@@ -92,7 +92,8 @@ public sealed record ServerInfo(
 /// What the client plays with beyond the game itself -- its title and the mods that change play -- as a short fingerprint,
 /// or empty when it doesn't say. Two games that differ there drift apart without a word, so a host refuses a mismatch.
 /// </param>
-public sealed record JoinRequest(string PlayerName, string Version, string Password, string Content = "")
+/// <param name="Skin">The look it plays in, a <see cref="PlayerSkins"/> id; empty for the default.</param>
+public sealed record JoinRequest(string PlayerName, string Version, string Password, string Content = "", string Skin = "")
 {
     /// <summary>The longest player name kept.</summary>
     public const int MaxNameBytes = 32;
@@ -107,6 +108,7 @@ public sealed record JoinRequest(string PlayerName, string Version, string Passw
         writer.WriteString(Version, 32);
         writer.WriteString(Password, 64);
         writer.WriteString(Content, 16);
+        writer.WriteString(Skin, 16);
         return writer.ToArray();
     }
 
@@ -121,7 +123,7 @@ public sealed record JoinRequest(string PlayerName, string Version, string Passw
             return null;
         }
 
-        JoinRequest request = new(reader.ReadString(MaxNameBytes), reader.ReadString(32), reader.ReadString(64), reader.ReadString(16));
+        JoinRequest request = new(reader.ReadString(MaxNameBytes), reader.ReadString(32), reader.ReadString(64), reader.ReadString(16), reader.ReadString(16));
         return reader.IsOverflowed ? null : request;
     }
 }

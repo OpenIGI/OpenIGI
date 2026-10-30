@@ -26,12 +26,12 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
     {
         if (hit.Context is Igi1WeaponHit round)
         {
-            TakeRound(round);
+            TakeRound(harm.Own, round);
         }
         else if (mission.Player is { } player)
         {
             // Another game's round: where it meets the player's body is this game's to find.
-            TakeRound(Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, player.Body.Position, new Vector3f(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f))));
+            TakeRound(harm.Own, Igi1WeaponHit.FromShared(hit, Igi1WeaponHit.Meet(hit, player.Body.Position, new Vector3f(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f))));
         }
     }
 
@@ -39,50 +39,50 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
     public void ExplosionHit(HumanTask human, in ExplosionHit hit)
     {
         Igi1ExplosionHit blast = hit.Context as Igi1ExplosionHit ?? Igi1ExplosionHit.FromShared(hit);
-        blasts.BlastPlayer(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
+        blasts.BlastPlayer(harm.Own, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
     }
 
-    /// <summary>One call of the player's hit handler (<c>0x412440</c>): the damage, the grunt, the shake, the flash and the shove.</summary>
+    /// <summary>The player's hit handler for the mission's own player.</summary>
     /// <param name="round">The round.</param>
-    public void TakeRound(Igi1WeaponHit round)
+    public void TakeRound(Igi1WeaponHit round) => TakeRound(harm.Own, round);
+
+    /// <summary>One call of the player's hit handler (<c>0x412440</c>): the damage, the grunt, the shake, the flash and the shove.</summary>
+    /// <param name="target">The player the round met: the mission's own, or a co-op partner.</param>
+    /// <param name="round">The round.</param>
+    public void TakeRound(IHarmedPlayer target, Igi1WeaponHit round)
     {
+        ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(round);
-        if (mission.Player is not { } player)
+        if (target.Rig is not { } rig)
         {
             return;
         }
 
-        HumanHealth health = mission.PlayerHealth;
+        HumanHealth health = target.Health;
         HumanHit struck = round.Hit;
         health.Apply(struck.Zone, round.DamageFactor);
         sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
 
-        // The retail handler transforms the round into camera space before writing the four
-        // corner alphas. It picks 0.4-0.8 rather than one opaque wash and replaces the prior
-        // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
+        // 0x412440's order: the grunt, then the shake, then the flash from the corners the round came in through, each on
+        // its own draw.
         Vector3d travel = round.End - round.Origin;
-        Vector3f incoming = new((float)travel.X, (float)travel.Y, (float)travel.Z);
-        Vector3f viewIncoming = player.Camera.Orientation.Transposed().Transform(incoming);
-
-        // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
         if (!health.IsDead)
         {
-            harm.PlayPlayerGrunt();
+            target.Senses.Grunt();
         }
 
-        harm.InstallPlayerHitShake();
-        mission.DamageFlash.Hit(viewIncoming, mission.SoundRandom.NextSingle());
+        target.Senses.HitShake();
+        target.Senses.FlashFrom(new Vector3f((float)travel.X, (float)travel.Y, (float)travel.Z));
 
-        // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
-        // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
-        // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
-        // what makes sustained fire stagger the player in retail.
+        // Every connecting round SHOVES the player 5 km/h along its travel -- the hit handler (0x412440) normalises the
+        // round's direction and adds x/y x 189.62962 into the slide accumulator, whose 0.9-a-tick damping then bleeds it
+        // off. This is what makes sustained fire stagger the player in retail.
         if (!health.IsDead)
         {
             double length = Math.Sqrt((travel.X * travel.X) + (travel.Y * travel.Y) + (travel.Z * travel.Z));
             if (length > 1e-6)
             {
-                player.Body.AddHitShove(
+                rig.Body.AddHitShove(
                     (float)(travel.X / length * PlayerBody.HitShoveUnitsPerTick),
                     (float)(travel.Y / length * PlayerBody.HitShoveUnitsPerTick));
             }
@@ -90,7 +90,7 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
 
         if (health.IsDead)
         {
-            harm.BeginPlayerDeath(round.Origin, struck.Zone, struck.Bone, round.Category);
+            harm.BeginPlayerDeath(target, round.Origin, struck.Zone, struck.Bone, round.Category);
         }
     }
 }

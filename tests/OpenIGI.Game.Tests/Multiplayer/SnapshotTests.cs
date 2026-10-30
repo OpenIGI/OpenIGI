@@ -20,8 +20,8 @@ public sealed class SnapshotTests
     [Fact]
     public void TheRoundsThatLandedRideEverySnapshotWhole()
     {
-        ReplicatedImpact wall = new(false, 2, new Int3(1000, -2000, 300), new Vector3f(0.6f, 0.8f, 0f));
-        ReplicatedImpact wound = new(true, 0, new Int3(-5, 7, 9), new Vector3f(0f, 0f, -1f));
+        ReplicatedImpact wall = new(ImpactKind.Surface, 2, new Int3(1000, -2000, 300), new Vector3f(0.6f, 0.8f, 0f));
+        ReplicatedImpact wound = new(ImpactKind.Blood, 0, new Int3(-5, 7, 9), new Vector3f(0f, 0f, -1f));
         Snapshot before = new(30, [Human(1, 0, 0)]);
         Snapshot after = new(31, [Human(1, 0, 0)], Impacts: [wall, wound]);
 
@@ -29,13 +29,30 @@ public sealed class SnapshotTests
         Assert.Equal(2, read!.Impacts!.Length);
         Assert.Equal(wall.Position, read.Impacts[0].Position);
         Assert.Equal(2, read.Impacts[0].Source);
-        Assert.True(read.Impacts[1].Blood);
+        Assert.Equal(ImpactKind.Blood, read.Impacts[1].Kind);
         Assert.Equal(-1f, read.Impacts[1].Direction.Z, 2);
         Assert.Equal(0.6f, read.Impacts[0].Direction.X, 2);
 
         // Events, not state: a snapshot without any carries none, whatever its baseline had.
         Assert.True(RoundTrip(new Snapshot(32, [Human(1, 0, 0)]), after, out Snapshot? next));
         Assert.Null(next!.Impacts);
+    }
+
+    [Fact]
+    public void WhatAPlayerFeltRidesToItsOwnGame()
+    {
+        ReplicatedSense flash = new(3, 4, new Vector3f(0.5f, -0.25f, 0.75f));
+        ReplicatedSense shake = new(3, 3, A: 204.8f, B: 0.013f, Ticks: 90);
+        ReplicatedSense sound = new(2, 7, Text: "elfence_spark1");
+        Snapshot before = new(40, [Human(1, 0, 0)]);
+        Snapshot after = new(41, [Human(1, 0, 0)], Senses: [flash, shake, sound]);
+
+        Assert.True(RoundTrip(after, before, out Snapshot? read));
+        Assert.Equal([flash, shake, sound], read!.Senses!);
+
+        // Events, not state: the next snapshot carries none of them again.
+        Assert.True(RoundTrip(new Snapshot(42, [Human(1, 0, 0)]), after, out Snapshot? next));
+        Assert.Null(next!.Senses);
     }
 
     [Fact]

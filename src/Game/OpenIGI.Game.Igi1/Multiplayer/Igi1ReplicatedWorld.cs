@@ -47,6 +47,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // The scale the soldiers' health was last set to.
     private float _enemyScale = 1f;
 
+
     private readonly Igi1Gameplay _game;
     private readonly SortedDictionary<int, Igi1NetworkPlayer> _bySlot = [];
     private readonly HashSet<int> _dead = [];
@@ -68,7 +69,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             {
                 if (landed.HitSomething && !landed.StruckHuman && !landed.Melee)
                 {
-                    _game.Impacts.Replay(new ReplicatedImpact(false, partner.Entity, Int3.From(landed.Wall.Position), landed.Direction), partner);
+                    _game.Impacts.Replay(new ReplicatedImpact(ImpactKind.Surface, partner.Entity, Int3.From(landed.Wall.Position), landed.Direction), partner);
                 }
             }
         };
@@ -76,9 +77,11 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         _game.World.PartnerBodies = () =>
             [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with
             {
+                Fired = p.FiredThisTick,
                 Name = p.Name,
                 Dead = p.IsDead,
                 Revive = p.IsDead ? ReviveProgressOf(p.Entity) : null,
+                Model = PlayerSkins.Of(p.Skin).Model,
             })];
     }
 
@@ -118,6 +121,16 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         _bySlot[slot] = player;
         _game.World.NetworkPlayers.Add(player);
         return slot + 1;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The host's own look is the clients' to draw; the server only draws its partners.</remarks>
+    public void SetSkin(int slot, string skin)
+    {
+        if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player))
+        {
+            player.Skin = skin;
+        }
     }
 
     /// <inheritdoc/>
@@ -170,7 +183,14 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
         }
 
-        Snapshot snapshot = new(tick, [.. humans], Doors(_game.World.Doors), _impacts.Count == 0 ? null : [.. _impacts]);
+        List<ReplicatedSense> senses = [];
+        foreach (Igi1NetworkPlayer partner in _bySlot.Values)
+        {
+            partner.RemoteSenses.TakeInto(senses);
+        }
+
+        Snapshot snapshot = new(
+            tick, [.. humans], Doors(_game.World.Doors), _impacts.Count == 0 ? null : [.. _impacts], senses.Count == 0 ? null : [.. senses]);
         _impacts.Clear();
         return snapshot;
     }
@@ -222,7 +242,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player))
         {
-            player.Health.Reset();
+            Igi1PlayerHarm.RevivePlayer(player, at: null, player.Player.Body.Yaw);
             _dead.Remove(slot + 1);
             Stand(player, slot);
         }
@@ -356,7 +376,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
             else if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? partner))
             {
-                partner.Health.Reset();
+                Igi1PlayerHarm.RevivePlayer(partner, at, partner.Player.Body.Yaw);
             }
 
             revived.Add(slot);

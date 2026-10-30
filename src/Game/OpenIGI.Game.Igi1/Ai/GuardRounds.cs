@@ -613,7 +613,10 @@ public sealed class GuardRounds
                     rounds.StrikePlayerWith(player.Hit, round.Origin, end, round.Weapon, round.DamageFactor, round.Shooter as SoldierView);
                     break;
                 case PartnerContact partner:
-                    partner.Partner.Health.Apply(partner.Hit.Zone, round.DamageFactor);
+                    // The player's own hit handler, for a player that holds no task in the level to be handed it.
+                    rounds._mission.PlayerEvents?.TakeRound(
+                        partner.Partner,
+                        new Igi1WeaponHit(partner.Hit, round.Origin, end, round.DamageFactor, round.Weapon.Category, round.Shooter as SoldierView, FromPlayer: false));
                     break;
                 case WorldTraceHit surface:
                     rounds._blasts.ApplyRoundContact(surface.Position, surface.Owner, surface.Placement, round.DamageFactor);

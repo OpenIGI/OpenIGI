@@ -25,6 +25,13 @@ public interface IReplicatedWorld
     /// <returns>The entity id its human goes by in snapshots, or <see langword="null"/> when it cannot be placed.</returns>
     int? AddPlayer(int slot, string name);
 
+    /// <summary>Dresses a player in the look it chose, a <see cref="PlayerSkins"/> id.</summary>
+    /// <param name="slot">The player's slot; <see cref="ServerSession.HostSlot"/> for a listen server's own.</param>
+    /// <param name="skin">The look.</param>
+    void SetSkin(int slot, string skin)
+    {
+    }
+
     /// <summary>Takes out a client's player, as it leaves.</summary>
     /// <param name="slot">The client's slot.</param>
     void RemovePlayer(int slot);
@@ -105,7 +112,14 @@ public interface IReplicatedClientWorld
     /// <param name="offset">How far, in world units.</param>
     void MoveLocal(Vector3d offset);
 
-    /// <summary>Takes another player's name, from the server's scoreboard.</summary>
+    /// <summary>Takes another player's look, a <see cref="PlayerSkins"/> id, from the server's scoreboard.</summary>
+    /// <param name="entity">Its entity.</param>
+    /// <param name="skin">Its look.</param>
+    void Skin(int entity, string skin)
+    {
+    }
+
+    /// <summary>Names another player, from the server's scoreboard.</summary>
     /// <param name="entity">Its entity.</param>
     /// <param name="name">Its name.</param>
     void Name(int entity, string name)

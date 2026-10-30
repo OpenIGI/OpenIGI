@@ -13,4 +13,5 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// there is no body, and the eye stands in.
 /// </param>
 /// <param name="Crouching">Whether the player is crouching, which halves the aim raise.</param>
-public readonly record struct SoldierEnemy(Vector3d Eye, bool Alive, Vector3d? Feet, bool Crouching);
+/// <param name="Player">Which player it is, for what is dealt to it: <see langword="null"/> for the mission's own.</param>
+public readonly record struct SoldierEnemy(Vector3d Eye, bool Alive, Vector3d? Feet, bool Crouching, World.IHarmedPlayer? Player = null);

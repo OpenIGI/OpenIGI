@@ -17,8 +17,31 @@ public sealed partial class Igi1MissionTick
     // tracer is, so everyone else can see where it is shooting. Not the original's: its player's rounds draw no line.
     private void ShowPartnerShot(in PartnerBody partner)
     {
-        if (!partner.Fired
-            || partner.Weapon is not { } weapon
+        if (partner.Fired)
+        {
+            ShowShot(partner.Key, partner.Weapon, partner.Feet, -partner.Facing, partner.Pose.AimPitch);
+        }
+    }
+
+    // A client's soldiers' shots: each a line through the air, as the server's rounds were.
+    private void ShowPuppetShots()
+    {
+        if (mission.Soldiers is not { } soldiers)
+        {
+            return;
+        }
+
+        foreach ((Player.SoldierView view, WeaponType? weapon, float facing, float pitch) in soldiers.TakePuppetShots())
+        {
+            // A soldier's facing is the angle its body is turned by, as a partner's is; the aim's yaw is that negated.
+            ShowShot(view, weapon, view.Position, -facing, pitch);
+        }
+    }
+
+    // One shot's tracer from the eye along the aim to whatever it meets.
+    private void ShowShot(object shooter, WeaponType? held, Vector3d feet, double yaw, double pitch)
+    {
+        if (held is not { } weapon
             || weapon.Category is WeaponCategory.Knife or WeaponCategory.Grenade
             || mission.Soldiers is not { } soldiers
             || mission.AmmoTypes is not { } ammunition
@@ -27,10 +50,8 @@ public sealed partial class Igi1MissionTick
             return;
         }
 
-        double yaw = -partner.Facing;
-        double pitch = partner.Pose.AimPitch;
         Vector3d aim = new(Math.Sin(yaw) * Math.Cos(pitch), Math.Cos(yaw) * Math.Cos(pitch), Math.Sin(pitch));
-        Vector3d eye = partner.Feet + new Vector3d(0, 0, PlayerBody.StandingEyeHeight);
+        Vector3d eye = feet + new Vector3d(0, 0, PlayerBody.StandingEyeHeight);
         Vector3d end = eye + (aim * PartnerShotReach);
         if (mission.Player?.GrenadeWalls is { } walls && walls(eye, end, out WorldRayHit hit))
         {
@@ -50,7 +71,7 @@ public sealed partial class Igi1MissionTick
             EndDistance = length,
             Range = length,
             Ammunition = ammo,
-            Shooter = partner.Key,
+            Shooter = shooter,
             Life = GunShotBallistics.TracerLifetimeTicks,
         });
     }

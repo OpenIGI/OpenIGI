@@ -42,6 +42,7 @@ public static class ClientReplication
                 if (line.Entity >= 0 && line.Entity != session.EntityId)
                 {
                     world.Name(line.Entity, line.Name);
+                    world.Skin(line.Entity, line.Skin);
                 }
             }
         }

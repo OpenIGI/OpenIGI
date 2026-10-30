@@ -29,7 +29,7 @@ public static class RoomSessions
         if (session.Join is { } code)
         {
             RoomTransport room = RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger);
-            return new SessionClient(room, RoomTransport.HostAddress, new JoinRequest(session.PlayerName, version, session.Password, content), titleId, logger);
+            return new SessionClient(room, RoomTransport.HostAddress, new JoinRequest(session.PlayerName, version, session.Password, content, Skin(session)), titleId, logger);
         }
 
         if (!session.Host)
@@ -40,7 +40,7 @@ public static class RoomSessions
         string map = mission.ToString(CultureInfo.InvariantCulture);
         int players = Math.Clamp(session.MaxPlayers, 1, 31);
         HostedSessionOptions options = new(
-            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content);
+            session.ServerName, players, session.Password, session.Mode, map, version, IncludesHost: true, session.PlayerName, content, Skin(session));
         RoomRequest request = new(
             titleId,
             MultiplayerProtocol.IdFor(titleId).ToString("x16", CultureInfo.InvariantCulture),
@@ -53,4 +53,8 @@ public static class RoomSessions
             session.Password.Length > 0);
         return new HostedSession(RoomTransport.Host(RoomTransport.DefaultMaster, request, peers, logger), options, titleId, GameClock.DefaultTickRate, logger);
     }
+
+    // The look asked for on the command line, else the one saved.
+    private static string Skin(SessionArguments session) =>
+        PlayerSkins.Of(session.Skin is { Length: > 0 } asked ? asked : PlayerSkins.Chosen.Value).Id;
 }

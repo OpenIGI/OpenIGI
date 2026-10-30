@@ -7,3 +7,4 @@
 [assembly: InternalsVisibleTo("OpenIGI.Game.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Game.Igi1.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Desktop.Tests")]
+[assembly: InternalsVisibleTo("OpenIGI.Parity.Tests")]

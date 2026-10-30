@@ -118,6 +118,50 @@ public sealed class Igi1CoopSessionTests
     }
 
     [RequiresGameDataFact]
+    public void A_round_that_meets_a_partner_is_taken_by_the_players_own_hit_handler()
+    {
+        const int HitFrame = 700;
+        float before = 0f;
+        float after = 0f;
+        Core.Numerics.Vector3f shove = default;
+        List<ReplicatedSense> felt = [];
+        (Capture capture, _, _) = Play(
+            900,
+            (game, frame) =>
+            {
+                if (frame != HitFrame || game.World.NetworkPlayers.Count == 0 || game.World.PlayerEvents is not { } events)
+                {
+                    return;
+                }
+
+                // A round from ten metres in front of the partner, through its chest.
+                Igi1NetworkPlayer partner = game.World.NetworkPlayers[0];
+                Core.Numerics.Vector3d chest = partner.Player.Body.Position + new Core.Numerics.Vector3d(0, 0, 1.3 * 4096);
+                Core.Numerics.Vector3d from = chest + new Core.Numerics.Vector3d(10 * 4096, 0, 0);
+                before = partner.Health.RemainingFraction;
+                Core.Numerics.Vector3f shoveBefore = partner.Player.Body.HitShove;
+                events.TakeRound(
+                    partner,
+                    new Game.Igi1.Ai.Igi1WeaponHit(
+                        new HumanHit(chest, 10 * 4096, HumanDamage.FrontZone, 0f, 0f), from, chest, 0.2f, Game.Weapons.WeaponCategory.Gun, null, FromPlayer: false));
+                after = partner.Health.RemainingFraction;
+                shove = partner.Player.Body.HitShove - shoveBefore;
+                partner.RemoteSenses.TakeInto(felt);
+            });
+
+        Assert.NotNull(capture.Game);
+        Assert.True(after < before, $"the partner took no damage ({before:P0} -> {after:P0})");
+
+        // The handler's shove, along the round's travel: towards -X.
+        Assert.True(shove.X < 0f && Math.Abs(shove.Y) < 1e-3f, $"the partner was shoved by {shove}");
+
+        // What it felt, in the handler's order, for its client: the grunt, the shake, the red from the side it came in.
+        Assert.Equal(3, felt.Count);
+        Assert.All(felt, sense => Assert.Equal(1, sense.Entity));
+        Assert.True(felt[2].Vector.X < 0f, $"the flash came from {felt[2].Vector}");
+    }
+
+    [RequiresGameDataFact]
     public void A_partners_shots_are_shown_to_the_others()
     {
         bool fired = false;

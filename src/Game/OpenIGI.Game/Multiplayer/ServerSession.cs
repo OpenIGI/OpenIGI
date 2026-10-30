@@ -34,7 +34,9 @@ public sealed class ServerSession
     /// <param name="map">The map, told to each client as it joins.</param>
     /// <param name="rules">The server's rules, or the original's defaults.</param>
     /// <param name="hostName">The listen server's own player's name, or <see langword="null"/> on a dedicated server.</param>
-    public ServerSession(NetServer net, IReplicatedWorld world, int tickRate, string map, MultiplayerRules? rules = null, string? hostName = null)
+    /// <param name="hostSkin">The listen server's own player's look, a <see cref="PlayerSkins"/> id.</param>
+    public ServerSession(
+        NetServer net, IReplicatedWorld world, int tickRate, string map, MultiplayerRules? rules = null, string? hostName = null, string hostSkin = "")
     {
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _world = world ?? throw new ArgumentNullException(nameof(world));
@@ -46,7 +48,8 @@ public sealed class ServerSession
         Match = new Match(rules ?? new MultiplayerRules());
         if (hostName is not null)
         {
-            Match.Join(HostSlot, hostName, TeamRoster.Good);
+            Match.Join(HostSlot, hostName, TeamRoster.Good).Skin = hostSkin;
+            world.SetSkin(HostSlot, hostSkin);
         }
     }
 
@@ -96,7 +99,8 @@ public sealed class ServerSession
             switch (e.Kind)
             {
                 case NetEventKind.Connected:
-                    Join(e.Peer, JoinRequest.Decode(e.Payload ?? [])?.PlayerName ?? "player");
+                    JoinRequest? request = JoinRequest.Decode(e.Payload ?? []);
+                    Join(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
                     break;
                 case NetEventKind.Disconnected:
                     if (_clients.Remove(e.Peer))
@@ -232,7 +236,7 @@ public sealed class ServerSession
     private int EntityOfSlot(int slot) =>
         slot == HostSlot ? HostEntity : _clients.TryGetValue(slot, out ClientState? client) ? client.Entity : -1;
 
-    private void Join(int slot, string name)
+    private void Join(int slot, string name, string skin)
     {
         int? entity = _world.AddPlayer(slot, name);
         if (entity is null)
@@ -242,7 +246,8 @@ public sealed class ServerSession
         }
 
         _clients[slot] = new ClientState(name, entity.Value);
-        Match.Join(slot, name, _world.TeamOf(slot));
+        Match.Join(slot, name, _world.TeamOf(slot)).Skin = skin;
+        _world.SetSkin(slot, skin);
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Welcome, 8);
         _writer.WriteVarUInt((uint)entity.Value);

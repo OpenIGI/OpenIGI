@@ -50,6 +50,9 @@ public sealed partial class SoldierRenderer
     private readonly Dictionary<object, (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired)> _partnerGuns = [];
     private (LoadedMission Mission, string Model, BoneAnimationSet Animations)? _partnerLoad;
 
+    // The model each partner's body was built from, so a change of look rebuilds it.
+    private readonly Dictionary<object, string> _partnerModels = [];
+
     /// <inheritdoc/>
     public void FollowPartnerBodies(IReadOnlyList<PartnerBody> partners)
     {
@@ -63,15 +66,35 @@ public sealed partial class SoldierRenderer
         foreach (PartnerBody partner in partners)
         {
             present.Add(partner.Key);
-            if (!_partners.TryGetValue(partner.Key, out PlayerBodyRenderer? body))
+
+            // Its look's model where the level ships it; the level's own player's otherwise. A look changed (the
+            // scoreboard naming it a moment after the body first showed) builds the body again.
+            // A look on another skeleton than the body's set would be posed by clips of the wrong bones; until its
+            // clips are mapped from the player's, the level's own player model stands in for it.
+            string look = partner.Model is { Length: > 0 } wanted
+                && OpenIGI.Game.Multiplayer.PlayerSkins.All.FirstOrDefault(s => s.Model == wanted) is { } skin
+                && skin.Skeleton == load.Animations.Skeleton.Id
+                && load.Mission.TryGetModel(wanted, out _)
+                    ? wanted
+                    : load.Model;
+            if (_partners.TryGetValue(partner.Key, out PlayerBodyRenderer? body) && _partnerModels.GetValueOrDefault(partner.Key) != look)
+            {
+                body.Release();
+                _partners.Remove(partner.Key);
+                _fallen.Remove(partner.Key);
+                body = null;
+            }
+
+            if (body is null)
             {
                 body = new PlayerBodyRenderer(this, _device, _sim, _logger, new SoldierPlayerBody());
-                if (!body.Load(load.Mission, load.Model, load.Animations, partner.Feet, partner.Facing))
+                if (!body.Load(load.Mission, look, load.Animations, partner.Feet, partner.Facing))
                 {
                     continue;
                 }
 
                 _partners[partner.Key] = body;
+                _partnerModels[partner.Key] = look;
             }
 
             if (partner.Name is { Length: > 0 } fallenName)
@@ -132,6 +155,7 @@ public sealed partial class SoldierRenderer
             _partnerGuns.Remove(gone);
             _partnerNames.Remove(gone);
             _fallen.Remove(gone);
+            _partnerModels.Remove(gone);
         }
     }
 

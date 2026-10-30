@@ -47,15 +47,23 @@ public static class Igi1Command
 /// <summary>Another player in an I.G.I. co-op session: a rig of the mission's own kind, driven by its client's commands.</summary>
 /// <param name="player">The rig.</param>
 /// <param name="health">Its health.</param>
-public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
+/// <remarks>
+/// Hurt as the mission's own player is, by the same handlers (<see cref="World.IHarmedPlayer"/>): what they decide happens
+/// to the rig and health here, and what it feels of it is recorded (<see cref="RemoteSenses"/>) for its client to feel.
+/// </remarks>
+public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) : World.IHarmedPlayer
 {
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
+    private bool _down;
 
     /// <summary>Gets the rig.</summary>
     public PlayerCamera Player { get; } = player ?? throw new ArgumentNullException(nameof(player));
 
     /// <summary>Gets or sets its player's name.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the look it wears, a <see cref="OpenIGI.Game.Multiplayer.PlayerSkins"/> id.</summary>
+    public string Skin { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the entity it is in the session's snapshots, or -1.</summary>
     public int Entity { get; set; } = -1;
@@ -66,8 +74,23 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
     /// <summary>Gets its client's commands, by the tick each is for.</summary>
     public UserCommandBuffer Commands { get; } = new(Igi1Command.ChannelCount);
 
-    /// <summary>Gets a value indicating whether it has died.</summary>
-    public bool IsDead => Health.IsDead;
+    /// <summary>Gets or sets whether it lies dead: its health spent, or put down by the death handler.</summary>
+    public bool IsDead
+    {
+        get => _down || Health.IsDead;
+        set => _down = value;
+    }
+
+    /// <inheritdoc/>
+    PlayerCamera? World.IHarmedPlayer.Rig => Player;
+
+    /// <inheritdoc/>
+    World.IPlayerSenses World.IHarmedPlayer.Senses => RemoteSenses;
+
+    /// <summary>Gets what it felt since the last snapshot, recorded for its client.</summary>
+    internal RemotePlayerSenses RemoteSenses => _remote ??= new RemotePlayerSenses(() => Entity);
+
+    private RemotePlayerSenses? _remote;
 
     /// <summary>Runs its tick on its client's command for the tick: the look set, then the frame run as the mission's player runs its own.</summary>
     /// <param name="tick">The tick being run.</param>
@@ -92,6 +115,7 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
     /// </remarks>
     public void Run(long tick, IGroundHeightField? ground, Action<PlayerCamera> rung)
     {
+        int shots = Player.Weapons?.ShotSequence ?? 0;
         for (int due = Commands.Due(); due > 0 && Commands.TryTake(_channels); due--)
         {
             if (!IsDead)
@@ -99,7 +123,16 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
                 RunCommand(ground, rung);
             }
         }
+
+        FiredThisTick = (Player.Weapons?.ShotSequence ?? 0) != shots;
     }
+
+    /// <summary>Gets whether it fired on its last tick, in any of the commands the tick ran.</summary>
+    /// <remarks>
+    /// Its own: a tick runs as many of its client's commands as are due -- none, one or two -- and the weapon's own "fired
+    /// this tick" is only the last command's.
+    /// </remarks>
+    public bool FiredThisTick { get; private set; }
 
     // One of its client's commands.
     private void RunCommand(IGroundHeightField? ground, Action<PlayerCamera> rung)

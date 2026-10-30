@@ -9,6 +9,9 @@ public sealed class MatchPlayer(int slot, string name, int team, int money)
     /// <summary>Gets the player's name.</summary>
     public string Name { get; } = name;
 
+    /// <summary>Gets or sets the look the player wears, a <see cref="PlayerSkins"/> id.</summary>
+    public string Skin { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the player's team.</summary>
     public int Team { get; set; } = team;
 

@@ -144,7 +144,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                best = new SoldierEnemy(other.Player.Body.Eye, true, other.Player.Body.Position, other.Player.IsCrouched);
+                best = new SoldierEnemy(other.Player.Body.Eye, true, other.Player.Body.Position, other.Player.IsCrouched, other);
             }
         }
 
@@ -986,6 +986,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                     ShowPartnerShot(partner);
                     audio.TickSoldierWeaponSound(PartnerVoiceBase - (partner.Key.GetHashCode() & 0xFFFFFF), partner.Fired, partner.Weapon, partner.Feet);
                 }
+            }
+
+            // A client's soldiers fire on the server; here their rounds are only lines through the air.
+            if (mission.CoopClient)
+            {
+                ShowPuppetShots();
             }
         }
     }

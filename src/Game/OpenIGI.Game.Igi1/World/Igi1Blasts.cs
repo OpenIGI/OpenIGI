@@ -271,6 +271,15 @@ public sealed class Igi1Blasts(
             members.Add((long.MaxValue, members.Count, () => SendPlayerTheBlast(blast)));
         }
 
+        // A co-op session's other players are humans the blast reaches as it reaches the player, through the player's
+        // handler; they hold no task in the level, so they come last, after it.
+        foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+        {
+            Multiplayer.Igi1NetworkPlayer member = partner;
+            members.Add((long.MaxValue, members.Count, () => BlastPlayer(
+                member, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy)));
+        }
+
         if (mission.Destructibles is { } registry)
         {
             foreach (DestructibleObject item in registry.Objects)
@@ -352,46 +361,52 @@ public sealed class Igi1Blasts(
         }
         else
         {
-            BlastPlayer(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
+            BlastPlayer(harm.Own, blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor, blast.KilledBy);
         }
     }
 
-    /// <summary>A blast's share of the player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death.</summary>
+    /// <summary>A blast's share of a player (<c>0x412990</c>): the shove and the shake, then the dose, the flash and the death.</summary>
+    /// <param name="target">The player: the mission's own, or a co-op partner.</param>
     /// <param name="position">The blast's centre, in units.</param>
     /// <param name="radiusUnits">The full-damage radius, in units.</param>
     /// <param name="falloffUnits">The falloff beyond it, in units.</param>
     /// <param name="damageFactor">The blast's damage.</param>
     /// <param name="killedBy">The weapon category a death it causes is reported under.</param>
-    public void BlastPlayer(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
+    public void BlastPlayer(IHarmedPlayer target, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor, WeaponCategory killedBy)
     {
-        if (mission.Player is null || mission.PlayerHealth.IsDead)
+        ArgumentNullException.ThrowIfNull(target);
+        if (target.Rig is not { } rig || target.Health.IsDead)
         {
             return;
         }
 
-        ReachPlayerWithBlast(position, radiusUnits, falloffUnits);
+        ReachPlayerWithBlast(target, rig, position, radiusUnits, falloffUnits);
         // 0x412990 weighs the blast at the origin (Human+32) with a third of the body model's bound (Human+0xA0).
         float dose = ExplosionDamage.Dose(
-            (float)(mission.Player.Body.Origin - position).Length,
+            (float)(rig.Body.Origin - position).Length,
             ExplosionDamage.EffectiveBodyRadius(mission.Soldiers?.PlayerHumanRadius ?? (float)HumanSeparation.RadiusInUnits),
             radiusUnits,
             falloffUnits,
             damageFactor);
         if (dose > 0f)
         {
-            mission.PlayerHealth.Apply(ExplosionDamage.Zone, dose);
-            FlashPlayerForBlast();
+            target.Health.Apply(ExplosionDamage.Zone, dose);
+
+            // 0x412990's flash: four independent corner draws.
+            target.Senses.FlashCorners();
 
             // A blast that zeroes the health kills exactly the way a bullet does -- without this the player stood at
             // zero for ever.
-            if (mission.PlayerHealth.IsDead)
+            if (target.Health.IsDead)
             {
-                harm.BeginPlayerDeath(position, ExplosionDamage.Zone, -1, killedBy);
+                harm.BeginPlayerDeath(target, position, ExplosionDamage.Zone, -1, killedBy);
             }
         }
     }
 
     /// <summary>What any blast does to the player before its damage is counted — the head of <c>0x412990</c>.</summary>
+    /// <param name="target">The player.</param>
+    /// <param name="rig">Its rig.</param>
     /// <param name="blastPosition">The blast's centre, in units.</param>
     /// <param name="radiusUnits">The blast radius, in units.</param>
     /// <param name="falloffUnits">The blast's falloff, in units.</param>
@@ -408,18 +423,18 @@ public sealed class Igi1Blasts(
     /// sound set defines it, so the original is silent there too.
     /// </para>
     /// </remarks>
-    private void ReachPlayerWithBlast(Vector3d blastPosition, float radiusUnits, float falloffUnits)
+    private static void ReachPlayerWithBlast(IHarmedPlayer target, PlayerCamera rig, Vector3d blastPosition, float radiusUnits, float falloffUnits)
     {
-        if (mission.Player is null || mission.PlayerHealth.IsDead || radiusUnits <= 0f)
+        if (target.Health.IsDead || radiusUnits <= 0f)
         {
             return;
         }
 
-        Vector3d away = mission.Player.EyeUnits - blastPosition;
+        Vector3d away = rig.EyeUnits - blastPosition;
         double distance = away.Length;
         if (distance < (radiusUnits + falloffUnits) * 1.5 && distance > 0.0)
         {
-            mission.Player.Body.AddHitShove(
+            rig.Body.AddHitShove(
                 (float)(away.X / distance * BlastShoveUnitsPerTick),
                 (float)(away.Y / distance * BlastShoveUnitsPerTick));
         }
@@ -428,20 +443,12 @@ public sealed class Igi1Blasts(
         double share = beyond < 0.0 ? 1.0 : 1.0 - (beyond / (radiusUnits * 6.0));
         if (share > 0.0)
         {
-            mission.Player.InstallViewShake(
+            target.Senses.Shake(
                 (float)(HumanViewShake.HitPositionUnits * share),
                 (float)(HumanViewShake.HitAngleRadians * share),
                 ExplosionShakeTicks);
         }
     }
-
-    /// <summary>The flash a damaging blast raises — <c>0x412990</c>'s four independent corner draws.</summary>
-    private void FlashPlayerForBlast() =>
-        mission.DamageFlash.HitEveryCorner(
-            mission.SoundRandom.NextSingle(),
-            mission.SoundRandom.NextSingle(),
-            mission.SoundRandom.NextSingle(),
-            mission.SoundRandom.NextSingle());
 
     /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
     public void ResolveM203Detonations()
