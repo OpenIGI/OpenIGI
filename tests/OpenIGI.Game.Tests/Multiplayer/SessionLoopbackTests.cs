@@ -89,6 +89,8 @@ public sealed class SessionLoopbackTests
 
         public long CurrentTick { get; set; }
 
+        public LagCompensation? LagCompensation { get; set; }
+
         public int? AddPlayer(int slot, string name)
         {
             Player player = new(_nextId++);

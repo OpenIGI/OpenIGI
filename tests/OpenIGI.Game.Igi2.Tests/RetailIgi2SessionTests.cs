@@ -59,5 +59,17 @@ public sealed class RetailIgi2SessionTests
         Assert.True(latest.TryGet(1, out ReplicatedHuman mine));
         Assert.Equal(Int3.From(player.Human.Position).X, mine.Position.X, tolerance: 2048);
         Assert.True((mine.Flags & ReplicatedHumanCondition.Alive) != 0);
+
+        // Lag compensation: the host jumps a metre; as the client's shots are traced the host is put back where the
+        // client last drew it, and stands where it jumped to again afterwards.
+        Core.Numerics.Vector3d hostWas = level.Human.Position;
+        level.Human.Position = hostWas + new Core.Numerics.Vector3d(4096, 0, 0);
+        using (IDisposable? rewound = level.NetworkRewind!(player))
+        {
+            Assert.NotNull(rewound);
+            Assert.True(Math.Abs(level.Human.Position.X - hostWas.X) < 512, $"rewound to {level.Human.Position.X}, was {hostWas.X}");
+        }
+
+        Assert.Equal(hostWas.X + 4096, level.Human.Position.X);
     }
 }

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Player;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
@@ -19,6 +20,16 @@ public sealed class Igi2ClientWorld : IReplicatedClientWorld
 
     /// <inheritdoc/>
     public IReadOnlyCollection<int> Shown => _puppets.Keys;
+
+    /// <inheritdoc/>
+    public Vector3d LocalPosition => _level.Human.Position;
+
+    /// <inheritdoc/>
+    public void MoveLocal(Vector3d offset)
+    {
+        _level.Human.Position += offset;
+        _level.Human.UpdateViewBody(updateAnimation: false);
+    }
 
     /// <summary>Gets the puppet of another player, or <see langword="null"/>.</summary>
     /// <param name="id">Its entity id.</param>

@@ -11,6 +11,9 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
+using OpenIGI.Host.Multiplayer;
+using OpenIGI.Game.Multiplayer;
+using OpenIGI.Net.Udp;
 using OpenIGI.Host;
 using OpenIGI.Host.Titles;
 using OpenIGI.Modding;
@@ -38,6 +41,37 @@ using DesktopLogging logging = DesktopLogging.Start();
 IOpenIgiLogger logger = logging.Logger;
 return Run(args, logger);
 
+// The session the command line asks for: a server to join, or this game hosting one; nothing otherwise.
+static IDisposable? StartSession(SessionArguments session, GameTitle title, HostOptions options, IOpenIgiLogger logger)
+{
+    string version = System.Reflection.Assembly.GetEntryAssembly()
+        ?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev";
+    if (session.Connect is { } target)
+    {
+        if (UdpTransport.Parse(target, SessionArguments.DefaultPort) is not { } server)
+        {
+            logger.Warning("Session", $"'{target}' is not a server address; playing alone.");
+            return null;
+        }
+
+        return new SessionClient(UdpTransport.Open(0), server, new JoinRequest(session.PlayerName, version, session.Password), title.Id, logger);
+    }
+
+    if (session.Listen)
+    {
+        string map = options.StartMission.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return new HostedSession(
+            UdpTransport.Open(session.Port),
+            new HostedSessionOptions(session.ServerName, session.MaxPlayers, session.Password, session.Mode, map, version, IncludesHost: true),
+            title.Id,
+            OpenIGI.Engine.Time.GameClock.DefaultTickRate,
+            logger);
+    }
+
+    return null;
+}
+
 // Reported where somebody will see it: the log and standard output always, and a dialog when the game was
 // double-clicked and has nowhere else to say why it stopped.
 static int Fail(IOpenIgiLogger logger, string message, int exitCode = 2, Exception? exception = null)
@@ -50,8 +84,12 @@ static int Fail(IOpenIgiLogger logger, string message, int exitCode = 2, Excepti
 static int Run(string[] args, IOpenIgiLogger logger)
 {
 HostOptions options;
+SessionArguments session;
 try
 {
+    // The multiplayer options first, so the host's parser sees only its own.
+    session = SessionArguments.Parse(args, out args);
+
     // -vulkan is still swallowed rather than rejected. It names the default backend, so it does nothing,
     // but a shortcut or a script that has carried it since there was a choice of renderers should keep
     // working. The backend is chosen by OPENIGI_RENDERER.
@@ -60,7 +98,7 @@ try
 }
 catch (ArgumentException ex)
 {
-    return Fail(logger, $"{ex.Message}\n\n{HostOptions.Usage}");
+    return Fail(logger, $"{ex.Message}\n\n{HostOptions.Usage}\n\n{SessionArguments.Usage}");
 }
 
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
@@ -270,6 +308,9 @@ using (window)
 
     HostOptions runOptions = options;
 
+    // A session joined (-connect) or hosted (-listen) runs either side of the title's ticks, and outlives a renderer switch.
+    using IDisposable? multiplayer = StartSession(session, title, options, logger);
+
     // NVIDIA's optional runtime (DLSS, ray reconstruction, frame generation, Reflex). Found once; each
     // Vulkan or Direct3D 12 device started over it opens a session of its own, and a WebGPU one never looks.
     StreamlineOptions? streamline = StreamlineLocator.Locate(options);
@@ -373,6 +414,7 @@ using (window)
             platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
             TitleCatalog.Catalog, titleRuntime.Title,
             fileSystem, runOptions with { Renderer = backend }, gamePath, logger);
+        game.TickObserver = multiplayer as IHostTickObserver;
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;

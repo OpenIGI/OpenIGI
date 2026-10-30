@@ -54,6 +54,9 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
     /// <summary>Gets or sets what the level's own player was made from, which another is made from too.</summary>
     internal Igi2PlayerSpawnKit? SpawnKit { get; set; }
 
+    /// <summary>Gets or sets what puts the other players where a client's player saw them as its shots are traced: lag compensation.</summary>
+    internal Func<Igi2NetworkHuman, IDisposable?>? NetworkRewind { get; set; }
+
     /// <summary>Gets the areas' rosters, which count every player in the level.</summary>
     internal List<PlayerRoster<Flow.IIgi2AreaOccupant>> AreaRosters { get; } = [];
 
@@ -158,7 +161,13 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
     {
         foreach (Igi2NetworkHuman other in _networkHumans)
         {
-            other.Weapons?.RunGunShot();
+            if (other.Weapons is not { } weapons)
+            {
+                continue;
+            }
+
+            using IDisposable? rewound = NetworkRewind?.Invoke(other);
+            weapons.RunGunShot();
         }
     }
 

@@ -44,6 +44,7 @@
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.Udp\OpenIGI.Net.Udp.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Streamline\OpenIGI.Rendering.Streamline.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.D3D12\OpenIGI.Rendering.D3D12.csproj" />

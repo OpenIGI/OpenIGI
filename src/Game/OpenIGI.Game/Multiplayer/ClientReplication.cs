@@ -17,7 +17,19 @@ public static class ClientReplication
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(world);
         session.Receive(now);
-        session.SendCommand(world.LocalFrame, now);
+
+        // The server's word on where this client's player was after its newest command it has run, against the prediction.
+        if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own)
+            && session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector()) is { } correction)
+        {
+            world.MoveLocal(correction);
+        }
+
+        if (session.SendCommand(world.LocalFrame, now) is { } sent)
+        {
+            session.Reconciler.Record(sent, world.LocalPosition);
+        }
+
         session.Flush(now);
         if (session.Latest is not { } latest || session.Clock is not { HasSample: true } clock)
         {

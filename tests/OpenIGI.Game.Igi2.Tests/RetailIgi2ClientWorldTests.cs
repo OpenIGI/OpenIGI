@@ -50,5 +50,13 @@ public sealed class RetailIgi2ClientWorldTests
         Assert.True(off < 4096, $"the host's puppet stands {off} units from the host");
         Assert.Single(serverLevel.NetworkHumans);
         Assert.Single(clientLevel.NetworkHumans);
+
+        // The client's own player began at its level's spawn; the server stood its copy a pace away. The first
+        // snapshot moved it there, and from then on it agrees with the server.
+        Core.Numerics.Vector3d mine = clientLevel.Human.Position;
+        Core.Numerics.Vector3d serverCopy = serverLevel.NetworkHumans[0].Human.Position;
+        double apart = Math.Abs(mine.X - serverCopy.X) + Math.Abs(mine.Y - serverCopy.Y);
+        Assert.True(apart < 1024, $"the client's player stands {apart} units from its server copy");
+        Assert.True(client.Reconciler.Corrections >= 1);
     }
 }

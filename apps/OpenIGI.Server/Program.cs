@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -8,6 +7,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Configuration;
+using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Host;
@@ -16,7 +16,7 @@ using OpenIGI.Host.Infrastructure;
 using OpenIGI.Net.Udp;
 using OpenIGI.Platform.Headless;
 using OpenIGI.Rendering.Headless;
-using OpenIGI.Server;
+using OpenIGI.Host.Multiplayer;
 
 // The dedicated server: the game's own host, run with no window, no picture and no sound, its level ticking in real time,
 // and the multiplayer session beside it. Everything the level does is the same code a client runs.
@@ -26,16 +26,16 @@ const string LogCategory = "Server";
 using LogRouter logger = new();
 logger.AddSink(new ConsoleSink(minimumLevel: LogLevel.Information));
 
-ServerOptions serverOptions;
+SessionArguments serverOptions;
 HostOptions hostOptions;
 try
 {
-    serverOptions = ServerOptions.Parse(args, out string[] hostArgs);
+    serverOptions = SessionArguments.Parse(args, out string[] hostArgs);
     hostOptions = HostOptions.Parse(hostArgs);
 }
 catch (ArgumentException ex)
 {
-    logger.Error(LogCategory, $"{ex.Message}\n\n{ServerOptions.Usage}\n\n{HostOptions.Usage}");
+    logger.Error(LogCategory, $"{ex.Message}\n\n{SessionArguments.Usage}\n\n{HostOptions.Usage}");
     return 2;
 }
 
@@ -83,8 +83,14 @@ using GameHost host = new(
 
 string version = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
 string map = hostOptions.StartMission.ToString(CultureInfo.InvariantCulture);
-using DedicatedServer server = new(UdpTransport.Open(serverOptions.Port), serverOptions, title.Id, map, version, logger);
-logger.Information(LogCategory, $"{title.DisplayName} server '{serverOptions.Name}' on UDP {server.LocalAddress.Port}, map {map}, up to {serverOptions.MaxPlayers} players.");
+using HostedSession server = new(
+    UdpTransport.Open(serverOptions.Port),
+    new HostedSessionOptions(serverOptions.ServerName, serverOptions.MaxPlayers, serverOptions.Password, serverOptions.Mode, map, version, IncludesHost: false),
+    title.Id,
+    GameClock.DefaultTickRate,
+    logger);
+host.TickObserver = server;
+logger.Information(LogCategory, $"{title.DisplayName} server '{serverOptions.ServerName}' on UDP {server.LocalAddress.Port}, map {map}, up to {serverOptions.MaxPlayers} players.");
 
 // Ctrl+C in the terminal, or a service manager's stop, ends the run between steps.
 bool stopping = false;
@@ -97,13 +103,11 @@ void Stop(PosixSignalContext context)
 using PosixSignalRegistration interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, Stop);
 using PosixSignalRegistration terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, Stop);
 
-Stopwatch clock = Stopwatch.StartNew();
 host.Start();
 while (!stopping && host.Step())
 {
-    server.Pump(clock.Elapsed.TotalSeconds);
-
-    // A host step ends as soon as its frame is done; with nothing to draw, the next tick is most of a period away.
+    // A host step ends as soon as its frame is done; with nothing to draw, the next tick is most of a period away. The
+    // session runs inside the step, either side of the title's tick.
     Thread.Sleep(1);
 }
 

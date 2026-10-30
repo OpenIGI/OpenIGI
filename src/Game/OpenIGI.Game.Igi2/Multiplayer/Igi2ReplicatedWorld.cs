@@ -31,7 +31,14 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ReplicatedWorld"/> class.</summary>
     /// <param name="level">The level, as its own player holds it.</param>
-    public Igi2ReplicatedWorld(Igi2TitlePlayer level) => _level = level ?? throw new ArgumentNullException(nameof(level));
+    public Igi2ReplicatedWorld(Igi2TitlePlayer level)
+    {
+        _level = level ?? throw new ArgumentNullException(nameof(level));
+        _level.NetworkRewind = RewindFor;
+    }
+
+    /// <inheritdoc/>
+    public LagCompensation? LagCompensation { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the level's own player is a player of the session (a listen server).</summary>
     public bool IncludesHost { get; set; } = true;
@@ -95,6 +102,41 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         return new Snapshot(tick, [.. _scratch]);
     }
 
+    /// <summary>Puts every player but a shooter where the shooter's client drew them when it fired, until the scope ends.</summary>
+    /// <param name="shooter">The client's player whose shots are about to be traced.</param>
+    /// <returns>The scope, or <see langword="null"/> when there is nothing to rewind to.</returns>
+    /// <remarks>The bodies are moved, not turned or re-posed: where a body stands is what a shot at a moving man misses by.</remarks>
+    private RewindScope? RewindFor(Igi2NetworkHuman shooter)
+    {
+        long commandTick = shooter.Commands.LastTakenTick;
+        if (LagCompensation is not { } lag || commandTick == long.MinValue)
+        {
+            return null;
+        }
+
+        List<(Igi2HumanPlayer Human, Vector3d Was)> moved = [];
+        void MoveBack(int id, Igi2HumanPlayer human)
+        {
+            if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(commandTick, id, out ReplicatedHuman then))
+            {
+                moved.Add((human, human.Position));
+                human.Position = then.Position.ToVector();
+            }
+        }
+
+        if (IncludesHost)
+        {
+            MoveBack(HostEntity, _level.Human);
+        }
+
+        foreach ((int slot, Igi2NetworkHuman other) in _bySlot)
+        {
+            MoveBack(slot + 1, other.Human);
+        }
+
+        return moved.Count == 0 ? null : new RewindScope(moved);
+    }
+
     /// <summary>One I.G.I. 2 human as a snapshot carries it.</summary>
     /// <param name="id">Its entity id.</param>
     /// <param name="human">The human.</param>
@@ -127,5 +169,16 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             (byte)Math.Round(left * 255),
             (byte)Math.Clamp(human.Team, 0, 255),
             condition);
+    }
+
+    private sealed class RewindScope(List<(Igi2HumanPlayer Human, Vector3d Was)> moved) : IDisposable
+    {
+        public void Dispose()
+        {
+            foreach ((Igi2HumanPlayer human, Vector3d was) in moved)
+            {
+                human.Position = was;
+            }
+        }
     }
 }

@@ -61,6 +61,12 @@ public sealed class ClientSession
     /// <summary>Gets the newest commands sent, oldest first, for prediction to run again.</summary>
     public IReadOnlyList<UserCommand> SentCommands => _sent;
 
+    /// <summary>Gets the newest tick whose command the server has run for this client, as of the newest snapshot.</summary>
+    public long LastRunCommandTick { get; private set; } = long.MinValue;
+
+    /// <summary>Gets what keeps this client's own player where the server has it.</summary>
+    public PredictionReconciler Reconciler { get; } = new();
+
     /// <summary>Gets the snapshots that could not be read because their baseline was gone.</summary>
     public long DroppedSnapshots { get; private set; }
 
@@ -174,12 +180,14 @@ public sealed class ClientSession
                     return;
                 }
 
+                long ran = reader.ReadBits(32) | ((long)reader.ReadBits(32) << 32);
                 Received.Add(snapshot);
                 Remote.Add(snapshot);
                 if (snapshot.Tick > _newestReceived)
                 {
                     _newestReceived = snapshot.Tick;
                     Latest = snapshot;
+                    LastRunCommandTick = reader.IsOverflowed ? long.MinValue : ran;
                     clock.AddSample(snapshot.Tick, now, _net.Connection?.Statistics.RoundTripTime ?? 0);
                 }
 

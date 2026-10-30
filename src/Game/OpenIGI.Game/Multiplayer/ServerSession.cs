@@ -37,6 +37,7 @@ public sealed class ServerSession
         TickRate = tickRate;
         Map = map ?? throw new ArgumentNullException(nameof(map));
         _codec = new UserCommandCodec(world.ChannelCount);
+        world.LagCompensation = new LagCompensation(LagCompensationHistory, tickRate);
     }
 
     /// <summary>Gets the world's ticks per second.</summary>
@@ -49,10 +50,7 @@ public sealed class ServerSession
     public int SnapshotInterval { get; set; } = 1;
 
     /// <summary>Gets the server's own recent snapshots, where shots are traced against the world as each shooter saw it.</summary>
-    public SnapshotInterpolator LagCompensation { get; } = new(64);
-
-    /// <summary>Gets or sets the most a shot may be rewound, in seconds (<c>sv_maxunlag</c>).</summary>
-    public double MaxUnlag { get; set; } = 1.0;
+    public SnapshotInterpolator LagCompensationHistory { get; } = new(64);
 
     /// <summary>Gets the connected clients' slots.</summary>
     public IEnumerable<int> Clients => _clients.Keys;
@@ -95,7 +93,7 @@ public sealed class ServerSession
     public void Send(double now, long tick)
     {
         Snapshot snapshot = _world.Capture(tick);
-        LagCompensation.Add(snapshot);
+        LagCompensationHistory.Add(snapshot);
         if (tick % Math.Max(1, SnapshotInterval) == 0)
         {
             foreach ((int slot, ClientState client) in _clients)
@@ -104,6 +102,9 @@ public sealed class ServerSession
                 _writer.Reset();
                 _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
                 SnapshotCodec.Write(_writer, snapshot, client.History.Baseline);
+                long ran = _world.CommandsFor(slot)?.LastTakenTick ?? -1;
+                _writer.WriteBits((uint)ran, 32);
+                _writer.WriteBits((uint)(ran >> 32), 32);
                 if (_writer.ByteCount <= NetConstants.MaxUnreliableMessageSize)
                 {
                     _net.Send(slot, NetChannel.Sequenced, _writer.AsSpan());
@@ -113,13 +114,6 @@ public sealed class ServerSession
 
         _net.Flush(now);
     }
-
-    /// <summary>Gets the moment a client's command was aimed at: its tick less the client's interpolation delay, within <see cref="MaxUnlag"/>.</summary>
-    /// <param name="commandTick">The tick the command ran on.</param>
-    /// <param name="interpolationDelay">The shooter's interpolation delay, in seconds.</param>
-    /// <returns>The fractional tick to sample <see cref="LagCompensation"/> at.</returns>
-    public double RewindTick(long commandTick, double interpolationDelay) =>
-        commandTick - (Math.Clamp(interpolationDelay, 0, MaxUnlag) * TickRate);
 
     private void Join(int slot, string name)
     {

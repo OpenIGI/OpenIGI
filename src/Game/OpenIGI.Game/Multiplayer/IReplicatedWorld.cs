@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Multiplayer;
 
 /// <summary>What a title gives the server session: its players made and taken out, their commands, and the world each tick.</summary>
@@ -12,6 +14,10 @@ public interface IReplicatedWorld
 
     /// <summary>Gets the tick the world runs next, the clock clients' commands are stamped against.</summary>
     long CurrentTick { get; }
+
+    /// <summary>Gets or sets the server's recent snapshots, against which a client's shots are traced as its client saw the world.</summary>
+    /// <remarks>Set by the session; a world without it traces every shot against the world as it stands.</remarks>
+    LagCompensation? LagCompensation { get; set; }
 
     /// <summary>Makes the player for a client who has joined.</summary>
     /// <param name="slot">The client's slot.</param>
@@ -55,6 +61,13 @@ public interface IReplicatedClientWorld
 
     /// <summary>Gets the entity ids of the other players shown.</summary>
     IReadOnlyCollection<int> Shown { get; }
+
+    /// <summary>Gets where the client's own player stands, in world units.</summary>
+    Vector3d LocalPosition { get; }
+
+    /// <summary>Moves the client's own player, as a correction from the server puts it where the server has it.</summary>
+    /// <param name="offset">How far, in world units.</param>
+    void MoveLocal(Vector3d offset);
 
     /// <summary>Shows another player where a snapshot has it, making it the first time.</summary>
     /// <param name="human">The player, sampled at the moment drawn.</param>
