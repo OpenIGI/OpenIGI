@@ -2,6 +2,9 @@ name = "openigi-master"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
+# Served at master.openigi.com; Cloudflare makes the DNS record for a custom domain itself.
+routes = [{ pattern = "master.openigi.com", custom_domain = true }]
+
 # Where the game's WebRTC connections find STUN and TURN: coturn on the data.openigi.com VM (tools/turn). The relay's
 # shared secret is the Worker secret TURN_SECRET (`wrangler secret put TURN_SECRET`; `.dev.vars` locally), never here.
 [vars]
@@ -20,5 +23,3 @@ class_name = "Room"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
-
-# Not deployed yet. Route it (e.g. master.openigi.com/v1/*) when the multiplayer branch ships.

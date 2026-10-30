@@ -18,8 +18,17 @@ sed "s/@SECRET@/$(cat "$dest/secret")/" "$here/turnserver.conf.template" > "$des
 chown 65534:65534 "$dest/turnserver.conf"
 chmod 600 "$dest/turnserver.conf" "$dest/secret"
 
+install -m 755 "$here/tls-cert.sh" "$dest/tls-cert.sh"
+install -m 644 "$here/openigi-turn-cert.service" "$here/openigi-turn-cert.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now openigi-turn-cert.timer
+# The certificate comes from the web stack's Caddy (turn.openigi.com.caddy appended to its Caddyfile); until it has
+# one, coturn starts without TLS.
+"$dest/tls-cert.sh" || true
+
 ufw allow 3478/udp comment 'openigi turn'
 ufw allow 3478/tcp comment 'openigi turn'
+ufw allow 5349/tcp comment 'openigi turns'
 ufw allow 49160:49999/udp comment 'openigi turn relay'
 
 cd "$dest"

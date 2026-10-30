@@ -290,7 +290,12 @@ export class Room {
     if (this.env.TURN_SECRET) {
       const username = `${Math.floor(Date.now() / 1000) + TURN_TTL_S}:${who}`;
       const credential = await hmacSha1Base64(this.env.TURN_SECRET, username);
-      servers.push({ urls: [`turn:${host}:3478?transport=udp`, `turn:${host}:3478?transport=tcp`], username, credential });
+      // UDP first; then TCP, and TLS on 5349 for networks that pass nothing that doesn't look like HTTPS.
+      servers.push({
+        urls: [`turn:${host}:3478?transport=udp`, `turn:${host}:3478?transport=tcp`, `turns:${host}:5349?transport=tcp`],
+        username,
+        credential,
+      });
     }
 
     return servers;
