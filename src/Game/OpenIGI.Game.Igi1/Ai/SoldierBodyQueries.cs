@@ -385,6 +385,30 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
         return found;
     }
 
+    /// <summary>Adds each soldier's place as its run tells it to the mines (<c>Human_SendPosition</c>, 0x463080).</summary>
+    /// <param name="into">The list the places are added to, in the roster's order.</param>
+    /// <remarks>
+    /// A soldier runs while its HumanAI sends it control, which it does for as long as the body is in the world
+    /// (<c>Human_IsActive</c>), dead or alive -- so a body lying before a mine sets it off until it leaves the world.
+    /// </remarks>
+    public void AddPlaces(List<HumanPlace> into)
+    {
+        foreach (SoldierModelGroup group in _context.Roster)
+        {
+            foreach (SoldierAgent member in group.Agents)
+            {
+                SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
+                    || (_context.Brains.TryGetValue(soldier, out Igi1HumanAi? brain) && brain.HasLeftWorld))
+                {
+                    continue;
+                }
+
+                into.Add(new HumanPlace(SoldierContext.OccupantOrigin(soldier), group.Body.HumanRadius));
+            }
+        }
+    }
+
     /// <summary>Finds the nearest living soldier on a segment without scoring the hit.</summary>
     public bool TryIntersect(Vector3d origin, Vector3d end, out HumanHit hit) => TryNearest(origin, end, out hit, out _);
 

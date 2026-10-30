@@ -191,6 +191,19 @@ public sealed class Igi1PlayerSetup(
             ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
             : solids.Tracer();
 
+        // The mine weapon lays nothing on a pane, a door or a vehicle (0x4755A0); its model's bound and magic vertex 0 are
+        // what a blast is measured against and where its own starts.
+        candidate.MineSurfaceRefused = hit => RefusesMine(hit);
+        candidate.Grenades.Solids = (owner, model) =>
+            loaded.TryGetModel(model, out MefModel? solidModel) && solidModel is not null
+            && MefCollisionMesh.TryRead(solidModel.Container, meshIndex: 0, out MefCollisionMesh? solidMesh)
+            && solidMesh is { Faces.Length: > 0 }
+                ? new RetailRayModel(owner, new RetailRayMesh(solidMesh), solidModel.NativeMarkerBound)
+                : null;
+        candidate.MineModel = model => loaded.TryGetModel(model, out MefModel? mineModel) && mineModel is not null
+            ? (mineModel.NativeMarkerBound, mineModel.TryGetMagicVertex(0, out Vector3f point) ? point : default)
+            : (0f, default);
+
         // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
         // cars do; it leaves the hand facing the way it was thrown (0x414A60).
         candidate.Grenades.World = () => mission.RetailWorld;
@@ -198,13 +211,13 @@ public sealed class Igi1PlayerSetup(
         candidate.Missiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
         mission.VehicleMissiles.World = () => mission.RetailWorld;
         mission.VehicleMissiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
-        candidate.Grenades.Bodies = (model, at, velocity) =>
+        candidate.Grenades.Bodies = (model, at, velocity, frame) =>
             mission.VehiclePhysics?.Types.TryFind(model, out OpenIGI.Game.Physics.PhysicsObjectType type) == true
                 ? RetailPhysicsObjectBody.Create(
                     type,
                     loaded.TryGetModel(model, out MefModel? grenadeModel) ? grenadeModel : null,
                     at,
-                    GrenadePhysics.PlacementOrientation(velocity),
+                    frame,
                     velocity)
                 : null;
 
@@ -692,8 +705,41 @@ public sealed class Igi1PlayerSetup(
         // 0x47BD7B sounds it there directly rather than through the material's window.
         candidate.Deflected = deflected;
 
+        // Every human's run tells the laid mines its place: the soldiers in the roster's order, then the player (0x463080),
+        // whose update (0x410960) sends it dead or alive.
+        List<HumanPlace> places = [];
+        candidate.Grenades.MineSensors = () =>
+        {
+            places.Clear();
+            guards.Simulation.AddHumanPlaces(places);
+            places.Add(new HumanPlace(candidate.Body.Origin, guards.Simulation.PlayerHumanRadius));
+            return places;
+        };
+
         // One grenade pool for both throwers: the player's own and every guard's lob fly,
         // bounce and detonate through the same simulation and the same drain.
         guards.Simulation.SetGrenades(candidate.Grenades);
+    }
+
+    // 0x4755A0 refuses a contact whose task is a Glass, a Door or a Vehicle (Heli, Missile, Train, Plane, Car, KnifeStab).
+    private bool RefusesMine(WorldTraceHit hit)
+    {
+        if (hit.Owner?.Type.Name is "Door" or "Heli" or "Missile" or "Train" or "Plane" or "Car" or "KnifeStab")
+        {
+            return true;
+        }
+
+        if (hit.Placement is { } placement && mission.Destructibles is { } destructibles)
+        {
+            foreach (DestructibleObject item in destructibles.Objects)
+            {
+                if (item.Kind == DestructibleObjectKind.Glass && ReferenceEquals(item.Placement, placement))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

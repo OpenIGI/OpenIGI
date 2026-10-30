@@ -749,7 +749,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         {
             _releasedThisEntry.Add(view);
             Vector3d hand = SoldierContext.OccupantOrigin(view) + (member?.ThrowOffset ?? member?.GunOffset ?? default);
-            _fire.ThrowAiGrenade(brain, hand, lobbed);
+            _fire.ThrowAiGrenade(brain, hand, lobbed, view.Orientation);
         }
         else if (state == HumanSoldierStates.CloseCombatState && clip.CrossedEvent(CloseCombatHitEvent))
         {

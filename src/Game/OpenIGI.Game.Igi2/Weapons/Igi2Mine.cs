@@ -4,6 +4,7 @@ using OpenIGI.Game.Igi2.Collision;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.Weapons;
@@ -89,9 +90,7 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
     private readonly Igi2Explosive _explosive;
     private readonly float[] _frame;
     private readonly Igi2RigidObject? _solid;
-    private int _armTimer;
-    private int _explodeTimer;
-    private bool _isNear;
+    private readonly ProximityMineFuse<Fpu> _fuse;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Igi2Mine"/> class, <c>Mine_New</c>: a blast of its radius, full damage at its
@@ -122,14 +121,12 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
         Position = position;
         _frame = [.. frame];
         Model = model ?? string.Empty;
-        _armTimer = armTicks;
         TimeBeforeExplode = timeBeforeExplode;
-        DetectionRadius = detectionRadius;
         ExplosionRadius = explodeRadius;
-        IsRemote = isRemote;
         _explosive = new Igi2Explosive(this, new Igi2MineTaskName()) { Models = world.Models, Explosions = world.Explosions };
         _explosive.Reset(_frame);
-        _explodeTimer = Fpu.ToInt32((Fpu)TimeBeforeExplode * 30.0);
+        _fuse = new ProximityMineFuse<Fpu>(
+            ProximityMineRules.Igi2, armTicks, Fpu.ToInt32((Fpu)TimeBeforeExplode * 30.0), detectionRadius, isRemote);
         if (world.Models(Model) is { } mesh && Igi2CollisionWorld.Meshes(mesh) is { } meshes)
         {
             _solid = new Igi2RigidObject(new Igi2CollisionOwner(TypeName, -1, Model, 0), meshes, mesh.NativeMarkerBound, isBuildingMesh: false)
@@ -189,16 +186,16 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
     public float TimeBeforeExplode { get; }
 
     /// <summary>Gets how near, in metres, a human sets it off.</summary>
-    public float DetectionRadius { get; }
+    public float DetectionRadius => _fuse.ActivateRadiusMetres;
 
     /// <summary>Gets a value indicating whether it waits for a detonator.</summary>
-    public bool IsRemote { get; }
+    public bool IsRemote => _fuse.IsRemote;
 
     /// <summary>Gets a value indicating whether it has armed.</summary>
-    public bool IsArmed { get; private set; }
+    public bool IsArmed => _fuse.IsArmed;
 
     /// <summary>Gets a value indicating whether something has set it off.</summary>
-    public bool IsTriggered { get; private set; }
+    public bool IsTriggered => _fuse.IsTriggered;
 
     /// <summary>Gets its exploding half.</summary>
     public Igi2Explosive Explosive => _explosive;
@@ -214,30 +211,15 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
     public bool Run()
     {
         _explosive.Run(null);
-        if (_armTimer != 0)
+        ProximityMineStep step = _fuse.Run();
+        if (step.ArmedNow)
         {
-            _armTimer--;
-        }
-        else if (!_isNear)
-        {
-            if (!IsArmed)
-            {
-                _world.PlaySoundAt(ArmSound, Position);
-            }
-
-            IsArmed = true;
+            _world.PlaySoundAt(ArmSound, Position);
         }
 
-        if (IsTriggered)
+        if (step.Explode)
         {
-            if (_explodeTimer != 0)
-            {
-                _explodeTimer--;
-            }
-            else
-            {
-                _explosive.Trigger();
-            }
+            _explosive.Trigger();
         }
 
         if (_explosive.IsExploded)
@@ -246,7 +228,6 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
             return false;
         }
 
-        _isNear = false;
         return true;
     }
 
@@ -257,40 +238,14 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
     /// <param name="human">The human.</param>
     /// <param name="position">Its place, a metre up.</param>
     /// <param name="radius">Its size.</param>
-    public void Notify(Igi2Human human, Vector3d position, float radius)
-    {
-        if (IsRemote)
-        {
-            return;
-        }
-
-        Fpu dx = (Fpu)position.X - Position.X;
-        Fpu dy = (Fpu)position.Y - Position.Y;
-        Fpu dz = (Fpu)position.Z - Position.Z;
-        Fpu reach = ((Fpu)DetectionRadius * 4096.0) + radius;
-        Fpu distance = Fpu.Sqrt(((dy * dy) + (dz * dz)) + (dx * dx));
-        Fpu ahead = (((Fpu)_frame[7] * dz) + ((Fpu)_frame[4] * dy)) + ((Fpu)_frame[1] * dx);
-        if (!(reach.Value > distance.Value) || !(ahead.Value > 0.0))
-        {
-            return;
-        }
-
-        _isNear = true;
-        if (IsArmed && _armTimer == 0 && !IsTriggered)
-        {
-            IsTriggered = true;
-        }
-    }
+    public void Notify(Igi2Human human, Vector3d position, float radius) =>
+        _fuse.Sense(Position, new Vector3f(_frame[1], _frame[4], _frame[7]), position, radius);
 
     /// <summary>The computer's map sets a remote mine off, <c>ComputerMap_Trace</c>: it explodes nine ticks on.</summary>
-    public void DetonateFromMap()
-    {
-        IsTriggered = true;
-        _explodeTimer = MapDetonationTicks;
-    }
+    public void DetonateFromMap() => _fuse.SetOffFromMap();
 
     /// <summary>The ticks a mine set off from the map waits.</summary>
-    public const int MapDetonationTicks = 9;
+    public const int MapDetonationTicks = ProximityMineFuse<Fpu>.MapDetonationTicks;
 
     /// <summary>Gets a value indicating whether it has exploded.</summary>
     public bool IsExploded => _explosive.IsExploded;

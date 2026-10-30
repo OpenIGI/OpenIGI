@@ -8,8 +8,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// A batch of rays goes first to the level's placed models and spline segments and to the other vehicles at their
 /// live poses (<see cref="RetailWorldObjects"/>), skipping the casting car and anything in a dormant container,
 /// then to the terrain (<see cref="RetailTerrainRay"/>), which replaces an object hit only when strictly nearer --
-/// the order <c>0x4CC2A0</c> runs them in. Not ported: the upward burial probe (<c>0x4CA010</c>, cast only by a car
-/// with non-wheel collision points), rigid spline segments, water, and the struck object's contact handlers.
+/// the order <c>0x4CC2A0</c> runs them in. Not ported: rigid spline segments, water, and the struck object's contact handlers.
 /// </remarks>
 /// <param name="terrain">The level's exact terrain query.</param>
 /// <param name="objects">The level's placed models and spline segments, or <see langword="null"/>.</param>
@@ -38,12 +37,22 @@ public sealed class RetailCarWorld(
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Coll_DropPointsMat</c> (<c>0x4CB9F0</c>) with every flag: each point's line straight up by
+    /// <paramref name="length"/> against the placed models, the vehicles and the terrain, as <see cref="CastRays"/> casts
+    /// them. A line that meets a face from behind (its back material, <see cref="RetailRayResult.HasSurface"/>) finds the
+    /// point buried. The terrain's own vertical query (<c>0x4CB050</c>) that follows in the original only replaces a nearer
+    /// terrain hit the line already found.
+    /// </remarks>
     public void ProbeUp(RetailRigidBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results)
     {
-        for (int k = 0; k < results.Length; k++)
+        Span<Vector3d> ends = points.Length <= 20 ? stackalloc Vector3d[points.Length] : new Vector3d[points.Length];
+        for (int k = 0; k < points.Length; k++)
         {
-            results[k] = default;
+            ends[k] = new Vector3d(points[k].X, points[k].Y, points[k].Z + length);
         }
+
+        CastRays(car, points, ends, results);
     }
 
     /// <inheritdoc/>

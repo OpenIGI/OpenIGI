@@ -104,6 +104,18 @@ public sealed class Igi1Blasts(
                 "explo_02_m",
                 () => Explode(frag.Position, frag.RadiusUnits, frag.FalloffUnits, frag.DamageFactor, WeaponCategory.Grenade)));
         }
+
+        // A mine is an ExplodeObject (0x481A60): an Explosion0 at its model's magic vertex 0 of one burst and no delay, a
+        // damage of 1 over its explosion radius and no falloff, five fragments and one FireBall, explo_proxy, and no scorch.
+        foreach (PlacedMine mine in mission.Player.Grenades.MineBlasts)
+        {
+            Vector3d at = mine.BlastPoint;
+            float radius = mine.ExplosionRadiusUnits;
+            impacts.Explosions.Spawn(new Igi1ExplosionRequest(
+                at, 1, 0, 1f, radius, 0f, PlacedMine.Fragments, PlacedMine.Fireballs,
+                PlacedMine.BlastSound,
+                () => Explode(at, radius, 0f, 1f, WeaponCategory.ProximityMine)));
+        }
     }
 
     /// <summary>Applies and shows launcher missile impacts produced by the missile task.</summary>
@@ -238,6 +250,21 @@ public sealed class Igi1Blasts(
             members.Add((long.MaxValue - 1, members.Count, () => member.ExplosionHit(joinedShare)));
         }
 
+        // The laid mines joined the list as they were made, after every task the level made (0x481780).
+        if (mission.Player?.Grenades is { } grenades)
+        {
+            foreach (PlacedMine mine in grenades.Mines)
+            {
+                PlacedMine member = mine;
+                members.Add((long.MaxValue - 2, members.Count, () => member.Blast(ExplosionDamage.Dose(
+                    (float)(member.Position - blast.Position).Length,
+                    member.ContactRadiusUnits,
+                    blast.RadiusUnits,
+                    blast.FalloffUnits,
+                    blast.DamageFactor))));
+            }
+        }
+
         if (mission.PlayerTask is null && mission.Player is not null)
         {
             // A level that declares no HumanPlayer still has the player the opening camera stood.
@@ -343,9 +370,10 @@ public sealed class Igi1Blasts(
         }
 
         ReachPlayerWithBlast(position, radiusUnits, falloffUnits);
+        // 0x412990 weighs the blast at the origin (Human+32) with a third of the body model's bound (Human+0xA0).
         float dose = ExplosionDamage.Dose(
-            (float)(mission.Player.Body.Position - position).Length,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+            (float)(mission.Player.Body.Origin - position).Length,
+            ExplosionDamage.EffectiveBodyRadius(mission.Soldiers?.PlayerHumanRadius ?? (float)HumanSeparation.RadiusInUnits),
             radiusUnits,
             falloffUnits,
             damageFactor);

@@ -171,6 +171,12 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerShotResolver.GrenadeTrace"/>
     public WorldTraceCast? GrenadeTrace { get => _shots.GrenadeTrace; set => _shots.GrenadeTrace = value; }
 
+    /// <inheritdoc cref="PlayerShotResolver.MineSurfaceRefused"/>
+    public Func<WorldTraceHit, bool>? MineSurfaceRefused { get => _shots.MineSurfaceRefused; set => _shots.MineSurfaceRefused = value; }
+
+    /// <inheritdoc cref="PlayerShotResolver.MineModel"/>
+    public Func<string, (float Bound, Vector3f BlastPoint)>? MineModel { get => _shots.MineModel; set => _shots.MineModel = value; }
+
     /// <summary>Gets or sets the world cast used by launcher missiles.</summary>
     public WorldRayCast? MissileWalls { get => _shots.MissileWalls; set => _shots.MissileWalls = value; }
 

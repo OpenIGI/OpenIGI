@@ -497,6 +497,9 @@ public sealed class GuardRounds
     private sealed record PlayerContact(HumanHit Hit);
 
     /// <summary>The world a soldier's marched round is cast through: placed objects and terrain, the soldiers, the player.</summary>
+    // A grenade or laid mine a guard's round met.
+    private sealed record ExplosiveContact(object Target);
+
     private sealed class MarchedWorld(GuardRounds rounds) : IGunShotWorld
     {
         public bool Cast(GunShotRound round, Vector3d start, Vector3d limit, out GunShotContact contact)
@@ -526,6 +529,22 @@ public sealed class GuardRounds
                     StruckHuman: false,
                     surface);
                 best = surface.Distance;
+                found = true;
+            }
+
+            // A grenade or a laid mine is a solid object of the world like any other the round's trace meets.
+            if (mission.Player?.Grenades is { } grenades
+                && grenades.TryStrike(start, limit, out double explosiveDistance, out object? explosive)
+                && explosiveDistance < best)
+            {
+                Vector3d along = limit - start;
+                double length = along.Length;
+                Vector3d at = length > 0.0 ? start + (along * (explosiveDistance / length)) : start;
+                Vector3f facing = length > 0.0
+                    ? new Vector3f((float)(-along.X / length), (float)(-along.Y / length), (float)(-along.Z / length))
+                    : default;
+                contact = new GunShotContact(at, facing, explosiveDistance, null, null, HasObject: true, StruckHuman: false, new ExplosiveContact(explosive!));
+                best = explosiveDistance;
                 found = true;
             }
 
@@ -573,6 +592,9 @@ public sealed class GuardRounds
                 case WorldTraceHit surface:
                     rounds._blasts.ApplyRoundContact(surface.Position, surface.Owner, surface.Placement, round.DamageFactor);
                     break;
+                case ExplosiveContact explosive:
+                    GrenadeSimulation.Strike(explosive.Target, round.DamageFactor);
+                    break;
             }
         }
 
@@ -583,6 +605,11 @@ public sealed class GuardRounds
 
         public void Effect(GunShotRound round, in GunShotRecord record)
         {
+            if (record.Contact.Payload is ExplosiveContact)
+            {
+                return;
+            }
+
             if (record.Contact.Payload is not WorldTraceHit surface)
             {
                 rounds._impacts.RunGunShotEffect(

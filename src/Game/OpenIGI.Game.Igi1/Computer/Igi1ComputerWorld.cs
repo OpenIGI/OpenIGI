@@ -5,6 +5,7 @@ using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Computer;
@@ -16,6 +17,7 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
     public const double GlassStep = 20.48;
 
     private readonly MissionWorld _mission;
+    private readonly List<ComputerObject> _mines = [];
     private readonly Igi1MissionAudio _audio;
     private readonly List<ComputerObject> _humans = [];
     private readonly List<ComputerObject> _vehicles = [];
@@ -137,7 +139,21 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<ComputerObject> Mines() => [];
+    public IReadOnlyList<ComputerObject> Mines()
+    {
+        _mines.Clear();
+        foreach (PlacedMine mine in _mission.Player?.Grenades.Mines ?? [])
+        {
+            // 0x475F30: its place, its frame and its model's bound; the map draws only a remote one.
+            _mines.Add(new ComputerObject(mine.Task, ComputerObjectKind.Mine, mine.Position, SoldierBodyQueries.FacingOf(mine.Orientation), mine.ContactRadiusUnits)
+            {
+                IsExploded = mine.IsExploded,
+                IsRemote = mine.IsRemote,
+            });
+        }
+
+        return _mines;
+    }
 
     /// <inheritdoc/>
     public IReadOnlyList<ComputerObject> Lenses()
@@ -262,6 +278,14 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
     /// <inheritdoc/>
     public void SetOffMine(GameTask mine)
     {
+        foreach (PlacedMine laid in _mission.Player?.Grenades.Mines ?? [])
+        {
+            if (ReferenceEquals(laid.Task, mine))
+            {
+                laid.Fuse.SetOffFromMap();
+                return;
+            }
+        }
     }
 
     /// <inheritdoc/>

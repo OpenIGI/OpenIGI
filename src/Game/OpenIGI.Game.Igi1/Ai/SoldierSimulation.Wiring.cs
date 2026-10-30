@@ -541,6 +541,12 @@ public sealed partial class SoldierSimulation
     public bool TryProximity(Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
         _bodies.TryProximity(center, radiusUnits, out target);
 
+    /// <summary>Gets the player's radius (<c>Human+0xA0</c>), its body model's bound.</summary>
+    public float PlayerHumanRadius => _playerBody.Model?.HumanRadius ?? (float)HumanSeparation.RadiusInUnits;
+
+    /// <inheritdoc cref="SoldierBodyQueries.AddPlaces"/>
+    public void AddHumanPlaces(List<HumanPlace> into) => _bodies.AddPlaces(into);
+
     /// <inheritdoc cref="SoldierBodyQueries.TryIntersect"/>
     public bool TryIntersect(Vector3d origin, Vector3d end, out HumanHit hit) => _bodies.TryIntersect(origin, end, out hit);
 

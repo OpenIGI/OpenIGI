@@ -11,6 +11,13 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// </remarks>
 public sealed class SoldierBodyModel(MefModel? model, float lowestVertexZ)
 {
+    /// <summary>The radius a human of this model has (<c>Human+0xA0</c>): its model's bound (<c>0x4D0950</c>).</summary>
+    /// <remarks>What a mine measures a passer-by's reach with and a blast takes a third of. A missing model keeps the
+    /// collision cylinder's radius.</remarks>
+    public float HumanRadius => Model is { NativeMarkerBound: > 0f } m && float.IsFinite(m.NativeMarkerBound)
+        ? m.NativeMarkerBound
+        : (float)OpenIGI.Game.Player.HumanSeparation.RadiusInUnits;
+
     private MefCollisionMesh? _collisionMesh;
     private bool _collisionMeshRead;
 

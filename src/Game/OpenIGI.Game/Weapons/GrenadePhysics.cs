@@ -52,15 +52,6 @@ public static class GrenadePhysics
     /// <remarks><c>0.1</c> m of the physics row, times 4096.</remarks>
     public const float HalfWidthUnits = 0.1f * 4096f;
 
-    /// <summary>The offset applied to a placed mine's native contact position.</summary>
-    /// <remarks>
-    /// The mine model <c>136_01_1</c> is authored with its contact plane at its origin. Native
-    /// <c>0x475F30</c> consumes the physics task position at <c>+0x20</c> directly, unlike the thrown
-    /// grenade path whose collision box needs a support projection. Keep this explicit zero so a
-    /// future physics-box change cannot accidentally move mines away from walls and props again.
-    /// </remarks>
-    public const float MineContactOffsetUnits = 0f;
-
     /// <summary>The fuse, in seconds — the physics row's own trailing argument.</summary>
     public const float FuseSeconds = 4f;
 
@@ -86,33 +77,6 @@ public static class GrenadePhysics
         + (MathF.Abs(normal.Y) * HalfWidthUnits)
         + (MathF.Abs(normal.Z) * HalfHeightUnits);
 
-    /// <summary>Returns the native placement orientation for a mine or held grenade.</summary>
-    /// <param name="direction">The weapon task's forward direction.</param>
-    /// <remarks>
-    /// <para>
-    /// The retail fire bridge at <c>0x462E50</c> passes the current weapon orientation in the
-    /// placement message. The mine callback at <c>0x4754C0</c> copies that message's ten orientation
-    /// words into task <c>+0x70</c>; it does not derive a new pose from the contact normal.
-    /// </para>
-    /// <para>
-    /// The native basis helper at <c>0x414A60</c> stores the supplied forward direction in matrix
-    /// column two. The mine model's authored contact face is the opposite local axis, so the placed
-    /// task supplies the reversed weapon direction to that helper. This is why a downward placement
-    /// ray produces an upright mine instead of an upside-down one.
-    /// </para>
-    /// </remarks>
-    public static Matrix3f PlacementOrientation(Vector3f direction)
-    {
-        float length = direction.Length;
-        return length > float.Epsilon
-            ? M203Physics.LaunchOrientation(direction / length)
-            : Matrix3f.Identity;
-    }
-
-    /// <summary>Returns the same native basis for callers that name the input as a surface axis.</summary>
-    /// <remarks>Retained for existing contact-pose callers; the actual placed-mine path uses the weapon direction.</remarks>
-    public static Matrix3f SurfaceOrientation(Vector3f normal) => PlacementOrientation(normal);
-
     /// <summary>The model a thrown grenade of a kind is, which its physics type is found by.</summary>
     /// <param name="type">The kind.</param>
     /// <returns><c>135_01_1</c> for the frag, <c>137_01_1</c> for the flashbang.</returns>
@@ -134,15 +98,16 @@ public static class GrenadePhysics
             : FlightOrientation(grenade.TumbleTicks + alpha);
     }
 
-    /// <summary>Places the retail mine model at the physics task's contact point.</summary>
-    /// <param name="contact">The point returned by the rich world trace.</param>
-    /// <param name="normal">The contacted surface normal.</param>
-    /// <remarks>The current native contact offset is zero; retaining the normal parameter documents the contact basis.</remarks>
-    public static Vector3d MineContactPosition(Vector3d contact, Vector3f normal) =>
-        new(
-            contact.X + (normal.X * MineContactOffsetUnits),
-            contact.Y + (normal.Y * MineContactOffsetUnits),
-            contact.Z + (normal.Z * MineContactOffsetUnits));
+    /// <summary>The frame <c>0x414A60</c> builds about a direction, kept in its second column (a thrown grenade's flight).</summary>
+    /// <param name="direction">The direction.</param>
+    /// <returns>The frame; the identity for no direction.</returns>
+    public static Matrix3f PlacementOrientation(Vector3f direction)
+    {
+        float length = direction.Length;
+        return length > float.Epsilon
+            ? M203Physics.LaunchOrientation(direction / length)
+            : Matrix3f.Identity;
+    }
 
     /// <summary>Builds the presentation orientation for a grenade that is still airborne.</summary>
     public static Matrix3f FlightOrientation(float clock) =>
@@ -156,14 +121,12 @@ public static class GrenadePhysics
 /// <param name="DamageFactor">The blast's damage factor; the shipped default is 1.</param>
 /// <param name="RadiusUnits">The full-damage radius; the shipped default is five metres.</param>
 /// <param name="FalloffUnits">The taper past it; the shipped default is zero — a step.</param>
-/// <param name="IsProximityMine">Whether this detonation came from a placed mine.</param>
 public readonly record struct GrenadeDetonation(
     Vector3d Position,
     GrenadeExplosionType Type,
     float DamageFactor,
     float RadiusUnits,
-    float FalloffUnits,
-    bool IsProximityMine = false);
+    float FalloffUnits);
 
 /// <summary>One grenade in the air or at rest, waiting on its fuse.</summary>
 public sealed class LiveGrenade
@@ -173,8 +136,6 @@ public sealed class LiveGrenade
     /// <param name="velocity">Its initial velocity, in world units per tick.</param>
     /// <param name="type">Which explosion it ends in.</param>
     /// <param name="fuseTicks">How many ticks until it does.</param>
-    /// <param name="isProximityMine">Whether this object is a placed proximity mine.</param>
-    /// <param name="ownerPosition">The placing actor's position.</param>
     /// <param name="radiusMetres">Optional config radius for a thrown weapon.</param>
     /// <param name="falloffMetres">Optional config falloff for a thrown weapon.</param>
     /// <param name="damageFactor">Optional config damage factor for a thrown weapon.</param>
@@ -183,8 +144,6 @@ public sealed class LiveGrenade
         Vector3f velocity,
         GrenadeExplosionType type,
         int fuseTicks,
-        bool isProximityMine = false,
-        Vector3d ownerPosition = default,
         float? radiusMetres = null,
         float? falloffMetres = null,
         float? damageFactor = null)
@@ -194,10 +153,6 @@ public sealed class LiveGrenade
         Velocity = velocity;
         Type = type;
         FuseTicks = fuseTicks;
-        IsProximityMine = isProximityMine;
-        OwnerPosition = ownerPosition;
-        ArmingTicksRemaining = isProximityMine ? ProximityMinePhysics.ArmingDelayTicks : 0;
-        TriggerTicksRemaining = ProximityMinePhysics.TriggerCountdownTicks;
         float defaultRadius = type == GrenadeExplosionType.Flashbang
             ? ExplosionDamage.DefaultFlashbangRadiusMetres
             : ExplosionDamage.DefaultGrenadeRadiusMetres;
@@ -207,15 +162,9 @@ public sealed class LiveGrenade
         float defaultDamage = type == GrenadeExplosionType.Flashbang
             ? ExplosionDamage.DefaultFlashbangDamageFactor
             : ExplosionDamage.DefaultGrenadeDamageFactor;
-        RadiusUnits = isProximityMine
-            ? ProximityMinePhysics.ExplosionRadiusUnits
-            : ExplosionDamage.ToUnits(radiusMetres ?? defaultRadius);
-        FalloffUnits = isProximityMine
-            ? 0f
-            : ExplosionDamage.ToUnits(falloffMetres ?? defaultFalloff);
-        DamageFactor = isProximityMine
-            ? ExplosionDamage.DefaultGrenadeDamageFactor
-            : damageFactor ?? defaultDamage;
+        RadiusUnits = ExplosionDamage.ToUnits(radiusMetres ?? defaultRadius);
+        FalloffUnits = ExplosionDamage.ToUnits(falloffMetres ?? defaultFalloff);
+        DamageFactor = damageFactor ?? defaultDamage;
     }
 
     /// <summary>Gets or sets where the grenade is, in world units.</summary>
@@ -229,21 +178,6 @@ public sealed class LiveGrenade
 
     /// <summary>Gets which explosion this grenade ends in.</summary>
     public GrenadeExplosionType Type { get; }
-
-    /// <summary>Gets whether this physics object is a proximity mine rather than a thrown grenade.</summary>
-    public bool IsProximityMine { get; }
-
-    /// <summary>Gets the position of the actor that placed the mine.</summary>
-    public Vector3d OwnerPosition { get; }
-
-    /// <summary>Gets or sets the native mine's arming countdown.</summary>
-    public int ArmingTicksRemaining { get; set; }
-
-    /// <summary>Gets or sets the native mine's post-trigger countdown.</summary>
-    public int TriggerTicksRemaining { get; set; }
-
-    /// <summary>Gets or sets whether the mine has detected a target.</summary>
-    public bool Triggered { get; set; }
 
     /// <summary>Gets the damage factor carried by this object.</summary>
     public float DamageFactor { get; }
@@ -279,16 +213,6 @@ public sealed class LiveGrenade
     /// <summary>Gets or sets the orientation captured at the last surface contact.</summary>
     public Matrix3f Orientation { get; set; } = Matrix3f.Identity;
 
-    /// <summary>Gets whether a proximity mine is latched to a placed object.</summary>
-    /// <remarks>
-    /// Retail's mine physics object remains on an object contact rather than reflecting like a thrown
-    /// grenade. This flag keeps that distinction visible to the renderer and diagnostics.
-    /// </remarks>
-    public bool AttachedToObject { get; set; }
-
-    /// <summary>Gets the placed task the mine latched to, when the rich trace supplied one.</summary>
-    public GameTask? AttachedOwner { get; set; }
-
     /// <summary>Gets or sets how many ticks it has been moving — the renderer's tumble clock.</summary>
     /// <remarks>Stops with the grenade, so a settled one lies still instead of spinning in place.</remarks>
     public int TumbleTicks { get; set; }
@@ -309,6 +233,9 @@ public sealed class LiveGrenade
 
     /// <summary>Gets or sets the tick it last bounced, which re-arms its bounce once it has been clear of every surface for ten (<c>+1828</c>).</summary>
     public int LastBounceTick { get; set; }
+
+    /// <summary>Gets or sets its model as a round's trace meets it (a RigidDynCubeObj in the world), or <see langword="null"/>.</summary>
+    public RetailRayModel? Solid { get; set; }
 }
 
 /// <summary>
@@ -339,6 +266,8 @@ public sealed class GrenadeSimulation
     private readonly List<Vector3d> _bounces = [];
     private readonly List<Vector3d> _thrown = [];
     private readonly List<Vector3d> _mineTriggers = [];
+    private readonly List<PlacedMine> _mines = [];
+    private readonly List<PlacedMine> _mineBlasts = [];
     private int _tick;
 
     /// <summary>Gets the grenades in flight or at rest.</summary>
@@ -366,6 +295,86 @@ public sealed class GrenadeSimulation
     /// <remarks>The retail mine task emits the <c>proxy_arm</c> cue on this rising edge.</remarks>
     public IReadOnlyList<Vector3d> MineTriggers => _mineTriggers;
 
+    /// <summary>Gets the laid mines, in the order they were laid.</summary>
+    public IReadOnlyList<PlacedMine> Mines => _mines;
+
+    /// <summary>Gets the mines that exploded during the last <see cref="Tick"/>, for the owner to set their blasts off.</summary>
+    public IReadOnlyList<PlacedMine> MineBlasts => _mineBlasts;
+
+    /// <summary>
+    /// Gets or sets the humans whose runs tell the mines their place (<c>Human_SendPosition</c>, 0x463080): each one's
+    /// origin and radius, the player's among them.
+    /// </summary>
+    public Func<IReadOnlyList<HumanPlace>>? MineSensors { get; set; }
+
+    /// <summary>
+    /// Gets or sets what makes a grenade's or a mine's model a solid a round's trace meets: the owner a hit reports and the
+    /// model's name; <see langword="null"/>, or none, leaves it untouchable.
+    /// </summary>
+    public Func<object, string, RetailRayModel?>? Solids { get; set; }
+
+    /// <summary>
+    /// Finds the nearest grenade or mine a round's segment meets (<c>0x4C1840</c> against each one's model at its pose).
+    /// </summary>
+    /// <param name="start">The segment's start.</param>
+    /// <param name="end">Its end.</param>
+    /// <param name="distance">How far along it the hit is.</param>
+    /// <param name="struck">The <see cref="LiveGrenade"/> or <see cref="PlacedMine"/> met.</param>
+    /// <returns>Whether one was met.</returns>
+    public bool TryStrike(Vector3d start, Vector3d end, out double distance, out object? struck)
+    {
+        RetailRayResult best = new() { Point = end };
+        struck = null;
+        foreach (LiveGrenade grenade in _grenades)
+        {
+            if (grenade.Solid is { } solid)
+            {
+                Pose(solid, grenade.Position, grenade.Orientation);
+                RetailModelRay.Cast(solid, start, end, ref best);
+            }
+        }
+
+        foreach (PlacedMine mine in _mines)
+        {
+            if (mine.Solid is { } solid)
+            {
+                RetailModelRay.Cast(solid, start, end, ref best);
+            }
+        }
+
+        distance = best.Distance;
+        struck = best.Hit ? best.Struck : null;
+        return struck is not null;
+    }
+
+    /// <summary>
+    /// A round's hit message to what it met: a grenade goes off on its next run (<c>0x476EA0</c> zeroes the fuse), a mine
+    /// takes the damage against its health (<c>0x481E60</c>).
+    /// </summary>
+    /// <param name="struck">What <see cref="TryStrike"/> met.</param>
+    /// <param name="damage">The round's damage.</param>
+    public static void Strike(object struck, float damage)
+    {
+        switch (struck)
+        {
+            case LiveGrenade grenade:
+                grenade.FuseTicks = 0;
+                break;
+            case PlacedMine mine:
+                mine.Hit(damage);
+                break;
+        }
+    }
+
+    // The model's pose for the trace: the body's place and frame, row by row.
+    private static void Pose(RetailRayModel solid, Vector3d position, Matrix3f m)
+    {
+        solid.Position[0] = position.X;
+        solid.Position[1] = position.Y;
+        solid.Position[2] = position.Z;
+        m.CopyTo(solid.M);
+    }
+
     /// <summary>
     /// Gets or sets what the grenades' contact points are cast through, the world the cars step in; <see langword="null"/>
     /// flies them the simple way.
@@ -373,10 +382,10 @@ public sealed class GrenadeSimulation
     public Func<IRetailCarWorld?>? World { get; set; }
 
     /// <summary>
-    /// Gets or sets what makes a thrown grenade's body from its model's physics type, at its start and speed (<c>0x477040</c>);
-    /// <see langword="null"/>, or no body, flies it the simple way.
+    /// Gets or sets what makes a thrown grenade's body from its model's physics type, at its start, speed and frame
+    /// (<c>0x477040</c>); <see langword="null"/>, or no body, flies it the simple way.
     /// </summary>
-    public Func<string, Vector3d, Vector3f, RetailPhysicsObjectBody?>? Bodies { get; set; }
+    public Func<string, Vector3d, Vector3f, Matrix3f, RetailPhysicsObjectBody?>? Bodies { get; set; }
 
     /// <summary>Clears grenade-thrown notifications after the owning game loop has delivered them.</summary>
     public void ClearThrownEvents() => _thrown.Clear();
@@ -416,6 +425,10 @@ public sealed class GrenadeSimulation
     /// <param name="radiusMetres">Optional config radius in metres.</param>
     /// <param name="falloffMetres">Optional config falloff in metres.</param>
     /// <param name="damageFactor">Optional config damage factor.</param>
+    /// <param name="orientation">
+    /// The frame it leaves in (<c>0x477040</c> copies the message's matrix): the held model's for the player's throw, the
+    /// aim frame for a soldier's; <see langword="null"/> builds one about the velocity.
+    /// </param>
     /// <returns><see langword="false"/> when the pool is full.</returns>
     public bool SpawnWithVelocity(
         Vector3d origin,
@@ -424,14 +437,15 @@ public sealed class GrenadeSimulation
         int fuseTicks = GrenadePhysics.FuseTicks,
         float? radiusMetres = null,
         float? falloffMetres = null,
-        float? damageFactor = null)
+        float? damageFactor = null,
+        Matrix3f? orientation = null)
     {
         if (_grenades.Count >= MaximumLive)
         {
             return false;
         }
 
-        _grenades.Add(new LiveGrenade(
+        LiveGrenade live = new(
             origin,
             velocityUnitsPerTick,
             type,
@@ -440,120 +454,44 @@ public sealed class GrenadeSimulation
             falloffMetres: falloffMetres,
             damageFactor: damageFactor)
         {
-            Body = Bodies?.Invoke(GrenadePhysics.ModelOf(type), origin, velocityUnitsPerTick),
-        });
+            Body = Bodies?.Invoke(
+                GrenadePhysics.ModelOf(type),
+                origin,
+                velocityUnitsPerTick,
+                orientation ?? GrenadePhysics.PlacementOrientation(velocityUnitsPerTick)),
+        };
+        live.Solid = Solids?.Invoke(live, GrenadePhysics.ModelOf(type));
+        _grenades.Add(live);
         _thrown.Add(origin);
         return true;
     }
 
-    /// <summary>Creates the legacy unplaced mine used by isolated physics callers.</summary>
-    /// <param name="origin">The hand/eye origin, in world units.</param>
-    /// <param name="ownerPosition">The placing actor's feet, used for ownership bookkeeping.</param>
-    /// <param name="direction">The view direction, used for the small placement offset.</param>
-    /// <returns><see langword="false"/> when the shared pool is full.</returns>
-    public bool SpawnMine(Vector3d origin, Vector3d ownerPosition, Vector3f direction)
-    {
-        if (_grenades.Count >= MaximumLive)
-        {
-            return false;
-        }
-
-        Vector3d position = new(
-            origin.X + (direction.X * GrenadePhysics.HalfWidthUnits),
-            origin.Y + (direction.Y * GrenadePhysics.HalfWidthUnits),
-            origin.Z + (direction.Z * GrenadePhysics.HalfWidthUnits));
-        _grenades.Add(new LiveGrenade(
-            position,
-            default,
-            GrenadeExplosionType.Normal,
-            int.MaxValue,
-            isProximityMine: true,
-            ownerPosition: ownerPosition)
-        {
-            // Keep the legacy no-trace path on the same authored mine basis as PlaceMine. The
-            // fallback is used by isolated callers, but it must not reintroduce the upside-down
-            // presentation the native placement task avoids.
-            Orientation = GrenadePhysics.PlacementOrientation(-direction),
-        });
-        return true;
-    }
-
-    /// <summary>
-    /// Places a proximity mine on the first surface in the player's aim ray.
-    /// </summary>
-    /// <param name="origin">The hand/eye origin, in world units.</param>
-    /// <param name="ownerPosition">The placing actor's feet, used for ownership bookkeeping.</param>
-    /// <param name="direction">The view direction, unit length.</param>
-    /// <param name="rangeInUnits">How far the placement ray may reach.</param>
-    /// <param name="trace">The rich world trace that identifies the contacted surface.</param>
-    /// <returns><see langword="true"/> when a mine was placed, otherwise <see langword="false"/>.</returns>
+    /// <summary>Lays a mine where <c>ProxMine_Use</c> (<c>0x4755A0</c>) found a surface, as <c>Mine_New</c> does.</summary>
+    /// <param name="mine">The mine.</param>
     /// <remarks>
-    /// The proximity-mine task is not the grenade physics task. Retail gives it a contact pose at the
-    /// aimed surface and leaves its physics velocity at zero; it never starts with a throw velocity and
-    /// never falls away from the wall or prop the player selected. A terrain contact is still a valid
-    /// floor placement, but object contacts retain their owner so the renderer and diagnostics can
-    /// distinguish a mine stuck to a prop from one resting on terrain.
+    /// The mine is made under the level's dynamic task, after the human that laid it in the walk, so it runs from the tick
+    /// it is laid.
     /// </remarks>
-    public bool PlaceMine(
-        Vector3d origin,
-        Vector3d ownerPosition,
-        Vector3f direction,
-        float rangeInUnits,
-        WorldTraceCast? trace)
+    public void Lay(PlacedMine mine)
     {
-        if (_grenades.Count >= MaximumLive || trace is null || rangeInUnits <= 0f)
+        ArgumentNullException.ThrowIfNull(mine);
+        if (mine.Solid is null && Solids?.Invoke(mine, mine.Model) is { } solid)
         {
-            return false;
+            Pose(solid, mine.Position, mine.Orientation);
+            mine.Solid = solid;
         }
 
-        Vector3d end = new(
-            origin.X + (direction.X * rangeInUnits),
-            origin.Y + (direction.Y * rangeInUnits),
-            origin.Z + (direction.Z * rangeInUnits));
-        if (!trace(
-                new WorldTraceRequest(origin, end, WorldTraceMask.World),
-                out WorldTraceHit hit))
-        {
-            return false;
-        }
-
-        Vector3d position = GrenadePhysics.MineContactPosition(hit.Position, hit.Normal);
-        _grenades.Add(new LiveGrenade(
-            position,
-            default,
-            GrenadeExplosionType.Normal,
-            int.MaxValue,
-            isProximityMine: true,
-            ownerPosition: ownerPosition)
-        {
-            Resting = true,
-            SurfaceContact = true,
-            // Native 0x4754C0 receives the weapon task orientation in the placement message. The
-            // trace normal positions the task but must not replace that authored orientation.
-            Orientation = GrenadePhysics.PlacementOrientation(-direction),
-            AttachedToObject = hit.Kind is WorldTraceHitKind.StaticObject or WorldTraceHitKind.DynamicObject,
-            AttachedOwner = hit.Owner,
-            TumbleTicks = 0,
-            TicksSinceContact = 0,
-        });
-        return true;
+        _mines.Add(mine);
     }
 
     /// <summary>Advances every grenade by one game tick.</summary>
     /// <param name="walls">What the world stops a grenade with, or <see langword="null"/> for open air.</param>
-    /// <param name="humans">The living-human query used by armed proximity mines.</param>
-    /// <param name="richWalls">
-    /// The rich world trace used to tell object contact from terrain contact. When present it must
-    /// describe the same world as <paramref name="walls"/>; the legacy cast remains the fallback for
-    /// callers and for the ordinary grenade path.
-    /// </param>
-    public void Tick(
-        WorldRayCast? walls,
-        HumanProximityCast? humans = null,
-        WorldTraceCast? richWalls = null)
+    public void Tick(WorldRayCast? walls)
     {
         _detonations.Clear();
         _bounces.Clear();
+        _mineBlasts.Clear();
+        TickMines();
         // Thrown notifications are owned by the desktop loop and are deliberately not cleared here:
         // AI grenades can be spawned during SoldierRenderer.Tick, after this simulation tick, and must
         // survive until the next pre-AI delivery pass.
@@ -588,8 +526,7 @@ public sealed class GrenadeSimulation
                     grenade.Type,
                     grenade.DamageFactor,
                     grenade.RadiusUnits,
-                    grenade.FalloffUnits,
-                    grenade.IsProximityMine));
+                    grenade.FalloffUnits));
                 _grenades.RemoveAt(i);
                 continue;
             }
@@ -598,18 +535,6 @@ public sealed class GrenadeSimulation
             {
                 grenade.PreviousPosition = grenade.Position;
                 grenade.SurfaceContact = true;
-                if (grenade.IsProximityMine && TickMine(grenade, humans))
-                {
-                    _detonations.Add(new GrenadeDetonation(
-                        grenade.Position,
-                        grenade.Type,
-                        grenade.DamageFactor,
-                        grenade.RadiusUnits,
-                        grenade.FalloffUnits,
-                        IsProximityMine: true));
-                    _grenades.RemoveAt(i);
-                }
-
                 continue;
             }
 
@@ -628,52 +553,9 @@ public sealed class GrenadeSimulation
                 grenade.Position.Z + velocity.Z);
 
             WorldRayHit hit = default;
-            WorldTraceHit richHit = default;
-            bool struck = richWalls is not null
-                ? richWalls(
-                    new WorldTraceRequest(grenade.Position, candidate, WorldTraceMask.World),
-                    out richHit)
-                : walls is not null && walls(grenade.Position, candidate, out hit);
-            if (struck)
+            if (walls is not null && walls(grenade.Position, candidate, out hit))
             {
-                if (richWalls is not null)
-                {
-                    hit = richHit.RayHit;
-                }
-
                 Vector3f normal = hit.Normal;
-
-                // The native ProximityMine callback is a physics-object contact, not a grenade
-                // bounce. On a placed object it stores the contact pose and remains there, which is
-                // what lets an armed mine watch the object-facing side of a wall. Terrain still uses
-                // the ordinary floor/rest path below.
-                if (grenade.IsProximityMine
-                    && richWalls is not null
-                    && richHit.Kind is WorldTraceHitKind.StaticObject or WorldTraceHitKind.DynamicObject)
-                {
-                    grenade.Position = GrenadePhysics.MineContactPosition(hit.Position, normal);
-                    grenade.Velocity = default;
-                    grenade.Resting = true;
-                    grenade.SurfaceContact = true;
-                    grenade.AttachedToObject = true;
-                    grenade.AttachedOwner = richHit.Owner;
-                    grenade.BounceSounded = false;
-                    grenade.TicksSinceContact = 0;
-
-                    if (TickMine(grenade, humans))
-                    {
-                        _detonations.Add(new GrenadeDetonation(
-                            grenade.Position,
-                            grenade.Type,
-                            grenade.DamageFactor,
-                            grenade.RadiusUnits,
-                            grenade.FalloffUnits,
-                            IsProximityMine: true));
-                        _grenades.RemoveAt(i);
-                    }
-
-                    continue;
-                }
 
                 float alongNormal = (velocity.X * normal.X) + (velocity.Y * normal.Y) + (velocity.Z * normal.Z);
 
@@ -732,18 +614,6 @@ public sealed class GrenadeSimulation
                     grenade.BounceSounded = false;
                 }
             }
-
-            if (grenade.IsProximityMine && TickMine(grenade, humans))
-            {
-                _detonations.Add(new GrenadeDetonation(
-                    grenade.Position,
-                    grenade.Type,
-                    grenade.DamageFactor,
-                    grenade.RadiusUnits,
-                    grenade.FalloffUnits,
-                    IsProximityMine: true));
-                _grenades.RemoveAt(i);
-            }
         }
     }
 
@@ -755,6 +625,41 @@ public sealed class GrenadeSimulation
         _bounces.Clear();
         _thrown.Clear();
         _mineTriggers.Clear();
+        _mines.Clear();
+        _mineBlasts.Clear();
+    }
+
+    // Each human's run tells every mine its place, then each mine runs (0x475CC0); one that exploded goes.
+    private void TickMines()
+    {
+        if (_mines.Count == 0)
+        {
+            return;
+        }
+
+        if (MineSensors?.Invoke() is { } humans)
+        {
+            foreach (HumanPlace human in humans)
+            {
+                foreach (PlacedMine mine in _mines)
+                {
+                    if (mine.Sense(human.Origin, human.Radius))
+                    {
+                        _mineTriggers.Add(mine.Position);
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < _mines.Count; i++)
+        {
+            PlacedMine mine = _mines[i];
+            if (mine.Run())
+            {
+                _mineBlasts.Add(mine);
+                _mines.RemoveAt(i--);
+            }
+        }
     }
 
     // 0x476D90 then 0x476CC0: the body's step, then its bounce -- heard on first touching something, and heard again only
@@ -781,28 +686,5 @@ public sealed class GrenadeSimulation
         {
             grenade.BounceSounded = false;
         }
-    }
-
-    private bool TickMine(LiveGrenade mine, HumanProximityCast? humans)
-    {
-        if (mine.ArmingTicksRemaining > 0)
-        {
-            mine.ArmingTicksRemaining--;
-            return false;
-        }
-
-        if (!mine.Triggered)
-        {
-            if (humans is null || !humans(mine.Position, ProximityMinePhysics.ActivationRadiusUnits, out _))
-            {
-                return false;
-            }
-
-            mine.Triggered = true;
-            mine.TriggerTicksRemaining = ProximityMinePhysics.TriggerCountdownTicks;
-            _mineTriggers.Add(mine.Position);
-        }
-
-        return --mine.TriggerTicksRemaining <= 0;
     }
 }

@@ -27,7 +27,12 @@ internal sealed class PlayerWeaponStateMachine
     private bool _reloadStarting;
     private int _throwChargeTicks;
     private bool _throwReleased;
-    private bool _placingFirePending;
+    private bool _throwCooking;
+    private bool _recovering;
+    private bool _changeAtLowering;
+    private bool _placeRemote;
+    private bool _wantRemoteMine;
+    private Func<int, bool> _crossedEvent = static _ => false;
     private bool _actionComplete;
     private bool _medipackUsed;
     private bool _medipackAwaitingRelease;
@@ -87,6 +92,18 @@ internal sealed class PlayerWeaponStateMachine
     /// <summary>Gets whether the current throw has been released.</summary>
     internal bool ThrowReleased => _throwReleased;
 
+    /// <summary>Gets whether the pin is out and the grenade not yet thrown -- <c>Human+1240</c>, while <c>grenade_tick_1</c> plays.</summary>
+    internal bool ThrowCooking => _throwCooking;
+
+    /// <summary>Gets whether this tick's placement is a remote mine -- the alternate-fire byte <c>Human+0x4D2</c>.</summary>
+    internal bool WantRemoteMine => _wantRemoteMine;
+
+    /// <summary>The wind-up clip's event that pulls the pin (<c>0x40F590</c> tests the view's event for 4).</summary>
+    internal const int ThrowPinEvent = 4;
+
+    /// <summary>The release clip's event that lets the grenade go (<c>0x40F640</c> tests the view's event for 3).</summary>
+    internal const int ThrowReleaseEvent = 3;
+
     /// <summary>Gets whether a one-shot action finished on the last tick — the original's <c>Human+1232</c>.</summary>
     internal bool ActionComplete => _actionComplete;
 
@@ -98,16 +115,16 @@ internal sealed class PlayerWeaponStateMachine
 
     private bool FiredThisTick => _owner.FiredThisTick;
 
-    /// <summary>Clears the placement's fire request once the gun has accepted its round.</summary>
-    internal void ClearPlacingFirePending() => _placingFirePending = false;
-
     /// <summary>Rebuilds the flag word, clears the per-tick requests and runs the current state.</summary>
     /// <param name="input">The player's current and previous input frames.</param>
     /// <param name="clipEnded">Whether view bone 0's clip has reached its end.</param>
     /// <param name="onGround">Whether the body is on the ground.</param>
     /// <param name="locomotionAction">What the body's locomotion state asks the torso to play.</param>
-    internal void Tick(PlayerInputState input, bool clipEnded, bool onGround, WeaponAction locomotionAction)
+    /// <param name="crossedEvent">Whether the view's clip crossed an event on its last tick (the view's <c>+524</c>).</param>
+    internal void Tick(
+        PlayerInputState input, bool clipEnded, bool onGround, WeaponAction locomotionAction, Func<int, bool>? crossedEvent = null)
     {
+        _crossedEvent = crossedEvent ?? (static _ => false);
         HumanWeaponFlagWord flags = HumanWeaponFlagBuilder.Build(Flags, input.Current, clipEnded, blending: false);
         if (onGround)
         {
@@ -123,6 +140,7 @@ internal sealed class PlayerWeaponStateMachine
         RequestedFireVariant = 0;
         _wantFire = false;
         _wantAlternateFire = false;
+        _wantRemoteMine = false;
         _actionComplete = false;
         // FUN_0040FBE0 is called once per sustained-handler tick. This latch prevents duplicate
         // calls within one tick (PlayerCamera is the production caller) but must not survive into
@@ -271,6 +289,8 @@ internal sealed class PlayerWeaponStateMachine
         _wantFire = false;
         _wantAlternateFire = false;
         _throwReleased = false;
+        _throwCooking = false;
+        _recovering = false;
         _actionComplete = false;
         Request(WeaponAction.None);
     }
@@ -308,7 +328,7 @@ internal sealed class PlayerWeaponStateMachine
         HumanWeaponState.ChangingWeapon => ChangingWeapon(),
         HumanWeaponState.Peeking => Peeking(input),
         HumanWeaponState.Throwing => Throwing(input),
-        HumanWeaponState.Placing => Placing(input),
+        HumanWeaponState.Placing => Placing(),
         HumanWeaponState.Medipack => Medipack(),
         HumanWeaponState.AlternateFire => AlternateFireState(),
         _ => Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : State,
@@ -329,14 +349,6 @@ internal sealed class PlayerWeaponStateMachine
         {
             int clip = held.Gun.RoundsInClip;
             int reserve = held.Gun.Reserve(Ammunition);
-
-            if (Flags.HasFlag(HumanWeaponFlagWord.AlternateFire)
-                && input.IsRisingEdge(PlayerInputSlot.AlternateFire)
-                && PlayerWeapons.IsM16A2(held.Weapon)
-                && _owner.HasM203Round())
-            {
-                return HumanWeaponState.AlternateFire;
-            }
 
             // Level-triggered, deliberately: there is no edge test here in the original, which is what
             // lets an automatic weapon keep firing while the button is down.
@@ -373,6 +385,21 @@ internal sealed class PlayerWeaponStateMachine
 
                     default:
                         return clip != 0 ? HumanWeaponState.Firing : HumanWeaponState.DryFire;
+                }
+            }
+            else if (Flags.HasFlag(HumanWeaponFlagWord.AlternateFire))
+            {
+                // 0x40E9C0's alternate branch, only when fire is up: the M16A2 launches an M203 round if one is carried, the
+                // mine is laid as a remote one (the alternate-fire byte, then the place state).
+                if (PlayerWeapons.IsM16A2(held.Weapon) && _owner.HasM203Round())
+                {
+                    return HumanWeaponState.AlternateFire;
+                }
+
+                if (held.Weapon.Category == (WeaponCategory)PlayerWeapons.PlacedCategory)
+                {
+                    _placeRemote = true;
+                    return HumanWeaponState.Placing;
                 }
             }
 
@@ -477,75 +504,124 @@ internal sealed class PlayerWeaponStateMachine
     private static HumanWeaponState DryFire(PlayerInputState input) =>
         input.IsSet(PlayerInputSlot.Fire) ? HumanWeaponState.DryFire : HumanWeaponState.Ready;
 
-    // 0x40F590 into 0x40F640, the grenade's charge-and-release. Holding fire charges (Human+1248
-    // counts the ticks); letting go releases -- the trigger byte is raised for exactly one tick,
-    // the gun lets the round out, and the throw animation plays over the round that went off. The
-    // state runs home once that clip ends.
+    // 0x40F590 (the wind-up) into 0x40F640 (the release), then 0x40FA20 (the recovery). The entry (0x40F4F0) played the
+    // wind-up clip. The cook counts (Human+1248) from the tick that clip crosses event 4, the pin, which also starts
+    // grenade_tick_1; once the clip has ended and fire is up, the release clip plays. It counts on through the release, and
+    // on the release clip's event 3 the trigger byte goes up for that one tick and the grenade leaves the hand. When the
+    // release clip ends the stand clip plays, the rig snaps down and is sent back up, and the next grenade comes out of the
+    // pouch -- or, with none left, the next carried weapon is picked and the rig changes to it once it is back up.
     private HumanWeaponState Throwing(PlayerInputState input)
     {
+        if (_recovering)
+        {
+            return Recover(HumanWeaponState.Throwing);
+        }
+
         if (!_throwReleased)
         {
-            if (input.IsSet(PlayerInputSlot.Fire))
+            if (_crossedEvent(ThrowPinEvent))
             {
-                _throwChargeTicks++;
-                return HumanWeaponState.Throwing;
+                _throwCooking = true;
             }
 
-            _throwReleased = true;
-            _wantFire = true;
+            if (_throwCooking)
+            {
+                _throwChargeTicks++;
+            }
+
+            if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) && !input.IsSet(PlayerInputSlot.Fire))
+            {
+                // Record +1672, the weapon's second fire clip.
+                Request(WeaponAction.Fire, 1);
+                _throwReleased = true;
+            }
+
             return HumanWeaponState.Throwing;
         }
 
-        if (FiredThisTick)
+        _throwChargeTicks++;
+        if (_crossedEvent(ThrowReleaseEvent))
         {
-            // The throw itself is the SECOND fire animation where the record carries one -- the
-            // first is the wind-up the entry already played and holding it again would read as the
-            // hand pocketing the grenade rather than releasing it.
-            Request(WeaponAction.Fire, InHand?.Weapon.FireAnimation2 >= 0 ? 1 : 0);
+            _wantFire = true;
+            _throwCooking = false;
+        }
 
-            // 0x40F640 snaps the rig out of the frame the instant the round leaves the hand -- the
-            // throw's own follow-through, the same lowering a weapon change and a peek use.
-            Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
+        if (!Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
+        {
+            return HumanWeaponState.Throwing;
+        }
 
-            // Out of grenades, 0x40F640's else branch (sub_40F760) selects the next carried weapon rather
-            // than staying on the spent one; the rig is already lowered for the change. With more in the
-            // pouch it stays and eases the rig back up, ready to throw again.
-            if (OutOfThrowables() && _selector.SelectNextCarried())
-            {
-                BeginChange();
-                return HumanWeaponState.ChangingWeapon;
-            }
+        // Record +1660, the stand clip; the rig snaps down and is sent back up before the pouch is looked in.
+        Request(WeaponAction.Stand);
+        Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
+        Sway.Raise();
+        return TakeNextRound(HumanWeaponState.Throwing);
+    }
 
+    // 0x40F930 raised the trigger byte on entry, and the mine weapon (0x4755A0) laid a mine that tick or found nowhere to
+    // lay one. 0x40F950 reads which: nothing laid goes straight back to the ready hub; a mine laid snaps the rig down,
+    // takes the next mine out of the pouch and sends the rig back up -- or, with none left, picks the next carried weapon
+    // and changes to it at once, the rig being already down.
+    private HumanWeaponState Placing()
+    {
+        if (_recovering)
+        {
+            return Recover(HumanWeaponState.Placing);
+        }
+
+        if (!FiredThisTick)
+        {
+            return HumanWeaponState.Ready;
+        }
+
+        Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
+        HumanWeaponState next = TakeNextRound(HumanWeaponState.Placing);
+        if (_recovering)
+        {
             Sway.Raise();
         }
 
-        return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded)
-            ? HumanWeaponState.Ready
-            : HumanWeaponState.Throwing;
+        return next;
     }
 
-    // 0x40F930/0x40F950. A mine is a one-shot placed task: entering the state lowers the rig and
-    // requests one gun round, then the state returns as soon as that round has been accepted. The
-    // old port entered Placing but never set the fire request, which made every mine a silent no-op.
-    private HumanWeaponState Placing(PlayerInputState input)
+    // The pouch test both one-shot states end on: with no reserve 0x40F760 picks the next carried weapon and the state goes
+    // to the change's lowering per-tick (0x40F280) without its entry; otherwise Weapon_UseAmmo (0x4F2350, the gun's
+    // 0x4798C0) moves the next round into the magazine and the recovery waits for the rig.
+    private HumanWeaponState TakeNextRound(HumanWeaponState state)
     {
-        if (_placingFirePending)
+        CarriedWeapon held = InHand!.Value;
+        if (held.Gun.Reserve(Ammunition) == 0 && !_owner.InfiniteAmmo)
         {
-            _wantFire = true;
-            return HumanWeaponState.Placing;
+            if (_selector.SelectNextCarried())
+            {
+                _changeAtLowering = true;
+                return HumanWeaponState.ChangingWeapon;
+            }
+
+            // Nothing else to change to: the lowering per-tick finds no weapon and raises the empty rig.
+            _recovering = true;
+            return state;
         }
 
-        // A held trigger must not place a mine again when the state returns through Ready. Wait for
-        // the release edge, just as the grenade throw waits for its release before accepting another
-        // round.
-        if (input.IsSet(PlayerInputSlot.Fire))
+        if (!_owner.InfiniteAmmo)
         {
-            return HumanWeaponState.Placing;
+            held.Gun.Reload(Ammunition);
         }
 
-        return OutOfThrowables() && _selector.SelectNextCarried()
-            ? HumanWeaponState.ChangingWeapon
-            : HumanWeaponState.Ready;
+        _recovering = true;
+        return state;
+    }
+
+    // 0x40FA20: back to the ready hub once the rig is where it was sent.
+    private HumanWeaponState Recover(HumanWeaponState state)
+    {
+        if (!Sway.Settled)
+        {
+            return state;
+        }
+
+        _recovering = false;
+        return HumanWeaponState.Ready;
     }
 
     // 0x479990, the gun's own reload handler, which 0x40F180 drives. It is a two-phase machine: play
@@ -762,15 +838,18 @@ internal sealed class PlayerWeaponStateMachine
             case HumanWeaponState.Throwing:
                 _throwChargeTicks = 0;
                 _throwReleased = false;
+                _throwCooking = false;
+                _recovering = false;
                 Request(WeaponAction.Fire);
                 break;
 
-            // 0x40F930 raises the fire request itself, so the mine goes down on the entry tick; the per-tick only waits on it.
+            // 0x40F930 raises the trigger byte and nothing else -- no clip, no lowering -- so the mine goes down on the
+            // entry tick and the per-tick reads whether it did.
             case HumanWeaponState.Placing:
-                _placingFirePending = true;
                 _wantFire = true;
-                Request(WeaponAction.Fire);
-                Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
+                _wantRemoteMine = _placeRemote;
+                _placeRemote = false;
+                _recovering = false;
                 break;
 
             // 0x40F4A0: raises the launch marker once and plays the weapon's FireAnimation2 (0x4137E0 action 8, variant 1) --
@@ -801,8 +880,19 @@ internal sealed class PlayerWeaponStateMachine
 
             // Play the stand pose and start tipping the rig out of the frame. Nothing is exchanged
             // yet -- the per-tick does that once the rig has arrived.
+            // A spent grenade or mine goes to the lowering per-tick directly (0x40F640, 0x40F950): no stand clip, and the rig
+            // keeps the target it was given.
             case HumanWeaponState.ChangingWeapon:
-                BeginChange();
+                if (_changeAtLowering)
+                {
+                    _changeAtLowering = false;
+                    _swapped = false;
+                }
+                else
+                {
+                    BeginChange();
+                }
+
                 break;
 
             default:

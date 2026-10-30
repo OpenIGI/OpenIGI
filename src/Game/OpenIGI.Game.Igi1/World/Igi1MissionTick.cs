@@ -663,13 +663,15 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             }
             else
             {
-                // The AI hears a grenade over 10 m and a mine over 25 m, however big the blast.
-                soldiers.NotifyExplosion(
-                    blast.Position,
-                    blast.IsProximityMine
-                        ? Igi1HumanAi.LargeExplosionEventRadiusInUnits
-                        : Igi1HumanAi.GrenadeExplosionEventRadiusInUnits);
+                // The grenade's Explosion0 is heard over 10 m (0x476AC0's 40960).
+                soldiers.NotifyExplosion(blast.Position, Igi1HumanAi.GrenadeExplosionEventRadiusInUnits);
             }
+        }
+
+        // A mine's is its ExplodeObject's (0x481A60), heard over 25 m.
+        foreach (PlacedMine mine in mission.Player.Grenades.MineBlasts)
+        {
+            soldiers.NotifyExplosion(mine.BlastPoint, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
         }
 
         foreach (MissileDetonation blast in mission.Player.Missiles.Detonations)

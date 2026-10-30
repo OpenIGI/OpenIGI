@@ -514,54 +514,87 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
     }
 
-    /// <summary>The throw charges while fire is held and releases the round when it is let go.</summary>
-    /// <remarks>The 0x40F590/0x40F640 charge-and-release, with <c>Human+1248</c> as the charge.</remarks>
+    /// <summary>
+    /// The throw as 0x40F4F0/0x40F590/0x40F640/0x40FA20 run it: the cook counts from the wind-up clip's event 4, the release
+    /// clip waits for that clip's end and for fire to be up, and the grenade leaves on the release clip's event 3.
+    /// </summary>
     [Fact]
-    public void AGrenadeChargesWhileHeldAndFliesOnRelease()
+    public void AGrenadeCooksFromThePinAndLeavesOnTheReleaseClipsEvent()
     {
         PlayerWeapons weapons = new([3]);
         weapons.Carry(Grenade, GrenadeAmmo);
+        weapons.Ammunition.Add(GrenadeAmmo.AmmoId, 5);
         Equip(weapons);
+        int clipBefore = weapons.InHand!.Value.Gun.RoundsInClip;
 
         PlayerInputState input = new();
 
-        // Twelve ticks of holding: the machine sits in the throw state, charging, firing nothing.
-        for (int tick = 0; tick < 12; tick++)
+        // The entry plays the wind-up and counts nothing.
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.Equal(HumanWeaponState.Throwing, weapons.State);
+
+        // Two ticks before the pin: nothing counted, no cook.
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.Equal(0, weapons.ThrowChargeTicks);
+        Assert.False(weapons.IsChargingThrow);
+
+        // The pin (event 4) and five more held ticks, the last two with the wind-up ended: fire is still down, so it waits.
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEvent: PlayerWeaponStateMachine.ThrowPinEvent);
+        Assert.True(weapons.IsChargingThrow);
+        for (int tick = 0; tick < 5; tick++)
         {
-            Tick(weapons, input, Frame(PlayerInputSlot.Fire));
-            Assert.Equal(HumanWeaponState.Throwing, weapons.State);
+            Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: tick >= 3);
             Assert.False(weapons.FiredThisTick);
         }
 
-        // The entry tick is 0x40F4F0's and counts nothing; the per-tick counts the eleven after it.
-        Assert.Equal(11, weapons.ThrowChargeTicks);
+        Assert.Equal(6, weapons.ThrowChargeTicks);
 
-        // The release is the throw: one round leaves on that very tick.
+        // Fire up with the wind-up ended: the release clip starts; nothing is thrown yet.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Assert.Equal(1, weapons.RequestedFireVariant);
+        Assert.False(weapons.FiredThisTick);
+        Assert.Equal(7, weapons.ThrowChargeTicks);
+
+        // Two release ticks, then event 3: the grenade leaves on that tick, the cook counting through it.
         Tick(weapons, input, Frame());
+        Tick(weapons, input, Frame());
+        Assert.False(weapons.FiredThisTick);
+        Tick(weapons, input, Frame(), clipEvent: PlayerWeaponStateMachine.ThrowReleaseEvent);
         Assert.True(weapons.FiredThisTick);
-        GunProjectile shot = Assert.Single(weapons.Shots);
-        Assert.Equal(2, weapons.InHand?.Gun.RoundsInClip);
-        float held = 11f;
-        float curve = MathF.Pow(held * 50f, 0.7f) + (held * 0.1f);
-        float tap = MathF.Pow(3f * 50f, 0.7f) + 0.3f;
-        float fullCharge = MathF.Pow(60f * 50f, 0.7f) + 6f;
-        float expectedShare = (curve - tap) / (fullCharge - tap);
-        float expectedSpeed = 15f * (PlayerWeapons.MinimumThrowShare
-            + ((PlayerWeapons.MaximumThrowShare - PlayerWeapons.MinimumThrowShare) * expectedShare));
-        Assert.Equal(expectedSpeed, shot.SpeedMetresPerSecond, 0.001f);
-        Assert.Equal(
-            shot.SpeedMetresPerSecond * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond,
-            shot.VelocityUnitsPerTick.Length,
-            0.01f);
+        Assert.Single(weapons.Shots);
+        Assert.Equal(10, weapons.ThrowChargeTicks);
+        Assert.False(weapons.IsChargingThrow);
 
-        // The retail power curve: longer charges throw harder, between the tap's short toss and the
-        // full wind-up's hurl, and the charge caps at retail's sixty ticks.
-        Assert.True(
-            PlayerWeapons.ChargedThrowSpeed(15f, 12) > PlayerWeapons.ChargedThrowSpeed(15f, 3));
-        Assert.Equal(15f * PlayerWeapons.MinimumThrowShare, PlayerWeapons.ChargedThrowSpeed(15f, 3), 0.001f);
-        Assert.Equal(15f * PlayerWeapons.MaximumThrowShare, PlayerWeapons.ChargedThrowSpeed(15f, 60), 0.001f);
-        Assert.Equal(
-            PlayerWeapons.ChargedThrowSpeed(15f, 60),
-            PlayerWeapons.ChargedThrowSpeed(15f, 600));
+        // The release clip ends: the stand clip, the rig snapped down and sent up, the next grenade into the hand.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(WeaponAction.Stand, weapons.RequestedAction);
+        Assert.Equal(clipBefore, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(HumanWeaponState.Throwing, weapons.State);
+
+        // 0x40FA20 waits for the rig.
+        int ticks = 0;
+        while (weapons.State == HumanWeaponState.Throwing)
+        {
+            Tick(weapons, input, Frame());
+            Assert.True(++ticks < 3 * HumanViewSway.TicksToTravel);
+        }
+
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+    }
+
+    /// <summary>0x462E50's grenade speed: the cook on retail's power curve, times the weapon's muzzle velocity, in units a tick.</summary>
+    [Fact]
+    public void TheThrowSpeedIsRetailsCurve()
+    {
+        double tap = PlayerWeapons.ThrowSpeedUnitsPerTick(15f, 0);
+        Assert.Equal((Math.Pow(150.0, 0.7) + (3f * (double)0.1f)) * 15.0, tap, 9);
+        Assert.Equal(tap, PlayerWeapons.ThrowSpeedUnitsPerTick(15f, 3));
+        Assert.Equal(3.7, tap * 30.0 / 4096.0, 1);
+
+        double full = PlayerWeapons.ThrowSpeedUnitsPerTick(15f, 60);
+        Assert.Equal(full, PlayerWeapons.ThrowSpeedUnitsPerTick(15f, 600));
+        Assert.Equal(30.5, full * 30.0 / 4096.0, 1);
     }
 }

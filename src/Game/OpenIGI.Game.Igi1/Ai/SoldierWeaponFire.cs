@@ -331,6 +331,7 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
     /// <param name="brain">The thrower.</param>
     /// <param name="hand">Where it leaves the hand: the origin plus bone 16's palette offset (<c>motion+0x858</c>).</param>
     /// <param name="grenades">The pool it flies in.</param>
+    /// <param name="orientation">The thrower's frame, which <c>AI_AimThrow</c> tips up to the target for the grenade's own.</param>
     /// <remarks>
     /// Two draws from the level's stream, in this order: the flight time in seconds (<c>+15784</c> plus a share of
     /// <c>+15788</c>) and the cook (<c>fistp(rand * +15796 * 30 + +15792)</c> -- the minimum not made ticks). The throw
@@ -338,7 +339,7 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
     /// with <c>time * 30 * 22.30044</c> -- half the fall a tick, times the ticks -- added upward. The cook comes off the
     /// grenade's own fuse.
     /// </remarks>
-    public void ThrowAiGrenade(Igi1HumanAi brain, Vector3d hand, GrenadeSimulation grenades)
+    public void ThrowAiGrenade(Igi1HumanAi brain, Vector3d hand, GrenadeSimulation grenades, Matrix3f orientation)
     {
         AiCombatParameters? parameters = brain.CombatParameters;
         if (parameters is null)
@@ -359,7 +360,37 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
             (float)(((target.Z - hand.Z) * ThrowAhead / frames) + (frames * ThrowLift)));
 
         int fuseTicks = Math.Max(0, GrenadePhysics.FuseTicks - cooked);
-        grenades.SpawnWithVelocity(hand, velocity, GrenadeExplosionType.Normal, fuseTicks);
+        grenades.SpawnWithVelocity(
+            hand, velocity, GrenadeExplosionType.Normal, fuseTicks, orientation: AimThrowFrame(orientation, target - hand));
+    }
+
+    /// <summary>
+    /// <c>AI_AimThrow</c>'s matrix (<c>0x452930</c>): the thrower's frame times a turn about its x axis by the pitch of the
+    /// target in that frame (<c>0x4148F0</c>: the y/z part's angle from +y, negative below).
+    /// </summary>
+    /// <param name="m">The thrower's frame, row by row.</param>
+    /// <param name="delta">The target less the hand.</param>
+    /// <returns>The grenade's frame.</returns>
+    internal static Matrix3f AimThrowFrame(Matrix3f m, Vector3d delta)
+    {
+        double vy = (m.M22 * delta.Y) + (m.M32 * delta.Z) + (m.M12 * delta.X);
+        double vz = (m.M23 * delta.Y) + (m.M33 * delta.Z) + (m.M13 * delta.X);
+        float pitch = 0f;
+        double length = Math.Sqrt((vy * vy) + (vz * vz));
+        if (length != 0.0)
+        {
+            double angle = Math.Acos(vy / length);
+            pitch = (float)(vz / length >= 0.0 ? angle : -angle);
+        }
+
+        float c = (float)Math.Cos(pitch);
+        float s = (float)Math.Sin(pitch);
+
+        // Matrix_SetRotX (0x4B3B60): rows (1,0,0), (0,c,-s), (0,s,c); the product m x r, row by row.
+        return new Matrix3f(
+            m.M11, (m.M12 * c) + (m.M13 * s), (m.M13 * c) - (m.M12 * s),
+            m.M21, (m.M22 * c) + (m.M23 * s), (m.M23 * c) - (m.M22 * s),
+            m.M31, (m.M32 * c) + (m.M33 * s), (m.M33 * c) - (m.M32 * s));
     }
 
     // AI_AimThrow's 1.1: the throw is aimed a tenth past the target.

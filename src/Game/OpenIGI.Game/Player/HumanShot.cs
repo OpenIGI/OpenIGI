@@ -73,3 +73,8 @@ public delegate bool HumanShot(
     double stopDistance,
     bool alreadyHeard,
     out HumanHit hit);
+
+/// <summary>A human's place as its run tells it to the level's mines (<c>Human_SendPosition</c>, 0x463080).</summary>
+/// <param name="Origin">The human's origin (<c>Human+32</c>), not its feet.</param>
+/// <param name="Radius">The human's radius, the one its DynCube is moved with, in units.</param>
+public readonly record struct HumanPlace(Vector3d Origin, float Radius);

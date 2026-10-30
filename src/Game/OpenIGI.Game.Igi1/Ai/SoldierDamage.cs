@@ -454,15 +454,18 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             return;
         }
 
+        // 0x45A3D0 weighs the blast at the origin (Human+32) with a third of the model's bound (Human+0xA0).
         Vector3d feet = soldier.Position;
+        Vector3d origin = SoldierContext.OccupantOrigin(soldier);
         double distance = Math.Sqrt(
-            ((feet.X - position.X) * (feet.X - position.X))
-            + ((feet.Y - position.Y) * (feet.Y - position.Y))
-            + ((feet.Z - position.Z) * (feet.Z - position.Z)));
+            ((origin.X - position.X) * (origin.X - position.X))
+            + ((origin.Y - position.Y) * (origin.Y - position.Y))
+            + ((origin.Z - position.Z) * (origin.Z - position.Z)));
+        float radius = _context.FindRoster(soldier)?.Body.HumanRadius ?? (float)HumanSeparation.RadiusInUnits;
 
         float dose = ExplosionDamage.Dose(
             (float)distance,
-            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+            ExplosionDamage.EffectiveBodyRadius(radius),
             radiusUnits,
             falloffUnits,
             damageFactor);

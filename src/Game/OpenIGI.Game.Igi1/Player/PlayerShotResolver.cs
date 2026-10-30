@@ -85,6 +85,17 @@ internal sealed class PlayerShotResolver
     /// </summary>
     internal WorldTraceCast? GrenadeTrace { get; set; }
 
+    private Matrix3f? _heldWeaponFrame;
+
+    /// <summary>
+    /// Gets or sets what refuses a mine (<c>0x4755A0</c>): a contact on a pane, a door or a vehicle -- the trace's own
+    /// task kinds the mine weapon will not lay on. Humans are refused by <see cref="HumanProbes"/>.
+    /// </summary>
+    internal Func<WorldTraceHit, bool>? MineSurfaceRefused { get; set; }
+
+    /// <summary>Gets or sets what a mine model's bound (<c>0x4D0950</c>) and magic vertex 0 (<c>0x414E20</c>) are.</summary>
+    internal Func<string, (float Bound, Vector3f BlastPoint)>? MineModel { get; set; }
+
     /// <summary>Gets or sets the world cast used by launcher missiles.</summary>
     internal WorldRayCast? MissileWalls { get; set; }
 
@@ -209,12 +220,105 @@ internal sealed class PlayerShotResolver
     /// <summary>Forgets the last tick's impacts, as the fire and the mounted gun do before they resolve.</summary>
     internal void ClearImpacts() => _impacts.Clear();
 
+    // ProxMine_Use (0x4755A0): one line from the eye along the view, the weapon's range times 4096 long, against everything
+    // but the thrower. A contact on a human, a pane, a door or a vehicle lays nothing; anywhere else Mine_New (0x476040)
+    // makes the mine at the contact, its frame 0x414A60 of the contact's normal, from the weapon's config tail (0x475960).
+    private bool LayMine(MinePlacementRequest placement, WeaponType weapon)
+    {
+        WorldTraceCast? trace = GrenadeTrace;
+        if (trace is null && GrenadeWalls is { } walls)
+        {
+            trace = WorldTrace.FromRayCast(walls);
+        }
+
+        if (trace is null)
+        {
+            return false;
+        }
+
+        // The x and y reach are stored as floats before they are added to the eye; z is not.
+        float reach = weapon.EffectiveRange * 4096f;
+        Vector3f direction = placement.Direction;
+        float reachX = reach * direction.X;
+        float reachY = reach * direction.Y;
+        Vector3d start = placement.Eye;
+        Vector3d end = new(reachX + start.X, reachY + start.Y, (reach * (double)direction.Z) + start.Z);
+        if (!trace(new WorldTraceRequest(start, end, WorldTraceMask.World), out WorldTraceHit hit))
+        {
+            return false;
+        }
+
+        if (HumanProbes is { } humans && humans(start, end, out HumanHit human)
+            && human.Distance <= hit.Distance)
+        {
+            return false;
+        }
+
+        if (MineSurfaceRefused?.Invoke(hit) == true)
+        {
+            return false;
+        }
+
+        Vector3f normal = hit.Normal;
+        if (normal.X != 0f || normal.Y != 0f || normal.Z != 0f)
+        {
+            double inverse = 1.0 / Math.Sqrt((normal.X * (double)normal.X) + (normal.Y * (double)normal.Y) + (normal.Z * (double)normal.Z));
+            normal = new Vector3f((float)(normal.X * inverse), (float)(normal.Y * inverse), (float)(normal.Z * inverse));
+        }
+
+        float arm = PlacedMine.DefaultArmSeconds;
+        float countdown = PlacedMine.DefaultCountdownSeconds;
+        float activate = PlacedMine.DefaultActivateRadiusMetres;
+        float explode = PlacedMine.DefaultExplosionRadiusMetres;
+        if (weapon.RetailConfig is { } config)
+        {
+            if (WeaponConfigRegistry.TryGetRealTag(config, "Proximitymine - Time before arming (seconds)", out float value))
+            {
+                arm = value;
+            }
+
+            if (WeaponConfigRegistry.TryGetRealTag(config, "Proximitymine - Countdown time (seconds)", out value))
+            {
+                countdown = value;
+            }
+
+            if (WeaponConfigRegistry.TryGetRealTag(config, "Proximitymine - Activate radius (meters)", out value))
+            {
+                activate = value;
+            }
+
+            if (WeaponConfigRegistry.TryGetRealTag(config, "Proximitymine - Explosion radius (meters)", out value))
+            {
+                explode = value;
+            }
+        }
+
+        (float bound, Vector3f blastPoint) = MineModel?.Invoke(weapon.GunModel) ?? (0f, default);
+        _grenades.Lay(new PlacedMine(
+            hit.Position,
+            M203Physics.LaunchOrientation(normal),
+            weapon.GunModel,
+            arm,
+            countdown,
+            activate,
+            explode,
+            placement.Remote,
+            bound,
+            blastPoint));
+        return true;
+    }
+
     /// <summary>The firing half of <c>0x462E50</c>: the rounds the weapon in hand let go this tick.</summary>
     /// <param name="weapons">The weapon machine.</param>
     /// <param name="view">The first-person rig, already committed for this tick.</param>
     /// <param name="scoped">Whether the Dragunov's scope is open.</param>
     internal void Fire(PlayerWeapons weapons, HumanView view, bool scoped)
     {
+        // The gun task's matrix (+0x70) is where the last tick's rig left it: the fire message hands it over before this
+        // tick's pose moves it (measured: retail's grenade frame is the port's held pose one tick earlier, to 1e-6).
+        Matrix3f heldLastTick = _heldWeaponFrame ?? view.HeldWeapon.Rotation;
+        _heldWeaponFrame = view.HeldWeapon.Rotation;
+
         // Binoculars are an optical device, not a gun. The weapon state machine ignores Fire while
         // they are held, and this guard keeps a stale trigger/request from reaching the generic gun
         // resolver if the input changes during the weapon-swap transition.
@@ -239,6 +343,11 @@ internal sealed class PlayerShotResolver
         float recoilScale = scoped ? DragunovScope.ScopedRecoilFactor : 1f;
         if (!weapons.ResolveFire(view.Eye, forward, right, up, recoilScale))
         {
+            if (weapons.MinePlacement is { } placement && weapons.InHand?.Weapon is { } mineWeapon && LayMine(placement, mineWeapon))
+            {
+                weapons.MineLaid();
+            }
+
             return;
         }
 
@@ -268,31 +377,6 @@ internal sealed class PlayerShotResolver
         // A thrown round is a GRENADE, and a grenade was never hit-scan in the original either --
         // it is a physics object with a four-second fuse. It flies the same on every profile.
         WeaponType? thrownWeapon = weapons.InHand?.Weapon;
-        if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.ProximityMine)
-        {
-            WorldTraceCast? mineTrace = GrenadeTrace;
-            if (mineTrace is null && GrenadeWalls is { } mineWalls)
-            {
-                mineTrace = WorldTrace.FromRayCast(mineWalls);
-            }
-
-            foreach (GunProjectile shot in weapons.Shots)
-            {
-                // The mine task is placed at the first surface under the crosshair. It is not a
-                // thrown grenade: starting it at the muzzle with zero velocity made it drop through
-                // the level until the physics solver happened to find a floor, which is visibly
-                // different from retail and makes wall/prop placement impossible.
-                _grenades.PlaceMine(
-                    shot.Origin,
-                    _body.Position,
-                    shot.Direction,
-                    shot.RangeInUnits,
-                    mineTrace);
-            }
-
-            return;
-        }
-
         if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.Grenade)
         {
             // The physics table keys the explosion type by MODEL: 135_01_1 is the frag, 137_01_1
@@ -301,10 +385,12 @@ internal sealed class PlayerShotResolver
                 ? GrenadeExplosionType.Flashbang
                 : GrenadeExplosionType.Normal;
 
-            // The speed is the CHARGE'S: retail winds the throw up while fire is held and releases
-            // on the retail power curve, up to the table's own fifteen metres a second.
-            float throwSpeed = PlayerWeapons.ChargedThrowSpeed(
-                thrownWeapon.MuzzleVelocity, weapons.ThrowChargeTicks);
+            // 0x462E50 replaces the thrower's velocity with the cook's speed along the view's forward axis.
+            double throwSpeed = PlayerWeapons.ThrowSpeedUnitsPerTick(thrownWeapon.MuzzleVelocity, weapons.ThrowChargeTicks);
+            Vector3f throwVelocity = new(
+                (float)(throwSpeed * forward.X),
+                (float)(throwSpeed * forward.Y),
+                (float)(throwSpeed * forward.Z));
 
             float radius = ExplosionDamage.DefaultGrenadeRadiusMetres;
             float falloff = ExplosionDamage.DefaultGrenadeFalloffMetres;
@@ -327,14 +413,14 @@ internal sealed class PlayerShotResolver
 
             foreach (GunProjectile shot in weapons.Shots)
             {
-                _grenades.Spawn(
+                _grenades.SpawnWithVelocity(
                     shot.Origin,
-                    shot.Direction,
-                    throwSpeed,
+                    throwVelocity,
                     explosion,
                     radiusMetres: radius,
                     falloffMetres: falloff,
-                    damageFactor: damage);
+                    damageFactor: damage,
+                    orientation: heldLastTick);
             }
 
             return;
@@ -462,7 +548,7 @@ internal sealed class PlayerShotResolver
         // The grenades fly every tick regardless of the tracer option -- they are the retail
         // behaviour, not a remaster one. Detonations are drained by the game, which owns the
         // effects and the blast's victims.
-        _grenades.Tick(GrenadeWalls ?? _body.Walls, HumanProximityTargets, GrenadeTrace);
+        _grenades.Tick(GrenadeWalls ?? _body.Walls);
         if (MissileTrace is { } missileTrace)
         {
             _missiles.TickWithMissileContext(
@@ -605,6 +691,14 @@ internal sealed class PlayerShotResolver
                     && Walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
                 WorldRayHit hit = struckWall ? richHit.RayHit : default;
 
+                // A grenade or a laid mine is a solid in the world like any other (a RigidDynCubeObj), met by the same trace.
+                bool struckExplosive = _grenades.TryStrike(origin, end, out double explosiveDistance, out object? explosive)
+                    && (!struckWall || explosiveDistance < hit.Distance);
+                if (struckExplosive)
+                {
+                    struckWall = false;
+                }
+
                 // The wall first, then the guards short of it. A guard in front of a wall takes the round
                 // and the wall stays clean; one behind it is never offered the damage, and the wall is
                 // marked. The callback damages as it is called, so the stop has to go in with the round.
@@ -615,10 +709,11 @@ internal sealed class PlayerShotResolver
                         end,
                         damageFactor,
                         category,
-                        struckWall ? hit.Distance : double.PositiveInfinity,
+                        struckWall ? hit.Distance : struckExplosive ? explosiveDistance : double.PositiveInfinity,
                         alreadyHeard: pass > 0,
                         out human)
-                    && (!struckWall || human.Distance < hit.Distance);
+                    && (!struckWall || human.Distance < hit.Distance)
+                    && (!struckExplosive || human.Distance < explosiveDistance);
 
                 if (struckHuman && ResolveBody(human, travel))
                 {
@@ -627,6 +722,15 @@ internal sealed class PlayerShotResolver
 
                 if (struckHuman)
                 {
+                    return;
+                }
+
+                if (struckExplosive)
+                {
+                    // Its hit handler takes the round; the round goes no further.
+                    GrenadeSimulation.Strike(explosive!, damageFactor);
+                    Vector3d at = origin + (direction * explosiveDistance);
+                    _impacts.Add(new GunImpact(at, false, remaining, Direction: travel));
                     return;
                 }
 

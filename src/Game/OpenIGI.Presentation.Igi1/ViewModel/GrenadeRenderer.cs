@@ -73,11 +73,9 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
 
         foreach (LiveGrenade grenade in grenades.Grenades)
         {
-            HeldWeaponRenderer? model = grenade.IsProximityMine
-                ? _mine ?? _frag
-                : grenade.Type == GrenadeExplosionType.Flashbang
-                    ? _flashbang ?? _frag
-                    : _frag;
+            HeldWeaponRenderer? model = grenade.Type == GrenadeExplosionType.Flashbang
+                ? _flashbang ?? _frag
+                : _frag;
             if (model is null)
             {
                 continue;
@@ -97,6 +95,22 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
                 firedThisTick: false,
                 shotSequence: 0,
                 WeaponDrawParts.BodyOnly);
+        }
+
+        // A laid mine lies still at its contact, in the frame its surface gave it.
+        if (_mine is { } mine)
+        {
+            foreach (PlacedMine laid in grenades.Mines)
+            {
+                mine.Sun = Sun;
+                mine.Draw(
+                    new BoneAttachment(laid.Position, laid.Orientation),
+                    camera,
+                    projection,
+                    firedThisTick: false,
+                    shotSequence: 0,
+                    WeaponDrawParts.BodyOnly);
+            }
         }
     }
 

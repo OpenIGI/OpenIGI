@@ -22,7 +22,7 @@ public sealed class GrenadeSimulationTests
     }
 
     [Fact]
-    public void AThrownGrenadeQueuesItsNativeTakeoffNotificationButAMineDoesNot()
+    public void AThrownGrenadeQueuesItsNativeTakeoffNotification()
     {
         GrenadeSimulation simulation = new();
         Vector3d origin = new(100, 200, 300);
@@ -35,9 +35,6 @@ public sealed class GrenadeSimulationTests
         Assert.Equal(new[] { origin }, simulation.Thrown);
 
         simulation.ClearThrownEvents();
-        Assert.Empty(simulation.Thrown);
-
-        Assert.True(simulation.SpawnMine(origin, default, new Vector3f(0f, 1f, 0f)));
         Assert.Empty(simulation.Thrown);
     }
 
@@ -286,178 +283,9 @@ public sealed class GrenadeSimulationTests
     }
 
     [Fact]
-    public void AProximityMineArmsTriggersAndUsesItsRetailRadius()
-    {
-        GrenadeSimulation simulation = new();
-        Assert.True(simulation.SpawnMine(new Vector3d(0, 0, 100), default, new Vector3f(0f, 1f, 0f)));
-        LiveGrenade mine = Assert.Single(simulation.Grenades);
-
-        static bool Floor(Vector3d origin, Vector3d end, out WorldRayHit hit)
-        {
-            if (origin.Z > 0.0 && end.Z <= 0.0)
-            {
-                hit = new WorldRayHit(new Vector3d(end.X, end.Y, 0), new Vector3f(0f, 0f, 1f), origin.Z);
-                return true;
-            }
-
-            hit = default;
-            return false;
-        }
-
-        static bool NoTarget(Vector3d center, float radius, out HumanProximityTarget target)
-        {
-            target = default;
-            return false;
-        }
-
-        for (int tick = 0; tick < ProximityMinePhysics.ArmingDelayTicks; tick++)
-        {
-            simulation.Tick(Floor, NoTarget);
-        }
-
-        Assert.True(mine.Resting);
-        Assert.False(mine.Triggered);
-        Assert.Empty(simulation.Detonations);
-
-        simulation.Tick(Floor, NoTarget);
-        for (int tick = 0; tick < ProximityMinePhysics.TriggerCountdownTicks; tick++)
-        {
-            simulation.Tick(Floor, (Vector3d center, float radius, out HumanProximityTarget target) =>
-            {
-                target = new HumanProximityTarget(
-                    new Vector3d(center.X + radius * 0.5, center.Y, center.Z),
-                    radius * 0.5);
-                return true;
-            });
-        }
-
-        GrenadeDetonation detonation = Assert.Single(simulation.Detonations);
-        Assert.True(detonation.IsProximityMine);
-        Assert.Equal(ProximityMinePhysics.ExplosionRadiusUnits, detonation.RadiusUnits);
-        Assert.Single(simulation.MineTriggers);
-        simulation.ClearMineTriggerEvents();
-        Assert.Empty(simulation.MineTriggers);
-        Assert.Empty(simulation.Grenades);
-    }
-
-    [Fact]
-    public void AProximityMineLatchesToAnObjectInsteadOfBouncingAway()
-    {
-        GrenadeSimulation simulation = new();
-        simulation.SpawnMine(new Vector3d(0, 0, 100), default, new Vector3f(0f, 1f, 0f));
-
-        WorldTraceCast objectTrace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
-        {
-            if (request.End.Z < request.Origin.Z)
-            {
-                hit = new WorldTraceHit(
-                    new Vector3d(request.Origin.X, request.Origin.Y, 50),
-                    new Vector3f(0f, 0f, 1f),
-                    1,
-                    0.5,
-                    0,
-                    WorldTraceHitKind.StaticObject,
-                    Label: "crate");
-                return true;
-            }
-
-            hit = default;
-            return false;
-        };
-
-        simulation.Tick(walls: null, humans: null, richWalls: objectTrace);
-
-        LiveGrenade mine = Assert.Single(simulation.Grenades);
-        Assert.True(mine.Resting);
-        Assert.True(mine.AttachedToObject);
-        Assert.Equal(0f, mine.Velocity.Length);
-        // 136_01_1 is authored with its local contact plane at the model origin. The native mine
-        // renderer consumes the physics task's +0x20 position directly; it does not add the grenade
-        // body's half-height support used by TASKTYPE_GRENADE.
-        Assert.Equal(50f, mine.Position.Z, 0.01f);
-        // The contact normal is deliberately different from the authored aim basis. Native
-        // 0x4754C0 copies the supplied orientation; it does not rebuild it from this normal.
-        Assert.Equal(new Vector3f(0f, -1f, 0f), mine.Orientation.Column2);
-    }
-
-    [Fact]
-    public void APlayerMineIsPlacedOnTheAimedSurfaceInsteadOfBeingThrown()
-    {
-        GrenadeSimulation simulation = new();
-        WorldTraceCast objectTrace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
-        {
-            hit = new WorldTraceHit(
-                new Vector3d(request.Origin.X, request.Origin.Y + 100f, request.Origin.Z),
-                new Vector3f(0f, -1f, 0f),
-                100,
-                0.25,
-                0,
-                WorldTraceHitKind.DynamicObject,
-                Label: "door");
-            return true;
-        };
-
-        Assert.True(simulation.PlaceMine(
-            new Vector3d(0, 0, 1000),
-            default,
-            new Vector3f(0f, 1f, 0f),
-            4096f,
-            objectTrace));
-
-        LiveGrenade mine = Assert.Single(simulation.Grenades);
-        Assert.True(mine.Resting);
-        Assert.True(mine.AttachedToObject);
-        Assert.Equal(100f, mine.Position.Y, 0.01f);
-        Assert.Equal(default, mine.Velocity);
-        // Native 0x462E50 -> 0x4754C0 carries the weapon orientation into the mine task. The
-        // contact normal is deliberately the opposite direction here so a normal-derived pose
-        // cannot pass this regression.
-        // 136_01_1's authored contact face is opposite the weapon task's forward axis. The native
-        // placement message carries the aim basis, while the renderer's model basis makes the mine
-        // face the contacted surface. Reversing the aim sign keeps the model upright on a floor and
-        // facing the prop.
-        Assert.Equal(new Vector3f(0f, -1f, 0f), mine.Orientation.Column2);
-
-        // A placed mine remains at its contact pose while it arms; gravity must never turn it back
-        // into a falling grenade.
-        simulation.Tick(walls: null, humans: null, richWalls: objectTrace);
-        Assert.Equal(100f, mine.Position.Y, 0.01f);
-        Assert.Equal(default, mine.Velocity);
-    }
-
-    [Fact]
-    public void APlacedMineReversesADownwardAimSoItsContactFaceIsUp()
-    {
-        GrenadeSimulation simulation = new();
-        WorldTraceCast floorTrace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
-        {
-            hit = new WorldTraceHit(
-                new Vector3d(request.End.X, request.End.Y, 0),
-                new Vector3f(0f, 0f, 1f),
-                100,
-                0.25,
-                0,
-                WorldTraceHitKind.Terrain,
-                Label: "floor");
-            return true;
-        };
-
-        Assert.True(simulation.PlaceMine(
-            new Vector3d(0, 0, 4096),
-            default,
-            new Vector3f(0f, 0f, -1f),
-            4096f,
-            floorTrace));
-
-        LiveGrenade mine = Assert.Single(simulation.Grenades);
-        Assert.Equal(new Vector3f(0f, 0f, 1f), mine.Orientation.Column2);
-        Assert.True(mine.Resting);
-    }
-
-    [Fact]
     public void ASettledGrenadeKeepsItsCapturedPoseAfterTheContactFlagIsCleared()
     {
-        Matrix3f landed = GrenadePhysics.SurfaceOrientation(new Vector3f(0f, -1f, 0f));
+        Matrix3f landed = GrenadePhysics.PlacementOrientation(new Vector3f(0f, -1f, 0f));
         LiveGrenade grenade = new(
             default,
             default,
@@ -474,9 +302,9 @@ public sealed class GrenadeSimulationTests
     }
 
     [Fact]
-    public void SurfaceOrientationUsesTheNativeSecondBasisColumn()
+    public void PlacementOrientationUsesTheNativeSecondBasisColumn()
     {
-        Matrix3f orientation = GrenadePhysics.SurfaceOrientation(new Vector3f(0.25f, -0.5f, 0.75f));
+        Matrix3f orientation = GrenadePhysics.PlacementOrientation(new Vector3f(0.25f, -0.5f, 0.75f));
         Vector3f normal = orientation.Column2;
 
         float length = MathF.Sqrt((0.25f * 0.25f) + (0.5f * 0.5f) + (0.75f * 0.75f));
