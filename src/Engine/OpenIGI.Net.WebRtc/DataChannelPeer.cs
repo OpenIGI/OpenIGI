@@ -9,6 +9,9 @@ namespace OpenIGI.Net.WebRtc;
 /// <summary>Makes libdatachannel connections: the desktop build's and the dedicated server's half of playing through a room.</summary>
 public sealed class DataChannelPeerFactory : IRtcPeerFactory
 {
+    // The library logs on its own threads; the lines wait here for the game's thread (Drain), where the game's log is safe
+    // to write. Bounded, in case nothing drains them.
+    private static readonly ConcurrentQueue<string> s_log = new();
     private static IOpenIgiLogger? s_logger;
     private static int s_loggerSet;
 
@@ -40,9 +43,33 @@ public sealed class DataChannelPeerFactory : IRtcPeerFactory
     /// <inheritdoc/>
     public IRtcPeer Create(IReadOnlyList<IceServer> iceServers, bool offerer) => new DataChannelPeer(iceServers, offerer, RelayOnly);
 
+    /// <summary>Writes what the library logged since the last call, on the calling (the network's) thread.</summary>
+    internal static void Drain()
+    {
+        while (s_log.TryDequeue(out string? line))
+        {
+            s_logger?.Warning("WebRTC", line);
+        }
+    }
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static unsafe void OnLog(int level, byte* message) =>
-        s_logger?.Warning("WebRTC", Native.Text(message) ?? string.Empty);
+    private static unsafe void OnLog(int level, byte* message)
+    {
+        try
+        {
+            // A player's own LAN addresses are offered as candidates too, and the relay refuses to relay into private
+            // address space by design: those refusals are expected, not news.
+            string text = Native.Text(message) ?? string.Empty;
+            if (!text.Contains("CreatePermission error response, code=403", StringComparison.Ordinal) && s_log.Count < 256)
+            {
+                s_log.Enqueue(text);
+            }
+        }
+        catch (Exception)
+        {
+            // Nothing may escape into the library's thread.
+        }
+    }
 }
 
 /// <summary>One libdatachannel connection with its one data channel, unordered and never resent.</summary>
@@ -52,9 +79,14 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     // full socket buffer drops them.
     private const int MaxQueued = 512;
 
+    // The live connections by the token each gives the library as its user pointer. A callback that comes for one already
+    // gone finds nothing, where a pointer to a freed handle would take the process down with it.
+    private static readonly ConcurrentDictionary<nint, DataChannelPeer> s_live = new();
+    private static long s_nextToken;
+
     private readonly ConcurrentQueue<RtcSignal> _signals = new();
     private readonly ConcurrentQueue<byte[]> _received = new();
-    private readonly GCHandle _self;
+    private readonly nint _token;
     private readonly int _pc;
     private volatile int _dc = -1;
     private volatile RtcPeerState _state = RtcPeerState.Connecting;
@@ -63,7 +95,8 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
 
     public DataChannelPeer(IReadOnlyList<IceServer> iceServers, bool offerer, bool relayOnly = false)
     {
-        _self = GCHandle.Alloc(this);
+        _token = (nint)Interlocked.Increment(ref s_nextToken);
+        s_live[_token] = this;
         List<string> urls = [.. iceServers.SelectMany(Urls)];
         nint[] strings = [.. urls.Select(Marshal.StringToCoTaskMemUTF8)];
         try
@@ -89,11 +122,11 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
 
         if (_pc < 0)
         {
-            _self.Free();
+            s_live.TryRemove(_token, out _);
             throw new InvalidOperationException($"libdatachannel could not make a connection ({_pc}).");
         }
 
-        Native.SetUserPointer(_pc, GCHandle.ToIntPtr(_self));
+        Native.SetUserPointer(_pc, _token);
         Check(Native.SetLocalDescriptionCallback(_pc, &OnDescription));
         Check(Native.SetLocalCandidateCallback(_pc, &OnCandidate));
         Check(Native.SetStateChangeCallback(_pc, &OnState));
@@ -134,6 +167,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
 
     public bool TryReceive(Span<byte> buffer, out int length)
     {
+        DataChannelPeerFactory.Drain();
         while (_received.TryDequeue(out byte[]? datagram))
         {
             if (datagram.Length <= buffer.Length)
@@ -158,14 +192,14 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
         _disposed = true;
         _state = RtcPeerState.Closed;
 
-        // Deleting waits out any callback in flight, after which none come; only then may the handle they use go.
+        // Out of the table first, so a callback still in flight finds nothing; then the library's side.
+        s_live.TryRemove(_token, out _);
         if (_dc >= 0)
         {
             _ = Native.DeleteDataChannel(_dc);
         }
 
         _ = Native.DeletePeerConnection(_pc);
-        _self.Free();
     }
 
     // libjuice relays over UDP alone, so a TURN address over TCP or TLS is no use to it; a relay login goes in the URL.
@@ -194,7 +228,8 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
         }
 
         _dc = dc;
-        Native.SetUserPointer(dc, GCHandle.ToIntPtr(_self));
+        Native.SetUserPointer(dc, _token);
+
         // Also reached from inside a native callback, where a throw would take the process down: a refusal fails the
         // connection instead.
         if (Native.SetOpenCallback(dc, &OnOpen) < 0 || Native.SetClosedCallback(dc, &OnClosed) < 0
@@ -218,57 +253,94 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
         _state = RtcPeerState.Closed;
     }
 
-    private static DataChannelPeer? From(nint pointer) =>
-        pointer == 0 ? null : GCHandle.FromIntPtr(pointer).Target as DataChannelPeer;
+    private static DataChannelPeer? From(nint pointer) => s_live.TryGetValue(pointer, out DataChannelPeer? peer) ? peer : null;
+
+    // Every callback runs on the library's threads, where an exception escaping would end the process: each is run
+    // through here, and whatever goes wrong fails that one connection instead.
+    private static void Guard(nint pointer, Action<DataChannelPeer> work)
+    {
+        if (From(pointer) is not { } peer)
+        {
+            return;
+        }
+
+        try
+        {
+            work(peer);
+        }
+        catch (Exception ex)
+        {
+            peer.Fail($"the connection broke ({ex.GetType().Name})");
+        }
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnDescription(int pc, byte* sdp, byte* type, nint pointer) =>
-        From(pointer)?._signals.Enqueue(new RtcSignal(Native.Text(type) ?? "offer", Native.Text(sdp) ?? string.Empty));
+    private static void OnDescription(int pc, byte* sdp, byte* type, nint pointer)
+    {
+        string? kind = Native.Text(type);
+        string text = Native.Text(sdp) ?? string.Empty;
+        Guard(pointer, peer => peer._signals.Enqueue(new RtcSignal(kind ?? "offer", text)));
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnCandidate(int pc, byte* candidate, byte* mid, nint pointer) =>
-        From(pointer)?._signals.Enqueue(new RtcSignal("candidate", Native.Text(candidate) ?? string.Empty, Native.Text(mid)));
+    private static void OnCandidate(int pc, byte* candidate, byte* mid, nint pointer)
+    {
+        string line = Native.Text(candidate) ?? string.Empty;
+        string? media = Native.Text(mid);
+        Guard(pointer, peer => peer._signals.Enqueue(new RtcSignal("candidate", line, media)));
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnState(int pc, int state, nint pointer)
     {
-        if (state is Native.StateFailed or Native.StateClosed or Native.StateDisconnected && From(pointer) is { } peer)
+        if (state is Native.StateFailed or Native.StateClosed or Native.StateDisconnected)
         {
-            peer.Fail(state == Native.StateFailed ? "no way through to the other player" : "the connection dropped");
+            Guard(pointer, peer => peer.Fail(state == Native.StateFailed ? "no way through to the other player" : "the connection dropped"));
         }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnDataChannel(int pc, int dc, nint pointer) => From(pointer)?.Attach(dc);
+    private static void OnDataChannel(int pc, int dc, nint pointer) => Guard(pointer, peer => peer.Attach(dc));
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnOpen(int id, nint pointer)
+    private static void OnOpen(int id, nint pointer) => Guard(pointer, peer =>
     {
-        if (From(pointer) is { _state: RtcPeerState.Connecting } peer)
+        if (peer._state == RtcPeerState.Connecting)
         {
             peer._state = RtcPeerState.Open;
         }
+    });
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnClosed(int id, nint pointer) => Guard(pointer, peer => peer.Fail("the other player closed the channel"));
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnError(int id, byte* error, nint pointer)
+    {
+        string why = Native.Text(error) ?? "channel error";
+        Guard(pointer, peer => peer.Fail(why));
     }
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnClosed(int id, nint pointer) => From(pointer)?.Fail("the other player closed the channel");
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnError(int id, byte* error, nint pointer) => From(pointer)?.Fail(Native.Text(error) ?? "channel error");
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnMessage(int id, byte* message, int size, nint pointer)
     {
         // A negative size is a text message; the game sends none.
-        if (size < 0 || From(pointer) is not { } peer)
+        if (size < 0 || size > NetConstants.MaxPacketSize * 2 || From(pointer) is not { } peer)
         {
             return;
         }
 
-        peer._received.Enqueue(new ReadOnlySpan<byte>(message, size).ToArray());
-        while (peer._received.Count > MaxQueued)
+        try
         {
-            peer._received.TryDequeue(out _);
+            peer._received.Enqueue(new ReadOnlySpan<byte>(message, size).ToArray());
+            while (peer._received.Count > MaxQueued)
+            {
+                peer._received.TryDequeue(out _);
+            }
+        }
+        catch (Exception)
+        {
+            // Nothing may escape into the library's thread; a datagram lost is one the network might have lost.
         }
     }
 }
