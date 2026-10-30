@@ -99,6 +99,45 @@ public sealed class DestructibleObjectRegistryTests
         Assert.False(registry.IsDestroyed(model));
     }
 
+    /// <summary>
+    /// An ExplodeObject authored with no health -- mission 5's Terminal_550, "Damage scale" 0 -- is set off by any blast's
+    /// message, however far: 0x481EA0 compares the dose, nought included, against the health as authored. Measured on
+    /// retail: an M203 34 m away blows it on the round's tick.
+    /// </summary>
+    [Fact]
+    public void AnExplodeObjectWithNoHealthGoesOffAtAnyBlast()
+    {
+        GameLoop loop = new();
+        QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("Terminal"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Destroyed model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Damage scale"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(550),
+                QvmExpression.Text("Terminal"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+                QvmExpression.Text("300_01_1"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(0f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
+
+        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(550));
+        WorldPlacement model = Placement(task, "Model");
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(loop.Tasks.Root, [model], loop.Variables);
+        DestructibleObject item = Assert.Single(registry.Objects);
+        Assert.True(item.ExplodesOnCountdown);
+
+        DestructibleObjectRegistry.ExplosionHit(item, null, new Vector3d(140000, 0, 0), 20480f, 0f, 1f);
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(registry, item));
+        Assert.True(item.IsDestroyed);
+    }
+
     [Fact]
     public void ARadioIsAnExplodeObject()
     {
