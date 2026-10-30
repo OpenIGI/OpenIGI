@@ -60,24 +60,31 @@ public sealed class RetailIgi2NetworkHumanTests
         Assert.Equal(level.Human, Assert.Single(level.Ai!.Players));
     }
 
-    internal static Igi2TitlePlayer StandMission1()
+    internal static Igi2TitlePlayer StandMission1() => StandLevel("location1", "level1", 11)!;
+
+    internal static Igi2TitlePlayer? StandLevel(string location, string levelName, int id)
     {
-        RetailIgi2Mission1 m = RetailIgi2Mission1.Load();
+        RetailIgi2Mission1 m = RetailIgi2Mission1.Load(location: location, levelName: levelName);
         (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(m.Level);
-        resources.FileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location1/level1/");
+        string folder = $"LOCAL:missions/{location}/{levelName}/";
+        resources.FileSystem.SetAlias(VirtualFileSystem.MissionAlias, folder);
         Engine.Flow.GameLoop loop = new(new Engine.Time.ManualTimeSource(1000), structuralTypes: new Igi2Runtime().Layout.StructuralTaskTypes);
         Engine.Titles.TitleSession.Start(new Igi2Runtime().Modules, loop, resources.FileSystem, resources, loadTables: false, inherited: m.Services);
         Engine.Tasks.LevelTask root = (Engine.Tasks.LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(Engine.Tasks.EngineTaskTypes.Level));
         new Engine.Level.LevelLoader(root, loop.TaskCommands, loop.Natives, resources).LoadScript("MISSION:objects.qvm");
-        MissionDescriptor descriptor = new(11, "igi2", string.Empty, string.Empty,
-            MissionDescriptor.NextMissionUndefined, "LOCAL:missions/location1/level1/", packs[0].Directory,
+        MissionDescriptor descriptor = new(id, "igi2", string.Empty, string.Empty,
+            MissionDescriptor.NextMissionUndefined, folder, packs[0].Directory,
             packs[^1].Directory, packs[0].Name, packs[^1].Name, string.Empty);
         LoadedMission mission = new(descriptor, packs[0], packs[^1], [], Packs: packs);
         WorldBuildRequest world = new(mission, root, resources, null, Core.Diagnostics.NullLogger.Instance, Services: m.Services);
         WorldBuildResult built = new Igi2WorldBuilder().Build(world);
         _ = new OpenIGI.Game.Igi1.Ai.AiScriptHost(loop.Natives);
-        Igi2TitlePlayer level = Assert.IsType<Igi2TitlePlayer>(new Igi2Gameplay().CreatePlayer(
-            new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: loop.Natives)));
+        if (new Igi2Gameplay().CreatePlayer(
+            new TitlePlayerRequest(world, built, m.Services!, Game.Ai.AiDifficulty.Normal, Natives: loop.Natives)) is not Igi2TitlePlayer level)
+        {
+            return null;
+        }
+
         level.Human.Damage.MaxDamage = 1000000f;
         return level;
     }

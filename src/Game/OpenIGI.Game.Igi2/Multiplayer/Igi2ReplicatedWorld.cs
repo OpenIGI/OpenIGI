@@ -30,6 +30,7 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     private readonly SortedDictionary<int, Igi2NetworkHuman> _bySlot = [];
     private readonly List<ReplicatedHuman> _scratch = [];
     private readonly HashSet<int> _dead = [];
+    private IReadOnlyList<IRoundObjective>? _objectives;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2ReplicatedWorld"/> class.</summary>
     /// <param name="level">The level, as its own player holds it.</param>
@@ -67,6 +68,15 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
 
     /// <inheritdoc/>
     public int TeamOf(int slot) => Teams.TeamOf(slot);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<IRoundObjective> RoundObjectives =>
+        _objectives ??= _level.Level is { } run
+            ? [.. _level.LevelTasks().OfType<Igi2NetworkObjectiveTask>().Select(task => new Igi2RoundObjective(task, run))]
+            : [];
+
+    /// <inheritdoc/>
+    public int CurrentObjective { get; set; }
 
     /// <inheritdoc/>
     public IReadOnlyList<WorldDeath> TakeDeaths()
@@ -151,14 +161,22 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
         if (areas.Length > 0)
         {
             side = team ?? Teams.FairTeam();
-            if (Array.Find(areas, a => a.Team == side && a.Points().Any()) is { } area && Spawns.Pick(area) is { } point)
+
+            // The current objective's own spawn areas first, as NetMission_SetObjectiveComplete makes them the active ones.
+            Igi2SpawnAreaTask? area = _level.LevelTasks().OfType<Igi2NetworkObjectiveTask>()
+                .FirstOrDefault(o => o.Order == CurrentObjective)?.Children.OfType<Igi2SpawnAreaTask>()
+                .FirstOrDefault(a => a.Team == side && a.Points().Any());
+            area ??= Array.Find(areas, a => a.Team == side && a.Points().Any());
+            if (area is not null && Spawns.Pick(area) is { } point)
             {
                 at = point.Position;
                 gamma = point.Gamma;
             }
         }
 
-        if (_level.AddNetworkHuman(model.Name, at, gamma, side) is not { } human)
+        // On a multiplayer map each team wears its own bodies (NetManager_atGoodModel / atBadModel); elsewhere the level's.
+        string body = (areas.Length > 0 && _level.SpawnKit is { } kit ? Igi2Gameplay.TeamModel(side, kit.Models) : null) ?? model.Name;
+        if (_level.AddNetworkHuman(body, at, gamma, side) is not { } human)
         {
             return null;
         }

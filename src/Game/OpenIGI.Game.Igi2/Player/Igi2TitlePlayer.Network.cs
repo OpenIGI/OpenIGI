@@ -47,7 +47,10 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
 
     /// <summary>Gets every task of the level running, or none between levels.</summary>
     /// <returns>The level's tasks, in the tree's order.</returns>
-    public IEnumerable<Engine.Tasks.GameTask> LevelTasks() => Level?.Root.Descendants() ?? [];
+    public IEnumerable<Engine.Tasks.GameTask> LevelTasks() => (Level?.Root ?? LevelRoot)?.Descendants() ?? [];
+
+    /// <summary>Gets or sets the level's task tree, which a level without a run of its own (a multiplayer map, for now) is read through.</summary>
+    internal Engine.Tasks.GameTask? LevelRoot { get; set; }
 
     /// <summary>Gets the ticks the level has run, the clock a server's commands are stamped against.</summary>
     public long TickCount => _ticks;
