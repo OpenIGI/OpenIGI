@@ -6,7 +6,11 @@ namespace OpenIGI.Game.Multiplayer;
 /// <summary>The world as the server had it at the end of a tick: every human it sends, by id.</summary>
 /// <param name="Tick">The server tick.</param>
 /// <param name="Humans">The humans, in ascending id order.</param>
-public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans)
+/// <param name="Doors">
+/// The level's doors as the server has them, one bit each in the level's own order (set: commanded open), or
+/// <see langword="null"/> where the world sends none.
+/// </param>
+public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans, byte[]? Doors = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -58,6 +62,9 @@ public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans)
 public static class SnapshotCodec
 {
     private const int FieldCount = 13;
+
+    // A level's doors, eight to a byte: the largest of the original's levels has some hundreds.
+    private const int MaxDoorBytes = 512;
     private const uint AllFields = (1u << FieldCount) - 1;
 
     /// <summary>Writes a snapshot.</summary>
@@ -103,6 +110,19 @@ public static class SnapshotCodec
             }
 
             WriteFields(writer, mask, before, human);
+        }
+
+        // The doors: one bit when they stand as the baseline had them, which is nearly always.
+        byte[] doors = snapshot.Doors ?? [];
+        bool same = baseline is not null && doors.AsSpan().SequenceEqual(baseline.Doors ?? []);
+        writer.WriteBool(same);
+        if (!same)
+        {
+            writer.WriteVarUInt((uint)doors.Length);
+            foreach (byte b in doors)
+            {
+                writer.WriteBits(b, 8);
+            }
         }
     }
 
@@ -162,7 +182,32 @@ public static class SnapshotCodec
             }
         }
 
-        snapshot = new Snapshot(tick, humans);
+        byte[]? doors = baseline?.Doors;
+        if (!reader.ReadBool())
+        {
+            uint length = reader.ReadVarUInt();
+            if (reader.IsOverflowed || length > MaxDoorBytes)
+            {
+                return false;
+            }
+
+            doors = length == 0 ? null : new byte[length];
+            for (int i = 0; i < length; i++)
+            {
+                doors![i] = (byte)reader.ReadBits(8);
+            }
+        }
+        else if (baseline is null)
+        {
+            return false;
+        }
+
+        if (reader.IsOverflowed)
+        {
+            return false;
+        }
+
+        snapshot = new Snapshot(tick, humans, doors);
         return true;
     }
 

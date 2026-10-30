@@ -61,6 +61,15 @@ public sealed partial class SoldierSimulation
             }
 
             view.Tick();
+
+            // Its gun stops with it. An automatic's sound is a loop held for as long as the soldier is said to be firing,
+            // and is let go only when told it isn't; a dead puppet told nothing kept firing on the client's speakers.
+            if (_context.FindAgent(view) is { } fallen && Brains.TryGetValue(view, out Igi1HumanAi? dead))
+            {
+                fallen.FiredThisTick = false;
+                WeaponSound?.Invoke(dead.RuntimeId, false, fallen.WeaponType, dead.EyePosition());
+            }
+
             return true;
         }
 

@@ -20,6 +20,14 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // Each partner's shot count as last drawn: a count moved on is a shot to flame and sound on this tick.
     private readonly Dictionary<int, byte> _shotsDrawn = [];
 
+    // The doors as the server last had them, and for how many snapshots each has disagreed with this client's own.
+    private byte[]? _serverDoors;
+    private int[] _doorDisagreement = [];
+
+    // Snapshots a door may stand otherwise than the server's before the server's is taken: about a second. Long enough
+    // for this client's own use of a door to reach the server and come back, so the door doesn't flick shut and open again.
+    private const int DoorPatience = 30;
+
     /// <summary>Initializes a new instance of the <see cref="Igi1ClientWorld"/> class.</summary>
     /// <param name="game">The client's own mission.</param>
     public Igi1ClientWorld(Igi1Gameplay game)
@@ -174,6 +182,49 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         other.Player.Body.Position = human.Position.ToVector();
         other.Player.Body.Yaw = Quantize.AngleFromBits(human.Yaw);
         other.Player.Body.Pitch = Quantize.AngleFromBits(human.Pitch);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Each door is commanded as the server's is, and swings here on its own as it does there, sounds and all. Taken when the
+    /// server's changes, which is how a door the host opened opens here; and taken when this client's has stood otherwise for
+    /// <see cref="DoorPatience"/> snapshots, which settles one this client opened that the server didn't.
+    /// </remarks>
+    public void ApplyWorld(Snapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.Doors is not { } bits || _game.World.Doors is not { Doors.Count: > 0 } registry)
+        {
+            return;
+        }
+
+        if (_doorDisagreement.Length != registry.Doors.Count)
+        {
+            _doorDisagreement = new int[registry.Doors.Count];
+        }
+
+        for (int i = 0; i < registry.Doors.Count && (i >> 3) < bits.Length; i++)
+        {
+            bool open = (bits[i >> 3] & (1 << (i & 7))) != 0;
+            bool changed = _serverDoors is null || (i >> 3) >= _serverDoors.Length || ((_serverDoors[i >> 3] & (1 << (i & 7))) != 0) != open;
+            OpenIGI.Game.World.DoorState door = registry.Doors[i].State;
+            _doorDisagreement[i] = door.IsCommandedOpen == open ? 0 : _doorDisagreement[i] + 1;
+            if (changed || _doorDisagreement[i] > DoorPatience)
+            {
+                if (open)
+                {
+                    door.CommandOpen();
+                }
+                else
+                {
+                    door.CommandClosed();
+                }
+
+                _doorDisagreement[i] = 0;
+            }
+        }
+
+        _serverDoors = bits;
     }
 
     /// <inheritdoc/>

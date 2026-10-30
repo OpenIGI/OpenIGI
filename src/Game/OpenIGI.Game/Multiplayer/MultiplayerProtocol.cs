@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Multiplayer;
 public static class MultiplayerProtocol
 {
     /// <summary>The protocol version; raised whenever any message changes shape.</summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>A fingerprint of what a game plays with beyond the game itself: its title and the mods that change play.</summary>
     /// <param name="titleId">The game's id.</param>

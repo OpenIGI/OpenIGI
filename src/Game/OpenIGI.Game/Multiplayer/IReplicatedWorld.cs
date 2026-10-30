@@ -111,6 +111,12 @@ public interface IReplicatedClientWorld
     /// <summary>Takes out a player the snapshots no longer hold.</summary>
     /// <param name="id">Its entity id.</param>
     void Hide(int id);
+
+    /// <summary>Takes the rest of the world from the newest snapshot: what is not a human, such as the doors.</summary>
+    /// <param name="snapshot">The newest snapshot.</param>
+    void ApplyWorld(Snapshot snapshot)
+    {
+    }
 }
 
 /// <summary>The kinds of message a session sends, the first byte of each.</summary>

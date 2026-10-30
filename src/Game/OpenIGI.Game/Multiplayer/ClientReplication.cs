@@ -68,5 +68,7 @@ public static class ClientReplication
         {
             world.Hide(id);
         }
+
+        world.ApplyWorld(latest);
     }
 }

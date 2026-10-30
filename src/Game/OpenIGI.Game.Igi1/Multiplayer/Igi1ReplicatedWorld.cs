@@ -132,7 +132,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
         }
 
-        return new Snapshot(tick, [.. humans]);
+        return new Snapshot(tick, [.. humans], Doors(_game.World.Doors));
     }
 
     /// <inheritdoc/>
@@ -226,6 +226,28 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             unchecked((byte)(player.Weapons?.ShotSequence ?? 0)),
             unchecked((byte)player.UpperBodySequence),
             (ushort)Math.Clamp(Math.Round((ladderTime ?? 0f) * ClipTimeScale), 0, ushort.MaxValue));
+    }
+
+    /// <summary>The level's doors as a snapshot carries them: one bit each, set where the door is commanded open.</summary>
+    /// <param name="doors">The level's doors.</param>
+    /// <returns>The bits, or <see langword="null"/> for a level without doors.</returns>
+    public static byte[]? Doors(OpenIGI.Game.World.DoorRegistry? doors)
+    {
+        if (doors is not { Doors.Count: > 0 } registry)
+        {
+            return null;
+        }
+
+        byte[] bits = new byte[(registry.Doors.Count + 7) / 8];
+        for (int i = 0; i < registry.Doors.Count; i++)
+        {
+            if (registry.Doors[i].State.IsCommandedOpen)
+            {
+                bits[i >> 3] |= (byte)(1 << (i & 7));
+            }
+        }
+
+        return bits;
     }
 
     private void Stand(Igi1NetworkPlayer player, int slot)

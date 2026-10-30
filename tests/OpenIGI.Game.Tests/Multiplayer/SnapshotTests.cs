@@ -18,6 +18,22 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void TheDoorsRideWholeAndAgainstABaseline()
+    {
+        Snapshot whole = new(20, [Human(1, 0, 0)], [0b0000_0101, 0b1000_0000]);
+        Assert.True(RoundTrip(whole, baseline: null, out Snapshot? read));
+        Assert.Equal(whole.Doors, read!.Doors);
+
+        // Unchanged: taken from the baseline. Changed: sent again.
+        Snapshot same = new(21, [Human(1, 0, 0)], [0b0000_0101, 0b1000_0000]);
+        Assert.True(RoundTrip(same, whole, out Snapshot? kept));
+        Assert.Equal(whole.Doors, kept!.Doors);
+        Snapshot opened = new(22, [Human(1, 0, 0)], [0b0000_0111, 0b1000_0000]);
+        Assert.True(RoundTrip(opened, whole, out Snapshot? moved));
+        Assert.Equal(opened.Doors, moved!.Doors);
+    }
+
+    [Fact]
     public void A_climbers_clip_time_and_counters_ride_a_delta()
     {
         Snapshot before = new(10, [Human(1, 0, 0)]);
