@@ -24,6 +24,7 @@ public sealed class ClientSession
     private readonly BitWriter _writer = new(512);
     private readonly List<UserCommand> _sent = [];
     private long _newestReceived = -1;
+    private readonly Dictionary<long, Snapshot?[]> _parts = [];
 
     /// <summary>Initializes a new instance of the <see cref="ClientSession"/> class.</summary>
     /// <param name="net">The client's network end; the session reads its events, so nothing else should.</param>
@@ -66,6 +67,12 @@ public sealed class ClientSession
 
     /// <summary>Gets the newest tick whose command the server has run for this client, as of the newest snapshot.</summary>
     public long LastRunCommandTick { get; private set; } = long.MinValue;
+
+    // How far behind the last stamp a command must be steered before ticks already sent are stamped again.
+    private const int RestampTicks = 3;
+
+    /// <summary>Gets how far ahead of the server's tick this client's newest command last arrived, in ticks.</summary>
+    public int CommandLead { get; private set; }
 
     /// <summary>Gets what keeps this client's own player where the server has it.</summary>
     public PredictionReconciler Reconciler { get; } = new();
@@ -121,6 +128,15 @@ public sealed class ClientSession
         if (_sent.Count > 0)
         {
             long last = _sent[^1].Tick;
+
+            // Steered well behind what was sent (the lead was too long): stamp those ticks again from here, and stop
+            // repeating the old ones, so the server runs this client's controls that much sooner (the ticks it already holds keep their first copy).
+            if (tick <= last - RestampTicks)
+            {
+                _sent.RemoveAll(sent => sent.Tick >= tick);
+                last = _sent.Count > 0 ? _sent[^1].Tick : tick - 1;
+            }
+
             tick = Math.Max(tick, last + 1);
 
             // A tick skipped (a hitch on this side) is filled with the same controls, so the server's buffer has every tick.
@@ -165,6 +181,41 @@ public sealed class ClientSession
         }
     }
 
+    // The parts of a split snapshot, gathered by tick: the whole once the last arrives, nothing before. A tick that never
+    // completes is dropped when a newer one does, as a lost unsplit snapshot is.
+    private Snapshot? Assemble(Snapshot piece, int part, int parts)
+    {
+        if (parts == 1)
+        {
+            return piece;
+        }
+
+        if (piece.Tick <= _newestReceived)
+        {
+            return null;
+        }
+
+        if (!_parts.TryGetValue(piece.Tick, out Snapshot?[]? gathered) || gathered.Length != parts)
+        {
+            gathered = new Snapshot?[parts];
+            _parts[piece.Tick] = gathered;
+        }
+
+        gathered[part] = piece;
+        if (gathered.Any(static p => p is null))
+        {
+            return null;
+        }
+
+        _parts.Remove(piece.Tick);
+        foreach (long stale in _parts.Keys.Where(t => t < piece.Tick).ToArray())
+        {
+            _parts.Remove(stale);
+        }
+
+        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)]);
+    }
+
     private void Read(byte[] data, double now)
     {
         BitReader reader = new(data);
@@ -180,13 +231,21 @@ public sealed class ClientSession
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
                 break;
             case SessionMessage.Snapshot when Clock is { } clock:
-                if (!SnapshotCodec.Read(ref reader, Received.Get, out Snapshot? snapshot) || snapshot is null)
+                int part = (int)reader.ReadBits(8);
+                int parts = (int)reader.ReadBits(8);
+                if (!SnapshotCodec.Read(ref reader, Received.Get, out Snapshot? piece) || piece is null || parts < 1 || part >= parts)
                 {
                     DroppedSnapshots++;
                     return;
                 }
 
                 long ran = reader.ReadBits(32) | ((long)reader.ReadBits(32) << 32);
+                short lead = (short)(ushort)reader.ReadBits(16);
+                if (Assemble(piece, part, parts) is not { } snapshot)
+                {
+                    return;
+                }
+
                 Received.Add(snapshot);
                 Remote.Add(snapshot);
                 if (snapshot.Tick > _newestReceived)
@@ -195,6 +254,11 @@ public sealed class ClientSession
                     Latest = snapshot;
                     LastRunCommandTick = reader.IsOverflowed ? long.MinValue : ran;
                     clock.AddSample(snapshot.Tick, now, _net.Connection?.Statistics.RoundTripTime ?? 0);
+                    if (!reader.IsOverflowed && lead != short.MinValue)
+                    {
+                        CommandLead = lead;
+                        clock.ReportCommandLead(lead);
+                    }
                 }
 
                 break;

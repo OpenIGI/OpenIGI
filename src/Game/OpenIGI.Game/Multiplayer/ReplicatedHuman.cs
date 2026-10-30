@@ -49,6 +49,8 @@ public enum ReplicatedHumanCondition : byte
 /// <param name="Health">Its health, 0 to 255 of full.</param>
 /// <param name="Team">Its team.</param>
 /// <param name="Flags">Its flags.</param>
+/// <param name="Shots">Its shots so far, counted round in a byte: a change is a shot, whichever snapshot carries it.</param>
+/// <param name="ActionSequence">How often its upper-body action has started, counted round in a byte: a change starts it again.</param>
 public readonly record struct ReplicatedHuman(
     int Id,
     Int3 Position,
@@ -60,7 +62,9 @@ public readonly record struct ReplicatedHuman(
     ushort Weapon,
     byte Health,
     byte Team,
-    ReplicatedHumanCondition Flags);
+    ReplicatedHumanCondition Flags,
+    byte Shots = 0,
+    byte ActionSequence = 0);
 
 /// <summary>A point in whole world units.</summary>
 /// <param name="X">X.</param>

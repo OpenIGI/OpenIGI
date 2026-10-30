@@ -64,6 +64,39 @@ public sealed class SessionLoopbackTests
         Assert.True(seen.Position.X > earlier.Position.X);
     }
 
+    [Fact]
+    public void A_world_too_big_for_one_packet_arrives_in_parts_and_whole()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new() { Crowd = 300 };
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.05, 0.02, 0.05, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, 0.05, 0.02, 0.05, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        float[] walk = new float[ToyWorld.Channels];
+        walk[0] = 1f;
+        for (long tick = 0; tick < 5 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            client.SendCommand(walk, now);
+            client.Flush(now);
+        }
+
+        // Every bystander is in the newest snapshot, as the server had it, and the client's commands ran.
+        Snapshot newest = Assert.IsType<Snapshot>(client.Latest);
+        Assert.Equal(301, newest.Humans.Length);
+        Assert.True(newest.TryGet(1299, out ReplicatedHuman last));
+        Assert.Equal(299 * 300, last.Position.Y);
+        Assert.Equal((int)newest.Tick * 7, last.Position.X);
+        Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 100 * 100);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);
@@ -102,10 +135,16 @@ public sealed class SessionLoopbackTests
 
         public UserCommandBuffer? CommandsFor(int slot) => _bySlot.TryGetValue(slot, out Player? p) ? p.Commands : null;
 
+        // How many bystanders besides the players, each moving every tick, as a level's soldiers do.
+        public int Crowd { get; set; }
+
         public Snapshot Capture(long tick) => new(tick,
         [
             .. _bySlot.Values.OrderBy(static p => p.Id).Select(static p => new ReplicatedHuman(
                 p.Id, p.Position, new Vector3f(p.Speed, 0, 0), 0, 0, 0, 0, 0, 255, 0, ReplicatedHumanCondition.Alive)),
+            .. Enumerable.Range(0, Crowd).Select(i => new ReplicatedHuman(
+                1000 + i, new Int3((int)tick * 7, i * 300, 0), new Vector3f(i, tick, 0), (ushort)(tick * 11), 0, 3, 4, 5, 200, 1,
+                ReplicatedHumanCondition.Alive)),
         ]);
 
         public Player PlayerOf(int id) => _bySlot.Values.Single(p => p.Id == id);

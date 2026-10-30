@@ -22,6 +22,9 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="host">What shows and plays it.</param>
 public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm harm, Igi1Blasts blasts, Igi1MissionAudio audio, IMissionTickHost host) : IMissionTick
 {
+    // Partners' guns are voiced below every soldier's runtime id, which counts up from zero.
+    private const int PartnerVoiceBase = -1_000_000;
+
     private bool _reportedShot;
     private int _reportedHumanHits;
 
@@ -1103,7 +1106,14 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             // A co-op session's partners, followed on the same tick the player's body is.
             if (mission.PartnerBodies is { } partners)
             {
-                followedBody.FollowPartnerBodies(partners());
+                IReadOnlyList<PartnerBody> bodies = partners();
+                followedBody.FollowPartnerBodies(bodies);
+
+                // Their guns heard as a soldier's are, each on a voice of its own.
+                foreach (PartnerBody partner in bodies)
+                {
+                    audio.TickSoldierWeaponSound(PartnerVoiceBase - (partner.Key.GetHashCode() & 0xFFFFFF), partner.Fired, partner.Weapon, partner.Feet);
+                }
             }
         }
     }

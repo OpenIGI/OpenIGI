@@ -67,7 +67,11 @@ public sealed class UserCommandBuffer
         }
 
         _pending.TryAdd(command.Tick, command.Channels);
+        NewestTick = command.Tick;
     }
+
+    /// <summary>Gets the tick of the command that arrived last (a packet carries its newest last), or <see cref="long.MinValue"/> before the first.</summary>
+    public long NewestTick { get; private set; } = long.MinValue;
 
     /// <summary>Gives the command for a tick, or repeats the last one when it has not arrived.</summary>
     /// <param name="tick">The tick being run.</param>

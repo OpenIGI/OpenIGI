@@ -36,6 +36,12 @@ public sealed class Igi1PlayerSetup(
     // humanplayer.qvm as Configure read it, which tunes a co-op session's other players the same way.
     private HumanPlayerConfig? _config;
 
+    // Where a glancing round whizzes, as the mission's own player's rounds were connected; a partner's are connected alike.
+    private Action<Vector3d>? _deflected;
+
+    // The first-person rig's set, which a partner's weapon is worked on as the player's is.
+    private BoneAnimationSet? _viewRig;
+
     // What Begin was given, which a co-op session's other players are brought up over.
     private (LoadedMission Loaded, LevelTask LevelRoot, ObjectCollisionIndex Solids, MissionStringResolver Text)? _bringUp;
 
@@ -66,7 +72,11 @@ public sealed class Igi1PlayerSetup(
 
     /// <summary>Gives the rig being brought up the first-person rig every Human builds (skeleton 5, model 005_01_1).</summary>
     /// <param name="animations">The first-person rig's animation set.</param>
-    public void UseViewRig(BoneAnimationSet animations) => Candidate.UseViewRig(animations);
+    public void UseViewRig(BoneAnimationSet animations)
+    {
+        _viewRig = animations;
+        Candidate.UseViewRig(animations);
+    }
 
     /// <summary>Hands the rig being brought up what the level's own <c>HumanPlayer</c> declares it carries.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -89,6 +99,7 @@ public sealed class Igi1PlayerSetup(
     /// <param name="deflected">Where a glancing round whizzes.</param>
     public void ConnectSoldiers(Action<Vector3d> deflected)
     {
+        _deflected = deflected;
         if (mission.SoldierPresenter is { } guards)
         {
             ConnectSoldiers(Candidate, guards, deflected);
@@ -425,11 +436,7 @@ public sealed class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         PlayerCamera extra = new(host.Logger);
         WirePlayer(extra, loaded, solids, missionText);
-        if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null && Weapons is not null && Ammunition is not null)
-        {
-            Carry(extra, loadout, Weapons, Ammunition);
-        }
-
+        // Tuned, rigged and then armed, in the order the mission's own player is.
         if (_config is { } config)
         {
             if (config.Parameters is { } tuning)
@@ -446,12 +453,29 @@ public sealed class Igi1PlayerSetup(
             extra.Weapons?.UseCategories(config.Categories);
         }
 
+        if (_viewRig is { } viewRig)
+        {
+            extra.UseViewRig(viewRig);
+        }
+
+        if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null && Weapons is not null && Ammunition is not null)
+        {
+            Carry(extra, loadout, Weapons, Ammunition);
+        }
+
         HumanHealth health = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
         {
             DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
         };
         extra.UseHealth(health);
         extra.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(extra, impact));
+
+        // The partner's rounds reach the soldiers as the mission's own player's do.
+        if (mission.SoldierPresenter is { } guards)
+        {
+            ConnectSoldiers(extra, guards, _deflected ?? (static _ => { }));
+        }
+
         return (extra, health);
     }
 

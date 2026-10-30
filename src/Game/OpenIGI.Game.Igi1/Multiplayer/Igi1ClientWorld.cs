@@ -7,23 +7,51 @@ using OpenIGI.Net;
 namespace OpenIGI.Game.Igi1.Multiplayer;
 
 /// <summary>A co-op client's I.G.I. mission: its own player as usual, the others stood where the server's snapshots put them.</summary>
-public sealed class Igi1ClientWorld(Igi1Gameplay game) : IReplicatedClientWorld
+public sealed class Igi1ClientWorld : IReplicatedClientWorld
 {
-    private readonly Igi1Gameplay _game = game ?? throw new ArgumentNullException(nameof(game));
+    private readonly Igi1Gameplay _game;
     private readonly Dictionary<int, Igi1NetworkPlayer> _others = [];
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
-    private readonly Dictionary<int, ReplicatedHuman> _shown = Watch(game);
+    private readonly Dictionary<int, ReplicatedHuman> _shown = [];
 
-    // The partners the frame draws on a client: each where the snapshots put it, its legs and torso on the clips the server's ran.
-    private static Dictionary<int, ReplicatedHuman> Watch(Igi1Gameplay game)
+    // Each partner's shot count as last drawn: a count moved on is a shot to flame and sound on this tick.
+    private readonly Dictionary<int, byte> _shotsDrawn = [];
+
+    /// <summary>Initializes a new instance of the <see cref="Igi1ClientWorld"/> class.</summary>
+    /// <param name="game">The client's own mission.</param>
+    public Igi1ClientWorld(Igi1Gameplay game)
     {
-        Dictionary<int, ReplicatedHuman> shown = [];
-        game.World.PartnerBodies = () => [.. shown.Values
-            .Where(static h => (h.Flags & ReplicatedHumanCondition.Alive) != 0)
-            .Select(static h => new Ai.PartnerBody(
+        _game = game ?? throw new ArgumentNullException(nameof(game));
+        game.World.PartnerBodies = PartnerBodies;
+    }
+
+    // The partners the frame draws on a client: each where the snapshots put it, its legs and torso on the clips the server's ran
+    // (a torso clip started again when the server's was), and the weapon the server has in its hand, fired when its count moved.
+    private List<Ai.PartnerBody> PartnerBodies()
+    {
+        List<Ai.PartnerBody> bodies = [];
+        foreach (ReplicatedHuman h in _shown.Values)
+        {
+            if ((h.Flags & ReplicatedHumanCondition.Alive) == 0)
+            {
+                continue;
+            }
+
+            bool fired = _shotsDrawn.TryGetValue(h.Id, out byte drawn) && drawn != h.Shots;
+            _shotsDrawn[h.Id] = h.Shots;
+            OpenIGI.Game.Weapons.WeaponType? gun =
+                h.Weapon > 0 && _game.PlayerSetup?.Weapons is { } roster && roster.TryGet(h.Weapon - 1, out OpenIGI.Game.Weapons.WeaponType held)
+                    ? held
+                    : null;
+            bodies.Add(new Ai.PartnerBody(
                 h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(h.Action - 1, true, 0f, -1, Quantize.AngleFromBits(h.Pitch))))];
-        return shown;
+                new Ai.PlayerBodyPose(h.Action - 1, true, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
+                gun,
+                h.Shots,
+                fired));
+        }
+
+        return bodies;
     }
 
     /// <inheritdoc/>
@@ -123,5 +151,6 @@ public sealed class Igi1ClientWorld(Igi1Gameplay game) : IReplicatedClientWorld
     {
         _others.Remove(id);
         _shown.Remove(id);
+        _shotsDrawn.Remove(id);
     }
 }

@@ -88,6 +88,10 @@ public sealed class Igi1CoopSessionTests
         // The frame is told to draw the partner where it stands.
         Game.Igi1.Ai.PartnerBody shown = Assert.Single(capture.Game.World.PartnerBodies!());
         Assert.Equal(partner.Player.Body.Position, shown.Feet);
+
+        // Walking on its own clips, and holding what the level arms its player with.
+        Assert.True(shown.Animation >= 0, $"the partner's legs are on clip {shown.Animation}");
+        Assert.False(string.IsNullOrEmpty(shown.Weapon?.GunModel), $"the partner holds no weapon: view {partner.Player.View is not null}, weapons {partner.Player.Weapons is not null}, carried {partner.Player.Weapons?.Carried.Count}, inhand {partner.Player.Weapons?.InHand}, state {partner.Player.Weapons?.State}; host carried {capture.Game.World.Player?.Weapons?.Carried.Count}, host inhand {capture.Game.World.Player?.Weapons?.InHand?.Weapon.ScriptId}");
     }
 
     private sealed class Capture(HostedSession session) : IHostTickObserver

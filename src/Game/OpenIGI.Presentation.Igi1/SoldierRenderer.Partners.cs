@@ -10,6 +10,7 @@ namespace OpenIGI.Presentation.Igi1;
 public sealed partial class SoldierRenderer
 {
     private readonly Dictionary<object, PlayerBodyRenderer> _partners = [];
+    private readonly Dictionary<object, (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired)> _partnerGuns = [];
     private (LoadedMission Mission, string Model, BoneAnimationSet Animations)? _partnerLoad;
 
     /// <inheritdoc/>
@@ -39,12 +40,20 @@ public sealed partial class SoldierRenderer
             PlayerBodyPose pose = partner.Pose;
             body.Follow(partner.Feet, partner.Facing, partner.Animation, partner.Loops, in pose);
             body.Tick();
+            int shots = _partnerGuns.TryGetValue(partner.Key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) before)
+                ? before.ShotSequence
+                : 0;
+            _partnerGuns[partner.Key] = (
+                partner.Weapon?.GunModel is { Length: > 0 } model ? _armoury.HeldWeaponFor(load.Mission, model) : null,
+                partner.Fired ? shots + 1 : shots,
+                partner.Fired);
         }
 
         foreach (object gone in _partners.Keys.Where(key => !present.Contains(key)).ToArray())
         {
             _partners[gone].Release();
             _partners.Remove(gone);
+            _partnerGuns.Remove(gone);
         }
     }
 
@@ -62,9 +71,32 @@ public sealed partial class SoldierRenderer
 
     private void DrawPartners(in Camera3D camera, in Matrix4f projection)
     {
-        foreach (PlayerBodyRenderer body in _partners.Values)
+        foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
             body.Draw(in camera, in projection);
+
+            // The weapon in its hand, drawn as a soldier's is: the gun's body only, its flame being light.
+            if (_partnerGuns.TryGetValue(key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) gun)
+                && gun.Gun is { } held
+                && body.HandAttachment() is { } hand)
+            {
+                _drawer.DrawHeld(held, hand, camera, projection, gun.ShotSequence);
+            }
+        }
+    }
+
+    // The flames of the partners that fired this tick, in the forward pass with the soldiers'.
+    private void DrawPartnerMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
+    {
+        foreach ((object key, PlayerBodyRenderer body) in _partners)
+        {
+            if (_partnerGuns.TryGetValue(key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) gun)
+                && gun.Fired
+                && gun.Gun?.Presentation is { } presentation
+                && body.HandAttachment() is { } hand)
+            {
+                presentation.Draw(hand, camera, projection, firedThisTick: true, gun.ShotSequence, WeaponDrawParts.FlameOnly);
+            }
         }
     }
 
@@ -76,6 +108,7 @@ public sealed partial class SoldierRenderer
         }
 
         _partners.Clear();
+        _partnerGuns.Clear();
         _partnerLoad = null;
     }
 }

@@ -398,6 +398,24 @@ internal sealed class SoldierWeaponDrawer(
         DrawRigidWeapon(weapon, member.DrawnWeaponOrigin, member.DrawnWeaponRotation, camera);
     }
 
+    /// <summary>Draws a weapon in a hand that is not a soldier's: a co-op partner's.</summary>
+    /// <param name="weapon">The weapon's model.</param>
+    /// <param name="hand">The hand it hangs off, in engine units.</param>
+    /// <param name="camera">The camera.</param>
+    /// <param name="projection">The projection.</param>
+    /// <param name="shotSequence">Its shots so far.</param>
+    internal void DrawHeld(SoldierHeldWeapon weapon, BoneAttachment hand, in Camera3D camera, in Matrix4f projection, int shotSequence)
+    {
+        if (weapon.Presentation is { } presentation)
+        {
+            presentation.Sun = Sun?.Invoke();
+            presentation.Draw(hand, camera, projection, firedThisTick: false, shotSequence, WeaponDrawParts.BodyOnly);
+            return;
+        }
+
+        DrawRigidWeapon(weapon, hand.Position / WorldScene.UnitsPerMetre, hand.Rotation, camera);
+    }
+
     // A weapon model drawn whole as one rigid mesh, for when no multipart presenter was built for it.
     // The origin is in metres, as CreateModelView takes it.
     private void DrawRigidWeapon(SoldierHeldWeapon weapon, Vector3d originMetres, Matrix3f rotation, in Camera3D camera)

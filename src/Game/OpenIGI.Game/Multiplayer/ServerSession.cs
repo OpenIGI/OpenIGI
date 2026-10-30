@@ -22,6 +22,9 @@ public sealed class ServerSession
     private readonly Dictionary<int, ClientState> _clients = [];
     private readonly UserCommandCodec _codec;
     private readonly BitWriter _writer = new(2048);
+
+    // The most packets one snapshot is split over.
+    private const int MaxSnapshotParts = 16;
     private readonly List<UserCommand> _commands = [];
 
     /// <summary>Initializes a new instance of the <see cref="ServerSession"/> class.</summary>
@@ -146,20 +149,59 @@ public sealed class ServerSession
             foreach ((int slot, ClientState client) in _clients)
             {
                 client.History.Add(snapshot);
-                _writer.Reset();
-                _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
-                SnapshotCodec.Write(_writer, snapshot, client.History.Baseline);
-                long ran = _world.CommandsFor(slot)?.LastTakenTick ?? -1;
-                _writer.WriteBits((uint)ran, 32);
-                _writer.WriteBits((uint)(ran >> 32), 32);
-                if (_writer.ByteCount <= NetConstants.MaxUnreliableMessageSize)
-                {
-                    _net.Send(slot, NetChannel.Sequenced, _writer.AsSpan());
-                }
+                SendSnapshot(slot, snapshot, client.History.Baseline, tick);
             }
         }
 
         _net.Flush(now);
+    }
+
+    // A snapshot to one client, in as few parts as fit a packet each: a level's soldiers fill more than one. Every part is
+    // written against the same baseline and names its place, and the client takes the tick once it holds them all.
+    private void SendSnapshot(int slot, Snapshot snapshot, Snapshot? baseline, long tick)
+    {
+        UserCommandBuffer? commands = _world.CommandsFor(slot);
+        long ran = commands?.LastTakenTick ?? -1;
+
+        // How far ahead of this tick the client's newest command arrived, so it can steer its stamps (0x8000: none yet).
+        long newest = commands?.NewestTick ?? long.MinValue;
+        int lead = newest == long.MinValue ? short.MinValue : (int)Math.Clamp(newest - tick, short.MinValue + 1, short.MaxValue);
+
+        for (int parts = 1; parts <= MaxSnapshotParts; parts++)
+        {
+            int per = (snapshot.Humans.Length + parts - 1) / Math.Max(1, parts);
+            List<byte[]> written = [];
+            for (int part = 0; part < parts; part++)
+            {
+                ReplicatedHuman[] slice = snapshot.Humans.Skip(part * per).Take(per).ToArray();
+                _writer.Reset();
+                _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
+                _writer.WriteBits((uint)part, 8);
+                _writer.WriteBits((uint)parts, 8);
+                SnapshotCodec.Write(_writer, snapshot with { Humans = slice }, baseline);
+                _writer.WriteBits((uint)ran, 32);
+                _writer.WriteBits((uint)(ran >> 32), 32);
+                _writer.WriteBits((ushort)(short)lead, 16);
+                if (_writer.ByteCount > NetConstants.MaxUnreliableMessageSize)
+                {
+                    break;
+                }
+
+                written.Add(_writer.AsSpan().ToArray());
+            }
+
+            if (written.Count == parts)
+            {
+                // One part is sequenced as ever; several go unordered, since a part overtaken by its sibling is still wanted
+                // (the client drops a tick older than one it holds by itself).
+                foreach (byte[] message in written)
+                {
+                    _net.Send(slot, parts == 1 ? NetChannel.Sequenced : NetChannel.Unreliable, message);
+                }
+
+                return;
+            }
+        }
     }
 
     private void Join(int slot, string name)

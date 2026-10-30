@@ -182,6 +182,11 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         ArgumentNullException.ThrowIfNull(player);
         bool dead = health?.IsDead == true;
         ReplicatedHumanCondition condition = dead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive;
+        if (player.Weapons?.FiredThisTick == true)
+        {
+            condition |= ReplicatedHumanCondition.Firing;
+        }
+
         return new ReplicatedHuman(
             id,
             Int3.From(player.Body.Position),
@@ -190,10 +195,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             Quantize.AngleToBits(player.Body.Pitch),
             (ushort)Math.Clamp(player.LocomotionAnimation + 1, 0, ushort.MaxValue),
             (ushort)Math.Clamp(player.UpperBodyAnimation + 1, 0, ushort.MaxValue),
-            0,
+            (ushort)Math.Clamp((player.Weapons?.InHand?.Weapon.WeaponId ?? -1) + 1, 0, ushort.MaxValue),
             (byte)Math.Round(Math.Clamp(health?.RemainingFraction ?? 1f, 0f, 1f) * 255),
             PlayerTeam,
-            condition);
+            condition,
+            unchecked((byte)(player.Weapons?.ShotSequence ?? 0)),
+            unchecked((byte)player.UpperBodySequence));
     }
 
     private void Stand(Igi1NetworkPlayer player, int slot)
