@@ -54,19 +54,18 @@ function toScreen(x, y, z) {
   return [x * c - y * s, x * s + y * c, z];
 }
 
-// Which of the rate's three numbers turns about which of the device's axes. The specification has beta about x, gamma about y
-// and alpha about z, and Chrome reports them so; Safari reports alpha, beta, gamma about x, y, z. Rather than guess from the
-// browser's name, the page watches which order explains how gravity moved across the device: a vector fixed in the world,
-// seen from a device turning at w, changes by -w x g. The order whose prediction misses least is the one used.
+// Which of the rate's three numbers turns about which of the device's axes. The specification once had beta about x, gamma
+// about y and alpha about z; Safari and Chrome both report alpha, beta, gamma about x, y, z, which the documentation now
+// gives too. Rather than trust either, the page watches which order explains how gravity moved across the device: a vector
+// fixed in the world, seen from a device turning at w, changes by -w x g. The order whose prediction misses least is used.
 const ORDERS = [
   ['spec', r => [r.beta ?? 0, r.gamma ?? 0, r.alpha ?? 0]],
   ['xyz', r => [r.alpha ?? 0, r.beta ?? 0, r.gamma ?? 0]],
 ];
-// Safari's order to begin with on an iPhone or an iPad, every browser on which is Safari underneath; the specification's
-// elsewhere. Starting from the likely one, the view turns the right way from the first reading, and the watching only
-// overrides it when the motion clearly says otherwise.
-const APPLE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-const LIKELY = APPLE ? 1 : 0;
+// The browsers' order to begin with. Starting from the likely one, the view turns the right way from the first reading, and
+// the watching only overrides it when the motion clearly says otherwise. Starting an Android phone on the specification's
+// order turned its tilt into a roll the view ignores: up and down did nothing.
+const LIKELY = 1;
 let misses = [0, 0];
 let order = LIKELY;
 let telling = 0;
