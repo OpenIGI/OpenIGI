@@ -18,6 +18,27 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void TheRoundsThatLandedRideEverySnapshotWhole()
+    {
+        ReplicatedImpact wall = new(false, 2, new Int3(1000, -2000, 300), new Vector3f(0.6f, 0.8f, 0f));
+        ReplicatedImpact wound = new(true, 0, new Int3(-5, 7, 9), new Vector3f(0f, 0f, -1f));
+        Snapshot before = new(30, [Human(1, 0, 0)]);
+        Snapshot after = new(31, [Human(1, 0, 0)], Impacts: [wall, wound]);
+
+        Assert.True(RoundTrip(after, before, out Snapshot? read));
+        Assert.Equal(2, read!.Impacts!.Length);
+        Assert.Equal(wall.Position, read.Impacts[0].Position);
+        Assert.Equal(2, read.Impacts[0].Source);
+        Assert.True(read.Impacts[1].Blood);
+        Assert.Equal(-1f, read.Impacts[1].Direction.Z, 2);
+        Assert.Equal(0.6f, read.Impacts[0].Direction.X, 2);
+
+        // Events, not state: a snapshot without any carries none, whatever its baseline had.
+        Assert.True(RoundTrip(new Snapshot(32, [Human(1, 0, 0)]), after, out Snapshot? next));
+        Assert.Null(next!.Impacts);
+    }
+
+    [Fact]
     public void TheDoorsRideWholeAndAgainstABaseline()
     {
         Snapshot whole = new(20, [Human(1, 0, 0)], [0b0000_0101, 0b1000_0000]);

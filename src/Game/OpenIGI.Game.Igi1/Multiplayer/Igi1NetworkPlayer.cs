@@ -57,6 +57,9 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health)
     /// <summary>Gets or sets its player's name.</summary>
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the entity it is in the session's snapshots, or -1.</summary>
+    public int Entity { get; set; } = -1;
+
     /// <summary>Gets its health.</summary>
     public HumanHealth Health { get; } = health ?? throw new ArgumentNullException(nameof(health));
 

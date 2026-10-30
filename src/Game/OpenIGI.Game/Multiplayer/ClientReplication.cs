@@ -69,6 +69,6 @@ public static class ClientReplication
             world.Hide(id);
         }
 
-        world.ApplyWorld(latest);
+        world.ApplyWorld(latest, session.EntityId);
     }
 }

@@ -79,6 +79,12 @@ public sealed class MissionWorld : MissionState
     /// <remarks>Its level never sees the player dead: the session respawns it, and the server's level decides the mission.</remarks>
     public bool CoopClient { get; set; }
 
+    /// <summary>Gets or sets the entity whose rounds are landing now, for a co-op server's record of them: the mission's own player's, nought, unless a partner's are.</summary>
+    public int ImpactSource { get; set; }
+
+    /// <summary>Gets or sets what a co-op server does once a partner has run its tick: shows where its rounds landed.</summary>
+    public Action<Multiplayer.Igi1NetworkPlayer>? PartnerRan { get; set; }
+
     /// <summary>Gets or sets a value indicating whether a co-op session's partners have run this tick.</summary>
     public bool PartnersTicked { get; set; }
 

@@ -485,7 +485,11 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             other.Player.CanJump = mission.Elevators is { } lifts
                 ? () => !lifts.IsPlayerInsideElevator(other.Player.Body.Position, out _)
                 : null;
+            // Its rounds are its own in the server's record, so the client that fired them doesn't show them twice.
+            mission.ImpactSource = other.Entity;
             other.Run(mission.PlayerTicks, host.Ground, LadderRung);
+            mission.PartnerRan?.Invoke(other);
+            mission.ImpactSource = 0;
         }
 
         mission.PlayerTicks++;

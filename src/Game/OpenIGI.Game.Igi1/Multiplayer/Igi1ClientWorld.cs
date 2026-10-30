@@ -20,6 +20,11 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // Each partner's shot count as last drawn: a count moved on is a shot to flame and sound on this tick.
     private readonly Dictionary<int, byte> _shotsDrawn = [];
 
+    // The newest snapshot whose rounds were shown, so each is shown once however many frames it stays the newest; and what
+    // each shooter's blood is kept against.
+    private long _impactsShown = long.MinValue;
+    private readonly Dictionary<int, object> _bloodOwners = [];
+
     // The doors as the server last had them, and for how many snapshots each has disagreed with this client's own.
     private byte[]? _serverDoors;
     private int[] _doorDisagreement = [];
@@ -190,9 +195,28 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// server's changes, which is how a door the host opened opens here; and taken when this client's has stood otherwise for
     /// <see cref="DoorPatience"/> snapshots, which settles one this client opened that the server didn't.
     /// </remarks>
-    public void ApplyWorld(Snapshot snapshot)
+    public void ApplyWorld(Snapshot snapshot, int? ownEntity)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+
+        // Where the others' rounds landed, once each; this client's own it showed as it fired them.
+        if (snapshot.Tick > _impactsShown)
+        {
+            _impactsShown = snapshot.Tick;
+            foreach (ReplicatedImpact impact in snapshot.Impacts ?? [])
+            {
+                if (impact.Source != ownEntity)
+                {
+                    if (!_bloodOwners.TryGetValue(impact.Source, out object? owner))
+                    {
+                        _bloodOwners[impact.Source] = owner = new object();
+                    }
+
+                    _game.Impacts.Replay(impact, owner);
+                }
+            }
+        }
+
         if (snapshot.Doors is not { } bits || _game.World.Doors is not { Doors.Count: > 0 } registry)
         {
             return;

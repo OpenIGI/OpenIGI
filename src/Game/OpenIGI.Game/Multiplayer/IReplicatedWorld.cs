@@ -114,7 +114,8 @@ public interface IReplicatedClientWorld
 
     /// <summary>Takes the rest of the world from the newest snapshot: what is not a human, such as the doors.</summary>
     /// <param name="snapshot">The newest snapshot.</param>
-    void ApplyWorld(Snapshot snapshot)
+    /// <param name="ownEntity">This client's own entity, whose rounds it showed already, or <see langword="null"/>.</param>
+    void ApplyWorld(Snapshot snapshot, int? ownEntity)
     {
     }
 }

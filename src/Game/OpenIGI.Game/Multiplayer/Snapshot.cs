@@ -10,7 +10,8 @@ namespace OpenIGI.Game.Multiplayer;
 /// The level's doors as the server has them, one bit each in the level's own order (set: commanded open), or
 /// <see langword="null"/> where the world sends none.
 /// </param>
-public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans, byte[]? Doors = null)
+/// <param name="Impacts">The rounds that landed since the server's last snapshot, for every client to show.</param>
+public sealed record Snapshot(long Tick, ReplicatedHuman[] Humans, byte[]? Doors = null, ReplicatedImpact[]? Impacts = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -124,6 +125,20 @@ public static class SnapshotCodec
                 writer.WriteBits(b, 8);
             }
         }
+
+        // The rounds that landed: events, not state, so written whole and never against the baseline.
+        ReplicatedImpact[] impacts = snapshot.Impacts ?? [];
+        int first = Math.Max(0, impacts.Length - ReplicatedImpact.MaxPerSnapshot);
+        writer.WriteBool(impacts.Length > first);
+        if (impacts.Length > first)
+        {
+            writer.WriteVarUInt((uint)(impacts.Length - first));
+        }
+
+        for (int i = first; i < impacts.Length; i++)
+        {
+            impacts[i].Write(writer);
+        }
     }
 
     /// <summary>Reads a snapshot.</summary>
@@ -202,12 +217,24 @@ public static class SnapshotCodec
             return false;
         }
 
+        uint impactCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
+        if (reader.IsOverflowed || impactCount > ReplicatedImpact.MaxPerSnapshot)
+        {
+            return false;
+        }
+
+        ReplicatedImpact[]? impacts = impactCount == 0 ? null : new ReplicatedImpact[impactCount];
+        for (int i = 0; i < impactCount; i++)
+        {
+            impacts![i] = ReplicatedImpact.Read(ref reader);
+        }
+
         if (reader.IsOverflowed)
         {
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors);
+        snapshot = new Snapshot(tick, humans, doors, impacts);
         return true;
     }
 

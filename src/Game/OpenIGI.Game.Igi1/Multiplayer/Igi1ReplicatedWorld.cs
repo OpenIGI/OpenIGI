@@ -36,11 +36,27 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     private readonly SortedDictionary<int, Igi1NetworkPlayer> _bySlot = [];
     private readonly HashSet<int> _dead = [];
 
+    // The rounds that landed since the last snapshot, for every client to show.
+    private readonly List<ReplicatedImpact> _impacts = [];
+
     /// <summary>Initializes a new instance of the <see cref="Igi1ReplicatedWorld"/> class.</summary>
     /// <param name="game">The mission.</param>
     public Igi1ReplicatedWorld(Igi1Gameplay game)
     {
         _game = game ?? throw new ArgumentNullException(nameof(game));
+        _game.Impacts.Recorded = impact => _impacts.Add(impact);
+
+        // A partner's rounds land on the server's world too: their marks and dust shown here, and so sent to everyone.
+        _game.World.PartnerRan = partner =>
+        {
+            foreach (Weapons.GunImpact landed in partner.Player.Impacts)
+            {
+                if (landed.HitSomething && !landed.StruckHuman && !landed.Melee)
+                {
+                    _game.Impacts.Replay(new ReplicatedImpact(false, partner.Entity, Int3.From(landed.Wall.Position), landed.Direction), partner);
+                }
+            }
+        };
         _game.World.PartnerBodies = () => [.. _bySlot.Values.Where(static p => !p.IsDead).Select(static p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with { Name = p.Name })];
     }
 
@@ -75,7 +91,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             return null;
         }
 
-        Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name };
+        Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name, Entity = slot + 1 };
         Stand(player, slot);
         _bySlot[slot] = player;
         _game.World.NetworkPlayers.Add(player);
@@ -132,7 +148,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
         }
 
-        return new Snapshot(tick, [.. humans], Doors(_game.World.Doors));
+        Snapshot snapshot = new(tick, [.. humans], Doors(_game.World.Doors), _impacts.Count == 0 ? null : [.. _impacts]);
+        _impacts.Clear();
+        return snapshot;
     }
 
     /// <inheritdoc/>
