@@ -206,6 +206,13 @@ public sealed class RoomTransport : INetTransport
         _outboxReady.Dispose();
     }
 
+    /// <summary>Handles what the room said and what each connection has to say back, without taking a datagram.</summary>
+    /// <remarks>
+    /// <see cref="TryReceive"/> does this itself; a joiner calls it while it waits for <see cref="Status"/> to open, before
+    /// anything reads datagrams.
+    /// </remarks>
+    public void Poll() => Pump();
+
     // What the room said, and what each connection has to say back, on the network's thread.
     private void Pump()
     {

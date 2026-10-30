@@ -11,8 +11,21 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="MaxPlayers">How many clients a server takes.</param>
 /// <param name="Password">The password: a server's to require, a client's to give.</param>
 /// <param name="Mode">The game mode a server plays.</param>
+/// <param name="Join">The room code to join, or <see langword="null"/>.</param>
+/// <param name="Host">Whether to host through a room: friends anywhere join by its code, no port opened.</param>
+/// <param name="Public">Whether a hosted room is listed in the server browser, rather than reached by its code alone.</param>
 public sealed record SessionArguments(
-    string? Connect, bool Listen, int Port, string PlayerName, string ServerName, int MaxPlayers, string Password, string Mode)
+    string? Connect,
+    bool Listen,
+    int Port,
+    string PlayerName,
+    string ServerName,
+    int MaxPlayers,
+    string Password,
+    string Mode,
+    string? Join = null,
+    bool Host = false,
+    bool Public = false)
 {
     /// <summary>The UDP port a server listens on unless told otherwise, as the original's <c>svport</c>.</summary>
     public const int DefaultPort = 26001;
@@ -20,8 +33,11 @@ public sealed record SessionArguments(
     /// <summary>The usage text.</summary>
     public const string Usage =
         "Multiplayer options:\n" +
-        "  -connect <host[:port]>  join a server\n" +
-        "  -listen                 host a listen server on the mission being played\n" +
+        "  -host                   host a room on the mission being played; friends join by its code\n" +
+        "  -public                 list the hosted room in the server browser\n" +
+        "  -join <code>            join a room by its code\n" +
+        "  -connect <host[:port]>  join a server by address (LAN or dedicated)\n" +
+        "  -listen                 host a listen server on a UDP port, for LAN\n" +
         "  -port <n>               UDP port a server listens on (default 26001)\n" +
         "  -name <text>            player name (default Jones)\n" +
         "  -servername <text>      name shown in the server list\n" +
@@ -45,6 +61,9 @@ public sealed record SessionArguments(
         int maxPlayers = 32;
         string password = string.Empty;
         string mode = "objective";
+        string? join = null;
+        bool host = false;
+        bool listed = false;
         List<string> left = [];
         for (int i = 0; i < args.Length; i++)
         {
@@ -57,6 +76,15 @@ public sealed record SessionArguments(
                     break;
                 case "-LISTEN":
                     listen = true;
+                    break;
+                case "-HOST":
+                    host = true;
+                    break;
+                case "-PUBLIC":
+                    listed = true;
+                    break;
+                case "-JOIN":
+                    join = Value();
                     break;
                 case "-PORT":
                     port = int.Parse(Value(), CultureInfo.InvariantCulture);
@@ -88,6 +116,6 @@ public sealed record SessionArguments(
         }
 
         rest = [.. left];
-        return new SessionArguments(connect, listen, port, playerName, serverName, maxPlayers, password, mode);
+        return new SessionArguments(connect, listen, port, playerName, serverName, maxPlayers, password, mode, join, host, listed);
     }
 }

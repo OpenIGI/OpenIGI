@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
 using OpenIGI.Net;
+using OpenIGI.Net.Rooms;
 
 namespace OpenIGI.Host.Multiplayer;
 
@@ -52,7 +53,10 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
     public int? LocalEntity => _session?.EntityId;
 
     /// <inheritdoc/>
-    public string Title => _session?.Map is { Length: > 0 } map ? $"{_server}  ·  {map}" : _server.ToString();
+    public string Title => _session?.Map is { Length: > 0 } map ? $"{Where}  ·  {map}" : Where;
+
+    // The server as a player knows it: a room by its code, otherwise by its address.
+    private string Where => _transport is RoomTransport room ? room.ToString() : _server.ToString();
 
     /// <inheritdoc/>
     public void BeforeTitleTick(object title)
@@ -63,6 +67,20 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
     public void AfterTitleTick(object title)
     {
         double now = _clock.Elapsed.TotalSeconds;
+
+        // Through a room, the handshake waits for the channel to the host: until it opens there is nowhere to send it.
+        if (_session is null && _transport is RoomTransport { Status: not RoomStatus.Open } room)
+        {
+            room.Poll();
+            if (room.Status == RoomStatus.Closed && _ended is null)
+            {
+                _ended = room.Error ?? "the room closed";
+                _logger.Warning(LogCategory, $"Could not join {room}: {_ended}.");
+            }
+
+            return;
+        }
+
         if (_session is null)
         {
             if (title is not IReplicatedTitle replicated)
@@ -74,20 +92,20 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
             _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId));
             _session = new ClientSession(_netClient, _world.LocalFrame.Length);
             _session.Connect(_server, _request, now);
-            _logger.Information(LogCategory, $"Joining {_server} as {_request.PlayerName}.");
+            _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
 
         ClientReplication.Tick(_session, _world!, now);
         if (!_welcomed && _session.EntityId is { } id)
         {
             _welcomed = true;
-            _logger.Information(LogCategory, $"Joined {_server}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
+            _logger.Information(LogCategory, $"Joined {Where}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
         }
 
         if (_session.EndReason is { } reason && reason != _ended)
         {
             _ended = reason;
-            _logger.Warning(LogCategory, $"The session with {_server} ended: {reason}.");
+            _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
         }
     }
 

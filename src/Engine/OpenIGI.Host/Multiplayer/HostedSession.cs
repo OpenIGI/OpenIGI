@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
 using OpenIGI.Net;
+using OpenIGI.Net.Rooms;
 
 namespace OpenIGI.Host.Multiplayer;
 
@@ -29,6 +30,8 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
     private const string LogCategory = "Session";
 
     private readonly NetServer _net;
+    private readonly RoomTransport? _room;
+    private bool _announced;
     private readonly HostedSessionOptions _options;
     private readonly string _titleId;
     private readonly int _tickRate;
@@ -50,6 +53,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
         _titleId = titleId ?? throw new ArgumentNullException(nameof(titleId));
         _tickRate = tickRate;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _room = transport as RoomTransport;
         _net = new NetServer(transport, new NetServerOptions
         {
             ProtocolId = MultiplayerProtocol.IdFor(titleId),
@@ -58,6 +62,9 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
             Info = _ => Info().Encode(),
         });
     }
+
+    /// <summary>Gets the room's code, when the session is hosted through one and the room is open.</summary>
+    public string? RoomCode => _room?.Code;
 
     /// <summary>Gets the address the session listens on.</summary>
     public NetAddress LocalAddress => _net.LocalAddress;
@@ -86,7 +93,15 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
 
             _world = replicated.CreateReplicatedWorld(_options.IncludesHost);
             _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null);
-            _logger.Information(LogCategory, $"The level is up; players may join on port {_net.LocalAddress.Port}.");
+            _logger.Information(
+                LogCategory,
+                _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
+        }
+
+        if (_room is { Code: { } code } && !_announced)
+        {
+            _announced = true;
+            _logger.Information(LogCategory, $"Room code {code}: friends join with it, on the desktop or in the browser.");
         }
 
         _session.Receive(_clock.Elapsed.TotalSeconds, _world!.CurrentTick);
@@ -116,6 +131,11 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
         foreach (int slot in _known.Except(now))
         {
             _logger.Information(LogCategory, $"The player in slot {slot} left.");
+        }
+
+        if (!_known.SetEquals(now))
+        {
+            _room?.ReportState(now.Count + (_options.IncludesHost ? 1 : 0), map: null);
         }
 
         _known.Clear();
