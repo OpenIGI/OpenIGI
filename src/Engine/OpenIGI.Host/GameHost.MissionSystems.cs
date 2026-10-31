@@ -254,8 +254,8 @@ public sealed partial class GameHost
                     _mission.MagicObjects,
                     _detailMaps,
                     () => _world?.Shading.Sun,
-                    // The original's levels of detail, on its own look only, as the world's models give theirs up.
-                    () => GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null));
+                    // The original's levels of detail only when asked for, as the world's models give theirs up.
+                    () => OpenIGI.Rendering.FrameCVars.ModelLod.Value ? _modelLod : null));
             _mission.AdoptSoldiers(_soldiers);
             _soldiers?.Load(
                 loaded,

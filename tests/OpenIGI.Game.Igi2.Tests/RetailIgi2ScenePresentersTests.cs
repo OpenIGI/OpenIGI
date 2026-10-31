@@ -12,6 +12,7 @@ using OpenIGI.TestSupport;
 using Xunit;
 using OpenIGI.Presentation.Igi2.World;
 using OpenIGI.Presentation.Igi2;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Game.Igi2.Tests;
 

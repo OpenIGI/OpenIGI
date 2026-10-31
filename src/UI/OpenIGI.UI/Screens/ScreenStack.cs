@@ -208,23 +208,7 @@ public sealed class ScreenStack
         }
     }
 
-    private void DrawCursor(UiPainter painter)
-    {
-        // A classic arrow: a white triangle over a slightly larger dark one for contrast, its tip at the
-        // pointer. Sized gently with the viewport so it stays a sensible size from 480p to 4K.
-        float size = Math.Clamp(painter.Context.Viewport.Y / 42f, 18f, 40f);
-        DrawArrow(painter, _pointer, size + 3f, OpenIGI.Core.Graphics.Bgra32.FromRgba(0, 0, 0, 200));
-        DrawArrow(painter, _pointer, size, OpenIGI.Core.Graphics.Bgra32.White);
-    }
-
-    private static void DrawArrow(UiPainter painter, UiVec2 tip, float size, OpenIGI.Core.Graphics.Bgra32 color)
-    {
-        var down = new UiVec2(tip.X, tip.Y + size);
-        var elbow = new UiVec2(tip.X + (size * 0.36f), tip.Y + (size * 0.72f));
-        var barb = new UiVec2(tip.X + (size * 0.72f), tip.Y + (size * 0.72f));
-        painter.FillTriangle(tip, down, elbow, color);
-        painter.FillTriangle(tip, elbow, barb, color);
-    }
+    private void DrawCursor(UiPainter painter) => UiCursor.Draw(painter, _pointer);
 
     private int TopIndex
     {

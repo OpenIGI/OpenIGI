@@ -292,8 +292,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         host.SoundOutput?.PlayDefinition("weaponpickup_1", priority: 180);
     }
 
-    /// <summary>Awards and plays an authored item that has reached the player.</summary>
-    /// <returns><see langword="true"/> when it was ammunition, whose message the caller posts.</returns>
+    /// <summary>Plays an authored item reaching the player.</summary>
+    /// <param name="ammunition">Whether it was ammunition.</param>
     /// <remarks>
     /// <para>
     /// <c>GenericPickup::cleanup</c> calls <c>0x4E7200("pickup", 0, 0)</c>. The cue is shared by C4,
@@ -305,23 +305,8 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// plays <c>weaponpickup_1</c> (<c>0x45FF80</c>); the box plays no cue of its own.
     /// </para>
     /// </remarks>
-    public bool TakeGenericPickup(GenericPickup pickup)
-    {
-        ArgumentNullException.ThrowIfNull(pickup);
-
-        // Award ammunition at the same collection edge as the cue, so the object, inventory count and sound
-        // cannot drift apart. An explicit task payload wins over the catalog fallback.
-        bool ammunition = string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal);
-        if (mission.Player?.Weapons is { } weapons
-            && mission.AmmoTypes is { } ammoTypes
-            && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
-        {
-            weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
-        }
-
+    public void PlayGenericPickupSound(bool ammunition) =>
         host.SoundOutput?.PlayDefinition(ammunition ? "weaponpickup_1" : "pickup", priority: 180);
-        return ammunition;
-    }
 
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
     /// <param name="listenerInUnits">Where the ear is, in engine units.</param>

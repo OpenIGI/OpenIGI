@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The browser build's half of playing through a room: the page's own RTCPeerConnection (rtc.js), reached through the
+       runtime's JavaScript interop. The desktop's is OpenIGI.Net.WebRtc. -->
+  <PropertyGroup>
+    <!-- The JavaScript interop's generated marshalling is unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Net\OpenIGI.Net.csproj" />
+  </ItemGroup>
+
+</Project>

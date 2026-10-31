@@ -337,7 +337,7 @@ public sealed class Igi1MissionSetup(
             // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
             soldiers.SetHitSound((prefix, variants, position) => sounds.PlayHit(prefix, variants, position));
             soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(mission.SoundRandom));
-            soldiers.SetMeleeStrikeSink(harm.StrikePlayer);
+            soldiers.SetMeleeStrikeSink((struck, attacker, damage) => harm.StrikePlayer(struck ?? harm.Own, attacker, damage));
             soldiers.SetPlayerDeltaTranslationScale(() => mission.PlayerDeltaTranslationScale);
 
             // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at

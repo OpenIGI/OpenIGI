@@ -95,6 +95,15 @@ public sealed class Shell
         Stack.Reset(new MissionFailedScreen(_context));
     }
 
+    /// <summary>Opens the shell over a co-op client's mission whose room is gone.</summary>
+    /// <param name="reason">Why, as the session said it.</param>
+    /// <param name="code">The room's code, to join it again by, or <see langword="null"/>.</param>
+    public void OpenRoomClosed(string reason, string? code)
+    {
+        _context.InGame = true;
+        Stack.Reset(new RoomClosedScreen(_context, reason, code));
+    }
+
     /// <summary>Tells the shell it is no longer over a live mission.</summary>
     /// <remarks>
     /// Called when the pause menu is left by any door — resuming, restarting, abandoning, or starting

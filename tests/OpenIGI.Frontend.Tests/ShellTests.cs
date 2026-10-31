@@ -152,51 +152,57 @@ public sealed class ShellTests : ShellTestHarness
     }
 
     [Fact]
-    public void Extras_unsubscribes_cheat_gate_handlers_after_resize_and_reset()
+    public void The_cheats_are_one_group_in_gameplay_settings_behind_enable_cheats_and_nowhere_in_extras()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
-        bool previousDeveloperMode = PlayerCheatCVars.DeveloperMode.Value;
         bool previousCheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
+        bool previousInfiniteAmmo = PlayerCheatCVars.InfiniteAmmo.Value;
         try
         {
-            PlayerCheatCVars.DeveloperMode.Value = false;
             PlayerCheatCVars.CheatsEnabled.Value = false;
+            PlayerCheatCVars.InfiniteAmmo.Value = false;
 
-            (Shell shell, _) = BuildShell(dir);
+            // A registry of the cheats alone: the shared one is filled from other tests' threads as this one reads it.
+            var cvars = new Core.Configuration.CVarRegistry();
+            foreach (Core.Configuration.ICVar cheat in (Core.Configuration.ICVar[])[
+                PlayerCheatCVars.CheatsEnabled, PlayerCheatCVars.InfiniteHealth, PlayerCheatCVars.InfiniteAmmo, PlayerCheatCVars.NoReload,
+                PlayerCheatCVars.NoRecoil, PlayerCheatCVars.AllWeapons, PlayerCheatCVars.UnlockAllLevels, PlayerCheatCVars.Speed,
+                PlayerCheatCVars.Jump, PlayerCheatCVars.HealthScale])
+            {
+                cvars.Add(cheat);
+            }
+
+            (Shell shell, _) = BuildShell(dir, cvars: cvars);
+            Assert.True(shell.OpenOn("settings"));
+            Pump(shell, 0.6f);
+            List<Control> rows = [.. shell.Stack.Top!.Root!.Descendants().OfType<Control>().Where(c => c is Slider or Toggle or Dropdown)];
+
+            // Each cheat once, in the Cheats group, its gate first: never loose among the general rows doing nothing.
+            Toggle enable = Assert.Single(rows.OfType<Toggle>(), toggle => toggle.Label == "Enable Cheats");
+            Toggle ammo = Assert.Single(rows.OfType<Toggle>(), toggle => toggle.Label == "Infinite Ammo");
+            Assert.Equal(9, rows.Count(row => row.Tooltip.Contains("(cheat)", StringComparison.Ordinal)));
+            Assert.True(rows.IndexOf(enable) < rows.IndexOf(ammo));
+
+            // Switched on there, a cheat is in force.
+            ammo.Value = true;
+            Assert.False(PlayerCheatOptions.Current.InfiniteAmmo);
+            enable.Value = true;
+            Assert.True(PlayerCheatOptions.Current.InfiniteAmmo);
+
             shell.OpenOn("extras");
-            Pump(shell, 0.1f);
-            var extras = Assert.IsType<ExtrasScreen>(shell.Stack.Top);
-            Toggle firstDeveloper = Find<Toggle>(extras, toggle => toggle.Label == "Developer mode")
-                ?? throw new Xunit.Sdk.XunitException("The Extras developer toggle was not built.");
-
-            Panel firstGate = Find<GroupHeader>(extras, header => header.Title == "CHEATS")!.Parent!.Parent as Panel
-                ?? throw new Xunit.Sdk.XunitException("The Extras cheat gate panel was not built.");
-            Assert.Equal(Visibility.Collapsed, firstGate.Visibility);
-
-            // A viewport change rebuilds the retained screen tree. The subscription must not be made by
-            // BuildContent, or reset would leave one duplicate handler behind.
-            shell.Update(new LayoutContext(1280f, 720f), new InputState(), 1f / 60f);
-            Toggle resizedDeveloper = Find<Toggle>(extras, toggle => toggle.Label == "Developer mode")
-                ?? throw new Xunit.Sdk.XunitException("The resized Extras developer toggle was not built.");
-            Panel resizedGate = Find<GroupHeader>(extras, header => header.Title == "CHEATS")!.Parent!.Parent as Panel
-                ?? throw new Xunit.Sdk.XunitException("The resized Extras cheat gate panel was not built.");
-
-            shell.OpenOn("campaign");
-            PlayerCheatCVars.DeveloperMode.Value = true;
-
-            Assert.Equal(Visibility.Collapsed, firstGate.Visibility);
-            Assert.Equal(Visibility.Collapsed, resizedGate.Visibility);
-            Assert.False(firstDeveloper.Value);
-            Assert.False(resizedDeveloper.Value);
+            Pump(shell, 0.3f);
+            Assert.Null(Find<GroupHeader>(shell.Stack.Top!, header => header.Title == "CHEATS"));
+            Assert.Null(Find<Toggle>(shell.Stack.Top!, toggle => toggle.Label is "Enable cheats" or "Infinite ammo"));
         }
         finally
         {
             PlayerCheatCVars.CheatsEnabled.Value = previousCheatsEnabled;
-            PlayerCheatCVars.DeveloperMode.Value = previousDeveloperMode;
+            PlayerCheatCVars.InfiniteAmmo.Value = previousInfiniteAmmo;
             if (Directory.Exists(dir))
             {
                 Directory.Delete(dir, recursive: true);
             }
         }
     }
+
 }

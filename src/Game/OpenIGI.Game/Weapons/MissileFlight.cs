@@ -39,8 +39,8 @@ public static class MissileFlight
     public const float TicksPerSecond = 30f;
 
     /// <summary>
-    /// Launch speed used when the weapon table's muzzle velocity is the dummy 5 m/s that keeps
-    /// rocket carriers out of <c>g_ballistics</c>.
+    /// Launch speed used when the weapon table's muzzle velocity is the dummy 5 m/s it carries for rocket
+    /// carriers.
     /// </summary>
     /// <remarks>
     /// Retail missiles are thrust bodies, not 5 m/s grenades. Forty metres a second is a conservative

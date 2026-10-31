@@ -163,10 +163,10 @@ internal static class DestructibleDamage
         // reads the register: five Glock rounds of 0.2 leave 0.99999994, so the radio takes a sixth.
         X87 sum = (X87)Math.Max(0f, damage) + item.ExplosionDamageAccumulated;
         item.ExplosionDamageAccumulated = sum.F;
-        float threshold = item.ExplosionDamageThreshold > 0f
-            ? item.ExplosionDamageThreshold
-            : ExplosionDamageDefaults.DamageThreshold;
-        if (sum.Value >= threshold)
+        // The authored health (+492, ParamChanged's copy of "Damage scale"), zero included: a logic object authored with
+        // none -- mission 5's Terminal_550 -- goes off at the first message of any explosion in the level, however far,
+        // since a dose of nought already reaches it (measured on retail: an M203 at 34 m sets it off on its tick).
+        if (sum.Value >= item.ExplosionDamageThreshold)
         {
             item.Countdown = explosion ? item.ExplosionDelayTicks : 0;
         }

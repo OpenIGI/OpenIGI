@@ -5,6 +5,7 @@ using OpenIGI.TestSupport;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Game.Tests;
 

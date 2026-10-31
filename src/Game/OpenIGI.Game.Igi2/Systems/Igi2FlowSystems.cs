@@ -108,7 +108,8 @@ internal static class Igi2FlowSystems
         foreach (Igi2AreaActivateTask area in b.Root.Descendants().OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
-            area.Player = player.Human;
+            area.Players.Set(player.Human);
+            player.AreaRosters.Add(area.Players);
             area.CameraPosition = () => player.EyePosition;
             area.VehiclePositions = () => levelCars.Select(static car => car.Position);
         }

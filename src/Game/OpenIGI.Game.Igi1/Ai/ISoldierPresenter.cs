@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -75,6 +75,11 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
         IEnumerable<string> weaponModels,
         Func<IEnumerable<VehicleGunVisual>> guns);
 
+    /// <summary>Stands the fallen player's body up again, as a co-op player is brought back.</summary>
+    void RevivePlayerBody()
+    {
+    }
+
     /// <summary>
     /// Poses the player's body with its death fall and starts drawing it — the player has died.
     /// </summary>
@@ -137,6 +142,19 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
     /// </para>
     /// </remarks>
     void FollowPlayerBody(Vector3d feetUnits, float facing, int animation, bool loops, in PlayerBodyPose pose);
+
+    /// <summary>Follows a co-op session's partners' bodies for a tick: each made the first time, posed and stepped; one gone, let go.</summary>
+    /// <param name="partners">The partners to show this tick.</param>
+    /// <remarks>Each body is built as the player's was; a presenter with none to build shows none.</remarks>
+    void FollowPartnerBodies(IReadOnlyList<PartnerBody> partners)
+    {
+    }
+
+    /// <summary>Keeps the partners' bodies out of sight, or shows them again: followed all the while, drawn only when shown.</summary>
+    /// <param name="hidden">Whether they are hidden, as a scene playing hides them.</param>
+    void HidePartnerBodies(bool hidden)
+    {
+    }
 
     /// <summary>Starts the third-person body in one of IGI1's ladder animation states.</summary>
     /// <param name="animation">The state's authored clip.</param>

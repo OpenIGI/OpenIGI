@@ -98,30 +98,38 @@ public readonly record struct NineSlice(UiImage Texture, UiRect Source, float Co
     }
 
     /// <summary>The single solid texel at the corner's inside, which the middle is filled from.</summary>
-    private UiRect Inside()
-    {
-        float texelX = Source.Width <= 0f ? 0f : Source.Width / MathF.Max(1f, CornerPixels);
-        float texelY = Source.Height <= 0f ? 0f : Source.Height / MathF.Max(1f, CornerPixels);
-        return new UiRect(
-            Source.X + Source.Width - (texelX * 0.5f),
-            Source.Y + Source.Height - (texelY * 0.5f),
-            0f,
-            0f);
-    }
+    private UiRect Inside() => new(Source.X + Source.Width - (TexelX * 0.5f), Source.Y + Source.Height - (TexelY * 0.5f), 0f, 0f);
 
     /// <summary>Returns the source rectangle for one corner, mirrored out of the stored one.</summary>
     /// <param name="right">Whether to mirror horizontally.</param>
     /// <param name="bottom">Whether to mirror vertically.</param>
     /// <returns>The source rectangle, with negative extents where it is mirrored.</returns>
     /// <remarks>
+    /// <para>
     /// Mirroring is expressed by moving the origin to the far edge and negating the extent, so the
     /// sprite batch interpolates the texture coordinates backwards without needing a flip flag.
+    /// </para>
+    /// <para>
+    /// Its inner sides stop at the middle of the last texel, as the edges do (<see cref="HorizontalEdge"/>): the whole texel
+    /// would have the filter reach halfway into the next one in the atlas, beyond the quadrant -- a seam along the figure's
+    /// inner rectangle that a wide, faint shadow shows as a dark line running out past the panel it is under.
+    /// </para>
     /// </remarks>
-    public UiRect Corner(bool right, bool bottom) => new(
-        right ? Source.X + Source.Width : Source.X,
-        bottom ? Source.Y + Source.Height : Source.Y,
-        right ? -Source.Width : Source.Width,
-        bottom ? -Source.Height : Source.Height);
+    public UiRect Corner(bool right, bool bottom)
+    {
+        float width = Source.Width - (TexelX * 0.5f);
+        float height = Source.Height - (TexelY * 0.5f);
+        return new(
+            right ? Source.X + width : Source.X,
+            bottom ? Source.Y + height : Source.Y,
+            right ? -width : width,
+            bottom ? -height : height);
+    }
+
+    // One texel of the corner, in texture coordinates, across and down.
+    private float TexelX => Source.Width <= 0f ? 0f : Source.Width / MathF.Max(1f, CornerPixels);
+
+    private float TexelY => Source.Height <= 0f ? 0f : Source.Height / MathF.Max(1f, CornerPixels);
 
     /// <summary>Returns the source strip used to stretch a horizontal edge.</summary>
     /// <param name="bottom">Whether this is the bottom edge.</param>
@@ -140,12 +148,13 @@ public readonly record struct NineSlice(UiImage Texture, UiRect Source, float Co
     /// </remarks>
     public UiRect HorizontalEdge(bool bottom)
     {
-        float texel = Source.Width <= 0f ? 0f : Source.Width / MathF.Max(1f, CornerPixels);
+        // Across the edge it stops short of the quadrant's inner side as a corner does.
+        float height = Source.Height - (TexelY * 0.5f);
         return new UiRect(
-            Source.X + Source.Width - (texel * 0.5f),
-            bottom ? Source.Y + Source.Height : Source.Y,
+            Source.X + Source.Width - (TexelX * 0.5f),
+            bottom ? Source.Y + height : Source.Y,
             0f,
-            bottom ? -Source.Height : Source.Height);
+            bottom ? -height : height);
     }
 
     /// <summary>Returns the source strip used to stretch a vertical edge.</summary>
@@ -154,11 +163,11 @@ public readonly record struct NineSlice(UiImage Texture, UiRect Source, float Co
     /// <remarks>Sampled through the middle of the row, for the reason <see cref="HorizontalEdge"/> gives.</remarks>
     public UiRect VerticalEdge(bool right)
     {
-        float texel = Source.Height <= 0f ? 0f : Source.Height / MathF.Max(1f, CornerPixels);
+        float width = Source.Width - (TexelX * 0.5f);
         return new UiRect(
-            right ? Source.X + Source.Width : Source.X,
-            Source.Y + Source.Height - (texel * 0.5f),
-            right ? -Source.Width : Source.Width,
+            right ? Source.X + width : Source.X,
+            Source.Y + Source.Height - (TexelY * 0.5f),
+            right ? -width : width,
             0f);
     }
 }

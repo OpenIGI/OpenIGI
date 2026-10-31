@@ -33,6 +33,23 @@ public sealed partial class GameHost
         }
 
         state.Console.QuitRequested += (_, _) => state.Running = false;
+        state.Console.System.Commands.Add(
+            "mission",
+            "Starts a mission by its id, or the one being played again; a co-op room's players follow.",
+            context =>
+            {
+                int? id = context.Count > 0
+                    ? int.TryParse(context[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int asked) ? asked : null
+                    : _session.Mission?.Id;
+                if (id is not { } missionId || !_missions.TryGet(missionId, out _))
+                {
+                    context.Error("No such mission.");
+                    return;
+                }
+
+                GoIntoMission(state, missionId);
+            },
+            "[id]");
 
         // The console reaches the system clipboard through the window, which is what owns the handle,
         // rather than taking a platform reference of its own.
@@ -46,6 +63,7 @@ public sealed partial class GameHost
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
         _lamps.RegisterCommands(state.Console.System);
+        RegisterCoopTalk(state.Console.System);
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
@@ -338,7 +356,6 @@ public sealed partial class GameHost
         _hud = null;
         _debugOverlay = null;
         _marks = null;
-        _tracers = null;
         _effects.Forget();
         _cameraStatusLights = null;
         _grenadeRenderer = null;
@@ -492,6 +509,7 @@ public sealed partial class GameHost
             // so does this.
             state.Saves = new SaveSlotStore(SavesDirectory());
 
+            _coop ??= CreateCoop();
             state.ShellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
@@ -609,35 +627,22 @@ public sealed partial class GameHost
                     _menuFlow.MenuMode = false;
                     _menuFlow.PauseMenu = false;
                     _window.CursorVisible = false;
+
+                    // Back from the failed page too, when a co-op squad stood again at its checkpoint.
+                    _session.FailedMenu = false;
+                    _session.ClearFailure();
                 },
                 restartMission: () =>
                 {
-                    if (_session.Mission is { } mission && !_loadSequence.IsActive)
+                    if (_session.Mission is { } mission)
                     {
-                        // The frozen mission under the pause menu is the picture the sequence holds: the
-                        // menu leaves, the place falls out of focus, and it comes back reset.
-                        void Restart()
-                        {
-                            state.Shell?.ClosePauseMenu();
-                            _menuFlow.MenuMode = false;
-                            _menuFlow.PauseMenu = false;
-                            ApplyGameplayMotionBlur();
-                            StartMission(mission.Id);
-                            _window.CursorVisible = false;
-                        }
-
-                        if (CinematicLoadAvailable)
-                        {
-                            BeginCinematicLoad(mission.Id, Restart);
-                        }
-                        else
-                        {
-                            Restart();
-                        }
+                        GoIntoMission(state, mission.Id);
                     }
                 },
                 abandonMission: () =>
                 {
+                    // Out of the mission is out of its room.
+                    _coop?.Leave();
                     // Before it was ever shown, possibly. Counting the rest of the warm-up down would
                     // hold a loading panel over the campaign screen.
                     CancelMissionWarmUp();
@@ -713,9 +718,14 @@ public sealed partial class GameHost
                 },
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,
+                coop: _coop,
                 touchScreen: () => _window.Input.Touch.InUse);
 
             state.ShellHostForEntryCam = state.ShellHost;
+            if (_coop is not null)
+            {
+                _coop.Shell = state.ShellHost;
+            }
 
             state.Shell = new Shell(BuildShellContext(state.ShellHost, shellTheme, state.Saves));
 

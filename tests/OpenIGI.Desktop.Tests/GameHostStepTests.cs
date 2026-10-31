@@ -10,6 +10,8 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Platform.Headless;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
 

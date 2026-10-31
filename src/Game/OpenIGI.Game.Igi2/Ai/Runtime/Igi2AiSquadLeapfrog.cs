@@ -26,7 +26,8 @@ public sealed class Igi2AiSquadLeapfrog : Igi2AiSquadAction
         words.Add(_node);
         words.Add(_movingTeam);
         words.Add(_timer);
-        words.Add(_target is not null && ReferenceEquals(_target, squad.World.Player) ? 1 : 0);
+        // 1 for the player in the original's word; one past the player's place in the roster for any of several.
+        words.Add(_target is IAiPlayer target ? squad.World.Players.IndexOf(target) + 1 : 0);
         _spread.SaveState(words);
     }
 
@@ -38,7 +39,8 @@ public sealed class Igi2AiSquadLeapfrog : Igi2AiSquadAction
         _node = words.Int();
         _movingTeam = words.Int();
         _timer = words.Int();
-        _target = words.Int() == 1 ? squad.World.Player as IAiDetectable : null;
+        int player = words.Int() - 1;
+        _target = player >= 0 && player < squad.World.Players.Count ? squad.World.Players[player] as IAiDetectable : null;
         _spread.LoadState(words);
     }
 

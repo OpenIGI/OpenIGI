@@ -45,6 +45,13 @@ public static class HumanGroundQuery
     /// </summary>
     public const double RoofClearanceInUnits = 7372.8;
 
+    /// <summary>How far the human's ground drop reaches from its probe, down and then up, in world units.</summary>
+    /// <remarks>
+    /// <c>4096000</c> -- a kilometre: <c>0x462390</c> drops that far down from its probe and, when nothing is there, the
+    /// same distance up, which finds the surface again over a body that has gone under it.
+    /// </remarks>
+    public const double GroundDropUnits = 4096000.0;
+
     /// <summary>The factor the horizontal step is scaled by into the second ground-angle field.</summary>
     /// <remarks>Exactly <c>2/π</c>, to four more digits than the binary stores.</remarks>
     public const float GroundAngleScale = 0.63661975f;

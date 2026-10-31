@@ -687,6 +687,9 @@ public static class GraphicsMenu
         // slider that did nothing until the next launch would be worse than no slider.
         "r_reflection_texture",
 
+        // The original's levels of detail, for comparing with it: every preset draws models whole.
+        "r_model_lod",
+
         // What enters the traced world, which is a correctness control rather than a quality dial: the
         // defaults are what make a reflection the same in two sessions, and a player has no way to judge
         // a radius by looking. See RayTracingCVars.TracedWorldRadius.

@@ -104,6 +104,9 @@ public interface IShellHost
     /// <returns>The sizes; empty where the host cannot say, and the settings page then offers only the desktop's.</returns>
     IReadOnlyList<(int Width, int Height)> DisplayResolutions() => [];
 
+    /// <summary>Gets co-op through rooms, where this build can play it; <see langword="null"/> where it can't.</summary>
+    ICoopRooms? Coop => null;
+
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;
 }

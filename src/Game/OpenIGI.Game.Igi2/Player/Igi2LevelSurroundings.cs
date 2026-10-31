@@ -103,7 +103,7 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     }
 
     /// <summary>Gets the level's conveyor belts, by level id.</summary>
-    public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors { get; } = [];
+    public Dictionary<int, Interaction.Igi2ConveyorBeltTask> Conveyors { get; private init; } = [];
 
     /// <summary>Gets or sets the session's materials, which name a footing's material, or <see langword="null"/> for none.</summary>
     public Igi2GameMaterials? Materials { get; set; }
@@ -144,7 +144,13 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     public Igi2GameMaterial? Material(int row) => Materials?[row];
 
     public IIgi2SoundInstance? PlaySoundAt(string name, Vector3d position) =>
-        Owner is Igi2HumanPlayer ? StartSound(name) : sounds.New(name, position);
+        Owner is Igi2HumanPlayer && !IsRemote ? StartSound(name) : sounds.New(name, position);
+
+    /// <summary>
+    /// Gets a value indicating whether the owner is a player the machine does not look through: another client's player on a
+    /// server, heard where it stands like a soldier rather than at the listener.
+    /// </summary>
+    public bool IsRemote { get; private init; }
 
     public void PlaySound(string name) => StartSound(name);
 
@@ -159,7 +165,26 @@ internal sealed class Igi2LevelSurroundings(Igi2CollisionWorld world, Igi2Sounds
     private Vector3d View() => Owner?.View.Position ?? default;
 
     /// <summary>Gets the things the player may activate, in the order the stationary tree offers them.</summary>
-    public List<Interaction.IIgi2Activatable> Activatables { get; } = [];
+    public List<Interaction.IIgi2Activatable> Activatables { get; private init; } = [];
+
+    /// <summary>Makes the surroundings of another player standing in the same level, sharing everything that is the level's.</summary>
+    /// <returns>Its surroundings, heard where it stands and telling it no status messages; its owner is set once it is made.</returns>
+    public Igi2LevelSurroundings ForRemotePlayer() => new(World, sounds)
+    {
+        IsRemote = true,
+        Detection = Detection,
+        Pickups = Pickups,
+        Grenades = Grenades,
+        Models = Models,
+        Water = Water,
+        Conveyors = Conveyors,
+        Materials = Materials,
+        Particles = Particles,
+        Humans = Humans,
+        AiEvents = AiEvents,
+        Activatables = Activatables,
+        ById = ById,
+    };
 
     /// <summary>Gets or sets the level's things by task id, which a soldier's activation names.</summary>
     public IReadOnlyDictionary<int, Interaction.IIgi2Activatable>? ById { get; set; }

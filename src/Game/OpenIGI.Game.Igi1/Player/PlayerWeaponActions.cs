@@ -142,7 +142,7 @@ internal sealed class PlayerWeaponActions
             ? declared
             : WeaponAction.Stand;
 
-        weapons.Tick(input, view?.ClipEnded ?? false, body.IsGrounded, locomotion);
+        weapons.Tick(input, view?.ClipEnded ?? false, body.IsGrounded, locomotion, view is null ? null : view.CrossedEvent);
 
         if (weapons.State == HumanWeaponState.Medipack)
         {

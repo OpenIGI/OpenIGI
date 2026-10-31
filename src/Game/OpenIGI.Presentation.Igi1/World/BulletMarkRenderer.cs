@@ -23,8 +23,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// frame (<see cref="IGraphicsDevice.UpdateAnimatedMesh"/>), with each texture's marks drawn as an
 /// index range of it. The first version destroyed and re-created a mesh per texture group per frame
 /// and drew it in the same frame — the create-upload-draw churn that intermittently rasterises a
-/// one-frame garbage quad on a threaded driver, which is exactly what the tracer renderer had to be
-/// cured of. See <c>TracerTrailRenderer</c>.
+/// one-frame garbage quad on a threaded driver.
 /// </para>
 /// <para>
 /// The original makes each mark a child of the struck <i>object</i> (<c>0x47D380</c>), drawn against

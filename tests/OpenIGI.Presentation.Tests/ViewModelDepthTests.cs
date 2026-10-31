@@ -2,6 +2,7 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Presentation.Tests;
 

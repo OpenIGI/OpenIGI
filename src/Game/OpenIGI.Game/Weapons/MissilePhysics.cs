@@ -193,7 +193,7 @@ public sealed class MissileSimulation
         config ??= MissileConfig.ForType(type);
 
         // The rocket leaves the tube at the config's launch speed and thrust builds it up from there; the
-        // dummy 5 m/s the weapon table carries to keep carriers out of g_ballistics is not a real speed.
+        // dummy 5 m/s the weapon table carries for rocket carriers is not a real speed.
         Vector3f velocity = MissileFlight.LaunchVelocity(
             origin, target, type, config.LaunchMetresPerSecond, launcherAxis);
         if (velocity == default && !config.Gravity)

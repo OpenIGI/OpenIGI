@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 
@@ -235,6 +236,9 @@ public static class TouchControlsRenderer
                 painter.StrokePolygon(fold, stroke, ink);
                 Line(-0.3f, -0.82f, -0.3f, 0.62f);
                 Line(0.3f, -0.62f, 0.3f, 0.82f);
+                break;
+            case TouchButton.Talk:
+                KitIcons.Draw(painter, KitIcon.Microphone, c, size * 1.5f, ink);
                 break;
             case TouchButton.Binoculars:
                 Ring(-0.46f, 0.2f, 0.38f);

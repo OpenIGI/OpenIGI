@@ -1,6 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation;
@@ -8,9 +7,6 @@ namespace OpenIGI.Presentation;
 /// <summary>What a title's player has put in the world, drawn among it: the projectiles in the air and the marks its rounds left.</summary>
 public interface IMissionWorldView
 {
-    /// <summary>Gets the rounds in flight whose streaks are drawn, or <see langword="null"/> when there is no player to have fired any.</summary>
-    BallisticSimulation? Ballistics { get; }
-
     /// <summary>Gets whether the player's weapon is drawn in its hand, and the shot it is on.</summary>
     /// <param name="shotSequence">The player's shot counter, which the muzzle's parts follow.</param>
     /// <returns><see langword="false"/> when there is no player or what it holds hides its weapon.</returns>

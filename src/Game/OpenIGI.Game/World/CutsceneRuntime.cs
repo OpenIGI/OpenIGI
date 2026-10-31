@@ -4,6 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Net;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 using static OpenIGI.Game.World.DeclaredTaskValues;
@@ -435,12 +436,56 @@ public sealed class CutsceneRuntime
         return state;
     }
 
+    // A co-op server's scenes, run and finished, two bits a scene in declaration order: a client's scenes run when the
+    // server's do rather than when their own expressions say.
+    private bool[]? _mirroredRuns;
+    private bool[]? _mirroredFinished;
+
+    /// <summary>Gets or sets whether the scenes run when a co-op server's do, rather than when their own expressions hold.</summary>
+    public bool Mirrored { get; set; }
+
+    /// <summary>Writes which scenes are running and which have finished, for a co-op server's clients.</summary>
+    /// <param name="writer">Where to.</param>
+    public void WriteRuns(BitWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteVarUInt((uint)_scenes.Count);
+        foreach (CutsceneSceneState scene in _scenes)
+        {
+            writer.WriteBool(scene.Task.IsRun);
+            writer.WriteBool(scene.Task.IsFinished);
+        }
+    }
+
+    /// <summary>Takes a co-op server's scenes, as <see cref="WriteRuns"/> wrote them.</summary>
+    /// <param name="reader">The scenes.</param>
+    public void ReadRuns(ref BitReader reader)
+    {
+        int count = (int)reader.ReadVarUInt();
+        bool[] runs = new bool[_scenes.Count];
+        bool[] finished = new bool[_scenes.Count];
+        for (int i = 0; i < count && !reader.IsOverflowed; i++)
+        {
+            bool run = reader.ReadBool();
+            bool done = reader.ReadBool();
+            if (i < runs.Length)
+            {
+                runs[i] = run;
+                finished[i] = done;
+            }
+        }
+
+        _mirroredRuns = runs;
+        _mirroredFinished = finished;
+    }
+
     /// <summary>Gets the currently running scene, if any.</summary>
     public CutSceneTask? ActiveScene => _scenes.LastOrDefault(
         static state => state.Task.IsRun && ConditionalContainerGate.IsTaskActive(state.Task))?.Task;
 
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
-    public void RequestBreak() => _breakRequested = true;
+    /// <remarks>A co-op client's scenes are its server's to break: it asks nothing of its own.</remarks>
+    public void RequestBreak() => _breakRequested = !Mirrored;
 
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
@@ -525,9 +570,22 @@ public sealed class CutsceneRuntime
             scene.IsFinished = false;
         }
 
-        scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
-            ? scene.InitialRun && !scene.IsFinished
-            : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+        int mirrored = Mirrored ? _scenes.IndexOf(state) : -1;
+        if (mirrored >= 0)
+        {
+            // A co-op client's scene runs when the server's does, and has finished when the server's has.
+            scene.IsRun = _mirroredRuns is { } runs && mirrored < runs.Length && runs[mirrored];
+            if (_mirroredFinished is { } finished && mirrored < finished.Length && finished[mirrored])
+            {
+                scene.IsFinished = true;
+            }
+        }
+        else
+        {
+            scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
+                ? scene.InitialRun && !scene.IsFinished
+                : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+        }
 
         if (!wasRun && scene.IsRun)
         {

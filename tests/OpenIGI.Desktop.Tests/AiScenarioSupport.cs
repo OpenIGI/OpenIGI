@@ -12,6 +12,8 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Platform.Desktop.Logging;
 using OpenIGI.TestSupport;
+using OpenIGI.Platform.Headless;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
 

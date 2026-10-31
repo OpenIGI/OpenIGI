@@ -109,4 +109,19 @@ public interface IWebAudioPage
     /// <summary>Stops whatever a voice is sounding.</summary>
     /// <param name="voice">The slot index.</param>
     void StopVoice(int voice);
+
+    /// <summary>Starts listening to the microphone, asking the browser's leave the first time.</summary>
+    /// <param name="sampleRate">The rate the samples are wanted at.</param>
+    /// <returns><see langword="true"/> when there is a context to listen through.</returns>
+    bool OpenMicrophone(int sampleRate) => false;
+
+    /// <summary>Takes the microphone's samples heard since the last call.</summary>
+    /// <param name="destination">Where to.</param>
+    /// <returns>How many were taken.</returns>
+    int ReadMicrophone(Span<short> destination) => 0;
+
+    /// <summary>Stops listening to the microphone.</summary>
+    void CloseMicrophone()
+    {
+    }
 }

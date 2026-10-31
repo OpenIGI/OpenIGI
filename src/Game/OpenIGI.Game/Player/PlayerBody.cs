@@ -813,9 +813,12 @@ public sealed class PlayerBody
             }
         }
 
+        // 0x462390's drop: from four metres over the probe a long way down, and only when nothing is there, up. A body
+        // whose feet have dipped under a steep slope -- sliding down one does every tick -- meets it again on the way.
         if (terrain is not null
             && !found
-            && terrain.TryGetGround(position.X, position.Y, from, out TerrainGround ground))
+            && (terrain.TryDrop(position.X, position.Y, from, HumanGroundQuery.GroundDropUnits, upward: false, out TerrainGround ground)
+                || terrain.TryDrop(position.X, position.Y, from, HumanGroundQuery.GroundDropUnits, upward: true, out ground)))
         {
             found = true;
             height = ground.Height;

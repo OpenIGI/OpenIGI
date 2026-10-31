@@ -47,10 +47,11 @@ internal static class PlayerWeaponsDriver
         PlayerWeapons weapons,
         PlayerInputState input,
         PlayerInputFrame frame,
-        bool clipEnded = false)
+        bool clipEnded = false,
+        int clipEvent = -1)
     {
         input.Accept(frame);
-        weapons.Tick(input, clipEnded, onGround: true);
+        weapons.Tick(input, clipEnded, onGround: true, crossedEvent: id => id == clipEvent);
 
         // Where 0x464BD0 steps the weapon-change lowering: after the machine has read it. Without this
         // a swap never completes, because the state that swaps waits for the rig to arrive.

@@ -111,6 +111,10 @@ public sealed class TerrainData : IGroundHeightField
         TerrainHeightQuery.TryGetGround(this, x, y, z, aboveUnits, out ground);
 
     /// <inheritdoc/>
+    public bool TryDrop(double x, double y, double z, double range, bool upward, out TerrainGround ground) =>
+        TerrainHeightQuery.TryDrop(this, x, y, z, range, upward, out ground);
+
+    /// <inheritdoc/>
     /// <remarks>
     /// The terrain half of the mover's own swept cast. It answers with the first triangle the segment
     /// crosses whichever way it faces; the caller keeps or drops it on the normal, as it always did.

@@ -81,6 +81,8 @@ public sealed class PlayerWeapons
     private AmmoType? _m203Ammunition;
     private bool _firedThisTick;
     private int _shotSequence;
+    private HeldGun? _mineGun;
+    private bool _mineTriggerDown;
     private PlayerCheatOptions _cheats = PlayerCheatOptions.Retail;
 
     /// <summary>Initializes a new instance of the <see cref="PlayerWeapons"/> class.</summary>
@@ -136,6 +138,31 @@ public sealed class PlayerWeapons
 
     /// <summary>Gets the cheats in force on this inventory.</summary>
     public PlayerCheatOptions Cheats => _cheats;
+
+    /// <summary>Gets whether ammunition is unlimited (<c>byte_56E214</c>), which the one-shot states test before the pouch.</summary>
+    internal bool InfiniteAmmo => _cheats.InfiniteAmmo;
+
+    /// <summary>
+    /// Gets the mine the weapon asked to lay this tick (<c>0x4755A0</c>): the eye and the view's direction, on the tick the
+    /// trigger byte rises; <see langword="null"/> otherwise. The owner traces it and reports back with
+    /// <see cref="MineLaid"/>.
+    /// </summary>
+    public MinePlacementRequest? MinePlacement { get; private set; }
+
+    /// <summary>The mine the weapon asked for went down: a round leaves the magazine and the shot is counted (<c>0x4755A0</c>).</summary>
+    public void MineLaid()
+    {
+        if (InHand is { } held && held.Gun.DrawsFromMagazine && held.Gun.State.RoundsInClip > 0)
+        {
+            held.Gun.State.RoundsInClip--;
+        }
+
+        _firedThisTick = true;
+        unchecked
+        {
+            _shotSequence++;
+        }
+    }
 
     /// <summary>
     /// Consumes a binocular toggle after the requested weapon has reached the hand. The request is
@@ -375,6 +402,7 @@ public sealed class PlayerWeapons
     /// resyncs to it, which is how a weapon goes back to its stand pose after a shot without either
     /// machine referring to the other.
     /// </param>
+    /// <param name="crossedEvent">Whether the view's clip crossed an event on its last tick, which the throw reads.</param>
     /// <exception cref="ArgumentNullException"><paramref name="input"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// The original's order, kept: the weapon cycler runs first (it is what sets the pending id the
@@ -386,7 +414,8 @@ public sealed class PlayerWeapons
         PlayerInputState input,
         bool clipEnded,
         bool onGround,
-        WeaponAction locomotionAction = WeaponAction.Stand)
+        WeaponAction locomotionAction = WeaponAction.Stand,
+        Func<int, bool>? crossedEvent = null)
     {
         ArgumentNullException.ThrowIfNull(input);
 
@@ -401,7 +430,7 @@ public sealed class PlayerWeapons
         _selector.SelectCategory(input);
         _selector.CycleWeapons(input);
 
-        _machine.Tick(input, clipEnded, onGround, locomotionAction);
+        _machine.Tick(input, clipEnded, onGround, locomotionAction, crossedEvent);
     }
 
     /// <summary>Executes one cooldown-eligible medipack dose while the syringe loop is held.</summary>
@@ -427,6 +456,10 @@ public sealed class PlayerWeapons
     /// request here therefore matters: otherwise its last <see cref="FiredThisTick"/> value and firing
     /// state remain latched for the presentation layer after the player is dead.
     /// </remarks>
+    /// <summary>Takes the weapons out of death, as a co-op player is brought back.</summary>
+    public void Revive() => _machine.Revive();
+
+    /// <summary>Stops the weapons because the player has died.</summary>
     public void StopForDeath()
     {
         _machine.StopForDeath();
@@ -522,9 +555,29 @@ public sealed class PlayerWeapons
         _m203Shots.Clear();
         _firedThisTick = false;
         TriggerHeldThisTick = false;
+        MinePlacement = null;
 
         if (InHand is not { } held)
         {
+            return false;
+        }
+
+        // The mine weapon's use handler (0x4755A0) lays one only on the tick its trigger rises -- the gun keeps last tick's
+        // byte (+0x24C) -- and takes a round only if it did; nothing else of a gun's firing applies.
+        if (held.Weapon.Category == (WeaponCategory)PlacedCategory)
+        {
+            if (!ReferenceEquals(_mineGun, held.Gun))
+            {
+                _mineGun = held.Gun;
+                _mineTriggerDown = false;
+            }
+
+            if (_machine.WantFire && !_mineTriggerDown)
+            {
+                MinePlacement = new MinePlacementRequest(eye, forward, _machine.WantRemoteMine);
+            }
+
+            _mineTriggerDown = _machine.WantFire;
             return false;
         }
 
@@ -586,20 +639,12 @@ public sealed class PlayerWeapons
 
         held.Gun.Tick(_machine.WantFire);
 
-        float? speedOverride = held.Weapon.Category == WeaponCategory.Grenade && _machine.ThrowReleased
-            ? ChargedThrowSpeed(held.Weapon.MuzzleVelocity, _machine.ThrowChargeTicks)
-            : null;
-        GunFireResult result = held.Gun.Fire(_machine.WantFire, eye, forward, right, up, _random, speedOverride);
+        GunFireResult result = held.Gun.Fire(_machine.WantFire, eye, forward, right, up, _random);
         _firedThisTick = result.Fired;
 
         // 0x478BA0 clears its trigger for a finished burst and an empty magazine, but not for the cooldown between rounds.
         TriggerHeldThisTick = _machine.WantFire
             && result.Block is not (GunFireBlock.BurstComplete or GunFireBlock.Empty or GunFireBlock.TriggerReleased);
-
-        if (result.Fired && held.Weapon.Category == (WeaponCategory)PlacedCategory)
-        {
-            _machine.ClearPlacingFirePending();
-        }
 
         if (result.Fired)
         {
@@ -637,47 +682,31 @@ public sealed class PlayerWeapons
     /// (<c>0x40F590</c>) and stops it on release (<c>0x40F640</c>). This is that window: in the throw
     /// state with the fire button still held.
     /// </remarks>
-    public bool IsChargingThrow => State == HumanWeaponState.Throwing && !_machine.ThrowReleased;
+    public bool IsChargingThrow => State == HumanWeaponState.Throwing && _machine.ThrowCooking;
 
-    /// <summary>Turns a throw's charge into its release speed, in metres a second.</summary>
-    /// <param name="muzzleVelocity">The weapon's own muzzle velocity — fifteen for both grenades.</param>
-    /// <param name="chargeTicks">How many ticks the button was held.</param>
-    /// <returns>The speed the grenade leaves at.</returns>
+    /// <summary>Turns a throw's cook into the grenade's speed, in units a tick -- <c>0x462E50</c>'s grenade case.</summary>
+    /// <param name="throwSpeed">The weapon row's thirteenth argument (record <c>+1632</c>), the muzzle velocity: 15 for both grenades.</param>
+    /// <param name="chargeTicks">The cook, <c>Human+1248</c>.</param>
+    /// <returns>The speed the grenade leaves at, along the view's forward axis, in units a tick.</returns>
     /// <remarks>
-    /// <para>
-    /// The curve is retail's, from <c>0x462E50</c>'s category-4 special case:
-    /// <c>t = clamp(held, 3, 60); s = pow(t·50, 0.7) + t·0.1</c>, times a per-weapon scale — so a
-    /// tenth-of-a-second tap lobs and a two-second wind-up hurls, on a 0.7 power law rather than a
-    /// line.
-    /// </para>
-    /// <para>
-    /// <b>The scale's field (<c>record+1632</c>) is unresolved</b>, so the calibration is chosen and
-    /// measured in play: a tap throws at <see cref="MinimumThrowShare"/> of the muzzle velocity —
-    /// a deliberate short toss that still clears a crate rather than a drop at the feet — and a
-    /// full two-second charge at <see cref="MaximumThrowShare"/>, the long hurl. The retail curve
-    /// shapes everything between.
-    /// </para>
+    /// <c>t = clamp(cook, 3, 60); k = (pow(t * 50, 0.7) + (float)t * 0.1f) * throwSpeed</c>, which replaces the thrower's own
+    /// velocity in the fire message: about 3.7 m/s for the shortest cook and 30.5 m/s for a two-second one.
     /// </remarks>
-    public static float ChargedThrowSpeed(float muzzleVelocity, int chargeTicks)
+    public static double ThrowSpeedUnitsPerTick(float throwSpeed, int chargeTicks)
     {
-        float held = Math.Clamp(chargeTicks, 3, 60);
-        float curve = MathF.Pow(held * 50f, 0.7f) + (held * 0.1f);
-        float tap = MathF.Pow(3f * 50f, 0.7f) + 0.3f;
-        float fullCharge = MathF.Pow(60f * 50f, 0.7f) + 6f;
+        double t = chargeTicks;
+        if (3.0 > t)
+        {
+            t = 3.0;
+        }
+        else if (60.0 < t)
+        {
+            t = 60.0;
+        }
 
-        float share = (curve - tap) / (fullCharge - tap);
-        return muzzleVelocity * (MinimumThrowShare + ((MaximumThrowShare - MinimumThrowShare) * share));
+        float tf = (float)t;
+        return (Math.Pow(t * 50.0, 0.7) + (tf * (double)0.1f)) * throwSpeed;
     }
-
-    /// <summary>What fraction of the muzzle velocity a minimal tap throws at.</summary>
-    public const float MinimumThrowShare = 0.45f;
-
-    /// <summary>What fraction of the muzzle velocity a full charge throws at.</summary>
-    /// <remarks>
-    /// Above one on purpose: the table's fifteen metres a second reads as the ordinary throw, and a
-    /// two-second wind-up should visibly out-range it.
-    /// </remarks>
-    public const float MaximumThrowShare = 1.8f;
 
     /// <summary>Gets whether a one-shot action finished on the last tick — the original's <c>Human+1232</c>.</summary>
     public bool ActionCompleted => _machine.ActionComplete;

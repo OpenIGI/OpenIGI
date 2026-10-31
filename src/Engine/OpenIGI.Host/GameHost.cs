@@ -150,7 +150,6 @@ public sealed partial class GameHost : IDisposable
     /// <summary>The pull-in ray, kept so a frame does not allocate one; rebuilt when the level's does.</summary>
 
 
-    private int _tracerSkipsLogged;
 
     // What the level says about its own light, for a title that authors that rather than a sky. Null for
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
@@ -245,7 +244,6 @@ public sealed partial class GameHost : IDisposable
     private int _missionCycleMission;
 
     private IBulletMarkPresenter? _marks;
-    private TracerTrailRenderer? _tracers;
 
     // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
     // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
@@ -741,6 +739,12 @@ public sealed partial class GameHost : IDisposable
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
             if (outcome == FrameOutcome.Tick && (_session.FailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel))
             {
+                // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
+                if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
+                {
+                    hold.Pump(_hosted);
+                }
+
                 continue;
             }
 
@@ -913,7 +917,6 @@ public sealed partial class GameHost : IDisposable
         _tacticalComputer?.Dispose();
         _messages?.Dispose();
         _marks?.Dispose();
-        _tracers?.Dispose();
         _effects.Dispose();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();

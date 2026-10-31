@@ -143,6 +143,10 @@ public sealed class DoorState
     /// <summary>Commands the door closed, however it stands.</summary>
     public void CommandClosed() => _latch = false;
 
+    /// <summary>Gets whether the door is commanded open: where it is heading, whatever it has reached.</summary>
+    /// <remarks>What a co-op server tells its clients; each client's own door then swings to it as the server's does.</remarks>
+    public bool IsCommandedOpen => _latch;
+
     /// <summary>
     /// A door that moved this tick found something in its doorway (<c>0x446D10</c> at <c>0x447323</c>): it is sent fully open,
     /// and is neither open nor closed for the tick.

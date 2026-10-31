@@ -46,14 +46,13 @@ public sealed partial class GameHost
         // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
         // same authored haze through the froxel volume instead, and their models are lit by the
         // G-buffer pass rather than by this one.
-        // The original's levels of detail, on its own look only: the other presets draw every model whole.
+        // Every model whole, under every preset; the original's levels of detail only when asked for (r_model_lod).
         if (_world is { } detailedWorld)
         {
-            bool vanilla = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
-            detailedWorld.Lod = vanilla ? _modelLod : null;
+            detailedWorld.Lod = FrameCVars.ModelLod.Value ? _modelLod : null;
 
-            // And its face groups as it draws them: the opaque ones without an alpha test, the sorted ones blended after.
-            detailedWorld.FaceGroupBlending = vanilla;
+            // The original's face groups on its own look: the opaque ones without an alpha test, the sorted ones blended after.
+            detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
         }
 
         bool retailFog = FogCVars.RetailFog.Value;
@@ -241,6 +240,10 @@ public sealed partial class GameHost
         _soldiers?.ObserveView(eye, projection);
         _soldiers?.Draw(eye, projection);
 
+        // A co-op look being chosen, standing in the level behind the menu.
+        _previewBodies?.ObserveView(eye, projection);
+        _previewBodies?.DrawPreviewBody(eye, projection);
+
         // Whatever the title, or a mod, draws for particular tasks of the level (PresenterRegistry.ForTask).
         foreach (ITaskPresenter taskPresenter in _taskPresenters)
         {
@@ -371,37 +374,10 @@ public sealed partial class GameHost
             _soldiers?.DrawGroundShadows(eye, projection);
         }
 
-        // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
-        // the geometry pass they are written into the g-buffer as scenery and come out lit
-        // and fogged (a dim grey square was exactly what that looked like). Here they draw
-        // additively over the finished scene, emissive like the muzzle flame, testing the
-        // world's depth but writing none.
-        if (_tracers is not null && WorldView?.Ballistics is { } ballistics)
-        {
-            _tracers.Draw(
-                ballistics,
-                eye,
-                projection,
-                smoothPresentation ? tickBlend : 1f);
-
-            // The finite guard's confession, rate-limited: a growing count is a NaN reaching
-            // the tracer geometry -- the exact stuff one-frame black squares were made of.
-            if (_tracers.SkippedQuads > _tracerSkipsLogged
-                && (_tracerSkipsLogged == 0 || _tracers.SkippedQuads - _tracerSkipsLogged >= 100))
-            {
-                _tracerSkipsLogged = _tracers.SkippedQuads;
-                _logger.Warning(
-                    "Tracer",
-                    $"{_tracers.SkippedQuads} tracer quad(s) carried a non-finite value and were not drawn.");
-            }
-        }
-
         // The rounds' tracers (one pass in eleven, and every pass through a wall): the original's thin
-        // unfogged line under the vanilla preset, the remaster's glowing streak under every other. With the
-        // remaster's ballistic AI streaks on, those stand for the same rounds. Sized against the image they
-        // are rasterised into.
-        if (_soldiers is { } tracerSoldiers
-            && !(GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value))
+        // unfogged line under the vanilla preset, the remaster's glowing streak under every other. Sized against
+        // the image they are rasterised into.
+        if (_soldiers is { } tracerSoldiers)
         {
             tracerSoldiers.DrawGunShotTracers(
                 eye,

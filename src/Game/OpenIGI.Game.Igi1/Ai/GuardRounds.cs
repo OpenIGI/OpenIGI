@@ -118,14 +118,9 @@ public sealed class GuardRounds
             from.Y + ((at.Y - from.Y) * 4.0),
             from.Z + ((at.Z - from.Z) * 4.0));
 
-        // A soldier's round is already in its gun's GunShot task, to be marched after the walk; all that is left here is
-        // the streak it draws.
+        // A soldier's round is already in its gun's GunShot task, to be marched after the walk.
         if (shooter is not null && _soldiers.MarchesRounds)
         {
-            Vector3d streakTo = _trace(new WorldTraceRequest(from, to, WorldTraceMask.World), out WorldTraceHit surface)
-                ? surface.Position
-                : to;
-            SpawnStreak(player, from, streakTo, weapon);
             return;
         }
 
@@ -252,12 +247,6 @@ public sealed class GuardRounds
                 _soldiers.NotifyRoundPassed(from, stop, shooter, struck: null);
             }
         }
-
-        // The streak, before the outcome: visual only, along the very ray this handler is
-        // resolving, dying where the world stops it. Whether the round connects is decided
-        // below exactly as ever -- from inside the head, a streak that reaches the eye and
-        // a round that hits look the same.
-        SpawnStreak(player, from, worldBlocked ? worldHit.Position : to, weapon);
 
         void MarkTheImpact()
         {
@@ -496,7 +485,13 @@ public sealed class GuardRounds
     /// <summary>What a contact on the player's body carries to the strike.</summary>
     private sealed record PlayerContact(HumanHit Hit);
 
+    /// <summary>What a contact on a co-op partner's body carries to the strike.</summary>
+    private sealed record PartnerContact(Multiplayer.Igi1NetworkPlayer Partner, HumanHit Hit);
+
     /// <summary>The world a soldier's marched round is cast through: placed objects and terrain, the soldiers, the player.</summary>
+    // A grenade or laid mine a guard's round met.
+    private sealed record ExplosiveContact(object Target);
+
     private sealed class MarchedWorld(GuardRounds rounds) : IGunShotWorld
     {
         public bool Cast(GunShotRound round, Vector3d start, Vector3d limit, out GunShotContact contact)
@@ -529,6 +524,22 @@ public sealed class GuardRounds
                 found = true;
             }
 
+            // A grenade or a laid mine is a solid object of the world like any other the round's trace meets.
+            if (mission.Player?.Grenades is { } grenades
+                && grenades.TryStrike(start, limit, out double explosiveDistance, out object? explosive)
+                && explosiveDistance < best)
+            {
+                Vector3d along = limit - start;
+                double length = along.Length;
+                Vector3d at = length > 0.0 ? start + (along * (explosiveDistance / length)) : start;
+                Vector3f facing = length > 0.0
+                    ? new Vector3f((float)(-along.X / length), (float)(-along.Y / length), (float)(-along.Z / length))
+                    : default;
+                contact = new GunShotContact(at, facing, explosiveDistance, null, null, HasObject: true, StruckHuman: false, new ExplosiveContact(explosive!));
+                best = explosiveDistance;
+                found = true;
+            }
+
             if (rounds._soldiers.TryCastRoundAtSoldiers(start, limit, shooter, side, out SoldierView? struck, out HumanHit body)
                 && struck is not null
                 && body.Distance < best)
@@ -552,7 +563,27 @@ public sealed class GuardRounds
                 HumanBodyCrossing first = crossings[0];
                 HumanHit hit = first.Hit with { Material = first.Material, IsExit = !first.Entering };
                 contact = BodyContact(hit, new PlayerContact(hit));
+                best = hit.Distance;
                 found = true;
+            }
+
+            // A co-op session's other players are bodies of the player's side like the player, met the same way.
+            foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+            {
+                if (!partner.IsDead
+                    && side != rounds._soldiers.PlayerTeam
+                    && rounds._soldiers.TryCastPlayerBody(start, limit, partner.Player.Body.Position, partner.Player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> partnerCrossings)
+                    && partnerCrossings.Count > 0
+                    && partnerCrossings[0].Hit.Distance < best
+                    && mission.SoundRandom.NextDouble() <= round.Probability
+                    && mission.SoundRandom.NextDouble() <= round.Probability)
+                {
+                    HumanBodyCrossing first = partnerCrossings[0];
+                    HumanHit hit = first.Hit with { Material = first.Material, IsExit = !first.Entering };
+                    contact = BodyContact(hit, new PartnerContact(partner, hit));
+                    best = hit.Distance;
+                    found = true;
+                }
             }
 
             return found;
@@ -570,8 +601,17 @@ public sealed class GuardRounds
                 case PlayerContact player:
                     rounds.StrikePlayerWith(player.Hit, round.Origin, end, round.Weapon, round.DamageFactor, round.Shooter as SoldierView);
                     break;
+                case PartnerContact partner:
+                    // The player's own hit handler, for a player that holds no task in the level to be handed it.
+                    rounds._mission.PlayerEvents?.TakeRound(
+                        partner.Partner,
+                        new Igi1WeaponHit(partner.Hit, round.Origin, end, round.DamageFactor, round.Weapon.Category, round.Shooter as SoldierView, FromPlayer: false));
+                    break;
                 case WorldTraceHit surface:
                     rounds._blasts.ApplyRoundContact(surface.Position, surface.Owner, surface.Placement, round.DamageFactor);
+                    break;
+                case ExplosiveContact explosive:
+                    GrenadeSimulation.Strike(explosive.Target, round.DamageFactor);
                     break;
             }
         }
@@ -583,6 +623,11 @@ public sealed class GuardRounds
 
         public void Effect(GunShotRound round, in GunShotRecord record)
         {
+            if (record.Contact.Payload is ExplosiveContact)
+            {
+                return;
+            }
+
             if (record.Contact.Payload is not WorldTraceHit surface)
             {
                 rounds._impacts.RunGunShotEffect(
@@ -636,31 +681,5 @@ public sealed class GuardRounds
                 StruckHuman: true,
                 payload);
         }
-    }
-
-    // The streak a soldier's round draws, to where the world stops it: visual only.
-    private void SpawnStreak(PlayerCamera player, Vector3d from, Vector3d end, WeaponType weapon)
-    {
-        if (!GameplayCVars.Ballistics.Value || !GameplayCVars.BallisticsAiTracers.Value)
-        {
-            return;
-        }
-
-        Vector3d line = end - from;
-        double length = line.Length;
-        if (length <= 1e-6)
-        {
-            return;
-        }
-
-        AmmoType? ammo = _mission.AmmoTypes is { } table && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
-            ? found
-            : null;
-        player.Ballistics.SpawnVisual(
-            from,
-            new Vector3f((float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length)),
-            end,
-            weapon,
-            ammo);
     }
 }

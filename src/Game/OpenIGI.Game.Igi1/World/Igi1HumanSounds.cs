@@ -111,7 +111,7 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     /// <remarks>The pitch a sound definition plays at is the sound layer's own; the original draws nothing for it from the level stream.</remarks>
     public void PlayMarchedRoundSound(string definition, Vector3d position)
     {
-        if (definition.Length == 0 || !GameplayCVars.BallisticsImpactSounds.Value)
+        if (definition.Length == 0 || !GameplayCVars.ImpactSounds.Value)
         {
             return;
         }
@@ -130,7 +130,7 @@ public sealed class Igi1HumanSounds(MissionWorld mission, IMissionSoundHost host
     {
         if (host.SoundOutput is not { } sounds
             || mission.Materials is null
-            || !GameplayCVars.BallisticsImpactSounds.Value
+            || !GameplayCVars.ImpactSounds.Value
             || host.Game.Clock.TickCount < _impactQuietUntil)
         {
             return;

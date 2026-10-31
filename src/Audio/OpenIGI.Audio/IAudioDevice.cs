@@ -119,4 +119,9 @@ public interface IAudioDevice : IDisposable
     /// <summary>Advances the device: retires finished voices and feeds streams.</summary>
     /// <remarks>Called once a frame from the game thread.</remarks>
     void Update();
+
+    /// <summary>Opens the default microphone, mono 16-bit at a rate, for a player to be heard by others.</summary>
+    /// <param name="sampleRate">The rate, in samples a second.</param>
+    /// <returns>The microphone, or <see langword="null"/> where there is none or it may not be opened.</returns>
+    IMicrophone? OpenMicrophone(int sampleRate) => null;
 }

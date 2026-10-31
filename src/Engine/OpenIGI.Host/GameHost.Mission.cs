@@ -33,6 +33,12 @@ public sealed partial class GameHost
             return;
         }
 
+        // A co-op host's players load the mission alongside it, from now rather than once its own is up.
+        if (TickObserver is Multiplayer.ISessionHold hosting)
+        {
+            hosting.AnnounceGoing(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         // The hold starts before anything blocks, and so does the panel. Everything below this line
         // runs on the render thread without presenting, so without a frame pushed out here the window
         // simply freezes on whatever it was last showing for the half second it takes -- and the warm-up
@@ -294,8 +300,6 @@ public sealed partial class GameHost
             _heldWeapon?.Dispose();
             _hud?.Dispose();
             _marks?.Dispose();
-            _tracers?.Dispose();
-            _tracers = null;
             _effects.Release();
             _heldWeapon = null;
 
@@ -313,11 +317,6 @@ public sealed partial class GameHost
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
                 _marks = _presentation.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(EffectsRequest());
-
-                // The ballistic streaks, beside the marks they end in. Cheap to have around: with
-                // g_ballistics off nothing is ever spawned and Draw returns at the count check.
-                _tracers?.Dispose();
-                _tracers = new TracerTrailRenderer(_device);
 
                 // The world's effects: the bursts where rounds land, the original's own dust, chips and blood,
                 // the fireball every blast shares, and the smoke rockets and blasts leave.
@@ -384,7 +383,13 @@ public sealed partial class GameHost
                     && playerBodySet is { } bodySet
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
-                    bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma);
+                    // A co-op partner's look this level doesn't ship is borrowed from one that does; and so is this
+                    // player's own, which it is seen in climbing or fallen as the others see it.
+                    bodies.BorrowLevel = level => Borrow(loaded, _resources, level);
+                    string? look = TickObserver is Multiplayer.ISessionLook { OwnSkin.Length: > 0 } session
+                        ? Game.Multiplayer.PlayerSkins.Of(session.OwnSkin).Model
+                        : null;
+                    bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma, look);
                 }
 
                 EndStage("standing the player up and building its third-person body");
@@ -587,7 +592,6 @@ public sealed partial class GameHost
         _remasteredHud?.Dispose();
         _debugOverlay?.Dispose();
         _marks?.Dispose();
-        _tracers?.Dispose();
         _effects.Release();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
@@ -611,7 +615,6 @@ public sealed partial class GameHost
         _remasteredHud = null;
         _debugOverlay = null;
         _marks = null;
-        _tracers = null;
         _cameraStatusLights = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
@@ -691,7 +694,20 @@ public sealed partial class GameHost
     private void TickMission(FrameLoopState state, FrameOutcome outcome)
     {
         _missionHost.State = state;
+
+        // A mission that serves a session itself (I.G.I.) is observed around its tick; a title's own player is observed around
+        // its own (GameHost.TitlePlayer), so neither is seen twice.
+        bool observed = outcome == FrameOutcome.Tick && _hosted is Game.Multiplayer.IReplicatedTitle && TickObserver is not null;
+        if (observed)
+        {
+            TickObserver!.BeforeTitleTick(_hosted);
+        }
+
         _hosted.Tick.Run(outcome == FrameOutcome.Tick);
+        if (observed)
+        {
+            TickObserver!.AfterTitleTick(_hosted);
+        }
     }
 
     /// <summary>What the player's rounds struck, heard and seen: the impact sounds, the sparks and dust, and the rockets' trails.</summary>
@@ -699,8 +715,7 @@ public sealed partial class GameHost
     {
         IHostedPlayer player = HostedPlayer!;
 
-        // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
-        // material table, where the round arrived rather than where it was fired.
+        // What this tick's rounds landed on -- dirt, steel or flesh, out of the material table.
         _hosted.Sounds.PlayPlayerImpacts();
 
         // The same impacts, seen: sparks and dust composed from the struck material.
@@ -713,7 +728,6 @@ public sealed partial class GameHost
         // it was born.
         _hosted.Impacts.Tick();
 
-        SpawnBallisticImpactParticles();
         _hosted.Impacts.SpawnPlayerImpacts();
 
         // The launcher rockets in the air lay their smoke trail, one column of puffs per

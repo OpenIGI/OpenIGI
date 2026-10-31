@@ -492,6 +492,12 @@ public sealed partial class GameHost
             float menuCameraElapsed = Math.Clamp((menuCameraNow - state.LastMenuCameraMilliseconds) / 1000f, 0f, 0.1f);
             state.LastMenuCameraMilliseconds = menuCameraNow;
             eye = _showcaseCamera.Update(menuCameraElapsed);
+
+            // A look being chosen holds the menu's eye on it, the orbit carrying on unseen behind.
+            if (_previewShot is { } lookShot)
+            {
+                eye = lookShot.Eye;
+            }
         }
         else if (mapScene is { } liveMap)
         {

@@ -1,0 +1,6 @@
+
+# STUN/TURN (tools/turn): Caddy only fetches and renews turn.openigi.com's certificate, which coturn uses for TURN over
+# TLS on 5349; tls-cert.sh copies it across. The name is DNS-only, so the ACME challenge reaches this origin directly.
+turn.openigi.com {
+	respond 404
+}

@@ -15,6 +15,9 @@ public sealed partial class GameHost
     private readonly CutsceneSkipHold _cutsceneSkip = new();
     private int _lastCutsceneSkipMilliseconds;
 
+    // Whether a co-op client's scene was playing last frame, to cut its sounds and messages as the host's ends it.
+    private bool _followedScene;
+
     /// <summary>Advances the skip hold by a frame, and breaks the host's cutscene the frame it completes.</summary>
     /// <param name="state">The frame loop's state.</param>
     private void UpdateCutsceneSkip(FrameLoopState state)
@@ -24,10 +27,21 @@ public sealed partial class GameHost
         _lastCutsceneSkipMilliseconds = now;
 
         bool free = !_menuFlow.MenuMode && !state.Console.IsOpen;
-        bool hostCutscene = free && _mission.Cutscenes?.IsPlaying == true;
+        // A co-op client's scenes end when its host's do: the host skips them, for everyone.
+        bool hostCutscene = free && _mission.Cutscenes?.IsPlaying == true && TickObserver is not Multiplayer.ISessionFollower;
         bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true };
         // On a touch screen the whole screen is the key: a finger held anywhere fills the ring.
         bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown;
+
+        // A scene the host ended -- skipped, often -- is cut here as the host's skip cut it there.
+        bool followed = TickObserver is Multiplayer.ISessionFollower && _mission.Cutscenes?.IsPlaying == true;
+        if (_followedScene && !followed)
+        {
+            _cutsceneSounds.StopAll();
+            _mission.Objectives?.ClearCutsceneMessages();
+        }
+
+        _followedScene = followed;
 
         if (_cutsceneSkip.Update(hostCutscene || titleCutscene, held, seconds)
             && hostCutscene)

@@ -134,6 +134,57 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
     /// <summary>Whether a soldier is a generator's: its body leaves the world in sight or not (<c>0x488610</c> parent test).</summary>
     public bool IsGenerated(SoldierView view) => GuardGenerators.ContainsValue(view);
 
+    /// <summary>Gets the generator whose current life a soldier is, or <see langword="null"/>.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>The generator.</returns>
+    public GuardGeneratorTask? GeneratorOf(SoldierView view)
+    {
+        foreach ((GuardGeneratorTask generator, SoldierView life) in GuardGenerators)
+        {
+            if (ReferenceEquals(life, view))
+            {
+                return generator;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A co-op client's replacement for a generator's dead guard, made when the server made its own.</summary>
+    /// <param name="generatorId">The generator's task id.</param>
+    /// <param name="runtimeId">The runtime id the server gave its replacement, which this one takes.</param>
+    /// <returns>The replacement, or <see langword="null"/> when there is nothing to replace.</returns>
+    /// <remarks>
+    /// A client's guards are the server's puppets and run no mind, so a dead one never takes its own body out of the world
+    /// and the client's generator never replaces it: the server's snapshot naming a guard the client hasn't is the cue.
+    /// </remarks>
+    public SoldierView? ReplaceAsServerDid(int generatorId, int runtimeId)
+    {
+        GuardGeneratorTask? generator = GuardGenerators.Keys.FirstOrDefault(g => g.Id == generatorId);
+        if (generator is null || !GuardGenerators.TryGetValue(generator, out SoldierView? dead))
+        {
+            return null;
+        }
+
+        // The server's dead guard left the world the tick before it cloned the next; this client's, which runs no mind to
+        // take it out, goes now -- or its body would lie on in the world beside its replacement, both standing for one task.
+        // Gone already when a clone that failed is tried again.
+        if (!_context.GoneBodies.ContainsKey(dead))
+        {
+            _context.RemoveBody(dead);
+        }
+
+        if (!_context.GoneBodies.TryGetValue(dead, out (SoldierAgent Agent, SoldierModelGroup Group) body)
+            || SpawnGeneratedGuard(generator, dead, body.Agent, body.Group, runtimeId) is not { } fresh)
+        {
+            return null;
+        }
+
+        _ = generator.Advance(isOn: true, childIsDead: true);
+        GuardGenerators[generator] = fresh;
+        return fresh;
+    }
+
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)
     {
         foreach (GameTask child in task.Children)
@@ -155,7 +206,7 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
     /// The replacement is made only once its renderer, when there is one, has its drawing ready (<see cref="SpawnedBody"/>):
     /// a transient upload failure leaves the generator free to try again next tick.
     /// </remarks>
-    private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView, SoldierAgent deadAgent, SoldierModelGroup group)
+    private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView, SoldierAgent deadAgent, SoldierModelGroup group, int? runtimeId = null)
     {
         if (!_context.Brains.TryGetValue(deadView, out Igi1HumanAi? deadBrain))
         {
@@ -202,7 +253,7 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
             brain => SoldierWeaponFire.CombatWeaponState(brain, freshAgent));
         // Each live instance has its own runtime ID, so nothing keyed by the old guard's -- its weapon sound, the replies to its
         // alerts -- is taken for the replacement's. Keep the authored Soldier.Id for mission queries.
-        freshBrain.RuntimeId = checked(_context.BrainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
+        freshBrain.RuntimeId = runtimeId ?? checked(_context.BrainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
         _sight.BindViewTracking(freshBrain, freshView);
         freshBrain.SetDefaultTarget(_context.PlayerTarget);
         _context.Brains[freshView] = freshBrain;

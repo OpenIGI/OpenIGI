@@ -42,7 +42,7 @@ public sealed class RetailGrenadeBodyTests(ITestOutputHelper output)
         GrenadeSimulation grenades = new()
         {
             World = () => world,
-            Bodies = (name, at, velocity) => RetailPhysicsObjectBody.Create(frag, model, at, GrenadePhysics.PlacementOrientation(velocity), velocity),
+            Bodies = (name, at, velocity, frame) => RetailPhysicsObjectBody.Create(frag, model, at, frame, velocity),
         };
 
         // From the player's spawn, at chest height, lobbed forward at the shipped fifteen metres a second.

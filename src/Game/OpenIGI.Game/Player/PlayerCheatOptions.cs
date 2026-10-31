@@ -33,7 +33,7 @@ public readonly record struct PlayerCheatOptions(
         NoRecoil: false,
         NoReload: false);
 
-    /// <summary>Gets the cheats the variables ask for, or <see cref="Retail"/> while either gate is shut.</summary>
+    /// <summary>Gets the cheats the variables ask for, or <see cref="Retail"/> while cheats are not enabled.</summary>
     public static PlayerCheatOptions Current => Activate(
         new PlayerCheatOptions(
             PlayerCheatCVars.Speed.Value,
@@ -45,14 +45,12 @@ public readonly record struct PlayerCheatOptions(
             PlayerCheatCVars.UnlockAllLevels.Value,
             PlayerCheatCVars.NoRecoil.Value,
             PlayerCheatCVars.NoReload.Value),
-        PlayerCheatCVars.DeveloperMode.Value,
         PlayerCheatCVars.CheatsEnabled.Value);
 
-    /// <summary>Applies the two session gates to a configured set.</summary>
+    /// <summary>Applies the session's gate to a configured set.</summary>
     /// <param name="configured">The cheats the variables ask for.</param>
-    /// <param name="developerMode">Whether developer mode is on.</param>
     /// <param name="cheatsEnabled">Whether cheats are enabled.</param>
-    /// <returns><paramref name="configured"/> when both gates are open; otherwise <see cref="Retail"/>.</returns>
-    public static PlayerCheatOptions Activate(PlayerCheatOptions configured, bool developerMode, bool cheatsEnabled) =>
-        developerMode && cheatsEnabled ? configured : Retail;
+    /// <returns><paramref name="configured"/> when cheats are enabled; otherwise <see cref="Retail"/>.</returns>
+    public static PlayerCheatOptions Activate(PlayerCheatOptions configured, bool cheatsEnabled) =>
+        cheatsEnabled ? configured : Retail;
 }

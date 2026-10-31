@@ -33,6 +33,28 @@ public sealed class Igi1PlayerSetup(
     /// <summary>Gets the rig being brought up, once <see cref="Begin"/> has made it.</summary>
     public PlayerCamera Candidate { get; private set; } = null!;
 
+    // humanplayer.qvm as Configure read it, which tunes a co-op session's other players the same way.
+    private HumanPlayerConfig? _config;
+
+    // Where a glancing round whizzes, as the mission's own player's rounds were connected; a partner's are connected alike.
+    private Action<Vector3d>? _deflected;
+
+    // The first-person rig's set, which a partner's weapon is worked on as the player's is.
+    private BoneAnimationSet? _viewRig;
+
+    // What Begin was given, which a co-op session's other players are brought up over.
+    private (LoadedMission Loaded, LevelTask LevelRoot, ObjectCollisionIndex Solids, MissionStringResolver Text)? _bringUp;
+
+    /// <summary>Makes another player over what <see cref="Begin"/> was given, once it has run.</summary>
+    /// <returns>The rig and its health, or <see langword="null"/> before <see cref="Begin"/>.</returns>
+    public (PlayerCamera Player, HumanHealth Health)? BeginExtra() =>
+        _bringUp is { } b ? BeginExtra(b.Loaded, b.LevelRoot, b.Solids, b.Text) : null;
+
+    /// <summary>Gets where the level starts its player, for standing a co-op session's other players beside it.</summary>
+    /// <returns>The spawn, or <see langword="null"/> before <see cref="Begin"/> or for a level that declares none.</returns>
+    public PlayerSpawnPoint? LevelSpawn() =>
+        _bringUp is { } b && PlayerSpawn.TryFindGameplay(b.LevelRoot, out PlayerSpawnPoint spawn) ? spawn : null;
+
     /// <summary>Gets the rig being brought up, as the host steers it.</summary>
     public IHostedPlayer Player => Candidate;
 
@@ -50,7 +72,11 @@ public sealed class Igi1PlayerSetup(
 
     /// <summary>Gives the rig being brought up the first-person rig every Human builds (skeleton 5, model 005_01_1).</summary>
     /// <param name="animations">The first-person rig's animation set.</param>
-    public void UseViewRig(BoneAnimationSet animations) => Candidate.UseViewRig(animations);
+    public void UseViewRig(BoneAnimationSet animations)
+    {
+        _viewRig = animations;
+        Candidate.UseViewRig(animations);
+    }
 
     /// <summary>Hands the rig being brought up what the level's own <c>HumanPlayer</c> declares it carries.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -73,6 +99,7 @@ public sealed class Igi1PlayerSetup(
     /// <param name="deflected">Where a glancing round whizzes.</param>
     public void ConnectSoldiers(Action<Vector3d> deflected)
     {
+        _deflected = deflected;
         if (mission.SoldierPresenter is { } guards)
         {
             ConnectSoldiers(Candidate, guards, deflected);
@@ -160,91 +187,8 @@ public sealed class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(missionText);
         PlayerCamera candidate = new(host.Logger);
         Candidate = candidate;
-
-        // 000.iff, kept so the player's third-person body can be built from the same set it walks on
-        // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
-        // animation's own root motion, so without it the player can stand and fall but not walk.
-        //
-        // Read once for the session rather than per mission: it lives under common/, so it is the
-        // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
-        // a mission started was most of that step's cost.
-        BoneAnimationSet? playerBodySet = host.ReadSharedAnimations();
-        if (playerBodySet is not null)
-        {
-            candidate.UseAnimations(playerBodySet);
-        }
-
-        // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
-        // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
-        // The index is the one built above for the soldiers' ground probe.
-        candidate.UseWalls(solids);
-        host.Logger.Information(
-            "Player",
-            $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
-
-        // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
-        // ground query, but a grenade has no such query and would fall through the world.
-        candidate.GrenadeWalls = host.Terrain is { } grenadeGround
-            ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
-            : solids.Caster();
-        candidate.GrenadeTrace = host.Terrain is { } grenadeTraceGround
-            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
-            : solids.Tracer();
-
-        // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
-        // cars do; it leaves the hand facing the way it was thrown (0x414A60).
-        candidate.Grenades.World = () => mission.RetailWorld;
-        candidate.Missiles.World = () => mission.RetailWorld;
-        candidate.Missiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
-        mission.VehicleMissiles.World = () => mission.RetailWorld;
-        mission.VehicleMissiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
-        candidate.Grenades.Bodies = (model, at, velocity) =>
-            mission.VehiclePhysics?.Types.TryFind(model, out OpenIGI.Game.Physics.PhysicsObjectType type) == true
-                ? RetailPhysicsObjectBody.Create(
-                    type,
-                    loaded.TryGetModel(model, out MefModel? grenadeModel) ? grenadeModel : null,
-                    at,
-                    GrenadePhysics.PlacementOrientation(velocity),
-                    velocity)
-                : null;
-
-        // The view model's forward sweep, which wants a ray through the terrain rather than the
-        // height under a point. Null for a title whose ground nothing can trace yet, and the
-        // pullback then meets placed objects only.
-        candidate.TerrainTrace = host.Terrain is { } viewModelGround
-            ? TerrainRayTrace.Caster(viewModelGround)
-            : null;
-
-        // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
-        // W/S up and down, E held to slide).
-        if (host.Scene is not null)
-        {
-            candidate.UseLadders(host.Scene.Ladders);
-            host.Logger.Information("Player", $"{host.Scene.Ladders.Count} ladder(s) to climb.");
-        }
-        if (mission.Interactions is { } interactions)
-        {
-            candidate.UseInteractions(interactions);
-            candidate.TaskActivated += id => mission.Soldiers?.ActivateTask(id);
-            candidate.ElectrifiedFenceTouched += fence => harm.ResolvePlayerElectricFence(candidate, fence);
-            candidate.UnarmedStationaryGun += gun => host.Logger.Warning(
-                "Player",
-                $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
-            host.Logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
-        }
-        if (mission.GenericPickups is { } genericPickups)
-        {
-            candidate.UseGenericPickups(genericPickups);
-            candidate.GenericPickedUp += pickup =>
-            {
-                // An AmmoPickup posts its own message as it is taken (0x46D990); a GenericPickup posts none.
-                if (audio.TakeGenericPickup(pickup))
-                {
-                    mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage), portrait: AmmoPickupPortrait);
-                }
-            };
-            host.Logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
-        }
+        _bringUp = (loaded, levelRoot, solids, missionText);
+        WirePlayer(candidate, loaded, solids, missionText);
 
         // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
         // symbols that get their values as the two tables are read, so the rosters have to load
@@ -274,8 +218,7 @@ public sealed class Igi1PlayerSetup(
             ammoTable.Register(host.Game.Natives);
             ammoTable.Load(host.FileSystem, host.Resources, host.Game.Natives);
 
-            // Shared with the guard-round handler: the ammunition record is what colours a
-            // ballistic streak, exactly as it colours the retail tracer.
+            // Shared with the guard-round handler: the ammunition record is what colours the retail tracer.
             mission.AmmoTypes = ammoTable;
 
             // Kept beside it for the all-weapons cheat, which can be switched on mid-mission and
@@ -322,19 +265,12 @@ public sealed class Igi1PlayerSetup(
             mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable, host.Game.Variables);
             GunPickupRegistry gunPickups = mission.GunPickups;
             gunPickups.Landed = sounds.PlayWeaponDrop;
-            candidate.UseGunPickups(gunPickups);
-            candidate.GunPickedUp += pickup =>
-            {
-                audio.PlayGunPickupSound(pickup);
-                string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
-                mission.Objectives?.ShowTransientMessage(missionText.Get(key));
-            };
+            WirePickups(candidate, missionText);
             mission.Soldiers?.UseDroppedWeaponPickups(gunPickups);
-            mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
-            {
-                GunPickup pickup = gunPickups.Spawn(position, orientation, weapon, velocity);
-                host.WeaponDropped(loaded, pickup);
-            });
+
+            // Every drop is drawn, a soldier's here or a co-op server's laid down on a client.
+            gunPickups.Spawned += pickup => host.WeaponDropped(loaded, pickup);
+            mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) => gunPickups.Spawn(position, orientation, weapon, velocity));
 
             // What a dropped gun lands on: the same solids and terrain a round strikes, as triangles
             // for the realistic body and as one ray for the original's fifty-metre drop probe.
@@ -364,6 +300,212 @@ public sealed class Igi1PlayerSetup(
         return candidate;
     }
 
+    /// <summary>Wires a player's rig into the level: its animations, walls, grenades and missiles, ladders, interactions and pickups.</summary>
+    /// <param name="candidate">The rig.</param>
+    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
+    /// <param name="solids">The collision index over the placed objects.</param>
+    /// <param name="missionText">The mission's text.</param>
+    /// <remarks>Everything <see cref="Begin"/> does for the one rig it makes; a co-op session's other players are wired the same way.</remarks>
+    private void WirePlayer(PlayerCamera candidate, LoadedMission loaded, ObjectCollisionIndex solids, MissionStringResolver missionText)
+    {
+
+        // 000.iff, kept so the player's third-person body can be built from the same set it walks on
+        // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
+        // animation's own root motion, so without it the player can stand and fall but not walk.
+        //
+        // Read once for the session rather than per mission: it lives under common/, so it is the
+        // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
+        // a mission started was most of that step's cost.
+        BoneAnimationSet? playerBodySet = host.ReadSharedAnimations();
+        if (playerBodySet is not null)
+        {
+            candidate.UseAnimations(playerBodySet);
+        }
+
+        // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
+        // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
+        // The index is the one built above for the soldiers' ground probe.
+        candidate.UseWalls(solids);
+        host.Logger.Information(
+            "Player",
+            $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
+
+        // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
+        // ground query, but a grenade has no such query and would fall through the world.
+        candidate.GrenadeWalls = host.Terrain is { } grenadeGround
+            ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
+            : solids.Caster();
+        candidate.GrenadeTrace = host.Terrain is { } grenadeTraceGround
+            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
+            : solids.Tracer();
+
+        // The mine weapon lays nothing on a pane, a door or a vehicle (0x4755A0); its model's bound and magic vertex 0 are
+        // what a blast is measured against and where its own starts.
+        candidate.MineSurfaceRefused = hit => RefusesMine(hit);
+        candidate.Grenades.Solids = (owner, model) =>
+            loaded.TryGetModel(model, out MefModel? solidModel) && solidModel is not null
+            && MefCollisionMesh.TryRead(solidModel.Container, meshIndex: 0, out MefCollisionMesh? solidMesh)
+            && solidMesh is { Faces.Length: > 0 }
+                ? new RetailRayModel(owner, new RetailRayMesh(solidMesh), solidModel.NativeMarkerBound)
+                : null;
+        candidate.MineModel = model => loaded.TryGetModel(model, out MefModel? mineModel) && mineModel is not null
+            ? (mineModel.NativeMarkerBound, mineModel.TryGetMagicVertex(0, out Vector3f point) ? point : default)
+            : (0f, default);
+
+        // A thrown grenade is the original's physics object of its model's type (0x477040), stepping in the world the
+        // cars do; it leaves the hand facing the way it was thrown (0x414A60).
+        candidate.Grenades.World = () => mission.RetailWorld;
+        candidate.Missiles.World = () => mission.RetailWorld;
+        candidate.Missiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
+        mission.VehicleMissiles.World = () => mission.RetailWorld;
+        mission.VehicleMissiles.Bodies = (model, at, frame, speed, target) => FireMissile(loaded, model, at, frame, speed, target);
+        candidate.Grenades.Bodies = (model, at, velocity, frame) =>
+            mission.VehiclePhysics?.Types.TryFind(model, out OpenIGI.Game.Physics.PhysicsObjectType type) == true
+                ? RetailPhysicsObjectBody.Create(
+                    type,
+                    loaded.TryGetModel(model, out MefModel? grenadeModel) ? grenadeModel : null,
+                    at,
+                    frame,
+                    velocity)
+                : null;
+
+        // The view model's forward sweep, which wants a ray through the terrain rather than the
+        // height under a point. Null for a title whose ground nothing can trace yet, and the
+        // pullback then meets placed objects only.
+        candidate.TerrainTrace = host.Terrain is { } viewModelGround
+            ? TerrainRayTrace.Caster(viewModelGround)
+            : null;
+
+        // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
+        // W/S up and down, E held to slide).
+        if (host.Scene is not null)
+        {
+            candidate.UseLadders(host.Scene.Ladders);
+            host.Logger.Information("Player", $"{host.Scene.Ladders.Count} ladder(s) to climb.");
+        }
+        if (mission.Interactions is { } interactions)
+        {
+            candidate.UseInteractions(interactions);
+            candidate.TaskActivated += id => mission.Soldiers?.ActivateTask(id);
+            candidate.ElectrifiedFenceTouched += fence => harm.ResolvePlayerElectricFence(candidate, fence);
+            candidate.UnarmedStationaryGun += gun => host.Logger.Warning(
+                "Player",
+                $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
+            host.Logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
+        }
+    }
+
+    // What a player walks over goes into that player's hands -- the mission's own or a co-op partner's -- and only the player
+    // this machine plays hears it and is told.
+    private void WirePickups(PlayerCamera candidate, MissionStringResolver missionText)
+    {
+        bool Felt() => ReferenceEquals(candidate, mission.Player);
+        if (mission.GunPickups is { } gunPickups)
+        {
+            candidate.UseGunPickups(gunPickups);
+            candidate.GunPickedUp += pickup =>
+            {
+                if (Felt())
+                {
+                    audio.PlayGunPickupSound(pickup);
+                    mission.Objectives?.ShowTransientMessage(missionText.Get($"PICKEDUPWEAPON{pickup.Weapon.DisplayName}"));
+                }
+            };
+        }
+
+        if (mission.GenericPickups is { } genericPickups)
+        {
+            candidate.UseGenericPickups(genericPickups);
+            candidate.GenericPickedUp += pickup =>
+            {
+                // An AmmoPickup hands its ammunition to whoever took it (0x46D990), the award at the same edge as the cue so
+                // the object, the count and the sound cannot drift apart; an explicit task payload wins over the catalogue.
+                bool ammunition = string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal);
+                if (candidate.Weapons is { } weapons
+                    && mission.AmmoTypes is { } ammoTypes
+                    && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
+                {
+                    weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
+                }
+
+                if (Felt())
+                {
+                    audio.PlayGenericPickupSound(ammunition);
+
+                    // An AmmoPickup posts its own message as it is taken; a GenericPickup posts none.
+                    if (ammunition)
+                    {
+                        mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage), portrait: AmmoPickupPortrait);
+                    }
+                }
+            };
+        }
+    }
+
+    /// <summary>
+    /// Makes another player for a co-op session: a rig wired into the level as the mission's own is, tuned by the same
+    /// <c>humanplayer.qvm</c>, carrying what the level declares, with health of its own.
+    /// </summary>
+    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
+    /// <param name="levelRoot">The level's task tree, whose declared loadout the player carries.</param>
+    /// <param name="solids">The collision index over the placed objects.</param>
+    /// <param name="missionText">The mission's text.</param>
+    /// <returns>The rig and its health.</returns>
+    /// <remarks>
+    /// The original has one player; a second is made with every per-player step of <see cref="Begin"/> and
+    /// <see cref="Configure(PlayerCamera)"/>, and none of their mission-wide ones: the tables are read once, and the mission's own player
+    /// keeps the health the HUD shows.
+    /// </remarks>
+    public (PlayerCamera Player, HumanHealth Health) BeginExtra(LoadedMission loaded, LevelTask levelRoot, ObjectCollisionIndex solids, MissionStringResolver missionText)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        ArgumentNullException.ThrowIfNull(levelRoot);
+        PlayerCamera extra = new(host.Logger);
+        WirePlayer(extra, loaded, solids, missionText);
+        WirePickups(extra, missionText);
+        // Tuned, rigged and then armed, in the order the mission's own player is.
+        if (_config is { } config)
+        {
+            if (config.Parameters is { } tuning)
+            {
+                extra.UseParameters(tuning);
+            }
+
+            extra.UseWeaponCycle(config.WeaponCycle);
+            foreach ((int ammoId, int limit) in config.AmmoLimits)
+            {
+                extra.Weapons?.Ammunition.SetLimit(ammoId, limit);
+            }
+
+            extra.Weapons?.UseCategories(config.Categories);
+        }
+
+        if (_viewRig is { } viewRig)
+        {
+            extra.UseViewRig(viewRig);
+        }
+
+        if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null && Weapons is not null && Ammunition is not null)
+        {
+            Carry(extra, loadout, Weapons, Ammunition);
+        }
+
+        HumanHealth health = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
+        {
+            DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
+        };
+        extra.UseHealth(health);
+        extra.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(extra, impact));
+
+        // The partner's rounds reach the soldiers as the mission's own player's do.
+        if (mission.SoldierPresenter is { } guards)
+        {
+            ConnectSoldiers(extra, guards, _deflected ?? (static _ => { }));
+        }
+
+        return (extra, health);
+    }
+
     /// <summary>Runs <c>humanplayer.qvm</c> over the rig and hands it the player's health.</summary>
     /// <param name="candidate">The rig <see cref="Begin"/> made.</param>
     public void Configure(PlayerCamera candidate)
@@ -376,6 +518,7 @@ public sealed class Igi1PlayerSetup(
             HumanPlayerConfig config = new();
             config.Register(host.Game.Natives);
             config.Load(host.Resources, host.Game.Natives);
+            _config = config;
 
             if (config.PlaceholderIds.Count > 0)
             {
@@ -692,8 +835,41 @@ public sealed class Igi1PlayerSetup(
         // 0x47BD7B sounds it there directly rather than through the material's window.
         candidate.Deflected = deflected;
 
+        // Every human's run tells the laid mines its place: the soldiers in the roster's order, then the player (0x463080),
+        // whose update (0x410960) sends it dead or alive.
+        List<HumanPlace> places = [];
+        candidate.Grenades.MineSensors = () =>
+        {
+            places.Clear();
+            guards.Simulation.AddHumanPlaces(places);
+            places.Add(new HumanPlace(candidate.Body.Origin, guards.Simulation.PlayerHumanRadius));
+            return places;
+        };
+
         // One grenade pool for both throwers: the player's own and every guard's lob fly,
         // bounce and detonate through the same simulation and the same drain.
         guards.Simulation.SetGrenades(candidate.Grenades);
+    }
+
+    // 0x4755A0 refuses a contact whose task is a Glass, a Door or a Vehicle (Heli, Missile, Train, Plane, Car, KnifeStab).
+    private bool RefusesMine(WorldTraceHit hit)
+    {
+        if (hit.Owner?.Type.Name is "Door" or "Heli" or "Missile" or "Train" or "Plane" or "Car" or "KnifeStab")
+        {
+            return true;
+        }
+
+        if (hit.Placement is { } placement && mission.Destructibles is { } destructibles)
+        {
+            foreach (DestructibleObject item in destructibles.Objects)
+            {
+                if (item.Kind == DestructibleObjectKind.Glass && ReferenceEquals(item.Placement, placement))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

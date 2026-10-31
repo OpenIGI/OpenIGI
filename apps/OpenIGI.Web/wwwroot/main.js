@@ -9,6 +9,7 @@
 import { dotnet } from './_framework/dotnet.js';
 import './wgpu-bridge.js';
 import * as platform from './platform.js';
+import * as rtc from './rtc.js';
 import * as audio from './audio.js';
 import * as files from './game-files.js';
 
@@ -22,6 +23,10 @@ const change = $('change');
 
 const query = new URLSearchParams(location.search);
 const args = (query.get('args') ?? '').split(' ').filter(Boolean);
+// A friend's link: ?join=CODE plays in their room, ?host opens one; ?name= is who you play as.
+if (query.get('join')) args.push('-join', query.get('join'));
+if (query.has('host')) args.push('-host');
+if (query.get('name')) args.push('-name', query.get('name'));
 
 const HINT = 'The folder with IGI.exe in it, usually pc inside the installation.';
 
@@ -294,6 +299,7 @@ async function start() {
 
   platform.install(canvas);
   runtime.setModuleImports('openigi-platform', platform.imports);
+  runtime.setModuleImports('openigi-rtc', rtc.imports);
   runtime.setModuleImports('openigi-audio', audio.imports);
   runtime.setModuleImports('openigi-files', files.imports);
 
@@ -314,7 +320,37 @@ async function start() {
   // The missions' files, downloaded ahead while the menu is up, so the first mission chosen starts at once.
   if (source.hosted) setTimeout(() => source.prefetch(), 3000);
 
+  // In a room the game can't stop when its tab is hidden: a host that stopped would stop everyone's game, and a joiner
+  // that stopped would be dropped. A hidden tab gets no animation frames and its timers are held to one a second, but a
+  // worker's timers run on, so while hidden the next frame comes from a worker's tick instead.
+  const inRoom = args.includes('-host') || args.includes('-join');
+  let ticker = null;
+  let pending = 0;
+  const next = () => {
+    if (inRoom && document.hidden) {
+      if (!ticker) {
+        const tick = 'let t; onmessage = () => { clearTimeout(t); t = setTimeout(() => postMessage(0), 16); };';
+        ticker = new Worker(URL.createObjectURL(new Blob([tick], { type: 'text/javascript' })));
+        ticker.onmessage = () => frame();
+      }
+
+      ticker.postMessage(0);
+    } else {
+      pending = requestAnimationFrame(frame);
+    }
+  };
+
+  // Hidden with an animation frame still asked for: that frame won't come, so the worker takes over now.
+  document.addEventListener('visibilitychange', () => {
+    if (inRoom && document.hidden && pending) {
+      cancelAnimationFrame(pending);
+      pending = 0;
+      next();
+    }
+  });
+
   const frame = () => {
+    pending = 0;
     let going;
     try {
       globalThis.openigi.frames++;
@@ -327,7 +363,7 @@ async function start() {
     }
 
     if (going) {
-      requestAnimationFrame(frame);
+      next();
       return;
     }
 
@@ -338,7 +374,7 @@ async function start() {
     device.destroy();
     offerReload('Play again', 'The game has closed. Your settings are saved.', 'neutral');
   };
-  requestAnimationFrame(frame);
+  next();
 }
 
 // The macOS and Linux install command, copied by its button. The code is selectable by hand as well, for

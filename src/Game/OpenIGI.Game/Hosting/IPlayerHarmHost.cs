@@ -27,4 +27,9 @@ public interface IPlayerHarmHost
     /// <param name="facing">The way it was thrown.</param>
     /// <param name="walls">What pulls the camera in.</param>
     void BeginDeathCamera(Vector3d position, float facing, WorldRayCast walls);
+
+    /// <summary>Gives the view back to the player from the death camera, as a co-op player is brought back.</summary>
+    void EndDeathCamera()
+    {
+    }
 }

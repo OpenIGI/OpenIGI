@@ -67,6 +67,9 @@ public enum TouchButton
 
     /// <summary>Closes the map computer.</summary>
     Close,
+
+    /// <summary>Held to talk to the others in a co-op room.</summary>
+    Talk,
 }
 
 /// <summary>The finger that is the pointer: where it is, how far it moved this frame, and whether it came down this frame.</summary>
@@ -140,6 +143,21 @@ public sealed class TouchControls
     private readonly List<TouchButtonSpot> _computerLayout = [];
     private readonly HashSet<TouchButton> _held = [];
     private (float Width, float Height) _laidOutFor;
+    private bool _talkShown;
+
+    /// <summary>Gets or sets whether the button held to talk is offered: in a co-op room, with push to talk.</summary>
+    public bool TalkShown
+    {
+        get => _talkShown;
+        set
+        {
+            if (_talkShown != value)
+            {
+                _talkShown = value;
+                _laidOutFor = default;
+            }
+        }
+    }
     private TouchControlMode _mode;
     private UiVec2 _lastLook;
 
@@ -363,7 +381,9 @@ public sealed class TouchControls
 
         // The few that are not reached for in a fight, small along the top right.
         float y = safe.Y + Px(80f);
-        TouchButton[] corner = [TouchButton.Pause, TouchButton.Map, TouchButton.Binoculars];
+        TouchButton[] corner = _talkShown
+            ? [TouchButton.Pause, TouchButton.Map, TouchButton.Binoculars, TouchButton.Talk]
+            : [TouchButton.Pause, TouchButton.Map, TouchButton.Binoculars];
         for (int i = 0; i < corner.Length; i++)
         {
             _layout.Add(new TouchButtonSpot(corner[i], new UiVec2(safe.Right - Px(80f) - (i * Px(CornerRadius * 2.6f)), y), Px(CornerRadius)));

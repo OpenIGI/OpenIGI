@@ -65,6 +65,15 @@ public sealed partial class WebAudioPage : IWebAudioPage
     /// <inheritdoc/>
     public void StopVoice(int voice) => StopPageVoice(voice);
 
+    /// <inheritdoc/>
+    public bool OpenMicrophone(int sampleRate) => OpenMic(sampleRate);
+
+    /// <inheritdoc/>
+    public int ReadMicrophone(Span<short> destination) => ReadMic(MemoryMarshal.AsBytes(destination));
+
+    /// <inheritdoc/>
+    public void CloseMicrophone() => CloseMic();
+
     /// <summary>Hands a read-only span over as the writable view the interop marshals.</summary>
     /// <remarks>
     /// The runtime marshals only <see cref="Span{T}"/> as a memory view, and the page reads the bytes
@@ -119,4 +128,13 @@ public sealed partial class WebAudioPage : IWebAudioPage
 
     [JSImport("stop", ModuleName)]
     private static partial void StopPageVoice(int voice);
+
+    [JSImport("openMic", ModuleName)]
+    private static partial bool OpenMic(int sampleRate);
+
+    [JSImport("readMic", ModuleName)]
+    private static partial int ReadMic([JSMarshalAs<JSType.MemoryView>] Span<byte> destination);
+
+    [JSImport("closeMic", ModuleName)]
+    private static partial void CloseMic();
 }

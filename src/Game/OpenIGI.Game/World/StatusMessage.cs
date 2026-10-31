@@ -23,6 +23,9 @@ internal sealed class StatusMessage(
     /// <summary>Gets the sprite drawn beside the text, from the status archive; none for an authored message.</summary>
     public string Portrait { get; init; } = string.Empty;
     public bool IsSent { get; set; }
+
+    /// <summary>Gets or sets how many times the message has been sent, which a co-op server tells its clients.</summary>
+    public int SendCount { get; set; }
     public int SentTick { get; set; } = -100000;
     public bool IsFinishedDisplay { get; set; }
     public int FinishedDisplayTick { get; set; } = -1;
