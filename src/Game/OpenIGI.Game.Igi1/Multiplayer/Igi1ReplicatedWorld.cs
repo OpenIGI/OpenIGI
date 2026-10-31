@@ -51,9 +51,6 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // Each fallen player's revival so far, in ticks, by entity.
     private readonly Dictionary<int, int> _reviving = [];
 
-    // The scale the soldiers' health was last set to.
-    private float _enemyScale = 1f;
-
     // The players whose clients dropped, kept aside out of the level by their parked keys.
     private readonly Dictionary<int, Igi1NetworkPlayer> _parked = [];
 
@@ -571,26 +568,14 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             ? human
             : human with { Health = (byte)Math.Round((ReviveProgressOf(human.Id) ?? 0f) * 255f) };
 
-    // The soldiers made tougher for a bigger squad, keeping what has been taken from each in proportion.
+    // The soldiers made tougher for a bigger squad, every one of them, keeping what has been taken from each in proportion.
     private void ScaleEnemies()
     {
         int players = _bySlot.Count + (IncludesHost ? 1 : 0);
-        float scale = 1f + (CoopCVars.EnemyHealthPerPlayer.Value / 100f * Math.Max(0, players - 1));
-        if (scale == _enemyScale || _game.World.Soldiers is not { } soldiers)
+        if (_game.World.Soldiers is { } soldiers)
         {
-            return;
+            soldiers.HealthScale = 1f + (CoopCVars.EnemyHealthPerPlayer.Value / 100f * Math.Max(0, players - 1));
         }
-
-        foreach (Player.SoldierView soldier in soldiers.SoldierViews)
-        {
-            if (!soldier.IsDead)
-            {
-                OpenIGI.Game.Player.HumanHealth health = soldiers.HealthOf(soldier);
-                health.RescaleMaximumHealth(health.BaseMaximumHealth * scale);
-            }
-        }
-
-        _enemyScale = scale;
     }
 
     // Where a player is stood: beside the level's start, or -- joining a level the host has gone on into -- where the host is.

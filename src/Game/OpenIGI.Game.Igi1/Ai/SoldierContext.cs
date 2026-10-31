@@ -403,9 +403,43 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
 
     /// <summary>
     /// A fresh damage state — <c>0x489C30</c> over the class's hit-zone table, with the settings row's
-    /// maximum health once <c>0x406F70</c> has configured the soldier.
+    /// maximum health once <c>0x406F70</c> has configured the soldier -- times <see cref="HealthScale"/>.
     /// </summary>
-    public HumanHealth NewHealth(SoldierView soldier) => new(
-        soldier.Soldier.Class.HitZones,
-        Combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.MaximumHealth : HumanHitZoneTable.MaximumHealth);
+    public HumanHealth NewHealth(SoldierView soldier)
+    {
+        HumanHealth health = new(
+            soldier.Soldier.Class.HitZones,
+            Combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.MaximumHealth : HumanHitZoneTable.MaximumHealth);
+        health.RescaleMaximumHealth(health.BaseMaximumHealth * _healthScale);
+        return health;
+    }
+
+    private float _healthScale = 1f;
+
+    /// <summary>Gets or sets how many times its own health every soldier has: a co-op squad's toughness, one alone.</summary>
+    /// <remarks>
+    /// Every soldier's, made now or later -- a health is made on a soldier's first hit, and a generator's replacement has
+    /// one of its own -- while each living one keeps the share of its health it has already lost. The players' own health
+    /// is no soldier's, and never scaled.
+    /// </remarks>
+    public float HealthScale
+    {
+        get => _healthScale;
+        set
+        {
+            if (value <= 0f || value == _healthScale)
+            {
+                return;
+            }
+
+            _healthScale = value;
+            foreach (HumanHealth health in Health.Values)
+            {
+                if (!health.IsDead)
+                {
+                    health.RescaleMaximumHealth(health.BaseMaximumHealth * value);
+                }
+            }
+        }
+    }
 }

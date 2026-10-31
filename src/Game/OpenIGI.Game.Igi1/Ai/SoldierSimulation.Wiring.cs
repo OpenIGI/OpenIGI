@@ -637,6 +637,9 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierContext.HealthOf"/>
     internal HumanHealth HealthOf(SoldierView soldier) => _context.HealthOf(soldier);
 
+    /// <inheritdoc cref="SoldierContext.HealthScale"/>
+    public float HealthScale { get => _context.HealthScale; set => _context.HealthScale = value; }
+
     /// <summary>The skinned model a soldier wears, so its ragdoll can be sized from its own geometry.</summary>
     internal MefModel? FindModel(SoldierView view) => _context.FindRoster(view)?.Body.Model;
 

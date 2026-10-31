@@ -330,6 +330,43 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void The_enemies_option_toughens_every_soldier_and_never_a_player()
+    {
+        using Igi1CoopPair pair = Joined();
+        try
+        {
+            Game.Multiplayer.CoopCVars.EnemyHealthPerPlayer.Value = 150;
+            pair.RunUntil(() => false, 5);
+            Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
+
+            // Two players at +150% each past the first: two and a half times, for every soldier there is now.
+            foreach (Game.Igi1.Player.SoldierView soldier in soldiers.SoldierViews.Where(static s => !s.IsDead))
+            {
+                Game.Player.HumanHealth health = soldiers.HealthOf(soldier);
+                Assert.Equal(health.BaseMaximumHealth * 2.5f, health.MaximumHealth, 3);
+            }
+
+            // And for one whose health is made afterwards -- a generator's replacement, a soldier a script brings in.
+            Game.Igi1.Player.SoldierView later = soldiers.SoldierViews.First(static s => !s.IsDead);
+            object context = typeof(Game.Igi1.Ai.SoldierSimulation)
+                .GetField("_context", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(soldiers)!;
+            var healths = (System.Collections.IDictionary)context.GetType().GetProperty("Health")!.GetValue(context)!;
+            healths.Remove(later);
+            Game.Player.HumanHealth fresh = soldiers.HealthOf(later);
+            Assert.Equal(fresh.BaseMaximumHealth * 2.5f, fresh.MaximumHealth, 3);
+
+            // The players keep their own.
+            Assert.Equal(pair.Host.World.PlayerHealth.BaseMaximumHealth, pair.Host.World.PlayerHealth.MaximumHealth);
+            Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
+            Assert.Equal(partner.Health.BaseMaximumHealth, partner.Health.MaximumHealth);
+        }
+        finally
+        {
+            Game.Multiplayer.CoopCVars.EnemyHealthPerPlayer.Value = 0;
+        }
+    }
+
+    [RequiresGameDataFact]
     public void A_downed_player_sees_what_its_teammate_sees()
     {
         using Igi1CoopPair pair = Joined();
