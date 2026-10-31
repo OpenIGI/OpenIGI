@@ -14,6 +14,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
     private readonly Dictionary<int, ReplicatedHuman> _shown = [];
 
+    // This client's own entity, as the server's snapshots name it.
+    private int _ownEntity = -1;
+
     // The other players' names and looks, by entity, from the server's scoreboard.
     private readonly Dictionary<int, string> _names = [];
     private readonly Dictionary<int, string> _skins = [];
@@ -45,6 +48,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         // The level's running state is the server's: counters, messages, result and scenes come with each change.
         game.World.Objectives?.Mirrored = true;
         game.World.Cutscenes?.Mirrored = true;
+        game.World.GunPickups?.Mirrored = true;
+        game.World.GenericPickups?.Mirrored = true;
         if (game.World.Soldiers is { } soldiers)
         {
             soldiers.PuppetsOnly = true;
@@ -114,6 +119,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// </remarks>
     public void ApplyOwn(in ReplicatedHuman self)
     {
+        _ownEntity = self.Id;
         // Killed on the server: the fall, here. Brought back by the server's respawn: up again where it stood this one.
         bool alive = (self.Flags & ReplicatedHumanCondition.Alive) != 0;
         if (!alive && !_game.World.IsPlayerDead && _game.World.Player is { } falling)
@@ -155,6 +161,75 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         if (reader.ReadBool() && _game.World.Cutscenes is { } cutscenes)
         {
             cutscenes.ReadRuns(ref reader);
+        }
+
+        ReadPickups(ref reader);
+    }
+
+    // The server's pickups: the dropped guns laid where its lie, and each one taken -- into this player's hands, as walking
+    // over it would, when the server says this player took it.
+    private void ReadPickups(ref BitReader reader)
+    {
+        Player.PlayerCamera? own = _game.World.Player;
+        Span<float> o = stackalloc float[9];
+        int guns = (int)reader.ReadVarUInt();
+        for (int i = 0; i < guns && !reader.IsOverflowed; i++)
+        {
+            byte taker = (byte)reader.ReadBits(8);
+            OpenIGI.Game.World.GunPickup? gun = _game.World.GunPickups is { } registry && i < registry.Items.Count ? registry.Items[i] : null;
+            if (reader.ReadBool())
+            {
+                int weaponId = (int)reader.ReadVarUInt();
+                Vector3d at = new(reader.ReadVarInt(), reader.ReadVarInt(), reader.ReadVarInt());
+                for (int k = 0; k < o.Length; k++)
+                {
+                    o[k] = reader.ReadSingle();
+                }
+
+                Matrix3f lies = Matrix3f.FromRowMajor(o);
+                if (gun is null
+                    && _game.World.GunPickups is { } drops
+                    && _game.PlayerSetup?.Weapons is { } roster
+                    && roster.TryGet(weaponId, out OpenIGI.Game.Weapons.WeaponType weapon))
+                {
+                    gun = drops.SpawnResting(at, lies, weapon);
+                }
+                else if (gun is { IsCollected: false } && Vector3d.Distance(gun.Position, at) > 1)
+                {
+                    gun.Rest(at, lies);
+                }
+            }
+
+            if (gun is { IsCollected: false } && taker != 0)
+            {
+                if (own is not null && taker == _ownEntity + 1)
+                {
+                    own.TakePickup(gun);
+                }
+                else
+                {
+                    _game.World.GunPickups!.Withdraw(gun);
+                }
+            }
+        }
+
+        int items = (int)reader.ReadVarUInt();
+        for (int i = 0; i < items && !reader.IsOverflowed; i++)
+        {
+            byte taker = (byte)reader.ReadBits(8);
+            if (taker == 0 || _game.World.GenericPickups is not { } registry || i >= registry.Items.Count || registry.Items[i].IsCollected)
+            {
+                continue;
+            }
+
+            if (own is not null && taker == _ownEntity + 1)
+            {
+                own.TakePickup(registry.Items[i]);
+            }
+            else
+            {
+                registry.Take(registry.Items[i]);
+            }
         }
     }
 

@@ -47,6 +47,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // The scale the soldiers' health was last set to.
     private float _enemyScale = 1f;
 
+    // Who took each pickup, by entity: a client shows it gone, and takes what its own player took into its own hands.
+    private readonly Dictionary<object, int> _takenBy = [];
+
 
     private readonly Igi1Gameplay _game;
     private readonly SortedDictionary<int, Igi1NetworkPlayer> _bySlot = [];
@@ -73,6 +76,11 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
                 }
             }
         };
+        if (_game.World.Player is { } own)
+        {
+            Record(own, HostEntity);
+        }
+
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>
             [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with
@@ -117,6 +125,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name, Entity = slot + 1 };
+        Record(made.Player, slot + 1);
         Stand(player, slot);
         _bySlot[slot] = player;
         _game.World.NetworkPlayers.Add(player);
@@ -332,8 +341,52 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         objectives.WriteState(_level);
         _level.WriteBool(_game.World.Cutscenes is not null);
         _game.World.Cutscenes?.WriteRuns(_level);
+        WritePickups(_level);
         return _level.AsSpan().ToArray();
     }
+
+    // Who takes what: each player's pickups, as it walks over them.
+    private void Record(PlayerCamera player, int entity)
+    {
+        player.GunPickedUp += pickup => _takenBy[pickup] = entity;
+        player.GenericPickedUp += pickup => _takenBy[pickup] = entity;
+    }
+
+    // The pickups: each gun by who took it (none, an entity, or the world), the dropped ones where they lie; each item likewise.
+    private void WritePickups(BitWriter writer)
+    {
+        IReadOnlyList<OpenIGI.Game.World.GunPickup> guns = _game.World.GunPickups?.Items ?? [];
+        writer.WriteVarUInt((uint)guns.Count);
+        foreach (OpenIGI.Game.World.GunPickup gun in guns)
+        {
+            writer.WriteBits(TakenBy(gun, gun.IsCollected), 8);
+            writer.WriteBool(gun.Task is null);
+            if (gun.Task is null)
+            {
+                writer.WriteVarUInt((uint)gun.Weapon.WeaponId);
+                Int3 at = Int3.From(gun.Position);
+                writer.WriteVarInt(at.X);
+                writer.WriteVarInt(at.Y);
+                writer.WriteVarInt(at.Z);
+                Matrix3f o = gun.Orientation;
+                foreach (float f in (ReadOnlySpan<float>)[o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33])
+                {
+                    writer.WriteSingle(f);
+                }
+            }
+        }
+
+        IReadOnlyList<OpenIGI.Game.World.GenericPickup> items = _game.World.GenericPickups?.Items ?? [];
+        writer.WriteVarUInt((uint)items.Count);
+        foreach (OpenIGI.Game.World.GenericPickup item in items)
+        {
+            writer.WriteBits(TakenBy(item, item.IsCollected), 8);
+        }
+    }
+
+    // Nought for one lying there, the taker's entity plus one, or 255 for one gone with nobody's hand on it.
+    private byte TakenBy(object pickup, bool collected) =>
+        !collected ? (byte)0 : _takenBy.TryGetValue(pickup, out int entity) && entity is >= 0 and < 254 ? (byte)(entity + 1) : (byte)255;
 
     /// <inheritdoc/>
     public float? ReviveProgressOf(int entity)

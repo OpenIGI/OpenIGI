@@ -625,6 +625,14 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _pickups.UseGeneric(pickups);
     }
 
+    /// <summary>Takes a gun the co-op server says this player took, as walking over it does.</summary>
+    /// <param name="pickup">The pickup.</param>
+    public void TakePickup(GunPickup pickup) => _pickups.Take(pickup, _weapons);
+
+    /// <summary>Takes an item the co-op server says this player took, as walking over it does.</summary>
+    /// <param name="pickup">The pickup.</param>
+    public void TakePickup(GenericPickup pickup) => _pickups.Take(pickup);
+
     /// <summary>Raised for each weapon collected from the world this tick.</summary>
     public event Action<GunPickup>? GunPickedUp
     {

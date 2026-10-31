@@ -93,6 +93,11 @@ public sealed class GenericPickupRegistry
     /// <param name="origin">The Human's origin (<c>+32</c>), not its feet.</param>
     public IReadOnlyList<GenericPickup> CollectAt(Vector3d origin)
     {
+        if (Mirrored)
+        {
+            return [];
+        }
+
         List<GenericPickup>? collected = null;
         foreach (GenericPickup pickup in _items)
         {
@@ -108,6 +113,27 @@ public sealed class GenericPickupRegistry
         }
 
         return collected ?? [];
+    }
+
+    /// <summary>
+    /// Gets or sets whether the pickups are a co-op client's, taken when the server says who took them rather than by whoever
+    /// walks over them here.
+    /// </summary>
+    public bool Mirrored { get; set; }
+
+    /// <summary>Takes a pickup out of the level, as walking over it does.</summary>
+    /// <param name="pickup">The pickup.</param>
+    /// <returns><see langword="false"/> when it was already taken.</returns>
+    public bool Take(GenericPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        if (pickup.IsCollected || !_items.Contains(pickup))
+        {
+            return false;
+        }
+
+        pickup.IsCollected = true;
+        return true;
     }
 
     /// <summary>Returns whether a world placement's owner has already been removed by pickup.</summary>

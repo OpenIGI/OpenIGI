@@ -9,8 +9,8 @@ namespace OpenIGI.Game.World;
 /// <summary>One live world <c>GunPickup</c> and the weapon its ID resolves to.</summary>
 public sealed class GunPickup
 {
-    private readonly Vector3d _position;
-    private readonly Matrix3f _orientation;
+    private Vector3d _position;
+    private Matrix3f _orientation;
     private DroppedGunState? _motion;
     private DroppedGunState? _previousMotion;
     private DroppedGunCollider? _collider;
@@ -34,6 +34,16 @@ public sealed class GunPickup
         _orientation = orientation;
         Weapon = weapon;
         Ammo = ammo;
+    }
+
+    /// <summary>Lays the pickup at rest where another machine has it: a co-op server's drop, as a client shows it.</summary>
+    /// <param name="position">Where it lies.</param>
+    /// <param name="orientation">How it lies.</param>
+    public void Rest(Vector3d position, Matrix3f orientation)
+    {
+        _motion = null;
+        _position = position;
+        _orientation = orientation;
     }
 
     /// <summary>Gets the authored task that owns this pickup, if it came from level data.</summary>
@@ -266,6 +276,12 @@ public sealed class GunPickupRegistry
         return registry;
     }
 
+    /// <summary>
+    /// Gets or sets whether the pickups are a co-op client's, taken when the server says who took them rather than by whoever
+    /// walks over them here.
+    /// </summary>
+    public bool Mirrored { get; set; }
+
     /// <summary>Consumes every pickup within the retail reach of the Human's origin this tick.</summary>
     /// <param name="position">The Human's origin (<c>+32</c>) in engine units, not its feet.</param>
     /// <param name="inventory">The player's weapon inventory.</param>
@@ -273,27 +289,46 @@ public sealed class GunPickupRegistry
     public IReadOnlyList<GunPickup> CollectAt(Vector3d position, PlayerWeapons inventory)
     {
         ArgumentNullException.ThrowIfNull(inventory);
+        if (Mirrored)
+        {
+            return [];
+        }
 
         List<GunPickup>? collected = null;
         foreach (GunPickup pickup in _items)
         {
-            if (pickup.IsCollected || !PickupReach.IsWithinRange(position, pickup.Position))
+            if (!pickup.IsCollected && PickupReach.IsWithinRange(position, pickup.Position) && CollectInto(pickup, inventory))
             {
-                continue;
+                (collected ??= []).Add(pickup);
             }
-
-            // GunPickup::Update forwards its configured clip size. The human handler deliberately
-            // leaves an existing weapon in place and turns the same payload into loose reserve ammo.
-            inventory.PickUp(pickup.Weapon, pickup.Ammo, pickup.Weapon.RoundsPerClip);
-            pickup.IsCollected = true;
-            if (pickup.Task is { } task)
-            {
-                task.Tree.Delete(task);
-            }
-            (collected ??= []).Add(pickup);
         }
 
         return collected ?? [];
+    }
+
+    /// <summary>Puts a pickup in a player's hands and takes it out of the level, as walking over it does.</summary>
+    /// <param name="pickup">The pickup.</param>
+    /// <param name="inventory">The player's weapons.</param>
+    /// <returns><see langword="false"/> when it was already taken.</returns>
+    public bool CollectInto(GunPickup pickup, PlayerWeapons inventory)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        ArgumentNullException.ThrowIfNull(inventory);
+        if (pickup.IsCollected || !_items.Contains(pickup))
+        {
+            return false;
+        }
+
+        // GunPickup::Update forwards its configured clip size. The human handler deliberately
+        // leaves an existing weapon in place and turns the same payload into loose reserve ammo.
+        inventory.PickUp(pickup.Weapon, pickup.Ammo, pickup.Weapon.RoundsPerClip);
+        pickup.IsCollected = true;
+        if (pickup.Task is { } task)
+        {
+            task.Tree.Delete(task);
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -333,6 +368,21 @@ public sealed class GunPickupRegistry
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
         pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
+        _items.Add(pickup);
+        Spawned?.Invoke(pickup);
+        return pickup;
+    }
+
+    /// <summary>Lays a dropped gun where another machine's lies, at rest: a co-op server's drop, as a client shows it.</summary>
+    /// <param name="position">Where it lies.</param>
+    /// <param name="orientation">How it lies.</param>
+    /// <param name="weapon">The weapon.</param>
+    /// <returns>The pickup.</returns>
+    public GunPickup SpawnResting(Vector3d position, Matrix3f orientation, WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
+        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
         _items.Add(pickup);
         Spawned?.Invoke(pickup);
         return pickup;

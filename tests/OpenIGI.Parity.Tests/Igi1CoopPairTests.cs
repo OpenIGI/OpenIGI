@@ -127,6 +127,42 @@ public sealed class Igi1CoopPairTests
         Assert.True(walked > 2048, $"after the restart the joiner's walk moved its player on the host {walked} units");
     }
 
+    [RequiresGameDataFact]
+    public void What_a_player_takes_is_taken_by_that_player_and_gone_for_the_other()
+    {
+        using Igi1CoopPair pair = Joined();
+        Game.World.GunPickupRegistry hostGuns = pair.Host!.World.GunPickups!;
+        Game.World.GunPickupRegistry joinerGuns = pair.Joiner!.World.GunPickups!;
+        Assert.Equal(hostGuns.Items.Count, joinerGuns.Items.Count);
+
+        // A guard killed on the host drops his gun, and the joiner's level has it lying in the same place -- once.
+        Vector3d hostAt = pair.Host.World.Player!.Body.Position;
+        Game.Igi1.Player.SoldierView guard = pair.Host.World.Soldiers!.SoldierViews
+            .Where(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier))
+            .OrderBy(v => Vector3d.Distance(v.Position, hostAt))
+            .First();
+        int before = hostGuns.Items.Count;
+        pair.Host.World.Soldiers.ApplyExplosion(guard.Position, 2048, 4096, 50f);
+        Assert.True(pair.RunUntil(() => guard.IsDead, 60) >= 0, $"the blast never killed {guard.Soldier.Name}");
+        Assert.True(pair.RunUntil(() => hostGuns.Items.Count > before, 600) >= 0, $"the killed guard {guard.Soldier.Name} dropped nothing");
+        Assert.True(pair.RunUntil(() => joinerGuns.Items.Count == hostGuns.Items.Count, 120) >= 0, $"the joiner has {joinerGuns.Items.Count} guns to the host's {hostGuns.Items.Count}");
+        pair.RunUntil(() => false, 200);
+        Assert.Equal(hostGuns.Items.Count, joinerGuns.Items.Count);
+        Game.World.GunPickup dropped = hostGuns.Items[^1];
+        Assert.True(Vector3d.Distance(dropped.Position, joinerGuns.Items[^1].Position) < 64, "the dropped gun lies elsewhere on the joiner");
+
+        // The joiner walks over it: on the host its player has the gun and the host's doesn't; on the joiner, likewise.
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
+        bool hostHad = pair.Host.World.Player!.Weapons!.HasWeapon(dropped.Weapon.WeaponId);
+        partner.Player.Body.Position = dropped.Position;
+        pair.Joiner.World.Player!.Body.Position = dropped.Position;
+        Assert.True(pair.RunUntil(() => dropped.IsCollected, 30) >= 0, "the partner never took the gun on the host");
+        Assert.True(partner.Player.Weapons!.HasWeapon(dropped.Weapon.WeaponId), "the partner on the host has no gun");
+        Assert.Equal(hostHad, pair.Host.World.Player.Weapons.HasWeapon(dropped.Weapon.WeaponId));
+        Assert.True(pair.RunUntil(() => joinerGuns.Items[^1].IsCollected, 60) >= 0, "the joiner's level still has the gun lying there");
+        Assert.True(pair.Joiner.World.Player.Weapons!.HasWeapon(dropped.Weapon.WeaponId), "the joiner's own player never got the gun");
+    }
+
     private static Igi1CoopPair Joined(params string[] hostArgs)
     {
         Igi1CoopPair pair = new(hostArgs: hostArgs);

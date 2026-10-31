@@ -266,19 +266,12 @@ public sealed class Igi1PlayerSetup(
             mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable, host.Game.Variables);
             GunPickupRegistry gunPickups = mission.GunPickups;
             gunPickups.Landed = sounds.PlayWeaponDrop;
-            candidate.UseGunPickups(gunPickups);
-            candidate.GunPickedUp += pickup =>
-            {
-                audio.PlayGunPickupSound(pickup);
-                string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
-                mission.Objectives?.ShowTransientMessage(missionText.Get(key));
-            };
+            WirePickups(candidate, missionText);
             mission.Soldiers?.UseDroppedWeaponPickups(gunPickups);
-            mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
-            {
-                GunPickup pickup = gunPickups.Spawn(position, orientation, weapon, velocity);
-                host.WeaponDropped(loaded, pickup);
-            });
+
+            // Every drop is drawn, a soldier's here or a co-op server's laid down on a client.
+            gunPickups.Spawned += pickup => host.WeaponDropped(loaded, pickup);
+            mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) => gunPickups.Spawn(position, orientation, weapon, velocity));
 
             // What a dropped gun lands on: the same solids and terrain a round strikes, as triangles
             // for the realistic body and as one ray for the original's fifty-metre drop probe.
@@ -401,18 +394,52 @@ public sealed class Igi1PlayerSetup(
                 $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
             host.Logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
         }
+    }
+
+    // What a player walks over goes into that player's hands -- the mission's own or a co-op partner's -- and only the player
+    // this machine plays hears it and is told.
+    private void WirePickups(PlayerCamera candidate, MissionStringResolver missionText)
+    {
+        bool Felt() => ReferenceEquals(candidate, mission.Player);
+        if (mission.GunPickups is { } gunPickups)
+        {
+            candidate.UseGunPickups(gunPickups);
+            candidate.GunPickedUp += pickup =>
+            {
+                if (Felt())
+                {
+                    audio.PlayGunPickupSound(pickup);
+                    mission.Objectives?.ShowTransientMessage(missionText.Get($"PICKEDUPWEAPON{pickup.Weapon.DisplayName}"));
+                }
+            };
+        }
+
         if (mission.GenericPickups is { } genericPickups)
         {
             candidate.UseGenericPickups(genericPickups);
             candidate.GenericPickedUp += pickup =>
             {
-                // An AmmoPickup posts its own message as it is taken (0x46D990); a GenericPickup posts none.
-                if (audio.TakeGenericPickup(pickup))
+                // An AmmoPickup hands its ammunition to whoever took it (0x46D990), the award at the same edge as the cue so
+                // the object, the count and the sound cannot drift apart; an explicit task payload wins over the catalogue.
+                bool ammunition = string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal);
+                if (candidate.Weapons is { } weapons
+                    && mission.AmmoTypes is { } ammoTypes
+                    && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
                 {
-                    mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage), portrait: AmmoPickupPortrait);
+                    weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
+                }
+
+                if (Felt())
+                {
+                    audio.PlayGenericPickupSound(ammunition);
+
+                    // An AmmoPickup posts its own message as it is taken; a GenericPickup posts none.
+                    if (ammunition)
+                    {
+                        mission.Objectives?.ShowTransientMessage(missionText.Get(AmmoPickupMessage), portrait: AmmoPickupPortrait);
+                    }
                 }
             };
-            host.Logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
         }
     }
 
@@ -436,6 +463,7 @@ public sealed class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         PlayerCamera extra = new(host.Logger);
         WirePlayer(extra, loaded, solids, missionText);
+        WirePickups(extra, missionText);
         // Tuned, rigged and then armed, in the order the mission's own player is.
         if (_config is { } config)
         {
