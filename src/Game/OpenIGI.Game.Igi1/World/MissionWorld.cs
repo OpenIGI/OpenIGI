@@ -68,6 +68,15 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets a co-op session's other players, run after the mission's own each tick; empty when playing alone.</summary>
     public List<Multiplayer.Igi1NetworkPlayer> NetworkPlayers { get; } = [];
 
+    /// <summary>Gets the other players a co-op client's level shows, as the server's snapshots have them.</summary>
+    public List<Multiplayer.Igi1NetworkPlayer> ShownPartners { get; } = [];
+
+    /// <summary>
+    /// Gets every other player in the level as this machine knows it: on a server the partners it runs, on a client those the
+    /// server's snapshots show. What the level asks of "the player" -- an area entered -- it asks of each of these too.
+    /// </summary>
+    public IReadOnlyList<Multiplayer.Igi1NetworkPlayer> Partners => CoopClient ? ShownPartners : NetworkPlayers;
+
     /// <summary>Gets or sets what tells the frame which co-op partners to draw each tick, or <see langword="null"/> playing alone.</summary>
     public Func<IReadOnlyList<Ai.PartnerBody>>? PartnerBodies { get; set; }
 

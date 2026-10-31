@@ -48,6 +48,46 @@ public sealed partial class SoldierSimulation
     /// <summary>Gets the level's soldiers, in no set order.</summary>
     public IEnumerable<SoldierView> SoldierViews => Brains.Keys;
 
+    /// <summary>
+    /// Gets or sets whether these soldiers are a co-op client's, every one the server's puppet: one the server hasn't posed yet
+    /// stands where it is rather than thinking for itself.
+    /// </summary>
+    public bool PuppetsOnly { get; set; }
+
+    /// <summary>Gets a soldier's runtime id, unique to each live soldier and the same on every machine playing the level.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>The id, or -1 for one with no mind.</returns>
+    public int RuntimeIdOf(SoldierView view) => Brains.TryGetValue(view, out Igi1HumanAi? brain) ? brain.RuntimeId : -1;
+
+    /// <summary>Gets the soldier with a runtime id, or <see langword="null"/>.</summary>
+    /// <param name="runtimeId">The id.</param>
+    /// <returns>The soldier.</returns>
+    public SoldierView? SoldierByRuntimeId(int runtimeId)
+    {
+        if (!_context.BrainsByRuntimeId.TryGetValue(runtimeId, out Igi1HumanAi? wanted))
+        {
+            return null;
+        }
+
+        foreach ((SoldierView view, Igi1HumanAi brain) in Brains)
+        {
+            if (ReferenceEquals(brain, wanted))
+            {
+                return view;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Gets the task id of the generator whose current life a soldier is, or <see langword="null"/>.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>The generator's id.</returns>
+    public int? GeneratorIdOf(SoldierView view) => _generators.GeneratorOf(view)?.Id;
+
+    /// <inheritdoc cref="GuardGeneratorSpawner.ReplaceAsServerDid"/>
+    public SoldierView? ReplaceAsServerDid(int generatorId, int runtimeId) => _generators.ReplaceAsServerDid(generatorId, runtimeId);
+
     /// <summary>Poses a soldier from the server's copy from now on, its own mind no longer run.</summary>
     /// <param name="view">The soldier.</param>
     /// <param name="puppet">How the server has it.</param>

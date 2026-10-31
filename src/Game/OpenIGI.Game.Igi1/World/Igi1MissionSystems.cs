@@ -46,6 +46,7 @@ public static class Igi1MissionSystems
                     game.Tick.AreaPlayerNow,
                     made =>
                     {
+                        made.PartnerPlayers = game.Tick.PartnerAreaPlayers;
                         b.Objectives = made;
                         BringComputerUp(game, b, made, host);
                     })))

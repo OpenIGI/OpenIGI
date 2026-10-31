@@ -26,6 +26,9 @@ internal sealed class MissionAreaActivation
     private Func<IEnumerable<HumanOccupant>>? _soldierSource;
     private Func<AreaPlayer>? _playerSource;
 
+    /// <summary>Gets or sets what reads the level's other players -- a co-op session's -- each counted as the player is.</summary>
+    public Func<IEnumerable<AreaPlayer>>? Partners { get; set; }
+
     /// <summary>Builds the area set over the loaded level.</summary>
     /// <param name="levelRoot">The loaded level's task tree, which resolves occupants to their tasks.</param>
     public MissionAreaActivation(GameTask levelRoot)
@@ -133,12 +136,18 @@ internal sealed class MissionAreaActivation
         int count = 0;
         AreaPlayer player = _playerSource?.Invoke()
             ?? new AreaPlayer(_statePlayer, _stateTeam, _stateExtraPlayer, _playerAlive);
-        if (player.Alive
-            && area.AcceptsPlayer(player.Team)
-            && ((player.Position is { } point && area.Contains(point))
-                || (player.ExtraPosition is { } extra && area.Contains(extra))))
+        if (Holds(area, player))
         {
             count++;
+        }
+
+        // Every other player stands in an area as the player does: a co-op partner reaching the exit is a player there.
+        foreach (AreaPlayer partner in Partners?.Invoke() ?? [])
+        {
+            if (Holds(area, partner))
+            {
+                count++;
+            }
         }
 
         IEnumerable<HumanOccupant> soldiers = _soldierSource?.Invoke() ?? _soldierOccupants.Values;
@@ -171,4 +180,10 @@ internal sealed class MissionAreaActivation
 
         area.ActiveCount = count;
     }
+
+    private static bool Holds(AreaActivation area, AreaPlayer player) =>
+        player.Alive
+        && area.AcceptsPlayer(player.Team)
+        && ((player.Position is { } point && area.Contains(point))
+            || (player.ExtraPosition is { } extra && area.Contains(extra)));
 }

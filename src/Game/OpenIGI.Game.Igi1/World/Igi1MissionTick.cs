@@ -169,6 +169,17 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             !mission.IsPlayerDead);
     }
 
+    /// <summary>Gets the level's other players as its areas count them: where each stands, and whether it is up.</summary>
+    /// <returns>One per partner.</returns>
+    public IEnumerable<AreaPlayer> PartnerAreaPlayers()
+    {
+        int team = mission.Soldiers?.PlayerTeam ?? 0;
+        foreach (Multiplayer.Igi1NetworkPlayer partner in mission.Partners)
+        {
+            yield return new AreaPlayer(partner.Player.Body.Origin, team, null, !partner.IsDead);
+        }
+    }
+
     // Whether the player's body is what the world sees, asked afresh each time as the tick may change it: the rig's, or another
     // game's player standing in its stead.
     private bool Walking() => host.PlayerMode && (mission.Player is not null || mission.PlayerStandIn is not null);
@@ -549,27 +560,36 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     }
 
     /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
+    // Every player a vehicle drives through is run over, a co-op partner as the player is.
     private void CheckRunOver()
     {
-        if (mission.Player is null || mission.IsPlayerDead || mission.Cutscenes is not { } runtime)
+        if (mission.Cutscenes is not { } runtime)
         {
             return;
         }
 
-        Vector3d origin = mission.Player.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.HumanOriginStandingInUnits);
-        if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+        foreach (IHarmedPlayer player in harm.Players)
         {
-            return;
-        }
+            if (player.Rig is not { } rig || player.IsDead)
+            {
+                continue;
+            }
 
-        mission.PlayerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
-        host.Logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
-        if (mission.PlayerHealth.IsDead)
-        {
-            Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
-                ? metres * WorldScene.UnitsPerMetre
-                : origin;
-            harm.BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+            Vector3d origin = rig.Body.Position + new Vector3d(0d, 0d, Igi1HumanAi.HumanOriginStandingInUnits);
+            if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+            {
+                continue;
+            }
+
+            player.Health.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
+            host.Logger.Information("Ai", $"A player was run over by {vehicle.Type.Name} {vehicle.Id}.");
+            if (player.Health.IsDead)
+            {
+                Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
+                    ? metres * WorldScene.UnitsPerMetre
+                    : origin;
+                harm.BeginPlayerDeath(player, from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+            }
         }
     }
 

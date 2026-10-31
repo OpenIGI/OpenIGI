@@ -165,10 +165,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         // The soldiers, which only the server's minds run: every client poses its copies by these.
         if (_game.World.Soldiers is { } soldiers)
         {
-            foreach (Player.SoldierView soldier in soldiers.SoldierViews.OrderBy(static v => v.Soldier.Id))
+            // Each by its runtime id, unique to the live soldier and the same on every machine; a generator's by its generator
+            // too, for a client to make the replacement the server made.
+            foreach (Player.SoldierView soldier in soldiers.SoldierViews.OrderBy(soldiers.RuntimeIdOf))
             {
                 humans.Add(new ReplicatedHuman(
-                    SoldierEntityBase + soldier.Soldier.Id,
+                    SoldierEntityBase + soldiers.RuntimeIdOf(soldier),
                     Int3.From(soldier.Position),
                     default,
                     Quantize.AngleToBits(Ai.SoldierPuppet.FacingOf(soldier.Orientation)),
@@ -179,7 +181,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
                     255,
                     (byte)Math.Clamp(soldier.Soldier.Team, 0, 255),
                     soldier.IsDead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive,
-                    unchecked((byte)(soldiers.AgentOf(soldier)?.ShotSequence ?? 0))));
+                    unchecked((byte)(soldiers.AgentOf(soldier)?.ShotSequence ?? 0)),
+                    Source: (ushort)((soldiers.GeneratorIdOf(soldier) ?? -1) + 1)));
             }
         }
 

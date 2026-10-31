@@ -32,6 +32,9 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
     /// <summary>Gets the mission's own player, felt on this machine.</summary>
     public IHarmedPlayer Own { get; } = new MissionPlayer(mission, new LocalPlayerSenses(mission, sounds, audio, host));
 
+    /// <summary>Gets every player this machine harms: the mission's own, then a co-op server's partners.</summary>
+    public IEnumerable<IHarmedPlayer> Players => [Own, .. mission.NetworkPlayers];
+
     /// <summary>A soldier's close-combat blow landing on the mission's own player.</summary>
     /// <param name="attacker">The striking soldier's position.</param>
     /// <param name="damage">The blow's damage.</param>

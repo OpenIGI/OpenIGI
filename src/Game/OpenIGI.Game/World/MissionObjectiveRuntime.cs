@@ -198,6 +198,13 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// </remarks>
     public float ExtraMessageHoldSeconds { get; set; }
 
+    /// <summary>Gets or sets what reads the level's other players, a co-op session's, whom the areas count as they count the player.</summary>
+    public Func<IEnumerable<AreaPlayer>>? PartnerPlayers
+    {
+        get => _areas.Partners;
+        set => _areas.Partners = value;
+    }
+
     /// <summary>Gets authored, non-cutscene status messages recorded by IGI1's ComputerLog.</summary>
     public IReadOnlyList<MissionComputerLogEntry> Log => _messages.Log;
 

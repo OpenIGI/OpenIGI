@@ -148,6 +148,13 @@ public sealed partial class SoldierSimulation : IHumanEvents
             return;
         }
 
+        // A client's soldier the server hasn't posed yet: still, its mind the server's to run.
+        if (PuppetsOnly)
+        {
+            view.Tick();
+            return;
+        }
+
         TickingSoldierId = view.Soldier.Id;
         TickingSoldierPosition = view.Position;
 

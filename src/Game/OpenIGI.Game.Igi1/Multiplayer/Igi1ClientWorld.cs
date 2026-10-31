@@ -41,6 +41,10 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         _game = game ?? throw new ArgumentNullException(nameof(game));
         game.World.PartnerBodies = PartnerBodies;
         game.World.CoopClient = true;
+        if (game.World.Soldiers is { } soldiers)
+        {
+            soldiers.PuppetsOnly = true;
+        }
     }
 
     // The partners the frame draws on a client: each where the snapshots put it, its legs and torso on the clips the server's ran
@@ -161,8 +165,12 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         // A soldier: the client's own copy is posed as the server's.
         if (human.Id >= Igi1ReplicatedWorld.SoldierEntityBase)
         {
-            if (_game.World.Soldiers is { } soldiers && soldiers.SoldierById(human.Id - Igi1ReplicatedWorld.SoldierEntityBase) is { } soldier)
+            int runtimeId = human.Id - Igi1ReplicatedWorld.SoldierEntityBase;
+            if (_game.World.Soldiers is { } soldiers
+                && (soldiers.SoldierByRuntimeId(runtimeId)
+                    ?? (human.Source > 0 && (human.Flags & ReplicatedHumanCondition.Alive) != 0 ? soldiers.ReplaceAsServerDid(human.Source - 1, runtimeId) : null)) is { } soldier)
             {
+                soldiers.PuppetsOnly = true;
                 soldiers.Puppet(soldier, new Ai.SoldierPuppet(
                     human.Position.ToVector(),
                     Quantize.AngleFromBits(human.Yaw),
@@ -183,11 +191,13 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 return;
             }
 
-            other = new Igi1NetworkPlayer(made.Player, made.Health);
+            other = new Igi1NetworkPlayer(made.Player, made.Health) { Entity = human.Id };
             _others[human.Id] = other;
+            _game.World.ShownPartners.Add(other);
         }
 
         _shown[human.Id] = human;
+        other.IsDead = (human.Flags & ReplicatedHumanCondition.Alive) == 0;
         other.Player.Body.Position = human.Position.ToVector();
         other.Player.Body.Yaw = Quantize.AngleFromBits(human.Yaw);
         other.Player.Body.Pitch = Quantize.AngleFromBits(human.Pitch);
@@ -268,7 +278,11 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// <inheritdoc/>
     public void Hide(int id)
     {
-        _others.Remove(id);
+        if (_others.Remove(id, out Igi1NetworkPlayer? gone))
+        {
+            _game.World.ShownPartners.Remove(gone);
+        }
+
         _shown.Remove(id);
         _shotsDrawn.Remove(id);
     }
