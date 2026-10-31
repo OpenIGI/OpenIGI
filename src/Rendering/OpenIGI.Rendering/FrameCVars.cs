@@ -37,6 +37,17 @@ public static class FrameCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether models are drawn at the original's levels of detail, coarser with distance, rather than always whole.</summary>
+    /// <remarks>
+    /// Off under every preset, the original's own look included: every model is drawn at its finest level at any distance.
+    /// Not archived, as <see cref="MenuBackdropLite"/> is not: it is for comparing with the original, not a preference.
+    /// </remarks>
+    public static readonly BoolCVar ModelLod = CVar.Bool(
+        "r_model_lod",
+        false,
+        CVarOptions.None,
+        "Draw models at the original's levels of detail, coarser with distance. Off draws every model at its finest.");
+
     /// <summary>Whether the level behind the menu is drawn without the expensive parts of the preset.</summary>
     /// <remarks>
     /// The backdrop is looked at through a blur, never played, and it is replaced every time the player
