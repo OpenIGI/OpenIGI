@@ -71,6 +71,14 @@ internal sealed class PlayerWeaponStateMachine
     /// <summary>Gets whether the medipack animation was started during the most recent weapon tick.</summary>
     internal bool MedipackStartedThisTick { get; private set; }
 
+    /// <summary>Gets whether a hand-off has asked for the view's zoom to be reset and nobody has taken it yet.</summary>
+    /// <remarks>
+    /// <c>0x4659E0</c>, which the ready hub (<c>0x40E9C0</c>) calls on its way into the reload, the lean and the weapon
+    /// change, and the fire state (<c>0x40EF70</c>) on its way into the reload: the view's scope latch clears and both
+    /// tangents go home. A scoped Dragunov or a zoomed MP5 comes out of its sight when the reload starts.
+    /// </remarks>
+    internal bool ViewResetPending { get; set; }
+
     /// <summary>Gets the weapon action the rig should be playing, or <see langword="null"/>.</summary>
     internal WeaponAction? RequestedAction { get; private set; }
 
@@ -320,6 +328,13 @@ internal sealed class PlayerWeaponStateMachine
         if (next == State)
         {
             return;
+        }
+
+        if ((State == HumanWeaponState.Ready
+                && next is HumanWeaponState.Reloading or HumanWeaponState.Peeking or HumanWeaponState.ChangingWeapon)
+            || (State == HumanWeaponState.Firing && next == HumanWeaponState.Reloading))
+        {
+            ViewResetPending = true;
         }
 
         PreviousState = State;

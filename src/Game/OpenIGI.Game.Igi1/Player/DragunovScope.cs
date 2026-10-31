@@ -69,6 +69,10 @@ public sealed class DragunovScope
     /// <param name="zoomOutHeld">Whether the zoom-out slot is down this tick.</param>
     /// <param name="tanX">The current world horizontal half-FOV tangent.</param>
     /// <param name="viewModelTanX">The current first-person model tangent.</param>
+    /// <param name="weaponReady">
+    /// Whether the weapon is ready (<see cref="PlayerWeapons.IsWeaponReady"/>). While it is not, <c>0x472E50</c> returns
+    /// before touching the scope: it cannot be raised mid-reload and neither tangent moves.
+    /// </param>
     /// <returns>The two tangents to use for this tick.</returns>
     public SightZoomFrame Tick(
         WeaponType? weapon,
@@ -77,7 +81,8 @@ public sealed class DragunovScope
         bool zoomInHeld,
         bool zoomOutHeld,
         float tanX,
-        float viewModelTanX)
+        float viewModelTanX,
+        bool weaponReady = true)
     {
         if (!ReferenceEquals(_weapon, weapon))
         {
@@ -91,6 +96,11 @@ public sealed class DragunovScope
         {
             IsScoped = false;
             return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        }
+
+        if (!weaponReady)
+        {
+            return new SightZoomFrame(tanX, viewModelTanX);
         }
 
         bool risingEdge = alternateHeld && !alternateHeldLastTick;

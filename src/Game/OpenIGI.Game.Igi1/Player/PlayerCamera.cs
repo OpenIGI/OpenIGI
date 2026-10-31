@@ -915,6 +915,13 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     {
         _shots.ClearImpacts();
 
+        // 0x4659E0, asked for by the weapon hand-off into a reload, a lean or a weapon change: the scope latch clears and
+        // both tangents go home, so a reload always comes out of the sight.
+        if (_weapons?.ConsumeViewReset() == true)
+        {
+            ResetOptics();
+        }
+
         HumanView? view = _firstPerson.Rig;
         if (view is not null)
         {
