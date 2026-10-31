@@ -147,6 +147,9 @@ public sealed class Igi1CoopSessionTests
                 after = partner.Health.RemainingFraction;
                 shove = partner.Player.Body.HitShove - shoveBefore;
                 partner.RemoteSenses.TakeInto(felt);
+
+                // The knock goes along too, but it is not felt: the client moves its body by it.
+                felt.RemoveAll(static sense => RemotePlayerSenses.TryShove(sense, out _, out _));
             });
 
         Assert.NotNull(capture.Game);
