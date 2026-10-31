@@ -124,6 +124,19 @@ public sealed partial class SoldierSimulation
             if (!view.IsDead)
             {
                 view.Kill(puppet.Animation);
+
+                // It falls as the server's fell, and lets its gun go: the gun on the ground is the server's, sent with the
+                // level's pickups, so none is dropped here -- but the hand is emptied, or the client drew the gun twice.
+                SoldierAgent? holder = _context.FindAgent(view);
+                double grounded = _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
+                _damage.BodyFell?.Invoke(new SoldierFall(
+                    view,
+                    new Vector3d(view.Position.X, view.Position.Y, grounded + view.RootSample.Z),
+                    Bone: -1,
+                    Travel: default,
+                    OpenIGI.Game.Weapons.WeaponCategory.Gun,
+                    Velocity: default,
+                    DroppedWeapon: holder is not null && SoldierDamage.WeaponForDrop(holder.CarriedWeaponType, holder.WeaponType) is not null));
             }
 
             view.Tick();

@@ -554,8 +554,28 @@ public sealed class Igi1CoopPairTests
         // Killed on the host, it falls on the joiner too and drops one gun there, where the host's lies -- which the joiner takes.
         Game.World.GunPickupRegistry hostGuns = pair.Host.World.GunPickups!;
         int hostGunsBefore = hostGuns.Items.Count;
+
+        // Each game's drawing hears the fall, and empties the guard's hand of the gun that dropped: the joiner's drew it in
+        // the corpse's hand beside the host's drop, a second gun that no pickup took away.
+        Dictionary<string, bool> emptied = [];
+        foreach ((string side, Game.Igi1.Ai.SoldierSimulation sim, Game.Igi1.Player.SoldierView fallen) in
+            new[] { ("host", soldiers, guard), ("joiner", copies, copy) })
+        {
+            Action<Game.Igi1.Ai.SoldierFall>? drawing = sim.BodyFell;
+            sim.BodyFell = fall =>
+            {
+                drawing?.Invoke(fall);
+                if (ReferenceEquals(fall.View, fallen))
+                {
+                    emptied[side] = fall.DroppedWeapon;
+                }
+            };
+        }
+
         soldiers.ApplyExplosion(guard.Position, 2048, 4096, 50f);
         Assert.True(pair.RunUntil(() => guard.IsDead && copy.IsDead, 60) >= 0, "the host's kill never reached the joiner");
+        Assert.True(emptied.GetValueOrDefault("host"), "the host's guard fell with its gun in hand");
+        Assert.True(emptied.GetValueOrDefault("joiner"), "the joiner's guard fell with its gun in hand");
         Assert.True(pair.RunUntil(() => hostGuns.Items.Count > hostGunsBefore, 600) >= 0, "the killed guard dropped nothing on the host");
         pair.RunUntil(() => false, 200);
         Assert.Equal(hostGuns.Items.Count - hostGunsBefore, joinerGuns.Items.Count - gunsBefore);
