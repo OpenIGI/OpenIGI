@@ -88,6 +88,32 @@ public interface IPlayerSenses
 
     /// <summary>The player brought back: the red gone, its own eyes again.</summary>
     void Revived();
+
+    /// <summary>The knock the handlers gave the player's body, already on the body here: for the game a partner plays on.</summary>
+    /// <param name="x">The X added to the shove accumulator, in units per tick.</param>
+    /// <param name="y">The Y added.</param>
+    /// <remarks>
+    /// The mission's own player has nothing to do: its body took the knock. A partner's client predicts its own body, and
+    /// moves it as the server's moved, or it is put back every tick the knock carries the server's on.
+    /// </remarks>
+    void Shoved(float x, float y)
+    {
+    }
+}
+
+/// <summary>What the handlers do to a player's body.</summary>
+internal static class HarmedPlayerBody
+{
+    /// <summary>Knocks a player's body along the floor (the shove accumulator, <c>Human+1648</c>), and tells its senses.</summary>
+    /// <param name="target">The player.</param>
+    /// <param name="rig">Its rig.</param>
+    /// <param name="x">The X to add, in units per tick.</param>
+    /// <param name="y">The Y to add.</param>
+    public static void Shove(this IHarmedPlayer target, PlayerCamera rig, float x, float y)
+    {
+        rig.Body.AddHitShove(x, y);
+        target.Senses.Shoved(x, y);
+    }
 }
 
 /// <summary>The mission's own player, as the handlers hurt it: the rig, health and death the mission state holds.</summary>
