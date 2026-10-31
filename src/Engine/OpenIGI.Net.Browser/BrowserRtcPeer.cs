@@ -57,6 +57,9 @@ internal sealed partial class BrowserRtcPeer(int id) : IRtcPeer
     /// <inheritdoc/>
     public bool Relayed => !_disposed && PeerRelayed(id);
 
+    /// <inheritdoc/>
+    public int Backlog => _disposed ? 0 : PeerBacklog(id);
+
     public void SetRemoteDescription(string kind, string sdp) => SetRemote(id, kind, sdp);
 
     public void AddRemoteCandidate(string candidate, string? mid) => AddCandidate(id, candidate, mid);
@@ -115,6 +118,9 @@ internal sealed partial class BrowserRtcPeer(int id) : IRtcPeer
 
     [JSImport("relayed", BrowserRtcPeerFactory.ModuleName)]
     private static partial bool PeerRelayed(int id);
+
+    [JSImport("backlog", BrowserRtcPeerFactory.ModuleName)]
+    private static partial int PeerBacklog(int id);
 
     [JSImport("failure", BrowserRtcPeerFactory.ModuleName)]
     private static partial string? PeerFailure(int id);

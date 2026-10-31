@@ -165,6 +165,10 @@ public sealed class RoomTransport : INetTransport
     }
 
     /// <inheritdoc/>
+    public int Backlog(NetAddress destination) =>
+        destination.Kind == NetAddressKind.Peer && _peers.TryGetValue((int)(uint)destination.Host, out IRtcPeer? peer) ? peer.Backlog : 0;
+
+    /// <inheritdoc/>
     public bool TryReceive(Span<byte> buffer, out NetAddress source, out int length)
     {
         Pump();

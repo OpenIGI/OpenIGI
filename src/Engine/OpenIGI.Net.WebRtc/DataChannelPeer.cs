@@ -12,6 +12,10 @@ public sealed class DataChannelPeerFactory : IRtcPeerFactory
     // The library logs on its own threads; the lines wait here for the game's thread (Drain), where the game's log is safe
     // to write. Bounded, in case nothing drains them.
     private static readonly ConcurrentQueue<string> s_log = new();
+
+    // SCTP's send buffer, and the largest message a channel takes, which the buffer is never let below.
+    internal const int SctpSendBuffer = 8 * NetConstants.MaxPacketSize;
+    internal const int MaxMessageSize = 2 * NetConstants.MaxPacketSize;
     private static IOpenIgiLogger? s_logger;
     private static int s_loggerSet;
 
@@ -26,6 +30,12 @@ public sealed class DataChannelPeerFactory : IRtcPeerFactory
             unsafe
             {
                 Native.InitLogger(Native.LogWarning, &OnLog);
+
+                // SCTP's own send buffer is a mebibyte by default and invisible to the channel's buffered amount: on a
+                // slow line, seconds of snapshots queue there unseen. Kept to a few packets, what overflows waits in the
+                // channel's queue instead, where Backlog sees it and Send drops past the bound.
+                Native.SctpSettings sctp = new() { SendBufferSize = SctpSendBuffer };
+                _ = Native.SetSctpSettings(&sctp);
             }
         }
     }
@@ -108,6 +118,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
                     IceServers = (nint)servers,
                     IceServersCount = strings.Length,
                     IceTransportPolicy = relayOnly ? 1 : 0,
+                    MaxMessageSize = DataChannelPeerFactory.MaxMessageSize,
                 };
                 _pc = Native.CreatePeerConnection(&config);
             }
@@ -174,6 +185,9 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
 
     public string? Failure => _failure;
 
+    /// <inheritdoc/>
+    public int Backlog => _dc is >= 0 and var dc && _state == RtcPeerState.Open ? Math.Max(0, Native.GetBufferedAmount(dc)) : 0;
+
     public void SetRemoteDescription(string kind, string sdp) => Native.SetRemoteDescription(_pc, sdp, kind);
 
     public void AddRemoteCandidate(string candidate, string? mid) => Native.AddRemoteCandidate(_pc, candidate, mid);
@@ -183,7 +197,7 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
     public void Send(ReadOnlySpan<byte> datagram)
     {
         int dc = _dc;
-        if (_state == RtcPeerState.Open && dc >= 0)
+        if (_state == RtcPeerState.Open && dc >= 0 && Native.GetBufferedAmount(dc) <= NetConstants.MaxSendBacklog)
         {
             fixed (byte* bytes = datagram)
             {

@@ -234,6 +234,13 @@ public sealed class ServerSession
         {
             foreach ((int slot, ClientState client) in _clients)
             {
+                // A line still carrying the last ones gets none this tick: a snapshot queued behind them would only
+                // arrive late, and push the round trip out with it.
+                if (_net.GetConnection(slot) is { IsChoked: true })
+                {
+                    continue;
+                }
+
                 client.History.Add(snapshot);
                 SendSnapshot(slot, snapshot, client.History.Baseline, tick);
             }

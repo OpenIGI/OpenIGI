@@ -76,6 +76,9 @@ public sealed class NetConnection
     /// <summary>Gets the reliable messages queued or unacknowledged.</summary>
     public int PendingReliableCount => SequenceMath.Distance(_reliableNextId, _reliableOldestUnacked) + _reliableBacklog.Count;
 
+    /// <summary>Gets whether the transport still holds more than <see cref="NetConstants.ChokeBacklog"/> bytes for the other end: the line is full.</summary>
+    public bool IsChoked => _transport.Backlog(RemoteAddress) > NetConstants.ChokeBacklog;
+
     internal uint Salt { get; }
 
     /// <summary>Queues a message for the next <see cref="Flush"/>.</summary>

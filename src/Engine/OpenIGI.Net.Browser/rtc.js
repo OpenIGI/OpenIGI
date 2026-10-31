@@ -12,6 +12,11 @@ const CLOSED = 2;
 // Datagrams waiting for the game: a second's worth for a busy host. Past it the oldest go, as a full socket drops them.
 const MAX_QUEUED = 512;
 
+// Bytes a channel may hold unsent before a datagram is dropped instead (NetConstants.MaxSendBacklog). The browser queues
+// without end otherwise: sent faster than the line carries, every datagram waits behind the last, and the round trip
+// grows by seconds while the line itself is quick.
+const MAX_SEND_BACKLOG = 32 * 1024;
+
 const peers = new Map();
 let next = 1;
 
@@ -118,9 +123,12 @@ export const imports = {
   failure: id => peers.get(id)?.failure ?? null,
   relayed: id => peers.get(id)?.relayed === true,
 
+  // The bytes the channel holds unsent.
+  backlog: id => peers.get(id)?.channel?.bufferedAmount ?? 0,
+
   send: (id, view) => {
     const peer = peers.get(id);
-    if (peer?.state === OPEN && peer.channel?.readyState === 'open') {
+    if (peer?.state === OPEN && peer.channel?.readyState === 'open' && peer.channel.bufferedAmount <= MAX_SEND_BACKLOG) {
       try {
         peer.channel.send(view.slice());
       } catch {
