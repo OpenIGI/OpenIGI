@@ -317,8 +317,6 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             : round.DamageFactor;
         if (!invulnerable)
         {
-            float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
-            round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
             if (BloodSpray is { } bleed)
             {
                 Vector3d line = round.End - round.Origin;
@@ -331,6 +329,17 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                         : default);
             }
 
+            // A co-op client's soldier is the server's: the round it fired is traced there, and whatever it does to the
+            // soldier comes back in the snapshots. Here it shows its blood and counts as a hit, and takes no health -- a
+            // soldier killed only here would lie dead while the server went on posing it alive and firing.
+            if (_context.PuppetsOnly)
+            {
+                round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
+                return;
+            }
+
+            float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
             if (health.IsDead)
             {
                 // The brain hears of the round that kills it too: the event is posted to an AI that is not dead yet,
@@ -443,7 +452,8 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// <summary>One blast on one soldier.</summary>
     public void TakeExplosion(SoldierView soldier, Vector3d position, float radiusUnits, float falloffUnits, float damageFactor)
     {
-        if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
+        // A co-op client's blast is the server's to weigh against its soldiers.
+        if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier) || _context.PuppetsOnly)
         {
             return;
         }

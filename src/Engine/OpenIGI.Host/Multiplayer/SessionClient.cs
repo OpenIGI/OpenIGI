@@ -92,7 +92,29 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     public void AfterTitleTick(object title)
     {
         double now = _clock.Elapsed.TotalSeconds;
+        if (!Attach(title, now))
+        {
+            return;
+        }
 
+        ClientReplication.Tick(_session!, _world!, now);
+        if (!_welcomed && _session!.EntityId is { } id)
+        {
+            _welcomed = true;
+            _logger.Information(LogCategory, $"Joined {Where}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
+        }
+
+        if (_session!.EndReason is { } reason && reason != _ended)
+        {
+            _ended = reason;
+            _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
+        }
+    }
+
+    // The session, as far as it can be brought up this call: the room's channel opened, the session made on the first level
+    // up here, and each later level followed. False while there is no session to run yet.
+    private bool Attach(object? title, double now)
+    {
         // Through a room, the handshake waits for the channel to the host: until it opens there is nowhere to send it.
         if (_session is null && _transport is RoomTransport { Status: not RoomStatus.Open } room)
         {
@@ -103,14 +125,14 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
                 _logger.Warning(LogCategory, $"Could not join {room}: {_ended}.");
             }
 
-            return;
+            return false;
         }
 
         if (_session is null)
         {
             if (title is not IReplicatedTitle { Level: not null } replicated)
             {
-                return;
+                return false;
             }
 
             _world = replicated.CreateClientWorld();
@@ -120,27 +142,14 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _session.Connect(_server, _request, now);
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
-
-        else
+        else if (title is not null)
         {
             FollowLevel(title);
         }
 
-        ClientReplication.Tick(_session, _world!, now);
-        if (!_welcomed && _session.EntityId is { } id)
-        {
-            _welcomed = true;
-            _logger.Information(LogCategory, $"Joined {Where}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
-        }
-
-        if (_session.EndReason is { } reason && reason != _ended)
-        {
-            _ended = reason;
-            _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
-        }
+        return true;
     }
 
-    /// <inheritdoc/>
     /// <inheritdoc/>
     public string? TakeTravel() => _session?.TakeTravel();
 
@@ -150,31 +159,56 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     // The longest a loaded level waits for the server's word: past this the server is taken to have gone on without it.
     private const double LongestWaitSeconds = 45.0;
 
-    // When the level the server is going on to came up here, held for its word, or null when none is.
+    // When the level up here began waiting for the server -- to be joined, told its state, or told to begin -- or null when
+    // it isn't waiting.
     private double? _heldSince;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A level is held behind the loading card until it can be played as the server's: the session joined and the server's
+    /// level state taken, so its scenes run as the server's run -- a late joiner never sees the intro the host has passed
+    /// -- and, going on to a level the server announced, the server's word to begin it. Past <see cref="LongestWaitSeconds"/>,
+    /// or once the session is over, it is let go.
+    /// </remarks>
     public bool HoldsLevel =>
-        _session is { WaitingForServer: true } && _heldSince is { } since && _clock.Elapsed.TotalSeconds - since < LongestWaitSeconds;
+        _ended is null && Waiting && (_heldSince is not { } since || _clock.Elapsed.TotalSeconds - since < LongestWaitSeconds);
+
+    // Whether the level up here still wants something of the server before it can be played as the server's.
+    private bool Waiting =>
+        _session is not { EntityId: not null, EndReason: null } session || !session.LevelTaken || session.WaitingForServer;
 
     /// <inheritdoc/>
     public void Pump(object? title)
     {
-        if (_session is not { } session)
+        double now = _clock.Elapsed.TotalSeconds;
+        if (title is IReplicatedTitle { Level: not null })
+        {
+            _heldSince ??= now;
+        }
+
+        if (!Attach(title, now) || _session is not { } session)
         {
             return;
         }
 
-        double now = _clock.Elapsed.TotalSeconds;
-        if (title is not null)
+        session.Receive(now);
+
+        // The server's level state, taken while the level is held, so its first tick is already the server's: nothing of a
+        // level the server has left is taken for the one here.
+        if (!session.Behind && session.TakeLevel() is { } level)
         {
-            FollowLevel(title);
+            _world!.ApplyLevel(level);
         }
 
-        session.Receive(now);
-        if (!session.WaitingForServer)
+        if (!Waiting)
         {
             _heldSince = null;
+        }
+
+        if (session.EndReason is { } reason && reason != _ended)
+        {
+            _ended = reason;
+            _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
         }
 
         session.Flush(now);
@@ -192,11 +226,11 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         _world = next.CreateClientWorld();
         _level = level;
         _session.Arrived();
+        _heldSince = _clock.Elapsed.TotalSeconds;
         _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
         if (_session.WaitingForServer)
         {
             _session.ReportReady();
-            _heldSince = _clock.Elapsed.TotalSeconds;
         }
     }
 

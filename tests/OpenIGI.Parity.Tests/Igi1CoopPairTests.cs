@@ -44,8 +44,10 @@ public sealed class Igi1CoopPairTests
         Assert.Equal(pair.Host!.World.Soldiers!.SoldierViews.Count(), soldiers.Length);
         Assert.Equal(soldiers.Length, soldiers.Distinct().Count());
 
-        // Each soldier the joiner has is the host's puppet, standing where the host's stands.
-        foreach (Game.Igi1.Player.SoldierView mine in pair.Joiner!.World.Soldiers!.SoldierViews.Where(static v => !v.IsDead))
+        // Each soldier the joiner has in play is the host's puppet, standing where the host's stands. One the level keeps
+        // out of play is never posed, there or here.
+        foreach (Game.Igi1.Player.SoldierView mine in pair.Joiner!.World.Soldiers!.SoldierViews
+            .Where(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier)))
         {
             int runtime = pair.Joiner.World.Soldiers.RuntimeIdOf(mine);
             Game.Igi1.Player.SoldierView? theirs = pair.Host.World.Soldiers.SoldierByRuntimeId(runtime);
@@ -479,6 +481,143 @@ public sealed class Igi1CoopPairTests
             Assert.True(joiner is null || joiner.IsDead, $"soldier {id} stands on the joiner's screen {when}");
         }
     }
+
+    [RequiresGameDataFact]
+    public void A_joiners_own_round_bleeds_a_soldier_and_leaves_its_life_to_the_host()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.RunUntil(() => false, 60);
+        Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
+        Game.Igi1.Ai.SoldierSimulation copies = pair.Joiner!.World.Soldiers!;
+        Game.World.GunPickupRegistry joinerGuns = pair.Joiner.World.GunPickups!;
+        int gunsBefore = joinerGuns.Items.Count;
+        Game.Igi1.Player.SoldierView guard = NearestLivingSoldier(pair.Host, pair.Host.World.Player!.Body.Position);
+        int id = soldiers.RuntimeIdOf(guard);
+        Game.Igi1.Player.SoldierView copy = copies.SoldierByRuntimeId(id)!;
+
+        // The joiner's player, stood square before its copy of the guard, fires through its chest, many times over.
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner.World.Player!;
+        own.Body.Position = copy.Position + new Vector3d(0, -2 * 4096, 0);
+        for (int round = 0; round < 20; round++)
+        {
+            Vector3d eye = own.Body.Eye;
+            Vector3d chest = copy.Position + new Vector3d(0, 0, 1.3 * 4096);
+            Vector3d beyond = eye + ((chest - eye) * 2);
+            Assert.True(pair.Joiner.World.Bodies.Shoot(
+                eye, beyond, pair.Joiner.World.PlayerTask,
+                hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 1000f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
+                out _), $"round {round} passed through the joiner's copy of {guard.Soldier.Name}");
+            pair.RunUntil(() => false, 2);
+        }
+
+        // Nothing of that is the joiner's to decide: its copy lives as long as the host's soldier does, whole, and dropped nothing.
+        Assert.False(copy.IsDead, "the joiner's copy died of the joiner's own rounds");
+        Assert.Equal(0f, copies.HealthOf(copy).Damage);
+        Assert.False(guard.IsDead, "the host's soldier died of rounds that never reached it");
+        Assert.Equal(gunsBefore, joinerGuns.Items.Count);
+
+        // Killed on the host, it falls on the joiner too and drops one gun there, where the host's lies -- which the joiner takes.
+        Game.World.GunPickupRegistry hostGuns = pair.Host.World.GunPickups!;
+        int hostGunsBefore = hostGuns.Items.Count;
+        soldiers.ApplyExplosion(guard.Position, 2048, 4096, 50f);
+        Assert.True(pair.RunUntil(() => guard.IsDead && copy.IsDead, 60) >= 0, "the host's kill never reached the joiner");
+        Assert.True(pair.RunUntil(() => hostGuns.Items.Count > hostGunsBefore, 600) >= 0, "the killed guard dropped nothing on the host");
+        pair.RunUntil(() => false, 200);
+        Assert.Equal(hostGuns.Items.Count - hostGunsBefore, joinerGuns.Items.Count - gunsBefore);
+        Game.World.GunPickup dropped = hostGuns.Items[^1];
+        Assert.True(Vector3d.Distance(dropped.Position, joinerGuns.Items[^1].Position) < 64, "the dropped gun lies elsewhere on the joiner");
+
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
+        partner.Player.Body.Position = dropped.Position;
+        own.Body.Position = dropped.Position;
+        Assert.True(pair.RunUntil(() => dropped.IsCollected, 30) >= 0, "the partner never took the gun on the host");
+        Assert.True(pair.RunUntil(() => joinerGuns.Items[^1].IsCollected, 60) >= 0, "the joiner's level still has the gun lying there");
+        Assert.True(own.Weapons!.HasWeapon(dropped.Weapon.WeaponId), "the joiner's own player never got the gun");
+        Assert.True(partner.Player.Weapons!.HasWeapon(dropped.Weapon.WeaponId), "the partner on the host has no gun");
+    }
+
+    [RequiresGameDataFact]
+    public void A_partners_round_meets_a_soldier_where_its_client_drew_it()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.RunUntil(() => false, 60);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host.World.Soldiers!;
+        Game.Igi1.Player.SoldierView guard = NearestLivingSoldier(pair.Host, partner.Player.Body.Position);
+
+        // The guard stands still, three metres before the partner, long enough for the server's history to have it there.
+        Vector3d stood = partner.Player.Body.Position + new Vector3d(0, 3 * 4096, 0);
+        Game.Igi1.Ai.SoldierPuppet still = new(stood, 0f, guard.CurrentAnimation, -1, 0f, Alive: true);
+        soldiers.Puppet(guard, still);
+        pair.RunUntil(() => false, 40);
+        long seenAt = pair.Session.Session!.LastSnapshot!.Tick;
+        Assert.True(pair.Session.Session.LagCompensationHistory.Sample(seenAt, Igi1ReplicatedWorld.SoldierEntityBase + soldiers.RuntimeIdOf(guard), out Game.Multiplayer.ReplicatedHuman seen));
+        Assert.True(Vector3d.Distance(seen.Position.ToVector(), stood) < 64);
+
+        // Then it is ten metres to the side when the partner's command, made while its client drew the guard before it, runs.
+        soldiers.Puppet(guard, still with { Position = stood + new Vector3d(10 * 4096, 0, 0) });
+        pair.RunUntil(() => false, 5);
+        Assert.True(Vector3d.Distance(guard.Position, stood) > 9 * 4096, "the guard never moved aside");
+
+        Vector3d eye = partner.Player.Body.Eye;
+        Vector3d chest = stood + new Vector3d(0, 0, 1.3 * 4096);
+        Vector3d beyond = eye + ((chest - eye) * 2);
+        bool Shoot() => pair.Host.World.Bodies.Shoot(
+            eye, beyond, pair.Host.World.PlayerTask,
+            hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 0.1f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
+            out _);
+
+        // Where the server has the guard now, the round passes through empty air; put back where the client drew it, it is met.
+        float whole = soldiers.HealthOf(guard).Damage;
+        Assert.False(Shoot(), "a round met the guard where its client had never drawn it");
+        partner.BeforeCommand!(seenAt + 2, seenAt);
+        try
+        {
+            Assert.True(Vector3d.Distance(guard.Position, stood) < 64, $"the guard was put back {Vector3d.Distance(guard.Position, stood)} units from where the client drew it");
+            Assert.True(Shoot(), "a round passed through the guard where its client drew it");
+            Assert.True(soldiers.HealthOf(guard).Damage > whole, "the guard was met and not hurt");
+        }
+        finally
+        {
+            partner.AfterCommand!();
+        }
+
+        // And it stands where this tick has it again once the command has run.
+        Assert.True(Vector3d.Distance(guard.Position, stood) > 9 * 4096, "the guard was not put back where the server has it");
+        Assert.False(soldiers.Rewound);
+    }
+
+    [RequiresGameDataFact]
+    public void A_late_joiner_never_sees_the_intro_the_host_has_passed()
+    {
+        using Igi1CoopPair pair = new(hostArgs: [], joinerArgs: [], joinLater: true);
+        Assert.True(pair.RunUntil(() => pair.Host?.World.Cutscenes is not null && pair.Host.World.Player is not null, 3000) >= 0, "the host's level never came up");
+        pair.RunUntil(() => false, 300);
+        Assert.False(pair.Host!.World.Cutscenes!.IsPlaying, "the host is still in its intro");
+
+        // The joiner comes to the level the host is playing, with no skip of its own: its scenes are the host's. Its level
+        // is held unrun until they are, so no tick of it ever has a scene of its own playing -- the authored intro that the
+        // loaded level starts with is put out by the first tick, before anything of the level is seen.
+        bool sawScene = false;
+        bool Watch()
+        {
+            sawScene |= pair.Joiner is { World: { PlayerTicks: > 0, Cutscenes: { IsPlaying: true } } };
+            return false;
+        }
+
+        pair.StartJoiner();
+        Assert.True(pair.RunUntil(() => { Watch(); return pair.Joined && pair.Host.World.NetworkPlayers.Count == 1; }, 3000) >= 0, "the joiner was never welcomed");
+        pair.RunUntil(Watch, 120);
+        Assert.False(sawScene, "the late joiner saw the intro cutscene");
+        Assert.NotNull(pair.Joiner!.World.Player);
+    }
+
+    // The living soldier nearest a place on a game, among those the level has in play.
+    private static Game.Igi1.Player.SoldierView NearestLivingSoldier(Igi1Gameplay game, Vector3d near) =>
+        game.World.Soldiers!.SoldierViews
+            .Where(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier))
+            .OrderBy(v => Vector3d.Distance(v.Position, near))
+            .First();
 
     [RequiresGameDataFact]
     public void A_downed_squad_stands_again_where_it_last_stood_together()

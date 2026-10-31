@@ -166,6 +166,9 @@ public sealed class ClientSession
 
     private bool _levelTaken;
 
+    /// <summary>Gets whether the server level's running state has been taken since the last level change: the level here plays the server's scenes and counters.</summary>
+    public bool LevelTaken => _levelTaken;
+
     /// <summary>Takes the server level's running state once each time a new one comes.</summary>
     /// <returns>The state, or <see langword="null"/> when none has come since the last call.</returns>
     public byte[]? TakeLevel()
@@ -297,7 +300,8 @@ public sealed class ClientSession
     }
 
     // The parts of a split snapshot, gathered by tick: the whole once the last arrives, nothing before. A tick that never
-    // completes is dropped when a newer one does, as a lost unsplit snapshot is.
+    // completes is dropped when a newer one does, as a lost unsplit snapshot is. The first part carries the doors and the
+    // events; the rest only humans.
     private Snapshot? Assemble(Snapshot piece, int part, int parts)
     {
         if (parts == 1)
@@ -328,7 +332,8 @@ public sealed class ClientSession
             _parts.Remove(stale);
         }
 
-        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)]);
+        Snapshot first = gathered[0]!;
+        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses);
     }
 
     private void Read(byte[] data, double now)

@@ -52,7 +52,17 @@ public sealed partial class SoldierSimulation
     /// Gets or sets whether these soldiers are a co-op client's, every one the server's puppet: one the server hasn't posed yet
     /// stands where it is rather than thinking for itself.
     /// </summary>
-    public bool PuppetsOnly { get; set; }
+    public bool PuppetsOnly
+    {
+        get => _context.PuppetsOnly;
+        set => _context.PuppetsOnly = value;
+    }
+
+    /// <summary>
+    /// Gets or sets whether the soldiers stand, for the moment, where a co-op client drew them -- the server's lag
+    /// compensation of that client's round -- so a hit test meets them at the simulation's placement, not the frame's.
+    /// </summary>
+    public bool Rewound { get; set; }
 
     /// <summary>Gets a soldier's runtime id, unique to each live soldier and the same on every machine playing the level.</summary>
     /// <param name="view">The soldier.</param>

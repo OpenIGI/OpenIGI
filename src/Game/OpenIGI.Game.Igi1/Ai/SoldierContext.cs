@@ -67,6 +67,12 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
     public Dictionary<SoldierView, Igi1HumanAi> Brains { get; } = [];
 
+    /// <summary>
+    /// Gets or sets whether these soldiers are a co-op client's, every one the server's puppet: their health and deaths
+    /// are the server's word, so a round that meets one here bleeds and nothing more.
+    /// </summary>
+    public bool PuppetsOnly { get; set; }
+
     /// <summary>Gets each brain by its runtime id.</summary>
     public Dictionary<int, Igi1HumanAi> BrainsByRuntimeId { get; } = [];
 
