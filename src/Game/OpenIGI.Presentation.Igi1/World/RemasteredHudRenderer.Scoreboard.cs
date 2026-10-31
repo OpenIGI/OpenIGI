@@ -171,6 +171,12 @@ internal sealed partial class RemasteredHudRenderer
         Outline(painter, cap, UiPalette.TextMuted.WithAlpha(160), MathF.Max(1f, Px(1.5f)));
         painter.DrawLabel(type.Heading, "TAB", new UiVec2(cap.X + Px(11f), UiRowStyle.CapsCenterY(type.Heading, footText, cap)), footText, Text, 0.12f);
         RightLabel(painter, type.Heading, "HOLD", cap.X - Px(12f), footY, footText, UiPalette.TextMuted);
+
+        // The pointer, once a click has taken it out onto the board.
+        if (controls is { } pointerHand)
+        {
+            UiCursor.Draw(painter, new UiVec2(pointerHand.PointerX, pointerHand.PointerY));
+        }
     }
 
     // One header figure, its label small over its value large; returns where the next figure to its left ends.

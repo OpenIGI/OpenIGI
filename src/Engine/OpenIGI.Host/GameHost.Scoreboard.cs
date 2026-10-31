@@ -20,21 +20,34 @@ public sealed partial class GameHost
     private void UpdateScoreboard()
     {
         _scoreboardUp = TickObserver is ISessionScoreboard && !_menuFlow.MenuMode && ScoreboardHeld();
-        bool hosting = _scoreboardUp && TickObserver is HostedSession;
-        if (hosting != _scoreboardPointer)
+        if (!_scoreboardUp)
         {
-            _scoreboardPointer = hosting;
-            _window.CursorVisible = hosting;
-            _window.CursorLocked = !hosting;
-            _confirmingRemoval = null;
-        }
+            if (_scoreboardPointer)
+            {
+                _scoreboardPointer = false;
+                _window.CursorLocked = true;
+            }
 
-        if (!hosting || TickObserver is not HostedSession hosted)
-        {
+            _confirmingRemoval = null;
             return;
         }
 
-        if (_window.Input.Mouse.WasPressed(MouseButton.Left) && _remasteredHud is { } hud)
+        // Held, the board leaves the look alone; a click of either button takes the pointer out onto it, the view and the
+        // gun let alone from then until the key is let go.
+        if (!_scoreboardPointer)
+        {
+            if (!_window.Input.Mouse.WasPressed(MouseButton.Left) && !_window.Input.Mouse.WasPressed(MouseButton.Right))
+            {
+                return;
+            }
+
+            _scoreboardPointer = true;
+            _window.CursorLocked = false;
+            _window.Input.Captured = true;
+            return;
+        }
+
+        if (TickObserver is HostedSession hosted && _window.Input.Mouse.WasPressed(MouseButton.Left) && _remasteredHud is { } hud)
         {
             float x = _window.Input.Mouse.X;
             float y = _window.Input.Mouse.Y;
@@ -59,11 +72,13 @@ public sealed partial class GameHost
         _window.Input.Captured = true;
     }
 
-    // What the host's hand on the board draws: a remove button on each player but its own.
+    // What the hand on the board draws: the pointer, and for the room's host a remove button on each player but its own.
     private ScoreboardControls? ScoreboardHand(Scoreboard board) =>
         _scoreboardPointer
             ? new ScoreboardControls(
-                board.Lines.Where(static l => l.Entity > ServerSession.HostEntity).Select(static l => l.Entity).ToHashSet(),
+                TickObserver is HostedSession
+                    ? board.Lines.Where(static l => l.Entity > ServerSession.HostEntity).Select(static l => l.Entity).ToHashSet()
+                    : new HashSet<int>(),
                 _window.Input.Mouse.X,
                 _window.Input.Mouse.Y,
                 _confirmingRemoval)

@@ -11,15 +11,16 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The co-op section, laid out as the campaign's: down the left, the room this player is in, a friend's room to join by
-/// its code and the public rooms as list cards; on the right, the look this player plays in standing in the level, and
-/// at its foot one strip of glass choosing what to host beside the button that hosts it. The same on the desktop and in
-/// the browser, which play each other.
+/// The co-op section: down the left, the page's title, the room this player is in, a friend's room to join by its code and
+/// the public rooms; on the right, one panel hosting a mission -- the look this player plays in, the mission and how it is
+/// played, then HOST; and between the two, the look itself standing in the level, turned by dragging it round. The same on
+/// the desktop and in the browser, which play each other.
 /// </summary>
 public sealed class CoopScreen : ShellScreen
 {
-    // A cycler fills the height it is given; the strip's cells are the campaign's height.
-    private const float CellHeight = 96f;
+    // The two columns' width, and the room the look stands in between them. Layout pixels.
+    private const float ColumnWidth = 560f;
+    private const float ColumnGap = 40f;
 
     private static readonly string[] Difficulties = AiDifficultyNames.All;
     private static readonly string[] Listings = ["Public", "Private"];
@@ -65,9 +66,14 @@ public sealed class CoopScreen : ShellScreen
         _shown = coop.Status;
         _shownListing = coop.Listing;
 
+        float inner = SideMargin + ColumnWidth + ColumnGap;
+        var turn = new TurnArea(theme, string.Empty) { Tooltip = "Drag, or press left and right, to turn your look round." };
+        turn.Turned += coop.TurnLook;
+
         var page = new Canvas();
-        page.Add(BuildRooms(theme, coop), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(SideMargin, 56f, -(SideMargin + 560f), 48f)));
-        page.Add(BuildHosting(theme, coop), new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(720f, 0f, SideMargin, 48f)));
+        page.Add(turn, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(inner, 0f, inner, 48f)));
+        page.Add(BuildRooms(theme, coop), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(SideMargin, 56f, -(SideMargin + ColumnWidth), 48f)));
+        page.Add(BuildHosting(theme, coop), new Anchor(new UiVec2(1f, 0f), UiVec2.One, new Thickness(-(SideMargin + ColumnWidth), 0f, SideMargin, 48f)));
         return page;
     }
 
@@ -91,26 +97,34 @@ public sealed class CoopScreen : ShellScreen
         }
     }
 
-    // The left column: the page's title, the room this player is in, a code to join by, and the open rooms.
+    // The left column: the page's title, where this player is, a code to join by, and the open rooms.
     private Grid BuildRooms(UiTheme theme, ICoopRooms coop)
     {
-        var layout = new Grid { RowSpacing = 28f };
+        var layout = new Grid { RowSpacing = 32f };
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
 
-        layout.Add(new SectionTitle(theme, "Together", "Co-op") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
-        layout.Add(BuildStatus(theme, coop.Status), 1, 0);
-        layout.Add(BuildJoin(theme, coop), 2, 0);
-        layout.Add(BuildList(theme, coop), 3, 0);
+        var heading = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
+        heading.AddChild(new SectionTitle(theme, "Together", "Co-op") { HorizontalAlignment = HorizontalAlignment.Left });
+        heading.AddChild(BuildStatus(theme, coop.Status));
+        layout.Add(heading, 0, 0);
+        layout.Add(BuildJoin(theme, coop), 1, 0);
+        layout.Add(BuildList(theme, coop), 2, 0);
         return layout;
     }
 
-    // Where this player is: nowhere yet, opening or finding a room, in one (its code large when it hosts), or turned away.
-    private GlassPanel BuildStatus(UiTheme theme, CoopStatus status)
+    // Where this player is: a line on what the page is for while in no room; once in one, opening or finding it, in it -- its
+    // code large when it hosts -- or turned away, on a panel with the way out of it.
+    private UiElement BuildStatus(UiTheme theme, CoopStatus status)
     {
+        if (status.Phase == CoopPhase.None)
+        {
+            return Body(theme, "Host a mission for friends to join, or join theirs with the code they send you.", UiPalette.TextBody);
+        }
+
         var (panel, content) = Group(theme, "Your room");
         switch (status.Phase)
         {
@@ -124,11 +138,8 @@ public sealed class CoopScreen : ShellScreen
             case CoopPhase.Connecting:
                 content.AddChild(Body(theme, status.Hosting ? "Opening a room…" : $"Finding room {status.Code}…", UiPalette.TextBody));
                 break;
-            case CoopPhase.Failed:
-                content.AddChild(Body(theme, $"Couldn't play together: {status.Error}.", theme.Danger));
-                break;
             default:
-                content.AddChild(Body(theme, "Host a mission for friends to join, or join theirs with the code they send you.", theme.TextMuted));
+                content.AddChild(Body(theme, $"Couldn't play together: {status.Error}.", theme.Danger));
                 break;
         }
 
@@ -139,6 +150,7 @@ public sealed class CoopScreen : ShellScreen
             content.AddChild(leave);
         }
 
+        panel.Margin = new Thickness(0f, 8f, 0f, 0f);
         return panel;
     }
 
@@ -162,10 +174,11 @@ public sealed class CoopScreen : ShellScreen
         return column;
     }
 
-    // The public rooms, each a card as the campaign's missions are: how full on the badge, its name and mission.
+    // The public rooms, each a card as the campaign's missions are: how full on the badge, its name and mission; with none, a
+    // line saying so.
     private Grid BuildList(UiTheme theme, ICoopRooms coop)
     {
-        var layout = new Grid { RowSpacing = 8f };
+        var layout = new Grid { RowSpacing = 12f };
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.ColumnDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
@@ -175,6 +188,12 @@ public sealed class CoopScreen : ShellScreen
         refresh.Activated += _ => coop.RefreshListing();
         layout.Add(refresh, 0, 1);
 
+        if (coop.Listing is { Count: 0 } && coop.ListingError is null)
+        {
+            layout.Add(BuildNoRooms(theme), 1, 0, columnSpan: 2);
+            return layout;
+        }
+
         var rows = new StackPanel { Orientation = Orientation.Vertical };
         if (coop.Listing is not { } rooms)
         {
@@ -183,10 +202,6 @@ public sealed class CoopScreen : ShellScreen
         else if (coop.ListingError is { } error)
         {
             rows.AddChild(Body(theme, $"Couldn't list rooms: {error}.", theme.Danger));
-        }
-        else if (rooms.Count == 0)
-        {
-            rows.AddChild(Body(theme, "No public rooms right now. Host one.", theme.TextMuted));
         }
         else
         {
@@ -214,146 +229,138 @@ public sealed class CoopScreen : ShellScreen
         return layout;
     }
 
-    // The right: the look, standing in the level above and turned by dragging it round; at its foot the operative strip,
-    // then what to host beside HOST.
-    private Grid BuildHosting(UiTheme theme, ICoopRooms coop)
+    // No public rooms: said on a faint panel.
+    private static GlassPanel BuildNoRooms(UiTheme theme)
     {
-        var column = new Grid { RowSpacing = 16f };
-        column.ColumnDefinitions.Add(GridLength.Star);
-        column.RowDefinitions.Add(GridLength.Star);
-        column.RowDefinitions.Add(GridLength.Auto);
-        column.RowDefinitions.Add(GridLength.Auto);
-        column.RowDefinitions.Add(GridLength.Auto);
+        var panel = new GlassPanel(theme)
+        {
+            Padding = new Thickness(20f, 16f, 20f, 16f),
+            Tint = Bgra32.FromRgba(14, 15, 17, 150),
+            TintBottom = Bgra32.FromRgba(10, 11, 12, 150),
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        panel.AddChild(new Label(theme.Body, "No public rooms right now.", 16f, UiPalette.TextBody));
+        return panel;
+    }
 
-        var turn = new TurnArea(theme, "Drag to turn") { Tooltip = "Drag, or press left and right, to turn your look round." };
-        turn.Turned += coop.TurnLook;
-        column.Add(turn, 0, 0);
+    // The right: one panel hosting a mission -- its title and how to turn the look, the look and what to play, how the room
+    // plays, and HOST across its foot.
+    private GlassPanel BuildHosting(UiTheme theme, ICoopRooms coop)
+    {
+        var column = new StackPanel { Orientation = Orientation.Vertical };
 
+        var header = new Grid { Margin = new Thickness(20f, 18f, 20f, 16f) };
+        header.RowDefinitions.Add(GridLength.Auto);
+        header.ColumnDefinitions.Add(GridLength.Star);
+        header.ColumnDefinitions.Add(GridLength.Auto);
+        header.Add(new Label(theme.Heading, "HOST A MISSION", 22f, theme.TextBright) { VerticalAlignment = VerticalAlignment.Center }, 0, 0);
+        header.Add(new Label(theme.Mono, "DRAG MODEL TO TURN", 11f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center }, 0, 1);
+        column.AddChild(header);
+        column.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.08f) });
+
+        column.AddChild(Section(theme, "Loadout"));
         List<PlayerSkin> looks = [.. PlayerSkins.All];
         int chosen = Math.Max(0, looks.FindIndex(s => s.Id == PlayerSkins.Of(PlayerSkins.Chosen.Value).Id));
-        var operative = new OptionCycler(theme, "Operative", [.. looks.Select(static s => s.Name)], chosen)
-        {
-            Height = CellHeight,
-            ContentWidth = 240f,
-            Tooltip = "How you appear to the others in co-op, shown standing here.",
-        };
+        OptionCycler operative = Row(theme, "Operative", [.. looks.Select(static s => s.Name)], chosen, "How you appear to the others in co-op, shown standing here.");
         operative.SelectionChanged += index =>
         {
             PlayerSkins.Chosen.Value = looks[index].Id;
             Context.Host.SaveSettings();
             coop.PreviewLook(looks[index].Id);
         };
-        column.Add(Strip(theme, operative), 1, 0);
+        column.AddChild(operative);
 
         IReadOnlyList<MissionInfo> missions = Context.Missions;
-        if (missions.Count == 0)
+        if (missions.Count > 0)
         {
-            return column;
+            _mission = Math.Clamp(_mission, 0, missions.Count - 1);
+            if (_difficulty < 0)
+            {
+                _difficulty = Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
+            }
+
+            OptionCycler mission = Row(theme, "Mission", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission);
+            mission.SelectionChanged += index => _mission = index;
+            OptionCycler difficulty = Row(theme, "Difficulty", Difficulties, _difficulty);
+            difficulty.SelectionChanged += index => _difficulty = index;
+            column.AddChild(mission);
+            column.AddChild(difficulty);
         }
 
-        _mission = Math.Clamp(_mission, 0, missions.Count - 1);
-        if (_difficulty < 0)
-        {
-            _difficulty = Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
-        }
-
-        var mission = new OptionCycler(
-            theme, "Mission", [.. missions.Select(m => string.Create(CultureInfo.InvariantCulture, $"{m.Number}. {m.Name}"))], _mission)
-        {
-            Height = CellHeight,
-            ContentWidth = 230f,
-        };
-        mission.SelectionChanged += index => _mission = index;
-        var difficulty = new OptionCycler(theme, "Difficulty", Difficulties, _difficulty) { Height = CellHeight };
-        difficulty.SelectionChanged += index => _difficulty = index;
-        var listing = new OptionCycler(theme, "Listing", Listings, _listing)
-        {
-            Height = CellHeight,
-            ContentWidth = 120f,
-            Tooltip = "Public rooms show under Open rooms; a private one only lets in those you give the code to.",
-        };
+        column.AddChild(Section(theme, "Rules"));
+        OptionCycler listing = Row(theme, "Listing", Listings, _listing, "Public rooms show under Open rooms; a private one only lets in those you give the code to.");
         listing.SelectionChanged += index => _listing = index;
+        column.AddChild(listing);
 
-        var host = new PrimaryAction(theme, "Host") { Width = 300f };
-        host.Activated += _ => coop.Host(missions[_mission].Id, _difficulty, listed: _listing == 0);
-
-        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Height = CellHeight, HorizontalAlignment = HorizontalAlignment.Left };
-        actions.Add(Strip(theme, mission, difficulty, listing));
-        actions.Add(host);
-        column.Add(BuildRules(theme), 2, 0);
-        column.Add(actions, 3, 0);
-        return column;
-    }
-
-    // How the room plays, the host's to set and saved with its settings: whether rounds hurt teammates, and how long a revival takes.
-    private GlassPanel BuildRules(UiTheme theme)
-    {
-        var friendlyFire = new OptionCycler(theme, "Friendly fire", OffOn, CoopCVars.FriendlyFire.Value ? 1 : 0)
-        {
-            Height = CellHeight,
-            ContentWidth = 120f,
-            Tooltip = "Whether your rounds hurt your teammates, and theirs you.",
-        };
+        OptionCycler friendlyFire = Row(theme, "Friendly fire", OffOn, CoopCVars.FriendlyFire.Value ? 1 : 0, "Whether your rounds hurt your teammates, and theirs you.");
         friendlyFire.SelectionChanged += index =>
         {
             CoopCVars.FriendlyFire.Value = index == 1;
             Context.Host.SaveSettings();
         };
+        column.AddChild(friendlyFire);
 
-        int revive = Math.Max(0, Array.IndexOf(ReviveChoices, CoopCVars.ReviveSeconds.Value));
-        var reviveTime = new OptionCycler(
-            theme, "Revive", [.. ReviveChoices.Select(static s => string.Create(CultureInfo.InvariantCulture, $"{s} s"))], revive)
-        {
-            Height = CellHeight,
-            ContentWidth = 100f,
-            Tooltip = "How long a teammate stands beside a downed player to bring them back.",
-        };
+        OptionCycler reviveTime = Row(
+            theme,
+            "Revive time",
+            [.. ReviveChoices.Select(static s => string.Create(CultureInfo.InvariantCulture, $"{s} s"))],
+            Math.Max(0, Array.IndexOf(ReviveChoices, CoopCVars.ReviveSeconds.Value)),
+            "How long a teammate stands beside a downed player to bring them back.");
         reviveTime.SelectionChanged += index =>
         {
             CoopCVars.ReviveSeconds.Value = ReviveChoices[index];
             Context.Host.SaveSettings();
         };
+        column.AddChild(reviveTime);
 
-        int tough = Math.Max(0, Array.IndexOf(ToughnessChoices, CoopCVars.EnemyHealthPerPlayer.Value));
-        var toughness = new OptionCycler(
+        OptionCycler toughness = Row(
             theme,
             "Enemies",
             [.. ToughnessChoices.Select(static p => p == 0 ? "As alone" : string.Create(CultureInfo.InvariantCulture, $"+{p}%"))],
-            tough)
-        {
-            Height = CellHeight,
-            ContentWidth = 130f,
-            Tooltip = "How much more health the guards have for each player past the first.",
-        };
+            Math.Max(0, Array.IndexOf(ToughnessChoices, CoopCVars.EnemyHealthPerPlayer.Value)),
+            "How much more health the guards have for each player past the first.");
         toughness.SelectionChanged += index =>
         {
             CoopCVars.EnemyHealthPerPlayer.Value = ToughnessChoices[index];
             Context.Host.SaveSettings();
         };
+        column.AddChild(toughness);
 
-        return Strip(theme, friendlyFire, reviveTime, toughness);
-    }
-
-    // One strip of glass holding cyclers side by side, as the campaign's conditions are held.
-    private static GlassPanel Strip(UiTheme theme, params OptionCycler[] cells)
-    {
-        var strip = new GlassPanel(theme)
+        if (missions.Count > 0)
         {
-            Tint = Bgra32.FromRgba(18, 20, 22, 184),
-            TintBottom = Bgra32.FromRgba(10, 12, 13, 184),
-            Blur = 20f,
-            BorderEdges = UiEdges.Top | UiEdges.Left | UiEdges.Bottom,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        var row = new FlexPanel { Orientation = Orientation.Horizontal };
-        foreach (OptionCycler cell in cells)
-        {
-            row.Add(cell);
+            var host = new PrimaryAction(theme, "Host") { Margin = new Thickness(20f, 16f, 20f, 20f) };
+            host.Activated += _ => Host(coop);
+            column.AddChild(host);
         }
 
-        strip.AddChild(row);
-        return strip;
+        var panel = new GlassPanel(theme)
+        {
+            Tint = Bgra32.FromRgba(16, 17, 19, 214),
+            TintBottom = Bgra32.FromRgba(11, 12, 13, 214),
+            Blur = 20f,
+            VerticalAlignment = VerticalAlignment.Bottom,
+        };
+        panel.AddChild(column);
+        return panel;
     }
+
+    // HOST: the mission, difficulty and listing chosen.
+    private void Host(ICoopRooms coop)
+    {
+        IReadOnlyList<MissionInfo> missions = Context.Missions;
+        if (missions.Count > 0)
+        {
+            coop.Host(missions[Math.Clamp(_mission, 0, missions.Count - 1)].Id, Math.Max(0, _difficulty), listed: _listing == 0);
+        }
+    }
+
+    // A form's line in the hosting panel: its label on the left, its value between arrows on the right.
+    private static OptionCycler Row(UiTheme theme, string label, IEnumerable<string> options, int selected, string tooltip = "") =>
+        new(theme, label, options, selected) { Inline = true, ContentWidth = 170f, Tooltip = tooltip };
+
+    // A section's name in the hosting panel, small and in the accent.
+    private static Eyebrow Section(UiTheme theme, string name) =>
+        new(theme, name) { Margin = new Thickness(20f, 18f, 20f, 4f), HorizontalAlignment = HorizontalAlignment.Left };
 
     private static Label Body(UiTheme theme, string text, Bgra32 colour) =>
         new(theme.Body, text, 17f, colour) { Wrap = true, Margin = new Thickness(0f, 4f, 0f, 8f) };

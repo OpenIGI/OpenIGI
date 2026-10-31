@@ -58,6 +58,10 @@ function lock() {
   }
 }
 
+// The field a touch screen's keyboard types into, and whether the game wants typing now.
+let textField = null;
+let textWanted = false;
+
 /**
  * Starts listening on the page.
  * @param {HTMLCanvasElement} target The canvas the game draws to.
@@ -70,8 +74,28 @@ export function install(target) {
   listening = new AbortController();
   const signal = listening.signal;
 
+  // A field nobody sees, for a touch screen's keyboard: a browser raises one only for a field that is focused, and only
+  // when the focus comes from the player's own touch -- so while the game wants typing, a touch on the game focuses it.
+  // What is typed into it goes to the game as characters; it is emptied as it goes.
+  textField = document.createElement('input');
+  Object.assign(textField, { type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: false });
+  textField.setAttribute('aria-hidden', 'true');
+  Object.assign(textField.style, {
+    position: 'fixed', left: '0', bottom: '0', width: '1px', height: '1px', opacity: '0', fontSize: '16px', border: '0', padding: '0',
+  });
+  document.body.appendChild(textField);
+  textField.addEventListener('input', () => {
+    for (const ch of textField.value) queue.push(`char ${ch}`);
+    textField.value = '';
+  }, { signal });
+  const raise = () => { if (textWanted && document.activeElement !== textField) textField.focus(); };
+  canvas.addEventListener('touchend', raise, { signal });
+  canvas.addEventListener('pointerup', e => { if (e.pointerType === 'touch') raise(); }, { signal });
+
   window.addEventListener('keydown', e => {
     if (PAGE_KEYS.has(e.code) || e.metaKey) return;
+    // A character typed into the field comes through its input; the keys that edit (Backspace, Enter, Escape) as keys.
+    if (e.target === textField && e.key.length === 1) return;
     e.preventDefault();
     if (!e.repeat) queue.push(`key ${e.code} 1`);
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey) queue.push(`char ${e.key}`);
@@ -163,4 +187,8 @@ export const imports = {
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },
   setGyro: wanted => gyro.setWanted(wanted),
+  setTextEntry: wanted => {
+    textWanted = wanted;
+    if (!wanted && textField && document.activeElement === textField) textField.blur();
+  },
 };

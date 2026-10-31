@@ -62,6 +62,12 @@ public class OptionCycler : Control
     /// <summary>Gets or sets the cell's content width, in design units, not counting its padding and arrows.</summary>
     public float ContentWidth { get; set; } = 150f;
 
+    /// <summary>
+    /// Gets or sets whether the cycler is a row: its label on the left and its value between a left and a right arrow on the
+    /// right, stepped by left and right -- a form's line rather than a cell of a strip.
+    /// </summary>
+    public bool Inline { get; set; }
+
     /// <summary>Gets or sets the selected value's index.</summary>
     public int SelectedIndex
     {
@@ -101,10 +107,12 @@ public class OptionCycler : Control
     {
         switch (direction)
         {
-            case NavDirection.Up:
+            case NavDirection.Up when !Inline:
+            case NavDirection.Right when Inline:
                 Step(1);
                 return true;
-            case NavDirection.Down:
+            case NavDirection.Down when !Inline:
+            case NavDirection.Left when Inline:
                 Step(-1);
                 return true;
             default:
@@ -138,11 +146,28 @@ public class OptionCycler : Control
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
-        new(context.Px(26f + ContentWidth + 6f + 30f + 10f), available.Y);
+        Inline
+            ? new(available.X, context.Px(InlineHeight))
+            : new(context.Px(26f + ContentWidth + 6f + 30f + 10f), available.Y);
+
+    // A row's height, and how far in from its edges its label and arrows stand. Layout pixels.
+    private const float InlineHeight = 57f;
+    private const float InlinePad = 20f;
 
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
+        if (Inline)
+        {
+            float box = context.Px(30f);
+            float right = contentRect.Right - context.Px(InlinePad) + context.Px(8f);
+            float left = right - box - context.Px(ContentWidth) - box;
+            float top = contentRect.Center.Y - (box * 0.5f);
+            _down = new UiRect(left, top, box, box);
+            _up = new UiRect(right - box, top, box, box);
+            return;
+        }
+
         float arrow = context.Px(30f);
         float x = contentRect.Right - context.Px(10f) - arrow;
         float mid = contentRect.Center.Y;
@@ -153,6 +178,12 @@ public class OptionCycler : Control
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
+        if (Inline)
+        {
+            DrawInline(painter);
+            return;
+        }
+
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
         float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
@@ -196,13 +227,73 @@ public class OptionCycler : Control
         DrawArrow(painter, _down, UiDirection.Down, appear);
     }
 
+    // The row: its label on the left, its value centred between the arrows with the pips under it, a hairline beneath.
+    private void DrawInline(UiPainter painter)
+    {
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
+        float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f);
+        if (hot > 0.001f)
+        {
+            painter.FillRect(Bounds, UiPalette.White(0.03f * hot * appear));
+        }
+
+        painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.06f * appear));
+
+        float labelSize = context.Px(14f);
+        Bgra32 label = Interpolate.Lerp(UiPalette.TextBody, Theme.Accent, Visual.Focus);
+        painter.DrawLabel(
+            Theme.Heading,
+            Label,
+            new UiVec2(Bounds.X + context.Px(InlinePad), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, Bounds)),
+            labelSize,
+            UiPalette.Fade(label, appear),
+            0.14f);
+
+        float valueSize = context.Px(20f);
+        float centre = (_down.Right + _up.X) * 0.5f;
+        float valueY = Bounds.Center.Y - (valueSize * 0.6f);
+        if (_options.Count > 0)
+        {
+            float width = UiPainter.MeasureLabel(Theme.Heading, _shown[_selected], valueSize, 0.08f);
+            var valueBox = new UiRect(centre - (width * 0.5f), valueY, width, valueSize);
+            painter.DrawLabel(Theme.Heading, _shown[_selected], new UiVec2(valueBox.X, UiRowStyle.CapsCenterY(Theme.Heading, valueSize, valueBox)), valueSize, UiPalette.Fade(Theme.TextBright, appear), 0.08f);
+        }
+
+        float pipsWidth = 0f;
+        for (int i = 0; i < _pips.Count; i++)
+        {
+            pipsWidth += context.Px(8f + (14f * _pips[i].Value)) + (i > 0 ? context.Px(4f) : 0f);
+        }
+
+        float px = centre - (pipsWidth * 0.5f);
+        float py = valueY + valueSize + context.Px(5f);
+        for (int i = 0; i < _pips.Count; i++)
+        {
+            float t = _pips[i].Value;
+            float w = context.Px(8f + (14f * t));
+            painter.FillRect(new UiRect(px, py, w, context.Px(2f)), UiPalette.Fade(Interpolate.Lerp(UiPalette.White(0.18f), Theme.Accent, t), appear));
+            px += w + context.Px(4f);
+        }
+
+        DrawArrow(painter, _down, UiDirection.Left, appear);
+        DrawArrow(painter, _up, UiDirection.Right, appear);
+    }
+
     private void DrawArrow(UiPainter painter, UiRect box, UiDirection direction, float appear)
     {
         bool hot = IsPointerOver && box.Contains(_pointer);
-        Bgra32 color = hot ? Theme.Accent : Theme.TextDim;
+        Bgra32 color = Inline ? (hot ? Theme.TextBright : Theme.Accent) : hot ? Theme.Accent : Theme.TextDim;
         float size = painter.Context.Px(9f);
         Span<UiVec2> triangle = stackalloc UiVec2[3];
-        UiPath.Chevron(box.Center, size, direction == UiDirection.Up ? -MathF.PI / 2f : MathF.PI / 2f, triangle);
+        float angle = direction switch
+        {
+            UiDirection.Up => -MathF.PI / 2f,
+            UiDirection.Down => MathF.PI / 2f,
+            UiDirection.Left => MathF.PI,
+            _ => 0f,
+        };
+        UiPath.Chevron(box.Center, size, angle, triangle);
         painter.FillPolygon(triangle, UiPalette.Fade(color, appear));
     }
 }
