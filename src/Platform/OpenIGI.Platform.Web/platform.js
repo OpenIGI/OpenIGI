@@ -5,6 +5,7 @@
 // frame. So every handler here only writes a line to a queue -- 'key KeyW 1', 'move 3 -1 640 360' -- and
 // WebGameWindow (C#) reads the queue in PumpEvents. The words are what WebInputEvent.Parse reads.
 
+import * as gyro from './gyro.js';
 import * as touch from './touch.js';
 
 let canvas = null;
@@ -13,6 +14,12 @@ let listening = null;
 let resizes = null;
 let wantLock = false;
 let pointerVisible = true;
+
+// Whether the player is on a touch screen: the last pointer down on the canvas was a finger, or, before any, the screen's
+// main pointer is one. Play asks for the pointer lock, and Chrome on Android grants it to a page a finger has just tapped --
+// after which the fingers no longer reach the page as touches, and every control in play goes dead while the menus, which
+// do not lock, still work. A finger has nothing to lock, so the lock is asked for only from a mouse.
+let touching = matchMedia('(pointer: coarse)').matches;
 
 // Every device pixel, a phone's three to the CSS pixel included: drawn at fewer, the browser scaled the picture up and
 // the menus' small type smeared past reading.
@@ -42,6 +49,7 @@ function applyPointer() {
 // Unadjusted movement is the sensor's own counts, without the desktop's pointer acceleration -- what a
 // look control wants, and what the desktop build asks for as raw motion. Not every browser offers it.
 function lock() {
+  if (touching) return;
   try {
     const request = canvas.requestPointerLock({ unadjustedMovement: true });
     request?.catch?.(() => canvas.requestPointerLock()?.catch?.(() => {}));
@@ -74,6 +82,7 @@ export function install(target) {
     queue.push(`key ${e.code} 0`);
   }, { signal });
 
+  canvas.addEventListener('pointerdown', e => { touching = e.pointerType === 'touch'; }, { signal });
   canvas.addEventListener('mousedown', e => {
     if (wantLock && document.pointerLockElement !== canvas) lock();
     queue.push(`button ${e.button} 1`);
@@ -101,6 +110,7 @@ export function install(target) {
   window.addEventListener('pagehide', () => queue.push('close'), { signal });
 
   touch.install(canvas, line => queue.push(line), pointerPosition);
+  gyro.install(canvas);
 
   resizes = new ResizeObserver(() => {
     const [width, height] = drawable();
@@ -114,6 +124,7 @@ export function install(target) {
  * queued for a game that will never take it.
  */
 export function uninstall() {
+  gyro.uninstall();
   touch.uninstall();
   listening?.abort();
   resizes?.disconnect();
@@ -133,6 +144,8 @@ export const imports = {
   hasFocus: () => document.hasFocus(),
   isFullscreen: () => document.fullscreenElement !== null,
   takeEvents: () => {
+    const turned = gyro.take();
+    if (turned) queue.push(turned);
     const taken = queue;
     queue = [];
     return taken;
@@ -149,4 +162,5 @@ export const imports = {
     if (!fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },
+  setGyro: wanted => gyro.setWanted(wanted),
 };

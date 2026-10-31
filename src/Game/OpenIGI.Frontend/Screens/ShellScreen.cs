@@ -234,6 +234,28 @@ public abstract class ShellScreen : Screen
         right.Add(operative);
         right.Add(new Rule { VerticalAlignment = VerticalAlignment.Center });
 
+        // Back to the mission from any section. A keyboard has Escape for it; a touch screen has nothing else, and a
+        // player who opened the settings from the pause menu was otherwise stuck in the menu.
+        if (Context.InGame && Context.Host.TouchScreen && Tab != ShellTab.Home)
+        {
+            var resume = new Button(theme, "Resume")
+            {
+                Accent = ButtonAccent.Text,
+                TextSize = 19f,
+                Padding = new Thickness(0f, 8f),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            resume.Activated += _ =>
+            {
+                void Go() => Context.Host.ResumeMission();
+                if (!HoldDeparture(Go))
+                {
+                    Go();
+                }
+            };
+            right.Add(resume);
+        }
+
         var quit = new Button(theme, "Quit")
         {
             Accent = ButtonAccent.Text,

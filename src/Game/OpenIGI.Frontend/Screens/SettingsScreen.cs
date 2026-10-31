@@ -134,7 +134,7 @@ public sealed class SettingsScreen : ShellScreen
         [
             ("Display", () => [SettingsGroup.Of("Display", DisplaySettingsTab.Build(_rows, theme))]),
             ("Audio", () => CvarGroupBuilder.CvarGroups(_rows, theme, CvarGroupBuilder.NamesWithPrefix(Context.Cvars, "snd_"), "Audio")),
-            ("Controls", () => ControlsSettingsTab.Build(Context, theme, out _resetBindings)),
+            ("Controls", () => ControlsSettingsTab.Build(Context, _rows, theme, out _resetBindings)),
             ("Gameplay", () => GameplaySettingsTab.Build(_rows, theme)),
         ];
 

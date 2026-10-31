@@ -47,4 +47,10 @@ public interface IBrowserPage
     /// <summary>Puts text on the system clipboard, where the browser allows it.</summary>
     /// <param name="text">The text.</param>
     void WriteClipboard(string text);
+
+    /// <summary>Says whether the page should report the device's turning, as <c>gyro</c> events.</summary>
+    /// <param name="wanted">Whether it should. Where the browser asks the player's leave, it is asked on the next tap.</param>
+    void SetGyro(bool wanted)
+    {
+    }
 }

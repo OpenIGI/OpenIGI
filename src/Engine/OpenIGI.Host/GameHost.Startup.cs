@@ -719,7 +719,8 @@ public sealed partial class GameHost
                 },
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,
-                coop: _coop);
+                coop: _coop,
+                touchScreen: () => _window.Input.Touch.InUse);
 
             state.ShellHostForEntryCam = state.ShellHost;
             if (_coop is not null)

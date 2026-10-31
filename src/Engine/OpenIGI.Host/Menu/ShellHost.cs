@@ -32,6 +32,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="displayResolutions">The resolutions the display offers, largest first.</param>
 /// <param name="playedMods">The mods that change play the running title is played with.</param>
 /// <param name="coop">Co-op through rooms, where the build can make WebRTC connections.</param>
+/// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -50,7 +51,8 @@ public sealed class ShellHost(
     Action<OpenIGI.Game.Config.PlayerProfile>? resetInputBindings = null,
     Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null,
     Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null,
-    ICoopRooms? coop = null) : IShellHost
+    ICoopRooms? coop = null,
+    Func<bool>? touchScreen = null) : IShellHost
 {
     /// <inheritdoc/>
     public ICoopRooms? Coop => coop;
@@ -109,6 +111,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public IReadOnlyList<(int Width, int Height)> DisplayResolutions() => displayResolutions?.Invoke() ?? [];
+
+    /// <inheritdoc/>
+    public bool TouchScreen => touchScreen?.Invoke() ?? false;
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>
