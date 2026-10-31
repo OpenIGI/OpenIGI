@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, IDisposable
+public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -142,6 +142,18 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
     /// <inheritdoc/>
     public string? Ended => _ended;
+
+    /// <inheritdoc/>
+    public void Say(string text) => _session?.Say(text);
+
+    /// <inheritdoc/>
+    public void Mark(Int3 position) => _session?.Mark(position);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<ChatLine> TakeChat() => _session?.TakeChat() ?? [];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorldMark> TakeMarks() => _session?.TakeMarks() ?? [];
 
     /// <inheritdoc/>
     public void Dispose()

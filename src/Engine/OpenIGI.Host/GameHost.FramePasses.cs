@@ -171,6 +171,12 @@ public sealed partial class GameHost
         int consoleNow = _loop.TimeSource.Milliseconds;
         state.Console.Update(_window.Input, Math.Clamp((consoleNow - state.LastConsoleMilliseconds) / 1000f, 0f, 0.25f));
         state.LastConsoleMilliseconds = consoleNow;
+
+        // A co-op line being typed takes the keyboard next, the same way.
+        if (!state.Console.IsOpen)
+        {
+            UpdateCoopTalk();
+        }
     }
 
     /// <summary>Runs the shell over its own input, or lets the game's binds have the keys when it is not up.</summary>

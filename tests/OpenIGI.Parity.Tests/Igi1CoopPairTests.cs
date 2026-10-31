@@ -198,6 +198,32 @@ public sealed class Igi1CoopPairTests
         Assert.True(pair.RunUntil(() => pair.Client.Ended is not null, 120) >= 0, "the joiner never heard the room close");
     }
 
+    [RequiresGameDataFact]
+    public void What_one_player_says_and_marks_reaches_the_other_under_its_name()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.Client.Say("Go, go, go!");
+        pair.Client.Mark(new Game.Multiplayer.Int3(10, 20, 30));
+        pair.Session.Say("Hold position.");
+        List<Game.Multiplayer.ChatLine> hostHeard = [];
+        List<Game.Multiplayer.ChatLine> joinerHeard = [];
+        List<Game.Multiplayer.WorldMark> hostMarks = [];
+        Assert.True(pair.RunUntil(
+            () =>
+            {
+                hostHeard.AddRange(pair.Session.TakeChat());
+                joinerHeard.AddRange(pair.Client.TakeChat());
+                hostMarks.AddRange(pair.Session.TakeMarks());
+                return hostHeard.Count >= 2 && joinerHeard.Count >= 2 && hostMarks.Count >= 1;
+            },
+            120) >= 0, $"host heard {hostHeard.Count}, joiner heard {joinerHeard.Count}, host saw {hostMarks.Count} marks");
+
+        int joiner = pair.Client.LocalEntity!.Value;
+        Assert.Contains(new Game.Multiplayer.ChatLine(joiner, "Go, go, go!"), hostHeard);
+        Assert.Contains(new Game.Multiplayer.ChatLine(Igi1ReplicatedWorld.HostEntity, "Hold position."), joinerHeard);
+        Assert.Contains(new Game.Multiplayer.WorldMark(joiner, new Game.Multiplayer.Int3(10, 20, 30)), hostMarks);
+    }
+
     private static Igi1CoopPair Joined(params string[] hostArgs)
     {
         Igi1CoopPair pair = new(hostArgs: hostArgs);

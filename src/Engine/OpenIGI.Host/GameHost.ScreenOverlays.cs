@@ -392,6 +392,16 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // Co-op talk: the lines said and being typed, and the places marked.
+        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, marks)
+            && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null))
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // The other players' names over their heads, on the same eye and lens as the marker.
         if (_remasteredHud is { IsReady: true } tagHud && _soldiers?.NameTags() is { Count: > 0 } tags)
         {

@@ -49,6 +49,46 @@ public sealed class ClientSession
 
     private string? _travel;
 
+    // What the server told this client was said and marked, since it last took them.
+    private readonly List<ChatLine> _heard = [];
+    private readonly List<WorldMark> _marked = [];
+
+    /// <summary>Says a line to every player.</summary>
+    /// <param name="text">The line.</param>
+    public void Say(string text)
+    {
+        _writer.Reset();
+        SessionTalk.WriteChat(_writer, -1, text);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    /// <summary>Marks a place for every player.</summary>
+    /// <param name="position">Where, in world units.</param>
+    public void Mark(Int3 position)
+    {
+        _writer.Reset();
+        SessionTalk.WriteMark(_writer, -1, position);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    /// <summary>Takes what has been said since the last call, this client's own lines included as the server echoed them.</summary>
+    /// <returns>The lines, oldest first.</returns>
+    public IReadOnlyList<ChatLine> TakeChat()
+    {
+        ChatLine[] heard = [.. _heard];
+        _heard.Clear();
+        return heard;
+    }
+
+    /// <summary>Takes what has been marked since the last call, this client's own marks included as the server echoed them.</summary>
+    /// <returns>The marks, oldest first.</returns>
+    public IReadOnlyList<WorldMark> TakeMarks()
+    {
+        WorldMark[] marked = [.. _marked];
+        _marked.Clear();
+        return marked;
+    }
+
     /// <summary>Takes the map the server has gone on to, once, for the client to load.</summary>
     /// <returns>The map, or <see langword="null"/> when the server has not travelled since the last call.</returns>
     public string? TakeTravel()
@@ -251,6 +291,12 @@ public sealed class ClientSession
                 Map = reader.ReadString(64);
                 Epoch = (byte)reader.ReadBits(8);
                 Clock = new TickClockSync(Math.Max(1, TickRate));
+                break;
+            case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
+                _heard.Add(line);
+                break;
+            case SessionMessage.Mark when SessionTalk.ReadMark(ref reader) is { } mark:
+                _marked.Add(mark);
                 break;
             case SessionMessage.Travel:
                 Epoch = (byte)reader.ReadBits(8);

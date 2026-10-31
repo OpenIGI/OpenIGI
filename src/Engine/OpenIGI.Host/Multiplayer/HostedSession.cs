@@ -27,7 +27,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisposable
+public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -149,6 +149,18 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
 
     /// <inheritdoc/>
     public void Dispose() => _net.Dispose();
+
+    /// <inheritdoc/>
+    public void Say(string text) => _session?.Say(text);
+
+    /// <inheritdoc/>
+    public void Mark(Int3 position) => _session?.Mark(position);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<ChatLine> TakeChat() => _session?.TakeChat() ?? [];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<WorldMark> TakeMarks() => _session?.TakeMarks() ?? [];
 
     private void ReportJoinsAndDepartures()
     {

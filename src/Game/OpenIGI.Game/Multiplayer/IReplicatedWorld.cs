@@ -208,4 +208,7 @@ public enum SessionMessage : byte
 
     /// <summary>Server to client, reliable: the server has gone on to another level, which the client loads to play on.</summary>
     Travel = 7,
+
+    /// <summary>Either way, reliable: a place one player marked for the others.</summary>
+    Mark = 8,
 }

@@ -22,6 +22,9 @@ internal sealed partial class RemasteredHudRenderer
     private const double NameTagReachMetres = 140.0;
     private const double NameTagFadeMetres = 30.0;
 
+    // Beyond here a tag says how far as well.
+    private const double NameTagDistanceMetres = 25.0;
+
     /// <inheritdoc/>
     /// <remarks>
     /// Each name is a plate on the screen, not a sign in the level: the point over the player's head is projected through
@@ -72,7 +75,9 @@ internal sealed partial class RemasteredHudRenderer
             float size = context.Px(NameTagSize * scale);
             float padX = size * 0.62f;
             float bar = MathF.Max(2f, size * 0.16f);
-            float width = font.MeasureWidth(tag.Name, size) + (padX * 2f) + bar;
+            // Far off, how far: a teammate across the compound is found by the number as much as the name.
+            string label = distance > NameTagDistanceMetres ? FormattableString.Invariant($"{tag.Name}  {distance:0} m") : tag.Name;
+            float width = font.MeasureWidth(label, size) + (padX * 2f) + bar;
             float height = size * 1.75f;
             var plate = new UiRect(headX - (width * 0.5f), headY - height - context.Px(6f * scale), width, height);
             if (plate.Right < 0f || plate.X > screenWidth || plate.Bottom < 0f || plate.Y > screenHeight)
@@ -86,7 +91,7 @@ internal sealed partial class RemasteredHudRenderer
             painter.FillRect(new UiRect(plate.X, plate.Y + (height * 0.2f), bar, height * 0.6f), Accent.WithAlpha((byte)(255 * fade)));
             painter.DrawLabel(
                 font,
-                tag.Name,
+                label,
                 new UiVec2(plate.X + bar + padX, UiRowStyle.CapsCenterY(font, size, plate)),
                 size,
                 Text.WithAlpha((byte)(255 * fade)),

@@ -63,6 +63,7 @@ public sealed partial class GameHost
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
         _lamps.RegisterCommands(state.Console.System);
+        RegisterCoopTalk(state.Console.System);
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);

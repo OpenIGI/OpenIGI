@@ -27,6 +27,10 @@ public sealed class ServerSession
     // The players who dropped, by name, kept under a parked key of their own until they come back or their time is up.
     private readonly Dictionary<string, (int Parked, double Since)> _away = new(StringComparer.Ordinal);
     private int _nextParked = -1;
+
+    // What was said and marked since the host last took it, its own included.
+    private readonly List<ChatLine> _heard = [];
+    private readonly List<WorldMark> _marked = [];
     private double _now;
     private readonly Dictionary<int, ClientState> _clients = [];
     private readonly UserCommandCodec _codec;
@@ -323,6 +327,48 @@ public sealed class ServerSession
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
     }
 
+    /// <summary>Says a line to every player, as the listen server's own player.</summary>
+    /// <param name="text">The line.</param>
+    public void Say(string text) => Say(new ChatLine(HostEntity, text));
+
+    /// <summary>Marks a place for every player, as the listen server's own player.</summary>
+    /// <param name="position">Where, in world units.</param>
+    public void Mark(Int3 position) => Mark(new WorldMark(HostEntity, position));
+
+    /// <summary>Takes what has been said since the last call, the host's own lines included.</summary>
+    /// <returns>The lines, oldest first.</returns>
+    public IReadOnlyList<ChatLine> TakeChat()
+    {
+        ChatLine[] heard = [.. _heard];
+        _heard.Clear();
+        return heard;
+    }
+
+    /// <summary>Takes what has been marked since the last call, the host's own marks included.</summary>
+    /// <returns>The marks, oldest first.</returns>
+    public IReadOnlyList<WorldMark> TakeMarks()
+    {
+        WorldMark[] marked = [.. _marked];
+        _marked.Clear();
+        return marked;
+    }
+
+    private void Say(ChatLine line)
+    {
+        _heard.Add(line);
+        _writer.Reset();
+        SessionTalk.WriteChat(_writer, line.Entity, line.Text);
+        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    private void Mark(WorldMark mark)
+    {
+        _marked.Add(mark);
+        _writer.Reset();
+        SessionTalk.WriteMark(_writer, mark.Entity, mark.Position);
+        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+    }
+
     /// <summary>Goes on to another level with every player: the next mission, or the same one again.</summary>
     /// <param name="world">The new level's world.</param>
     /// <param name="map">Its map.</param>
@@ -428,9 +474,19 @@ public sealed class ServerSession
     private void ReadMessage(int slot, ClientState client, byte[] data, long serverTick)
     {
         BitReader reader = new(data);
-        if ((SessionMessage)reader.ReadBits(8) != SessionMessage.Commands || reader.ReadBits(8) != _epoch)
+        switch ((SessionMessage)reader.ReadBits(8))
         {
-            return;
+            // Said or marked by a client: told to everyone, under its own entity whatever it claimed.
+            case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
+                Say(line with { Entity = client.Entity });
+                return;
+            case SessionMessage.Mark when SessionTalk.ReadMark(ref reader) is { } mark:
+                Mark(mark with { Entity = client.Entity });
+                return;
+            case SessionMessage.Commands when reader.ReadBits(8) == _epoch:
+                break;
+            default:
+                return;
         }
 
         long acknowledged = reader.ReadBits(32) | ((long)reader.ReadBits(32) << 32);
