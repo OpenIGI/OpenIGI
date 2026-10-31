@@ -668,6 +668,81 @@ public sealed class Igi1CoopPairTests
     }
 
     // The living soldier nearest a place on a game, among those the level has in play.
+    [RequiresGameDataFact]
+    public void A_joiner_climbing_and_sliding_down_a_ladder_lands_where_the_host_has_it()
+    {
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        ClientSession session = pair.Client.Session!;
+        object controller = typeof(Game.Igi1.Player.PlayerCamera).GetField("_ladder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(own)!;
+        var ladders = (IReadOnlyList<LadderPlacement>)controller.GetType().GetField("_ladders", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(controller)!;
+        LadderPlacement ladder = ladders.OrderBy(l => l.Top.Z - l.Bottom.Z).Last();
+
+        // At its foot facing it, on both games, and on with the use key.
+        foreach (Game.Igi1.Player.PlayerCamera body in new[] { own, partner.Player })
+        {
+            body.Body.Position = ladder.BottomMount - new Vector3d(0, 0, LadderPlacement.BottomVerticalOffsetUnits);
+            body.Body.Yaw = ladder.PlayerYaw;
+        }
+
+        pair.RunUntil(() => false, 10);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        bool mounted = pair.RunUntil(() => own.IsOnLadder && partner.Player.IsOnLadder, 30) >= 0;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Assert.True(mounted, $"the joiner never got on: own {own.IsOnLadder}, on the host {partner.Player.IsOnLadder}");
+
+        // Up a good way: the joiner's climb is the one its commands run on the host, rung for rung, so it is seldom put back.
+        long climbStart = session.Reconciler.Corrections;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 240);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        pair.RunUntil(() => false, 30);
+        double high = own.Body.Position.Z - ladder.Bottom.Z;
+        Assert.True(high > 8192, $"the joiner climbed only {high} units");
+        Assert.True(
+            Math.Abs(own.Body.Position.Z - partner.Player.Body.Position.Z) < 256,
+            $"the joiner climbed to {high:0} and the host has it at {partner.Player.Body.Position.Z - ladder.Bottom.Z:0}");
+        long climbCorrections = session.Reconciler.Corrections - climbStart;
+        Assert.True(climbCorrections <= 3, $"the joiner was put back {climbCorrections} times on the climb");
+
+        // Then slide to the ground.
+        long correctionsBefore = session.Reconciler.Corrections;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        List<string> phases = [];
+        string last = string.Empty;
+        bool off = pair.RunUntil(
+            () =>
+            {
+                string now = $"{own.LadderPhase}/{partner.Player.LadderPhase}";
+                if (now != last)
+                {
+                    phases.Add($"f{phases.Count}:{now} z{own.Body.Position.Z - ladder.Bottom.Z:0}/{partner.Player.Body.Position.Z - ladder.Bottom.Z:0}");
+                    last = now;
+                }
+
+                return !own.IsOnLadder && !partner.Player.IsOnLadder;
+            },
+            600) >= 0;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Assert.True(off, $"still on the ladder after sliding: own {own.LadderPhase}, on the host {partner.Player.LadderPhase}; climbed {high}; {string.Join(" | ", phases)}");
+
+        // Standing at the foot on both, and staying there: no fall, no putting back.
+        List<string> afterwards = [];
+        for (int frame = 0; frame < 90; frame++)
+        {
+            Assert.True(pair.Step());
+            afterwards.Add($"{own.Body.Position.Z - partner.Player.Body.Position.Z:0}");
+        }
+
+        long corrections = session.Reconciler.Corrections - correctionsBefore;
+        double apart = Vector3d.Distance(own.Body.Position, partner.Player.Body.Position);
+        Assert.True(
+            apart < 256 && corrections <= 3,
+            $"after a slide from {high:0} units up: {apart:0} apart, {corrections} corrections, own grounded {own.Body.IsGrounded} z {own.Body.Position.Z:0}, "
+            + $"host's grounded {partner.Player.Body.IsGrounded} z {partner.Player.Body.Position.Z:0}, foot {ladder.Bottom.Z:0}; dz {string.Join(" ", afterwards.Where((_, i) => i % 6 == 0))}");
+    }
+
     private static Game.Igi1.Player.SoldierView NearestLivingSoldier(Igi1Gameplay game, Vector3d near) =>
         game.World.Soldiers!.SoldierViews
             .Where(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier))
