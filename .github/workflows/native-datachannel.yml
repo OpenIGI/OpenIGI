@@ -7,6 +7,10 @@ name: Build libdatachannel
 
 on:
   workflow_dispatch:
+  # Dispatch needs the workflow on the default branch; until it is there, a change to it on the co-op branch runs it.
+  push:
+    branches: [feat/multiplayer]
+    paths: [.github/workflows/native-datachannel.yml]
 
 permissions:
   contents: write
