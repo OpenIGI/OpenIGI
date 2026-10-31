@@ -442,11 +442,10 @@ public sealed class HostConsole : IDisposable
             {
                 if (context.Count > 0)
                 {
-                    // The console's gate and the player cheats' two session gates move together, so
+                    // The console's gate and the player cheats' session gate move together, so
                     // `cheats 1` makes the g_cheat_* variables both assignable and in force.
                     bool enabled = context[0] is "1" or "on" or "true" or "yes";
                     System.CheatsEnabled = enabled;
-                    PlayerCheatCVars.DeveloperMode.Value = enabled;
                     PlayerCheatCVars.CheatsEnabled.Value = enabled;
                 }
 

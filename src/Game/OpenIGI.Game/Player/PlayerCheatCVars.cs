@@ -2,13 +2,13 @@ using OpenIGI.Core.Configuration;
 
 namespace OpenIGI.Game.Player;
 
-/// <summary>The player cheats of issue #57, and the two session gates they sit behind.</summary>
+/// <summary>The player cheats of issue #57, and the session gate they sit behind.</summary>
 /// <remarks>
 /// <para>
-/// None of these is archived: every launch starts retail, and a cheat only takes effect once both
-/// <see cref="DeveloperMode"/> and <see cref="CheatsEnabled"/> are on. The console's <c>cheats 1</c>
-/// opens both; Extras opens them one at a time. Read them through <see cref="PlayerCheatOptions.Current"/>,
-/// which applies the gates, rather than one by one.
+/// None of these is archived: every launch starts retail, and a cheat only takes effect once
+/// <see cref="CheatsEnabled"/> is on -- the first switch of the Gameplay settings' Cheats group, or the
+/// console's <c>cheats 1</c>. Read them through <see cref="PlayerCheatOptions.Current"/>, which applies the
+/// gate, rather than one by one.
 /// </para>
 /// <para>
 /// Nothing here is retail behaviour. Every multiplier's value of 1 and every switch's value of off is
@@ -18,12 +18,12 @@ namespace OpenIGI.Game.Player;
 [CVarContainer]
 public static class PlayerCheatCVars
 {
-    /// <summary>The first gate: shows the cheat section in Extras.</summary>
+    /// <summary>Developer mode: the session-only developer controls in Extras. Cheats do not need it.</summary>
     public static readonly BoolCVar DeveloperMode = CVar.Bool(
         "g_developer_mode", false, CVarOptions.Developer | CVarOptions.Hidden,
-        "Shows the cheat controls in Extras. Not saved.");
+        "Shows the developer controls in Extras. Not saved.");
 
-    /// <summary>The second gate: puts the cheat values in force, and lets the console assign them.</summary>
+    /// <summary>The gate: puts the cheat values in force.</summary>
     public static readonly BoolCVar CheatsEnabled = CVar.Bool(
         "g_cheats_enabled", false, CVarOptions.Developer | CVarOptions.Hidden,
         "Puts the g_cheat_* variables in force. Not saved.");

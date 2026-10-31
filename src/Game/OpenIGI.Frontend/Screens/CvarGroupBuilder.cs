@@ -97,8 +97,11 @@ internal static class CvarGroupBuilder
         var names = new List<string>();
         foreach (ICVar cvar in cvars.All)
         {
+            // The cheats are a group of their own, behind their gate (GameplaySettingsTab); loose here they were
+            // switches that did nothing.
             if ((cvar.Name.StartsWith("g_", StringComparison.Ordinal) || cvar.Name.StartsWith("ui_", StringComparison.Ordinal))
-                && !cvar.Flags.HasFlag(CVarOptions.Hidden))
+                && !cvar.Flags.HasFlag(CVarOptions.Hidden)
+                && !cvar.Flags.HasFlag(CVarOptions.Cheat))
             {
                 names.Add(cvar.Name);
             }

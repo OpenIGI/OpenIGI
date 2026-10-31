@@ -143,11 +143,9 @@ public sealed class CampaignShellTests : ShellTestHarness
             var rows = shell.Stack.Top!.Root!.Descendants().OfType<ListCard>().ToList();
             Assert.False(rows[1].IsEnabled);
 
-            // Unlocking alone is not enough: all three availability gates are part of the effective
-            // option, and each change must refresh the active rail.
+            // Unlocking alone is not enough: cheats must be enabled too, and each change must refresh
+            // the active rail.
             PlayerCheatCVars.UnlockAllLevels.Value = true;
-            Assert.False(rows[1].IsEnabled);
-            PlayerCheatCVars.DeveloperMode.Value = true;
             Assert.False(rows[1].IsEnabled);
             PlayerCheatCVars.CheatsEnabled.Value = true;
             Assert.True(rows[1].IsEnabled);
