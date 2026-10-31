@@ -102,6 +102,17 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets the input frame the last tick ran on: on a co-op client, the command sent up for it.</summary>
     public PlayerInputFrame LastFrame => _input.Current;
 
+    /// <summary>Gets the heading the last tick ran with, before anything in it turned the body.</summary>
+    /// <remarks>
+    /// What a co-op client sends with <see cref="LastFrame"/>: its server sets the heading and then runs the frame, so it must
+    /// be the heading the frame met. Getting on a ladder at its top turns the body round to face the ladder; sent that,
+    /// the server's copy faces away from the ladder's head as it takes the use key and never gets on.
+    /// </remarks>
+    public float FrameYaw { get; private set; }
+
+    /// <summary>Gets the view's pitch the last tick ran with; see <see cref="FrameYaw"/>.</summary>
+    public float FramePitch { get; private set; }
+
     /// <summary>Uses the owning runtime's live player-health accumulator.</summary>
     public void UseHealth(HumanHealth health) => _body.UseHealth(health);
 

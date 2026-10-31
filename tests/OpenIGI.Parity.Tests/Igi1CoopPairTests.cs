@@ -842,6 +842,67 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void A_joiner_getting_on_a_ladder_at_its_top_climbs_down_where_the_host_has_it()
+    {
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        object controller = typeof(Game.Igi1.Player.PlayerCamera).GetField("_ladder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(own)!;
+        var ladders = (IReadOnlyList<LadderPlacement>)controller.GetType().GetField("_ladders", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(controller)!;
+        LadderPlacement ladder = ladders.OrderBy(l => l.Top.Z - l.Bottom.Z).Last();
+
+        // On the roof behind the ladder's head, facing it, on both games.
+        Vector3f normal = ladder.Orientation.Column2;
+        Vector3d back = new Vector3d(-normal.X, -normal.Y, 0);
+        back /= back.Length;
+        foreach (Game.Igi1.Player.PlayerCamera body in new[] { own, partner.Player })
+        {
+            body.Body.Position = ladder.ActivationTop + (back * 3000.0) + new Vector3d(0, 0, 2048);
+            body.Body.Yaw = (float)Math.Atan2(-back.X, -back.Y);
+        }
+
+        pair.RunUntil(() => false, 30);
+        string near = $"own eye {own.Body.Eye} host eye {partner.Player.Body.Eye} top {ladder.ActivationTop}; own yaw {own.Body.Yaw} host yaw {partner.Player.Body.Yaw}";
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        List<string> phases = [];
+        string last = string.Empty;
+        pair.RunUntil(
+            () =>
+            {
+                string now = $"{own.LadderPhase}/{partner.Player.LadderPhase}";
+                if (now != last)
+                {
+                    phases.Add($"f{phases.Count}:{now} z{own.Body.Position.Z - ladder.Bottom.Z:0}/{partner.Player.Body.Position.Z - ladder.Bottom.Z:0}");
+                    last = now;
+                }
+
+                return false;
+            },
+            20);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.S, true);
+        pair.RunUntil(
+            () =>
+            {
+                string now = $"{own.LadderPhase}/{partner.Player.LadderPhase}";
+                if (now != last)
+                {
+                    phases.Add($"f{phases.Count}:{now} z{own.Body.Position.Z - ladder.Bottom.Z:0}/{partner.Player.Body.Position.Z - ladder.Bottom.Z:0}");
+                    last = now;
+                }
+
+                return false;
+            },
+            150);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.S, false);
+
+        Assert.True(own.IsOnLadder && partner.Player.IsOnLadder, $"{near}; {string.Join(" | ", phases)}");
+        Assert.True(
+            Math.Abs(own.Body.Position.Z - partner.Player.Body.Position.Z) < 256,
+            $"own z{own.Body.Position.Z - ladder.Bottom.Z:0} host z{partner.Player.Body.Position.Z - ladder.Bottom.Z:0}; {string.Join(" | ", phases)}");
+    }
+
+    [RequiresGameDataFact]
     public void A_players_voice_reaches_the_other_under_its_entity_and_decodes()
     {
         using Igi1CoopPair pair = Joined();
