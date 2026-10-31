@@ -1,8 +1,10 @@
 <Project>
 
-  <!-- Puts libdatachannel beside whatever is being built, from where tools/native/build-datachannel.ps1 (or the release's
-       fetch) left it in the gitignored third-party/. Conditional throughout: a checkout without it builds and plays as
-       before, with rooms unavailable and saying so. -->
+  <!-- Puts libdatachannel beside the program that imports this, for the runtime it is built for, from where
+       tools/native/build-datachannel.ps1 (or the release's fetch) left it in the gitignored third-party/. Imported by the
+       program, not by OpenIGI.Net.WebRtc: a referenced library is built for no runtime, so there it fell back to the
+       building machine's and every platform's package shipped that one's library. Conditional throughout: a checkout
+       without it builds and plays as before, with rooms unavailable and saying so. -->
 
   <PropertyGroup>
     <DataChannelRuntimeIdentifier Condition="'$(DataChannelRuntimeIdentifier)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</DataChannelRuntimeIdentifier>

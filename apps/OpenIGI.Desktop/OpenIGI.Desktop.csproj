@@ -131,4 +131,7 @@
           Condition="!Exists('$(OutDir)dlssg_sm86.ini')" />
   </Target>
 
+  <!-- libdatachannel for the runtime this is built for, beside the game. -->
+  <Import Project="..\..\src\Engine\OpenIGI.Net.WebRtc\DataChannelNative.props" />
+
 </Project>

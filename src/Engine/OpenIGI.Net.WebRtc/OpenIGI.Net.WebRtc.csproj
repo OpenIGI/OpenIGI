@@ -3,7 +3,9 @@
   <!--
     WebRTC data channels for the desktop build and the dedicated server, over libdatachannel (MPL-2.0) through its C API.
     The native library is built by tools/native/build-datachannel.ps1 into third-party/ and copied beside the game by
-    DataChannelNative.props; never part of the browser build, which has the page's own RTCPeerConnection.
+    DataChannelNative.props, which the programs that run this import: a library is built for no runtime, so only the
+    program knows which platform's library it ships. Never part of the browser build, which has the page's own
+    RTCPeerConnection.
   -->
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -12,7 +14,5 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenIGI.Net\OpenIGI.Net.csproj" />
   </ItemGroup>
-
-  <Import Project="DataChannelNative.props" />
 
 </Project>

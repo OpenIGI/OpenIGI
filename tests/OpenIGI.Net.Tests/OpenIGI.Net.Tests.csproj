@@ -13,4 +13,6 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 
+  <Import Project="..\..\src\Engine\OpenIGI.Net.WebRtc\DataChannelNative.props" />
+
 </Project>
