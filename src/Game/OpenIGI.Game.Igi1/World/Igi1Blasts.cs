@@ -434,7 +434,8 @@ public sealed class Igi1Blasts(
         double distance = away.Length;
         if (distance < (radiusUnits + falloffUnits) * 1.5 && distance > 0.0)
         {
-            rig.Body.AddHitShove(
+            target.Shove(
+                rig,
                 (float)(away.X / distance * BlastShoveUnitsPerTick),
                 (float)(away.Y / distance * BlastShoveUnitsPerTick));
         }

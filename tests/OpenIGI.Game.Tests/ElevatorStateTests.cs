@@ -421,4 +421,74 @@ public sealed class ElevatorStateTests
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
         Assert.True(elevator.Position.Z > underway.Z);
     }
+
+    [Fact]
+    public void A_motion_projected_on_is_where_the_lift_itself_gets_to()
+    {
+        // A co-op client takes the server's lift as the snapshot had it, some ticks old, and projects it to its own tick:
+        // the projection must land where the server's own lift does over those ticks, accelerating and braking alike.
+        ElevatorState server = TallLift();
+        server.RequestFloor(2);
+        for (int i = 0; i < 5; i++)
+        {
+            server.Tick(canStart: true, floorUp: false, floorDown: false);
+        }
+
+        ElevatorMotion sent = server.Motion;
+        ElevatorState client = TallLift();
+        foreach (int ahead in new[] { 0, 1, 12, 200, 1000 })
+        {
+            ElevatorState reference = TallLift();
+            reference.Restore(sent);
+            for (int i = 0; i < ahead; i++)
+            {
+                reference.Tick(canStart: true, floorUp: false, floorDown: false);
+            }
+
+            Assert.Equal(reference.Motion, client.Project(sent, ahead));
+        }
+
+        // Far enough on, the car has arrived and stands.
+        Assert.Equal(new ElevatorMotion(new Vector3d(0, 0, 80000), 2, null, 0.0), client.Project(sent, 1000));
+    }
+
+    [Fact]
+    public void A_restored_lift_carries_on_from_the_motion_it_took()
+    {
+        // A partner called it on the server; this client's copy never heard the press, and takes the server's mid-trip.
+        ElevatorState server = TallLift();
+        ElevatorState client = TallLift();
+        server.RequestFloor(1);
+        for (int i = 0; i < 10; i++)
+        {
+            server.Tick(canStart: true, floorUp: false, floorDown: false);
+        }
+
+        Vector3d was = client.Position;
+        client.Restore(server.Motion);
+        Assert.Equal(server.Position, client.Position);
+        Assert.Equal(was, client.PreviousPosition);
+        Assert.True(client.TransformChangedThisTick);
+
+        for (int i = 0; i < 1000; i++)
+        {
+            server.Tick(canStart: true, floorUp: false, floorDown: false);
+            client.Tick(canStart: true, floorUp: false, floorDown: false);
+            Assert.Equal(server.Position, client.Position);
+        }
+
+        Assert.Equal(1, client.CurrentFloorIndex);
+        Assert.False(client.IsMoving);
+    }
+
+    private static ElevatorState TallLift() => new(
+        startPosition: new Vector3d(0, 0, 0),
+        floors:
+        [
+            new ElevatorFloor(10, new Vector3d(0, 0, 0)),
+            new ElevatorFloor(20, new Vector3d(0, 0, 40000)),
+            new ElevatorFloor(30, new Vector3d(0, 0, 80000)),
+        ],
+        maxSpeedUnitsPerSecond: 6000,
+        speedInertiaUnitsPerSecondPerTick: 500);
 }

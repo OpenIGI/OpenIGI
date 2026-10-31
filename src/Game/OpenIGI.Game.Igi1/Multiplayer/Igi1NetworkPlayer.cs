@@ -88,7 +88,7 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
     World.IPlayerSenses World.IHarmedPlayer.Senses => RemoteSenses;
 
     /// <summary>Gets what it felt since the last snapshot, recorded for its client.</summary>
-    internal RemotePlayerSenses RemoteSenses => _remote ??= new RemotePlayerSenses(() => Entity);
+    internal RemotePlayerSenses RemoteSenses => _remote ??= new RemotePlayerSenses(() => Entity, () => Commands.LastTakenTick);
 
     private RemotePlayerSenses? _remote;
 

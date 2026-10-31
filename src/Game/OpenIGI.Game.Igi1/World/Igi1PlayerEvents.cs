@@ -82,7 +82,8 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
             double length = Math.Sqrt((travel.X * travel.X) + (travel.Y * travel.Y) + (travel.Z * travel.Z));
             if (length > 1e-6)
             {
-                rig.Body.AddHitShove(
+                target.Shove(
+                    rig,
                     (float)(travel.X / length * PlayerBody.HitShoveUnitsPerTick),
                     (float)(travel.Y / length * PlayerBody.HitShoveUnitsPerTick));
             }

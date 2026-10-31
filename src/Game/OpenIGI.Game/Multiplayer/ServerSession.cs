@@ -234,6 +234,13 @@ public sealed class ServerSession
         {
             foreach ((int slot, ClientState client) in _clients)
             {
+                // A line still carrying the last ones gets none this tick: a snapshot queued behind them would only
+                // arrive late, and push the round trip out with it.
+                if (_net.GetConnection(slot) is { IsChoked: true })
+                {
+                    continue;
+                }
+
                 client.History.Add(snapshot);
                 SendSnapshot(slot, snapshot, client.History.Baseline, tick);
             }
@@ -263,7 +270,7 @@ public sealed class ServerSession
                 ReplicatedHuman[] slice = snapshot.Humans.Skip(part * per).Take(per).ToArray();
                 Snapshot piece = part == 0
                     ? snapshot with { Humans = slice }
-                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Impacts = null, Senses = null };
+                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Lifts = baseline?.Lifts, Impacts = null, Senses = null };
                 _writer.Reset();
                 _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
                 _writer.WriteBits((uint)part, 8);

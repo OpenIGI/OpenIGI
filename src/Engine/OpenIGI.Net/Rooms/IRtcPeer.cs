@@ -69,6 +69,10 @@ public interface IRtcPeer : IDisposable
 
     /// <summary>Gets whether the open connection goes through the TURN relay rather than straight between the two players.</summary>
     bool Relayed => false;
+
+    /// <summary>Gets the bytes sent that the channel still holds, not yet on the wire.</summary>
+    /// <remarks>Past <see cref="NetConstants.MaxSendBacklog"/>, <see cref="Send"/> drops the datagram instead.</remarks>
+    int Backlog => 0;
 }
 
 /// <summary>Makes <see cref="IRtcPeer"/>s: the one platform-specific part of playing through a room.</summary>

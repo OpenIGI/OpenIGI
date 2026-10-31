@@ -27,8 +27,13 @@ public sealed partial class GameHost
         _lastCutsceneSkipMilliseconds = now;
 
         bool free = !_menuFlow.MenuMode && !state.Console.IsOpen;
-        // A co-op client's scenes end when its host's do: the host skips them, for everyone.
-        bool hostCutscene = free && _mission.Cutscenes?.IsPlaying == true && TickObserver is not Multiplayer.ISessionFollower;
+        // A co-op client's scenes end when its host's do: the host skips them, for everyone. And only a scene the level's
+        // script listens for the key in can be skipped at all -- an I.G.I. intro -- so no other is offered the hold; one
+        // whose hold has completed stays offered until it ends.
+        bool hostCutscene = free
+            && _mission.Cutscenes is { IsPlaying: true } scenes
+            && (scenes.CanBreak || _cutsceneSkip.Breaking)
+            && TickObserver is not Multiplayer.ISessionFollower;
         bool titleCutscene = free && TitlePlayer is { IsCutscenePlaying: true };
         // On a touch screen the whole screen is the key: a finger held anywhere fills the ring.
         bool held = _window.Input.Keyboard.IsDown(Input.KeyCode.Escape) || _window.Input.Touch.AnyDown;
@@ -43,10 +48,21 @@ public sealed partial class GameHost
 
         _followedScene = followed;
 
-        if (_cutsceneSkip.Update(hostCutscene || titleCutscene, held, seconds)
-            && hostCutscene)
+        bool completed = _cutsceneSkip.Update(hostCutscene || titleCutscene, held, seconds);
+        if (!hostCutscene)
+        {
+            return;
+        }
+
+        // Held, as the original's key is read, from the hold's completing until the scene ends: the script reading it may not
+        // run on the very tick after, and a single tick's press it missed left the ring full and the scene playing.
+        if (_cutsceneSkip.Breaking)
         {
             _mission.Cutscenes!.RequestBreak();
+        }
+
+        if (completed)
+        {
             _cutsceneSounds.StopAll();
             _mission.Objectives?.ClearCutsceneMessages();
         }

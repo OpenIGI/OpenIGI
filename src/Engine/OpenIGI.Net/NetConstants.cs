@@ -32,6 +32,16 @@ public static class NetConstants
 
     /// <summary>The reliable messages that may be unacknowledged at once; the rest wait their turn.</summary>
     public const int MaxReliableInFlight = 512;
+
+    /// <summary>The bytes a transport may hold unsent for one destination before it drops what more comes, as a full socket does.</summary>
+    /// <remarks>
+    /// A WebRTC channel otherwise queues without end: sent faster than the line carries, every datagram waits behind the
+    /// last, and the round trip grows by seconds while the line itself is quick.
+    /// </remarks>
+    public const int MaxSendBacklog = 32 * 1024;
+
+    /// <summary>The bytes waiting to go to a client past which the server skips its snapshot that tick (Source's choke).</summary>
+    public const int ChokeBacklog = 4 * MaxPacketSize;
 }
 
 /// <summary>How a message is delivered.</summary>

@@ -207,6 +207,30 @@ internal sealed class PlayerLadderController
         }
     }
 
+    /// <summary>Moves the climber by a correction from outside the climb, the climb's own place with it.</summary>
+    /// <param name="delta">The correction, in world units.</param>
+    internal void Shift(Vector3d delta)
+    {
+        _body.Position += delta;
+        if (_climb.IsOnLadder)
+        {
+            _climb.Shift(delta);
+        }
+    }
+
+    /// <summary>Lets go of the ladder where the body is, as a co-op server that has the climber off it says.</summary>
+    /// <remarks>The body is left where it is, collision back on, to fall or stand from there as leaving any ladder does.</remarks>
+    internal void Release()
+    {
+        if (!_climb.IsOnLadder)
+        {
+            return;
+        }
+
+        _climb.Release();
+        _body.EndLadderTraversal();
+    }
+
     // Off the ladder at either end. 0x4113E0 only turns collision back on: the Human's origin stays where the climb left it,
     // a little above the ground or the roof, so the body is in the air and falls the last few centimetres into state 29,
     // landing with the surface's step (0x40BE40). The climb carries the origin; the body stands on its feet,
