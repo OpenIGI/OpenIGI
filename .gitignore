@@ -90,6 +90,8 @@ gamedata/
 # An added asset's provenance, licence and preparation recipe are not working notes: they have to
 # ship with the binary they describe, or nobody downstream can tell what they are allowed to do with it.
 !apps/OpenIGI.Composition/Assets/**/README.md
+# What someone running a co-op relay for the project reads.
+!tools/turn/OPERATORS.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp

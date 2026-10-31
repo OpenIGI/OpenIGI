@@ -38,6 +38,7 @@ internal sealed class PlayerOptics
         // ticked with the current weapon so its own weapon-change reset fires; its answer is a
         // default frame and is discarded.
         WeaponType? heldWeapon = weapons?.InHand?.Weapon;
+        bool ready = weapons?.IsWeaponReady ?? true;
         bool dragunov = heldWeapon is not null
             && string.Equals(heldWeapon.Weapon.TypeName, DragunovScope.TaskType, StringComparison.Ordinal);
 
@@ -52,7 +53,8 @@ internal sealed class PlayerOptics
                 input.Current.IsSet(PlayerInputSlot.ZoomIn),
                 input.Current.IsSet(PlayerInputSlot.ZoomOut),
                 view.TanX,
-                view.ViewModelTanX);
+                view.ViewModelTanX,
+                ready);
         }
         else
         {
@@ -81,7 +83,8 @@ internal sealed class PlayerOptics
                     heldWeapon,
                     input.IsRisingEdge(PlayerInputSlot.AlternateFire),
                     view.TanX,
-                    view.ViewModelTanX);
+                    view.ViewModelTanX,
+                    ready);
         }
 
         view.TanX = zoom.TanX;

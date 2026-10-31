@@ -46,12 +46,18 @@ public sealed class Mp5SightZoom
     /// <param name="togglePressed">Whether alternate fire rose this tick.</param>
     /// <param name="tanX">The current world horizontal half-FOV tangent.</param>
     /// <param name="viewModelTanX">The current first-person model horizontal half-FOV tangent.</param>
+    /// <param name="weaponReady">
+    /// Whether the weapon is ready (<see cref="PlayerWeapons.IsWeaponReady"/>). While it is not -- a reload, a weapon
+    /// change -- <c>0x473AF0</c> puts both tangents home and drops the latch, so the sight is closed until it is
+    /// toggled again.
+    /// </param>
     /// <returns>The two tangents to use for this tick.</returns>
     public SightZoomFrame Tick(
         WeaponType? weapon,
         bool togglePressed,
         float tanX,
-        float viewModelTanX)
+        float viewModelTanX,
+        bool weaponReady = true)
     {
         if (!ReferenceEquals(_weapon, weapon))
         {
@@ -62,6 +68,12 @@ public sealed class Mp5SightZoom
         }
 
         if (!TryGetMinimum(weapon, out float minimumTanX))
+        {
+            IsActive = false;
+            return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        }
+
+        if (!weaponReady)
         {
             IsActive = false;
             return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);

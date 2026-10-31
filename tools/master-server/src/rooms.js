@@ -3,10 +3,12 @@
 // A room is one Durable Object, named by its code. It never carries game traffic: the host and each joiner hold a
 // WebSocket to it only while they swap what WebRTC needs to connect them directly (offer, answer, ICE candidates), and
 // the host keeps its own open for as long as the room lives so joiners can arrive. The game itself then runs over a
-// data channel between the two players, or through the TURN relay on turn.openigi.com when their routers won't allow
-// that. The relay's logins are minted here, per player, and expire.
+// data channel between the two players, or through a TURN relay when their routers won't allow that. Which relay is
+// the relay list's choice (relays.js), from where the host and each joiner are; the logins expire.
 //
 // Hibernating WebSockets: a room spends nearly all its life idle with sockets open, and is only woken by a message.
+
+import { builtinIce } from "./relays.js";
 
 // Codes are read aloud and typed on phones: no 0/O, 1/I/L.
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -14,7 +16,6 @@ const CODE_LENGTH = 6;
 
 // How long a created room waits for its host's socket, and how long a relay login lasts.
 const HOST_CONNECT_MS = 60_000;
-const TURN_TTL_S = 6 * 60 * 60;
 
 // How often an open room refreshes its entry in the list, which drops entries 90 s after they were last refreshed.
 const PUBLISH_MS = 30_000;
@@ -27,8 +28,11 @@ const JOINER_SLACK = 4;
 
 const MAX_FIELD = 64;
 
-/** The rooms' routes, under /v1/rooms. */
-export async function handleRooms(request, env, url) {
+/**
+ * The rooms' routes, under /v1/rooms. `geo` is where the request came from ({lat, lon, country} from Cloudflare, or
+ * null): the Worker's to say, since a room only sees the requests the Worker sends it.
+ */
+export async function handleRooms(request, env, url, geo) {
   const parts = url.pathname.split("/").filter(Boolean); // ["v1", "rooms", code?, "ws"?]
 
   if (request.method === "POST" && parts.length === 2) {
@@ -44,7 +48,7 @@ export async function handleRooms(request, env, url) {
       const code = newCode();
       const response = await roomStub(env, code).fetch("https://room/create", {
         method: "POST",
-        body: JSON.stringify({ ...meta, code, ip }),
+        body: JSON.stringify({ ...meta, code, ip, geo }),
       });
       if (response.status !== 409) {
         return response;
@@ -72,7 +76,10 @@ export async function handleRooms(request, env, url) {
       return json({ error: "expected a WebSocket" }, 426);
     }
 
-    return roomStub(env, code).fetch(new Request(`https://room/ws${url.search}`, request));
+    // Where the joiner is, said by the Worker alone: any such header the client sent is replaced.
+    const headers = new Headers(request.headers);
+    headers.set("x-openigi-geo", JSON.stringify(geo));
+    return roomStub(env, code).fetch(new Request(`https://room/ws${url.search}`, { headers }));
   }
 
   return json({ error: "not found" }, 404);
@@ -95,11 +102,14 @@ export class Room {
 
       const meta = await request.json();
       const hostToken = randomToken();
-      const created = { ...meta, hostTokenHash: await sha256(hostToken), hostConnected: false, nextPeer: 1, players: 1 };
+      const who = `${meta.code}-host`;
+      const { relays, ice } = await this.iceServers([who], meta.geo, null, null);
+      // The relay the host was handed: a joiner shares it when it is about as good as the best for the pair.
+      const created = { ...meta, relay: relays[0] ?? null, hostTokenHash: await sha256(hostToken), hostConnected: false, nextPeer: 1, players: 1 };
       await this.ctx.storage.put("room", created);
       await this.ctx.storage.setAlarm(Date.now() + HOST_CONNECT_MS);
       await this.publish(created);
-      return json({ code: meta.code, hostToken, ice: await this.iceServers(`${meta.code}-host`) });
+      return json({ code: meta.code, hostToken, ice: ice[who] });
     }
 
     if (!room) {
@@ -111,13 +121,13 @@ export class Room {
     }
 
     if (url.pathname === "/ws") {
-      return this.connect(url, room);
+      return this.connect(url, room, readGeo(request.headers.get("x-openigi-geo")));
     }
 
     return json({ error: "not found" }, 404);
   }
 
-  async connect(url, room) {
+  async connect(url, room, geo) {
     const role = url.searchParams.get("role");
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -151,8 +161,13 @@ export class Room {
       await this.ctx.storage.put("room", room);
       this.ctx.acceptWebSocket(server, ["join", `peer:${peer}`]);
       server.serializeAttachment({ role: "join", peer });
-      server.send(JSON.stringify({ type: "welcome", peer, room: roomView(room), ice: await this.iceServers(`${room.code}-${peer}`) }));
-      this.toHost({ type: "join", peer });
+      // The joiner and the host each get logins on the relays chosen for the two of them. A host from before relays were
+      // chosen per pair ignores the join's ice and keeps the relay it was given when it made the room.
+      const joinerWho = `${room.code}-${peer}`;
+      const hostWho = `${room.code}-host-${peer}`;
+      const { ice } = await this.iceServers([joinerWho, hostWho], room.geo, geo, room.relay);
+      server.send(JSON.stringify({ type: "welcome", peer, room: roomView(room), ice: ice[joinerWho] }));
+      this.toHost({ type: "join", peer, ice: ice[hostWho] });
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -285,27 +300,54 @@ export class Room {
     await this.env.SERVER_LIST.get(this.env.SERVER_LIST.idFromName("global")).fetch("https://list/rooms/update", {
       method: "POST",
       // Listed only once its host is there to be joined.
-      body: JSON.stringify({ view: roomView(room), ip: room.ip, public: room.public && room.hostConnected, hosted: room.hostConnected }),
+      body: JSON.stringify({
+        view: roomView(room),
+        ip: room.ip,
+        public: room.public && room.hostConnected,
+        hosted: room.hostConnected,
+        relay: room.relay ?? null,
+      }),
     });
   }
 
-  // STUN and TURN on the VM, with a relay login that expires (the TURN REST scheme coturn's use-auth-secret checks).
-  async iceServers(who) {
-    const host = this.env.TURN_HOST;
-    const servers = [{ urls: [`stun:${host}:3478`] }];
-    if (this.env.TURN_SECRET) {
-      const username = `${Math.floor(Date.now() / 1000) + TURN_TTL_S}:${who}`;
-      const credential = await hmacSha1Base64(this.env.TURN_SECRET, username);
-      // UDP first; then TCP, and TLS on 5349 for networks that pass nothing that doesn't look like HTTPS.
-      servers.push({
-        urls: [`turn:${host}:3478?transport=udp`, `turn:${host}:3478?transport=tcp`, `turns:${host}:5349?transport=tcp`],
-        username,
-        credential,
+  // STUN and TURN logins for each of `who`, on the relays the relay list picks for a host and joiner at those places.
+  // If the list can't be reached, the built-in relay as before: a room is never left without one.
+  async iceServers(who, host, joiner, prefer) {
+    try {
+      const response = await this.env.RELAYS.get(this.env.RELAYS.idFromName("global")).fetch("https://relays/ice", {
+        method: "POST",
+        body: JSON.stringify({ who, host, joiner, prefer }),
       });
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch {
+      // Below.
     }
 
-    return servers;
+    const ice = {};
+    for (const name of who) {
+      ice[name] = await builtinIce(this.env, name);
+    }
+
+    return { relays: this.env.TURN_HOST ? ["eu"] : [], ice };
   }
+}
+
+/** A place as the Worker passed it: {lat, lon} to a tenth of a degree, or null. */
+export function readGeo(text) {
+  try {
+    const geo = typeof text === "string" ? JSON.parse(text) : text;
+    const lat = Number(geo?.lat);
+    const lon = Number(geo?.lon);
+    if (geo && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      return { lat: Math.round(lat * 10) / 10, lon: Math.round(lon * 10) / 10 };
+    }
+  } catch {
+    // Not a place.
+  }
+
+  return null;
 }
 
 function validateRoom(body) {
@@ -373,12 +415,6 @@ function randomToken() {
 async function sha256(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hmacSha1Base64(secret, text) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text));
-  return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
 function json(value, status = 200) {

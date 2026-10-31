@@ -813,20 +813,22 @@ public sealed class PlayerBody
             }
         }
 
-        // 0x462390's drop: from four metres over the probe a long way down, and only when nothing is there, up. A body
-        // whose feet have dipped under a steep slope -- sliding down one does every tick -- meets it again on the way.
+        // 0x462390's downward cast, terrain half: from four metres over the probe a long way down. A body whose feet
+        // have dipped under a steep slope -- sliding down one does every tick -- meets it again on the way.
+        bool terrainFound = false;
+        double terrainHeight = double.NegativeInfinity;
+        Vector3f terrainNormal = default;
         if (terrain is not null
             && !found
-            && (terrain.TryDrop(position.X, position.Y, from, HumanGroundQuery.GroundDropUnits, upward: false, out TerrainGround ground)
-                || terrain.TryDrop(position.X, position.Y, from, HumanGroundQuery.GroundDropUnits, upward: true, out ground)))
+            && terrain.TryDrop(position.X, position.Y, from, HumanGroundQuery.GroundDropUnits, upward: false, out TerrainGround ground))
         {
-            found = true;
-            height = ground.Height;
-            normal = new Vector3f((float)ground.NormalX, (float)ground.NormalY, (float)ground.NormalZ);
+            terrainFound = true;
+            terrainHeight = ground.Height;
+            terrainNormal = new Vector3f((float)ground.NormalX, (float)ground.NormalY, (float)ground.NormalZ);
         }
 
-        // The object half of the cast: a downward ray at the placed models. Its nearest hit is the
-        // highest surface below the probe, so a top, a ramp or a floor above the terrain wins here.
+        // The object half of the same cast: a downward ray at the placed models, whose nearest hit is the highest
+        // surface below the probe. 0x4CBE40 lets the terrain replace it only when the terrain lies nearer the probe.
         if (Walls is not null)
         {
             Vector3d probeTop = new(position.X, position.Y, from);
@@ -838,6 +840,24 @@ public sealed class PlayerBody
                 height = hit.Position.Z;
                 normal = hit.Normal;
             }
+        }
+
+        if (terrainFound && (!found || Math.Abs(from - terrainHeight) < Math.Abs(from - height)))
+        {
+            found = true;
+            height = terrainHeight;
+            normal = terrainNormal;
+        }
+
+        // Only when the whole downward cast met nothing does 0x462390 cast up. Doing so before the objects are asked
+        // stood a body in a building below the terrain -- mission 3's cells -- on the terrain overhead (#18).
+        if (terrain is not null
+            && !found
+            && terrain.TryDrop(position.X, position.Y, from, HumanGroundQuery.GroundDropUnits, upward: true, out ground))
+        {
+            found = true;
+            height = ground.Height;
+            normal = new Vector3f((float)ground.NormalX, (float)ground.NormalY, (float)ground.NormalZ);
         }
 
         if (!found)

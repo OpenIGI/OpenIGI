@@ -5,10 +5,18 @@ compatibility_date = "2026-10-01"
 # Served at master.openigi.com; Cloudflare makes the DNS record for a custom domain itself.
 routes = [{ pattern = "master.openigi.com", custom_domain = true }]
 
-# Where the game's WebRTC connections find STUN and TURN: coturn on the data.openigi.com VM (tools/turn). The relay's
-# shared secret is the Worker secret TURN_SECRET (`wrangler secret put TURN_SECRET`; `.dev.vars` locally), never here.
+# The built-in relay, every room's last resort: coturn on the data.openigi.com VM in Frankfurt (tools/turn). Its secret
+# is the Worker secret TURN_SECRET (`wrangler secret put TURN_SECRET`; `.dev.vars` locally), never here. Other relays
+# are added through the admin routes (ADMIN_TOKEN) and their secrets kept encrypted under RELAY_KEY, both secrets too.
 [vars]
 TURN_HOST = "turn.openigi.com"
+TURN_REGION = "Europe"
+TURN_LAT = "50.1"
+TURN_LON = "8.7"
+
+# The relays probed every minute, so one that stops answering stops being handed out.
+[triggers]
+crons = ["* * * * *"]
 
 # The whole list lives in one Durable Object; heartbeats keep it current, so nothing needs persisting. Each co-op room
 # is a Durable Object of its own, named by its code. SQLite-backed: the only kind the Workers free plan has.
@@ -20,6 +28,15 @@ class_name = "ServerList"
 name = "ROOMS"
 class_name = "Room"
 
+# The relay list: who they are, their secrets, and how their last probes went.
+[[durable_objects.bindings]]
+name = "RELAYS"
+class_name = "Relays"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ServerList", "Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Relays"]

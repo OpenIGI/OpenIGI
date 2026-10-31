@@ -302,8 +302,10 @@ public sealed class RoomTransport : INetTransport
                 _logger.Information(LogCategory, $"In room {_code} as player {(int?)message["peer"]}; reaching its host.");
                 break;
 
+            // The master picks a relay for each host and joiner pair and sends this host's logins on it with the join; a
+            // master from before that sends none, and the relay the room was made with serves.
             case "join" when _hosting:
-                Add(peer, _factory.Create(_ice, offerer: false));
+                Add(peer, _factory.Create(message["ice"] is JsonArray pairIce ? ReadIce(pairIce) : _ice, offerer: false));
                 break;
 
             case "leave" when _hosting:

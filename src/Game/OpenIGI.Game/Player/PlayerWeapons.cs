@@ -119,6 +119,25 @@ public sealed class PlayerWeapons
     /// <summary>Gets the state the machine was in before the current one.</summary>
     public HumanWeaponState PreviousState => _machine.PreviousState;
 
+    /// <summary>Gets whether the weapon in hand is ready for its own handler, the fire message's active word.</summary>
+    /// <remarks>
+    /// Cleared for the length of a reload (<c>0x40F180</c>), a weapon change (<c>0x40F230</c> until <c>0x40F300</c>)
+    /// and the map computer (<c>0x40FDA0</c>), and handed to the weapon's fire handler as its active flag: the MP5's
+    /// sight goes home while it is clear and the Dragunov's scope cannot be raised.
+    /// </remarks>
+    public bool IsWeaponReady => State is not (HumanWeaponState.Reloading
+        or HumanWeaponState.ChangingWeapon
+        or HumanWeaponState.MapComputer);
+
+    /// <summary>Takes the view reset a weapon hand-off asked for, <c>0x4659E0</c>.</summary>
+    /// <returns><see langword="true"/> once for each hand-off that reset the view.</returns>
+    public bool ConsumeViewReset()
+    {
+        bool pending = _machine.ViewResetPending;
+        _machine.ViewResetPending = false;
+        return pending;
+    }
+
     /// <summary>Gets the flag word the prologue last built.</summary>
     public HumanWeaponFlagWord Flags => _machine.Flags;
 

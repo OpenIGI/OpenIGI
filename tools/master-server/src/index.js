@@ -4,9 +4,10 @@
 // at the address its heartbeat came from (CF-Connecting-IP), never at an address it claims, so nobody can list a
 // server on someone else's machine. One Durable Object holds the whole list: a few hundred entries at most.
 
-import { handleRooms } from "./rooms.js";
+import { handleRooms, readGeo } from "./rooms.js";
 
 export { Room } from "./rooms.js";
+export { Relays } from "./relays.js";
 
 const ENTRY_TTL_MS = 90_000;
 const MAX_SERVERS_PER_IP = 8;
@@ -32,8 +33,12 @@ export default {
       }
     }
 
+    if (url.pathname.startsWith("/v1/admin/")) {
+      return cors(await admin(request, env, url));
+    }
+
     if (url.pathname.startsWith("/v1/rooms")) {
-      const response = await handleRooms(request, env, url);
+      const response = await handleRooms(request, env, url, geoOf(request, env));
       // A WebSocket upgrade is passed back as it is; headers can't be added to it.
       return response.status === 101 ? response : cors(response);
     }
@@ -44,11 +49,50 @@ export default {
 
     return cors(await list.fetch(request));
   },
+
+  // Every minute: the relays probed, so one that stops answering stops being handed out.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(relays(env).fetch("https://relays/probe", { method: "POST" }));
+  },
 };
 
+function relays(env) {
+  return env.RELAYS.get(env.RELAYS.idFromName("global"));
+}
+
+// Where a request came from, to a tenth of a degree, as Cloudflare places it. `wrangler dev` may set ALLOW_TEST_GEO
+// to let a test say where it is (?testGeo=lat,lon); the deployed Worker never does.
+function geoOf(request, env) {
+  const test = new URL(request.url).searchParams.get("testGeo");
+  if (env.ALLOW_TEST_GEO === "1" && test) {
+    const [lat, lon] = test.split(",");
+    return readGeo({ lat, lon });
+  }
+
+  return readGeo({ lat: request.cf?.latitude, lon: request.cf?.longitude });
+}
+
+// The relay list's admin routes, for us alone: a bearer token checked against the Worker secret ADMIN_TOKEN, and no
+// routes at all where it isn't set.
+async function admin(request, env, url) {
+  if (!env.ADMIN_TOKEN || !url.pathname.startsWith("/v1/admin/relays")) {
+    return json({ error: "not found" }, 404);
+  }
+
+  const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const digest = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  if (!crypto.subtle.timingSafeEqual(await digest(given), await digest(env.ADMIN_TOKEN))) {
+    return json({ error: "unauthorised" }, 401);
+  }
+
+  const path = url.pathname.slice("/v1".length);
+  return relays(env).fetch(new Request(`https://relays${path}`, { method: request.method, body: request.body, headers: request.headers }));
+}
+
 export class ServerList {
-  constructor(state) {
+  constructor(state, env) {
     this.state = state;
+    this.env = env;
     this.servers = new Map();
     // Rooms by code, public or not: the public ones are listed, and all of them count against their host's address.
     this.rooms = new Map();
@@ -70,7 +114,15 @@ export class ServerList {
 
     // How busy things are, as counts only: never a private room's code or anyone's address.
     if (request.method === "GET" && url.pathname === "/v1/stats") {
-      return json(stats(this.servers, this.rooms));
+      // The relays' health from the relay list; the counts stand without it if it can't answer.
+      let status = [];
+      try {
+        status = await (await relays(this.env).fetch("https://relays/status")).json();
+      } catch {
+        // Counts only.
+      }
+
+      return json(stats(this.servers, this.rooms, status));
     }
 
     // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers and /v1/stats are).
@@ -81,8 +133,8 @@ export class ServerList {
     }
 
     if (request.method === "POST" && url.pathname === "/rooms/update") {
-      const { view, ip, public: listed, hosted } = await request.json();
-      this.rooms.set(view.room, { view, ip, public: listed === true, hosted: hosted === true, lastSeen: now });
+      const { view, ip, public: listed, hosted, relay } = await request.json();
+      this.rooms.set(view.room, { view, ip, public: listed === true, hosted: hosted === true, relay: relay ?? null, lastSeen: now });
       return json({ ok: true });
     }
 
@@ -181,10 +233,17 @@ function validate(body, ip, now) {
 }
 
 // A room counts once its host is connected (one still waiting for its host is only "waiting"), and as playing once
-// anyone has joined its host.
-export function stats(servers, rooms) {
+// anyone has joined its host. Each relay counts the rooms whose host it was handed first, and their players: what the
+// master chose, not what ICE ended up using, which only the players' games know.
+export function stats(servers, rooms, relayStatus = []) {
   const tally = () => ({ open: 0, playing: 0, players: 0 });
-  const out = { rooms: { public: tally(), private: tally(), waiting: 0 }, servers: { open: 0, players: 0 }, byTitle: {} };
+  const out = { rooms: { public: tally(), private: tally(), waiting: 0 }, servers: { open: 0, players: 0 }, byTitle: {}, relays: {} };
+  for (const r of relayStatus) {
+    if (r.enabled) {
+      out.relays[r.id] = { region: r.region, healthy: r.healthy, rooms: 0, players: 0 };
+    }
+  }
+
   for (const r of rooms.values()) {
     if (!r.hosted) {
       out.rooms.waiting++;
@@ -195,6 +254,11 @@ export function stats(servers, rooms) {
     const title = (out.byTitle[r.view.title] ??= { rooms: 0, servers: 0, players: 0 });
     title.rooms++;
     title.players += players;
+    if (r.relay && out.relays[r.relay]) {
+      out.relays[r.relay].rooms++;
+      out.relays[r.relay].players += players;
+    }
+
     const kind = r.public ? out.rooms.public : out.rooms.private;
     kind.open++;
     kind.players += players;

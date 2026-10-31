@@ -1,5 +1,5 @@
 [Unit]
-Description=Copy turn.openigi.com's certificate from Caddy to coturn
+Description=Copy the OpenIGI relay's certificate to coturn
 
 [Service]
 Type=oneshot

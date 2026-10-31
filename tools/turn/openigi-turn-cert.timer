@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily copy of turn.openigi.com's certificate to coturn
+Description=Daily copy of the OpenIGI relay's certificate to coturn
 
 [Timer]
 OnCalendar=daily
