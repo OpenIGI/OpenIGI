@@ -105,6 +105,10 @@ public sealed class Igi1CoopPairTests
         pair.RunUntil(() => false, 40);
         Assert.Equal(Count(pair.Host, "EditVariable_199.nValue"), Count(pair.Joiner, "EditVariable_199.nValue"));
 
+        // No script listens for the break key in it, so neither game offers the hold.
+        Assert.False(pair.Host.World.Cutscenes!.CanBreak);
+        Assert.False(pair.Joiner.World.Cutscenes!.CanBreak);
+
         // The joiner can't break it: the scene is the host's to skip.
         pair.Joiner.World.Cutscenes!.RequestBreak();
         pair.RunUntil(() => false, 5);
@@ -113,6 +117,35 @@ public sealed class Igi1CoopPairTests
         // And the scene ends on both.
         Assert.True(pair.RunUntil(() => pair.Host.World.Cutscenes?.ActiveScene is null && pair.Joiner.World.Cutscenes?.ActiveScene is null, 3000) >= 0,
             $"the scene runs on: host {pair.Host.World.Cutscenes?.ActiveScene?.Id}, joiner {pair.Joiner.World.Cutscenes?.ActiveScene?.Id}");
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData(1, "EditVariable_4004.nValue")]
+    [InlineData(3, "EditVariable_1001.nValue")]
+    public void The_host_may_skip_its_intro_and_the_break_held_ends_it_on_both_games(int mission, string skipped)
+    {
+        using Igi1CoopPair pair = new([], [], joinLater: false, mission: mission, hostSkipsIntro: false);
+        Assert.True(pair.RunUntil(() => pair.Host?.World.Cutscenes?.IsPlaying == true && pair.Joined, 3000) >= 0, "the host's intro never began");
+        pair.RunUntil(() => false, 30);
+
+        // The intro's script listens for the key: the hold is offered to the host, and not to the joiner, whose scene is the host's.
+        Assert.True(pair.Host!.World.Cutscenes!.CanBreak, $"the host's intro scene {pair.Host.World.Cutscenes.ActiveScene?.Id} is not offered the skip");
+        Assert.False(pair.Joiner!.World.Cutscenes!.CanBreak);
+
+        // Held from the hold's completing, as the host holds it, until the intro has ended -- on both games.
+        int ended = pair.RunUntil(
+            () =>
+            {
+                pair.Host.World.Cutscenes.RequestBreak();
+                return !pair.Host.World.Cutscenes.IsPlaying;
+            },
+            150);
+        Assert.True(ended >= 0, $"the break held 150 frames and the host's intro scene {pair.Host.World.Cutscenes.ActiveScene?.Id} runs on");
+        Assert.Equal(1, Count(pair.Host, skipped));
+        Assert.True(pair.RunUntil(() => !pair.Joiner.World.Cutscenes.IsPlaying, 150) >= 0, "the host skipped its intro, and the joiner's runs on");
+
+        // Skipped once, the intro offers no second skip.
+        Assert.False(pair.Host.World.Cutscenes.CanBreak);
     }
 
     [RequiresGameDataFact]

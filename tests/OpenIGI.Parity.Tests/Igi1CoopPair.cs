@@ -66,17 +66,18 @@ internal sealed class Igi1CoopPair : IDisposable
     /// <param name="joinerArgs">The joiner's extras, in place of the host's.</param>
     /// <param name="joinLater">Whether the joiner waits for <see cref="StartJoiner"/>.</param>
     /// <param name="mission">The mission both play.</param>
-    public Igi1CoopPair(string[] hostArgs, string[] joinerArgs, bool joinLater, int mission = 1)
-        : this(null, null, mission, 20000, hostArgs, joinerArgs, joinLater)
+    /// <param name="hostSkipsIntro">Whether the host skips its intro (the joiner alongside skips its own with it).</param>
+    public Igi1CoopPair(string[] hostArgs, string[] joinerArgs, bool joinLater, int mission = 1, bool hostSkipsIntro = true)
+        : this(null, null, mission, 20000, hostArgs, joinerArgs, joinLater, hostSkipsIntro)
     {
     }
 
-    private Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater)
+    private Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true)
     {
         bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
-        string[] skip = ["-skipcutscene"];
+        string[] skip = hostSkipsIntro ? ["-skipcutscene"] : [];
         _session = new HostedSession(
             _network.Open(26001),
             new HostedSessionOptions("coop", 4, string.Empty, "coop", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
