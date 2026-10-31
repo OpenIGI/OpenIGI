@@ -484,7 +484,8 @@ public sealed class CutsceneRuntime
         static state => state.Task.IsRun && ConditionalContainerGate.IsTaskActive(state.Task))?.Task;
 
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
-    public void RequestBreak() => _breakRequested = true;
+    /// <remarks>A co-op client's scenes are its server's to break: it asks nothing of its own.</remarks>
+    public void RequestBreak() => _breakRequested = !Mirrored;
 
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()

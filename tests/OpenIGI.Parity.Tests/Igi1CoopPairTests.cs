@@ -101,6 +101,11 @@ public sealed class Igi1CoopPairTests
         pair.RunUntil(() => false, 40);
         Assert.Equal(Count(pair.Host, "EditVariable_199.nValue"), Count(pair.Joiner, "EditVariable_199.nValue"));
 
+        // The joiner can't break it: the scene is the host's to skip.
+        pair.Joiner.World.Cutscenes!.RequestBreak();
+        pair.RunUntil(() => false, 5);
+        Assert.Equal(1204, pair.Joiner.World.Cutscenes.ActiveScene?.Id);
+
         // And the scene ends on both.
         Assert.True(pair.RunUntil(() => pair.Host.World.Cutscenes?.ActiveScene is null && pair.Joiner.World.Cutscenes?.ActiveScene is null, 3000) >= 0,
             $"the scene runs on: host {pair.Host.World.Cutscenes?.ActiveScene?.Id}, joiner {pair.Joiner.World.Cutscenes?.ActiveScene?.Id}");
