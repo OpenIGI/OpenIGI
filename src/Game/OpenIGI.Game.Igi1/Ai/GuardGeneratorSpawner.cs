@@ -253,11 +253,10 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
             brain => SoldierWeaponFire.CombatWeaponState(brain, freshAgent));
         // Each live instance has its own runtime ID, so nothing keyed by the old guard's -- its weapon sound, the replies to its
         // alerts -- is taken for the replacement's. Keep the authored Soldier.Id for mission queries.
-        freshBrain.RuntimeId = runtimeId ?? checked(_context.BrainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
+        freshBrain.RuntimeId = runtimeId ?? _context.NewRuntimeId();
         _sight.BindViewTracking(freshBrain, freshView);
         freshBrain.SetDefaultTarget(_context.PlayerTarget);
-        _context.Brains[freshView] = freshBrain;
-        _context.BrainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
+        _context.Register(freshView, freshBrain);
         _enlist(freshView);
 
         // 0x487EE0 deletes the dead child (0x4015F0) as it clones the next; its body has already left the world. The task it

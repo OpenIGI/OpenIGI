@@ -70,6 +70,35 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
     /// <summary>Gets each brain by its runtime id.</summary>
     public Dictionary<int, Igi1HumanAi> BrainsByRuntimeId { get; } = [];
 
+    // The highest runtime id any soldier of this level has had, gone bodies' too.
+    private int _highestRuntimeId;
+
+    /// <summary>Gets a runtime id no soldier of this level has had, for a generator's replacement.</summary>
+    /// <remarks>
+    /// Never one a body that left the world had: a co-op client keeps every corpse under its id, since it runs no mind to take
+    /// one out, and a replacement given a corpse's id would be posed on that corpse -- lying dead and firing.
+    /// </remarks>
+    /// <returns>The id.</returns>
+    public int NewRuntimeId() => checked(_highestRuntimeId + 1);
+
+    /// <summary>Registers a soldier's brain, under its view and its runtime id.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="brain">Its brain, its runtime id already given.</param>
+    public void Register(SoldierView view, Igi1HumanAi brain)
+    {
+        Brains[view] = brain;
+        BrainsByRuntimeId[brain.RuntimeId] = brain;
+        _highestRuntimeId = Math.Max(_highestRuntimeId, brain.RuntimeId);
+    }
+
+    /// <summary>Forgets every brain, for the next level.</summary>
+    public void ClearBrains()
+    {
+        Brains.Clear();
+        BrainsByRuntimeId.Clear();
+        _highestRuntimeId = 0;
+    }
+
     /// <summary>Gets each soldier's view by its task, for the hit events the task receives.</summary>
     public Dictionary<HumanTask, SoldierView> ViewsByTask { get; } = [];
 

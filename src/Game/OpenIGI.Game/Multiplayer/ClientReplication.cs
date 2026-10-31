@@ -18,6 +18,13 @@ public static class ClientReplication
         ArgumentNullException.ThrowIfNull(world);
         session.Receive(now);
 
+        // Nothing of a level the server has begun is shown on the one this client is leaving, nor commanded from it.
+        if (session.Behind)
+        {
+            session.Flush(now);
+            return;
+        }
+
         // The server's word on where this client's player was after its newest command it has run, against the prediction.
         if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own))
         {

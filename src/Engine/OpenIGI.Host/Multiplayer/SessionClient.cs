@@ -191,6 +191,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
         _world = next.CreateClientWorld();
         _level = level;
+        _session.Arrived();
         _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
         if (_session.WaitingForServer)
         {

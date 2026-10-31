@@ -57,6 +57,16 @@ public sealed class ClientSession
     /// <summary>Gets whether a level the server is going on to is loaded or loading here, waiting for the server to begin it.</summary>
     public bool WaitingForServer => _going is not null;
 
+    /// <summary>Gets whether the server has begun a level this client has still to load, its snapshots not for the one here.</summary>
+    /// <remarks>
+    /// A restart, or a level gone on to unannounced: until the client is there, the server's soldiers would be posed on the
+    /// level being left, where the same ids are other soldiers -- a corpse there standing for a guard alive and firing.
+    /// </remarks>
+    public bool Behind { get; private set; }
+
+    /// <summary>Tells the session the level the server began is up here, so its snapshots are shown again.</summary>
+    public void Arrived() => Behind = false;
+
     /// <summary>Tells the server the level it is going on to is loaded here.</summary>
     public void ReportReady()
     {
@@ -367,6 +377,7 @@ public sealed class ClientSession
                 {
                     _going = null;
                     _travel = Map;
+                    Behind = true;
                 }
 
                 break;

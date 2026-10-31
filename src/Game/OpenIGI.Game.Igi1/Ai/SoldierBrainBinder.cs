@@ -257,8 +257,7 @@ internal sealed class SoldierBrainBinder(SoldierContext context, SoldierSightQue
                     }
                 }
 
-                _context.Brains[view] = brain;
-                _context.BrainsByRuntimeId[brain.RuntimeId] = brain;
+                _context.Register(view, brain);
                 _enlist(view);
                 index++;
             }
