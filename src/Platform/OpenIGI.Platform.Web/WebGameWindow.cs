@@ -38,6 +38,7 @@ public sealed class WebGameWindow : IGameWindow
     private bool _cursorVisible;
     private bool _cursorLocked;
     private bool _gyroWanted;
+    private bool _textWanted;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGameWindow"/> class.</summary>
@@ -180,6 +181,17 @@ public sealed class WebGameWindow : IGameWindow
         {
             _gyroWanted = wanted;
             _page.SetGyro(wanted);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Asked of the page only when it changes: the host says it every frame.</remarks>
+    public void SetTextEntry(bool wanted)
+    {
+        if (_textWanted != wanted && !_disposed)
+        {
+            _textWanted = wanted;
+            _page.SetTextEntry(wanted);
         }
     }
 

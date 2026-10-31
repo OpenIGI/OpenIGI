@@ -160,6 +160,10 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         _bodies.Add(body);
     }
 
+    /// <summary>Takes a boned object out of the world, as a player leaving a server does.</summary>
+    /// <param name="body">The object.</param>
+    public void RemoveBody(Igi2BoneCollider body) => _bodies.Remove(body);
+
     /// <summary>Puts something in the world that answers lines and sight itself, after the world's own kinds.</summary>
     /// <param name="collider">It.</param>
     public void AddCollider(IWorldLineCollider collider)

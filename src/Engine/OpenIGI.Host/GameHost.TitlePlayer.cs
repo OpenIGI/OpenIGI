@@ -236,6 +236,7 @@ public sealed partial class GameHost
             replaced |= PlayerAction.MapComputer;
         }
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        TickObserver?.BeforeTitleTick(player);
         player.Tick(new TitlePlayerInput(
             _titleMouseX,
             _titleMouseY,
@@ -248,6 +249,7 @@ public sealed partial class GameHost
             TitleHeld: !still && Gameplay is { } gameplay ? TitleInputBindings.Sample(profile, _window.Input, gameplay.InputBindings, pressed: false) : 0,
             TitlePressed: _titleExtraPressed,
             Raw: SampleRawKeys()));
+        TickObserver?.AfterTitleTick(player);
         _titlePresentation.CaptureTick(_titleFeatures!);
         double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _titleTickMilliseconds += milliseconds;
@@ -431,8 +433,8 @@ public sealed partial class GameHost
     {
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
-            // The original's levels of detail, on its own look only, as the world's models give theirs up.
-            models.Lod = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla ? _modelLod : null;
+            // The original's levels of detail only when asked for, as the world's models give theirs up.
+            models.Lod = FrameCVars.ModelLod.Value ? _modelLod : null;
             models.LodBiasHeld = TitlePlayer?.IsCutscenePlaying == true;
             models.DrawWorld(owned.WorldModels, eye, projection, _titlePresentationBlend);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);

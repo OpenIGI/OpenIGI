@@ -52,6 +52,15 @@ public static class DefaultBinds
         // rule above rather than being an exception to it: g_thirdperson is deliberately NOT archived, so
         // a view flipped to while lining up a jump is not what the game starts as tomorrow.
         ("v", "toggle g_thirdperson"),
+
+        // Co-op talk: the place under the crosshair marked for the others, a line typed to them, and four said at a press.
+        // Each does nothing outside a co-op room.
+        ("t", "coop_mark"),
+        ("y", "coop_chat"),
+        ("f1", "coop_say Go, go, go!"),
+        ("f2", "coop_say Hold position."),
+        ("f3", "coop_say Enemy spotted."),
+        ("f4", "coop_say Need help here!"),
     ];
 
     /// <summary>The variable a statement toggles, or <see langword="null"/> when it toggles nothing.</summary>

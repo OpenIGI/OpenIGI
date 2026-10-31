@@ -29,4 +29,7 @@ public interface ISampleSource : IDisposable
     /// <summary>Rewinds to the start so the source can loop.</summary>
     /// <exception cref="NotSupportedException"><see cref="CanRestart"/> is <see langword="false"/>.</exception>
     void Restart();
+
+    /// <summary>Gets how many frames each buffer a device queues from this source holds: fewer for a live voice, so little waits.</summary>
+    int FramesPerBuffer => VoiceSlot.StreamFramesPerBuffer;
 }

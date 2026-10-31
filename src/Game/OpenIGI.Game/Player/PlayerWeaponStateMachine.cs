@@ -278,6 +278,16 @@ internal sealed class PlayerWeaponStateMachine
         }
     }
 
+    /// <summary>Takes the machine out of death, ready with what it holds, as a co-op player is brought back.</summary>
+    internal void Revive()
+    {
+        PreviousState = State;
+        State = HumanWeaponState.Ready;
+        Flags &= ~(HumanWeaponFlagWord.Dead | HumanWeaponFlagWord.Dying);
+        Request(WeaponAction.None);
+        Enter(State);
+    }
+
     /// <summary>Suspends the machine and drops every outgoing request because the player has died.</summary>
     internal void StopForDeath()
     {

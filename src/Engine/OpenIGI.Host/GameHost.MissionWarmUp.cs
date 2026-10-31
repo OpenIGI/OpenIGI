@@ -92,8 +92,12 @@ public sealed partial class GameHost
     /// </remarks>
     private bool PresentationHoldsLevel =>
         IsWarmingUp
+        || CoopHoldsLevel
         || _loadSequence.Phase is MissionLoadPhase.Depart or MissionLoadPhase.Hold
         || _entry.IsCameraActive;
+
+    /// <summary>Whether a co-op level is held for the other players to have it loaded too, so all of them begin it at once.</summary>
+    private bool CoopHoldsLevel => TickObserver is Multiplayer.ISessionHold { HoldsLevel: true };
 
     /// <summary>Whether a loading screen may be drawn at all this run.</summary>
     /// <remarks>
@@ -401,8 +405,8 @@ public sealed partial class GameHost
             }
         }
 
-        _loadSequence.Update(elapsed, ready: _loadSequence.Loaded && !_warmUp.IsActive);
-        _switch.AdvanceHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
+        _loadSequence.Update(elapsed, ready: _loadSequence.Loaded && !_warmUp.IsActive && !CoopHoldsLevel);
+        _switch.AdvanceHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive && !CoopHoldsLevel, loadActive: _loadSequence.IsActive);
 
         if (!_loadSequence.IsActive || !ShowsLoadingPanel)
         {
@@ -582,7 +586,7 @@ public sealed partial class GameHost
         float barTop = footer + (14f * scale);
         float progress = Math.Clamp(_warmUp.Progress, 0f, 1f);
 
-        string stage = _warmUp.IsActive ? _warmUp.Stage : "Preparing";
+        string stage = _warmUp.IsActive ? _warmUp.Stage : CoopHoldsLevel ? "Waiting for the others" : "Preparing";
         float stageSize = 11f * scale;
         painter.DrawLabel(type.Mono, stage.ToUpperInvariant(), new UiVec2(barLeft, footer - (8f * scale)), stageSize, CardDim, 0.22f);
 

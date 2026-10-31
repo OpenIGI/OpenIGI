@@ -32,6 +32,23 @@ internal sealed class PlayerPickups
     /// <summary>Gives the player the level's automatic generic item pickups.</summary>
     internal void UseGeneric(GenericPickupRegistry pickups) => _genericPickups = pickups;
 
+    // A pickup the co-op server says this player took: into its hands, and its handlers told, as walking over it does.
+    internal void Take(GunPickup pickup, PlayerWeapons? weapons)
+    {
+        if (weapons is not null && _gunPickups?.CollectInto(pickup, weapons) == true)
+        {
+            GunPickedUp?.Invoke(pickup);
+        }
+    }
+
+    internal void Take(GenericPickup pickup)
+    {
+        if (_genericPickups?.Take(pickup) == true)
+        {
+            GenericPickedUp?.Invoke(pickup);
+        }
+    }
+
     /// <summary>Collects whatever this tick's origin reaches.</summary>
     /// <param name="weapons">The weapon machine a weapon joins, or <see langword="null"/> before one exists.</param>
     internal void Collect(PlayerWeapons? weapons)

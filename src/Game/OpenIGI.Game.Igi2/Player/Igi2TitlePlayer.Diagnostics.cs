@@ -14,7 +14,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayerDiagnostics
             + $"ai={Ai is not null}, defaultScript={Ai?.Default is not null}, squadScript={Ai?.SquadDefault is not null}, "
             + $"nativeNamespaceMatches={ReferenceEquals(Ai?.Natives, Level?.Natives)}, cutscene={IsCutscenePlaying}";
         yield return $"playerTeam={Human.Team}, playerActive={Human.DetectionInfo().IsActive}, playerDead={Human.IsDead}, "
-            + $"aiPlayerMatches={ReferenceEquals(Ai?.Player, Human)}, playerPosition={Human.Position}";
+            + $"aiPlayerMatches={ReferenceEquals(Ai?.Players.Primary, Human)}, playerPosition={Human.Position}";
         yield return $"playerState={Human.Locomotion.CurrentState}, action={Human.ActionState}, held={Inventory?.Current?.WeaponType.WeaponName}, "
             + $"zoomAllowed={Human.IsZoomedModeAllowed}, overlayStatus={Weapons?.Firing.OverlayStatus}, overlay={ZoomOverlay}";
         if (Soldiers is not { } soldiers) { yield break; }

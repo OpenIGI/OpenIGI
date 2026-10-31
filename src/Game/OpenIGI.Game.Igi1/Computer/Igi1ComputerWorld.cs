@@ -97,6 +97,20 @@ public sealed class Igi1ComputerWorld : IIgi1ComputerWorld
             });
         }
 
+        // A co-op session's other players, drawn as the player is and named.
+        if (_mission.PlayerTask is { } ownTask)
+        {
+            foreach (Multiplayer.Igi1NetworkPlayer partner in _mission.Partners)
+            {
+                _humans.Add(new ComputerObject(ownTask, ComputerObjectKind.Player, partner.Player.Body.Position, partner.Player.Yaw, 0f)
+                {
+                    Team = ownTask.Team,
+                    IsLive = !partner.IsDead,
+                    Name = partner.Name,
+                });
+            }
+        }
+
         foreach ((GameTask task, int team, Vector3d position, float facing, bool live) in _mission.Soldiers?.MapHumans() ?? [])
         {
             _humans.Add(new ComputerObject(task, ComputerObjectKind.Human, position, facing, 0f) { Team = team, IsLive = live });

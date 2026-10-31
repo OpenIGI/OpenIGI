@@ -9,7 +9,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// Project I.G.I.'s mission as the host runs it: its world, how it is brought up, how each tick runs, what hurts the player
 /// and how the blasts resolve.
 /// </summary>
-public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
+public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Game.Multiplayer.IReplicatedTitle
 {
     private readonly IMissionHostServices _host;
 
@@ -35,6 +35,13 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
 
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
+
+    /// <inheritdoc/>
+    public string Map => World.MissionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <inheritdoc/>
+    /// <remarks>The title outlives its missions; each load builds a new level tree, and between two there is none.</remarks>
+    public object? Level => World.LevelRoot;
 
     /// <summary>Gets the player the host steers and looks through, or <see langword="null"/> before a level places one.</summary>
     public IHostedPlayer? Player => World.Player;
@@ -94,5 +101,15 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource
 
     /// <summary>Starts making a player for the mission being brought up.</summary>
     /// <returns>The player's setup.</returns>
-    public Igi1PlayerSetup NewPlayerSetup() => new(World, Harm, Audio, Sounds, _host);
+    public Igi1PlayerSetup NewPlayerSetup() => PlayerSetup = new(World, Harm, Audio, Sounds, _host);
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.Multiplayer.IReplicatedWorld CreateReplicatedWorld(bool includesHost) =>
+        new Multiplayer.Igi1ReplicatedWorld(this) { IncludesHost = includesHost };
+
+    /// <inheritdoc/>
+    public OpenIGI.Game.Multiplayer.IReplicatedClientWorld CreateClientWorld() => new Multiplayer.Igi1ClientWorld(this);
+
+    /// <summary>Gets the bring-up of the mission's player, once made, which a co-op session's other players are made by.</summary>
+    public Igi1PlayerSetup? PlayerSetup { get; private set; }
 }

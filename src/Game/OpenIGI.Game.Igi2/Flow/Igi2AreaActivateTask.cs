@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
 
@@ -112,8 +113,7 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "AreaActivate";
 
-    private float[] _frame = EngineEuler.Rotation(0f, 0f, 0f);
-    private Vector3f _half;
+    private Igi2OrientedBox _box;
     private int? _mask;
     private int _active;
     private int _clientId;
@@ -146,8 +146,8 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
     /// <summary>Gets or sets the humans of the level, <c>Human_ptQTaskList</c>, in its order.</summary>
     public IReadOnlyList<IIgi2AreaOccupant> Humans { get; set; } = [];
 
-    /// <summary>Gets or sets the level's task 0 when it is the player, or <see langword="null"/>.</summary>
-    public IIgi2AreaOccupant? Player { get; set; }
+    /// <summary>Gets the level's players: the original's task 0 when it is the player, a roster of one.</summary>
+    public PlayerRoster<IIgi2AreaOccupant> Players { get; } = new();
 
     /// <summary>Gets or sets where the game screen's camera stands, or <see langword="null"/> while there is none.</summary>
     public Func<Vector3d?> CameraPosition { get; set; } = static () => null;
@@ -159,29 +159,12 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
     /// Readies the box, <c>AreaActivateQTask_UpdateInternalDataHandler</c> (<c>igi2 0x592CA0</c>): its frame from its angles and its
     /// half dimensions. Its bounds for the world's object tree are not needed here.
     /// </summary>
-    public void Prepare()
-    {
-        Vector3f angles = Orientation;
-        _frame = EngineEuler.Rotation(angles.X, angles.Y, angles.Z);
-        Vector3f d = Dimensions;
-        _half = new Vector3f(((Fpu)d.X * 0.5).F, ((Fpu)d.Y * 0.5).F, ((Fpu)d.Z * 0.5).F);
-    }
+    public void Prepare() => _box = Igi2OrientedBox.From(Position, Orientation, Dimensions);
 
     /// <summary>Whether a point is inside the box, <c>AreaActivateQTask_IsInsideArea</c> (<c>igi2 0x593190</c>).</summary>
     /// <param name="point">The point.</param>
     /// <returns><see langword="true"/> within half the dimensions along each of the box's axes, edges included.</returns>
-    public bool IsInside(Vector3d point)
-    {
-        float[] m = _frame;
-        Fpu dx = (Fpu)point.X - Position.X, dy = (Fpu)point.Y - Position.Y, dz = (Fpu)point.Z - Position.Z;
-        float x = ((((Fpu)dz * m[6]) + ((Fpu)dy * m[3])) + ((Fpu)dx * m[0])).F;
-        float y = ((((Fpu)dz * m[7]) + ((Fpu)dy * m[4])) + ((Fpu)dx * m[1])).F;
-        float z = ((((Fpu)dz * m[8]) + ((Fpu)dy * m[5])) + ((Fpu)dx * m[2])).F;
-
-        // Each test passes when the point is not beyond the face, which a value that is not a number never is.
-        return !(x > _half.X) && !(y > _half.Y) && !(z > _half.Z)
-            && !(-_half.X > x) && !(-_half.Y > y) && !(-_half.Z > z);
-    }
+    public bool IsInside(Vector3d point) => _box.IsInside(point, Position);
 
     /// <inheritdoc/>
     public override void Run(Igi2LevelRun level)
@@ -227,7 +210,16 @@ public sealed partial class Igi2AreaActivateTask : Igi2Task
         int hits = 0;
         if (criterion == Igi2AreaCriteria.HumanPlayer)
         {
-            return Player is { } player && IsInside(player.RootPosition) ? 1 : 0;
+            // The original's one player counts once; of several, the area is satisfied by any inside.
+            foreach (IIgi2AreaOccupant player in Players)
+            {
+                if (IsInside(player.RootPosition))
+                {
+                    return 1;
+                }
+            }
+
+            return 0;
         }
 
         if (criterion == Igi2AreaCriteria.Camera)

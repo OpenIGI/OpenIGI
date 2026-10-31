@@ -272,6 +272,13 @@ public sealed class Igi2FlowContentModule : IContentModule
         context.Services.GetOrProvide(static () => new Flow.Igi2ScreenOverlay());
         Flow.Igi2ScreenOverlay.RegisterConstants(context.Natives);
         context.Types.Register<Flow.Igi2MissionTimerTask>(Flow.Igi2MissionTimerTask.TypeName);
+
+        // The multiplayer maps' own: their mission and objectives, where each team spawns, and where the bomb goes.
+        context.Types.Register<Multiplayer.Igi2NetworkMissionTask>(Multiplayer.Igi2NetworkMissionTask.TypeName);
+        context.Types.Register<Multiplayer.Igi2NetworkObjectiveTask>(Multiplayer.Igi2NetworkObjectiveTask.TypeName);
+        context.Types.Register<Multiplayer.Igi2SpawnAreaTask>(Multiplayer.Igi2SpawnAreaTask.TypeName);
+        context.Types.Register<Multiplayer.Igi2SpawnPointTask>(Multiplayer.Igi2SpawnPointTask.TypeName);
+        context.Types.Register<Multiplayer.Igi2C4BombAreaTask>(Multiplayer.Igi2C4BombAreaTask.TypeName);
         context.Types.Register<Interaction.Igi2SecurityCameraTask>(Interaction.Igi2SecurityCameraTask.TypeName);
 
         Scripting.Igi2ScriptFunctions functions = context.Services.GetOrProvide(() => new Scripting.Igi2ScriptFunctions());

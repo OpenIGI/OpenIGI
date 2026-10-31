@@ -1,4 +1,4 @@
-﻿using OpenIGI.Game.Ai;
+using OpenIGI.Game.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
@@ -43,7 +43,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1Viewpoint(gameplay) : null)
             .Add<SoldierPresentationRequest, ISoldierBodies>(static (in SoldierPresentationRequest request) =>
-                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic) { DetailMaps = request.DetailMaps, Sun = request.Sun, Lod = request.Lod })
+                new SoldierRenderer(request.Device, request.Resources, request.Logger, request.Magic, SoldierWeapons(request)) { DetailMaps = request.DetailMaps, Sun = request.Sun, Lod = request.Lod })
             .Add<WorldPresentationRequest, IWorldPresenter>(CreateWorld)
             .Add<SkyPresentationRequest, ISkyPresenter>(CreateSky)
             .Add<ViewModelPresentationRequest, IViewModelPresenter>(CreateViewModel)
@@ -223,6 +223,21 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     private IHeldWeaponPresenter CreateHeldWeapon(in ViewModelPresentationRequest request) =>
         new HeldWeaponRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
+
+    // The multipart weapon a soldier or a co-op partner holds, its flame among its parts: the renderer the player's own gun
+    // is drawn with. Without it every third-person gun is one rigid mesh and never flames.
+    private static Func<IHeldWeaponPresenter>? SoldierWeapons(in SoldierPresentationRequest request)
+    {
+        if (request.Magic is not { } magic)
+        {
+            return null;
+        }
+
+        OpenIGI.Rendering.IGraphicsDevice device = request.Device;
+        Engine.Resources.ResourceRegistry resources = request.Resources;
+        Core.Diagnostics.IOpenIgiLogger? logger = request.Logger;
+        return () => new HeldWeaponRenderer(device, resources, magic, logger);
+    }
 
     /// <inheritdoc/>
     private IGrenadePresenter CreateGrenades(in ViewModelPresentationRequest request) =>

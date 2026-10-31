@@ -41,6 +41,9 @@ public sealed partial class BrowserPage : IBrowserPage
     /// <inheritdoc/>
     public void SetGyro(bool wanted) => SetPageGyro(wanted);
 
+    /// <inheritdoc/>
+    public void SetTextEntry(bool wanted) => SetPageTextEntry(wanted);
+
     [JSImport("canvasWidth", ModuleName)]
     private static partial int CanvasWidth();
 
@@ -67,6 +70,9 @@ public sealed partial class BrowserPage : IBrowserPage
 
     [JSImport("writeClipboard", ModuleName)]
     private static partial void WritePageClipboard(string text);
+
+    [JSImport("setTextEntry", ModuleName)]
+    private static partial void SetPageTextEntry(bool wanted);
 
     [JSImport("setGyro", ModuleName)]
     private static partial void SetPageGyro(bool wanted);

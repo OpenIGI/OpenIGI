@@ -121,6 +121,13 @@ public interface IGameWindow : IDisposable
     {
     }
 
+    /// <summary>Says whether the game wants typing: a text box has the focus, or a line is being typed.</summary>
+    /// <param name="wanted">Whether it does.</param>
+    /// <remarks>Nothing where a keyboard is always there; a touch screen's browser raises its own keyboard for it.</remarks>
+    void SetTextEntry(bool wanted)
+    {
+    }
+
     /// <summary>Makes the window visible.</summary>
     void Show();
 

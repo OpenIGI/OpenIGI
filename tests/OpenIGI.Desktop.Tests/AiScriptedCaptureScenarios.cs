@@ -10,6 +10,8 @@ using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
 using static OpenIGI.Desktop.Tests.AiScenarioSupport;
+using OpenIGI.Platform.Headless;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Desktop.Tests;
 

@@ -46,14 +46,13 @@ public sealed partial class GameHost
         // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
         // same authored haze through the froxel volume instead, and their models are lit by the
         // G-buffer pass rather than by this one.
-        // The original's levels of detail, on its own look only: the other presets draw every model whole.
+        // Every model whole, under every preset; the original's levels of detail only when asked for (r_model_lod).
         if (_world is { } detailedWorld)
         {
-            bool vanilla = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
-            detailedWorld.Lod = vanilla ? _modelLod : null;
+            detailedWorld.Lod = FrameCVars.ModelLod.Value ? _modelLod : null;
 
-            // And its face groups as it draws them: the opaque ones without an alpha test, the sorted ones blended after.
-            detailedWorld.FaceGroupBlending = vanilla;
+            // The original's face groups on its own look: the opaque ones without an alpha test, the sorted ones blended after.
+            detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
         }
 
         bool retailFog = FogCVars.RetailFog.Value;
@@ -240,6 +239,10 @@ public sealed partial class GameHost
         // never swaps in the view-model block for them.
         _soldiers?.ObserveView(eye, projection);
         _soldiers?.Draw(eye, projection);
+
+        // A co-op look being chosen, standing in the level behind the menu.
+        _previewBodies?.ObserveView(eye, projection);
+        _previewBodies?.DrawPreviewBody(eye, projection);
 
         // Whatever the title, or a mod, draws for particular tasks of the level (PresenterRegistry.ForTask).
         foreach (ITaskPresenter taskPresenter in _taskPresenters)

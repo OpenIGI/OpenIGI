@@ -45,6 +45,10 @@ public enum PlayerAction
     /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the remaster's wheel (<see cref="WeaponWheel"/>) takes the next free bit.</remarks>
     WeaponWheel = 0x20,
 
+    /// <summary>Hold a multiplayer session's scoreboard open.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the next free bit. The host reads it; the player's update does not.</remarks>
+    Scoreboard = 0x40,
+
     /// <summary>Fire the held weapon.</summary>
     Fire = 0x100,
 

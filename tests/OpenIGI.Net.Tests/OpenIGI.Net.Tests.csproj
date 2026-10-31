@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net\OpenIGI.Net.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.Udp\OpenIGI.Net.Udp.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.WebRtc\OpenIGI.Net.WebRtc.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

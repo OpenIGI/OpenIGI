@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- A console application: a dedicated server is run from a terminal or a service manager, never double-clicked. -->
+    <OutputType>Exe</OutputType>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net\OpenIGI.Net.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.Udp\OpenIGI.Net.Udp.csproj" />
+    <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
+  </ItemGroup>
+
+</Project>

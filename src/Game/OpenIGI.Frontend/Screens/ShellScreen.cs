@@ -17,6 +17,9 @@ public enum ShellTab
     /// <summary>The campaign / mission select.</summary>
     Campaign,
 
+    /// <summary>Co-op through rooms: host, join by code, or pick a public room.</summary>
+    Coop,
+
     /// <summary>The settings.</summary>
     Settings,
 
@@ -58,7 +61,7 @@ public abstract class ShellScreen : Screen
     /// <summary>The margin either side of the header, footer and pages, in design units.</summary>
     protected const float SideMargin = 64f;
 
-    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
+    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Coop, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
 
     private Canvas? _chrome;
     private GameSwitcher? _title;
@@ -215,7 +218,7 @@ public abstract class ShellScreen : Screen
         nav.Add(new KeyCapLabel(theme, "Q") { Margin = new Thickness(0f, 0f, 12f, 0f) });
         foreach (ShellTab tab in Order)
         {
-            var button = new HeaderTab(theme, tab.ToString()) { Selected = tab == Tab };
+            var button = new HeaderTab(theme, tab == ShellTab.Coop ? "Co-op" : tab.ToString()) { Selected = tab == Tab };
             ShellTab target = tab;
             button.Activated += _ => GoTo(target);
             nav.Add(button);
@@ -365,6 +368,7 @@ public abstract class ShellScreen : Screen
     private static Screen CreateScreen(ShellTab tab, ShellContext context) => tab switch
     {
         ShellTab.Campaign => new CampaignScreen(context),
+        ShellTab.Coop => new CoopScreen(context),
         ShellTab.Settings => new SettingsScreen(context),
         ShellTab.Profile => new ProfilesScreen(context),
         ShellTab.Extras => new ExtrasScreen(context),

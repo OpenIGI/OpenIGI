@@ -45,6 +45,9 @@ public enum KitIcon
 
     /// <summary>A chevron right: more.</summary>
     ChevronRight,
+
+    /// <summary>A microphone: talk, a voice heard.</summary>
+    Microphone,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
@@ -134,6 +137,25 @@ public static class KitIcons
             case KitIcon.ChevronRight:
                 painter.DrawChevron(center, size, UiDirection.Right, stroke, color);
                 break;
+
+            case KitIcon.Microphone:
+            {
+                // On the usual 24-unit grid: a capsule 6 wide from 2 to 15, a cradle of radius 7 round its foot, the stem
+                // down to 22 and a foot across it. Arcs as bands, so the curves are smooth at any size.
+                float u = size / 24f;
+                UiVec2 At(float x, float y) => new(cx + ((x - 12f) * u), cy + ((y - 12f) * u));
+                float half = stroke * 0.5f;
+                painter.FillArc(At(12f, 5f), (3f * u) - half, (3f * u) + half, -MathF.PI * 0.5f, MathF.PI * 0.5f, color);
+                painter.FillArc(At(12f, 12f), (3f * u) - half, (3f * u) + half, MathF.PI * 0.5f, MathF.PI * 1.5f, color);
+                painter.StrokeLine(At(9f, 5f), At(9f, 12f), stroke, color);
+                painter.StrokeLine(At(15f, 5f), At(15f, 12f), stroke, color);
+                painter.FillArc(At(12f, 11f), (7f * u) - half, (7f * u) + half, MathF.PI * 0.5f, MathF.PI * 1.5f, color);
+                painter.StrokeLine(At(5f, 9f), At(5f, 11f), stroke, color);
+                painter.StrokeLine(At(19f, 9f), At(19f, 11f), stroke, color);
+                painter.StrokeLine(At(12f, 18f), At(12f, 22f), stroke, color);
+                painter.StrokeLine(At(8f, 22f), At(16f, 22f), stroke, color);
+                break;
+            }
 
             default:
                 break;

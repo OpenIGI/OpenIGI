@@ -1,0 +1,78 @@
+name: Build libdatachannel
+
+# libdatachannel, the WebRTC data channels co-op through a room plays over, for every platform the game ships on: built
+# once per version on each platform's own runner (vcpkg, everything linked in; tools/native) and attached to the
+# release natives-libdatachannel-<version>, which tools/native/fetch-datachannel.sh downloads at packaging time. Run by
+# hand when the version or the triplets change.
+
+on:
+  workflow_dispatch:
+  # Dispatch needs the workflow on the default branch; until it is there, a change to it on the co-op branch runs it.
+  push:
+    branches: [feat/multiplayer]
+    paths: [.github/workflows/native-datachannel.yml]
+
+permissions:
+  contents: write
+
+env:
+  LIBDATACHANNEL: 0.23.2
+  # The vcpkg the triplets were made against; its port pins the library's version.
+  VCPKG_COMMIT: cf51d74d269b939bdda976eb2e08a1d8d1842aed
+
+jobs:
+  build:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, os: windows-latest, arch: "" }
+          - { rid: linux-x64, os: ubuntu-22.04, arch: "" }
+          - { rid: osx-arm64, os: macos-14, arch: arm64 }
+          - { rid: osx-x64, os: macos-14, arch: x64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP/vcpkg"
+          git -C "$env:RUNNER_TEMP/vcpkg" checkout $env:VCPKG_COMMIT
+          if ($IsWindows) { & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics } else { & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $arguments = @{ Vcpkg = "$env:RUNNER_TEMP/vcpkg" }
+          if ('${{ matrix.arch }}') { $arguments.Architecture = '${{ matrix.arch }}' }
+          ./tools/native/build-datachannel.ps1 @arguments
+
+      - name: Pack
+        shell: bash
+        run: tar -czf "libdatachannel-${{ matrix.rid }}.tar.gz" -C "third-party/libdatachannel/${{ matrix.rid }}" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libdatachannel-${{ matrix.rid }}
+          path: libdatachannel-${{ matrix.rid }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: natives
+          merge-multiple: true
+
+      - name: Attach to the natives release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="natives-libdatachannel-$LIBDATACHANNEL"
+          gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "libdatachannel $LIBDATACHANNEL (natives)" \
+                 --notes "Built by native-datachannel.yml for co-op through rooms. MPL-2.0; see each archive's LICENSE." --latest=false
+          gh release upload "$tag" natives/*.tar.gz -R "$GITHUB_REPOSITORY" --clobber

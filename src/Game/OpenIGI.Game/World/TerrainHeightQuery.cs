@@ -52,6 +52,66 @@ public static class TerrainHeightQuery
     /// </remarks>
     public const double AboveRecoveryUnits = 65536.0;
 
+    /// <summary>How far beyond its point the original's vertical drop starts, in world units.</summary>
+    /// <remarks>
+    /// <c>0x4001</c> -- 16385, just over four metres: <c>0x4CB050</c> moves its start that far up for a downward drop and
+    /// down for an upward one, then walks the column from there. A triangle belongs to the leaf whose cell holds its
+    /// vertices' origin, and on a steep slope it hangs below that cell into the one beneath: a search begun in the cell
+    /// beneath, at the feet, never sees it. Begun four metres up, it starts in the cell the triangle belongs to.
+    /// </remarks>
+    public const double DropLeadUnits = 16385.0;
+
+    /// <summary>The original's vertical drop over the terrain octree.</summary>
+    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="x">The point's X, in world units biased by the level origin.</param>
+    /// <param name="y">The point's Y, likewise.</param>
+    /// <param name="z">The point's Z.</param>
+    /// <param name="range">How far from the point a surface is still taken, in world units.</param>
+    /// <param name="upward">Whether the drop goes up, from below the point.</param>
+    /// <param name="ground">Receives the surface when one is found.</param>
+    /// <returns><see langword="false"/> when no surface is met within range.</returns>
+    /// <remarks>
+    /// <c>0x4CB050</c>: from <see cref="DropLeadUnits"/> beyond the point, leaf by leaf along the column, the first
+    /// surface met, taken when it lies within <paramref name="range"/> of the point.
+    /// </remarks>
+    public static bool TryDrop(TerrainData terrain, double x, double y, double z, double range, bool upward, out TerrainGround ground)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+        ground = default;
+        range = Math.Abs(range);
+
+        int leafHeight = 2 * (TerrainOctree.RootExtent >> TerrainLeafQuery.SurfaceDepth);
+        double start = upward ? z - DropLeadUnits : z + DropLeadUnits;
+        double end = upward ? z + range : z - range;
+        double probeZ = start;
+
+        while (true)
+        {
+            Vector3i point = new((int)Math.Floor(x), (int)Math.Floor(y), (int)Math.Floor(probeZ));
+            if (TerrainLeafQuery.TryFindLeaf(terrain, point, out TerrainLeaf leaf))
+            {
+                double limitZ = end - leaf.Origin.Z + (upward ? TerrainSurfaceTest.EndNudge : -TerrainSurfaceTest.EndNudge);
+                if (TerrainSurfaceTest.TryFindSurface(
+                        leaf, x - leaf.Origin.X, y - leaf.Origin.Y, limitZ, downward: !upward, out TerrainSurfaceHit hit))
+                {
+                    double height = hit.Height + leaf.Origin.Z;
+                    if ((upward ? height >= start : height <= start) && Math.Abs(height - z) <= range)
+                    {
+                        ground = new TerrainGround(height, hit.NormalX, hit.NormalY, hit.NormalZ);
+                        return true;
+                    }
+                }
+            }
+
+            if (upward ? probeZ >= end : probeZ <= end)
+            {
+                return false;
+            }
+
+            probeZ = upward ? Math.Min(end, probeZ + leafHeight) : Math.Max(end, probeZ - leafHeight);
+        }
+    }
+
     /// <summary>Finds the ground under a point.</summary>
     /// <param name="terrain">The level's terrain.</param>
     /// <param name="x">The point's X, in world units biased by the level origin.</param>

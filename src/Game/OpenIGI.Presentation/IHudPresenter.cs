@@ -197,6 +197,87 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenHeight">The target height in pixels.</param>
     void Draw(SpriteBatch batch, in RemasteredHudSnapshot snapshot, int screenWidth, int screenHeight);
 
+    /// <summary>Draws a session's scoreboard over the picture, while its key is held.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="board">The scoreboard.</param>
+    /// <param name="localEntity">This end's own player's entity, whose line is marked, or <see langword="null"/>.</param>
+    /// <param name="roomCode">The room's code, when the session is played through one.</param>
+    /// <param name="place">Where it is played: the mission or map.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    /// <param name="controls">The host's hand on the board -- the players it may remove, and the pointer -- or <see langword="null"/> for a board only read.</param>
+    /// <param name="relayed">Whether this player's connection goes through the TURN relay.</param>
+    void DrawScoreboard(
+        SpriteBatch batch,
+        Game.Multiplayer.Scoreboard board,
+        int? localEntity,
+        string? roomCode,
+        string place,
+        int screenWidth,
+        int screenHeight,
+        ScoreboardControls? controls = null,
+        bool relayed = false)
+    {
+    }
+
+    /// <summary>Gets where the last board drew each player's remove button, by entity, in pixels: what a host's click is tested against.</summary>
+    IReadOnlyList<(int Entity, float X, float Y, float Width, float Height)> ScoreboardRemoveButtons => [];
+
+    /// <summary>Draws the panel a fallen co-op player sees while it waits for a teammate: its revival so far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="progress">How far the revival has gone, in <c>[0,1]</c>.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawDowned(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws other players' names over their heads, each standing in the level and turned to the eye.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="tags">The names and where they stand.</param>
+    /// <param name="eye">Where the world is seen from.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawNameTags(
+        SpriteBatch batch,
+        IReadOnlyList<Game.Ai.WorldNameTag> tags,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Draws co-op talk: the lines said, the one being typed, and the places marked, each with who and how far.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="chat">The lines still up, oldest first.</param>
+    /// <param name="entry">The line being typed, or <see langword="null"/>.</param>
+    /// <param name="warning">A word about this player's connection, or <see langword="null"/>.</param>
+    /// <param name="talking">Who is talking now, by name.</param>
+    /// <param name="marks">The places marked.</param>
+    /// <param name="eye">Where the world is seen from.</param>
+    /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
+    /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawCoopTalk(
+        SpriteBatch batch,
+        IReadOnlyList<HudChatLine> chat,
+        string? entry,
+        string? warning,
+        IReadOnlyList<string> talking,
+        IReadOnlyList<HudMark> marks,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
     /// <summary>Draws the prompt for the action available where the player is looking.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="view">What the prompt should say and where it is anchored.</param>

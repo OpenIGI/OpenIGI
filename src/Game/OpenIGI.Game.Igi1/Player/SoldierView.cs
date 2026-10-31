@@ -187,14 +187,28 @@ public sealed class SoldierView
     /// arms and weapon, and bone 0's clip keeps the legs.
     /// </para>
     /// </remarks>
-    public bool PlayUpperBodyAnimation(int animation, bool loops, float blendSeconds = 0f)
+    public bool PlayUpperBodyAnimation(int animation, bool loops, float blendSeconds = 0f) =>
+        PlayUpperBodyAnimation(animation, loops, blendSeconds, restart: false);
+
+    /// <summary>Plays a clip on the torso, from its start when <paramref name="restart"/> even if it is the one playing.</summary>
+    /// <param name="animation">The clip.</param>
+    /// <param name="loops">Whether it repeats.</param>
+    /// <param name="blendSeconds">How long it eases in.</param>
+    /// <param name="restart">
+    /// Whether a request for the clip already playing starts it again: a player's second knife stab or shot asks for the same
+    /// clip, and <c>0x4137E0</c> plays it again (<c>0x489ED0</c>), where a soldier's mind asking for its stance every tick
+    /// must leave it running.
+    /// </param>
+    /// <returns><see langword="false"/> when the clip is not in the set or the body is dead.</returns>
+    public bool PlayUpperBodyAnimation(int animation, bool loops, float blendSeconds, bool restart)
     {
         if (IsDead || animation < 0 || !_bones.Set.TryGet(animation, out _))
         {
             return false;
         }
 
-        if (animation == UpperBodyAnimation
+        if (!restart
+            && animation == UpperBodyAnimation
             && _bones.SourceOf(HumanUpperBody.Bone) is { } current
             && current.Loops == loops)
         {
@@ -332,6 +346,22 @@ public sealed class SoldierView
         _pose = null;
         _unrotatedPose = null;
         return true;
+    }
+
+    /// <summary>Gets where the whole-body clip is, in its own time: a climbing player's place on the ladder clip.</summary>
+    public float LadderClipTime => _bones.SourceOf(0)?.Time ?? 0f;
+
+    /// <summary>Holds the whole-body clip still at a time, as another player's window poses a climber from the server's.</summary>
+    /// <param name="time">The clip's time.</param>
+    public void HoldLadderClip(float time)
+    {
+        if (_bones.SourceOf(0) is { } clip)
+        {
+            clip.Rate = 0f;
+            clip.SetTime(time);
+            _pose = null;
+            _unrotatedPose = null;
+        }
     }
 
     /// <summary>Sets animation 168's time scale to −1, 0 or +1 authoring frame per tick.</summary>

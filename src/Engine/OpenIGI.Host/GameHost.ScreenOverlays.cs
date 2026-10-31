@@ -342,6 +342,79 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // A session's scoreboard, while its key is held: over everything but the console.
+        if (TickObserver is ISessionScoreboard session
+            && session.CurrentScoreboard is { } board
+            && _remasteredHud is { IsReady: true } boardHud
+            && _scoreboardUp)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            boardHud.DrawScoreboard(
+                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board), session.Relayed);
+            state.Batch.End();
+        }
+
+        // The fallen teammates, each marked where it lies with the same prompt anything usable gets: its ring is the revival.
+        if (_remasteredHud is { IsReady: true } reviveHud && _soldiers?.ReviveMarkers() is { Count: > 0 } fallen)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            foreach (Game.Ai.ReviveMarker mark in fallen)
+            {
+                reviveHud.DrawInteractionPrompt(
+                    state.Batch,
+                    new InteractionPromptView(
+                        mark.AnchorMetres,
+                        1f,
+                        1f,
+                        "+",
+                        $"Revive {mark.Name}",
+                        mark.Progress > 0f
+                            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Reviving {mark.Progress * 100f:0}%, stay close")
+                            : "Stand beside them for 5 seconds",
+                        mark.Progress),
+                    eye,
+                    horizontalTangent,
+                    aspectRatio,
+                    SafeWindowWidth,
+                    SafeWindowHeight);
+            }
+
+            state.Batch.End();
+        }
+
+        // This player fallen in co-op: down, not out, and how far a teammate has got with bringing it back.
+        if (TickObserver is ISessionScoreboard { OwnRevive: { } revival } && _remasteredHud is { IsReady: true } downedHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            downedHud.DrawDowned(state.Batch, revival, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // Co-op talk: the lines said and being typed, and the places marked.
+        string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
+        Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
+        string[] talking = [.. Talking().Select(e => e < 0 ? "You" : talkLines.FirstOrDefault(l => l.Entity == e).Name ?? "Teammate")];
+        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, marks)
+            && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null || talking.Length > 0))
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, linkWarning, talking, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The other players' names over their heads, on the same eye and lens as the marker.
+        if (_remasteredHud is { IsReady: true } tagHud && _soldiers?.NameTags() is { Count: > 0 } tags)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            tagHud.DrawNameTags(state.Batch, tags, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // In play the mission's messages are the remastered display's, each title's in its own look (Igi1HudOverlay and the
         // title's own display); the cards below stand in only for a cutscene's subtitles where the original's face is missing.
 

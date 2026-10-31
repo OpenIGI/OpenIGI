@@ -14,6 +14,8 @@ using OpenIGI.Host.Infrastructure;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Platform.Headless;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Parity.Tests;
 

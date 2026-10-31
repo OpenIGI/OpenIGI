@@ -100,6 +100,14 @@ public sealed partial class GameHost
 
         _window.PumpEvents();
         ApplyTouchControls();
+        _coop?.Update();
+        FollowSession(state);
+
+        // Typing wanted -- a text box with the focus, or a co-op line -- for a touch screen to raise its keyboard.
+        _window.SetTextEntry(
+            _chatEntry is not null
+            || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.TextBox));
+        UpdateLookPreview();
 
         // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.
         // The setting is read here rather than captured at construction so that turning
@@ -168,6 +176,14 @@ public sealed partial class GameHost
         int consoleNow = _loop.TimeSource.Milliseconds;
         state.Console.Update(_window.Input, Math.Clamp((consoleNow - state.LastConsoleMilliseconds) / 1000f, 0f, 0.25f));
         state.LastConsoleMilliseconds = consoleNow;
+
+        // A co-op line being typed takes the keyboard next, the same way.
+        if (!state.Console.IsOpen)
+        {
+            UpdateCoopVoice();
+            UpdateCoopTalk();
+            UpdateScoreboard();
+        }
     }
 
     /// <summary>Runs the shell over its own input, or lets the game's binds have the keys when it is not up.</summary>

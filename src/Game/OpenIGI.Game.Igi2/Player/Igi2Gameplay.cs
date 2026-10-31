@@ -31,7 +31,7 @@ namespace OpenIGI.Game.Igi2.Player;
 /// conveyors.
 /// </para>
 /// </remarks>
-public sealed class Igi2Gameplay : ITitleGameplay
+public sealed partial class Igi2Gameplay : ITitleGameplay
 {
     /// <summary>What a terrain hit reports as struck.</summary>
     public const string TerrainOwner = "Terrain";
@@ -58,7 +58,9 @@ public sealed class Igi2Gameplay : ITitleGameplay
     public ITitlePlayer? CreatePlayer(in TitlePlayerRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.Services);
-        if (!PlayerSpawn.TryFindGameplay(request.World.LevelRoot, out PlayerSpawnPoint spawn))
+        Func<string, Formats.World.MefModel?> models = Models(request.World);
+        if (!PlayerSpawn.TryFindGameplay(request.World.LevelRoot, out PlayerSpawnPoint spawn)
+            && !TryFindMultiplayerSpawn(request.World.LevelRoot, models, out spawn))
         {
             return null;
         }
@@ -68,7 +70,6 @@ public sealed class Igi2Gameplay : ITitleGameplay
         Igi2HumanPlayerGeneral general = tuning?.General ?? Igi2HumanPlayerGeneral.Unset;
         ArgumentNullException.ThrowIfNull(request.World.Mission);
         Igi2AnimationLibrary clips = Igi2AnimationLibrary.Load(request.World.Mission.PacksInLoadOrder, request.World.Resources);
-        Func<string, Formats.World.MefModel?> models = Models(request.World);
         Igi2BoneHierarchy? rig = models(spawn.Model)?.BoneHierarchy;
         string? armsModel = FirstPersonModel(models, PlayerSpawn.FindGameplayTask(request.World.LevelRoot) as Igi2HumanPlayerTask);
         Igi2BoneHierarchy? arms = armsModel is null ? null : models(armsModel)?.BoneHierarchy;
@@ -90,6 +91,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
             player.Human.DeadBodySounds = deadBodySounds;
         }
 
+        player.SpawnKit = new Igi2PlayerSpawnKit(world, general, request.Difficulty, clips, models, tuning, sounds, request.Services);
         player.Human.Model = Igi2BodyModel.From(spawn.Model, models(spawn.Model));
         player.Human.Collider = new Igi2BoneCollider(player.Human, player.Human);
         world.AddBody(player.Human.Collider);
@@ -260,6 +262,7 @@ public sealed class Igi2Gameplay : ITitleGameplay
         player.MissionId = request.World.Mission.Descriptor.Id;
         player.Quirks = request.Services.TryGet(out Igi2Quirks? quirks) ? quirks : new Igi2Quirks();
         Engine.Tasks.GameTask? taskRoot = request.World.LevelRoot;
+        player.LevelRoot = taskRoot;
         player.TaskById = id => taskRoot?.Tree.FromId(id);
         player.Level = LevelRun(request, player);
         player.Saves = MissionSaves(request, player);

@@ -119,8 +119,68 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// <param name="vector">The round's travel.</param>
     /// <param name="effect">The material's effect block.</param>
     /// <param name="struckHuman">Whether it met a body.</param>
-    public void RunGunShotEffect(Vector3d position, Vector3f normal, Vector3f vector, in GunShotEffect effect, bool struckHuman) =>
+    public void RunGunShotEffect(Vector3d position, Vector3f normal, Vector3f vector, in GunShotEffect effect, bool struckHuman)
+    {
+        if (!struckHuman)
+        {
+            Record(blood: false, position, vector);
+        }
+
         Runtime.RunGunShotEffect(position, normal, vector, effect, struckHuman, host.ImpactEffectsWanted);
+    }
+
+    /// <summary>Gets or sets what a co-op server does with each round's mark as it lands: sends it to every client.</summary>
+    public Action<OpenIGI.Game.Multiplayer.ReplicatedImpact>? Recorded { get; set; }
+
+    /// <summary>Shows a round another player's game resolved: the surface found by tracing through the point, or the wound.</summary>
+    /// <param name="impact">Where it landed and which way it was going.</param>
+    /// <param name="bloodOwner">What the blood is kept against, so a body's systems are reused across its wounds.</param>
+    public void Replay(in OpenIGI.Game.Multiplayer.ReplicatedImpact impact, object bloodOwner)
+    {
+        ArgumentNullException.ThrowIfNull(bloodOwner);
+        Vector3d at = impact.Position.ToVector();
+        Vector3f along = impact.Direction;
+        if (impact.Kind == OpenIGI.Game.Multiplayer.ImpactKind.Blood)
+        {
+            SpawnBlood(bloodOwner, at, along);
+            return;
+        }
+
+        // A short stretch through the point along the round's path finds the surface it met, as the round did.
+        const double reach = 96.0;
+        if (Walls is not { } walls
+            || mission.Materials is not { } materials
+            || (along.X == 0f && along.Y == 0f && along.Z == 0f)
+            || !walls(
+                new Vector3d(at.X - (along.X * reach), at.Y - (along.Y * reach), at.Z - (along.Z * reach)),
+                new Vector3d(at.X + (along.X * reach), at.Y + (along.Y * reach), at.Z + (along.Z * reach)),
+                out WorldRayHit hit)
+            || !materials.TryGet(hit.Material, out GameMaterial? material)
+            || material is null
+            || !material.RecordsImpacts)
+        {
+            return;
+        }
+
+        Record(blood: false, hit.Position, along);
+        mission.Player?.Marks?.TryAdd(
+            hit,
+            MarkSurfaceAt(hit.Position, hit.Normal, out WorldPlacement? struck),
+            materials,
+            probe: mission.Player?.MarkProbe,
+            placement: struck);
+        if (host.ImpactEffectsWanted)
+        {
+            Runtime.SpawnSurfaceImpact(hit.Position, hit.Normal, along, material.Entry, struckHuman: false);
+        }
+    }
+
+    private void Record(bool blood, Vector3d position, Vector3f direction) =>
+        Recorded?.Invoke(new OpenIGI.Game.Multiplayer.ReplicatedImpact(
+            blood ? OpenIGI.Game.Multiplayer.ImpactKind.Blood : OpenIGI.Game.Multiplayer.ImpactKind.Surface,
+            mission.ImpactSource,
+            OpenIGI.Game.Multiplayer.Int3.From(position),
+            direction));
 
     /// <summary>Runs the struck material's own <c>GunShotEffect</c> for whatever the player's rounds landed on this tick.</summary>
     public void SpawnPlayerImpacts()
@@ -186,6 +246,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
                 continue;
             }
 
+            Record(blood: false, impact.Wall.Position, impact.Direction);
             Runtime.SpawnSurfaceImpact(impact.Wall.Position, impact.Wall.Normal, impact.Direction, material.Entry, struckHuman: false);
         }
     }
@@ -202,6 +263,7 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     /// </remarks>
     public BloodReport SpawnBlood(object owner, Vector3d position, Vector3f direction)
     {
+        Record(blood: true, position, direction);
         if (mission.Player is null || !host.ImpactEffectsWanted)
         {
             return default;

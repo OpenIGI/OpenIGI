@@ -456,6 +456,10 @@ public sealed class PlayerWeapons
     /// request here therefore matters: otherwise its last <see cref="FiredThisTick"/> value and firing
     /// state remain latched for the presentation layer after the player is dead.
     /// </remarks>
+    /// <summary>Takes the weapons out of death, as a co-op player is brought back.</summary>
+    public void Revive() => _machine.Revive();
+
+    /// <summary>Stops the weapons because the player has died.</summary>
     public void StopForDeath()
     {
         _machine.StopForDeath();

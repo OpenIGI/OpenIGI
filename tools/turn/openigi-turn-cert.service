@@ -1,0 +1,6 @@
+[Unit]
+Description=Copy turn.openigi.com's certificate from Caddy to coturn
+
+[Service]
+Type=oneshot
+ExecStart=/srv/openigi-turn/tls-cert.sh

@@ -3,6 +3,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
 using OpenIGI.Game.Igi2.Player;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Game.World.Particles;
 
@@ -165,8 +166,8 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     /// <summary>Gets or sets the module's random stream.</summary>
     public Igi2SmokeRandom? Stream { get; set; }
 
-    /// <summary>Gets or sets the player, whom it burns.</summary>
-    public Igi2HumanPlayer? Player { get; set; }
+    /// <summary>Gets the players, whom it burns; the original's one player is a roster of one.</summary>
+    public PlayerRoster<Igi2HumanPlayer> Players { get; } = new();
 
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
@@ -271,7 +272,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
             Fpu.ToInt32((Fpu)FadeTime / Intensity * 30.0));
     }
 
-    /// <summary>Burns the player standing within its radius, once a second, at the head (<c>Smoke_DoDamage</c>, <c>HumanPlayer_SmokeDamageHandler</c>).</summary>
+    /// <summary>Burns each player standing within its radius, once a second, at the head (<c>Smoke_DoDamage</c>, <c>HumanPlayer_SmokeDamageHandler</c>).</summary>
     private void Burn()
     {
         if (_damageTimer != 0)
@@ -281,17 +282,15 @@ public sealed partial class Igi2SmokeTask : Igi2Task
         }
 
         _damageTimer = 30;
-        if (Player is not { } player)
+        foreach (Igi2HumanPlayer player in Players)
         {
-            return;
-        }
-
-        Vector3d p = player.Position;
-        float dx = ((Fpu)p.X - Position.X).F, dy = ((Fpu)p.Y - Position.Y).F;
-        Fpu dz = (Fpu)p.Z - Position.Z;
-        if (Fpu.Sqrt(((Fpu)dx * dx) + ((Fpu)dy * dy) + (dz * dz)).Value <= ((Fpu)DamageRadius * 4096.0).F)
-        {
-            player.HandleDamage(Igi2DamagePart.Head, DamagePerSecond, default);
+            Vector3d p = player.Position;
+            float dx = ((Fpu)p.X - Position.X).F, dy = ((Fpu)p.Y - Position.Y).F;
+            Fpu dz = (Fpu)p.Z - Position.Z;
+            if (Fpu.Sqrt(((Fpu)dx * dx) + ((Fpu)dy * dy) + (dz * dz)).Value <= ((Fpu)DamageRadius * 4096.0).F)
+            {
+                player.HandleDamage(Igi2DamagePart.Head, DamagePerSecond, default);
+            }
         }
     }
 }

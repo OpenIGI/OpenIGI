@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.Rendering.Tests;
 

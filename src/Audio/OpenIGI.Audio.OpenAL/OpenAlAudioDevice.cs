@@ -50,6 +50,9 @@ public sealed partial class OpenAlAudioDevice : IAudioDevice
     private VoicePool<OpenAlVoice> _pool = VoicePool.Empty<OpenAlVoice>();
     private AL? _al;
     private ALContext? _alc;
+
+    /// <inheritdoc/>
+    public IMicrophone? OpenMicrophone(int sampleRate) => _alc is { } alc ? OpenAlMicrophone.Open(alc, sampleRate) : null;
     private unsafe Device* _device;
     private unsafe Context* _context;
     private int _nextBufferHandle = 1;

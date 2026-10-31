@@ -21,6 +21,8 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     private readonly ThirdPersonCamera _thirdPerson = new();
     private Igi1HumanCamera _death = new();
     private Igi1HumanCamera _interaction = new();
+    private readonly TeammateView _teammate = new();
+    private WorldRayCast? _deathWalls;
     private Vector3d _interactionFeet;
 
     // Where the orbit looks: the body's eye (HumanCamera's info.pos, HumanView_GetEye), standing over its feet.
@@ -113,7 +115,11 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
             return null;
         }
 
-        return smooth && player.HasViewTickPair ? player.SmoothedCamera(tickBlend) : player.Camera;
+        Camera3D eye = smooth && player.HasViewTickPair ? player.SmoothedCamera(tickBlend) : player.Camera;
+
+        // A co-op client's correction from the server moved the body at once; the eye catches up over a tenth of a second.
+        Vector3d eased = player.ViewError.Offset(tickBlend);
+        return eased == default ? eye : new Camera3D(eye.Position + eased, eye.Orientation);
     }
 
     /// <inheritdoc/>
@@ -151,18 +157,27 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public void BeginDeathView(Vector3d position, float facing, WorldRayCast walls)
     {
         ArgumentNullException.ThrowIfNull(walls);
+        _deathWalls = walls;
         _death.Begin(EyeOver(position), position, facing, walls, death: true);
     }
 
     /// <inheritdoc/>
     public void FollowDeathView(Vector3d centre)
     {
+        _teammate.Reset();
         Vector3d feet = FeetUnder(centre);
         _death.Tick(EyeOver(feet), feet);
     }
 
     /// <inheritdoc/>
-    public void ResetDeathView() => _death.Reset();
+    public void FollowTeammateView(Vector3d eye, float yaw, float pitch) => _teammate.Follow(eye, yaw, pitch);
+
+    /// <inheritdoc/>
+    public void ResetDeathView()
+    {
+        _death.Reset();
+        _teammate.Reset();
+    }
 
     /// <inheritdoc/>
     public Camera3D ComposeEye(in ViewpointFrame frame, out Camera3D bodyEye)
@@ -189,7 +204,10 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
             _death.Present(frame.Smooth ? frame.TickBlend : 1f);
         }
 
-        Camera3D eye = mission.IsPlayerDead && _death.IsActive
+        // A downed co-op player watching a teammate sees what the teammate sees.
+        Camera3D eye = mission.IsPlayerDead && _teammate.IsActive
+            ? _teammate.Present(frame.Smooth ? frame.TickBlend : 1f, _deathWalls)
+            : mission.IsPlayerDead && _death.IsActive
             ? _death.Camera
             : (mission.Player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                 && _interaction.IsActive

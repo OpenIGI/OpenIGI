@@ -65,6 +65,41 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the player's rig: its body, eyes, weapons and the impacts its rounds made, or <see langword="null"/> before a level places one.</summary>
     public PlayerCamera? Player { get; set; }
 
+    /// <summary>Gets a co-op session's other players, run after the mission's own each tick; empty when playing alone.</summary>
+    public List<Multiplayer.Igi1NetworkPlayer> NetworkPlayers { get; } = [];
+
+    /// <summary>Gets or sets the id of the mission this level is.</summary>
+    public int MissionId { get; set; }
+
+    /// <summary>Gets the other players a co-op client's level shows, as the server's snapshots have them.</summary>
+    public List<Multiplayer.Igi1NetworkPlayer> ShownPartners { get; } = [];
+
+    /// <summary>
+    /// Gets every other player in the level as this machine knows it: on a server the partners it runs, on a client those the
+    /// server's snapshots show. What the level asks of "the player" -- an area entered -- it asks of each of these too.
+    /// </summary>
+    public IReadOnlyList<Multiplayer.Igi1NetworkPlayer> Partners => CoopClient ? ShownPartners : NetworkPlayers;
+
+    /// <summary>Gets or sets what tells the frame which co-op partners to draw each tick, or <see langword="null"/> playing alone.</summary>
+    public Func<IReadOnlyList<Ai.PartnerBody>>? PartnerBodies { get; set; }
+
+    /// <summary>Gets or sets the mission's simulation ticks, the clock a session's commands are stamped against.</summary>
+    /// <remarks>It runs whatever the mission's own player is doing: dead, in a cut-scene or at the computer.</remarks>
+    public long PlayerTicks { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether this mission is a co-op client's, whose player's death the server decides.</summary>
+    /// <remarks>Its level never sees the player dead: the session respawns it, and the server's level decides the mission.</remarks>
+    public bool CoopClient { get; set; }
+
+    /// <summary>Gets or sets the entity whose rounds are landing now, for a co-op server's record of them: the mission's own player's, nought, unless a partner's are.</summary>
+    public int ImpactSource { get; set; }
+
+    /// <summary>Gets or sets what a co-op server does once a partner has run its tick: shows where its rounds landed.</summary>
+    public Action<Multiplayer.Igi1NetworkPlayer>? PartnerRan { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether a co-op session's partners have run this tick.</summary>
+    public bool PartnersTicked { get; set; }
+
     /// <summary>Gets or sets the computer the player carries, the original's own.</summary>
     public OpenIGI.Game.Igi1.Computer.Igi1Computer? Computer { get; set; }
 
@@ -192,9 +227,14 @@ public sealed class MissionWorld : MissionState
     }
 
     /// <inheritdoc/>
-    /// <remarks>The soldiers and the player go with the rest.</remarks>
+    /// <remarks>The soldiers and the player go with the rest, and a co-op session's partners with the level they were in.</remarks>
     public override void ReleaseWorld()
     {
+        NetworkPlayers.Clear();
+        ShownPartners.Clear();
+        PartnerBodies = null;
+        PartnerRan = null;
+        CoopClient = false;
         Soldiers = null;
         SoldierPresenter = null;
         Player = null;

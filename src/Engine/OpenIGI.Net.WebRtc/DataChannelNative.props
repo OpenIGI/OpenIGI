@@ -1,0 +1,36 @@
+<Project>
+
+  <!-- Puts libdatachannel beside whatever is being built, from where tools/native/build-datachannel.ps1 (or the release's
+       fetch) left it in the gitignored third-party/. Conditional throughout: a checkout without it builds and plays as
+       before, with rooms unavailable and saying so. -->
+
+  <PropertyGroup>
+    <DataChannelRuntimeIdentifier Condition="'$(DataChannelRuntimeIdentifier)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</DataChannelRuntimeIdentifier>
+    <DataChannelRuntimeIdentifier Condition="'$(DataChannelRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</DataChannelRuntimeIdentifier>
+    <DataChannelDirectory>$(MSBuildThisFileDirectory)..\..\..\third-party\libdatachannel\$(DataChannelRuntimeIdentifier)\</DataChannelDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="$(DataChannelDirectory)datachannel.dll"
+             Condition="Exists('$(DataChannelDirectory)datachannel.dll')"
+             Link="datachannel.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Visible="false" />
+
+    <Content Include="$(DataChannelDirectory)libdatachannel.so"
+             Condition="Exists('$(DataChannelDirectory)libdatachannel.so')"
+             Link="libdatachannel.so"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Visible="false" />
+
+    <Content Include="$(DataChannelDirectory)libdatachannel.dylib"
+             Condition="Exists('$(DataChannelDirectory)libdatachannel.dylib')"
+             Link="libdatachannel.dylib"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Visible="false" />
+  </ItemGroup>
+
+</Project>

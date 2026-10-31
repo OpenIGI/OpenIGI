@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi2.Humans;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -87,8 +88,8 @@ public sealed class Igi2AiWorld
     /// <summary>Gets or sets the fire task types, which tell a bullet from a rocket.</summary>
     public Weapons.Igi2FireTaskTypes FireTaskTypes { get; set; }
 
-    /// <summary>Gets or sets the player, whom a soldier at a jammed door listens for.</summary>
-    public IAiPlayer? Player { get; set; }
+    /// <summary>Gets the players, whom a soldier at a jammed door listens for; the original's one player is a roster of one.</summary>
+    public PlayerRoster<IAiPlayer> Players { get; } = new();
 
     /// <summary>Gets or sets the level's task with an id, <c>Level_GetQTaskFromLevelQTaskID</c>.</summary>
     public Func<int, object?> TaskById { get; set; } = static _ => null;

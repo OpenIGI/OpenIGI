@@ -492,7 +492,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
 
         // Explosion0's thrown pieces: each container's model, at the tenth of its size each piece was given, moving between ticks.
         IEnumerable<TitleWorldModel> pieces = Explosions is { } explosions ? ExplosionPieceModels.Of(explosions, _ticks) : [];
-        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces];
+        return [.. pickups, .. flying, .. soldiers, .. figures, .. barrels, .. wrecks, .. laid, .. working, .. casings, .. pieces, .. NetworkModels()];
     }
 
     /// <summary>Makes the player at its spawn, as <c>HumanPlayer_CreateHandler</c> does, over a collision world.</summary>
@@ -610,6 +610,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     internal void RunPlayer()
     {
         Weapons?.RunGunShot();
+        RunNetworkGunShots();
         if (Level is { } level)
         {
             // The player's first child, HumanPlayerInput, reads the controls into the frame it sends up as the player's update.
@@ -633,6 +634,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
         Human.Ticks = (int)_ticks;
         Human.Update(_frame);
         Human.RunDelayed();
+        RunNetworkHumans();
 
         // The computer's menu, a task of the game screen, runs after the player, and its screens with it.
         RunComputerSaves();

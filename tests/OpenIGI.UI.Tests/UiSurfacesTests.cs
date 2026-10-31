@@ -3,6 +3,7 @@ using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using OpenIGI.UI.Layout;
 using Xunit;
+using OpenIGI.Rendering.Headless;
 
 namespace OpenIGI.UI.Tests;
 
@@ -40,6 +41,33 @@ public sealed class UiSurfacesTests
         Assert.True(topRight.Width < 0f);
         Assert.True(bottomRight.Width < 0f && bottomRight.Height < 0f);
         Assert.Equal(MathF.Abs(topLeft.Width), MathF.Abs(topRight.Width), 5);
+    }
+
+    /// <summary>
+    /// No piece's texture coordinates reach the quadrant's inner side, which sits against the next sprite in the atlas: there
+    /// the filter would take in half a texel of that sprite, a seam along the figure's inner rectangle -- under a wide shadow, a
+    /// dark line running out past the panel.
+    /// </summary>
+    [Fact]
+    public void No_piece_samples_past_the_middle_of_the_quadrants_last_texel()
+    {
+        var device = new RecordingGraphicsDevice();
+        using var surfaces = UiSurfaces.Create(device);
+
+        Span<NineSlicePiece> pieces = stackalloc NineSlicePiece[NineSlice.MaxPieces];
+        foreach (NineSlice slice in (NineSlice[])[surfaces.Rounded, surfaces.Shadow])
+        {
+            float innerX = slice.Source.Right - (slice.Source.Width / slice.CornerPixels * 0.5f);
+            float innerY = slice.Source.Bottom - (slice.Source.Height / slice.CornerPixels * 0.5f);
+            int count = slice.GetPieces(new UiRect(0f, 0f, 400f, 200f), 32f, pieces);
+            foreach (NineSlicePiece piece in pieces[..count])
+            {
+                float right = MathF.Max(piece.Source.X, piece.Source.X + piece.Source.Width);
+                float bottom = MathF.Max(piece.Source.Y, piece.Source.Y + piece.Source.Height);
+                Assert.True(right <= innerX + 1e-6f, $"a piece samples across to {right}, past {innerX}");
+                Assert.True(bottom <= innerY + 1e-6f, $"a piece samples down to {bottom}, past {innerY}");
+            }
+        }
     }
 
     [Fact]

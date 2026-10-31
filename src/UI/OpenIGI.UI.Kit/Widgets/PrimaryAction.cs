@@ -100,16 +100,29 @@ public class PrimaryAction : Control
         }
 
         Bgra32 ink = UiPalette.Fade(IsEnabled ? Theme.OnAccent : Theme.TextDisabled, appear);
+        string title = busy ? Percent(_progress.Value) : _title;
+        float x = bounds.X + context.Px(34f);
+
+        // The arrow box: a dark hairline square holding the glyph, set against the right padding.
+        float boxSize = context.Px(48f);
+        var box = new UiRect(bounds.Right - context.Px(30f) - boxSize, bounds.Center.Y - (boxSize * 0.5f), boxSize, boxSize);
+
+        // The title has the room up to the box; a longer one is set smaller to fit it rather than running under the arrow.
         float titleSize = context.Px(TitleSize);
+        float room = box.X - context.Px(16f) - x;
+        float wide = UiPainter.MeasureLabel(Theme.Display, title, titleSize, 0.2f);
+        if (wide > room && room > 0f)
+        {
+            titleSize *= room / wide;
+        }
+
         float subSize = context.Px(SubtitleSize);
         float gap = context.Px(6f);
         float capHeight = titleSize * 0.9f;
         bool hasSub = Subtitle.Length > 0;
         float block = capHeight + (hasSub ? gap + Theme.Mono.LineHeight(subSize) : 0f);
-        float x = bounds.X + context.Px(34f);
         float top = bounds.Center.Y - (block * 0.5f);
 
-        string title = busy ? Percent(_progress.Value) : _title;
         var titleBox = new UiRect(x, top, bounds.Width, capHeight);
         painter.DrawLabel(Theme.Display, title, new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Display, titleSize, titleBox)), titleSize, ink, 0.2f);
         if (hasSub)
@@ -117,9 +130,6 @@ public class PrimaryAction : Control
             painter.DrawLabel(Theme.Mono, Subtitle, new UiVec2(x, top + capHeight + gap), subSize, UiPalette.Fade(ink, 0.7f), 0.22f);
         }
 
-        // The arrow box: a dark hairline square holding the glyph, set against the right padding.
-        float boxSize = context.Px(48f);
-        var box = new UiRect(bounds.Right - context.Px(30f) - boxSize, bounds.Center.Y - (boxSize * 0.5f), boxSize, boxSize);
         painter.StrokeRect(box, context.Px(1.5f), UiPalette.Fade(UiPalette.Ink.WithAlpha(204), appear));
         DrawIcon(painter, box, busy ? PrimaryActionIcon.Pause : Icon, ink);
     }

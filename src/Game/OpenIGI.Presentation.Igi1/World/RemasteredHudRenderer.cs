@@ -26,7 +26,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// player, weapon and objective data but presents it with the modern shell's distance-field fonts and
 /// layout system, so changing the surface cannot change the simulation behind it.
 /// </remarks>
-internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
+internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
 {
     /// <summary>Leaves breathing room below the compact objective readout for the modern comms cards.</summary>
     public const float MessageTopInsetDesign = 116f;

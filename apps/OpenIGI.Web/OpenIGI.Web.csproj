@@ -45,6 +45,7 @@
     <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.Browser\OpenIGI.Net.Browser.csproj" />
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
@@ -86,6 +87,7 @@
 
   <Import Project="..\..\src\Rendering\OpenIGI.Rendering.WebGpu.Browser\WgpuBrowser.props" />
   <Import Project="..\..\src\Platform\OpenIGI.Platform.Web\WebPlatform.props" />
+  <Import Project="..\..\src\Engine\OpenIGI.Net.Browser\NetBrowser.props" />
   <Import Project="..\..\src\Audio\OpenIGI.Audio.Web\WebAudio.props" />
 
 </Project>

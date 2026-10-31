@@ -58,6 +58,24 @@ internal sealed class SoldierArmoury(
     public bool TryGetHeldWeapon(string gunModel, out SoldierHeldWeapon? weapon) =>
         _heldWeaponsByModel.TryGetValue(gunModel, out weapon);
 
+    /// <summary>Gets the held model of a weapon, building it the first time: a partner holds the player's weapons, which no soldier may carry.</summary>
+    /// <param name="mission">The mission whose packs hold the weapon models.</param>
+    /// <param name="gunModel">The weapon's gun model.</param>
+    /// <returns>The model, or <see langword="null"/> when it cannot be built.</returns>
+    public SoldierHeldWeapon? HeldWeaponFor(LoadedMission mission, string gunModel)
+    {
+        if (!_heldWeaponsByModel.TryGetValue(gunModel, out SoldierHeldWeapon? held))
+        {
+            held = _meshes.BuildWeapon(mission, gunModel);
+            if (held is not null)
+            {
+                _heldWeaponsByModel[gunModel] = held;
+            }
+        }
+
+        return held;
+    }
+
     /// <summary>Notes that a stationary gun's visual has been drawn, so it is reported only once.</summary>
     /// <param name="taskId">The gun's task.</param>
     /// <returns><see langword="true"/> the first time.</returns>

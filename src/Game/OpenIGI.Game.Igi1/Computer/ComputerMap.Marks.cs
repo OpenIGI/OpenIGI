@@ -113,6 +113,13 @@ public sealed partial class ComputerMap
                 q.Marker = 2;
                 q.Color = 3;
                 Marker(q, culled: false);
+
+                // A co-op teammate under its name, which is no text resource to be looked up.
+                if (o.Name.Length > 0)
+                {
+                    _marks.Add(new ComputerMark(ComputerMarkKind.Label, q.Position) { Text = o.Name });
+                }
+
                 break;
             case ComputerObjectKind.Human:
                 // 0x460280: from the first close zoom to the last but one, alive, in view and in sight of the map's eye.

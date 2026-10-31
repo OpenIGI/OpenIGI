@@ -217,9 +217,10 @@ public sealed class GraphicsMenuPresetAlignmentTests : IDisposable
 /// each for the whole process, and applying a preset writes about a hundred of them. xUnit runs test
 /// classes in the same assembly in parallel, so without this the alignment tests and
 /// <see cref="QualityBindingTests"/> would take turns pulling the same variables out from under each
-/// other — and would do it intermittently, which is the worst way to find out.
+/// other — and would do it intermittently, which is the worst way to find out. Run alone, not merely together: the shell's
+/// tests make whole settings pages, and register more of the same process's variables while they do.
 /// </remarks>
-[CollectionDefinition(Name)]
+[CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class GraphicsSettingsRegistries
 {
     /// <summary>The collection's name.</summary>

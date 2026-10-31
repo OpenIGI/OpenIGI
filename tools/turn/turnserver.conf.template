@@ -1,0 +1,57 @@
+# coturn for OpenIGI co-op. install.sh writes turnserver.conf from this with the shared secret filled in; the secret is
+# never in the repo. The master-server Worker holds the same secret and mints each player a login that expires
+# (the TURN REST scheme: username "<expiry>:<room>", password base64(HMAC-SHA1(secret, username))).
+
+listening-ip=185.110.190.243
+external-ip=185.110.190.243
+listening-port=3478
+
+# TURN over TLS, for networks that only let through what looks like HTTPS. The certificate is Caddy's for
+# turn.openigi.com, copied here by tls-cert.sh.
+tls-listening-port=5349
+cert=/etc/coturn/tls/cert.pem
+pkey=/etc/coturn/tls/key.pem
+no-dtls
+
+# The relay's ports: one per relayed player. ufw opens the same range.
+min-port=49160
+max-port=49999
+
+realm=openigi.com
+use-auth-secret
+static-auth-secret=@SECRET@
+fingerprint
+stale-nonce=600
+
+# Only what a game needs, nothing that makes it useful to anyone else: UDP relaying only, no relaying into private or
+# reserved address space, no admin console, and no version string handed to scanners.
+no-tcp-relay
+no-multicast-peers
+no-cli
+no-software-attribute
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.0.2.0-192.0.2.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=198.51.100.0-198.51.100.255
+denied-peer-ip=203.0.113.0-203.0.113.255
+denied-peer-ip=224.0.0.0-255.255.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# A co-op game is tens of kilobits a second per player; these cap the worst case so a misuse can't eat the VM's link.
+# Bytes a second per relayed session, sessions per login, sessions in all, and the whole relay's bytes a second.
+max-bps=64000
+user-quota=8
+total-quota=300
+bps-capacity=6000000
+
+log-file=stdout
+simple-log

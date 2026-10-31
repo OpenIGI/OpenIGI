@@ -179,7 +179,7 @@ public sealed class VoicePool<TVoice>
             return [];
         }
 
-        int wanted = VoiceSlot.StreamFramesPerBuffer * stream.Format.Channels;
+        int wanted = stream.FramesPerBuffer * stream.Format.Channels;
         if (_streamScratch.Length < wanted)
         {
             _streamScratch = new short[wanted];
