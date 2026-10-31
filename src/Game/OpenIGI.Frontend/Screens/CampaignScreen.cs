@@ -120,7 +120,6 @@ public sealed class CampaignScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnEnter()
     {
-        PlayerCheatCVars.DeveloperMode.Changed += OnUnlockCheatChanged;
         PlayerCheatCVars.CheatsEnabled.Changed += OnUnlockCheatChanged;
         PlayerCheatCVars.UnlockAllLevels.Changed += OnUnlockCheatChanged;
     }
@@ -128,7 +127,6 @@ public sealed class CampaignScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnExit()
     {
-        PlayerCheatCVars.DeveloperMode.Changed -= OnUnlockCheatChanged;
         PlayerCheatCVars.CheatsEnabled.Changed -= OnUnlockCheatChanged;
         PlayerCheatCVars.UnlockAllLevels.Changed -= OnUnlockCheatChanged;
     }

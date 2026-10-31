@@ -29,7 +29,8 @@ public abstract class ShellTestHarness
         string savesDir,
         int activeMission = 2,
         IReadOnlyList<TitleInputBinding>? controls = null,
-        IReadOnlyList<MissionInfo>? extraMissions = null)
+        IReadOnlyList<MissionInfo>? extraMissions = null,
+        CVarRegistry? cvars = null)
     {
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont font = OpenIGI.UI.Text.UiFont.ForMeasurement(
@@ -59,7 +60,7 @@ public abstract class ShellTestHarness
             GameProfileResolver.BuildCatalogue(GameTitle.Igi1, "C:\\Games\\IGI", null, null),
             GameTitle.Igi1.Id,
             missions,
-            new CVarRegistry(),
+            cvars ?? new CVarRegistry(),
             GraphicsPresetRegistry.Default,
             config,
             new SaveSlotStore(savesDir));

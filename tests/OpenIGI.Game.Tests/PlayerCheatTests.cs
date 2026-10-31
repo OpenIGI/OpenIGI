@@ -214,7 +214,7 @@ public sealed class PlayerCheatTests
     }
 
     [Fact]
-    public void CheatsStayRetailUntilDeveloperModeAndCheatsAreBothEnabled()
+    public void CheatsStayRetailUntilCheatsAreEnabled()
     {
         PlayerCheatOptions configured = PlayerCheatOptions.Retail with
         {
@@ -223,11 +223,9 @@ public sealed class PlayerCheatTests
             InfiniteHealth = true,
         };
 
-        Assert.Equal(PlayerCheatOptions.Retail, PlayerCheatOptions.Activate(configured, false, false));
-        Assert.Equal(PlayerCheatOptions.Retail, PlayerCheatOptions.Activate(configured, true, false));
-        Assert.Equal(PlayerCheatOptions.Retail, PlayerCheatOptions.Activate(configured, false, true));
+        Assert.Equal(PlayerCheatOptions.Retail, PlayerCheatOptions.Activate(configured, false));
 
-        PlayerCheatOptions active = PlayerCheatOptions.Activate(configured, true, true);
+        PlayerCheatOptions active = PlayerCheatOptions.Activate(configured, true);
         Assert.Equal(3f, active.SpeedMultiplier);
         Assert.True(active.AllWeapons);
         Assert.True(active.InfiniteHealth);
