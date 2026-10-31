@@ -2,6 +2,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -674,9 +676,88 @@ public sealed class Igi1CoopPairTests
         Assert.NotNull(pair.Session.WhereIs(voice.Entity));
     }
 
-    private static Igi1CoopPair Joined(params string[] hostArgs)
+    [RequiresGameDataFact]
+    public void A_joiner_riding_a_lift_the_host_calls_rides_it_on_both_games_without_being_put_back()
     {
-        Igi1CoopPair pair = new(hostArgs: hostArgs);
+        using Igi1CoopPair pair = Joined(mission: 3);
+        PlacedElevator lift = Assert.IsType<PlacedElevator>(pair.Host!.World.Elevators?.Elevators.FirstOrDefault(static l => l.State.FloorCount > 1));
+        PlacedElevator joinerLift = pair.Joiner!.World.Elevators!.Elevators[pair.Host.World.Elevators!.Elevators.ToList().IndexOf(lift)];
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
+        Igi1ClientWorld joinerWorld = Assert.IsType<Igi1ClientWorld>(pair.Client.World);
+        ClientSession session = pair.Client.Session!;
+
+        // The joiner stands in the car, on both games.
+        Vector3d aboard = lift.State.Position + new Vector3d(0, 0, 64);
+        partner.Player.Body.Position = aboard;
+        pair.Joiner.World.Player!.Body.Position = aboard;
+        pair.RunUntil(() => false, 30);
+        double startZ = partner.Player.Body.Position.Z;
+        int to = lift.State.CurrentFloorIndex == 0 ? 1 : 0;
+
+        // The car is called on the host alone, as the host's own press calls it: the joiner's game hears of it only by the
+        // snapshots. Before, its car stood while the host's rose, and the server left its partner on the floor below.
+        WorldInteraction button = Assert.Single(
+            pair.Host.World.Interactions!.Items,
+            item => item.Task.Type.Name == "Switch" && item.Task.IsSelfOrDescendantOf(lift.Task));
+        long correctionsBefore = session.Reconciler.Corrections;
+        button.Press();
+
+        List<double> hostTrip = [];
+        List<(double Z, int Lead)> joinerTrip = [];
+        Assert.True(
+            pair.RunUntil(
+                () =>
+                {
+                    int lead = session.SentCommands.Count > 0 && session.LastRunCommandTick != long.MinValue
+                        ? (int)(session.SentCommands[^1].Tick - session.LastRunCommandTick)
+                        : 0;
+                    hostTrip.Add(lift.State.Position.Z);
+                    joinerTrip.Add((joinerLift.State.Position.Z, lead));
+                    return lift.State.CurrentFloorIndex == to && !lift.State.IsMoving;
+                },
+                3000) >= 0,
+            "the host's car never arrived");
+
+        // The rest of the joiner's commands from the ride reach the server.
+        pair.RunUntil(() => false, 15);
+        long rideCorrections = session.Reconciler.Corrections - correctionsBefore;
+
+        // The server carried the partner with the car.
+        double rode = Math.Abs(partner.Player.Body.Position.Z - startZ);
+        double floors = Math.Abs(lift.State.Floors[to].Position.Z - lift.State.Floors[1 - to].Position.Z);
+        Assert.True(rode > floors * 0.8, $"the partner rode {rode} of the {floors} units between the floors on the host");
+
+        // The joiner's car went with the host's, taken once: each frame it stood where the host's stood then or up to the
+        // joiner's lead (and a few ticks of slack) later -- its own commands are that far ahead -- and it stopped there too.
+        double worstApart = 0;
+        for (int i = 0; i < joinerTrip.Count; i++)
+        {
+            (double z, int lead) = joinerTrip[i];
+            double nearest = double.MaxValue;
+            for (int k = i; k <= Math.Min(hostTrip.Count - 1, i + lead + 4); k++)
+            {
+                nearest = Math.Min(nearest, Math.Abs(hostTrip[k] - z));
+            }
+
+            worstApart = Math.Max(worstApart, nearest);
+        }
+
+        Assert.True(worstApart < 1024, $"the joiner's car was {worstApart} units from anywhere the host's stood over its lead");
+        Assert.True(Math.Abs(joinerLift.State.Position.Z - lift.State.Position.Z) < 64, "the joiner's car stopped elsewhere than the host's");
+        Assert.InRange(joinerWorld.LiftsTaken, 1, 2);
+
+        // And its player rode it there, put back once at most rather than tick after tick. (Afterwards the guards at the top
+        // may shoot it, whose shove the joiner's game does not feel: only the ride is counted.)
+        Assert.True(rideCorrections <= 3, $"the joiner's player was put back {rideCorrections} times on the ride");
+        double height = Math.Abs(pair.Joiner.World.Player.Body.Position.Z - partner.Player.Body.Position.Z);
+        Assert.True(height < 64, $"the joiner's player stands {height} units above or below where the host has it");
+    }
+
+    private static Igi1CoopPair Joined(params string[] hostArgs) => Joined(1, hostArgs);
+
+    private static Igi1CoopPair Joined(int mission, params string[] hostArgs)
+    {
+        Igi1CoopPair pair = new(mission: mission, hostArgs: hostArgs);
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
         return pair;
     }

@@ -25,8 +25,11 @@ public sealed class PredictionReconciler
     private readonly Dictionary<long, Vector3d> _predicted = [];
     private long _lastChecked = long.MinValue;
 
+    /// <summary>How far off a prediction may be, in world units, before it is corrected, unless the world says otherwise.</summary>
+    public const double DefaultTolerance = 64;
+
     /// <summary>Gets or sets how far off a prediction may be, in world units, before it is corrected at all.</summary>
-    public double Tolerance { get; set; } = 64;
+    public double Tolerance { get; set; } = DefaultTolerance;
 
     /// <summary>Gets the size of the last error found, in world units.</summary>
     public double LastError { get; private set; }

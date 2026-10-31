@@ -40,6 +40,29 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // for this client's own use of a door to reach the server and come back, so the door doesn't flick shut and open again.
     private const int DoorPatience = 30;
 
+    // The newest snapshot whose lifts were compared, and since which of this client's ticks each lift has stood otherwise
+    // than the server's.
+    private long _liftsChecked = long.MinValue;
+    private long[] _liftDisagreeingSince = [];
+
+    // How far, in world units, this client's car may stand from the server's before the server's is taken: two or three
+    // ticks of travel, the most a press reaching the server a tick off moves it.
+    private const double LiftTolerance = 512;
+
+    // Ticks past the commands in flight that a car may stand otherwise than a server's standing one: this client's own
+    // press reaching the server and coming back.
+    private const int LiftPatience = 15;
+
+    // This client's ticks, for the lifts' patience and the riding slack.
+    private long _ticks;
+
+    // While riding a moving lift: how far its player may stand from the server's word, and until which tick.
+    private double _ridingSlack;
+    private long _ridingUntil = long.MinValue;
+
+    // Ticks of a lift's travel a rider may be off by: the server's queue of this client's commands moving a tick or two.
+    private const int RidingSlackTicks = 4;
+
     /// <summary>Initializes a new instance of the <see cref="Igi1ClientWorld"/> class.</summary>
     /// <param name="game">The client's own mission.</param>
     public Igi1ClientWorld(Igi1Gameplay game)
@@ -89,6 +112,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
 
         return bodies;
     }
+
+    /// <summary>Gets how many times a lift here was put where the server's stood: once per partner's call, not every tick.</summary>
+    public int LiftsTaken { get; private set; }
 
     /// <inheritdoc/>
     public ReadOnlySpan<float> LocalFrame
@@ -311,9 +337,12 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// server's changes, which is how a door the host opened opens here; and taken when this client's has stood otherwise for
     /// <see cref="DoorPatience"/> snapshots, which settles one this client opened that the server didn't.
     /// </remarks>
-    public void ApplyWorld(Snapshot snapshot, int? ownEntity)
+    public void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        _ticks++;
+        ApplyLifts(snapshot, ticksAhead);
+        NoteRiding(ticksAhead);
 
         // Where the others' rounds landed, once each; this client's own it showed as it fired them.
         if (snapshot.Tick > _impactsShown)
@@ -375,6 +404,77 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         }
 
         _serverDoors = bits;
+    }
+
+    // Each lift as the server has it, where it will be by the tick this client's world has run to: the snapshot is that
+    // many ticks old, and this client's player rides its own copy in the present. A car the server moves that this one
+    // doesn't -- a partner called it -- is taken at once. A car the server holds still that this one moves is given the
+    // time its own press takes to reach the server and come back before it is put back.
+    private void ApplyLifts(Snapshot snapshot, int lead)
+    {
+        long predictedTick = _ticks;
+        if (snapshot.Tick <= _liftsChecked || snapshot.Lifts is not { } lifts || _game.World.Elevators is not { Elevators.Count: > 0 } registry)
+        {
+            return;
+        }
+
+        _liftsChecked = snapshot.Tick;
+        if (_liftDisagreeingSince.Length != registry.Elevators.Count)
+        {
+            _liftDisagreeingSince = new long[registry.Elevators.Count];
+            Array.Fill(_liftDisagreeingSince, long.MaxValue);
+        }
+
+        for (int i = 0; i < registry.Elevators.Count && i < lifts.Length; i++)
+        {
+            OpenIGI.Game.World.PlacedElevator elevator = registry.Elevators[i];
+            ReplicatedLift lift = lifts[i];
+            OpenIGI.Game.World.ElevatorMotion server = new(lift.Position.ToVector(), lift.Floor, lift.Target < 0 ? null : lift.Target, lift.Speed);
+            OpenIGI.Game.World.ElevatorMotion due = elevator.State.Project(server, lead);
+            OpenIGI.Game.World.ElevatorMotion own = elevator.State.Motion;
+            if (Vector3d.Distance(due.Position, own.Position) <= LiftTolerance && due.Target == own.Target)
+            {
+                _liftDisagreeingSince[i] = long.MaxValue;
+                continue;
+            }
+
+            _liftDisagreeingSince[i] = Math.Min(_liftDisagreeingSince[i], predictedTick);
+            if (server.Target is not null || predictedTick - _liftDisagreeingSince[i] > lead + LiftPatience)
+            {
+                registry.Restore(elevator, due, _game.World.Solids);
+                _liftDisagreeingSince[i] = long.MaxValue;
+                LiftsTaken++;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public double PredictionSlack => _ticks <= _ridingUntil ? _ridingSlack : 0;
+
+    // While this client's player rides a moving lift, and for as long after as the server's word on it is behind: the slack
+    // is a few ticks of the car's travel.
+    private void NoteRiding(int lead)
+    {
+        if (_game.World.Elevators is not { } lifts || _game.World.Player is not { } player)
+        {
+            return;
+        }
+
+        foreach (OpenIGI.Game.World.PlacedElevator lift in lifts.Elevators)
+        {
+            if (lift.State.IsMoving
+                && OpenIGI.Game.World.ElevatorRegistry.TryGetPassengerDisplacement(lift, player.Body.Position, _game.World.Solids, out Vector3d step))
+            {
+                _ridingSlack = Math.Max(_ridingSlack, step.Length * RidingSlackTicks);
+                _ridingUntil = _ticks + lead + RidingSlackTicks;
+                return;
+            }
+        }
+
+        if (_ticks > _ridingUntil)
+        {
+            _ridingSlack = 0;
+        }
     }
 
     /// <inheritdoc/>

@@ -799,6 +799,16 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             passenger.Body.Position += displacement;
         }
+
+        // A co-op partner standing in it rides it on the server as its client's own copy rides it there: left behind, the
+        // server put it back on the floor below tick after tick, and its client snapped between the two.
+        foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+        {
+            if (ElevatorRegistry.TryGetPassengerDisplacement(elevator, partner.Player.Body.Position, mission.Solids, out Vector3d carried))
+            {
+                partner.Player.Body.Position += carried;
+            }
+        }
     }
 
     // What the player's update set in motion this tick -- its sounds, effects and detonations -- in the order the port has

@@ -28,6 +28,7 @@ public static class ClientReplication
         // The server's word on where this client's player was after its newest command it has run, against the prediction.
         if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own))
         {
+            session.Reconciler.Tolerance = Math.Max(PredictionReconciler.DefaultTolerance, world.PredictionSlack);
             if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector()) is { } correction)
             {
                 world.MoveLocal(correction);
@@ -83,6 +84,10 @@ public static class ClientReplication
             world.Hide(id);
         }
 
-        world.ApplyWorld(latest, session.EntityId);
+        // The snapshot's world stands after the server ran this client's command for LastRunCommandTick: in this client's own
+        // count, it is as many ticks behind as commands sent since.
+        long seen = session.LastRunCommandTick != long.MinValue ? session.LastRunCommandTick : latest.Tick;
+        long sentLast = session.SentCommands.Count > 0 ? session.SentCommands[^1].Tick : seen;
+        world.ApplyWorld(latest, session.EntityId, (int)Math.Clamp(sentLast - seen, 0, 600));
     }
 }
