@@ -211,10 +211,19 @@ public sealed class CoopScreen : ShellScreen
         return layout;
     }
 
-    // The right: the look, standing in the level above; at its foot the operative strip, then what to host beside HOST.
-    private StackPanel BuildHosting(UiTheme theme, ICoopRooms coop)
+    // The right: the look, standing in the level above and turned by dragging it round; at its foot the operative strip,
+    // then what to host beside HOST.
+    private Grid BuildHosting(UiTheme theme, ICoopRooms coop)
     {
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f, VerticalAlignment = VerticalAlignment.Bottom };
+        var column = new Grid { RowSpacing = 16f };
+        column.ColumnDefinitions.Add(GridLength.Star);
+        column.RowDefinitions.Add(GridLength.Star);
+        column.RowDefinitions.Add(GridLength.Auto);
+        column.RowDefinitions.Add(GridLength.Auto);
+
+        var turn = new TurnArea(theme, "Drag to turn") { Tooltip = "Drag, or press left and right, to turn your look round." };
+        turn.Turned += coop.TurnLook;
+        column.Add(turn, 0, 0);
 
         List<PlayerSkin> looks = [.. PlayerSkins.All];
         int chosen = Math.Max(0, looks.FindIndex(s => s.Id == PlayerSkins.Of(PlayerSkins.Chosen.Value).Id));
@@ -230,7 +239,7 @@ public sealed class CoopScreen : ShellScreen
             Context.Host.SaveSettings();
             coop.PreviewLook(looks[index].Id);
         };
-        column.AddChild(Strip(theme, operative));
+        column.Add(Strip(theme, operative), 1, 0);
 
         IReadOnlyList<MissionInfo> missions = Context.Missions;
         if (missions.Count == 0)
@@ -267,7 +276,7 @@ public sealed class CoopScreen : ShellScreen
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Height = CellHeight, HorizontalAlignment = HorizontalAlignment.Left };
         actions.Add(Strip(theme, mission, difficulty, listing));
         actions.Add(host);
-        column.AddChild(actions);
+        column.Add(actions, 2, 0);
         return column;
     }
 

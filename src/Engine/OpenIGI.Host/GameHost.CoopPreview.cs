@@ -33,11 +33,16 @@ public sealed partial class GameHost
     private MissionPreview? _previewFor;
     private (Camera3D Eye, Vector3d Feet, float Facing)? _previewShot;
     private float _previewElapsed;
+    private float _previewTurn;
     private int _previewClock;
 
     /// <summary>Shows a look standing in the level behind the menu, or none.</summary>
     /// <param name="skinId">The look, a <see cref="PlayerSkins"/> id, or <see langword="null"/> to stop.</param>
     internal void PreviewLook(string? skinId) => _previewLook = skinId;
+
+    /// <summary>Turns the look being shown about its feet.</summary>
+    /// <param name="radians">How far, positive to its left.</param>
+    internal void TurnLook(float radians) => _previewTurn = (_previewTurn + radians) % MathF.Tau;
 
     // Once a frame: the look stood in the backdrop while the co-op page asks for it, and put away otherwise.
     private void UpdateLookPreview()
@@ -79,11 +84,14 @@ public sealed partial class GameHost
             return;
         }
 
-        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, shot.Feet, shot.Facing);
+        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, shot.Feet, shot.Facing + _previewTurn);
         for (_previewElapsed += elapsed; _previewElapsed >= PreviewTickSeconds; _previewElapsed -= PreviewTickSeconds)
         {
             bodies.TickPreviewBody();
         }
+
+        // Drawn between its last two ticks, as the game's own bodies are.
+        bodies.BeginFrame(_previewElapsed / PreviewTickSeconds, smooth: true);
     }
 
     private void EndLookPreview()
@@ -93,6 +101,7 @@ public sealed partial class GameHost
         _previewFor = null;
         _previewShot = null;
         _previewElapsed = 0f;
+        _previewTurn = 0f;
     }
 
     // Where the look stands and how it is seen: on the ground a few metres ahead of the menu's eye, facing a camera stood
@@ -137,7 +146,9 @@ public sealed partial class GameHost
     }
 
     // A view of a mission with another level's own pack as its level pack, for a model only that level ships: opened once
-    // beside each mission, and left closed when the level won't open.
+    // beside each mission, and left closed when the level won't open. A browser holds only the levels it has fetched, so
+    // until the load gate has that level's files there is nothing yet -- and asking it is what fetches them; the look is
+    // asked for again each frame, and stands once they are there.
     private LoadedMission? Borrow(LoadedMission into, ResourceRegistry resources, int level)
     {
         if (_borrowed.TryGetValue((into, level), out LoadedMission? held))
@@ -148,6 +159,11 @@ public sealed partial class GameHost
         LoadedMission? view = null;
         if (_missions.TryGet(level, out MissionDescriptor? descriptor) && descriptor is not null)
         {
+            if (!_loadGate.IsReady(descriptor, out _))
+            {
+                return null;
+            }
+
             PackReference home = descriptor.PacksToOpen[^1];
             try
             {

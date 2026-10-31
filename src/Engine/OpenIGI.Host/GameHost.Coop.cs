@@ -25,6 +25,7 @@ public sealed partial class GameHost
             () => Game.Multiplayer.MultiplayerProtocol.ContentFingerprint(_titleRuntime.Title.Id, _titleRuntime.Mods.Select(m => $"{m.Id}@{m.Version}")),
             observer => TickObserver = observer,
             PreviewLook,
+            TurnLook,
             typeof(GameHost).Assembly
                 .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
                 .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev",

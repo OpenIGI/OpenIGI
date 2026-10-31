@@ -26,6 +26,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     private readonly Func<string> _content;
     private readonly Action<IHostTickObserver?> _observe;
     private readonly Action<string?> _preview;
+    private readonly Action<float> _turn;
     private readonly IOpenIgiLogger _logger;
     private readonly string _version;
     private IDisposable? _session;
@@ -44,6 +45,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         Func<string> content,
         Action<IHostTickObserver?> observe,
         Action<string?> preview,
+        Action<float> turn,
         string version,
         IOpenIgiLogger logger)
     {
@@ -54,6 +56,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         _content = content;
         _observe = observe;
         _preview = preview;
+        _turn = turn;
         _version = version;
         _logger = logger;
     }
@@ -194,6 +197,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
 
     /// <inheritdoc/>
     public void PreviewLook(string? skinId) => _preview(skinId);
+
+    /// <inheritdoc/>
+    public void TurnLook(float radians) => _turn(radians);
 
     /// <inheritdoc/>
     public void Dispose() => Leave();

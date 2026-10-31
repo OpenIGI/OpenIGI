@@ -67,4 +67,8 @@ public interface ICoopRooms
     /// <summary>Shows a look standing in the level behind the menu, as a player chooses it; <see langword="null"/> takes it away.</summary>
     /// <param name="skinId">The look's id.</param>
     void PreviewLook(string? skinId);
+
+    /// <summary>Turns the look being shown about its feet, as a player drags it round.</summary>
+    /// <param name="radians">How far, positive to its left.</param>
+    void TurnLook(float radians);
 }

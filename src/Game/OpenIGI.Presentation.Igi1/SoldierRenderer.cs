@@ -635,6 +635,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         // and report itself as never having moved.
         _playerBody.ResolveFrameState();
         ResolvePartnerFrameStates();
+        _preview?.ResolveFrameState();
     }
 
     /// <inheritdoc/>

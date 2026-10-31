@@ -10,6 +10,10 @@ namespace OpenIGI.Presentation.Igi1;
 /// <summary>A look shown standing in the level behind the menu, for a player choosing how to appear in co-op.</summary>
 public sealed partial class SoldierRenderer
 {
+    // The player's stand (clip 2) is one held pose, a statue; this is one of its slow cyclic idles, twenty seconds of
+    // breathing and weight shifting.
+    private const int PreviewIdleAnimation = 203;
+
     private PlayerBodyRenderer? _preview;
     private string? _previewModel;
     private (Vector3d Feet, float Facing) _previewSpot;
@@ -31,43 +35,42 @@ public sealed partial class SoldierRenderer
 
         _previewSpot = (feet, facing);
         (LoadedMission lookMission, string look) = ResolveLook(mission, model, OpenIGI.Game.Multiplayer.PlayerSkins.Default.Model);
-        if (_preview is not null && _previewModel == look)
+        if (_preview is null || _previewModel != look)
         {
-            return;
-        }
+            ReleasePreview();
+            PlayerBodyRenderer body = new(this, _device, _sim, _logger, new SoldierPlayerBody());
+            if (!body.Load(lookMission, look, AnimationsFor(look, lookMission, player), feet, facing))
+            {
+                return;
+            }
 
-        ReleasePreview();
-        PlayerBodyRenderer body = new(this, _device, _sim, _logger, new SoldierPlayerBody());
-        if (body.Load(lookMission, look, AnimationsFor(look, lookMission, player), feet, facing))
-        {
             _preview = body;
             _previewModel = look;
         }
+
+        // Stood where it is asked to every frame, so a turn follows the drag rather than the tick.
+        StandPreview();
     }
 
     /// <inheritdoc/>
-    /// <remarks>Stood on the player's idle, the clip the player's own rig plays standing still.</remarks>
+    /// <remarks>
+    /// Nothing else in this renderer ticks -- no mission runs behind the menu -- so the tick its bodies pose once per is
+    /// the preview's own, counted here.
+    /// </remarks>
     public void TickPreviewBody()
     {
-        if (_preview is not { } body)
-        {
-            return;
-        }
-
-        int idle = HumanLocomotionStates.For(HumanLocomotionStates.Idle).AnimationId;
-        PlayerBodyPose still = new(-1, true, 0f, 0, 0f);
-        body.Follow(_previewSpot.Feet, _previewSpot.Facing, idle, true, in still);
-        body.Tick();
+        _sim.TickCount++;
+        StandPreview();
     }
 
     /// <inheritdoc/>
-    public void DrawPreviewBody(in Camera3D camera, in Matrix4f projection)
+    public void DrawPreviewBody(in Camera3D camera, in Matrix4f projection) => _preview?.Draw(in camera, in projection);
+
+    // On a slow breathing idle of the player's own: posed once a tick, placed every call.
+    private void StandPreview()
     {
-        if (_preview is { } body)
-        {
-            body.ResolveFrameState();
-            body.Draw(in camera, in projection);
-        }
+        PlayerBodyPose still = new(-1, true, 0f, 0, 0f);
+        _preview?.Follow(_previewSpot.Feet, _previewSpot.Facing, PreviewIdleAnimation, true, in still);
     }
 
     private void ReleasePreview()
