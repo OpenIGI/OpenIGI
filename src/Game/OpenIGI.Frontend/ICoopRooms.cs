@@ -74,7 +74,8 @@ public interface ICoopRooms
     /// <summary>Leaves the room, if in one.</summary>
     void Leave();
 
-    /// <summary>Fetches the public rooms afresh into <see cref="Listing"/>.</summary>
+    /// <summary>Fetches the public rooms afresh into <see cref="Listing"/>, which keeps what it had until they come.</summary>
+    /// <remarks>The same rooms again leave <see cref="Listing"/> the same list, so a page showing it need not be rebuilt.</remarks>
     void RefreshListing();
 
     /// <summary>Shows a look standing in the level behind the menu, as a player chooses it; <see langword="null"/> takes it away.</summary>

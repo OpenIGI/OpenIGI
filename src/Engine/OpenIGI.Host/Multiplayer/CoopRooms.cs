@@ -148,8 +148,6 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             return;
         }
 
-        _rooms = null;
-        _listingError = null;
         _listing = RoomDirectory.ListAsync(RoomTransport.DefaultMaster, _titleId(), Protocol);
     }
 
@@ -161,9 +159,15 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             _listing = null;
             if (listing.IsCompletedSuccessfully)
             {
-                _rooms = [.. listing.Result.Select(r => new CoopRoomInfo(r.Code, r.Name, r.Mission() ?? 0, r.Players, r.MaxPlayers, r.Passworded))];
+                CoopRoomInfo[] rooms = [.. listing.Result.Select(r => new CoopRoomInfo(r.Code, r.Name, r.Mission() ?? 0, r.Players, r.MaxPlayers, r.Passworded))];
+                if (_listingError is not null || _rooms is null || !_rooms.SequenceEqual(rooms))
+                {
+                    _rooms = rooms;
+                }
+
+                _listingError = null;
             }
-            else
+            else if (_listingError is null)
             {
                 _rooms = [];
                 _listingError = "couldn't reach the room list";

@@ -30,6 +30,10 @@ public sealed class CoopScreen : ShellScreen
 
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
+
+    // How often the open rooms are asked for again while the page is up, and how long since they were.
+    private const float RelistSeconds = 5f;
+    private float _sinceListed;
     private string _code = string.Empty;
     private int _mission;
     private int _difficulty = -1;
@@ -80,6 +84,7 @@ public sealed class CoopScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnEnter()
     {
+        _sinceListed = 0f;
         Coop?.RefreshListing();
         Coop?.PreviewLook(PlayerSkins.Of(PlayerSkins.Chosen.Value).Id);
     }
@@ -88,10 +93,25 @@ public sealed class CoopScreen : ShellScreen
     protected override void OnExit() => Coop?.PreviewLook(null);
 
     /// <inheritdoc/>
-    /// <remarks>The room and the list change in the background; the page is rebuilt when either does.</remarks>
+    /// <remarks>
+    /// The room and the list change in the background; the page is rebuilt when either does. Out of a room the list is
+    /// asked for again every few seconds, so a room opened while the page is up shows without a press of REFRESH.
+    /// </remarks>
     protected override void OnUpdate(float elapsedSeconds)
     {
-        if (Coop is { } coop && (coop.Status != _shown || !ReferenceEquals(coop.Listing, _shownListing)))
+        if (Coop is not { } coop)
+        {
+            return;
+        }
+
+        _sinceListed += elapsedSeconds;
+        if (coop.Status.Phase == CoopPhase.None && _sinceListed >= RelistSeconds)
+        {
+            _sinceListed = 0f;
+            coop.RefreshListing();
+        }
+
+        if (coop.Status != _shown || !ReferenceEquals(coop.Listing, _shownListing))
         {
             Invalidate();
         }
