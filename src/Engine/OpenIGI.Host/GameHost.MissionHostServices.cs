@@ -117,6 +117,8 @@ public sealed partial class GameHost
 
         public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(centre);
 
+        public void FollowTeammate(Vector3d eye, float yaw, float pitch) => host.Viewpoint?.FollowTeammateView(eye, yaw, pitch);
+
         public OpenIGI.Input.InputState Input => host._window.Input;
 
         public OpenIGI.Game.Config.PlayerProfile? InputProfile => host._configuration.Active;

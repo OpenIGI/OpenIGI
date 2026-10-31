@@ -40,7 +40,22 @@ internal sealed class Igi1CoopPair : IDisposable
     /// <param name="frames">How many frames each may run.</param>
     /// <param name="hostArgs">More of the host's command line, such as a <c>-runat</c>.</param>
     public Igi1CoopPair(int mission = 1, int frames = 20000, params string[] hostArgs)
+        : this(null, null, mission, frames, hostArgs)
     {
+    }
+
+    /// <summary>
+    /// Starts both games on a mission, each heard and listening through the audio it is given; given audio, the games talk
+    /// through the session themselves -- what is said and spoken is theirs to take, not the test's.
+    /// </summary>
+    /// <param name="hostAudio">The host's audio.</param>
+    /// <param name="joinerAudio">The joiner's audio.</param>
+    /// <param name="mission">The mission both play.</param>
+    /// <param name="frames">How many frames each may run.</param>
+    /// <param name="hostArgs">More of the host's command line.</param>
+    public Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission = 1, int frames = 20000, params string[] hostArgs)
+    {
+        bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
         _session = new HostedSession(
@@ -51,10 +66,10 @@ internal sealed class Igi1CoopPair : IDisposable
             NullLogger.Instance);
         _client = NewClient();
 
-        HostGame = Make([.. args, .. hostArgs], HostWindow, _hostDevice);
-        JoinerGame = Make(args, JoinerWindow, _joinerDevice);
-        _hostWatch = new Watch(_session);
-        _joinerWatch = new FollowingWatch(_client);
+        HostGame = Make([.. args, .. hostArgs], HostWindow, _hostDevice, hostAudio ?? NullAudioDeviceFactory.Instance);
+        JoinerGame = Make(args, JoinerWindow, _joinerDevice, joinerAudio ?? NullAudioDeviceFactory.Instance);
+        _hostWatch = new Watch(_session) { Talks = talks };
+        _joinerWatch = new FollowingWatch(_client) { Talks = talks };
         HostGame.TickObserver = _hostWatch;
         JoinerGame.TickObserver = _joinerWatch;
         HostGame.Start();
@@ -153,14 +168,14 @@ internal sealed class Igi1CoopPair : IDisposable
     private SessionClient NewClient() =>
         new(_network.Open(), _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
 
-    private static GameHost Make(string[] args, HeadlessGameWindow window, RecordingGraphicsDevice device)
+    private static GameHost Make(string[] args, HeadlessGameWindow window, RecordingGraphicsDevice device, IAudioDeviceFactory audio)
     {
         string root = GameDataSource.Igi1.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.For(GameTitle.Igi1);
         VirtualFileSystem files = new(NullLogger.Instance);
         files.RegisterDevice(new LocalFileDevice(root));
         FileSystemConfig.LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(files);
-        return new GameHost(new HeadlessPlatformHost(), window, device, NullAudioDeviceFactory.Instance,
+        return new GameHost(new HeadlessPlatformHost(), window, device, audio,
             InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, HostOptions.Parse(args), root, NullLogger.Instance);
     }
 
@@ -187,9 +202,28 @@ internal sealed class Igi1CoopPair : IDisposable
         }
     }
 
-    private class Watch(IHostTickObserver inner) : IHostTickObserver
+    // The session's talk passes through too, as the game finds it on the session itself.
+    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk
     {
         public IHostTickObserver Inner { get; set; } = inner;
+
+        public bool Talks { get; init; }
+
+        private ISessionTalk? Talk => Talks ? Inner as ISessionTalk : null;
+
+        public void Say(string text) => Talk?.Say(text);
+
+        public void Mark(Int3 position) => Talk?.Mark(position);
+
+        public IReadOnlyList<ChatLine> TakeChat() => Talk?.TakeChat() ?? [];
+
+        public IReadOnlyList<WorldMark> TakeMarks() => Talk?.TakeMarks() ?? [];
+
+        public void Speak(ReadOnlySpan<byte> packet) => Talk?.Speak(packet);
+
+        public IReadOnlyList<VoicePacket> TakeVoices() => Talk?.TakeVoices() ?? [];
+
+        public Int3? WhereIs(int entity) => Talk?.WhereIs(entity);
 
         public Igi1Gameplay? Game { get; private set; }
 

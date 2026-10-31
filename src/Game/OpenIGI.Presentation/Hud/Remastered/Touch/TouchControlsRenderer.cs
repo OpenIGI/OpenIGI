@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 
@@ -237,13 +238,7 @@ public static class TouchControlsRenderer
                 Line(0.3f, -0.62f, 0.3f, 0.82f);
                 break;
             case TouchButton.Talk:
-                // A microphone: its head, the cradle under it, and the stand.
-                Ring(0f, -0.28f, 0.34f);
-                Line(-0.55f, 0.05f, -0.55f, 0.2f);
-                Line(0.55f, 0.05f, 0.55f, 0.2f);
-                Line(-0.55f, 0.2f, 0.55f, 0.2f);
-                Line(0f, 0.2f, 0f, 0.62f);
-                Line(-0.35f, 0.62f, 0.35f, 0.62f);
+                KitIcons.Draw(painter, KitIcon.Microphone, c, size * 1.5f, ink);
                 break;
             case TouchButton.Binoculars:
                 Ring(-0.46f, 0.2f, 0.38f);

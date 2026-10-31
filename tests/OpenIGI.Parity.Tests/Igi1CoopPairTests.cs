@@ -270,6 +270,23 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void A_downed_player_sees_what_its_teammate_sees()
+    {
+        using Igi1CoopPair pair = Joined();
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        pair.Host.Harm.BeginPlayerDeath(pair.Host.World.Player!.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+        pair.RunUntil(() => false, 30);
+
+        Core.Graphics.Camera3D eye = (Core.Graphics.Camera3D)typeof(Host.GameHost)
+            .GetField("_inspectorEye", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.HostGame)!;
+        Vector3d partnerEye = Game.World.WorldScene.ToMetres(partner.Player.Body.Eye);
+        Core.Numerics.Matrix3f look = Core.Graphics.Camera3D.LookRotation(partner.Player.Body.Yaw, partner.Player.AimPitch);
+        Assert.True(Vector3d.Distance(eye.Position, partnerEye) < 1.9, $"the view is {Vector3d.Distance(eye.Position, partnerEye):0.0} m from the teammate's eye");
+        float along = (eye.Orientation.M31 * look.M31) + (eye.Orientation.M32 * look.M32) + (eye.Orientation.M33 * look.M33);
+        Assert.True(along > 0.99f, $"the view looks {MathF.Acos(Math.Clamp(along, -1f, 1f)) * 180f / MathF.PI:0} degrees off the teammate's");
+    }
+
+    [RequiresGameDataFact]
     public void A_downed_squad_stands_again_where_it_last_stood_together()
     {
         using Igi1CoopPair pair = Joined();

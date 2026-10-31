@@ -30,6 +30,13 @@ public sealed partial class GameHost
     private const float VoiceFarMetres = 45f;
     private const int TalkingMilliseconds = 300;
 
+    // How long after the key is let go the microphone is kept, for the last words and a quick press again; then it is
+    // closed, so nothing -- the system, the browser, the phone -- says it is listening while nobody talks.
+    private const int MicrophoneTailMilliseconds = 1500;
+
+    // Above every sound the level makes, so a fight cannot take a teammate's voice from the pool.
+    private const int VoicePriority = 250;
+
     // Through a wall a voice keeps this little of its top, and this much of its loudness.
     private const float VoiceWallCutoffHz = 700f;
     private const float VoiceWallGain = 0.4f;
@@ -46,6 +53,7 @@ public sealed partial class GameHost
     private IMicrophone? _microphone;
     private IOpusEncoder? _encoder;
     private int _ownTalkingAt = int.MinValue;
+    private int _listenedAt = int.MinValue;
 
     // Once a frame, before the game reads its input: this player's voice out, the others' in and placed where they stand.
     private void UpdateCoopVoice()
@@ -65,6 +73,14 @@ public sealed partial class GameHost
             && ((BindKeyNames.TryParse(CoopVoiceCVars.Key.Value, out KeyCode key) && _window.Input.Keyboard.IsDown(key))
                 || _touchControls.Held.Contains(Presentation.Hud.Remastered.Touch.TouchButton.Talk));
         bool listening = CoopVoiceCVars.Mode.Value == 2 || held;
+        if (listening)
+        {
+            _listenedAt = now;
+        }
+        else if (_microphone is not null && now - _listenedAt > MicrophoneTailMilliseconds)
+        {
+            CloseMicrophone();
+        }
 
         // The microphone is opened the first time it is wanted -- in a browser, the press that asks is what lets it be asked.
         if (listening && _microphone is null)
@@ -100,10 +116,16 @@ public sealed partial class GameHost
         {
             if (!_heardVoices.TryGetValue(packet.Entity, out HeardVoice? heard))
             {
-                LiveVoice stream = new(VoiceRate, VoiceFrame);
-                heard = new HeardVoice(OpusCodecFactory.CreateDecoder(VoiceRate, 1), stream);
-                heard.Voice = _audioOut.Device.PlayStream(stream, VoiceParameters.Default with { Category = SoundCategory.Speech, Priority = 250 });
+                heard = new HeardVoice(OpusCodecFactory.CreateDecoder(VoiceRate, 1));
                 _heardVoices[packet.Entity] = heard;
+            }
+
+            // A voice not playing -- new, or let go by the device (none free when it spoke, or the device started again)
+            // -- is played afresh on a stream of its own; the device owns, and ends, a stream it lets go.
+            if (!_audioOut.Device.IsPlaying(heard.Voice))
+            {
+                heard.Stream = new LiveVoice(VoiceRate, VoiceFrame);
+                heard.Voice = _audioOut.Device.PlayStream(heard.Stream, Placed(default, 0f));
             }
 
             int decoded = heard.Decoder.Decode(packet.Packet, _voicePcm, VoiceFrame, false);
@@ -127,7 +149,7 @@ public sealed partial class GameHost
     {
         if (talk.WhereIs(entity) is not { } feet)
         {
-            _audioOut.Device.SetVoiceParameters(heard.Voice, VoiceParameters.Default with { Category = SoundCategory.Speech, Gain = 0f });
+            _audioOut.Device.SetVoiceParameters(heard.Voice, Placed(default, 0f));
             return;
         }
 
@@ -148,17 +170,20 @@ public sealed partial class GameHost
 
         float openness = open / 3f;
         heard.Stream.CutoffHz = MathF.Exp(float.Lerp(MathF.Log(VoiceWallCutoffHz), MathF.Log(SmoothedLowPass.OpenCutoffHz), openness));
-        _audioOut.Device.SetVoiceParameters(heard.Voice, VoiceParameters.Default with
-        {
-            Category = SoundCategory.Speech,
-            Priority = 250,
-            IsPositional = true,
-            Position = mouth,
-            MinimumDistance = VoiceNearMetres,
-            MaximumDistance = VoiceFarMetres,
-            Gain = CoopVoiceCVars.Volume.Value / 100f * float.Lerp(VoiceWallGain, 1f, openness),
-        });
+        _audioOut.Device.SetVoiceParameters(heard.Voice, Placed(mouth, CoopVoiceCVars.Volume.Value / 100f * float.Lerp(VoiceWallGain, 1f, openness)));
     }
+
+    // How a voice is played: as speech, above the level's sounds, from a mouth that far and near are measured from.
+    private static VoiceParameters Placed(Vector3d mouth, float gain) => VoiceParameters.Default with
+    {
+        Category = SoundCategory.Speech,
+        Priority = VoicePriority,
+        IsPositional = true,
+        Position = mouth,
+        MinimumDistance = VoiceNearMetres,
+        MaximumDistance = VoiceFarMetres,
+        Gain = gain,
+    };
 
     // Whether the level stands between two points, in metres.
     private bool Blocked(Vector3d fromMetres, Vector3d toMetres) =>
@@ -184,11 +209,16 @@ public sealed partial class GameHost
         }
     }
 
-    private void EndCoopVoice()
+    private void CloseMicrophone()
     {
         _microphone?.Dispose();
         _microphone = null;
         _micPending.Clear();
+    }
+
+    private void EndCoopVoice()
+    {
+        CloseMicrophone();
         foreach (HeardVoice heard in _heardVoices.Values)
         {
             _audioOut.Device.StopVoice(heard.Voice);
@@ -209,11 +239,11 @@ public sealed partial class GameHost
     }
 
     // One teammate heard: its decoder, the stream it plays through, the voice playing it, and when it last said anything.
-    private sealed class HeardVoice(IOpusDecoder decoder, LiveVoice stream)
+    private sealed class HeardVoice(IOpusDecoder decoder)
     {
         public IOpusDecoder Decoder { get; } = decoder;
 
-        public LiveVoice Stream { get; } = stream;
+        public LiveVoice Stream { get; set; } = null!;
 
         public AudioVoiceHandle Voice { get; set; }
 

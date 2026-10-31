@@ -417,6 +417,8 @@ export const imports = {
         const silence = context.createGain();
         silence.gain.value = 0;
         listening.node.connect(silence).connect(context.destination);
+        // iOS stops the page's sound while it takes the microphone over; it comes back only when asked.
+        if (context.state !== 'running') context.resume().catch(() => {});
       })
       .catch(() => { if (mic === listening) mic = null; });
     return true;

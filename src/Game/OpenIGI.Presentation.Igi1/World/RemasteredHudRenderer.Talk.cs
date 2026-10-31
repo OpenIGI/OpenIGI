@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
@@ -74,14 +75,15 @@ internal sealed partial class RemasteredHudRenderer
         float lineHeight = size * 1.7f;
         float x = context.SafeRect.X + context.Px(ChatLeft);
         float y = context.SafeRect.Bottom - context.Px(ChatBottom);
-        // Who is talking: a chip each, the accent beside the name, above the chat.
+        // Who is talking: a chip each, a microphone in the accent and the name, above the chat.
         foreach (string speaker in talking)
         {
-            float width = font.MeasureWidth(speaker, size) + font.MeasureWidth("VOICE  ", size) + (size * 1.6f);
+            float icon = lineHeight * 0.62f;
+            float width = (size * 0.55f) + icon + (size * 0.45f) + font.MeasureWidth(speaker, size) + (size * 0.8f);
             var chip = new UiRect(x, y - lineHeight, width, lineHeight);
-            painter.FillRoundedRect(chip, rounded, UiPalette.InkAt(0.82f).WithAlpha(210), lineHeight * 0.22f);
-            UiVec2 pen = painter.DrawLabel(font, "VOICE", new UiVec2(chip.X + (size * 0.7f), UiRowStyle.CapsCenterY(font, size, chip)), size, Accent, 0.08f);
-            painter.DrawLabel(font, speaker, new UiVec2(pen.X + (size * 0.6f), UiRowStyle.CapsCenterY(font, size, chip)), size, Text, 0.02f);
+            painter.FillRoundedRect(chip, rounded, UiPalette.InkAt(0.82f).WithAlpha(210), lineHeight * 0.5f);
+            KitIcons.Draw(painter, KitIcon.Microphone, new UiVec2(chip.X + (size * 0.55f) + (icon * 0.5f), chip.Y + (lineHeight * 0.5f)), icon, Accent);
+            painter.DrawLabel(font, speaker, new UiVec2(chip.X + (size * 1f) + icon, UiRowStyle.CapsCenterY(font, size, chip)), size, Text, 0.02f);
             y -= lineHeight + context.Px(4f);
         }
 
