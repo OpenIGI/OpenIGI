@@ -248,7 +248,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         Snapshot snapshot = new(
-            tick, [.. humans], Doors(_game.World.Doors), _impacts.Count == 0 ? null : [.. _impacts], senses.Count == 0 ? null : [.. senses]);
+            tick,
+            [.. humans],
+            Doors(_game.World.Doors),
+            _impacts.Count == 0 ? null : [.. _impacts],
+            senses.Count == 0 ? null : [.. senses],
+            Lifts(_game.World.Elevators));
         _impacts.Clear();
         return snapshot;
     }
@@ -373,6 +378,26 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         return bits;
+    }
+
+    /// <summary>The level's lifts as a snapshot carries them, in the level's own order.</summary>
+    /// <param name="lifts">The level's lifts.</param>
+    /// <returns>The lifts, or <see langword="null"/> for a level without any.</returns>
+    public static ReplicatedLift[]? Lifts(OpenIGI.Game.World.ElevatorRegistry? lifts)
+    {
+        if (lifts is not { Elevators.Count: > 0 } registry)
+        {
+            return null;
+        }
+
+        ReplicatedLift[] all = new ReplicatedLift[Math.Min(registry.Elevators.Count, ReplicatedLift.MaxPerSnapshot)];
+        for (int i = 0; i < all.Length; i++)
+        {
+            OpenIGI.Game.World.ElevatorMotion motion = registry.Elevators[i].State.Motion;
+            all[i] = new ReplicatedLift(Int3.From(motion.Position), motion.Floor, motion.Target ?? -1, (float)motion.Speed);
+        }
+
+        return all;
     }
 
     /// <inheritdoc/>

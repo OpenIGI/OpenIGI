@@ -2,6 +2,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -103,6 +105,10 @@ public sealed class Igi1CoopPairTests
         pair.RunUntil(() => false, 40);
         Assert.Equal(Count(pair.Host, "EditVariable_199.nValue"), Count(pair.Joiner, "EditVariable_199.nValue"));
 
+        // No script listens for the break key in it, so neither game offers the hold.
+        Assert.False(pair.Host.World.Cutscenes!.CanBreak);
+        Assert.False(pair.Joiner.World.Cutscenes!.CanBreak);
+
         // The joiner can't break it: the scene is the host's to skip.
         pair.Joiner.World.Cutscenes!.RequestBreak();
         pair.RunUntil(() => false, 5);
@@ -111,6 +117,35 @@ public sealed class Igi1CoopPairTests
         // And the scene ends on both.
         Assert.True(pair.RunUntil(() => pair.Host.World.Cutscenes?.ActiveScene is null && pair.Joiner.World.Cutscenes?.ActiveScene is null, 3000) >= 0,
             $"the scene runs on: host {pair.Host.World.Cutscenes?.ActiveScene?.Id}, joiner {pair.Joiner.World.Cutscenes?.ActiveScene?.Id}");
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData(1, "EditVariable_4004.nValue")]
+    [InlineData(3, "EditVariable_1001.nValue")]
+    public void The_host_may_skip_its_intro_and_the_break_held_ends_it_on_both_games(int mission, string skipped)
+    {
+        using Igi1CoopPair pair = new([], [], joinLater: false, mission: mission, hostSkipsIntro: false);
+        Assert.True(pair.RunUntil(() => pair.Host?.World.Cutscenes?.IsPlaying == true && pair.Joined, 3000) >= 0, "the host's intro never began");
+        pair.RunUntil(() => false, 30);
+
+        // The intro's script listens for the key: the hold is offered to the host, and not to the joiner, whose scene is the host's.
+        Assert.True(pair.Host!.World.Cutscenes!.CanBreak, $"the host's intro scene {pair.Host.World.Cutscenes.ActiveScene?.Id} is not offered the skip");
+        Assert.False(pair.Joiner!.World.Cutscenes!.CanBreak);
+
+        // Held from the hold's completing, as the host holds it, until the intro has ended -- on both games.
+        int ended = pair.RunUntil(
+            () =>
+            {
+                pair.Host.World.Cutscenes.RequestBreak();
+                return !pair.Host.World.Cutscenes.IsPlaying;
+            },
+            150);
+        Assert.True(ended >= 0, $"the break held 150 frames and the host's intro scene {pair.Host.World.Cutscenes.ActiveScene?.Id} runs on");
+        Assert.Equal(1, Count(pair.Host, skipped));
+        Assert.True(pair.RunUntil(() => !pair.Joiner.World.Cutscenes.IsPlaying, 150) >= 0, "the host skipped its intro, and the joiner's runs on");
+
+        // Skipped once, the intro offers no second skip.
+        Assert.False(pair.Host.World.Cutscenes.CanBreak);
     }
 
     [RequiresGameDataFact]
@@ -519,8 +554,28 @@ public sealed class Igi1CoopPairTests
         // Killed on the host, it falls on the joiner too and drops one gun there, where the host's lies -- which the joiner takes.
         Game.World.GunPickupRegistry hostGuns = pair.Host.World.GunPickups!;
         int hostGunsBefore = hostGuns.Items.Count;
+
+        // Each game's drawing hears the fall, and empties the guard's hand of the gun that dropped: the joiner's drew it in
+        // the corpse's hand beside the host's drop, a second gun that no pickup took away.
+        Dictionary<string, bool> emptied = [];
+        foreach ((string side, Game.Igi1.Ai.SoldierSimulation sim, Game.Igi1.Player.SoldierView fallen) in
+            new[] { ("host", soldiers, guard), ("joiner", copies, copy) })
+        {
+            Action<Game.Igi1.Ai.SoldierFall>? drawing = sim.BodyFell;
+            sim.BodyFell = fall =>
+            {
+                drawing?.Invoke(fall);
+                if (ReferenceEquals(fall.View, fallen))
+                {
+                    emptied[side] = fall.DroppedWeapon;
+                }
+            };
+        }
+
         soldiers.ApplyExplosion(guard.Position, 2048, 4096, 50f);
         Assert.True(pair.RunUntil(() => guard.IsDead && copy.IsDead, 60) >= 0, "the host's kill never reached the joiner");
+        Assert.True(emptied.GetValueOrDefault("host"), "the host's guard fell with its gun in hand");
+        Assert.True(emptied.GetValueOrDefault("joiner"), "the joiner's guard fell with its gun in hand");
         Assert.True(pair.RunUntil(() => hostGuns.Items.Count > hostGunsBefore, 600) >= 0, "the killed guard dropped nothing on the host");
         pair.RunUntil(() => false, 200);
         Assert.Equal(hostGuns.Items.Count - hostGunsBefore, joinerGuns.Items.Count - gunsBefore);
@@ -613,6 +668,146 @@ public sealed class Igi1CoopPairTests
     }
 
     // The living soldier nearest a place on a game, among those the level has in play.
+    [RequiresGameDataFact]
+    public void A_joiner_knocked_by_rounds_on_the_host_is_knocked_as_far_on_its_own_game()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.RunUntil(() => false, 30);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        ClientSession session = pair.Client.Session!;
+
+        // Rounds a few ticks apart, each knocking the partner along the floor on the host: the host's own, with friendly fire
+        // on, through the same handler a guard's goes through.
+        long correctionsBefore = session.Reconciler.Corrections;
+        Vector3d start = partner.Player.Body.Position;
+        List<string> errors = [];
+        long seen = correctionsBefore;
+        int frame = 0;
+        void Watch(int frames)
+        {
+            for (int i = 0; i < frames; i++, frame++)
+            {
+                Assert.True(pair.Step());
+                if (session.Reconciler.Corrections != seen)
+                {
+                    seen = session.Reconciler.Corrections;
+                    errors.Add($"f{frame}:{session.Reconciler.LastError:0}");
+                }
+            }
+        }
+
+        try
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = true;
+            for (int round = 0; round < 5; round++)
+            {
+                Vector3d eye = pair.Host.World.Player!.Body.Eye;
+                Vector3d chest = partner.Player.Body.Position + new Vector3d(0, 0, 1.3 * 4096);
+                Vector3d beyond = eye + ((chest - eye) * 2);
+                Assert.True(
+                    pair.Host.World.Bodies.Shoot(
+                        eye,
+                        beyond,
+                        pair.Host.World.PlayerTask,
+                        hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 0.02f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
+                        out _),
+                    "the round missed the partner");
+                Watch(4);
+            }
+        }
+        finally
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = false;
+        }
+
+        Watch(60);
+        double knocked = Vector3d.Distance(start, partner.Player.Body.Position);
+        Assert.True(knocked > 2048, $"the rounds knocked the partner only {knocked} units on the host");
+        Assert.False(partner.IsDead);
+
+        // The joiner's player went as far, and was not put back for it tick after tick.
+        long corrections = session.Reconciler.Corrections - correctionsBefore;
+        double apart = Vector3d.Distance(own.Body.Position, partner.Player.Body.Position);
+        Assert.True(apart < 256, $"the joiner's player stands {apart} units from where the host has it after a {knocked:0}-unit knock");
+        Assert.True(corrections <= 1, $"the joiner's player was put back {corrections} times for five knocks: {string.Join(" ", errors)}");
+    }
+
+    [RequiresGameDataFact]
+    public void A_joiner_climbing_and_sliding_down_a_ladder_lands_where_the_host_has_it()
+    {
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        ClientSession session = pair.Client.Session!;
+        object controller = typeof(Game.Igi1.Player.PlayerCamera).GetField("_ladder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(own)!;
+        var ladders = (IReadOnlyList<LadderPlacement>)controller.GetType().GetField("_ladders", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(controller)!;
+        LadderPlacement ladder = ladders.OrderBy(l => l.Top.Z - l.Bottom.Z).Last();
+
+        // At its foot facing it, on both games, and on with the use key.
+        foreach (Game.Igi1.Player.PlayerCamera body in new[] { own, partner.Player })
+        {
+            body.Body.Position = ladder.BottomMount - new Vector3d(0, 0, LadderPlacement.BottomVerticalOffsetUnits);
+            body.Body.Yaw = ladder.PlayerYaw;
+        }
+
+        pair.RunUntil(() => false, 10);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        bool mounted = pair.RunUntil(() => own.IsOnLadder && partner.Player.IsOnLadder, 30) >= 0;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Assert.True(mounted, $"the joiner never got on: own {own.IsOnLadder}, on the host {partner.Player.IsOnLadder}");
+
+        // Up a good way: the joiner's climb is the one its commands run on the host, rung for rung, so it is seldom put back.
+        long climbStart = session.Reconciler.Corrections;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 240);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        pair.RunUntil(() => false, 30);
+        double high = own.Body.Position.Z - ladder.Bottom.Z;
+        Assert.True(high > 8192, $"the joiner climbed only {high} units");
+        Assert.True(
+            Math.Abs(own.Body.Position.Z - partner.Player.Body.Position.Z) < 256,
+            $"the joiner climbed to {high:0} and the host has it at {partner.Player.Body.Position.Z - ladder.Bottom.Z:0}");
+        long climbCorrections = session.Reconciler.Corrections - climbStart;
+        Assert.True(climbCorrections <= 3, $"the joiner was put back {climbCorrections} times on the climb");
+
+        // Then slide to the ground.
+        long correctionsBefore = session.Reconciler.Corrections;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        List<string> phases = [];
+        string last = string.Empty;
+        bool off = pair.RunUntil(
+            () =>
+            {
+                string now = $"{own.LadderPhase}/{partner.Player.LadderPhase}";
+                if (now != last)
+                {
+                    phases.Add($"f{phases.Count}:{now} z{own.Body.Position.Z - ladder.Bottom.Z:0}/{partner.Player.Body.Position.Z - ladder.Bottom.Z:0}");
+                    last = now;
+                }
+
+                return !own.IsOnLadder && !partner.Player.IsOnLadder;
+            },
+            600) >= 0;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Assert.True(off, $"still on the ladder after sliding: own {own.LadderPhase}, on the host {partner.Player.LadderPhase}; climbed {high}; {string.Join(" | ", phases)}");
+
+        // Standing at the foot on both, and staying there: no fall, no putting back.
+        List<string> afterwards = [];
+        for (int frame = 0; frame < 90; frame++)
+        {
+            Assert.True(pair.Step());
+            afterwards.Add($"{own.Body.Position.Z - partner.Player.Body.Position.Z:0}");
+        }
+
+        long corrections = session.Reconciler.Corrections - correctionsBefore;
+        double apart = Vector3d.Distance(own.Body.Position, partner.Player.Body.Position);
+        Assert.True(
+            apart < 256 && corrections <= 3,
+            $"after a slide from {high:0} units up: {apart:0} apart, {corrections} corrections, own grounded {own.Body.IsGrounded} z {own.Body.Position.Z:0}, "
+            + $"host's grounded {partner.Player.Body.IsGrounded} z {partner.Player.Body.Position.Z:0}, foot {ladder.Bottom.Z:0}; dz {string.Join(" ", afterwards.Where((_, i) => i % 6 == 0))}");
+    }
+
     private static Game.Igi1.Player.SoldierView NearestLivingSoldier(Igi1Gameplay game, Vector3d near) =>
         game.World.Soldiers!.SoldierViews
             .Where(static v => !v.IsDead && Game.World.ConditionalContainerGate.IsTaskActive(v.Soldier))
@@ -674,9 +869,88 @@ public sealed class Igi1CoopPairTests
         Assert.NotNull(pair.Session.WhereIs(voice.Entity));
     }
 
-    private static Igi1CoopPair Joined(params string[] hostArgs)
+    [RequiresGameDataFact]
+    public void A_joiner_riding_a_lift_the_host_calls_rides_it_on_both_games_without_being_put_back()
     {
-        Igi1CoopPair pair = new(hostArgs: hostArgs);
+        using Igi1CoopPair pair = Joined(mission: 3);
+        PlacedElevator lift = Assert.IsType<PlacedElevator>(pair.Host!.World.Elevators?.Elevators.FirstOrDefault(static l => l.State.FloorCount > 1));
+        PlacedElevator joinerLift = pair.Joiner!.World.Elevators!.Elevators[pair.Host.World.Elevators!.Elevators.ToList().IndexOf(lift)];
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
+        Igi1ClientWorld joinerWorld = Assert.IsType<Igi1ClientWorld>(pair.Client.World);
+        ClientSession session = pair.Client.Session!;
+
+        // The joiner stands in the car, on both games.
+        Vector3d aboard = lift.State.Position + new Vector3d(0, 0, 64);
+        partner.Player.Body.Position = aboard;
+        pair.Joiner.World.Player!.Body.Position = aboard;
+        pair.RunUntil(() => false, 30);
+        double startZ = partner.Player.Body.Position.Z;
+        int to = lift.State.CurrentFloorIndex == 0 ? 1 : 0;
+
+        // The car is called on the host alone, as the host's own press calls it: the joiner's game hears of it only by the
+        // snapshots. Before, its car stood while the host's rose, and the server left its partner on the floor below.
+        WorldInteraction button = Assert.Single(
+            pair.Host.World.Interactions!.Items,
+            item => item.Task.Type.Name == "Switch" && item.Task.IsSelfOrDescendantOf(lift.Task));
+        long correctionsBefore = session.Reconciler.Corrections;
+        button.Press();
+
+        List<double> hostTrip = [];
+        List<(double Z, int Lead)> joinerTrip = [];
+        Assert.True(
+            pair.RunUntil(
+                () =>
+                {
+                    int lead = session.SentCommands.Count > 0 && session.LastRunCommandTick != long.MinValue
+                        ? (int)(session.SentCommands[^1].Tick - session.LastRunCommandTick)
+                        : 0;
+                    hostTrip.Add(lift.State.Position.Z);
+                    joinerTrip.Add((joinerLift.State.Position.Z, lead));
+                    return lift.State.CurrentFloorIndex == to && !lift.State.IsMoving;
+                },
+                3000) >= 0,
+            "the host's car never arrived");
+
+        // The rest of the joiner's commands from the ride reach the server.
+        pair.RunUntil(() => false, 15);
+        long rideCorrections = session.Reconciler.Corrections - correctionsBefore;
+
+        // The server carried the partner with the car.
+        double rode = Math.Abs(partner.Player.Body.Position.Z - startZ);
+        double floors = Math.Abs(lift.State.Floors[to].Position.Z - lift.State.Floors[1 - to].Position.Z);
+        Assert.True(rode > floors * 0.8, $"the partner rode {rode} of the {floors} units between the floors on the host");
+
+        // The joiner's car went with the host's, taken once: each frame it stood where the host's stood then or up to the
+        // joiner's lead (and a few ticks of slack) later -- its own commands are that far ahead -- and it stopped there too.
+        double worstApart = 0;
+        for (int i = 0; i < joinerTrip.Count; i++)
+        {
+            (double z, int lead) = joinerTrip[i];
+            double nearest = double.MaxValue;
+            for (int k = i; k <= Math.Min(hostTrip.Count - 1, i + lead + 4); k++)
+            {
+                nearest = Math.Min(nearest, Math.Abs(hostTrip[k] - z));
+            }
+
+            worstApart = Math.Max(worstApart, nearest);
+        }
+
+        Assert.True(worstApart < 1024, $"the joiner's car was {worstApart} units from anywhere the host's stood over its lead");
+        Assert.True(Math.Abs(joinerLift.State.Position.Z - lift.State.Position.Z) < 64, "the joiner's car stopped elsewhere than the host's");
+        Assert.InRange(joinerWorld.LiftsTaken, 1, 2);
+
+        // And its player rode it there, put back once at most rather than tick after tick. (Afterwards the guards at the top
+        // may shoot it, whose shove the joiner's game does not feel: only the ride is counted.)
+        Assert.True(rideCorrections <= 3, $"the joiner's player was put back {rideCorrections} times on the ride");
+        double height = Math.Abs(pair.Joiner.World.Player.Body.Position.Z - partner.Player.Body.Position.Z);
+        Assert.True(height < 64, $"the joiner's player stands {height} units above or below where the host has it");
+    }
+
+    private static Igi1CoopPair Joined(params string[] hostArgs) => Joined(1, hostArgs);
+
+    private static Igi1CoopPair Joined(int mission, params string[] hostArgs)
+    {
+        Igi1CoopPair pair = new(mission: mission, hostArgs: hostArgs);
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
         return pair;
     }

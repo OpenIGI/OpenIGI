@@ -874,6 +874,13 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerLadderController.MoveEntryFrame"/>
     public void MoveLadderEntryFrame(Vector3d rootDelta) => _ladder.MoveEntryFrame(rootDelta);
 
+    /// <summary>Moves the player by a correction from outside its own tick -- a co-op server's word -- ladder and all.</summary>
+    /// <param name="delta">The correction, in world units.</param>
+    public void Shift(Vector3d delta) => _ladder.Shift(delta);
+
+    /// <inheritdoc cref="PlayerLadderController.Release"/>
+    public void ReleaseLadder() => _ladder.Release();
+
     /// <summary>Commits the rung whose clip has just completed, returning the climb to a boundary.</summary>
     public void CompleteLadderStep() => _ladder.CompleteStep();
 

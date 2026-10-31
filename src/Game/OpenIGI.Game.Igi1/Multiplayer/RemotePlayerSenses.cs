@@ -6,21 +6,54 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 
 /// <summary>A co-op partner's senses on the server: each reaction recorded, for the partner's own game to make.</summary>
 /// <param name="entity">The partner's entity in the snapshots.</param>
+/// <param name="commandTick">The newest of its client's commands the server has run, or <see cref="long.MinValue"/>.</param>
 /// <remarks>
 /// The server has no screen for a partner, and its sound stream is its own player's: so nothing is drawn or played here.
 /// The partner's client takes each record from its snapshot and makes the same call on its own
-/// <see cref="LocalPlayerSenses"/> (<see cref="Replay"/>), drawing on its own stream as its own handlers would.
+/// <see cref="LocalPlayerSenses"/> (<see cref="Replay"/>), drawing on its own stream as its own handlers would. A shove is
+/// the one record that is not a sense: the client moves its own body by it (<see cref="TryShove"/>).
 /// </remarks>
-internal sealed class RemotePlayerSenses(Func<int> entity) : IPlayerSenses
+internal sealed class RemotePlayerSenses(Func<int> entity, Func<long> commandTick) : IPlayerSenses
 {
     private readonly List<ReplicatedSense> _pending = [];
 
+    // Each shove waiting to be sent, by its place in the pending list, with the command it came after.
+    private readonly List<(int Index, long After)> _shoves = [];
+
     /// <summary>Takes what the partner has felt since the last snapshot.</summary>
     /// <param name="into">Where they go.</param>
+    /// <remarks>A shove goes with how many of the partner's commands it has carried by now, the snapshot's moment.</remarks>
     public void TakeInto(List<ReplicatedSense> into)
     {
+        long now = commandTick();
+        foreach ((int index, long after) in _shoves)
+        {
+            int carried = now == long.MinValue || after == long.MinValue ? 0 : (int)Math.Clamp(now - after, 0, 255);
+            _pending[index] = _pending[index] with { Ticks = carried };
+        }
+
         into.AddRange(_pending);
         _pending.Clear();
+        _shoves.Clear();
+    }
+
+    /// <summary>Reads a shove from a record: its knock, and how many commands it had carried the server's body by the snapshot.</summary>
+    /// <param name="sense">The record.</param>
+    /// <param name="push">The knock added to the shove accumulator, in units per tick.</param>
+    /// <param name="carried">How many of the client's commands the server ran with it.</param>
+    /// <returns><see langword="true"/> when the record is a shove.</returns>
+    public static bool TryShove(in ReplicatedSense sense, out Vector3f push, out int carried)
+    {
+        push = sense.Vector;
+        carried = sense.Ticks;
+        return (SenseKind)sense.Kind == SenseKind.Shove;
+    }
+
+    /// <inheritdoc/>
+    public void Shoved(float x, float y)
+    {
+        _shoves.Add((_pending.Count, commandTick()));
+        _pending.Add(new ReplicatedSense(entity(), (byte)SenseKind.Shove, new Vector3f(x, y, 0f)));
     }
 
     /// <summary>Makes a recorded reaction on this machine's own senses: the partner's client, feeling what its server recorded.</summary>
@@ -112,5 +145,6 @@ internal sealed class RemotePlayerSenses(Func<int> entity) : IPlayerSenses
         FlashCorners,
         FlashCentre,
         Sound,
+        Shove,
     }
 }

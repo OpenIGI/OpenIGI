@@ -53,6 +53,31 @@ internal static unsafe partial class Native
         public ushort Stream;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SctpSettings
+    {
+        public int RecvBufferSize;
+        public int SendBufferSize;
+        public int MaxChunksOnQueue;
+        public int InitialCongestionWindow;
+        public int MaxBurst;
+        public int CongestionControlModule;
+        public int DelayedSackTimeMs;
+        public int MinRetransmitTimeoutMs;
+        public int MaxRetransmitTimeoutMs;
+        public int InitialRetransmitTimeoutMs;
+        public int MaxRetransmitAttempts;
+        public int HeartbeatIntervalMs;
+    }
+
+    // Applies to connections made after it only.
+    [LibraryImport(Library, EntryPoint = "rtcSetSctpSettings")]
+    public static partial int SetSctpSettings(SctpSettings* settings);
+
+    // What the channel holds that SCTP has not yet taken; what SCTP took sits in its own send buffer, not counted here.
+    [LibraryImport(Library, EntryPoint = "rtcGetBufferedAmount")]
+    public static partial int GetBufferedAmount(int id);
+
     [LibraryImport(Library, EntryPoint = "rtcInitLogger")]
     public static partial void InitLogger(int level, delegate* unmanaged[Cdecl]<int, byte*, void> callback);
 

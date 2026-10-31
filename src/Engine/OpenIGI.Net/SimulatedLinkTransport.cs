@@ -15,8 +15,15 @@ public sealed class SimulatedLinkSettings
     /// <summary>Gets or sets the chance a datagram is delivered twice, 0 to 1 (<c>net_fakedup</c>).</summary>
     public double Duplicate { get; set; }
 
+    /// <summary>Gets or sets the bytes a second the line carries to each destination, or nought for no limit (<c>net_fakebandwidth</c>).</summary>
+    /// <remarks>
+    /// Only the sending side applies it. What is sent faster waits its turn, as on a WebRTC channel, which queues without
+    /// end rather than dropping; <see cref="SimulatedLinkTransport.Backlog"/> reports the bytes waiting.
+    /// </remarks>
+    public double Bandwidth { get; set; }
+
     /// <summary>Gets a value indicating whether the line is perfect, so nothing need be queued.</summary>
-    public bool IsPerfect => Latency <= 0 && Jitter <= 0 && Loss <= 0 && Duplicate <= 0;
+    public bool IsPerfect => Latency <= 0 && Jitter <= 0 && Loss <= 0 && Duplicate <= 0 && Bandwidth <= 0;
 }
 
 /// <summary>Wraps a transport in a bad line: delay, jitter (and so reordering), loss and duplication on both directions.</summary>
@@ -32,6 +39,9 @@ public sealed class SimulatedLinkTransport : INetTransport
     private readonly PriorityQueue<Pending, double> _outgoing = new();
     private readonly PriorityQueue<Pending, double> _incoming = new();
     private readonly byte[] _scratch;
+
+    // Per destination, under a bandwidth limit: when the line is next free, and the datagrams still waiting for it.
+    private readonly Dictionary<NetAddress, Wire> _wires = [];
 
     /// <summary>Initializes a new instance of the <see cref="SimulatedLinkTransport"/> class.</summary>
     /// <param name="inner">The real transport.</param>
@@ -58,6 +68,24 @@ public sealed class SimulatedLinkTransport : INetTransport
     public int MaxDatagramSize => _inner.MaxDatagramSize;
 
     /// <inheritdoc/>
+    public int Backlog(NetAddress destination)
+    {
+        int waiting = 0;
+        if (_wires.TryGetValue(destination, out Wire? wire))
+        {
+            double now = _clock();
+            while (wire.Waiting.TryPeek(out (double Leaves, int Size) first) && first.Leaves <= now)
+            {
+                wire.Waiting.Dequeue();
+            }
+
+            waiting = wire.Waiting.Sum(static w => w.Size);
+        }
+
+        return waiting + _inner.Backlog(destination);
+    }
+
+    /// <inheritdoc/>
     void INetTransport.Send(NetAddress destination, ReadOnlySpan<byte> datagram)
     {
         FlushOutgoing();
@@ -67,7 +95,20 @@ public sealed class SimulatedLinkTransport : INetTransport
             return;
         }
 
-        Schedule(_outgoing, Send, destination, datagram);
+        double leaves = _clock();
+        if (Send.Bandwidth > 0)
+        {
+            if (!_wires.TryGetValue(destination, out Wire? wire))
+            {
+                _wires[destination] = wire = new Wire();
+            }
+
+            wire.FreeAt = Math.Max(wire.FreeAt, leaves) + (datagram.Length / Send.Bandwidth);
+            leaves = wire.FreeAt;
+            wire.Waiting.Enqueue((leaves, datagram.Length));
+        }
+
+        Schedule(_outgoing, Send, destination, datagram, leaves);
         FlushOutgoing();
     }
 
@@ -77,7 +118,7 @@ public sealed class SimulatedLinkTransport : INetTransport
         FlushOutgoing();
         while (_inner.TryReceive(_scratch, out NetAddress from, out int size))
         {
-            Schedule(_incoming, Receive, from, _scratch.AsSpan(0, size));
+            Schedule(_incoming, Receive, from, _scratch.AsSpan(0, size), _clock());
         }
 
         if (_incoming.TryPeek(out Pending next, out double due) && due <= _clock())
@@ -97,7 +138,7 @@ public sealed class SimulatedLinkTransport : INetTransport
     /// <inheritdoc/>
     public void Dispose() => _inner.Dispose();
 
-    private void Schedule(PriorityQueue<Pending, double> queue, SimulatedLinkSettings line, NetAddress address, ReadOnlySpan<byte> datagram)
+    private void Schedule(PriorityQueue<Pending, double> queue, SimulatedLinkSettings line, NetAddress address, ReadOnlySpan<byte> datagram, double leaves)
     {
         if (line.Loss > 0 && _random.NextDouble() < line.Loss)
         {
@@ -107,7 +148,7 @@ public sealed class SimulatedLinkTransport : INetTransport
         int copies = line.Duplicate > 0 && _random.NextDouble() < line.Duplicate ? 2 : 1;
         for (int i = 0; i < copies; i++)
         {
-            double due = _clock() + line.Latency + (line.Jitter * _random.NextDouble());
+            double due = leaves + line.Latency + (line.Jitter * _random.NextDouble());
             queue.Enqueue(new Pending(address, datagram.ToArray()), due);
         }
     }
@@ -123,4 +164,11 @@ public sealed class SimulatedLinkTransport : INetTransport
     }
 
     private readonly record struct Pending(NetAddress Address, byte[] Datagram);
+
+    private sealed class Wire
+    {
+        public double FreeAt { get; set; } = double.NegativeInfinity;
+
+        public Queue<(double Leaves, int Size)> Waiting { get; } = new();
+    }
 }

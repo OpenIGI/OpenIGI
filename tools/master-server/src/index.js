@@ -38,7 +38,7 @@ export default {
       return response.status === 101 ? response : cors(response);
     }
 
-    if (!url.pathname.startsWith("/v1/servers")) {
+    if (!url.pathname.startsWith("/v1/servers") && url.pathname !== "/v1/stats") {
       return cors(json({ error: "not found" }, 404));
     }
 
@@ -68,7 +68,12 @@ export class ServerList {
       return json({ servers: [...servers, ...rooms] });
     }
 
-    // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers is).
+    // How busy things are, as counts only: never a private room's code or anyone's address.
+    if (request.method === "GET" && url.pathname === "/v1/stats") {
+      return json(stats(this.servers, this.rooms));
+    }
+
+    // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers and /v1/stats are).
     if (request.method === "POST" && url.pathname === "/rooms/reserve") {
       const { ip } = await request.json();
       const open = [...this.rooms.values()].filter((r) => r.ip === ip).length;
@@ -76,8 +81,8 @@ export class ServerList {
     }
 
     if (request.method === "POST" && url.pathname === "/rooms/update") {
-      const { view, ip, public: listed } = await request.json();
-      this.rooms.set(view.room, { view, ip, public: listed === true, lastSeen: now });
+      const { view, ip, public: listed, hosted } = await request.json();
+      this.rooms.set(view.room, { view, ip, public: listed === true, hosted: hosted === true, lastSeen: now });
       return json({ ok: true });
     }
 
@@ -173,6 +178,40 @@ function validate(body, ip, now) {
     passworded: body.passworded === true,
     lastSeen: now,
   };
+}
+
+// A room counts once its host is connected (one still waiting for its host is only "waiting"), and as playing once
+// anyone has joined its host.
+export function stats(servers, rooms) {
+  const tally = () => ({ open: 0, playing: 0, players: 0 });
+  const out = { rooms: { public: tally(), private: tally(), waiting: 0 }, servers: { open: 0, players: 0 }, byTitle: {} };
+  for (const r of rooms.values()) {
+    if (!r.hosted) {
+      out.rooms.waiting++;
+      continue;
+    }
+
+    const players = r.view.players ?? 1;
+    const title = (out.byTitle[r.view.title] ??= { rooms: 0, servers: 0, players: 0 });
+    title.rooms++;
+    title.players += players;
+    const kind = r.public ? out.rooms.public : out.rooms.private;
+    kind.open++;
+    kind.players += players;
+    if (players > 1) {
+      kind.playing++;
+    }
+  }
+
+  for (const s of servers.values()) {
+    const title = (out.byTitle[s.title] ??= { rooms: 0, servers: 0, players: 0 });
+    title.servers++;
+    title.players += s.players;
+    out.servers.open++;
+    out.servers.players += s.players;
+  }
+
+  return out;
 }
 
 function publicView(s) {

@@ -394,91 +394,6 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         return standing[(_watching % standing.Count + standing.Count) % standing.Count];
     }
 
-    /// <summary>Advances the ladder and the world interactions on the fixed tick, and the camera that frames them.</summary>
-    private void TickClimbsAndInteractions()
-    {
-        ISoldierPresenter? soldiers = mission.SoldierPresenter;
-        // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
-        // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
-        // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
-        if (mission.Player is not null && mission.Player.IsOnLadder)
-        {
-            mission.Player.InputProfile = host.InputProfile;
-            _ownClimb.Tick(
-                mission.Player,
-                soldiers is null ? null : new PresentedLadderBody(soldiers),
-                mission.Player.IsActionDown(host.Input, PlayerAction.MoveUp),
-                mission.Player.IsActionDown(host.Input, PlayerAction.MoveDown),
-                mission.Player.IsActionDown(host.Input, PlayerAction.Activate),
-                host.Ground!,
-                LadderRung);
-
-            // All four states stay in third person until their actual deinitialization signal.
-            if (mission.Player.IsOnLadder)
-            {
-                if (!host.IsInteractionViewActive)
-                {
-                    WorldRayCast? cameraCast = mission.Solids?.Caster();
-                    host.BeginInteractionView(mission.Player.LadderFeet, mission.Player.LadderFacing, cameraCast);
-                }
-                else
-                {
-                    host.FollowInteractionView(mission.Player.LadderFeet);
-                }
-
-                host.TickInteractionView();
-            }
-        }
-
-        // Outside the ladder block on purpose: the tick the slide reaches the ground has already left the ladder, and that
-        // tick is the one that must stop the sound.
-        audio.TickLadderSlideSound(mission.Player);
-
-        if (mission.Player is { IsInWorldInteraction: true } interacting)
-        {
-            _ownInteraction.Tick(interacting, soldiers is null ? null : new PresentedLadderBody(soldiers), audio.PlayLadderStepSound);
-            if (interacting.IsMountedStationaryGun)
-            {
-                // The gun's sight sits just in front of the gunner's own chest, and retail draws
-                // no body in that view (captured in mission 4: barrel, stand and scenery only).
-                mission.Soldiers?.HidePlayerBodyClimbing();
-            }
-
-            Vector3d interactionCameraFeet = mission.Soldiers?.PlayerInteractionCameraFeet(
-                interacting.InteractionFeet) ?? interacting.InteractionFeet;
-
-            // State 33 is the one interaction that keeps a first-person camera: the gun hands
-            // the view its own sight (0x474420), so no orbit is started behind the body.
-            if (interacting.IsMountedStationaryGun)
-            {
-                host.ResetInteractionView();
-            }
-            else if (!host.IsInteractionViewActive)
-            {
-                WorldRayCast? cameraCast = mission.Solids?.Caster();
-                host.BeginInteractionView(interactionCameraFeet, interacting.InteractionFacing, cameraCast);
-            }
-            else
-            {
-                host.FollowInteractionView(interactionCameraFeet);
-            }
-
-            if (host.IsInteractionViewActive)
-            {
-                host.TickInteractionView();
-            }
-        }
-
-        if ((mission.Player is null || (!mission.Player.IsOnLadder && !mission.Player.IsInWorldInteraction))
-            && (_ownClimb.IsActive || _ownInteraction.IsActive || host.IsInteractionViewActive))
-        {
-            mission.Soldiers?.HidePlayerBodyClimbing();
-            host.ResetInteractionView();
-            _ownClimb.Reset();
-            _ownInteraction.Reset();
-        }
-    }
-
     // A co-op session's other players, once a tick: after the mission's own when it runs, and by themselves when it is down,
     // in a cut-scene or at the computer, so a partner never stands frozen because the host's player is.
     private void RunPartners()
@@ -772,32 +687,6 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 camera.HeadPositionUnits.Y / WorldScene.UnitsPerMetre,
                 camera.HeadPositionUnits.Z / WorldScene.UnitsPerMetre);
             cameraSolids.UpdateTransform(camera.Task, camera.HeadModelName, headMetres, camera.Orientation);
-        }
-    }
-
-    // One lift's tick: its floor expressions and its move, then what the move carries -- its sound, its collision and the
-    // player standing in it. Per lift, because a lift the walk has not reached yet this tick still holds last tick's move.
-    private void StepElevator(ElevatorRegistry elevators, PlacedElevator elevator)
-    {
-        elevators.TickElevator(elevator);
-        audio.UpdateElevatorSoundPositions();
-        audio.UpdateScriptSoundPositions();
-
-        // A staged soldier standing in a car rides it through the cutscene runtime's attachments, so the runtime is
-        // told where the car now is.
-        mission.Cutscenes?.SetPlatformPose(elevator.Task, elevator.State.Position, elevator.Orientation);
-        if (mission.Solids is { } elevatorSolids)
-        {
-            elevators.ApplyCollision(elevatorSolids, elevator);
-        }
-
-        // The soldiers grounded on a graph authored in the cab ride it with their graph (0x4F9770, 0x460CF0).
-        mission.Soldiers?.CarryOnPlatform(elevator.Task, elevator.State.Position - elevator.State.PreviousPosition);
-
-        if (host.PlayerMode && mission.Player is { } passenger
-            && ElevatorRegistry.TryGetPassengerDisplacement(elevator, passenger.Body.Position, mission.Solids, out Vector3d displacement))
-        {
-            passenger.Body.Position += displacement;
         }
     }
 

@@ -51,6 +51,11 @@ public sealed class CutsceneRuntime
     private readonly CutsceneCameraFrames _camera;
     private bool _breakRequested;
 
+    private const string BreakKeyNative = "LevelFlow_GetBreakCutSceneKey";
+
+    // The level's expressions that read the break key, and the task each belongs to.
+    private readonly List<(GameTask Task, string Expression)> _breakReaders = [];
+
     /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
     /// <remarks>
     /// <para>
@@ -200,6 +205,16 @@ public sealed class CutsceneRuntime
             if (task is ConditionalContainerTask { SettlesOutsideTheTick: true } container)
             {
                 _containers.Add(container);
+            }
+
+            foreach (TaskParameter parameter in task.Type.Parameters)
+            {
+                if (task.TryGetScriptValue(parameter.Name, out object? value)
+                    && value is string expression
+                    && expression.Contains(BreakKeyNative, StringComparison.Ordinal))
+                {
+                    _breakReaders.Add((task, expression));
+                }
             }
 
             if (task is CutSceneTask cutscene)
@@ -486,6 +501,42 @@ public sealed class CutsceneRuntime
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     /// <remarks>A co-op client's scenes are its server's to break: it asks nothing of its own.</remarks>
     public void RequestBreak() => _breakRequested = !Mirrored;
+
+    /// <summary>Gets whether the break key, down now, would end the scene playing.</summary>
+    /// <remarks>
+    /// Nothing in the engine breaks a scene: a level's own script reads the key (<c>LevelFlow_GetBreakCutSceneKey</c>), and
+    /// Project I.G.I.'s levels read it in one place, an EditVariable counting the intro skipped. A scene no reader is
+    /// listening for -- a mid-mission one, or the intro once skipped -- plays out whatever is held, so the hold is not offered.
+    /// Mission 4's outro is the one other: the break lets go the gate that keeps it (see RetainsLevelFourOutro).
+    /// </remarks>
+    public bool CanBreak
+    {
+        get
+        {
+            if (Mirrored || !IsPlaying)
+            {
+                return false;
+            }
+
+            if (_containers.Any(RetainsLevelFourOutro))
+            {
+                return true;
+            }
+
+            bool was = _breakRequested;
+            _breakRequested = true;
+            try
+            {
+                return _breakReaders.Any(reader =>
+                    ConditionalContainerGate.IsTaskActive(reader.Task)
+                    && _context.Expressions.EvaluateCondition(reader.Expression, emptyValue: false, reader.Task));
+            }
+            finally
+            {
+                _breakRequested = was;
+            }
+        }
+    }
 
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
@@ -872,7 +923,7 @@ public sealed class CutsceneRuntime
 
     private QvmValue? InvokeNative(string name, ScriptArguments arguments)
     {
-        if (string.Equals(name, "LevelFlow_GetBreakCutSceneKey", StringComparison.Ordinal))
+        if (string.Equals(name, BreakKeyNative, StringComparison.Ordinal))
         {
             return QvmValue.FromInt32(_breakRequested ? 1 : 0);
         }

@@ -72,6 +72,23 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void The_lifts_ride_whole_and_against_a_baseline()
+    {
+        ReplicatedLift parked = new(new Int3(100, -200, 4096), 0, -1, 0f);
+        ReplicatedLift rising = new(new Int3(100, -200, 5000), 0, 2, 4096f);
+        Snapshot whole = new(20, [Human(1, 0, 0)], Lifts: [parked, parked]);
+        Assert.True(RoundTrip(whole, baseline: null, out Snapshot? read));
+        Assert.Equal(whole.Lifts, read!.Lifts);
+
+        // Standing as the baseline had them: taken from it. One moving: sent again.
+        Assert.True(RoundTrip(whole with { Tick = 21 }, whole, out Snapshot? kept));
+        Assert.Equal(whole.Lifts, kept!.Lifts);
+        Snapshot moving = new(22, [Human(1, 0, 0)], Lifts: [parked, rising]);
+        Assert.True(RoundTrip(moving, whole, out Snapshot? moved));
+        Assert.Equal(moving.Lifts, moved!.Lifts);
+    }
+
+    [Fact]
     public void A_climbers_clip_time_and_counters_ride_a_delta()
     {
         Snapshot before = new(10, [Human(1, 0, 0)]);
