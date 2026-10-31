@@ -25,7 +25,7 @@ public sealed class CoopScreen : ShellScreen
     private static readonly string[] Listings = ["Public", "Private"];
     private static readonly string[] OffOn = ["Off", "On"];
     private static readonly int[] ReviveChoices = [3, 5, 10];
-    private static readonly int[] ToughnessChoices = [0, 25, 50, 100];
+    private static readonly int[] ToughnessChoices = [0, 50, 100, 150];
 
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
