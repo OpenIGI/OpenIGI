@@ -387,6 +387,68 @@ public sealed class Igi1CoopPairTests
     public void The_dead_stay_dead_on_both_games_when_the_host_falls()
     {
         using Igi1CoopPair pair = Joined();
+        int[] ids = KillSoldiers(pair);
+
+        // Each corpse lies in its death clip, on both games, and holds its gun's count of shots.
+        Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
+        Game.Igi1.Ai.SoldierSimulation joiners = pair.Joiner!.World.Soldiers!;
+        Dictionary<int, (int Host, int Joiner, int Shots)> lying = ids.ToDictionary(
+            static id => id,
+            id => (soldiers.SoldierByRuntimeId(id)!.CurrentAnimation, joiners.SoldierByRuntimeId(id)?.CurrentAnimation ?? -1,
+                soldiers.AgentOf(soldiers.SoldierByRuntimeId(id)!)?.ShotSequence ?? 0));
+
+        // The joiner fights on away from the host, out of reach to revive it.
+        Assert.Single(pair.Host.World.NetworkPlayers).Player.Body.Position += new Vector3d(20000, 0, 0);
+        pair.Host.Harm.BeginPlayerDeath(pair.Host.World.Player!.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+        for (int second = 0; second < 20; second++)
+        {
+            pair.RunUntil(() => false, 30);
+            AssertStillDead(pair, ids, $"{second} s after the host fell");
+            foreach (int id in ids)
+            {
+                (int Host, int Joiner, int Shots) now = (
+                    soldiers.SoldierByRuntimeId(id)!.CurrentAnimation,
+                    joiners.SoldierByRuntimeId(id)?.CurrentAnimation ?? -1,
+                    soldiers.AgentOf(soldiers.SoldierByRuntimeId(id)!)?.ShotSequence ?? 0);
+                Assert.True(now == lying[id], $"soldier {id} {second} s after the host fell: clip/joiner clip/shots {lying[id]} -> {now}");
+            }
+        }
+
+        Assert.True(pair.Host.World.IsPlayerDead, "the host's player is not down");
+
+        // Nor is the mission failed under the host while its partner plays on: its restart would be the host's alone.
+        object session = typeof(Host.GameHost)
+            .GetField("_session", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.HostGame)!;
+        Assert.False((bool)session.GetType().GetProperty("FailedMenu")!.GetValue(session)!, "the host's mission failed while its partner played on");
+        Assert.False(pair.Host.World.Objectives?.IsFailed ?? false, "the host's level failed while its partner played on");
+    }
+
+    [RequiresGameDataFact]
+    public void The_dead_stay_dead_on_both_games_when_the_joiner_revives_the_host()
+    {
+        using Igi1CoopPair pair = Joined();
+        int[] ids = KillSoldiers(pair);
+
+        pair.Host!.Harm.BeginPlayerDeath(pair.Host.World.Player!.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+        pair.RunUntil(() => false, 5);
+        Assert.True(pair.Host.World.IsPlayerDead, "the host's player did not fall");
+        Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host.World.Soldiers!;
+        Dictionary<int, int> shots = ids.ToDictionary(static id => id, id => soldiers.AgentOf(soldiers.SoldierByRuntimeId(id)!)?.ShotSequence ?? 0);
+        Assert.True(pair.RunUntil(() => !pair.Host.World.IsPlayerDead, 30 * 30) >= 0, "the joiner beside the host never revived it");
+        for (int second = 0; second < 10; second++)
+        {
+            pair.RunUntil(() => false, 30);
+            AssertStillDead(pair, ids, $"{second} s after the host was revived");
+            foreach (int id in ids)
+            {
+                Assert.Equal((id, shots[id]), (id, soldiers.AgentOf(soldiers.SoldierByRuntimeId(id)!)?.ShotSequence ?? 0));
+            }
+        }
+    }
+
+    // Kills soldiers on the host with blasts, and gives the runtime ids of every soldier dead once the joiner has seen it.
+    private static int[] KillSoldiers(Igi1CoopPair pair)
+    {
         pair.RunUntil(() => false, 60);
         Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
         foreach (Game.Igi1.Player.SoldierView soldier in soldiers.SoldierViews.Where(static v => !v.IsDead).Take(6).ToArray())
@@ -395,38 +457,27 @@ public sealed class Igi1CoopPairTests
         }
 
         pair.RunUntil(() => false, 90);
-        Game.Igi1.Player.SoldierView[] killed = [.. soldiers.SoldierViews.Where(static v => v.IsDead)];
-        Assert.NotEmpty(killed);
-        int[] ids = [.. killed.Select(soldiers.RuntimeIdOf)];
+        int[] ids = [.. soldiers.SoldierViews.Where(static v => v.IsDead).Select(soldiers.RuntimeIdOf)];
+        Assert.NotEmpty(ids);
+        AssertStillDead(pair, ids, "once killed");
+        return ids;
+    }
 
-        // The joiner fights on away from the host, out of reach to revive it.
-        Assert.Single(pair.Host.World.NetworkPlayers).Player.Body.Position += new Vector3d(20000, 0, 0);
-        pair.Host.Harm.BeginPlayerDeath(pair.Host.World.Player!.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
-        for (int second = 0; second < 20; second++)
+    // Each of the soldiers dead on the host, in what the joiner is sent, and on the joiner's own screen.
+    private static void AssertStillDead(Igi1CoopPair pair, int[] ids, string when)
+    {
+        foreach (int id in ids)
         {
-            pair.RunUntil(() => false, 30);
-            foreach (int id in ids)
-            {
-                Game.Igi1.Player.SoldierView? host = soldiers.SoldierByRuntimeId(id);
-                Assert.True(host is null || host.IsDead, $"soldier {id} stood up on the host {second} s after the host fell");
-                Assert.True(
-                    pair.Client.Session!.Latest is not { } latest
-                        || !latest.TryGet(Igi1ReplicatedWorld.SoldierEntityBase + id, out Game.Multiplayer.ReplicatedHuman sent)
-                        || (sent.Flags & Game.Multiplayer.ReplicatedHumanCondition.Alive) == 0,
-                    $"soldier {id} is sent alive to the joiner {second} s after the host fell");
-            }
-
+            Game.Igi1.Player.SoldierView? host = pair.Host!.World.Soldiers!.SoldierByRuntimeId(id);
+            Assert.True(host is null || host.IsDead, $"soldier {id} stood up on the host {when}");
+            Assert.True(
+                pair.Client.Session!.Latest is not { } latest
+                    || !latest.TryGet(Igi1ReplicatedWorld.SoldierEntityBase + id, out Game.Multiplayer.ReplicatedHuman sent)
+                    || (sent.Flags & Game.Multiplayer.ReplicatedHumanCondition.Alive) == 0,
+                $"soldier {id} is sent alive to the joiner {when}");
+            Game.Igi1.Player.SoldierView? joiner = pair.Joiner!.World.Soldiers!.SoldierByRuntimeId(id);
+            Assert.True(joiner is null || joiner.IsDead, $"soldier {id} stands on the joiner's screen {when}");
         }
-
-        Assert.All(killed, static v => Assert.True(v.IsDead, $"{v.Soldier.Name} stood up again"));
-        Assert.True(pair.Host.World.IsPlayerDead, "the host's player is not down");
-
-        // Nor is the mission failed under the host while its partner plays on: its restart would be the host's alone.
-        object session = typeof(Host.GameHost)
-            .GetField("_session", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.HostGame)!;
-        Assert.False((bool)session.GetType().GetProperty("FailedMenu")!.GetValue(session)!, "the host's mission failed while its partner played on");
-        Assert.False(pair.Host.World.Objectives?.IsFailed ?? false, "the host's level failed while its partner played on");
-        Assert.Same(soldiers, pair.Host.World.Soldiers);
     }
 
     [RequiresGameDataFact]
