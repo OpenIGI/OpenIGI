@@ -61,6 +61,13 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <summary>Gets the room joined through, when the session is one.</summary>
     public RoomTransport? Room => _transport as RoomTransport;
 
+    /// <inheritdoc/>
+    public bool Relayed => Room?.Relayed == true;
+
+    /// <inheritdoc/>
+    /// <remarks>Poor: a round trip over a quarter of a second, or one packet in twenty lost.</remarks>
+    public bool PoorConnection => _netClient?.Connection?.Statistics is { } stats && (stats.RoundTripTime > 0.25 || stats.PacketLoss > 0.05);
+
     /// <summary>Gets the session once connecting has started, or <see langword="null"/>.</summary>
     public ClientSession? Session => _session;
 

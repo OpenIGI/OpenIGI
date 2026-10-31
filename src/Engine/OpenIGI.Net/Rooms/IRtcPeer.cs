@@ -66,6 +66,9 @@ public interface IRtcPeer : IDisposable
     /// <param name="length">How many bytes it holds.</param>
     /// <returns><see langword="true"/> when one was taken.</returns>
     bool TryReceive(Span<byte> buffer, out int length);
+
+    /// <summary>Gets whether the open connection goes through the TURN relay rather than straight between the two players.</summary>
+    bool Relayed => false;
 }
 
 /// <summary>Makes <see cref="IRtcPeer"/>s: the one platform-specific part of playing through a room.</summary>

@@ -15,6 +15,9 @@ internal sealed partial class RemasteredHudRenderer
     private const float ChatLeft = 40f;
     private const float ChatBottom = 210f;
 
+    // The connection warning's mark: amber, a caution rather than a failure.
+    private static readonly Bgra32 WarningInk = Bgra32.FromRgb(232, 170, 60);
+
     // A mark's diamond, and its label's size.
     private const float MarkSize = 9f;
     private const float MarkLabelSize = 14f;
@@ -29,6 +32,7 @@ internal sealed partial class RemasteredHudRenderer
         SpriteBatch batch,
         IReadOnlyList<HudChatLine> chat,
         string? entry,
+        string? warning,
         IReadOnlyList<HudMark> marks,
         in Camera3D eye,
         float horizontalTangent,
@@ -51,6 +55,18 @@ internal sealed partial class RemasteredHudRenderer
         foreach (HudMark mark in marks)
         {
             DrawMark(painter, context, font, rounded, mark, eye, horizontalTangent, aspectRatio, screenWidth, screenHeight);
+        }
+
+        // A word about the connection, top and centre, small: the game goes on, but the player knows why it stutters.
+        if (warning is { Length: > 0 })
+        {
+            float warnSize = context.Px(MarkLabelSize);
+            float warnHeight = warnSize * 1.8f;
+            float warnWidth = font.MeasureWidth(warning, warnSize) + (warnSize * 1.6f);
+            var chip = new UiRect(context.SafeRect.X + ((context.SafeRect.Width - warnWidth) * 0.5f), context.SafeRect.Y + context.Px(18f), warnWidth, warnHeight);
+            painter.FillRoundedRect(chip, rounded, UiPalette.InkAt(0.82f).WithAlpha(210), warnHeight * 0.22f);
+            painter.FillRect(new UiRect(chip.X, chip.Y + (warnHeight * 0.2f), MathF.Max(2f, warnSize * 0.16f), warnHeight * 0.6f), WarningInk);
+            painter.DrawLabel(font, warning, new UiVec2(chip.X + (warnSize * 0.8f), UiRowStyle.CapsCenterY(font, warnSize, chip)), warnSize, Text, 0.02f);
         }
 
         float size = context.Px(ChatSize);

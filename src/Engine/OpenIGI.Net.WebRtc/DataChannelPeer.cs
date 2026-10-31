@@ -145,6 +145,33 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
 
     public RtcPeerState State => _state;
 
+    private bool? _relayed;
+
+    /// <inheritdoc/>
+    /// <remarks>Read once the channel is open, from the candidate pair ICE settled on: a relay candidate either end is the relay.</remarks>
+    public bool Relayed
+    {
+        get
+        {
+            if (_relayed is { } known || _state != RtcPeerState.Open)
+            {
+                return _relayed ?? false;
+            }
+
+            const int Size = 256;
+            byte* local = stackalloc byte[Size];
+            byte* remote = stackalloc byte[Size];
+            if (Native.GetSelectedCandidatePair(_pc, local, Size, remote, Size) < 0)
+            {
+                return false;
+            }
+
+            _relayed = (Native.Text(local) ?? string.Empty).Contains(" typ relay", StringComparison.Ordinal)
+                || (Native.Text(remote) ?? string.Empty).Contains(" typ relay", StringComparison.Ordinal);
+            return _relayed.Value;
+        }
+    }
+
     public string? Failure => _failure;
 
     public void SetRemoteDescription(string kind, string sdp) => Native.SetRemoteDescription(_pc, sdp, kind);

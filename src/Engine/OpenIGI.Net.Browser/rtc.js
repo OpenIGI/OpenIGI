@@ -18,7 +18,7 @@ let next = 1;
 function create(iceJson, offerer, relayOnly) {
   const id = next++;
   const pc = new RTCPeerConnection({ iceServers: JSON.parse(iceJson), iceTransportPolicy: relayOnly ? 'relay' : 'all' });
-  const peer = { pc, channel: null, state: CONNECTING, failure: null, signals: [], received: [], chain: Promise.resolve() };
+  const peer = { pc, channel: null, state: CONNECTING, failure: null, relayed: false, signals: [], received: [], chain: Promise.resolve() };
   peers.set(id, peer);
 
   pc.onicecandidate = e => {
@@ -27,6 +27,7 @@ function create(iceJson, offerer, relayOnly) {
     }
   };
   pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') findRelay(peer);
     if (pc.connectionState === 'failed') fail(peer, 'no way through to the other player');
     else if (pc.connectionState === 'closed' || pc.connectionState === 'disconnected') fail(peer, 'the connection dropped');
   };
@@ -55,6 +56,23 @@ function attach(peer, channel) {
     peer.received.push(new Uint8Array(e.data));
     if (peer.received.length > MAX_QUEUED) peer.received.shift();
   };
+}
+
+// Whether the pair ICE settled on goes through the relay: a relay candidate at either end.
+async function findRelay(peer) {
+  try {
+    const stats = await peer.pc.getStats();
+    let pair = null;
+    stats.forEach(s => {
+      if (s.type === 'transport' && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId);
+    });
+    if (!pair) stats.forEach(s => { if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') pair = s; });
+    const local = pair && stats.get(pair.localCandidateId);
+    const remote = pair && stats.get(pair.remoteCandidateId);
+    peer.relayed = local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+  } catch {
+    peer.relayed = false;
+  }
 }
 
 function fail(peer, why) {
@@ -98,6 +116,7 @@ export const imports = {
   state: id => peers.get(id)?.state ?? CLOSED,
 
   failure: id => peers.get(id)?.failure ?? null,
+  relayed: id => peers.get(id)?.relayed === true,
 
   send: (id, view) => {
     const peer = peers.get(id);

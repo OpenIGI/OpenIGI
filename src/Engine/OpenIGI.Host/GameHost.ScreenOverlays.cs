@@ -351,7 +351,7 @@ public sealed partial class GameHost
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             boardHud.DrawScoreboard(
-                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board));
+                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board), session.Relayed);
             state.Batch.End();
         }
 
@@ -394,12 +394,13 @@ public sealed partial class GameHost
         }
 
         // Co-op talk: the lines said and being typed, and the places marked.
+        string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
         if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, marks)
-            && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null))
+            && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, linkWarning, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 

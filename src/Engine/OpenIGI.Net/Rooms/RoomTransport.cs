@@ -70,6 +70,9 @@ public sealed class RoomTransport : INetTransport
     private readonly ConcurrentQueue<string> _outbox = new();
     private readonly SemaphoreSlim _outboxReady = new(0);
     private readonly Dictionary<int, IRtcPeer> _peers = [];
+
+    /// <summary>Gets whether any of the room's connections goes through the TURN relay.</summary>
+    public bool Relayed => _peers.Values.Any(static p => p.State == RtcPeerState.Open && p.Relayed);
     private readonly List<int> _order = [];
     private IReadOnlyList<IceServer> _ice = [];
     private ClientWebSocket? _socket;

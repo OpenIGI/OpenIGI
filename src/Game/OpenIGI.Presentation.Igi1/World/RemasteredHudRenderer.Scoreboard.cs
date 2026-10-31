@@ -63,7 +63,8 @@ internal sealed partial class RemasteredHudRenderer
         string place,
         int screenWidth,
         int screenHeight,
-        ScoreboardControls? controls = null)
+        ScoreboardControls? controls = null,
+        bool relayed = false)
     {
         _removeButtons.Clear();
         ArgumentNullException.ThrowIfNull(batch);
@@ -118,6 +119,11 @@ internal sealed partial class RemasteredHudRenderer
         {
             statRight = Stat(painter, type, context, statRight, header, "ALIVE", string.Create(CultureInfo.InvariantCulture, $"{up}/{lines.Length}"), up == 0 ? Bad : Alive);
             statRight = Stat(painter, type, context, statRight - Px(44f), header, "SQUAD KILLS", lines.Sum(static l => l.Kills).ToString(CultureInfo.InvariantCulture), Text);
+            if (roomCode is not null)
+            {
+                statRight = Stat(painter, type, context, statRight - Px(44f), header, "LINK", relayed ? "RELAYED" : "DIRECT", relayed ? Down : Alive);
+            }
+
             if (roomCode is not null && place.Length > 0)
             {
                 string mission = place.StartsWith("Mission ", StringComparison.Ordinal) ? place["Mission ".Length..] : place;

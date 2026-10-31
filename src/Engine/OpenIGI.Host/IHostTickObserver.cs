@@ -20,6 +20,12 @@ public interface ISessionScoreboard
 
     /// <summary>Gets how far this end's own fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> while it is up.</summary>
     float? OwnRevive => null;
+
+    /// <summary>Gets whether this player's connection goes through the TURN relay rather than straight to the others.</summary>
+    bool Relayed => false;
+
+    /// <summary>Gets whether this player's connection is poor enough to tell them: a long round trip, or rounds of packets lost.</summary>
+    bool PoorConnection => false;
 }
 
 /// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>

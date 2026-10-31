@@ -206,6 +206,7 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     /// <param name="controls">The host's hand on the board -- the players it may remove, and the pointer -- or <see langword="null"/> for a board only read.</param>
+    /// <param name="relayed">Whether this player's connection goes through the TURN relay.</param>
     void DrawScoreboard(
         SpriteBatch batch,
         Game.Multiplayer.Scoreboard board,
@@ -214,7 +215,8 @@ public interface IRemasteredHudPresenter : IDisposable
         string place,
         int screenWidth,
         int screenHeight,
-        ScoreboardControls? controls = null)
+        ScoreboardControls? controls = null,
+        bool relayed = false)
     {
     }
 
@@ -253,6 +255,7 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="chat">The lines still up, oldest first.</param>
     /// <param name="entry">The line being typed, or <see langword="null"/>.</param>
+    /// <param name="warning">A word about this player's connection, or <see langword="null"/>.</param>
     /// <param name="marks">The places marked.</param>
     /// <param name="eye">Where the world is seen from.</param>
     /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
@@ -263,6 +266,7 @@ public interface IRemasteredHudPresenter : IDisposable
         SpriteBatch batch,
         IReadOnlyList<HudChatLine> chat,
         string? entry,
+        string? warning,
         IReadOnlyList<HudMark> marks,
         in Camera3D eye,
         float horizontalTangent,

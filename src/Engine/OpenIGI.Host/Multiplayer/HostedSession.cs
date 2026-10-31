@@ -89,6 +89,9 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     public string Place => MapName(_session?.Map ?? _options.Map);
 
     /// <inheritdoc/>
+    public bool Relayed => _room?.Relayed == true;
+
+    /// <inheritdoc/>
     public float? OwnRevive => _options.IncludesHost ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
 
     /// <summary>A map as a player reads it: a mission by its number, anything else as it is.</summary>

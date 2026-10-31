@@ -101,6 +101,9 @@ internal static unsafe partial class Native
     [LibraryImport(Library, EntryPoint = "rtcSendMessage")]
     public static partial int SendMessage(int id, byte* data, int size);
 
+    [LibraryImport(Library, EntryPoint = "rtcGetSelectedCandidatePair")]
+    public static partial int GetSelectedCandidatePair(int pc, byte* local, int localSize, byte* remote, int remoteSize);
+
     [LibraryImport(Library, EntryPoint = "rtcDeleteDataChannel")]
     public static partial int DeleteDataChannel(int dc);
 
