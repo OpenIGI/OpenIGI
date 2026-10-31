@@ -243,7 +243,9 @@ public sealed class ServerSession
     }
 
     // A snapshot to one client, in as few parts as fit a packet each: a level's soldiers fill more than one. Every part is
-    // written against the same baseline and names its place, and the client takes the tick once it holds them all.
+    // written against the same baseline and names its place, and the client takes the tick once it holds them all. The
+    // doors, the rounds and the senses ride the first part alone: the others carry the baseline's doors (a bit) and no
+    // events, so nothing lands twice.
     private void SendSnapshot(int slot, Snapshot snapshot, Snapshot? baseline, long tick)
     {
         UserCommandBuffer? commands = _world.CommandsFor(slot);
@@ -259,12 +261,15 @@ public sealed class ServerSession
             for (int part = 0; part < parts; part++)
             {
                 ReplicatedHuman[] slice = snapshot.Humans.Skip(part * per).Take(per).ToArray();
+                Snapshot piece = part == 0
+                    ? snapshot with { Humans = slice }
+                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Impacts = null, Senses = null };
                 _writer.Reset();
                 _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
                 _writer.WriteBits((uint)part, 8);
                 _writer.WriteBits((uint)parts, 8);
                 _writer.WriteBits(_epoch, 8);
-                SnapshotCodec.Write(_writer, snapshot with { Humans = slice }, baseline);
+                SnapshotCodec.Write(_writer, piece, baseline);
                 _writer.WriteBits((uint)ran, 32);
                 _writer.WriteBits((uint)(ran >> 32), 32);
                 _writer.WriteBits((ushort)(short)lead, 16);

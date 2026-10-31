@@ -57,6 +57,16 @@ public sealed class ClientSession
     /// <summary>Gets whether a level the server is going on to is loaded or loading here, waiting for the server to begin it.</summary>
     public bool WaitingForServer => _going is not null;
 
+    /// <summary>Gets whether the server has begun a level this client has still to load, its snapshots not for the one here.</summary>
+    /// <remarks>
+    /// A restart, or a level gone on to unannounced: until the client is there, the server's soldiers would be posed on the
+    /// level being left, where the same ids are other soldiers -- a corpse there standing for a guard alive and firing.
+    /// </remarks>
+    public bool Behind { get; private set; }
+
+    /// <summary>Tells the session the level the server began is up here, so its snapshots are shown again.</summary>
+    public void Arrived() => Behind = false;
+
     /// <summary>Tells the server the level it is going on to is loaded here.</summary>
     public void ReportReady()
     {
@@ -155,6 +165,9 @@ public sealed class ClientSession
     public byte[]? Level { get; private set; }
 
     private bool _levelTaken;
+
+    /// <summary>Gets whether the server level's running state has been taken since the last level change: the level here plays the server's scenes and counters.</summary>
+    public bool LevelTaken => _levelTaken;
 
     /// <summary>Takes the server level's running state once each time a new one comes.</summary>
     /// <returns>The state, or <see langword="null"/> when none has come since the last call.</returns>
@@ -287,7 +300,8 @@ public sealed class ClientSession
     }
 
     // The parts of a split snapshot, gathered by tick: the whole once the last arrives, nothing before. A tick that never
-    // completes is dropped when a newer one does, as a lost unsplit snapshot is.
+    // completes is dropped when a newer one does, as a lost unsplit snapshot is. The first part carries the doors and the
+    // events; the rest only humans.
     private Snapshot? Assemble(Snapshot piece, int part, int parts)
     {
         if (parts == 1)
@@ -318,7 +332,8 @@ public sealed class ClientSession
             _parts.Remove(stale);
         }
 
-        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)]);
+        Snapshot first = gathered[0]!;
+        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses);
     }
 
     private void Read(byte[] data, double now)
@@ -367,6 +382,7 @@ public sealed class ClientSession
                 {
                     _going = null;
                     _travel = Map;
+                    Behind = true;
                 }
 
                 break;

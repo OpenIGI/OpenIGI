@@ -65,6 +65,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // The rounds that landed since the last snapshot, for every client to show.
     private readonly List<ReplicatedImpact> _impacts = [];
 
+    // Where each soldier stood before it was put back for a partner's command, to stand there again after it.
+    private readonly List<(Player.SoldierView View, Vector3d Position, Matrix3f Orientation)> _rewound = [];
+
     /// <summary>Initializes a new instance of the <see cref="Igi1ReplicatedWorld"/> class.</summary>
     /// <param name="game">The mission.</param>
     public Igi1ReplicatedWorld(Igi1Gameplay game)
@@ -134,7 +137,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             return null;
         }
 
-        Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name, Entity = slot + 1 };
+        Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name, Entity = slot + 1, BeforeCommand = RewindSoldiers, AfterCommand = RestoreSoldiers };
         Record(made.Player, slot + 1);
         Stand(player, slot);
         _bySlot[slot] = player;
@@ -575,6 +578,47 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         if (_game.World.Soldiers is { } soldiers)
         {
             soldiers.HealthScale = 1f + (CoopCVars.EnemyHealthPerPlayer.Value / 100f * Math.Max(0, players - 1));
+        }
+    }
+
+    // Lag compensation for a partner's command: every living soldier put where the partner's client drew it when the command
+    // was made (the server's own snapshots sampled at the tick the client was drawing, as the client itself samples them),
+    // so the rounds the command fires meet the soldier the partner aimed at. The history reaches back no further than
+    // LagCompensation.MaxUnlag; a soldier it never held, or a command with no view tick, stands where it is.
+    private void RewindSoldiers(long commandTick, long viewTick)
+    {
+        if (LagCompensation is not { } lag || _game.World.Soldiers is not { } soldiers || viewTick == long.MinValue)
+        {
+            return;
+        }
+
+        double moment = lag.AimedAt(commandTick, viewTick);
+        foreach (Player.SoldierView soldier in soldiers.SoldierViews)
+        {
+            if (soldier.IsDead || !lag.History.Sample(moment, SoldierEntityBase + soldiers.RuntimeIdOf(soldier), out ReplicatedHuman then))
+            {
+                continue;
+            }
+
+            _rewound.Add((soldier, soldier.Position, soldier.Orientation));
+            soldier.PlaceAt(then.Position.ToVector(), Matrix3f.RotationZ(Quantize.AngleFromBits(then.Yaw)));
+        }
+
+        soldiers.Rewound = _rewound.Count > 0;
+    }
+
+    // The soldiers put back where this tick has them.
+    private void RestoreSoldiers()
+    {
+        foreach ((Player.SoldierView soldier, Vector3d position, Matrix3f orientation) in _rewound)
+        {
+            soldier.PlaceAt(position, orientation);
+        }
+
+        _rewound.Clear();
+        if (_game.World.Soldiers is { } soldiers)
+        {
+            soldiers.Rewound = false;
         }
     }
 

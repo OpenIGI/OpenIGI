@@ -360,10 +360,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _context.Sight = sight is null ? null : WorldTrace.AsRayCast(sight, WorldTraceMask.World);
         _context.SightTrace = sight;
         _sight.SightTraceForTesting = sight;
-        Brains.Clear();
+        _context.ClearBrains();
         _rounds.Clear();
         _damage.ClearPendingDeaths();
-        BrainsByRuntimeId.Clear();
         _generators.GuardGenerators.Clear();
         _generators.GuardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
         ScriptVariables = variables;

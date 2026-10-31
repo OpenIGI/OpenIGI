@@ -586,7 +586,10 @@ public sealed partial class GameHost
         float barTop = footer + (14f * scale);
         float progress = Math.Clamp(_warmUp.Progress, 0f, 1f);
 
-        string stage = _warmUp.IsActive ? _warmUp.Stage : CoopHoldsLevel ? "Waiting for the others" : "Preparing";
+        // A held co-op level: the host's waits for the others to load it; a joiner's waits for the host's word on it.
+        string stage = _warmUp.IsActive ? _warmUp.Stage
+            : CoopHoldsLevel ? (TickObserver is Multiplayer.ISessionFollower ? "Joining the host" : "Waiting for the others")
+            : "Preparing";
         float stageSize = 11f * scale;
         painter.DrawLabel(type.Mono, stage.ToUpperInvariant(), new UiVec2(barLeft, footer - (8f * scale)), stageSize, CardDim, 0.22f);
 

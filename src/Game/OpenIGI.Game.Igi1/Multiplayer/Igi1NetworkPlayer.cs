@@ -121,14 +121,34 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
         int shots = Player.Weapons?.ShotSequence ?? 0;
         for (int due = Commands.Due(); due > 0 && Commands.TryTake(_channels); due--)
         {
-            if (!IsDead)
+            if (IsDead)
+            {
+                continue;
+            }
+
+            BeforeCommand?.Invoke(Commands.LastTakenTick, Commands.LastViewTick);
+            try
             {
                 RunCommand(ground, rung);
+            }
+            finally
+            {
+                AfterCommand?.Invoke();
             }
         }
 
         FiredThisTick = (Player.Weapons?.ShotSequence ?? 0) != shots;
     }
+
+    /// <summary>
+    /// Gets or sets what the world does before each of its commands runs, given the command's tick and the tick its client
+    /// was drawing the others at: the server's lag compensation puts the soldiers back where that client saw them, for the
+    /// command's rounds to meet.
+    /// </summary>
+    public Action<long, long>? BeforeCommand { get; set; }
+
+    /// <summary>Gets or sets what the world does once a command has run: the soldiers put back where they stand now.</summary>
+    public Action? AfterCommand { get; set; }
 
     /// <summary>Gets whether it fired on its last tick, in any of the commands the tick ran.</summary>
     /// <remarks>

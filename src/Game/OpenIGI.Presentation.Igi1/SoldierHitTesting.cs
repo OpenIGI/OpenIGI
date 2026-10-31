@@ -183,8 +183,9 @@ internal sealed class SoldierHitTesting(
         // The player fires against the body the crosshair was drawn over. With r_smooth that is
         // the last presentation transform, not the newer simulation state the next tick has just
         // published. AI fire stays on its own fixed-tick path below: this is only the player-shot
-        // delegate supplied by Shooter().
-        bool presented = _frames.FrameSmooth && member.HasFrameState;
+        // delegate supplied by Shooter(). A soldier put back where a co-op client drew it is met there, whatever
+        // the frame drew.
+        bool presented = !_sim.Rewound && _frames.FrameSmooth && member.HasFrameState;
         Vector3d feet;
         Matrix3f m;
         if (presented)

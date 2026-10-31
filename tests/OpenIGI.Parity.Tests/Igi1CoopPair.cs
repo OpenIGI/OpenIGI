@@ -54,10 +54,29 @@ internal sealed class Igi1CoopPair : IDisposable
     /// <param name="frames">How many frames each may run.</param>
     /// <param name="hostArgs">More of the host's command line.</param>
     public Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission = 1, int frames = 20000, params string[] hostArgs)
+        : this(hostAudio, joinerAudio, mission, frames, hostArgs, joinerArgs: [], joinLater: false)
+    {
+    }
+
+    /// <summary>
+    /// Starts the host on a mission, and the joiner either alongside or not until <see cref="StartJoiner"/>: a late joiner,
+    /// coming to a level the host has played into. The host skips its intro; the joiner plays with no extras but its own.
+    /// </summary>
+    /// <param name="hostArgs">More of the host's command line.</param>
+    /// <param name="joinerArgs">The joiner's extras, in place of the host's.</param>
+    /// <param name="joinLater">Whether the joiner waits for <see cref="StartJoiner"/>.</param>
+    /// <param name="mission">The mission both play.</param>
+    public Igi1CoopPair(string[] hostArgs, string[] joinerArgs, bool joinLater, int mission = 1)
+        : this(null, null, mission, 20000, hostArgs, joinerArgs, joinLater)
+    {
+    }
+
+    private Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater)
     {
         bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
-        string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+        string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+        string[] skip = ["-skipcutscene"];
         _session = new HostedSession(
             _network.Open(26001),
             new HostedSessionOptions("coop", 4, string.Empty, "coop", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
@@ -66,16 +85,31 @@ internal sealed class Igi1CoopPair : IDisposable
             NullLogger.Instance);
         _client = NewClient();
 
-        HostGame = Make([.. args, .. hostArgs], HostWindow, _hostDevice, hostAudio ?? NullAudioDeviceFactory.Instance);
-        JoinerGame = Make(args, JoinerWindow, _joinerDevice, joinerAudio ?? NullAudioDeviceFactory.Instance);
+        HostGame = Make([.. args, .. skip, .. hostArgs], HostWindow, _hostDevice, hostAudio ?? NullAudioDeviceFactory.Instance);
+        JoinerGame = Make([.. args, .. (joinLater ? joinerArgs : skip)], JoinerWindow, _joinerDevice, joinerAudio ?? NullAudioDeviceFactory.Instance);
         _hostWatch = new Watch(_session) { Talks = talks };
         _joinerWatch = new FollowingWatch(_client) { Talks = talks };
         HostGame.TickObserver = _hostWatch;
         JoinerGame.TickObserver = _joinerWatch;
         HostGame.Start();
-        JoinerGame.Start();
         HostGame.ScriptedViewInput = HostInput;
         JoinerGame.ScriptedViewInput = JoinerInput;
+        if (!joinLater)
+        {
+            StartJoiner();
+        }
+    }
+
+    private bool _joinerStarted;
+
+    /// <summary>Starts the joiner's game, which joins the host as soon as its level is up.</summary>
+    public void StartJoiner()
+    {
+        if (!_joinerStarted)
+        {
+            _joinerStarted = true;
+            JoinerGame.Start();
+        }
     }
 
     /// <summary>Gets the hosting game.</summary>
@@ -119,7 +153,7 @@ internal sealed class Igi1CoopPair : IDisposable
 
     /// <summary>Runs both games a frame each.</summary>
     /// <returns><see langword="false"/> once either has stopped.</returns>
-    public bool Step() => HostGame.Step() & JoinerGame.Step();
+    public bool Step() => HostGame.Step() & (!_joinerStarted || JoinerGame.Step());
 
     /// <summary>Runs both games until a condition holds.</summary>
     /// <param name="until">The condition.</param>

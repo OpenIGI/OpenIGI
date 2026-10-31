@@ -141,6 +141,48 @@ public sealed class SessionLoopbackTests
         Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 100 * 100);
     }
 
+    [Fact]
+    public void A_snapshot_in_parts_keeps_its_doors_and_lands_each_round_once()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new() { Crowd = 300, Doors = [0b1010_0101, 0b0000_0001] };
+        using NetServer serverNet = new(network.Open(26002), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession client = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        float[] idle = new float[ToyWorld.Channels];
+        int landed = 0;
+        for (long tick = 0; tick < 3 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+
+            // One round lands every tick, on a world whose every snapshot takes several packets.
+            world.Landed = [new ReplicatedImpact(ImpactKind.Surface, 1, new Int3((int)tick, 0, 0), new Vector3f(0, 0, 1))];
+            server.Send(now, tick);
+            client.Receive(now);
+            if (client.Latest is { } latest && latest.Tick > 0)
+            {
+                landed += latest.Impacts?.Length ?? 0;
+                Assert.Equal(world.Doors, latest.Doors);
+                Assert.True(latest.Humans.Length > 1);
+            }
+
+            client.SendCommand(idle, now);
+            client.Flush(now);
+        }
+
+        // Every snapshot read carried its doors and its one round, however many parts it came in.
+        Assert.True(landed > 0, "no round reached the client");
+        Assert.Equal(0, client.DroppedSnapshots);
+        Snapshot newest = Assert.IsType<Snapshot>(client.Latest);
+        Assert.Single(newest.Impacts!);
+        Assert.Equal(world.Doors, newest.Doors);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);
@@ -182,6 +224,11 @@ public sealed class SessionLoopbackTests
         // How many bystanders besides the players, each moving every tick, as a level's soldiers do.
         public int Crowd { get; set; }
 
+        // The level's doors as the snapshot carries them, and the rounds that landed this tick.
+        public byte[]? Doors { get; set; }
+
+        public ReplicatedImpact[]? Landed { get; set; }
+
         public Snapshot Capture(long tick) => new(tick,
         [
             .. _bySlot.Values.OrderBy(static p => p.Id).Select(static p => new ReplicatedHuman(
@@ -189,7 +236,7 @@ public sealed class SessionLoopbackTests
             .. Enumerable.Range(0, Crowd).Select(i => new ReplicatedHuman(
                 1000 + i, new Int3((int)tick * 7, i * 300, 0), new Vector3f(i, tick, 0), (ushort)(tick * 11), 0, 3, 4, 5, 200, 1,
                 ReplicatedHumanCondition.Alive)),
-        ]);
+        ], Doors, Landed);
 
         public Player PlayerOf(int id) => _bySlot.Values.Single(p => p.Id == id);
 

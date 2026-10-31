@@ -1,11 +1,16 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Time;
+using OpenIGI.Formats.Ai;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
 using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Player;
 
 namespace OpenIGI.Game.Tests;
 
@@ -90,5 +95,34 @@ public sealed class GuardGeneratorTests
         Assert.Equal(dead.RuntimeId, fresh.RuntimeId);
         Assert.False(fresh.PlayerIsEnemy);
         Assert.Same(parameters, fresh.CombatParameters);
+    }
+
+    [Fact]
+    public void AReplacementNeverTakesTheIdOfABodyThatLeftTheWorld()
+    {
+        // A co-op client keeps every corpse under its id, so a replacement given a gone body's id is posed on that corpse.
+        SoldierContext context = new(NullLogger.Instance);
+        for (int id = 1; id <= 3; id++)
+        {
+            context.Register(View(), new Igi1HumanAi(graph: null, default, facing: 0f, phase: 0, seed: id) { RuntimeId = id });
+        }
+
+        // The highest-numbered guard dies and his body leaves the world, as RemoveBody takes it out.
+        context.BrainsByRuntimeId.Remove(3);
+
+        Assert.Equal(4, context.NewRuntimeId());
+
+        context.ClearBrains();
+        Assert.Equal(1, context.NewRuntimeId());
+    }
+
+    private static SoldierView View()
+    {
+        BoneSkeleton skeleton = BoneSkeleton.Create([BoneSkeleton.NoParent], [default]);
+        Quaternion32 identity = new(0f, 0f, 0f, 1f);
+        BoneAnimationSet set = BoneAnimationSet.Create(
+            skeleton,
+            BoneAnimation.Create(0, duration: 320f, [[new BoneRotationKey(identity, 0f, identity, identity)]]));
+        return new SoldierView(new HumanSoldierTask { Model = "test", BoneHierarchy = skeleton.Id }, set);
     }
 }
