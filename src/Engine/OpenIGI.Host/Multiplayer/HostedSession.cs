@@ -156,6 +156,12 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <summary>Gets the names of the players who joined, the host's own not among them.</summary>
     public IReadOnlyList<string> Players => _session is { } session ? [.. session.Clients.Select(session.NameOf).OfType<string>()] : [];
 
+    /// <summary>Gets whether every player is down and the squad can stand again where it last stood together.</summary>
+    public bool CanRetryFromCheckpoint => _world?.CanRetryFromCheckpoint == true;
+
+    /// <summary>Stands every player up again where the squad last stood together.</summary>
+    public void RetryFromCheckpoint() => _world?.RetryFromCheckpoint();
+
     /// <summary>Puts a player out of the room by its name.</summary>
     /// <param name="name">The player's name.</param>
     public void Kick(string name)

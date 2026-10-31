@@ -99,6 +99,14 @@ public interface IReplicatedWorld
     /// <returns>The revived slots.</returns>
     IReadOnlyList<int> TakeRevivals() => [];
 
+    /// <summary>Gets whether every player is down and the squad can stand again where it last stood together.</summary>
+    bool CanRetryFromCheckpoint => false;
+
+    /// <summary>Stands every player up again where the squad last stood together, the level as it is.</summary>
+    void RetryFromCheckpoint()
+    {
+    }
+
     /// <summary>Gets how far a fallen player's revival has gone, in <c>[0,1]</c>, or <see langword="null"/> when it is up.</summary>
     /// <param name="entity">The player's entity.</param>
     /// <returns>The progress.</returns>

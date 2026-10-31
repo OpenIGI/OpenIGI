@@ -269,6 +269,33 @@ public sealed class Igi1CoopPairTests
         Assert.True(pair.Session.Session!.IsBarred("Anya"));
     }
 
+    [RequiresGameDataFact]
+    public void A_downed_squad_stands_again_where_it_last_stood_together()
+    {
+        using Igi1CoopPair pair = Joined();
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        pair.RunUntil(() => false, 15 * 30 + 30);
+        Vector3d hostKept = pair.Host.World.Player!.Body.Position;
+        Vector3d partnerKept = partner.Player.Body.Position;
+
+        // Gone on and down, every one of them: the host's world can stand them up where they last stood together.
+        pair.Host.World.Player.Body.Position += new Vector3d(20000, 0, 0);
+        partner.Player.Body.Position += new Vector3d(20000, 0, 0);
+        pair.Host.Harm.BeginPlayerDeath(pair.Host.World.Player.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+        pair.Host.Harm.BeginPlayerDeath(partner, partner.Player.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+        pair.RunUntil(() => false, 5);
+        Igi1ReplicatedWorld world = (Igi1ReplicatedWorld)pair.Session.Session!.GetType()
+            .GetField("_world", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.Session.Session)!;
+        Assert.True(world.CanRetryFromCheckpoint, "the downed squad cannot stand again");
+
+        world.RetryFromCheckpoint();
+        pair.RunUntil(() => false, 5);
+        Assert.False(pair.Host.World.IsPlayerDead);
+        Assert.False(partner.IsDead);
+        Assert.True(Vector3d.Distance(pair.Host.World.Player.Body.Position, hostKept) < 2048, "the host stood up away from the checkpoint");
+        Assert.True(Vector3d.Distance(partner.Player.Body.Position, partnerKept) < 2048, "the partner stood up away from the checkpoint");
+    }
+
     private static Igi1CoopPair Joined(params string[] hostArgs)
     {
         Igi1CoopPair pair = new(hostArgs: hostArgs);

@@ -628,6 +628,10 @@ public sealed partial class GameHost
                     _menuFlow.MenuMode = false;
                     _menuFlow.PauseMenu = false;
                     _window.CursorVisible = false;
+
+                    // Back from the failed page too, when a co-op squad stood again at its checkpoint.
+                    _session.FailedMenu = false;
+                    _session.ClearFailure();
                 },
                 restartMission: () =>
                 {

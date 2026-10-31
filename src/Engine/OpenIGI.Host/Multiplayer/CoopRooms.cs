@@ -135,6 +135,12 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <inheritdoc/>
     public void Kick(string name) => (_session as HostedSession)?.Kick(name);
 
+    /// <inheritdoc/>
+    public bool CanRetryFromCheckpoint => (_session as HostedSession)?.CanRetryFromCheckpoint == true;
+
+    /// <inheritdoc/>
+    public void RetryFromCheckpoint() => (_session as HostedSession)?.RetryFromCheckpoint();
+
     public void RefreshListing()
     {
         if (_listing is { IsCompleted: false })

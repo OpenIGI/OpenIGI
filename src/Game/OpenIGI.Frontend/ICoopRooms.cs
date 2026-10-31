@@ -65,6 +65,12 @@ public interface ICoopRooms
     /// <param name="name">The player's name.</param>
     void Kick(string name);
 
+    /// <summary>Gets whether the room this player hosts has every player down, and can stand them again at its checkpoint.</summary>
+    bool CanRetryFromCheckpoint { get; }
+
+    /// <summary>Stands every player of the room this player hosts up again where the squad last stood together.</summary>
+    void RetryFromCheckpoint();
+
     /// <summary>Leaves the room, if in one.</summary>
     void Leave();
 

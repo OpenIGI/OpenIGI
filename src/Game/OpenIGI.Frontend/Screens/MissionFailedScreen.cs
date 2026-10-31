@@ -39,13 +39,28 @@ public sealed class MissionFailedScreen : ShellScreen
                 Context.Theme.Danger,
                 ("Leave room", () => Context.Host.AbandonMission()),
                 [])
-            : MissionActions.Build(
-                Context.Theme,
-                "Operation",
-                "Mission failed",
-                Context.Theme.Danger,
-                ("Restart", () => Context.Host.RestartMission()),
-                [("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
+            : Context.Host.Coop is { CanRetryFromCheckpoint: true } coop
+                ? MissionActions.Build(
+                    Context.Theme,
+                    "The whole squad is down",
+                    "Mission failed",
+                    Context.Theme.Danger,
+                    ("Retry from checkpoint", () =>
+                    {
+                        coop.RetryFromCheckpoint();
+                        Context.Host.ResumeMission();
+                    }),
+                    [
+                        ("RESTART MISSION", ButtonAccent.Ghost, () => Context.Host.RestartMission()),
+                        ("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission()),
+                    ])
+                : MissionActions.Build(
+                    Context.Theme,
+                    "Operation",
+                    "Mission failed",
+                    Context.Theme.Danger,
+                    ("Restart", () => Context.Host.RestartMission()),
+                    [("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)

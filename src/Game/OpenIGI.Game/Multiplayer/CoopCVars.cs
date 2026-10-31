@@ -12,6 +12,15 @@ public static class CoopCVars
         CVarOptions.Archive,
         "Whether co-op players' rounds hurt one another. The host's setting is the room's.");
 
+    /// <summary>How much tougher the soldiers are for each player past the first, in percent of their health.</summary>
+    public static readonly NumericCVar<int> EnemyHealthPerPlayer = CVar.Int(
+        "coop_enemy_health",
+        50,
+        0,
+        200,
+        CVarOptions.Archive,
+        "Percent more health the soldiers have for each co-op player past the first. The host's setting is the room's.");
+
     /// <summary>How long a teammate stands beside a downed player to bring it back, in seconds.</summary>
     public static readonly NumericCVar<int> ReviveSeconds = CVar.Int(
         "coop_revive_seconds",

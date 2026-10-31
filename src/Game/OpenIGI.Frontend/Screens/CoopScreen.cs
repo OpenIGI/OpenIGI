@@ -25,6 +25,7 @@ public sealed class CoopScreen : ShellScreen
     private static readonly string[] Listings = ["Public", "Private"];
     private static readonly string[] OffOn = ["Off", "On"];
     private static readonly int[] ReviveChoices = [3, 5, 10];
+    private static readonly int[] ToughnessChoices = [0, 25, 50, 100];
 
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
@@ -313,7 +314,24 @@ public sealed class CoopScreen : ShellScreen
             Context.Host.SaveSettings();
         };
 
-        return Strip(theme, friendlyFire, reviveTime);
+        int tough = Math.Max(0, Array.IndexOf(ToughnessChoices, CoopCVars.EnemyHealthPerPlayer.Value));
+        var toughness = new OptionCycler(
+            theme,
+            "Enemies",
+            [.. ToughnessChoices.Select(static p => p == 0 ? "As alone" : string.Create(CultureInfo.InvariantCulture, $"+{p}%"))],
+            tough)
+        {
+            Height = CellHeight,
+            ContentWidth = 130f,
+            Tooltip = "How much more health the guards have for each player past the first.",
+        };
+        toughness.SelectionChanged += index =>
+        {
+            CoopCVars.EnemyHealthPerPlayer.Value = ToughnessChoices[index];
+            Context.Host.SaveSettings();
+        };
+
+        return Strip(theme, friendlyFire, reviveTime, toughness);
     }
 
     // One strip of glass holding cyclers side by side, as the campaign's conditions are held.

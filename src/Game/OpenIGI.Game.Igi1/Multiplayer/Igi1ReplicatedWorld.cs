@@ -41,8 +41,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     /// <summary>How near a teammate stands to a fallen player to revive it, in world units: two metres.</summary>
     public const double ReviveReachUnits = 2 * 4096;
 
-    /// <summary>How much tougher the soldiers are for each player past the first: half as much health again.</summary>
-    public const float EnemyHealthPerExtraPlayer = 0.5f;
+    // How often, while the whole squad stands, where each stands is kept as the checkpoint: fifteen seconds of ticks.
+    private const int CheckpointTicks = 15 * 30;
+
+    // Where each player stood when the squad last stood together, by entity, and the tick it was kept on.
+    private readonly Dictionary<int, (Vector3d At, float Yaw)> _checkpoint = [];
+    private long? _checkpointTick;
 
     // Each fallen player's revival so far, in ticks, by entity.
     private readonly Dictionary<int, int> _reviving = [];
@@ -472,6 +476,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
         }
 
+        // The whole squad standing: where each stands is the checkpoint, kept every so often.
+        if (down.Count == 0 && up.Count > 0 && (_checkpointTick is not { } kept || CurrentTick - kept >= CheckpointTicks))
+        {
+            KeepCheckpoint();
+        }
+
         List<int> revived = [];
         foreach ((int entity, int slot, Vector3d at) in down)
         {
@@ -505,6 +515,48 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         return revived;
     }
 
+    /// <inheritdoc/>
+    public bool CanRetryFromCheckpoint =>
+        _checkpoint.Count > 0
+        && (!IncludesHost || _game.World.IsPlayerDead)
+        && _bySlot.Values.All(static p => p.IsDead);
+
+    /// <inheritdoc/>
+    public void RetryFromCheckpoint()
+    {
+        if (IncludesHost && _game.World.Player is { } own)
+        {
+            (Vector3d at, float yaw) = _checkpoint.GetValueOrDefault(HostEntity, (own.Body.Position, own.Body.Yaw));
+            _game.Harm.RevivePlayer(at, yaw);
+            _dead.Remove(HostEntity);
+        }
+
+        foreach (Igi1NetworkPlayer partner in _bySlot.Values)
+        {
+            (Vector3d at, float yaw) = _checkpoint.GetValueOrDefault(partner.Entity, (partner.Player.Body.Position, partner.Player.Body.Yaw));
+            Igi1PlayerHarm.RevivePlayer(partner, at, yaw);
+            _dead.Remove(partner.Entity);
+        }
+
+        _reviving.Clear();
+    }
+
+    private void KeepCheckpoint()
+    {
+        _checkpoint.Clear();
+        if (IncludesHost && _game.World.Player is { } own)
+        {
+            _checkpoint[HostEntity] = (own.Body.Position, own.Body.Yaw);
+        }
+
+        foreach (Igi1NetworkPlayer partner in _bySlot.Values)
+        {
+            _checkpoint[partner.Entity] = (partner.Player.Body.Position, partner.Player.Body.Yaw);
+        }
+
+        _checkpointTick = CurrentTick;
+    }
+
     // A fallen player's health byte carries its revival instead, for every client's prompt and panel to show.
     private ReplicatedHuman WithRevive(ReplicatedHuman human) =>
         (human.Flags & ReplicatedHumanCondition.Alive) != 0
@@ -515,7 +567,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     private void ScaleEnemies()
     {
         int players = _bySlot.Count + (IncludesHost ? 1 : 0);
-        float scale = 1f + (EnemyHealthPerExtraPlayer * Math.Max(0, players - 1));
+        float scale = 1f + (CoopCVars.EnemyHealthPerPlayer.Value / 100f * Math.Max(0, players - 1));
         if (scale == _enemyScale || _game.World.Soldiers is not { } soldiers)
         {
             return;
