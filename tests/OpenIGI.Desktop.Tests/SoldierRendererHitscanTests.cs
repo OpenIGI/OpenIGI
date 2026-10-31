@@ -29,10 +29,7 @@ public sealed class SoldierRendererHitscanTests
     [RequiresGameDataFact]
     public void DefaultPlayerHitscanPathRegistersTheMeshItAimsAt()
     {
-        // Tactical ballistics is opt-in, so a normal player shot resolves synchronously through this
-        // renderer-owned callback rather than spawning an in-flight projectile.
-        Assert.False(GameplayCVars.Ballistics.DefaultValue);
-
+        // A player's shot resolves synchronously through this renderer-owned callback.
         using Scenario scenario = CreateScenario();
         MeshHitRay ray = FindAnyMeshHitRay(scenario.Renderer);
 

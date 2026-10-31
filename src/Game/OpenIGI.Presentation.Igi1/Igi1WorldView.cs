@@ -1,7 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.World;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 
@@ -12,7 +11,6 @@ namespace OpenIGI.Presentation.Igi1;
 internal sealed class Igi1WorldView(Igi1Gameplay gameplay) : IMissionWorldView
 {
     /// <inheritdoc/>
-    public BallisticSimulation? Ballistics => gameplay.World.Player?.Ballistics;
 
     /// <inheritdoc/>
     public bool TryHeldWeapon(out int shotSequence)

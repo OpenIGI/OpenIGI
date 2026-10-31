@@ -118,14 +118,9 @@ public sealed class GuardRounds
             from.Y + ((at.Y - from.Y) * 4.0),
             from.Z + ((at.Z - from.Z) * 4.0));
 
-        // A soldier's round is already in its gun's GunShot task, to be marched after the walk; all that is left here is
-        // the streak it draws.
+        // A soldier's round is already in its gun's GunShot task, to be marched after the walk.
         if (shooter is not null && _soldiers.MarchesRounds)
         {
-            Vector3d streakTo = _trace(new WorldTraceRequest(from, to, WorldTraceMask.World), out WorldTraceHit surface)
-                ? surface.Position
-                : to;
-            SpawnStreak(player, from, streakTo, weapon);
             return;
         }
 
@@ -252,12 +247,6 @@ public sealed class GuardRounds
                 _soldiers.NotifyRoundPassed(from, stop, shooter, struck: null);
             }
         }
-
-        // The streak, before the outcome: visual only, along the very ray this handler is
-        // resolving, dying where the world stops it. Whether the round connects is decided
-        // below exactly as ever -- from inside the head, a streak that reaches the eye and
-        // a round that hits look the same.
-        SpawnStreak(player, from, worldBlocked ? worldHit.Position : to, weapon);
 
         void MarkTheImpact()
         {
@@ -692,31 +681,5 @@ public sealed class GuardRounds
                 StruckHuman: true,
                 payload);
         }
-    }
-
-    // The streak a soldier's round draws, to where the world stops it: visual only.
-    private void SpawnStreak(PlayerCamera player, Vector3d from, Vector3d end, WeaponType weapon)
-    {
-        if (!GameplayCVars.Ballistics.Value || !GameplayCVars.BallisticsAiTracers.Value)
-        {
-            return;
-        }
-
-        Vector3d line = end - from;
-        double length = line.Length;
-        if (length <= 1e-6)
-        {
-            return;
-        }
-
-        AmmoType? ammo = _mission.AmmoTypes is { } table && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
-            ? found
-            : null;
-        player.Ballistics.SpawnVisual(
-            from,
-            new Vector3f((float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length)),
-            end,
-            weapon,
-            ammo);
     }
 }

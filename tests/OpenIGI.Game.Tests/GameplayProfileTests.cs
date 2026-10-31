@@ -22,7 +22,6 @@ public sealed class GameplayProfileTests : IDisposable
     private readonly bool _ragdoll = GameplayCVars.Ragdoll.Value;
     private readonly float _force = GameplayCVars.RagdollForce.Value;
     private readonly int _substeps = GameplayCVars.RagdollSubsteps.Value;
-    private readonly bool _ballistics = GameplayCVars.Ballistics.Value;
 
     /// <summary>The vanilla profile turns simulated deaths off.</summary>
     [Fact]
@@ -69,32 +68,6 @@ public sealed class GameplayProfileTests : IDisposable
         Assert.True(GameplayCVars.Ragdoll.Value);
     }
 
-    /// <summary>Tactical ballistics ships off, and stays off until a player asks for it by hand.</summary>
-    /// <remarks>
-    /// The one gameplay-mutating variable in the container. Its default IS the vanilla guarantee —
-    /// with it off nothing is ever spawned into the ballistic pool and every round resolves in its
-    /// own tick, exactly as retail does.
-    /// </remarks>
-    [Fact]
-    public void TacticalBallisticsIsOffByDefault()
-    {
-        Assert.False(GameplayCVars.Ballistics.DefaultValue);
-    }
-
-    /// <summary>Vanilla forces ballistics off; enhanced deliberately leaves it alone.</summary>
-    [Fact]
-    public void OnlyVanillaTouchesTacticalBallistics()
-    {
-        GameplayCVars.Ballistics.Value = true;
-        GameplayCVars.Apply(GameplayProfile.Vanilla);
-        Assert.False(GameplayCVars.Ballistics.Value);
-
-        // Enhanced is presentation; ballistics is an opt-in on top of any profile, not part of one.
-        GameplayCVars.Ballistics.Value = true;
-        GameplayCVars.Apply(GameplayProfile.Enhanced);
-        Assert.True(GameplayCVars.Ballistics.Value);
-    }
-
     /// <summary>The variables carry the <c>g_</c> prefix the settings screen groups its gameplay page by.</summary>
     [Fact]
     public void EveryVariableIsOnTheGameplayPage()
@@ -103,10 +76,6 @@ public sealed class GameplayProfileTests : IDisposable
         Assert.StartsWith("g_", GameplayCVars.Ragdoll.Name, StringComparison.Ordinal);
         Assert.StartsWith("g_", GameplayCVars.RagdollForce.Name, StringComparison.Ordinal);
         Assert.StartsWith("g_", GameplayCVars.RagdollSubsteps.Name, StringComparison.Ordinal);
-        Assert.StartsWith("g_", GameplayCVars.Ballistics.Name, StringComparison.Ordinal);
-        Assert.StartsWith("g_", GameplayCVars.BallisticsDrag.Name, StringComparison.Ordinal);
-        Assert.StartsWith("g_", GameplayCVars.BallisticsGravity.Name, StringComparison.Ordinal);
-        Assert.StartsWith("g_", GameplayCVars.BallisticsAiTracers.Name, StringComparison.Ordinal);
     }
 
     /// <inheritdoc/>
@@ -116,6 +85,5 @@ public sealed class GameplayProfileTests : IDisposable
         GameplayCVars.Ragdoll.Value = _ragdoll;
         GameplayCVars.RagdollForce.Value = _force;
         GameplayCVars.RagdollSubsteps.Value = _substeps;
-        GameplayCVars.Ballistics.Value = _ballistics;
     }
 }

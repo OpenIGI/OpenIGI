@@ -15,15 +15,7 @@ namespace OpenIGI.Game;
 /// <b>Nothing declared here may change what the simulation does, with one named exception.</b> These
 /// gate presentation only — what is drawn, not what is recorded — so the determinism contract and the
 /// vanilla regression gate both stand whatever they are set to. Anything that would alter observable game
-/// logic belongs with the faithfulness work instead.
-/// </para>
-/// <para>
-/// The exception is <see cref="Ballistics"/> and its family: tactical ballistics <em>is</em> a
-/// gameplay change — a round takes time to arrive and drops on the way — and it says so rather than
-/// pretending to be a look. It is defensible here because it defaults <b>off</b>, no profile turns it
-/// on (<c>vanilla</c> forces it off, <c>enhanced</c> leaves it alone), and the regression gate never
-/// runs with it set. A player who types <c>g_ballistics 1</c> is explicitly asking for a game the
-/// original is not.
+/// logic belongs with the faithfulness work instead. The exception is <see cref="RealisticDrops"/>.
 /// </para>
 /// </remarks>
 [CVarContainer]
@@ -75,9 +67,8 @@ public static class GameplayCVars
     /// the real world triangles -- tumbling, bouncing, sliding off slopes and lying across ledges.
     /// </para>
     /// <para>
-    /// Where the gun ends up decides where the player picks it up, so this is a second exception to
-    /// the rule above, alongside <see cref="Ballistics"/>. It is safe for the same reason: the Vanilla
-    /// preset forces it off, and the regression gate runs Vanilla.
+    /// Where the gun ends up decides where the player picks it up, so this is the exception to the rule
+    /// above. It is safe because the Vanilla preset forces it off, and the regression gate runs Vanilla.
     /// </para>
     /// </remarks>
     public static readonly BoolCVar RealisticDrops = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
@@ -175,89 +166,17 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "Ragdoll solver substeps per tick. Higher is stiffer and more expensive.");
 
-    /// <summary>Whether a round is a simulated projectile rather than the original's instant ray.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The one gameplay-mutating variable in this container</b>; see the container remarks for why
-    /// it is allowed to be. Off, every round resolves the tick it is fired, exactly as retail does.
-    /// On, the player's rounds fly at their weapon's real muzzle velocity, drop under gravity and
-    /// slow by calibre drag (<see cref="Weapons.Ballistics.BallisticProfile"/>) — you lead a moving
-    /// target — and both sides' fire draws a visible streak.
-    /// </para>
-    /// <para>Off by default in every profile. <c>vanilla</c> forces it off; <c>enhanced</c> does not touch it.</para>
-    /// </remarks>
-    public static readonly BoolCVar Ballistics = CVar.Bool(
-        "g_ballistics",
-        false,
-        CVarOptions.Archive,
-        "Tactical ballistics: rounds fly with travel time, drop and drag instead of hitting instantly.");
-
-    /// <summary>How much air a round flies through.</summary>
-    /// <remarks>
-    /// One multiplier over every profile's drag constant, so the feel is a single number: zero is a
-    /// vacuum where only gravity bends the shot, one is the calibre model as computed.
-    /// </remarks>
-    public static readonly NumericCVar<float> BallisticsDrag = CVar.Float(
-        "g_ballistics_drag",
-        1f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "Air drag on ballistic rounds. 0 is a vacuum, 1 the per-calibre model.");
-
-    /// <summary>What fraction of real gravity a round drops under.</summary>
-    /// <remarks>
-    /// The rounds fall at the engine's own 9.8 m/s² — the same constant the ragdoll picked over the
-    /// player's 18.6, and for the same reason: a bullet is an object, not a jump. This scales it for
-    /// players who want a flatter or more exaggerated arc.
-    /// </remarks>
-    public static readonly NumericCVar<float> BallisticsGravity = CVar.Float(
-        "g_ballistics_gravity",
-        1f,
-        0f,
-        2f,
-        CVarOptions.Archive,
-        "Bullet drop on ballistic rounds, as a fraction of real gravity.");
-
-    /// <summary>The least time a ballistic round flies in open air, in seconds.</summary>
-    /// <remarks>
-    /// The weapon table's effective ranges were authored for the hit-scan path and are short for a
-    /// flying round — an MP5's 80 m is a fifth of a second. The round's range is raised to at least
-    /// this many seconds of flight, so far targets are reachable; a wall or a body still stops it
-    /// the moment it is met.
-    /// </remarks>
-    public static readonly NumericCVar<float> BallisticsMinimumFlight = CVar.Float(
-        "g_ballistics_min_flight",
-        2f,
-        0f,
-        10f,
-        CVarOptions.Archive,
-        "The least seconds a ballistic round flies in open air, whatever its weapon's range says.");
-
-    /// <summary>Whether the AI's fire draws ballistic streaks too.</summary>
-    /// <remarks>
-    /// Visual only, and only read while <see cref="Ballistics"/> is on: a guard's round is still
-    /// resolved by its own combat code in its own tick, and the streak flies the line that
-    /// resolution already chose. Incoming fire becomes something you can see and duck.
-    /// </remarks>
-    public static readonly BoolCVar BallisticsAiTracers = CVar.Bool(
-        "g_ballistics_ai_tracers",
-        true,
-        CVarOptions.Archive,
-        "Draw ballistic streaks for AI fire while g_ballistics is on. Visual only.");
-
     /// <summary>Whether bullet impacts are heard as well as seen.</summary>
     /// <remarks>
     /// The sounds are the material table's own six per row — dirt for terrain, the struck row for
     /// objects, the <c>Flesh</c> row for a body — picked and rate-limited exactly as the retail shot
-    /// loop does (<c>BulletImpactSounds</c>). It applies to hit-scan fire and to the
-    /// optional ballistic path.
+    /// loop does (<c>BulletImpactSounds</c>).
     /// </remarks>
-    public static readonly BoolCVar BallisticsImpactSounds = CVar.Bool(
-        "g_ballistics_impact_sounds",
+    public static readonly BoolCVar ImpactSounds = CVar.Bool(
+        "g_impact_sounds",
         true,
         CVarOptions.Archive,
-        "Play the struck material's own impact sound for hit-scan and ballistic rounds.");
+        "Play the struck material's own impact sound where a round lands.");
 
     /// <summary>Whether the player is drawn from behind rather than through their own eyes.</summary>
     /// <remarks>
@@ -345,10 +264,6 @@ public static class GameplayCVars
         {
             case GameplayProfile.Vanilla:
                 Ragdoll.Value = false;
-
-                // The one gameplay-mutating option. Enhanced deliberately does NOT set it back: it is
-                // an opt-in on top of any profile, but vanilla means the 2000 build, full stop.
-                Ballistics.Value = false;
                 break;
 
             default:

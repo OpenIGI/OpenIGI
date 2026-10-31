@@ -300,8 +300,6 @@ public sealed partial class GameHost
             _heldWeapon?.Dispose();
             _hud?.Dispose();
             _marks?.Dispose();
-            _tracers?.Dispose();
-            _tracers = null;
             _effects.Release();
             _heldWeapon = null;
 
@@ -319,11 +317,6 @@ public sealed partial class GameHost
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
                 _marks = _presentation.Presenters.Create<EffectsPresentationRequest, IBulletMarkPresenter>(EffectsRequest());
-
-                // The ballistic streaks, beside the marks they end in. Cheap to have around: with
-                // g_ballistics off nothing is ever spawned and Draw returns at the count check.
-                _tracers?.Dispose();
-                _tracers = new TracerTrailRenderer(_device);
 
                 // The world's effects: the bursts where rounds land, the original's own dust, chips and blood,
                 // the fireball every blast shares, and the smoke rockets and blasts leave.
@@ -599,7 +592,6 @@ public sealed partial class GameHost
         _remasteredHud?.Dispose();
         _debugOverlay?.Dispose();
         _marks?.Dispose();
-        _tracers?.Dispose();
         _effects.Release();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
@@ -623,7 +615,6 @@ public sealed partial class GameHost
         _remasteredHud = null;
         _debugOverlay = null;
         _marks = null;
-        _tracers = null;
         _cameraStatusLights = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
@@ -724,8 +715,7 @@ public sealed partial class GameHost
     {
         IHostedPlayer player = HostedPlayer!;
 
-        // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
-        // material table, where the round arrived rather than where it was fired.
+        // What this tick's rounds landed on -- dirt, steel or flesh, out of the material table.
         _hosted.Sounds.PlayPlayerImpacts();
 
         // The same impacts, seen: sparks and dust composed from the struck material.
@@ -738,7 +728,6 @@ public sealed partial class GameHost
         // it was born.
         _hosted.Impacts.Tick();
 
-        SpawnBallisticImpactParticles();
         _hosted.Impacts.SpawnPlayerImpacts();
 
         // The launcher rockets in the air lay their smoke trail, one column of puffs per

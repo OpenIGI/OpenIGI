@@ -26,7 +26,7 @@ public sealed class MissileSimulationTests
             + (missile.Velocity.Z * missile.Velocity.Z));
 
         // A rocket leaves the tube at the config's launch speed, not the dummy 5 m/s the weapon
-        // table carries to keep carriers out of g_ballistics; thrust builds it up from there.
+        // table carries for rocket carriers; thrust builds it up from there.
         float expected = MissileConfig.AntiTank.LaunchMetresPerSecond
             * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond;
         Assert.Equal(expected, speed, 0.5f);

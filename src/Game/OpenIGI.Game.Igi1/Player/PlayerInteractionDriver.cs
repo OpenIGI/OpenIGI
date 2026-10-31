@@ -624,7 +624,7 @@ internal sealed class PlayerInteractionDriver
         _shots.ClearImpacts();
         if (_mountedGun is null || MountedStationaryGun is not { } gun)
         {
-            _shots.TickBallistics();
+            _shots.TickProjectiles();
             return;
         }
 
@@ -651,7 +651,7 @@ internal sealed class PlayerInteractionDriver
             _shots.ResolveMountedRounds(result.Projectiles, _mountedGun.Weapon);
         }
 
-        _shots.TickBallistics();
+        _shots.TickProjectiles();
         _host.SyncView();
     }
 

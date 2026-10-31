@@ -4,7 +4,6 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Services;
@@ -246,45 +245,6 @@ public sealed partial class GameHost
 
         _rainDebugTimestamp = now;
         _logger.Information("Audio", $"Rain: {rain.Describe()}");
-    }
-
-    /// <summary>Spawns the particle bursts for whatever ballistic rounds landed this tick.</summary>
-    /// <remarks>
-    /// Beside the impact sounds because it reads the same impacts and resolves the same material; a
-    /// human takes the flesh burst, with no surface normal to bias it.
-    /// </remarks>
-    private void SpawnBallisticImpactParticles()
-    {
-        if (_effects.Particles is null || HostedPlayer is null)
-        {
-            return;
-        }
-
-        float intensity = CombatEffectCVars.ImpactParticles.Value;
-        if (!(intensity > 0f))
-        {
-            return;
-        }
-
-        foreach (BallisticImpact impact in HostedPlayer.Ballistics.Impacts)
-        {
-            if (impact.StruckHuman)
-            {
-                _effects.Particles.SpawnBurst(impact.Position, default, ImpactSurfaceKind.Flesh, intensity);
-            }
-            else if (impact.StruckWall)
-            {
-                string material = _mission.Materials is { } table
-                    && table.TryGet(impact.Wall.Material, out GameMaterial struck)
-                    ? struck.Name
-                    : string.Empty;
-                _effects.Particles.SpawnBurst(
-                    impact.Wall.Position,
-                    impact.Wall.Normal,
-                    ImpactParticleRenderer.KindOf(material),
-                    intensity);
-            }
-        }
     }
 
     /// <summary>Empties the bank and the score for a different game, and starts that game's theme.</summary>

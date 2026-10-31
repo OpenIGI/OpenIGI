@@ -2,7 +2,6 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -67,9 +66,6 @@ public interface IHostedPlayer
 
     /// <summary>Gets the grenades in the air.</summary>
     GrenadeSimulation Grenades { get; }
-
-    /// <summary>Gets the rounds in flight.</summary>
-    BallisticSimulation Ballistics { get; }
 
     /// <summary>Gets the marks the player's rounds have left.</summary>
     BulletMarks Marks { get; }

@@ -8,7 +8,6 @@ using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -117,9 +116,8 @@ public sealed partial class PlayerCamera
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
         ResolveFire();
 
-        // After the fire, so a round spawned this tick flies its first segment in the same tick --
-        // otherwise every shot would carry a one-tick delay on top of its real travel time.
-        _shots.TickBallistics();
+        // After the fire, so a grenade or rocket let go this tick flies its first segment in the same tick.
+        _shots.TickProjectiles();
 
         // After the fire has (possibly) started a new clip, so the pair describes what this tick
         // actually shows.

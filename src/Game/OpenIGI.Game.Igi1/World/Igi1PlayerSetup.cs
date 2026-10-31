@@ -218,8 +218,7 @@ public sealed class Igi1PlayerSetup(
             ammoTable.Register(host.Game.Natives);
             ammoTable.Load(host.FileSystem, host.Resources, host.Game.Natives);
 
-            // Shared with the guard-round handler: the ammunition record is what colours a
-            // ballistic streak, exactly as it colours the retail tracer.
+            // Shared with the guard-round handler: the ammunition record is what colours the retail tracer.
             mission.AmmoTypes = ammoTable;
 
             // Kept beside it for the all-weapons cheat, which can be switched on mid-mission and

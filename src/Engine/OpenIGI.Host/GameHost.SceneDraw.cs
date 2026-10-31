@@ -374,37 +374,10 @@ public sealed partial class GameHost
             _soldiers?.DrawGroundShadows(eye, projection);
         }
 
-        // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
-        // the geometry pass they are written into the g-buffer as scenery and come out lit
-        // and fogged (a dim grey square was exactly what that looked like). Here they draw
-        // additively over the finished scene, emissive like the muzzle flame, testing the
-        // world's depth but writing none.
-        if (_tracers is not null && WorldView?.Ballistics is { } ballistics)
-        {
-            _tracers.Draw(
-                ballistics,
-                eye,
-                projection,
-                smoothPresentation ? tickBlend : 1f);
-
-            // The finite guard's confession, rate-limited: a growing count is a NaN reaching
-            // the tracer geometry -- the exact stuff one-frame black squares were made of.
-            if (_tracers.SkippedQuads > _tracerSkipsLogged
-                && (_tracerSkipsLogged == 0 || _tracers.SkippedQuads - _tracerSkipsLogged >= 100))
-            {
-                _tracerSkipsLogged = _tracers.SkippedQuads;
-                _logger.Warning(
-                    "Tracer",
-                    $"{_tracers.SkippedQuads} tracer quad(s) carried a non-finite value and were not drawn.");
-            }
-        }
-
         // The rounds' tracers (one pass in eleven, and every pass through a wall): the original's thin
-        // unfogged line under the vanilla preset, the remaster's glowing streak under every other. With the
-        // remaster's ballistic AI streaks on, those stand for the same rounds. Sized against the image they
-        // are rasterised into.
-        if (_soldiers is { } tracerSoldiers
-            && !(GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value))
+        // unfogged line under the vanilla preset, the remaster's glowing streak under every other. Sized against
+        // the image they are rasterised into.
+        if (_soldiers is { } tracerSoldiers)
         {
             tracerSoldiers.DrawGunShotTracers(
                 eye,

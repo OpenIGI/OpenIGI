@@ -24,66 +24,54 @@ public sealed class PlayerCameraScopedFireTests
     [RequiresGameDataFact]
     public void DragunovFiresThroughTheHumanCallbackWhileItsScopeIsOpeningWithDefaultHitscan()
     {
-        Assert.False(GameplayCVars.Ballistics.DefaultValue);
-        bool previousBallistics = GameplayCVars.Ballistics.Value;
-        GameplayCVars.Ballistics.Value = false;
+        WeaponType dragunov = LoadRoster().Weapons.Single(
+            weapon => weapon.ScriptId == "WEAPON_ID_DRAGUNOV");
+        PlayerCamera camera = new();
+        camera.UseWeaponCycle([dragunov.WeaponId]);
+        camera.Carry(dragunov, new AmmoType { AmmoId = 1, CalibreId = dragunov.CalibreId });
+        camera.UseViewRig(LoadViewSet());
+        camera.UseWalls(ObjectCollisionIndex.Build([]));
 
-        try
+        int callbackCount = 0;
+        Vector3d callbackOrigin = default;
+        Vector3d callbackEnd = default;
+        camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, double _, bool _, out HumanHit hit) =>
         {
-            WeaponType dragunov = LoadRoster().Weapons.Single(
-                weapon => weapon.ScriptId == "WEAPON_ID_DRAGUNOV");
-            PlayerCamera camera = new();
-            camera.UseWeaponCycle([dragunov.WeaponId]);
-            camera.Carry(dragunov, new AmmoType { AmmoId = 1, CalibreId = dragunov.CalibreId });
-            camera.UseViewRig(LoadViewSet());
-            camera.UseWalls(ObjectCollisionIndex.Build([]));
+            callbackCount++;
+            callbackOrigin = origin;
+            callbackEnd = end;
+            hit = new HumanHit(
+                new Vector3d(origin.X, origin.Y + PlayerCamera.UnitsPerMetre, origin.Z),
+                PlayerCamera.UnitsPerMetre,
+                Zone: 4,
+                LocalForward: 0f,
+                LocalSide: 0f);
+            return true;
+        };
 
-            int callbackCount = 0;
-            Vector3d callbackOrigin = default;
-            Vector3d callbackEnd = default;
-            camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, double _, bool _, out HumanHit hit) =>
-            {
-                callbackCount++;
-                callbackOrigin = origin;
-                callbackEnd = end;
-                hit = new HumanHit(
-                    new Vector3d(origin.X, origin.Y + PlayerCamera.UnitsPerMetre, origin.Z),
-                    PlayerCamera.UnitsPerMetre,
-                    Zone: 4,
-                    LocalForward: 0f,
-                    LocalSide: 0f);
-                return true;
-            };
+        InputState input = new();
+        TickUntilReady(camera, input);
 
-            InputState input = new();
-            TickUntilReady(camera, input);
+        // The opening edge and the trigger arrive in the same camera tick, as they do when the
+        // player scopes and shoots together. The player may fire immediately; neither the scope
+        // transition nor its FOV adjustment is allowed to defer or discard this round.
+        input.BeginFrame();
+        input.Keyboard.SetKey(KeyCode.Backspace, down: true);
+        input.Mouse.SetButton(MouseButton.Left, down: true);
+        camera.Tick(input, terrain: null);
 
-            // The opening edge and the trigger arrive in the same camera tick, as they do when the
-            // player scopes and shoots together. The player may fire immediately; neither the scope
-            // transition nor its FOV adjustment is allowed to defer or discard this round.
-            input.BeginFrame();
-            input.Keyboard.SetKey(KeyCode.Backspace, down: true);
-            input.Mouse.SetButton(MouseButton.Left, down: true);
-            camera.Tick(input, terrain: null);
+        // The fire state's entry tick asks nothing of the gun (0x40EF60); the trigger still down the next tick fires.
+        input.BeginFrame();
+        camera.Tick(input, terrain: null);
 
-            // The fire state's entry tick asks nothing of the gun (0x40EF60); the trigger still down the next tick fires.
-            input.BeginFrame();
-            camera.Tick(input, terrain: null);
-
-            Assert.True(camera.IsSniperScoped);
-            Assert.True(camera.FiredThisTick);
-            Assert.Equal(1, callbackCount);
-            Assert.Equal(camera.EyeUnits, callbackOrigin);
-            Assert.True(callbackEnd.Y > callbackOrigin.Y);
-            Assert.True(camera.Ballistics.Rounds.Count == 0);
-            Assert.Equal(1, camera.HumanHits);
-            Assert.Equal(4, camera.LastHumanZone);
-            Assert.True(Assert.Single(camera.Impacts).HitSomething);
-        }
-        finally
-        {
-            GameplayCVars.Ballistics.Value = previousBallistics;
-        }
+        Assert.True(camera.IsSniperScoped);
+        Assert.True(camera.FiredThisTick);
+        Assert.Equal(1, callbackCount);
+        Assert.Equal(camera.EyeUnits, callbackOrigin);
+        Assert.True(callbackEnd.Y > callbackOrigin.Y);
+        Assert.Equal(1, camera.HumanHits);
+        Assert.Equal(4, camera.LastHumanZone);
+        Assert.True(Assert.Single(camera.Impacts).HitSomething);
     }
 
     private static void TickUntilReady(PlayerCamera camera, InputState input)

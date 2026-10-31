@@ -2,7 +2,6 @@
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Player;
@@ -27,7 +26,6 @@ internal sealed class PlayerShotResolver
     private readonly PlayerBody _body;
     private readonly IgiRandom _random;
     private readonly List<GunImpact> _impacts = [];
-    private readonly BallisticSimulation _ballistics = new();
     private readonly GrenadeSimulation _grenades = new();
     private readonly MissileSimulation _missiles = new();
     private readonly M203Simulation _m203 = new();
@@ -54,10 +52,6 @@ internal sealed class PlayerShotResolver
 
     /// <summary>Gets the marks rounds have left on the world.</summary>
     internal BulletMarks Marks { get; } = new();
-
-    /// <summary>Gets the rounds in flight under <c>g_ballistics</c>, for the tracer renderer.</summary>
-    /// <remarks>Empty whenever the option is off — nothing is ever spawned into it.</remarks>
-    internal BallisticSimulation Ballistics => _ballistics;
 
     /// <summary>Gets the grenades in the air, both the player's and the AI's.</summary>
     /// <remarks>
@@ -467,39 +461,10 @@ internal sealed class PlayerShotResolver
             return;
         }
 
-        // The opt-in fork. With g_ballistics on, a round that can fly is spawned into the simulation
-        // instead of being resolved here -- it arrives ticks later, in TickBallistics. A weapon no
-        // profile accepts (the knife, a rocket carrier) falls through to the retail ray either way,
-        // so the option never silently disarms anything.
         WeaponType? held = weapons.InHand?.Weapon;
-        AmmoType? ammo = weapons.InHand?.Gun.Ammo;
-        bool simulate = GameplayCVars.Ballistics.Value
-            && held is not null
-            && BallisticProfile.TryCreate(held, ammo) is not null;
-
-        // Where the round is DRAWN from: the gun sits right of and below the eye the simulation
-        // fires from, and a tracer leaving dead screen centre is invisible -- it recedes into a
-        // point behind the crosshair. The offset is presentation only; the flight is the retail
-        // eye-origin geometry either way.
-        Vector3d visualOffset = new(
-            ((right.X * 0.22) - (up.X * 0.16)) * PlayerCamera.UnitsPerMetre,
-            ((right.Y * 0.22) - (up.Y * 0.16)) * PlayerCamera.UnitsPerMetre,
-            ((right.Z * 0.22) - (up.Z * 0.16)) * PlayerCamera.UnitsPerMetre);
-
         foreach (GunProjectile shot in weapons.Shots)
         {
-            if (simulate)
-            {
-                _ballistics.Spawn(
-                    shot,
-                    held!,
-                    ammo,
-                    damageFactor,
-                    category,
-                    visualOffset,
-                    GameplayCVars.BallisticsMinimumFlight.Value);
-            }
-            else if (category == WeaponCategory.Knife)
+            if (category == WeaponCategory.Knife)
             {
                 ResolveStab(shot, right, damageFactor, category);
             }
@@ -510,44 +475,19 @@ internal sealed class PlayerShotResolver
         }
     }
 
-    // The rounds of a mounted gun, down the same fork as a carried one: flown with g_ballistics on and
-    // a weapon a profile accepts, else the retail ray. The muzzle is the gun's own, so a streak needs no
-    // offset to be seen leaving it.
+    // The rounds of a mounted gun, by the retail ray as a carried one's are.
     internal void ResolveMountedRounds(IReadOnlyList<GunProjectile> shots, WeaponType weapon)
     {
-        bool simulate = GameplayCVars.Ballistics.Value && BallisticProfile.TryCreate(weapon, null) is not null;
         foreach (GunProjectile shot in shots)
         {
-            if (simulate)
-            {
-                _ballistics.Spawn(
-                    shot,
-                    weapon,
-                    null,
-                    weapon.DamageFactor,
-                    weapon.Category,
-                    default,
-                    GameplayCVars.BallisticsMinimumFlight.Value);
-            }
-            else
-            {
-                ResolveShot(shot, weapon.DamageFactor, weapon.Category, weapon.PenetrationPower);
-            }
+            ResolveShot(shot, weapon.DamageFactor, weapon.Category, weapon.PenetrationPower);
         }
     }
 
-    /// <summary>Advances the ballistic rounds and lands whatever arrived this tick.</summary>
-    /// <remarks>
-    /// The impact side-effects are exactly <see cref="ResolveShot"/>'s, applied on the tick the round
-    /// arrives rather than the tick it was fired: the hit counters, the AI's ground-impact notice and
-    /// the decal. Damage needs nothing here — the <see cref="Humans"/> delegate applied it during the
-    /// cast, the same way it does for a ray.
-    /// </remarks>
-    internal void TickBallistics()
+    /// <summary>Advances what flies: the grenades, the rockets and the launcher's rounds.</summary>
+    internal void TickProjectiles()
     {
-        // The grenades fly every tick regardless of the tracer option -- they are the retail
-        // behaviour, not a remaster one. Detonations are drained by the game, which owns the
-        // effects and the blast's victims.
+        // Detonations are drained by the game, which owns the effects and the blast's victims.
         _grenades.Tick(GrenadeWalls ?? _body.Walls);
         if (MissileTrace is { } missileTrace)
         {
@@ -562,74 +502,7 @@ internal sealed class PlayerShotResolver
         }
         _m203.Tick(GrenadeWalls ?? _body.Walls, HumanProbes);
 
-        if (_ballistics.Rounds.Count == 0)
-        {
-            return;
-        }
-
-        WorldRayCast? walls = _body.Walls;
-        _ballistics.Tick(
-            walls,
-            Humans,
-            GameplayCVars.BallisticsGravity.Value,
-            GameplayCVars.BallisticsDrag.Value,
-            Walls?.Tracer(),
-            BallisticEntryOf);
-
-        foreach (BallisticImpact impact in _ballistics.Impacts)
-        {
-            if (impact.StruckHuman)
-            {
-                HumanHits++;
-                LastHumanZone = impact.Human.Zone;
-            }
-            else if (impact.StruckWall)
-            {
-                GroundImpact?.Invoke(impact.Wall.Position);
-
-                // The surface decides what the hit looks like, out of the material its own face names,
-                // and the struck object decides whether it takes a mark at all.
-                if (Materials is { } materials)
-                {
-                    Marks.TryAdd(
-                        impact.Wall,
-                        BulletMarks.SurfaceOf(impact.Owner, impact.Placement),
-                        materials,
-                        isEntry: !impact.Wall.IsExit,
-                        exitCrossing: impact.Wall.IsExit,
-                        probe: MarkProbe,
-                        placement: impact.Placement);
-                }
-            }
-
-            _impacts.Add(new GunImpact(
-                impact.Position,
-                impact.StruckHuman || impact.StruckWall,
-                impact.RangeInUnits,
-                impact.Owner,
-                impact.Placement,
-                StruckHuman: impact.StruckHuman,
-                Wall: impact.StruckWall ? impact.Wall : default,
-                Direction: impact.Direction));
-        }
     }
-
-    // A flying round meets a surface or a body under the hit-scan march's own rule: the material row against
-    // the weapon's power, and only an object the trace named can be passed. A glance stops a flying round.
-    private GunShotImpact BallisticEntryOf(
-        BallisticRound round,
-        in WorldRayHit surface,
-        bool namedObject,
-        Vector3d direction) =>
-        Materials is { } rows && rows.TryGet(surface.Material, out GameMaterial row)
-            ? GunShotBallistics.ResolveEntry(
-                round.Weapon.PenetrationPower,
-                row,
-                namedObject,
-                GunShotBallistics.IncidenceRadians(direction, surface.Normal),
-                alreadyDeflected: false,
-                _random.NextSingle)
-            : GunShotImpact.Stopped;
 
     /// <summary>Resolves one round the way <c>0x47B750</c> does — as a march, not a single cast.</summary>
     /// <remarks>

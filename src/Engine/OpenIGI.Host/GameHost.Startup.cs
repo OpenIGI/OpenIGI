@@ -356,7 +356,6 @@ public sealed partial class GameHost
         _hud = null;
         _debugOverlay = null;
         _marks = null;
-        _tracers = null;
         _effects.Forget();
         _cameraStatusLights = null;
         _grenadeRenderer = null;

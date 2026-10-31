@@ -8,7 +8,6 @@ using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
-using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
@@ -124,9 +123,6 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
     /// <summary>Gets the marks rounds have left on the world.</summary>
     public BulletMarks Marks => _shots.Marks;
-
-    /// <inheritdoc cref="PlayerShotResolver.Ballistics"/>
-    public BallisticSimulation Ballistics => _shots.Ballistics;
 
     /// <summary>Gets whether the Dragunov's scope is open, for the HUD's overlay.</summary>
     public bool IsSniperScoped => _optics.IsSniperScoped;
