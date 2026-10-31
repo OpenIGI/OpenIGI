@@ -52,7 +52,7 @@ public sealed partial class GameHost
     private readonly byte[] _voicePacket = new byte[SessionTalk.MaxVoiceBytes];
     private IMicrophone? _microphone;
     private IOpusEncoder? _encoder;
-    private int _ownTalkingAt = int.MinValue;
+    private int? _ownTalkingAt;
     private int _listenedAt = int.MinValue;
 
     // Once a frame, before the game reads its input: this player's voice out, the others' in and placed where they stand.
@@ -247,7 +247,7 @@ public sealed partial class GameHost
 
         public AudioVoiceHandle Voice { get; set; }
 
-        public int HeardAt { get; set; } = int.MinValue;
+        public int? HeardAt { get; set; }
     }
 }
 

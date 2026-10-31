@@ -54,6 +54,19 @@ public sealed class Igi1CoopVoiceTests
         Assert.True(pair.RunUntil(() => joinerAudio.Device.Microphone is { Open: false }, 150) >= 0, "the microphone stayed open");
     }
 
+    [RequiresGameDataFact]
+    public void Nobody_is_shown_talking_before_anyone_has_spoken()
+    {
+        using var pair = new Igi1CoopPair(new ListeningAudio(), new ListeningAudio());
+        Assert.True(pair.RunUntil(() => pair.Joined, 6000) >= 0, "the joiner never got in");
+        pair.RunUntil(() => false, 30);
+
+        // Push to talk, the key up: neither game says anyone is talking -- its own player least of all.
+        System.Reflection.MethodInfo talking = typeof(GameHost).GetMethod("Talking", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Assert.Empty((IEnumerable<int>)talking.Invoke(pair.HostGame, [])!);
+        Assert.Empty((IEnumerable<int>)talking.Invoke(pair.JoinerGame, [])!);
+    }
+
     // An audio device that makes no sound but plays every stream as the real one would, and keeps how loud they were.
     private sealed class ListeningAudio : IAudioDeviceFactory
     {
