@@ -65,6 +65,11 @@ assert.ok(entry, "listed once hosted");
 assert.equal(entry.address, undefined, "never the host's address");
 assert.equal(entry.hostToken, undefined);
 
+// Counted in the stats, as counts only.
+const stats = await (await fetch(`${base}/v1/stats`)).json();
+assert.ok(stats.rooms.public.open >= 1);
+assert.ok(!JSON.stringify(stats).includes(made.code), "never a room's code");
+
 // Joined, case-insensitively, and signaled both ways.
 const joiner = await open(`${wsBase}/v1/rooms/${made.code.toLowerCase()}/ws?role=join`);
 const welcome = await joiner.next();

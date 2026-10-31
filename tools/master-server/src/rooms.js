@@ -285,7 +285,7 @@ export class Room {
     await this.env.SERVER_LIST.get(this.env.SERVER_LIST.idFromName("global")).fetch("https://list/rooms/update", {
       method: "POST",
       // Listed only once its host is there to be joined.
-      body: JSON.stringify({ view: roomView(room), ip: room.ip, public: room.public && room.hostConnected }),
+      body: JSON.stringify({ view: roomView(room), ip: room.ip, public: room.public && room.hostConnected, hosted: room.hostConnected }),
     });
   }
 
