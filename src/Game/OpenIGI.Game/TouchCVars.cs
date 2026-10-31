@@ -17,10 +17,13 @@ namespace OpenIGI.Game;
 public static class TouchCVars
 {
     /// <summary>When turning the phone turns the view.</summary>
-    /// <remarks>Off by default: a player lying down or on a bus would find the view turning on its own.</remarks>
+    /// <remarks>
+    /// Always by default, as a phone shooter's aim is: the swipe still turns the view as well, and a player lying down or
+    /// on a bus turns it off. Nothing asks for the sensors until a touch screen is in use, so a desktop never does.
+    /// </remarks>
     public static readonly EnumCVar<GyroAim> Gyro = CVar.Choice(
         "touch_gyro",
-        GyroAim.Off,
+        GyroAim.Always,
         CVarOptions.Archive,
         "When turning the phone turns the view: off, scope (through a sight or the binoculars) or always.");
 
