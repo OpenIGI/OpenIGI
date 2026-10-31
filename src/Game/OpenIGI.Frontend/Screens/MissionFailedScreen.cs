@@ -23,18 +23,29 @@ public sealed class MissionFailedScreen : ShellScreen
     /// <inheritdoc/>
     protected override ShellTab Tab => ShellTab.Home;
 
+    // A co-op client's mission is its host's: the host restarts it, and this game follows.
+    private bool FollowsHost => Context.Host.Coop?.Status is { Phase: CoopPhase.Playing, Hosting: false };
+
     /// <inheritdoc/>
-    protected override IReadOnlyList<KeyHint> Hints => [new("ENTER", "Restart"), new("ESC", "Abandon")];
+    protected override IReadOnlyList<KeyHint> Hints => FollowsHost ? [new("ESC", "Leave room")] : [new("ENTER", "Restart"), new("ESC", "Abandon")];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context) =>
-        MissionActions.Build(
-            Context.Theme,
-            "Operation",
-            "Mission failed",
-            Context.Theme.Danger,
-            ("Restart", () => Context.Host.RestartMission()),
-            [("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
+        FollowsHost
+            ? MissionActions.Build(
+                Context.Theme,
+                "Waiting for the host to restart",
+                "Mission failed",
+                Context.Theme.Danger,
+                ("Leave room", () => Context.Host.AbandonMission()),
+                [])
+            : MissionActions.Build(
+                Context.Theme,
+                "Operation",
+                "Mission failed",
+                Context.Theme.Danger,
+                ("Restart", () => Context.Host.RestartMission()),
+                [("ABANDON MISSION", ButtonAccent.Destructive, () => Context.Host.AbandonMission())]);
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)

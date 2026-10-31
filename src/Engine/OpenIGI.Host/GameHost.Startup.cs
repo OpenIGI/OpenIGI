@@ -33,6 +33,23 @@ public sealed partial class GameHost
         }
 
         state.Console.QuitRequested += (_, _) => state.Running = false;
+        state.Console.System.Commands.Add(
+            "mission",
+            "Starts a mission by its id, or the one being played again; a co-op room's players follow.",
+            context =>
+            {
+                int? id = context.Count > 0
+                    ? int.TryParse(context[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int asked) ? asked : null
+                    : _session.Mission?.Id;
+                if (id is not { } missionId || !_missions.TryGet(missionId, out _))
+                {
+                    context.Error("No such mission.");
+                    return;
+                }
+
+                GoIntoMission(state, missionId);
+            },
+            "[id]");
 
         // The console reaches the system clipboard through the window, which is what owns the handle,
         // rather than taking a platform reference of its own.
@@ -613,28 +630,9 @@ public sealed partial class GameHost
                 },
                 restartMission: () =>
                 {
-                    if (_session.Mission is { } mission && !_loadSequence.IsActive)
+                    if (_session.Mission is { } mission)
                     {
-                        // The frozen mission under the pause menu is the picture the sequence holds: the
-                        // menu leaves, the place falls out of focus, and it comes back reset.
-                        void Restart()
-                        {
-                            state.Shell?.ClosePauseMenu();
-                            _menuFlow.MenuMode = false;
-                            _menuFlow.PauseMenu = false;
-                            ApplyGameplayMotionBlur();
-                            StartMission(mission.Id);
-                            _window.CursorVisible = false;
-                        }
-
-                        if (CinematicLoadAvailable)
-                        {
-                            BeginCinematicLoad(mission.Id, Restart);
-                        }
-                        else
-                        {
-                            Restart();
-                        }
+                        GoIntoMission(state, mission.Id);
                     }
                 },
                 abandonMission: () =>

@@ -106,9 +106,30 @@ public sealed class Igi1CoopPairTests
             $"the scene runs on: host {pair.Host.World.Cutscenes?.ActiveScene?.Id}, joiner {pair.Joiner.World.Cutscenes?.ActiveScene?.Id}");
     }
 
-    private static Igi1CoopPair Joined()
+    [RequiresGameDataFact]
+    public void The_host_starts_the_mission_again_and_the_joiner_follows_it_into_the_new_level()
     {
-        Igi1CoopPair pair = new();
+        using Igi1CoopPair pair = Joined("-runat", "400", "mission");
+        // The titles live on; each load builds the level again.
+        object firstHost = pair.Host!.World.LevelRoot!;
+        object firstJoiner = pair.Joiner!.World.LevelRoot!;
+        Assert.True(pair.RunUntil(() => pair.Host.World.LevelRoot is { } now && !ReferenceEquals(now, firstHost), 1500) >= 0, "the host never started the mission again");
+        Assert.True(pair.RunUntil(() => pair.Joiner.World.LevelRoot is { } now && !ReferenceEquals(now, firstJoiner), 1500) >= 0, "the joiner never followed");
+
+        // Both in the new level, the joiner's player the host's partner there, and walking it moves it on the host.
+        Assert.True(pair.RunUntil(() => pair.Host!.World.NetworkPlayers.Count == 1 && pair.Client.Session?.Latest is not null, 1500) >= 0, "the joiner never came into the host's new level");
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Vector3d from = partner.Player.Body.Position;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 300);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        double walked = Vector3d.Distance(from, partner.Player.Body.Position);
+        Assert.True(walked > 2048, $"after the restart the joiner's walk moved its player on the host {walked} units");
+    }
+
+    private static Igi1CoopPair Joined(params string[] hostArgs)
+    {
+        Igi1CoopPair pair = new(hostArgs: hostArgs);
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
         return pair;
     }

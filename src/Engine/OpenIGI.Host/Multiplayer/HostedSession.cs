@@ -41,6 +41,8 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly HashSet<int> _known = [];
     private IReplicatedWorld? _world;
+    // The level the session was last bound to.
+    private object? _level;
     private ServerSession? _session;
 
     /// <summary>Initializes a new instance of the <see cref="HostedSession"/> class.</summary>
@@ -84,7 +86,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
     public string Title => _room?.Code is { } code ? $"Room {code}  ·  {MapName(_options.Map)}" : $"{_options.Name}  ·  {MapName(_options.Map)}";
 
     /// <inheritdoc/>
-    public string Place => MapName(_options.Map);
+    public string Place => MapName(_session?.Map ?? _options.Map);
 
     /// <inheritdoc/>
     public float? OwnRevive => _options.IncludesHost ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
@@ -108,10 +110,22 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, IDisp
             }
 
             _world = replicated.CreateReplicatedWorld(_options.IncludesHost);
+            _level = replicated.Level;
             _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin);
             _logger.Information(
                 LogCategory,
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
+        }
+
+        else if (title is IReplicatedTitle next && !ReferenceEquals(next.Level, _level))
+        {
+            // Another level: the next mission, or this one again. The room goes on, and every player with it.
+            _world = next.CreateReplicatedWorld(_options.IncludesHost);
+            _level = next.Level;
+            string map = next.Map.Length > 0 ? next.Map : _session.Map;
+            _session.Travel(_world, map);
+            _room?.ReportState(_known.Count + (_options.IncludesHost ? 1 : 0), map);
+            _logger.Information(LogCategory, $"The room goes on to {MapName(map)}; its players follow.");
         }
 
         if (_room is { Code: { } code } && !_announced)

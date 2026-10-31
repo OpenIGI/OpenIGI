@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Net.Rooms;
 
@@ -14,6 +15,47 @@ public sealed partial class GameHost
     /// own in the browser. Without it the menu's co-op section says rooms aren't available here.
     /// </remarks>
     public IRtcPeerFactory? RoomPeers { get; set; }
+
+    // Into a mission from over a played one -- a restart, or a co-op client following its server -- behind the same going-in
+    // sequence: the frozen level under the menu is the picture held, the menu leaves, and the place comes back as asked.
+    private void GoIntoMission(FrameLoopState state, int missionId)
+    {
+        if (_loadSequence.IsActive)
+        {
+            return;
+        }
+
+        void Go()
+        {
+            state.Shell?.ClosePauseMenu();
+            _menuFlow.MenuMode = false;
+            _menuFlow.PauseMenu = false;
+            ApplyGameplayMotionBlur();
+            StartMission(missionId);
+            _window.CursorVisible = false;
+        }
+
+        if (CinematicLoadAvailable)
+        {
+            BeginCinematicLoad(missionId, Go);
+        }
+        else
+        {
+            Go();
+        }
+    }
+
+    // A co-op client goes where its server goes: on to the next mission, or into the same one again.
+    private void FollowSessionTravel(FrameLoopState state)
+    {
+        if (TickObserver is ISessionFollower follower
+            && follower.TakeTravel() is { } map
+            && int.TryParse(map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int missionId))
+        {
+            _logger.Information("Coop", $"Following the room's host into mission {missionId}.");
+            GoIntoMission(state, missionId);
+        }
+    }
 
     // Made once, before the shell that offers it.
     private CoopRooms? CreateCoop() => RoomPeers is { } peers

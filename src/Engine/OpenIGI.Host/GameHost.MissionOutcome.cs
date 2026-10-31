@@ -47,6 +47,8 @@ public sealed partial class GameHost
 
         public void StartMission(int id) => host.StartMission(id);
 
+        public bool FollowsSession => host.TickObserver is Multiplayer.ISessionFollower;
+
         public void ReleasePlayedMission() => host.ReleasePlayedMission();
     }
 }

@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisposable
+public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -26,6 +26,8 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
     private NetClient? _netClient;
     private ClientSession? _session;
     private bool _welcomed;
+    // The level the session was last bound to.
+    private object? _level;
     private string? _ended;
 
     /// <summary>Initializes a new instance of the <see cref="SessionClient"/> class.</summary>
@@ -105,10 +107,19 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
             }
 
             _world = replicated.CreateClientWorld();
+            _level = replicated.Level;
             _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId));
             _session = new ClientSession(_netClient, _world.LocalFrame.Length);
             _session.Connect(_server, _request, now);
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
+        }
+
+        else if (title is IReplicatedTitle next && !ReferenceEquals(next.Level, _level))
+        {
+            // The level the server travelled to is up: this one's players and state are shown on it from now.
+            _world = next.CreateClientWorld();
+            _level = next.Level;
+            _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
         }
 
         ClientReplication.Tick(_session, _world!, now);
@@ -124,6 +135,10 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, IDisp
             _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
         }
     }
+
+    /// <inheritdoc/>
+    /// <inheritdoc/>
+    public string? TakeTravel() => _session?.TakeTravel();
 
     /// <inheritdoc/>
     public void Dispose()

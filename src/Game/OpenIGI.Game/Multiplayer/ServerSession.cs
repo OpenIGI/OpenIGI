@@ -18,7 +18,11 @@ namespace OpenIGI.Game.Multiplayer;
 public sealed class ServerSession
 {
     private readonly NetServer _net;
-    private readonly IReplicatedWorld _world;
+    private IReplicatedWorld _world;
+
+    // Which of the server's levels a message belongs to, counted on at each travel: a snapshot or a command from the level
+    // before is dropped, its ticks being another level's.
+    private byte _epoch;
     private readonly Dictionary<int, ClientState> _clients = [];
     private readonly UserCommandCodec _codec;
     private readonly BitWriter _writer = new(2048);
@@ -72,7 +76,7 @@ public sealed class ServerSession
     public int TickRate { get; }
 
     /// <summary>Gets the map.</summary>
-    public string Map { get; }
+    public string Map { get; private set; }
 
     /// <summary>Gets or sets how many ticks apart snapshots are sent; one sends every tick.</summary>
     public int SnapshotInterval { get; set; } = 1;
@@ -222,6 +226,7 @@ public sealed class ServerSession
                 _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
                 _writer.WriteBits((uint)part, 8);
                 _writer.WriteBits((uint)parts, 8);
+                _writer.WriteBits(_epoch, 8);
                 SnapshotCodec.Write(_writer, snapshot with { Humans = slice }, baseline);
                 _writer.WriteBits((uint)ran, 32);
                 _writer.WriteBits((uint)(ran >> 32), 32);
@@ -279,7 +284,56 @@ public sealed class ServerSession
         _writer.WriteVarUInt((uint)entity.Value);
         _writer.WriteVarUInt((uint)TickRate);
         _writer.WriteString(Map, 64);
+        _writer.WriteBits(_epoch, 8);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    /// <summary>Goes on to another level with every player: the next mission, or the same one again.</summary>
+    /// <param name="world">The new level's world.</param>
+    /// <param name="map">Its map.</param>
+    /// <remarks>
+    /// Each client keeps its slot, so its player is made again in the new level under the same entity, and is told to load
+    /// the map; until its new level is up, what it sends belongs to the old one and is dropped.
+    /// </remarks>
+    public void Travel(IReplicatedWorld world, string map)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(map);
+        _world = world;
+        Map = map;
+        _epoch++;
+        LagCompensationHistory.Clear();
+        world.LagCompensation = new LagCompensation(LagCompensationHistory, TickRate);
+        if (Match.Players.TryGetValue(HostSlot, out MatchPlayer? host))
+        {
+            world.SetSkin(HostSlot, host.Skin);
+        }
+
+        foreach ((int slot, ClientState client) in _clients.ToArray())
+        {
+            if (world.AddPlayer(slot, client.Name) is not { } entity)
+            {
+                _clients.Remove(slot);
+                Match.Leave(slot);
+                _net.Disconnect(slot, "no room in the level");
+                continue;
+            }
+
+            world.SetSkin(slot, Match.Players.GetValueOrDefault(slot)?.Skin ?? string.Empty);
+            _clients[slot] = new ClientState(client.Name, entity);
+            _writer.Reset();
+            _writer.WriteBits((uint)SessionMessage.Travel, 8);
+            _writer.WriteBits(_epoch, 8);
+            _writer.WriteVarUInt((uint)entity);
+            _writer.WriteString(map, 64);
+            _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+        }
+
+        foreach (MatchPlayer player in Match.Players.Values)
+        {
+            player.IsAlive = true;
+            player.DiedAt = null;
+        }
     }
 
     // The map's objectives, taken in order; a new round puts every player back at its team's spawn.
@@ -331,7 +385,7 @@ public sealed class ServerSession
     private void ReadMessage(int slot, ClientState client, byte[] data, long serverTick)
     {
         BitReader reader = new(data);
-        if ((SessionMessage)reader.ReadBits(8) != SessionMessage.Commands)
+        if ((SessionMessage)reader.ReadBits(8) != SessionMessage.Commands || reader.ReadBits(8) != _epoch)
         {
             return;
         }

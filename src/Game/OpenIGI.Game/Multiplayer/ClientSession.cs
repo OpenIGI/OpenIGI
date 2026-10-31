@@ -44,6 +44,20 @@ public sealed class ClientSession
     /// <summary>Gets the map the server plays, once welcomed.</summary>
     public string? Map { get; private set; }
 
+    /// <summary>Gets which of the server's levels this client is on, counted on at each travel.</summary>
+    public byte Epoch { get; private set; }
+
+    private string? _travel;
+
+    /// <summary>Takes the map the server has gone on to, once, for the client to load.</summary>
+    /// <returns>The map, or <see langword="null"/> when the server has not travelled since the last call.</returns>
+    public string? TakeTravel()
+    {
+        string? travel = _travel;
+        _travel = null;
+        return travel;
+    }
+
     /// <summary>Gets the estimate of the server's clock, once welcomed.</summary>
     public TickClockSync? Clock { get; private set; }
 
@@ -90,7 +104,7 @@ public sealed class ClientSession
     public int CommandLead { get; private set; }
 
     /// <summary>Gets what keeps this client's own player where the server has it.</summary>
-    public PredictionReconciler Reconciler { get; } = new();
+    public PredictionReconciler Reconciler { get; private set; } = new();
 
     /// <summary>Gets the snapshots that could not be read because their baseline was gone.</summary>
     public long DroppedSnapshots { get; private set; }
@@ -153,6 +167,7 @@ public sealed class ClientSession
 
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Commands, 8);
+        _writer.WriteBits(Epoch, 8);
         _writer.WriteBits((uint)_newestReceived, 32);
         _writer.WriteBits((uint)(_newestReceived >> 32), 32);
         _codec.Write(_writer, _sent.ToArray().AsSpan(first));
@@ -163,6 +178,23 @@ public sealed class ClientSession
     /// <summary>Sends what is queued.</summary>
     /// <param name="now">The current time in seconds.</param>
     public void Flush(double now) => _net.Flush(now);
+
+    // Everything that belonged to the level the server has left: its snapshots, its clock, the commands sent for it.
+    private void ForgetLevel()
+    {
+        _sent.Clear();
+        _parts.Clear();
+        _newestReceived = -1;
+        Received.Clear();
+        Remote.Clear();
+        Latest = null;
+        Level = null;
+        _levelTaken = false;
+        LastRunCommandTick = long.MinValue;
+        CommandLead = 0;
+        Reconciler = new PredictionReconciler();
+        Clock = new TickClockSync(Math.Max(1, TickRate));
+    }
 
     private void Keep(UserCommand command)
     {
@@ -217,7 +249,15 @@ public sealed class ClientSession
                 EntityId = (int)reader.ReadVarUInt();
                 TickRate = (int)reader.ReadVarUInt();
                 Map = reader.ReadString(64);
+                Epoch = (byte)reader.ReadBits(8);
                 Clock = new TickClockSync(Math.Max(1, TickRate));
+                break;
+            case SessionMessage.Travel:
+                Epoch = (byte)reader.ReadBits(8);
+                EntityId = (int)reader.ReadVarUInt();
+                Map = reader.ReadString(64);
+                ForgetLevel();
+                _travel = Map;
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
@@ -243,6 +283,11 @@ public sealed class ClientSession
             case SessionMessage.Snapshot when Clock is { } clock:
                 int part = (int)reader.ReadBits(8);
                 int parts = (int)reader.ReadBits(8);
+                if (reader.ReadBits(8) != Epoch)
+                {
+                    return;
+                }
+
                 if (!SnapshotCodec.Read(ref reader, Received.Get, out Snapshot? piece) || piece is null || parts < 1 || part >= parts)
                 {
                     DroppedSnapshots++;

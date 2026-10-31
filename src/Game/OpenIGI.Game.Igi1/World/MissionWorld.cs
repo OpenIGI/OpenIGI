@@ -68,6 +68,9 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets a co-op session's other players, run after the mission's own each tick; empty when playing alone.</summary>
     public List<Multiplayer.Igi1NetworkPlayer> NetworkPlayers { get; } = [];
 
+    /// <summary>Gets or sets the id of the mission this level is.</summary>
+    public int MissionId { get; set; }
+
     /// <summary>Gets the other players a co-op client's level shows, as the server's snapshots have them.</summary>
     public List<Multiplayer.Igi1NetworkPlayer> ShownPartners { get; } = [];
 
@@ -224,9 +227,14 @@ public sealed class MissionWorld : MissionState
     }
 
     /// <inheritdoc/>
-    /// <remarks>The soldiers and the player go with the rest.</remarks>
+    /// <remarks>The soldiers and the player go with the rest, and a co-op session's partners with the level they were in.</remarks>
     public override void ReleaseWorld()
     {
+        NetworkPlayers.Clear();
+        ShownPartners.Clear();
+        PartnerBodies = null;
+        PartnerRan = null;
+        CoopClient = false;
         Soldiers = null;
         SoldierPresenter = null;
         Player = null;

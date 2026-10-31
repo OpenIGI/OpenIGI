@@ -91,6 +91,12 @@ public readonly record struct WorldDeath(int Victim, int Killer);
 /// <summary>A title's player that can host a session: it hands the session the level as an <see cref="IReplicatedWorld"/>.</summary>
 public interface IReplicatedTitle
 {
+    /// <summary>Gets the map the level is, as a session names it: the mission's id for a campaign level.</summary>
+    string Map => string.Empty;
+
+    /// <summary>Gets what stands for the level now loaded: another object once another level is, the same one again included.</summary>
+    object Level => this;
+
     /// <summary>Makes the level's replicated world.</summary>
     /// <param name="includesHost">Whether the level's own player is a player of the session: a listen server, not a dedicated one.</param>
     /// <returns>The world.</returns>
@@ -177,4 +183,7 @@ public enum SessionMessage : byte
 
     /// <summary>Server to client, reliable: the level's running state, as the title writes it.</summary>
     Level = 6,
+
+    /// <summary>Server to client, reliable: the server has gone on to another level, which the client loads to play on.</summary>
+    Travel = 7,
 }

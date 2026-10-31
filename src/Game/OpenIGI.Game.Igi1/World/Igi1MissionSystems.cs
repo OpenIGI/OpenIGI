@@ -37,6 +37,7 @@ public static class Igi1MissionSystems
             .InsertBefore(MissionSystemNames.TestCaptures, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Cutscenes, b =>
             {
                 game.World.LevelRoot = b.LevelRoot;
+                game.World.MissionId = b.Id;
                 b.MissionText = game.Setup.BuildCutscenes(b.Loaded, b.LevelRoot, b.Walker, () => b.Objectives);
             }))
             .InsertBefore(MissionSystemNames.TestCaptures, new LevelSystem<MissionLevelBuild>(MissionSystemNames.Objectives, b =>

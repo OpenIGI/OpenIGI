@@ -32,12 +32,13 @@ internal sealed class Igi1CoopPair : IDisposable
     private readonly HostedSession _session;
     private readonly SessionClient _client;
     private readonly Watch _hostWatch;
-    private readonly Watch _joinerWatch;
+    private readonly FollowingWatch _joinerWatch;
 
     /// <summary>Starts both games on a mission; the joiner connects once the host's level is up.</summary>
     /// <param name="mission">The mission both play.</param>
     /// <param name="frames">How many frames each may run.</param>
-    public Igi1CoopPair(int mission = 1, int frames = 20000)
+    /// <param name="hostArgs">More of the host's command line, such as a <c>-runat</c>.</param>
+    public Igi1CoopPair(int mission = 1, int frames = 20000, params string[] hostArgs)
     {
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
@@ -50,10 +51,10 @@ internal sealed class Igi1CoopPair : IDisposable
             NullLogger.Instance);
         _client = new SessionClient(network.Open(), _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
 
-        HostGame = Make(args, HostWindow, _hostDevice);
+        HostGame = Make([.. args, .. hostArgs], HostWindow, _hostDevice);
         JoinerGame = Make(args, JoinerWindow, _joinerDevice);
         _hostWatch = new Watch(_session);
-        _joinerWatch = new Watch(_client);
+        _joinerWatch = new FollowingWatch(_client);
         HostGame.TickObserver = _hostWatch;
         JoinerGame.TickObserver = _joinerWatch;
         HostGame.Start();
@@ -150,7 +151,13 @@ internal sealed class Igi1CoopPair : IDisposable
     }
 
     // Passes the ticks on to a session and keeps the level it runs on.
-    private sealed class Watch(IHostTickObserver inner) : IHostTickObserver
+    // A client's watch follows its session where the server goes.
+    private sealed class FollowingWatch(SessionClient inner) : Watch(inner), ISessionFollower
+    {
+        public string? TakeTravel() => inner.TakeTravel();
+    }
+
+    private class Watch(IHostTickObserver inner) : IHostTickObserver
     {
         public Igi1Gameplay? Game { get; private set; }
 

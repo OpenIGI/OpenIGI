@@ -51,6 +51,9 @@ internal interface IMissionOutcomeHost
     /// <param name="id">The mission to start.</param>
     void StartMission(int id);
 
+    // A co-op client's: the mission goes on, or again, where its server takes it.
+    bool FollowsSession { get; }
+
     /// <summary>Lets go of the mission being played.</summary>
     void ReleasePlayedMission();
 }
@@ -149,9 +152,17 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
                     host.SaveConfiguration();
                 }
 
-                logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
                 host.TitlePlayer?.MissionCompleted(nextMissionId);
-                host.StartMission(nextMissionId);
+                if (host.FollowsSession)
+                {
+                    // The server loads the next one, and this client follows it there.
+                    logger.Information("Mission", $"Completed mission {completedMission.Id}; following the room's host to {nextMissionId}.");
+                }
+                else
+                {
+                    logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
+                    host.StartMission(nextMissionId);
+                }
             }
             else
             {

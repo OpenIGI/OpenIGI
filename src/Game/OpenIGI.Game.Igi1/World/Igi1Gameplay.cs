@@ -36,6 +36,13 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
 
+    /// <inheritdoc/>
+    public string Map => World.MissionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <inheritdoc/>
+    /// <remarks>The title outlives its missions; each load builds a new level tree.</remarks>
+    public object Level => World.LevelRoot ?? (object)this;
+
     /// <summary>Gets the player the host steers and looks through, or <see langword="null"/> before a level places one.</summary>
     public IHostedPlayer? Player => World.Player;
 
