@@ -20,7 +20,7 @@ public sealed partial class GameHost
     private const double PreviewBack = 3.4;
     private const double PreviewEyeHeight = 1.5;
     private const double PreviewAim = 0.75;
-    private const double PreviewAside = 1.15;
+    private const double PreviewAside = 2.0;
 
     // A tick of the look's idle, as the game's own ticks run.
     private const float PreviewTickSeconds = 1f / 30f;
