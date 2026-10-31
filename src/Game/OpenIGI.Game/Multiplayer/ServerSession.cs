@@ -28,6 +28,9 @@ public sealed class ServerSession
     private readonly Dictionary<string, (int Parked, double Since)> _away = new(StringComparer.Ordinal);
     private int _nextParked = -1;
 
+    // The names the host has put out of the room: they are not let back in while it stands.
+    private readonly HashSet<string> _barred = new(StringComparer.Ordinal);
+
     // What was said and marked since the host last took it, its own included.
     private readonly List<ChatLine> _heard = [];
     private readonly List<WorldMark> _marked = [];
@@ -295,6 +298,12 @@ public sealed class ServerSession
 
     private void Join(int slot, string name, string skin)
     {
+        if (_barred.Contains(name))
+        {
+            _net.Disconnect(slot, "the host removed you from this room");
+            return;
+        }
+
         // One who dropped and comes back under its name has its player back, where and as it was, and its standing.
         int? entity = null;
         if (_away.Remove(name, out (int Parked, double Since) away) && _world.UnparkPlayer(away.Parked, slot) is { } back)
@@ -325,6 +334,26 @@ public sealed class ServerSession
         _writer.WriteString(Map, 64);
         _writer.WriteBits(_epoch, 8);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    /// <summary>Gets whether a name has been put out of the room, and is to be refused at the door.</summary>
+    /// <param name="name">The name.</param>
+    /// <returns><see langword="true"/> when it was.</returns>
+    public bool IsBarred(string name) => _barred.Contains(name);
+
+    /// <summary>Puts a client's player out of the room, and keeps its name out while the room stands.</summary>
+    /// <param name="slot">The client's slot.</param>
+    public void Kick(int slot)
+    {
+        if (!_clients.Remove(slot, out ClientState? client))
+        {
+            return;
+        }
+
+        _barred.Add(client.Name);
+        _world.RemovePlayer(slot);
+        Match.Leave(slot);
+        _net.Disconnect(slot, "the host removed you from this room");
     }
 
     /// <summary>Says a line to every player, as the listen server's own player.</summary>

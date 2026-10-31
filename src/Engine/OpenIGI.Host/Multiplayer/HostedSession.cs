@@ -150,6 +150,20 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public void Dispose() => _net.Dispose();
 
+    /// <summary>Gets the names of the players who joined, the host's own not among them.</summary>
+    public IReadOnlyList<string> Players => _session is { } session ? [.. session.Clients.Select(session.NameOf).OfType<string>()] : [];
+
+    /// <summary>Puts a player out of the room by its name.</summary>
+    /// <param name="name">The player's name.</param>
+    public void Kick(string name)
+    {
+        if (_session is { } session && session.Clients.FirstOrDefault(slot => session.NameOf(slot) == name) is int slot && session.NameOf(slot) == name)
+        {
+            _logger.Information(LogCategory, $"{name} was removed from the room.");
+            session.Kick(slot);
+        }
+    }
+
     /// <inheritdoc/>
     public void Say(string text) => _session?.Say(text);
 
@@ -194,6 +208,11 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         if (_options.Content.Length > 0 && join.Content.Length > 0 && !string.Equals(join.Content, _options.Content, StringComparison.Ordinal))
         {
             return NetAdmission.Reject("your game plays with different mods from the host's");
+        }
+
+        if (_session?.IsBarred(join.PlayerName) == true)
+        {
+            return NetAdmission.Reject("the host removed you from this room");
         }
 
         if (_options.Password.Length > 0 && !string.Equals(join.Password, _options.Password, StringComparison.Ordinal))

@@ -31,6 +31,14 @@ public sealed class PauseScreen : ShellScreen
     protected override UiElement? BuildContent(LayoutContext context)
     {
         List<(string Text, ButtonAccent Accent, Action Activated)> actions = [];
+
+        // A co-op client's mission is its host's: the host restarts, saves and loads it, and this game follows.
+        if (Context.Host.Coop?.Status is { Phase: CoopPhase.Playing, Hosting: false })
+        {
+            actions.Add(("LEAVE ROOM", ButtonAccent.Destructive, () => Context.Host.AbandonMission()));
+            return MissionActions.Build(Context.Theme, "Co-op", "Paused", Context.Theme.Accent, ("Resume", () => Context.Host.ResumeMission()), actions);
+        }
+
         if (Context.Host.MissionSaves is { } saves)
         {
             actions.Add(("SAVE GAME", ButtonAccent.Ghost, () => Context.Stack.Reset(new MissionSavesScreen(Context, saves, isSaving: true))));

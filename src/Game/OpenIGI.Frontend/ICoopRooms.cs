@@ -58,6 +58,13 @@ public interface ICoopRooms
     /// <param name="code">The code.</param>
     void Join(string code);
 
+    /// <summary>Gets the names of the players in the room this player hosts, its own not among them; empty otherwise.</summary>
+    IReadOnlyList<string> Players { get; }
+
+    /// <summary>Puts a player out of the room this player hosts, and keeps it out.</summary>
+    /// <param name="name">The player's name.</param>
+    void Kick(string name);
+
     /// <summary>Leaves the room, if in one.</summary>
     void Leave();
 

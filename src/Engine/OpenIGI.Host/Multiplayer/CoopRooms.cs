@@ -129,6 +129,12 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <inheritdoc/>
+    public IReadOnlyList<string> Players => (_session as HostedSession)?.Players ?? [];
+
+    /// <inheritdoc/>
+    public void Kick(string name) => (_session as HostedSession)?.Kick(name);
+
     public void RefreshListing()
     {
         if (_listing is { IsCompleted: false })

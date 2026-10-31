@@ -205,9 +205,21 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="place">Where it is played: the mission or map.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawScoreboard(SpriteBatch batch, Game.Multiplayer.Scoreboard board, int? localEntity, string? roomCode, string place, int screenWidth, int screenHeight)
+    /// <param name="controls">The host's hand on the board -- the players it may remove, and the pointer -- or <see langword="null"/> for a board only read.</param>
+    void DrawScoreboard(
+        SpriteBatch batch,
+        Game.Multiplayer.Scoreboard board,
+        int? localEntity,
+        string? roomCode,
+        string place,
+        int screenWidth,
+        int screenHeight,
+        ScoreboardControls? controls = null)
     {
     }
+
+    /// <summary>Gets where the last board drew each player's remove button, by entity, in pixels: what a host's click is tested against.</summary>
+    IReadOnlyList<(int Entity, float X, float Y, float Width, float Height)> ScoreboardRemoveButtons => [];
 
     /// <summary>Draws the panel a fallen co-op player sees while it waits for a teammate: its revival so far.</summary>
     /// <param name="batch">The batch to draw into.</param>

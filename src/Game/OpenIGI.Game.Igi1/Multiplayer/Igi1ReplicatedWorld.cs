@@ -36,7 +36,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     private const double LateJoinDistance = 30 * 4096;
 
     /// <summary>How long a teammate stands by a fallen player to bring it back, in ticks: five seconds.</summary>
-    public const int ReviveTicks = 5 * 30;
+    public static int ReviveTicks => CoopCVars.ReviveSeconds.Value * 30;
 
     /// <summary>How near a teammate stands to a fallen player to revive it, in world units: two metres.</summary>
     public const double ReviveReachUnits = 2 * 4096;
@@ -86,6 +86,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         {
             Record(own, HostEntity);
         }
+
+        // With friendly fire on, a player's round meets the other players as it meets the guards.
+        _game.World.Bodies.Add(new CoopPlayerBodies(_game));
 
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>

@@ -61,6 +61,21 @@ public sealed partial class GameHost
             });
 
         console.Commands.Add(
+            "coop_kick",
+            "Puts a player out of the co-op room this game hosts, by its name.",
+            context =>
+            {
+                if (TickObserver is not HostedSession hosted)
+                {
+                    context.Error("Not hosting a co-op room.");
+                    return;
+                }
+
+                hosted.Kick(context.Rest(0));
+            },
+            "<name>");
+
+        console.Commands.Add(
             "coop_chat",
             "Opens a line to type to the others in the co-op room; Enter says it, Escape lets it go.",
             _ =>

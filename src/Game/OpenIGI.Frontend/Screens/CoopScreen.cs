@@ -23,6 +23,8 @@ public sealed class CoopScreen : ShellScreen
 
     private static readonly string[] Difficulties = AiDifficultyNames.All;
     private static readonly string[] Listings = ["Public", "Private"];
+    private static readonly string[] OffOn = ["Off", "On"];
+    private static readonly int[] ReviveChoices = [3, 5, 10];
 
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
@@ -220,6 +222,7 @@ public sealed class CoopScreen : ShellScreen
         column.RowDefinitions.Add(GridLength.Star);
         column.RowDefinitions.Add(GridLength.Auto);
         column.RowDefinitions.Add(GridLength.Auto);
+        column.RowDefinitions.Add(GridLength.Auto);
 
         var turn = new TurnArea(theme, "Drag to turn") { Tooltip = "Drag, or press left and right, to turn your look round." };
         turn.Turned += coop.TurnLook;
@@ -276,8 +279,41 @@ public sealed class CoopScreen : ShellScreen
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Height = CellHeight, HorizontalAlignment = HorizontalAlignment.Left };
         actions.Add(Strip(theme, mission, difficulty, listing));
         actions.Add(host);
-        column.Add(actions, 2, 0);
+        column.Add(BuildRules(theme), 2, 0);
+        column.Add(actions, 3, 0);
         return column;
+    }
+
+    // How the room plays, the host's to set and saved with its settings: whether rounds hurt teammates, and how long a revival takes.
+    private GlassPanel BuildRules(UiTheme theme)
+    {
+        var friendlyFire = new OptionCycler(theme, "Friendly fire", OffOn, CoopCVars.FriendlyFire.Value ? 1 : 0)
+        {
+            Height = CellHeight,
+            ContentWidth = 120f,
+            Tooltip = "Whether your rounds hurt your teammates, and theirs you.",
+        };
+        friendlyFire.SelectionChanged += index =>
+        {
+            CoopCVars.FriendlyFire.Value = index == 1;
+            Context.Host.SaveSettings();
+        };
+
+        int revive = Math.Max(0, Array.IndexOf(ReviveChoices, CoopCVars.ReviveSeconds.Value));
+        var reviveTime = new OptionCycler(
+            theme, "Revive", [.. ReviveChoices.Select(static s => string.Create(CultureInfo.InvariantCulture, $"{s} s"))], revive)
+        {
+            Height = CellHeight,
+            ContentWidth = 100f,
+            Tooltip = "How long a teammate stands beside a downed player to bring them back.",
+        };
+        reviveTime.SelectionChanged += index =>
+        {
+            CoopCVars.ReviveSeconds.Value = ReviveChoices[index];
+            Context.Host.SaveSettings();
+        };
+
+        return Strip(theme, friendlyFire, reviveTime);
     }
 
     // One strip of glass holding cyclers side by side, as the campaign's conditions are held.

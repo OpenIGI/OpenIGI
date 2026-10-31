@@ -50,8 +50,22 @@ internal sealed partial class RemasteredHudRenderer
     /// </para>
     /// <para>Not the original's: it had no other players to list.</para>
     /// </remarks>
-    public void DrawScoreboard(SpriteBatch batch, Scoreboard board, int? localEntity, string? roomCode, string place, int screenWidth, int screenHeight)
+    public IReadOnlyList<(int Entity, float X, float Y, float Width, float Height)> ScoreboardRemoveButtons => _removeButtons;
+
+    private readonly List<(int Entity, float X, float Y, float Width, float Height)> _removeButtons = [];
+
+    /// <inheritdoc/>
+    public void DrawScoreboard(
+        SpriteBatch batch,
+        Scoreboard board,
+        int? localEntity,
+        string? roomCode,
+        string place,
+        int screenWidth,
+        int screenHeight,
+        ScoreboardControls? controls = null)
     {
+        _removeButtons.Clear();
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(board);
         if (_theme is not { } type)
@@ -131,6 +145,11 @@ internal sealed partial class RemasteredHudRenderer
             var row = new UiRect(x + pad - Px(14f), y, width - (pad * 2f) + Px(28f), Px(BoardRow));
             bool own = localEntity is { } self && line.Entity == self;
             DrawPlayerCard(painter, type, context, row, line, own, teamed, killsRight, deathsRight, pingRight);
+            if (controls is { } hand && hand.Removable.Contains(line.Entity))
+            {
+                DrawRemove(painter, type, context, row, killsRight - Px(110f), line.Entity, hand);
+            }
+
             y += Px(BoardRow + BoardRowGap);
         }
 
@@ -175,6 +194,32 @@ internal sealed partial class RemasteredHudRenderer
     }
 
     // One player's card: lit when it is this player's own, dimmed when it has fallen.
+    // The host's button on a joiner's row: REMOVE, lit under the pointer, and CONFIRM in red once it has been clicked.
+    private void DrawRemove(UiPainter painter, UiTheme type, LayoutContext context, UiRect row, float right, int entity, ScoreboardControls hand)
+    {
+        bool confirming = hand.Confirming == entity;
+        string text = confirming ? "CONFIRM" : "REMOVE";
+        float size = context.Px(LabelText);
+        float width = (type.Heading.MeasureWidth(text, size) * 1.14f) + context.Px(24f);
+        float height = context.Px(30f);
+        var button = new UiRect(right - width, row.Y + ((row.Height - height) * 0.5f), width, height);
+        bool over = hand.PointerX >= button.X && hand.PointerX <= button.Right && hand.PointerY >= button.Y && hand.PointerY <= button.Bottom;
+        if (confirming || over)
+        {
+            painter.FillRect(button, confirming ? Bad : Bad.WithAlpha(70));
+        }
+
+        Outline(painter, button, Bad, MathF.Max(1f, context.Px(1f)));
+        painter.DrawLabel(
+            type.Heading,
+            text,
+            new UiVec2(button.X + context.Px(12f), UiRowStyle.CapsCenterY(type.Heading, size, button)),
+            size,
+            confirming ? Bgra32.FromRgb(20, 16, 10) : Text,
+            0.1f);
+        _removeButtons.Add((entity, button.X, button.Y, button.Width, button.Height));
+    }
+
     private void DrawPlayerCard(
         UiPainter painter,
         UiTheme type,
@@ -327,7 +372,7 @@ internal sealed partial class RemasteredHudRenderer
 
         string line = progress > 0f
             ? "Stay put, a teammate is with you"
-            : "A teammate can revive you by standing beside you for 5 seconds  ·  Fire to watch another";
+            : "A teammate can revive you by standing beside you  ·  Fire to watch another";
         float lineSize = Px(17f);
         float lineWidth = type.Body.MeasureWidth(line, lineSize);
         painter.DrawLabel(type.Body, line, new UiVec2(x + ((width - lineWidth) * 0.5f), y + Px(68f)), lineSize, UiPalette.TextSecondary, 0.01f);

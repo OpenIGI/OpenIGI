@@ -193,7 +193,8 @@ public sealed class LevelBodies
             return true;
         }
 
-        if (struck.Task is IWeaponHitTarget taker)
+        // A body that takes its own hits -- one with no task of its own to be handed them -- before its task.
+        if ((struck as IWeaponHitTarget ?? struck.Task as IWeaponHitTarget) is { } taker)
         {
             WeaponHit sent = hitFor(hit);
             taker.WeaponHit(scale == 1f ? sent : sent with { Damage = sent.Damage * scale });

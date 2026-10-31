@@ -176,6 +176,7 @@ public sealed partial class GameHost
         if (!state.Console.IsOpen)
         {
             UpdateCoopTalk();
+            UpdateScoreboard();
         }
     }
 

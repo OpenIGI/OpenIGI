@@ -346,11 +346,12 @@ public sealed partial class GameHost
         if (TickObserver is ISessionScoreboard session
             && session.CurrentScoreboard is { } board
             && _remasteredHud is { IsReady: true } boardHud
-            && ScoreboardHeld())
+            && _scoreboardUp)
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            boardHud.DrawScoreboard(state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight);
+            boardHud.DrawScoreboard(
+                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board));
             state.Batch.End();
         }
 

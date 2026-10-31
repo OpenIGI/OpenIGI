@@ -224,6 +224,51 @@ public sealed class Igi1CoopPairTests
         Assert.Contains(new Game.Multiplayer.WorldMark(joiner, new Game.Multiplayer.Int3(10, 20, 30)), hostMarks);
     }
 
+    [RequiresGameDataFact]
+    public void A_players_round_hurts_a_teammate_only_with_friendly_fire_on()
+    {
+        using Igi1CoopPair pair = Joined();
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Vector3d eye = pair.Host.World.Player!.Body.Eye;
+        Vector3d chest = partner.Player.Body.Position + new Vector3d(0, 0, 1.3 * 4096);
+        Vector3d beyond = eye + ((chest - eye) * 2);
+        bool Shoot() => pair.Host.World.Bodies.Shoot(
+            eye,
+            beyond,
+            pair.Host.World.PlayerTask,
+            hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 1f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
+            out _);
+
+        float before = partner.Health.RemainingFraction;
+        try
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = false;
+            Assert.False(Shoot(), "a round met the teammate with friendly fire off");
+            Assert.Equal(before, partner.Health.RemainingFraction);
+
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = true;
+            Assert.True(Shoot(), "a round passed through the teammate with friendly fire on");
+            Assert.True(partner.Health.RemainingFraction < before, "the teammate was met and not hurt");
+        }
+        finally
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = false;
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void A_player_the_host_removes_is_told_and_is_not_let_back_in()
+    {
+        using Igi1CoopPair pair = Joined();
+        Assert.Equal(["Anya"], pair.Session.Players);
+        pair.Session.Kick("Anya");
+        Assert.True(pair.RunUntil(() => pair.Client.Ended is not null, 120) >= 0, "the removed player was never told");
+        Assert.Empty(pair.Host!.World.NetworkPlayers);
+
+        // Its game shows the room closed over a paused mission; asking to come back in under that name is refused at the door.
+        Assert.True(pair.Session.Session!.IsBarred("Anya"));
+    }
+
     private static Igi1CoopPair Joined(params string[] hostArgs)
     {
         Igi1CoopPair pair = new(hostArgs: hostArgs);
