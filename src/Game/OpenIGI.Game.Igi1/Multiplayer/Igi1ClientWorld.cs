@@ -360,7 +360,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         ArgumentNullException.ThrowIfNull(predictions);
         ArgumentNullException.ThrowIfNull(snapshot);
         _ticks++;
-        ApplyLifts(snapshot, ticksAhead);
+        ApplyLifts(snapshot, ticksAhead, predictions);
         NoteRiding(ticksAhead);
 
         // Where the others' rounds landed, once each; this client's own it showed as it fired them.
@@ -470,7 +470,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // many ticks old, and this client's player rides its own copy in the present. A car the server moves that this one
     // doesn't -- a partner called it -- is taken at once. A car the server holds still that this one moves is given the
     // time its own press takes to reach the server and come back before it is put back.
-    private void ApplyLifts(Snapshot snapshot, int lead)
+    private void ApplyLifts(Snapshot snapshot, int lead, PredictionReconciler predictions)
     {
         long predictedTick = _ticks;
         if (snapshot.Tick <= _liftsChecked || snapshot.Lifts is not { } lifts || _game.World.Elevators is not { Elevators.Count: > 0 } registry)
@@ -501,11 +501,36 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             _liftDisagreeingSince[i] = Math.Min(_liftDisagreeingSince[i], predictedTick);
             if (server.Target is not null || predictedTick - _liftDisagreeingSince[i] > lead + LiftPatience)
             {
+                // A car this client's player stands in takes the player with it. Put where the server's is, the car jumps by
+                // the ticks of travel this client learned of late -- the higher the ping, the further -- and, left where it
+                // stood, the player was under the floor of a car going up and fell out of it.
+                if (_game.World.Player is { } rider
+                    && OpenIGI.Game.World.ElevatorRegistry.IsPassenger(elevator, rider.Body.Position, _game.World.Solids))
+                {
+                    rider.Shift(due.Position - own.Position);
+                    predictions.ShiftNewest(RideInFlight(elevator, server, own.Position, lead));
+                }
+
                 registry.Restore(elevator, due, _game.World.Solids);
                 _liftDisagreeingSince[i] = long.MaxValue;
                 LiftsTaken++;
             }
         }
+    }
+
+    // How far the server's car carried this client's player, for each command still in flight, past where this client's car
+    // stood for it: the server ran them in a car moving on from the snapshot's, while this client's stood still, so what it
+    // predicted for them is moved by the difference -- or the server's word on each would put the player back.
+    private static Vector3d[] RideInFlight(
+        OpenIGI.Game.World.PlacedElevator elevator, OpenIGI.Game.World.ElevatorMotion server, Vector3d stood, int lead)
+    {
+        Vector3d[] offsets = new Vector3d[Math.Max(lead, 0)];
+        for (int k = 0; k < offsets.Length; k++)
+        {
+            offsets[k] = elevator.State.Project(server, k + 1).Position - stood;
+        }
+
+        return offsets;
     }
 
     /// <inheritdoc/>

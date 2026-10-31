@@ -26,6 +26,13 @@ public sealed class PredictionReconciler
     private long _lastChecked = long.MinValue;
     private long _newest = long.MinValue;
 
+    // The newest prediction made before the last correction: those up to it started from the uncorrected place, and are not
+    // weighed until a command sent after the correction comes back.
+    private long _correctedThrough = long.MinValue;
+
+    // Whether a correction came before the next prediction is noted: that command was run before it too.
+    private bool _correctedSinceRecord;
+
     /// <summary>Moves the newest predictions by what the server did to the player that the client learned of late.</summary>
     /// <param name="offsets">
     /// How far each of the newest predictions should have stood from where it was recorded, oldest first: the last is the
@@ -65,6 +72,12 @@ public sealed class PredictionReconciler
     {
         _newest = Math.Max(_newest, tick);
         _predicted[tick] = position;
+        if (_correctedSinceRecord)
+        {
+            _correctedSinceRecord = false;
+            _correctedThrough = Math.Max(_correctedThrough, tick);
+        }
+
         if (_predicted.Count > History)
         {
             foreach (long old in _predicted.Keys.Where(t => t < tick - History).ToArray())
@@ -86,6 +99,17 @@ public sealed class PredictionReconciler
         }
 
         _lastChecked = commandTick;
+
+        // A prediction made before the last correction was made from the wrong place, and moving it by the correction is no
+        // more than a guess: a body the correction lifted off a lift's floor falls back onto it, one it put under a floor
+        // stands up again. Weighed against the server's word all the same, the guess was put right as an error in turn, and
+        // that correction made the next -- a player standing still in a lift was moved every tick, without end. So after a
+        // correction the client waits a round trip, for the commands it predicted from the corrected place.
+        if (commandTick <= _correctedThrough)
+        {
+            return null;
+        }
+
         Vector3d error = server - predicted;
         LastError = error.Length;
         if (LastError <= Tolerance)
@@ -95,6 +119,8 @@ public sealed class PredictionReconciler
 
         // Every later prediction started from the same wrong place: correct them too, so they are not counted again.
         Corrections++;
+        _correctedThrough = _newest;
+        _correctedSinceRecord = true;
         foreach (long tick in _predicted.Keys.Where(t => t > commandTick).ToArray())
         {
             _predicted[tick] += error;

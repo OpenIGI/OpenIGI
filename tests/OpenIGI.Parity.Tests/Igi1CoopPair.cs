@@ -154,7 +154,11 @@ internal sealed class Igi1CoopPair : IDisposable
 
     /// <summary>Runs both games a frame each.</summary>
     /// <returns><see langword="false"/> once either has stopped.</returns>
-    public bool Step() => HostGame.Step() & (!_joinerStarted || JoinerGame.Step());
+    public bool Step()
+    {
+        _steps++;
+        return HostGame.Step() & (!_joinerStarted || JoinerGame.Step());
+    }
 
     /// <summary>Runs both games until a condition holds.</summary>
     /// <param name="until">The condition.</param>
@@ -200,8 +204,25 @@ internal sealed class Igi1CoopPair : IDisposable
         _joinerDevice.Dispose();
     }
 
-    private SessionClient NewClient() =>
-        new(_network.Open(), _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
+    private SessionClient NewClient()
+    {
+        JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0);
+        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
+    }
+
+    // Frames run, the clock the joiner's line keeps.
+    private long _steps;
+
+    /// <summary>Gets the joiner's line to the host, perfect until a test makes it otherwise.</summary>
+    public SimulatedLinkTransport JoinerLink { get; private set; } = null!;
+
+    /// <summary>Puts a round trip between the joiner and the host, half each way.</summary>
+    /// <param name="seconds">The round trip, in seconds.</param>
+    public void Ping(double seconds)
+    {
+        JoinerLink.Send.Latency = seconds / 2;
+        JoinerLink.Receive.Latency = seconds / 2;
+    }
 
     private static GameHost Make(string[] args, HeadlessGameWindow window, RecordingGraphicsDevice device, IAudioDeviceFactory audio)
     {

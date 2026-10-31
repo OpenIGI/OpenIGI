@@ -931,9 +931,16 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
-    public void A_joiner_riding_a_lift_the_host_calls_rides_it_on_both_games_without_being_put_back()
+    public void A_joiner_riding_a_lift_the_host_calls_rides_it_on_both_games_without_being_put_back() => RideTheHostsLift(0);
+
+    [RequiresGameDataFact]
+    public void A_joiner_a_long_way_off_riding_a_lift_the_host_calls_stays_in_the_car() => RideTheHostsLift(0.35);
+
+    // The joiner stands in a car the host calls, over a line with the given round trip.
+    private static void RideTheHostsLift(double ping)
     {
         using Igi1CoopPair pair = Joined(mission: 3);
+        pair.Ping(ping);
         PlacedElevator lift = Assert.IsType<PlacedElevator>(pair.Host!.World.Elevators?.Elevators.FirstOrDefault(static l => l.State.FloorCount > 1));
         PlacedElevator joinerLift = pair.Joiner!.World.Elevators!.Elevators[pair.Host.World.Elevators!.Elevators.ToList().IndexOf(lift)];
         Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
@@ -944,7 +951,8 @@ public sealed class Igi1CoopPairTests
         Vector3d aboard = lift.State.Position + new Vector3d(0, 0, 64);
         partner.Player.Body.Position = aboard;
         pair.Joiner.World.Player!.Body.Position = aboard;
-        pair.RunUntil(() => false, 30);
+        // Put there, the joiner's commands in flight come back from the server first: a few round trips, and some.
+        pair.RunUntil(() => false, 30 + (int)(ping * 240));
         double startZ = partner.Player.Body.Position.Z;
         int to = lift.State.CurrentFloorIndex == 0 ? 1 : 0;
 
@@ -958,6 +966,8 @@ public sealed class Igi1CoopPairTests
 
         List<double> hostTrip = [];
         List<(double Z, int Lead)> joinerTrip = [];
+        double lowestInCar = double.MaxValue;
+        double highestInCar = double.MinValue;
         Assert.True(
             pair.RunUntil(
                 () =>
@@ -967,13 +977,21 @@ public sealed class Igi1CoopPairTests
                         : 0;
                     hostTrip.Add(lift.State.Position.Z);
                     joinerTrip.Add((joinerLift.State.Position.Z, lead));
+                    double inCar = pair.Joiner.World.Player.Body.Position.Z - joinerLift.State.Position.Z;
+                    lowestInCar = Math.Min(lowestInCar, inCar);
+                    highestInCar = Math.Max(highestInCar, inCar);
                     return lift.State.CurrentFloorIndex == to && !lift.State.IsMoving;
                 },
                 3000) >= 0,
             "the host's car never arrived");
 
         // The rest of the joiner's commands from the ride reach the server.
-        pair.RunUntil(() => false, 15);
+        pair.RunUntil(() => false, 15 + (int)(ping * 30));
+
+        // On the joiner's own game its player stood in its car the whole way: never left below the floor or above it.
+        Assert.True(
+            highestInCar - lowestInCar < 256,
+            $"the joiner's player stood from {lowestInCar:0} to {highestInCar:0} units over its car's floor on the ride");
         long rideCorrections = session.Reconciler.Corrections - correctionsBefore;
 
         // The server carried the partner with the car.
@@ -988,7 +1006,8 @@ public sealed class Igi1CoopPairTests
         {
             (double z, int lead) = joinerTrip[i];
             double nearest = double.MaxValue;
-            for (int k = i; k <= Math.Min(hostTrip.Count - 1, i + lead + 4); k++)
+            // Or as far behind as the host's press takes to reach the joiner: until it learns of the call, its car stands.
+            for (int k = Math.Max(0, i - (int)Math.Ceiling(ping * 30) - 2); k <= Math.Min(hostTrip.Count - 1, i + lead + 4); k++)
             {
                 nearest = Math.Min(nearest, Math.Abs(hostTrip[k] - z));
             }
