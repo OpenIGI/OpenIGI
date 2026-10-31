@@ -33,6 +33,7 @@ internal sealed partial class RemasteredHudRenderer
         IReadOnlyList<HudChatLine> chat,
         string? entry,
         string? warning,
+        IReadOnlyList<string> talking,
         IReadOnlyList<HudMark> marks,
         in Camera3D eye,
         float horizontalTangent,
@@ -73,6 +74,17 @@ internal sealed partial class RemasteredHudRenderer
         float lineHeight = size * 1.7f;
         float x = context.SafeRect.X + context.Px(ChatLeft);
         float y = context.SafeRect.Bottom - context.Px(ChatBottom);
+        // Who is talking: a chip each, the accent beside the name, above the chat.
+        foreach (string speaker in talking)
+        {
+            float width = font.MeasureWidth(speaker, size) + font.MeasureWidth("VOICE  ", size) + (size * 1.6f);
+            var chip = new UiRect(x, y - lineHeight, width, lineHeight);
+            painter.FillRoundedRect(chip, rounded, UiPalette.InkAt(0.82f).WithAlpha(210), lineHeight * 0.22f);
+            UiVec2 pen = painter.DrawLabel(font, "VOICE", new UiVec2(chip.X + (size * 0.7f), UiRowStyle.CapsCenterY(font, size, chip)), size, Accent, 0.08f);
+            painter.DrawLabel(font, speaker, new UiVec2(pen.X + (size * 0.6f), UiRowStyle.CapsCenterY(font, size, chip)), size, Text, 0.02f);
+            y -= lineHeight + context.Px(4f);
+        }
+
         if (entry is not null)
         {
             string typed = $"{entry}_";

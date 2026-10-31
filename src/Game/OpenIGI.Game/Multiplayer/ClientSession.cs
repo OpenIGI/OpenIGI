@@ -52,6 +52,25 @@ public sealed class ClientSession
     // What the server told this client was said and marked, since it last took them.
     private readonly List<ChatLine> _heard = [];
     private readonly List<WorldMark> _marked = [];
+    private readonly List<VoicePacket> _voices = [];
+
+    /// <summary>Sends a moment of this player's voice to the others.</summary>
+    /// <param name="packet">The encoded voice.</param>
+    public void Speak(ReadOnlySpan<byte> packet)
+    {
+        _writer.Reset();
+        SessionTalk.WriteVoice(_writer, -1, packet);
+        _net.Send(NetChannel.Unreliable, _writer.AsSpan());
+    }
+
+    /// <summary>Takes the others' voices heard since the last call.</summary>
+    /// <returns>The moments, oldest first.</returns>
+    public IReadOnlyList<VoicePacket> TakeVoices()
+    {
+        VoicePacket[] heard = [.. _voices];
+        _voices.Clear();
+        return heard;
+    }
 
     /// <summary>Says a line to every player.</summary>
     /// <param name="text">The line.</param>
@@ -297,6 +316,9 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Mark when SessionTalk.ReadMark(ref reader) is { } mark:
                 _marked.Add(mark);
+                break;
+            case SessionMessage.Voice when SessionTalk.ReadVoice(ref reader) is { } voice:
+                _voices.Add(voice);
                 break;
             case SessionMessage.Travel:
                 Epoch = (byte)reader.ReadBits(8);

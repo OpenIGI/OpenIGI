@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Concentus" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The game host: the frame loop, the mission and cutscene wiring, the developer console, the
          menu host and the bake orchestration. Everything here is portable — a desktop, mobile or web
          app supplies the window, the graphics device and the audio backend through the abstraction

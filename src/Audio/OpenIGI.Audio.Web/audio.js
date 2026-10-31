@@ -31,6 +31,9 @@ let voices = [];
 let buffers = [null];
 let freeBufferIds = [];
 
+// The microphone being listened to for a player's voice, or null.
+let mic = null;
+
 function onGesture() {
   if (context && context.state !== 'running') context.resume().catch(() => {});
 }
@@ -377,6 +380,77 @@ export const imports = {
     stopSources(voice);
     voice.stream = null;
     voice.ended = true;
+  },
+
+  /**
+   * Starts listening to the microphone for a player's voice, asking the browser's leave the first time.
+   * @param {number} rate The rate the game wants the samples at.
+   * @returns {boolean} Whether there is a context to listen through.
+   */
+  openMic: rate => {
+    if (!context || mic) return Boolean(mic);
+    mic = { rate, queue: [], length: 0, stream: null, source: null, node: null, phase: 0 };
+    const listening = mic;
+    navigator.mediaDevices?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      .then(stream => {
+        if (mic !== listening) { stream.getTracks().forEach(track => track.stop()); return; }
+        listening.stream = stream;
+        listening.source = context.createMediaStreamSource(stream);
+        // A script node is old, but it is everywhere and needs no second module: what it hears is resampled to the
+        // game's rate by stepping through it, and kept until the game takes it.
+        listening.node = context.createScriptProcessor(1024, 1, 1);
+        listening.node.onaudioprocess = e => {
+          const input = e.inputBuffer.getChannelData(0);
+          const step = context.sampleRate / listening.rate;
+          const out = new Int16Array(Math.ceil((input.length - listening.phase) / step));
+          let n = 0;
+          for (let at = listening.phase; at < input.length; at += step) {
+            out[n++] = Math.max(-32768, Math.min(32767, Math.round(input[Math.floor(at)] * 32767)));
+          }
+          listening.phase = (listening.phase + n * step) - input.length;
+          listening.queue.push(n === out.length ? out : out.subarray(0, n));
+          listening.length += n;
+          while (listening.length > listening.rate && listening.queue.length > 1) listening.length -= listening.queue.shift().length;
+        };
+        listening.source.connect(listening.node);
+        // The node only runs while it leads somewhere; a muted gain keeps it running without the player hearing itself.
+        const silence = context.createGain();
+        silence.gain.value = 0;
+        listening.node.connect(silence).connect(context.destination);
+      })
+      .catch(() => { if (mic === listening) mic = null; });
+    return true;
+  },
+
+  /**
+   * Takes the samples heard since the last call.
+   * @param {object} view Where to: a memory view over 16-bit samples' bytes.
+   * @returns {number} How many were taken.
+   */
+  readMic: view => {
+    if (!mic) return 0;
+    const target = new Int16Array(view.byteLength >> 1);
+    let n = 0;
+    while (mic.queue.length > 0 && n < target.length) {
+      const chunk = mic.queue[0];
+      const take = Math.min(chunk.length, target.length - n);
+      target.set(chunk.subarray(0, take), n);
+      n += take;
+      mic.length -= take;
+      if (take === chunk.length) mic.queue.shift();
+      else mic.queue[0] = chunk.subarray(take);
+    }
+    view.set(new Uint8Array(target.buffer, 0, n * 2), 0);
+    return n;
+  },
+
+  /** Stops listening to the microphone. */
+  closeMic: () => {
+    if (!mic) return;
+    mic.stream?.getTracks().forEach(track => track.stop());
+    mic.source?.disconnect();
+    mic.node?.disconnect();
+    mic = null;
   },
 };
 

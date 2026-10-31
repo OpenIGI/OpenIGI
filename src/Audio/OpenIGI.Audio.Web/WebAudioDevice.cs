@@ -181,6 +181,19 @@ public sealed class WebAudioDevice : IAudioDevice
     }
 
     /// <inheritdoc/>
+    public IMicrophone? OpenMicrophone(int sampleRate) => _open && _page.OpenMicrophone(sampleRate) ? new PageMicrophone(_page, sampleRate) : null;
+
+    // The page's microphone, as the game listens to it.
+    private sealed class PageMicrophone(IWebAudioPage page, int sampleRate) : IMicrophone
+    {
+        public int SampleRate => sampleRate;
+
+        public int Read(Span<short> destination) => page.ReadMicrophone(destination);
+
+        public void Dispose() => page.CloseMicrophone();
+    }
+
+    /// <inheritdoc/>
     public AudioVoiceHandle PlayStream(ISampleSource source, in VoiceParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(source);

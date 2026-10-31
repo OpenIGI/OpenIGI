@@ -43,25 +43,21 @@ public sealed class FilteredLoopSource : ISampleSource
     /// the recording through a filter that is merely wide. Callers blending towards "open" should
     /// blend towards this value.
     /// </remarks>
-    public const float OpenCutoffHz = 24000f;
+    public const float OpenCutoffHz = SmoothedLowPass.OpenCutoffHz;
 
     /// <summary>The lowest cutoff a caller may ask for, in hertz.</summary>
     /// <remarks>
     /// Below this the bed stops being muffled rain and starts being a hum with no rain in it at all.
     /// Concrete and rain together do not get duller than this in life either.
     /// </remarks>
-    public const float MinimumCutoffHz = 60f;
+    public const float MinimumCutoffHz = SmoothedLowPass.MinimumCutoffHz;
 
     private readonly ReadOnlyMemory<short> _pcm;
     private readonly int _sampleRate;
     private readonly int _startFrame;
-    private readonly float _approach;
+    private readonly SmoothedLowPass _filter;
 
     private int _cursor;
-    private float _coefficient;
-    private float _targetCoefficient;
-    private float _poleA;
-    private float _poleB;
 
     /// <summary>Initializes a new instance of the <see cref="FilteredLoopSource"/> class.</summary>
     /// <param name="pcm">The shared mono 16-bit PCM to loop. It is read, never written or copied.</param>
@@ -84,21 +80,13 @@ public sealed class FilteredLoopSource : ISampleSource
         }
 
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(smoothingSeconds);
 
         _pcm = pcm;
         _sampleRate = sampleRate;
         _startFrame = (int)(((startFrame % pcm.Length) + pcm.Length) % (long)pcm.Length);
         _cursor = _startFrame;
 
-        // The fraction of the remaining distance to close each sample, chosen so that a step reaches
-        // 1 - 1/e of the way in smoothingSeconds. One exponential, evaluated once.
-        _approach = 1f - MathF.Exp(-1f / (smoothingSeconds * sampleRate));
-
-        _coefficient = CoefficientFor(cutoffHz, sampleRate);
-        _targetCoefficient = _coefficient;
-        _poleA = 0f;
-        _poleB = 0f;
+        _filter = new SmoothedLowPass(sampleRate, cutoffHz, smoothingSeconds);
     }
 
     /// <inheritdoc/>
@@ -120,8 +108,8 @@ public sealed class FilteredLoopSource : ISampleSource
     /// </remarks>
     public float CutoffHz
     {
-        get => CutoffFor(Volatile.Read(ref _targetCoefficient), _sampleRate);
-        set => Volatile.Write(ref _targetCoefficient, CoefficientFor(value, _sampleRate));
+        get => _filter.CutoffHz;
+        set => _filter.CutoffHz = value;
     }
 
     /// <summary>Puts the cutoff at a value immediately, with no glide.</summary>
@@ -130,12 +118,7 @@ public sealed class FilteredLoopSource : ISampleSource
     /// For the frame a tap starts on, where there is no previous value to glide from and the smoothing
     /// would otherwise be heard as the sound opening up over its first fifth of a second.
     /// </remarks>
-    public void SnapCutoff(float cutoffHz)
-    {
-        float coefficient = CoefficientFor(cutoffHz, _sampleRate);
-        Volatile.Write(ref _targetCoefficient, coefficient);
-        _coefficient = coefficient;
-    }
+    public void SnapCutoff(float cutoffHz) => _filter.Snap(cutoffHz);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -147,34 +130,16 @@ public sealed class FilteredLoopSource : ISampleSource
     public int Read(Span<short> destination)
     {
         ReadOnlySpan<short> pcm = _pcm.Span;
-        float target = Volatile.Read(ref _targetCoefficient);
-        float coefficient = _coefficient;
-        float poleA = _poleA;
-        float poleB = _poleB;
         int cursor = _cursor;
-
         for (int i = 0; i < destination.Length; i++)
         {
-            coefficient += (target - coefficient) * _approach;
-
-            // Two one-pole sections in series: twelve decibels an octave, which is close enough to
-            // what a wall does and, unlike a biquad, cannot ring or go unstable however fast the
-            // coefficient is moved underneath it.
-            float sample = pcm[cursor];
-            poleA += (sample - poleA) * (1f - coefficient);
-            poleB += (poleA - poleB) * (1f - coefficient);
-
-            destination[i] = (short)Math.Clamp(poleB, short.MinValue, short.MaxValue);
-
+            destination[i] = (short)Math.Clamp(_filter.Process(pcm[cursor]), short.MinValue, short.MaxValue);
             if (++cursor >= pcm.Length)
             {
                 cursor = 0;
             }
         }
 
-        _coefficient = coefficient;
-        _poleA = poleA;
-        _poleB = poleB;
         _cursor = cursor;
         return destination.Length;
     }
@@ -190,33 +155,15 @@ public sealed class FilteredLoopSource : ISampleSource
         // only a borrowed span has nothing to release.
     }
 
-    /// <summary>Turns a cutoff frequency into the one-pole coefficient that realises it.</summary>
+    /// <summary>Turns a cutoff frequency into the one-pole coefficient that realises it; see <see cref="SmoothedLowPass.CoefficientFor"/>.</summary>
     /// <param name="cutoffHz">The cutoff, in hertz.</param>
     /// <param name="sampleRate">The sample rate, in hertz.</param>
     /// <returns>The coefficient, zero (no filtering) to just under one.</returns>
-    /// <remarks>
-    /// The impulse-invariant form, <c>exp(-2*pi*fc/fs)</c>, which keeps the cutoff honest across the
-    /// range that matters here — a few hundred hertz to a few kilohertz. At and above Nyquist it is
-    /// forced to exactly zero rather than to the 0.043 the formula gives, so that "open" really is
-    /// open; the half-decibel step that removes at eight kilohertz is smoothed like any other move.
-    /// </remarks>
-    public static float CoefficientFor(float cutoffHz, int sampleRate)
-    {
-        float clamped = Math.Clamp(cutoffHz, MinimumCutoffHz, OpenCutoffHz);
-        return clamped >= sampleRate / 2f
-            ? 0f
-            : MathF.Exp(-2f * MathF.PI * clamped / sampleRate);
-    }
+    public static float CoefficientFor(float cutoffHz, int sampleRate) => SmoothedLowPass.CoefficientFor(cutoffHz, sampleRate);
 
     /// <summary>Turns a one-pole coefficient back into the cutoff it stands for.</summary>
     /// <param name="coefficient">The coefficient, zero to just under one.</param>
     /// <param name="sampleRate">The sample rate, in hertz.</param>
     /// <returns>The cutoff, in hertz.</returns>
-    public static float CutoffFor(float coefficient, int sampleRate) =>
-        coefficient <= 0f
-            ? OpenCutoffHz
-            : Math.Clamp(
-                -MathF.Log(coefficient) * sampleRate / (2f * MathF.PI),
-                MinimumCutoffHz,
-                OpenCutoffHz);
+    public static float CutoffFor(float coefficient, int sampleRate) => SmoothedLowPass.CutoffFor(coefficient, sampleRate);
 }

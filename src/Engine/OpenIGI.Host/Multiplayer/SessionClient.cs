@@ -163,6 +163,15 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     public IReadOnlyList<WorldMark> TakeMarks() => _session?.TakeMarks() ?? [];
 
     /// <inheritdoc/>
+    public void Speak(ReadOnlySpan<byte> packet) => _session?.Speak(packet);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<VoicePacket> TakeVoices() => _session?.TakeVoices() ?? [];
+
+    /// <inheritdoc/>
+    public Int3? WhereIs(int entity) => _session?.Latest is { } last && last.TryGet(entity, out ReplicatedHuman human) ? human.Position : null;
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_netClient is { } client)

@@ -3,6 +3,7 @@ using OpenIGI.Core.Configuration;
 namespace OpenIGI.Game.Multiplayer;
 
 /// <summary>How a co-op room plays, as its host sets it: the host's game decides, so a joiner's settings are not read.</summary>
+[CVarContainer]
 public static class CoopCVars
 {
     /// <summary>Whether co-op players' rounds and blasts hurt one another.</summary>

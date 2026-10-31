@@ -12,6 +12,11 @@ public readonly record struct ChatLine(int Entity, string Text);
 /// <param name="Position">Where, in world units.</param>
 public readonly record struct WorldMark(int Entity, Int3 Position);
 
+/// <summary>A moment of one player's voice, encoded, and whose it is, by entity.</summary>
+/// <param name="Entity">The speaker's entity.</param>
+/// <param name="Packet">The encoded voice.</param>
+public sealed record VoicePacket(int Entity, byte[] Packet);
+
 /// <summary>How chat and marks are written to a session's messages, either way.</summary>
 public static class SessionTalk
 {
@@ -42,6 +47,46 @@ public static class SessionTalk
         writer.WriteVarInt(position.X);
         writer.WriteVarInt(position.Y);
         writer.WriteVarInt(position.Z);
+    }
+
+    /// <summary>The longest moment of voice sent, in bytes; a longer one is not sent.</summary>
+    public const int MaxVoiceBytes = 400;
+
+    /// <summary>Writes a moment of voice.</summary>
+    /// <param name="writer">Where to.</param>
+    /// <param name="entity">The speaker, or -1 from a client, which the server fills in.</param>
+    /// <param name="packet">The encoded voice.</param>
+    public static void WriteVoice(BitWriter writer, int entity, ReadOnlySpan<byte> packet)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteBits((uint)SessionMessage.Voice, 8);
+        writer.WriteVarInt(entity);
+        writer.WriteVarUInt((uint)packet.Length);
+        foreach (byte b in packet)
+        {
+            writer.WriteBits(b, 8);
+        }
+    }
+
+    /// <summary>Reads the rest of a moment of voice, after its kind.</summary>
+    /// <param name="reader">The message.</param>
+    /// <returns>The voice, or <see langword="null"/> when it is malformed.</returns>
+    public static VoicePacket? ReadVoice(ref BitReader reader)
+    {
+        int entity = reader.ReadVarInt();
+        uint length = reader.ReadVarUInt();
+        if (reader.IsOverflowed || length == 0 || length > MaxVoiceBytes)
+        {
+            return null;
+        }
+
+        byte[] packet = new byte[length];
+        for (int i = 0; i < packet.Length; i++)
+        {
+            packet[i] = (byte)reader.ReadBits(8);
+        }
+
+        return reader.IsOverflowed ? null : new VoicePacket(entity, packet);
     }
 
     /// <summary>Reads the rest of a line of chat, after its kind.</summary>

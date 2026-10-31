@@ -395,12 +395,14 @@ public sealed partial class GameHost
 
         // Co-op talk: the lines said and being typed, and the places marked.
         string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
+        Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
+        string[] talking = [.. Talking().Select(e => e < 0 ? "You" : talkLines.FirstOrDefault(l => l.Entity == e).Name ?? "Teammate")];
         if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, marks)
-            && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null))
+            && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null || talking.Length > 0))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, linkWarning, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, linkWarning, talking, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 

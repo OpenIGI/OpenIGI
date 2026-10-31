@@ -34,6 +34,10 @@ public sealed class ServerSession
     // What was said and marked since the host last took it, its own included.
     private readonly List<ChatLine> _heard = [];
     private readonly List<WorldMark> _marked = [];
+    private readonly List<VoicePacket> _voices = [];
+
+    /// <summary>Gets the newest snapshot the world gave, where every human stood at the end of the last tick.</summary>
+    public Snapshot? LastSnapshot { get; private set; }
     private double _now;
     private readonly Dictionary<int, ClientState> _clients = [];
     private readonly UserCommandCodec _codec;
@@ -221,6 +225,7 @@ public sealed class ServerSession
         }
 
         Snapshot snapshot = _world.Capture(tick);
+        LastSnapshot = snapshot;
         LagCompensationHistory.Add(snapshot);
         if (tick % Math.Max(1, SnapshotInterval) == 0)
         {
@@ -363,6 +368,38 @@ public sealed class ServerSession
     /// <summary>Marks a place for every player, as the listen server's own player.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position) => Mark(new WorldMark(HostEntity, position));
+
+    /// <summary>Sends a moment of the listen server's own player's voice to every player.</summary>
+    /// <param name="packet">The encoded voice.</param>
+    public void Speak(ReadOnlySpan<byte> packet) => Speak(new VoicePacket(HostEntity, packet.ToArray()), except: null);
+
+    /// <summary>Takes the clients' voices heard since the last call, for the listen server's own player to hear.</summary>
+    /// <returns>The moments, oldest first.</returns>
+    public IReadOnlyList<VoicePacket> TakeVoices()
+    {
+        VoicePacket[] heard = [.. _voices];
+        _voices.Clear();
+        return heard;
+    }
+
+    // A voice to everyone but the one it is: the speaker hears itself already.
+    private void Speak(VoicePacket voice, int? except)
+    {
+        if (except is not null)
+        {
+            _voices.Add(voice);
+        }
+
+        _writer.Reset();
+        SessionTalk.WriteVoice(_writer, voice.Entity, voice.Packet);
+        foreach (int slot in _clients.Keys)
+        {
+            if (slot != except)
+            {
+                _net.Send(slot, NetChannel.Unreliable, _writer.AsSpan());
+            }
+        }
+    }
 
     /// <summary>Takes what has been said since the last call, the host's own lines included.</summary>
     /// <returns>The lines, oldest first.</returns>
@@ -511,6 +548,9 @@ public sealed class ServerSession
                 return;
             case SessionMessage.Mark when SessionTalk.ReadMark(ref reader) is { } mark:
                 Mark(mark with { Entity = client.Entity });
+                return;
+            case SessionMessage.Voice when SessionTalk.ReadVoice(ref reader) is { } voice:
+                Speak(voice with { Entity = client.Entity }, except: slot);
                 return;
             case SessionMessage.Commands when reader.ReadBits(8) == _epoch:
                 break;

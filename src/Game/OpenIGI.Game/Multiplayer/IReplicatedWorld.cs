@@ -219,4 +219,7 @@ public enum SessionMessage : byte
 
     /// <summary>Either way, reliable: a place one player marked for the others.</summary>
     Mark = 8,
+
+    /// <summary>Either way, unreliable: a moment of one player's voice, encoded.</summary>
+    Voice = 9,
 }

@@ -296,6 +296,34 @@ public sealed class Igi1CoopPairTests
         Assert.True(Vector3d.Distance(partner.Player.Body.Position, partnerKept) < 2048, "the partner stood up away from the checkpoint");
     }
 
+    [RequiresGameDataFact]
+    public void A_players_voice_reaches_the_other_under_its_entity_and_decodes()
+    {
+        using Igi1CoopPair pair = Joined();
+        short[] tone = new short[960];
+        for (int i = 0; i < tone.Length; i++)
+        {
+            tone[i] = (short)(8000 * Math.Sin(i * 2 * Math.PI * 440 / 48000));
+        }
+
+        Concentus.IOpusEncoder encoder = Concentus.OpusCodecFactory.CreateEncoder(48000, 1, Concentus.Enums.OpusApplication.OPUS_APPLICATION_VOIP);
+        byte[] packet = new byte[400];
+        int length = encoder.Encode(tone, 960, packet, packet.Length);
+        pair.Client.Speak(packet.AsSpan(0, length));
+
+        List<Game.Multiplayer.VoicePacket> heard = [];
+        Assert.True(pair.RunUntil(() => { heard.AddRange(pair.Session.TakeVoices()); return heard.Count > 0; }, 60) >= 0, "the host never heard the joiner");
+        Game.Multiplayer.VoicePacket voice = Assert.Single(heard);
+        Assert.Equal(pair.Client.LocalEntity, voice.Entity);
+
+        short[] decoded = new short[960];
+        Assert.Equal(960, Concentus.OpusCodecFactory.CreateDecoder(48000, 1).Decode(voice.Packet, decoded, 960, false));
+        Assert.True(decoded.Max(static s => Math.Abs((int)s)) > 1000, "the voice decoded to silence");
+
+        // Where the speaker stands is known to the host, to place the voice there.
+        Assert.NotNull(pair.Session.WhereIs(voice.Entity));
+    }
+
     private static Igi1CoopPair Joined(params string[] hostArgs)
     {
         Igi1CoopPair pair = new(hostArgs: hostArgs);

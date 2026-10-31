@@ -175,6 +175,7 @@ public sealed partial class GameHost
         // A co-op line being typed takes the keyboard next, the same way.
         if (!state.Console.IsOpen)
         {
+            UpdateCoopVoice();
             UpdateCoopTalk();
             UpdateScoreboard();
         }

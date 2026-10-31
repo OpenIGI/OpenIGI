@@ -20,4 +20,17 @@ public interface ISessionTalk
     /// <summary>Takes what has been marked since the last call, this player's own marks included.</summary>
     /// <returns>The marks, oldest first.</returns>
     IReadOnlyList<WorldMark> TakeMarks();
+
+    /// <summary>Sends a moment of this player's voice to the others.</summary>
+    /// <param name="packet">The encoded voice.</param>
+    void Speak(ReadOnlySpan<byte> packet);
+
+    /// <summary>Takes the others' voices heard since the last call.</summary>
+    /// <returns>The moments, oldest first.</returns>
+    IReadOnlyList<VoicePacket> TakeVoices();
+
+    /// <summary>Gets where a player stands, by entity, as the session last had it.</summary>
+    /// <param name="entity">The player's entity.</param>
+    /// <returns>Its feet, in world units, or <see langword="null"/> when it is not in the level.</returns>
+    Int3? WhereIs(int entity);
 }

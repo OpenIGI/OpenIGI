@@ -256,6 +256,7 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="chat">The lines still up, oldest first.</param>
     /// <param name="entry">The line being typed, or <see langword="null"/>.</param>
     /// <param name="warning">A word about this player's connection, or <see langword="null"/>.</param>
+    /// <param name="talking">Who is talking now, by name.</param>
     /// <param name="marks">The places marked.</param>
     /// <param name="eye">Where the world is seen from.</param>
     /// <param name="horizontalTangent">The horizontal half-tangent of the view.</param>
@@ -267,6 +268,7 @@ public interface IRemasteredHudPresenter : IDisposable
         IReadOnlyList<HudChatLine> chat,
         string? entry,
         string? warning,
+        IReadOnlyList<string> talking,
         IReadOnlyList<HudMark> marks,
         in Camera3D eye,
         float horizontalTangent,

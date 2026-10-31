@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="Silk.NET.OpenAL" />
+    <PackageReference Include="Silk.NET.OpenAL.Extensions.EXT" />
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
   </ItemGroup>
 
