@@ -355,8 +355,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// server's changes, which is how a door the host opened opens here; and taken when this client's has stood otherwise for
     /// <see cref="DoorPatience"/> snapshots, which settles one this client opened that the server didn't.
     /// </remarks>
-    public void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead)
+    public void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead, PredictionReconciler predictions)
     {
+        ArgumentNullException.ThrowIfNull(predictions);
         ArgumentNullException.ThrowIfNull(snapshot);
         _ticks++;
         ApplyLifts(snapshot, ticksAhead);
@@ -370,7 +371,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             // same senses the player's own handlers use.
             foreach (ReplicatedSense sense in snapshot.Senses ?? [])
             {
-                if (sense.Entity == ownEntity)
+                if (sense.Entity != ownEntity)
+                {
+                    continue;
+                }
+
+                if (RemotePlayerSenses.TryShove(sense, out Vector3f push, out int carried))
+                {
+                    TakeShove(push, carried + ticksAhead, predictions);
+                }
+                else
                 {
                     RemotePlayerSenses.Replay(sense, _game.Harm.Own.Senses);
                 }
@@ -422,6 +432,38 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         }
 
         _serverDoors = bits;
+    }
+
+    // A knock the server gave this client's player -- a round, a blast -- some commands ago, which carried the server's body
+    // on through every command since: this player's, which ran those commands without it, is moved as far as the knock had
+    // carried it, keeps what of the knock is left, and what it predicted for those commands moves with it. Taken late, as
+    // it was, the knock was otherwise the server's alone, and this client was put back by it tick after tick.
+    private void TakeShove(Vector3f push, int commands, PredictionReconciler predictions)
+    {
+        if (_game.World.Player is not { } player || _game.World.IsPlayerDead)
+        {
+            return;
+        }
+
+        // The body damps the knock and then moves by it, each tick (PlayerBody's move, 0x4614B0).
+        Vector3f left = push;
+        Vector3d moved = default;
+        List<Vector3d> each = new(commands);
+        for (int i = 0; i < commands; i++)
+        {
+            left = OpenIGI.Game.Player.HumanSlopeSlide.Damp(left);
+            moved += new Vector3d(left.X, left.Y, left.Z);
+            each.Add(moved);
+        }
+
+        // The player now stands after the newest of those commands, whose prediction is yet to be recorded: the ones before it
+        // were, and move with it.
+        player.Shift(moved);
+        player.Body.AddHitShove(left.X, left.Y);
+        if (each.Count > 1)
+        {
+            predictions.ShiftNewest(each.GetRange(0, each.Count - 1));
+        }
     }
 
     // Each lift as the server has it, where it will be by the tick this client's world has run to: the snapshot is that

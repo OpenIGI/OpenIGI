@@ -669,6 +669,71 @@ public sealed class Igi1CoopPairTests
 
     // The living soldier nearest a place on a game, among those the level has in play.
     [RequiresGameDataFact]
+    public void A_joiner_knocked_by_rounds_on_the_host_is_knocked_as_far_on_its_own_game()
+    {
+        using Igi1CoopPair pair = Joined();
+        pair.RunUntil(() => false, 30);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        ClientSession session = pair.Client.Session!;
+
+        // Rounds a few ticks apart, each knocking the partner along the floor on the host: the host's own, with friendly fire
+        // on, through the same handler a guard's goes through.
+        long correctionsBefore = session.Reconciler.Corrections;
+        Vector3d start = partner.Player.Body.Position;
+        List<string> errors = [];
+        long seen = correctionsBefore;
+        int frame = 0;
+        void Watch(int frames)
+        {
+            for (int i = 0; i < frames; i++, frame++)
+            {
+                Assert.True(pair.Step());
+                if (session.Reconciler.Corrections != seen)
+                {
+                    seen = session.Reconciler.Corrections;
+                    errors.Add($"f{frame}:{session.Reconciler.LastError:0}");
+                }
+            }
+        }
+
+        try
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = true;
+            for (int round = 0; round < 5; round++)
+            {
+                Vector3d eye = pair.Host.World.Player!.Body.Eye;
+                Vector3d chest = partner.Player.Body.Position + new Vector3d(0, 0, 1.3 * 4096);
+                Vector3d beyond = eye + ((chest - eye) * 2);
+                Assert.True(
+                    pair.Host.World.Bodies.Shoot(
+                        eye,
+                        beyond,
+                        pair.Host.World.PlayerTask,
+                        hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 0.02f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
+                        out _),
+                    "the round missed the partner");
+                Watch(4);
+            }
+        }
+        finally
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = false;
+        }
+
+        Watch(60);
+        double knocked = Vector3d.Distance(start, partner.Player.Body.Position);
+        Assert.True(knocked > 2048, $"the rounds knocked the partner only {knocked} units on the host");
+        Assert.False(partner.IsDead);
+
+        // The joiner's player went as far, and was not put back for it tick after tick.
+        long corrections = session.Reconciler.Corrections - correctionsBefore;
+        double apart = Vector3d.Distance(own.Body.Position, partner.Player.Body.Position);
+        Assert.True(apart < 256, $"the joiner's player stands {apart} units from where the host has it after a {knocked:0}-unit knock");
+        Assert.True(corrections <= 1, $"the joiner's player was put back {corrections} times for five knocks: {string.Join(" ", errors)}");
+    }
+
+    [RequiresGameDataFact]
     public void A_joiner_climbing_and_sliding_down_a_ladder_lands_where_the_host_has_it()
     {
         using Igi1CoopPair pair = Joined();

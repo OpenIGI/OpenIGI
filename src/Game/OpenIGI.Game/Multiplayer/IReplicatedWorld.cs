@@ -195,7 +195,8 @@ public interface IReplicatedClientWorld
     /// How many ticks this client's own world has run past the snapshot's, counted in its own commands: what its player
     /// stands in -- a lift -- is where the server's will be that many ticks on.
     /// </param>
-    void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead)
+    /// <param name="predictions">This client's predictions of its own player, for what the server did to it that the client learns of late.</param>
+    void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead, PredictionReconciler predictions)
     {
     }
 

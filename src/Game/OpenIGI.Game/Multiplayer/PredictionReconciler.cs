@@ -24,6 +24,27 @@ public sealed class PredictionReconciler
 
     private readonly Dictionary<long, Vector3d> _predicted = [];
     private long _lastChecked = long.MinValue;
+    private long _newest = long.MinValue;
+
+    /// <summary>Moves the newest predictions by what the server did to the player that the client learned of late.</summary>
+    /// <param name="offsets">
+    /// How far each of the newest predictions should have stood from where it was recorded, oldest first: the last is the
+    /// newest command's. A knock the server gave the player some commands ago carried it on through each since, and the
+    /// client, moving its player by it now, moves what it predicted for those commands with it -- or the server's word on
+    /// each would put the player back by a knock it already took.
+    /// </param>
+    public void ShiftNewest(IReadOnlyList<Vector3d> offsets)
+    {
+        ArgumentNullException.ThrowIfNull(offsets);
+        for (int i = 0; i < offsets.Count; i++)
+        {
+            long tick = _newest - (offsets.Count - 1) + i;
+            if (_predicted.TryGetValue(tick, out Vector3d at))
+            {
+                _predicted[tick] = at + offsets[i];
+            }
+        }
+    }
 
     /// <summary>How far off a prediction may be, in world units, before it is corrected, unless the world says otherwise.</summary>
     public const double DefaultTolerance = 64;
@@ -42,6 +63,7 @@ public sealed class PredictionReconciler
     /// <param name="position">Where the player stood after running it.</param>
     public void Record(long tick, Vector3d position)
     {
+        _newest = Math.Max(_newest, tick);
         _predicted[tick] = position;
         if (_predicted.Count > History)
         {

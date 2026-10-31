@@ -25,6 +25,17 @@ public static class ClientReplication
             return;
         }
 
+        // The rest of the server's world first -- its lifts, its doors, and what it did to this client's player that the
+        // client learns of only now, a knock among them -- so the server's word on the player below is weighed against a
+        // prediction that has taken them. The snapshot's world stands after the server ran this client's command for
+        // LastRunCommandTick; this client's own has run every command since, this tick's too, which goes out below.
+        if (session.Latest is { } snapshot)
+        {
+            long seen = session.LastRunCommandTick != long.MinValue ? session.LastRunCommandTick : snapshot.Tick;
+            int ahead = session.SentCommands.Count > 0 ? (int)Math.Clamp(session.SentCommands[^1].Tick + 1 - seen, 0, 600) : 0;
+            world.ApplyWorld(snapshot, session.EntityId, ahead, session.Reconciler);
+        }
+
         // The server's word on where this client's player was after its newest command it has run, against the prediction.
         if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own))
         {
@@ -83,11 +94,5 @@ public static class ClientReplication
         {
             world.Hide(id);
         }
-
-        // The snapshot's world stands after the server ran this client's command for LastRunCommandTick: in this client's own
-        // count, it is as many ticks behind as commands sent since.
-        long seen = session.LastRunCommandTick != long.MinValue ? session.LastRunCommandTick : latest.Tick;
-        long sentLast = session.SentCommands.Count > 0 ? session.SentCommands[^1].Tick : seen;
-        world.ApplyWorld(latest, session.EntityId, (int)Math.Clamp(sentLast - seen, 0, 600));
     }
 }
