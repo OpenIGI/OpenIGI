@@ -195,6 +195,33 @@ public sealed class ElevatorRegistry
         }
     }
 
+    /// <summary>Puts a lift where another game's copy has it: a co-op client taking the server's.</summary>
+    /// <param name="elevator">The lift.</param>
+    /// <param name="motion">Where the other copy's car is and where it is going.</param>
+    /// <param name="solids">The collision its car and riders are moved in, or <see langword="null"/>.</param>
+    /// <remarks>
+    /// Its collision and its riders' move with it at once, and its sound starts or stops as the move does. Whoever stands in
+    /// it is not carried by the jump: the server carried them already, and says where.
+    /// </remarks>
+    public void Restore(PlacedElevator elevator, ElevatorMotion motion, ObjectCollisionIndex? solids)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        bool wasMoving = elevator.State.HasMovementRequest;
+        elevator.State.Restore(motion);
+        if (solids is not null)
+        {
+            ApplyCollision(solids, elevator);
+        }
+
+        if (_sounds is null || wasMoving == elevator.State.HasMovementRequest)
+        {
+            return;
+        }
+
+        elevator.IsSounding = !wasMoving;
+        _sounds(elevator, wasMoving ? ElevatorSoundEvent.Stopped : ElevatorSoundEvent.Traveling);
+    }
+
     /// <summary>Converts an elevator-owned switch pulse into its authored floor request.</summary>
     /// <remarks>
     /// The switch task remains a normal <c>Switch</c>: it publishes its three-tick script pulse, but

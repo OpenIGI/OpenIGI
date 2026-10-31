@@ -191,9 +191,20 @@ public interface IReplicatedClientWorld
     /// <summary>Takes the rest of the world from the newest snapshot: what is not a human, such as the doors.</summary>
     /// <param name="snapshot">The newest snapshot.</param>
     /// <param name="ownEntity">This client's own entity, whose rounds it showed already, or <see langword="null"/>.</param>
-    void ApplyWorld(Snapshot snapshot, int? ownEntity)
+    /// <param name="ticksAhead">
+    /// How many ticks this client's own world has run past the snapshot's, counted in its own commands: what its player
+    /// stands in -- a lift -- is where the server's will be that many ticks on.
+    /// </param>
+    void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead)
     {
     }
+
+    /// <summary>Gets how far, in world units, this client's own player may stand from the server's word without being put back.</summary>
+    /// <remarks>
+    /// Nought leaves the session's own tolerance. A player riding a moving lift is given more: the server carries it each of
+    /// its ticks and runs its commands as they come, so the two drift by a tick of the lift's travel and back as the queue does.
+    /// </remarks>
+    double PredictionSlack => 0;
 }
 
 /// <summary>The kinds of message a session sends, the first byte of each.</summary>

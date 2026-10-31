@@ -270,7 +270,7 @@ public sealed class ServerSession
                 ReplicatedHuman[] slice = snapshot.Humans.Skip(part * per).Take(per).ToArray();
                 Snapshot piece = part == 0
                     ? snapshot with { Humans = slice }
-                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Impacts = null, Senses = null };
+                    : snapshot with { Humans = slice, Doors = baseline?.Doors, Lifts = baseline?.Lifts, Impacts = null, Senses = null };
                 _writer.Reset();
                 _writer.WriteBits((uint)SessionMessage.Snapshot, 8);
                 _writer.WriteBits((uint)part, 8);

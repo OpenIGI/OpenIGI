@@ -12,8 +12,14 @@ namespace OpenIGI.Game.Multiplayer;
 /// </param>
 /// <param name="Impacts">The rounds that landed since the server's last snapshot, for every client to show.</param>
 /// <param name="Senses">What players felt since the server's last snapshot, for each one's own game to feel.</param>
+/// <param name="Lifts">The level's lifts as the server has them, in the level's own order, or <see langword="null"/> where the world sends none.</param>
 public sealed record Snapshot(
-    long Tick, ReplicatedHuman[] Humans, byte[]? Doors = null, ReplicatedImpact[]? Impacts = null, ReplicatedSense[]? Senses = null)
+    long Tick,
+    ReplicatedHuman[] Humans,
+    byte[]? Doors = null,
+    ReplicatedImpact[]? Impacts = null,
+    ReplicatedSense[]? Senses = null,
+    ReplicatedLift[]? Lifts = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -128,6 +134,20 @@ public static class SnapshotCodec
             }
         }
 
+        // The lifts: one bit when they stand as the baseline had them, which is all but while one moves.
+        ReplicatedLift[] lifts = snapshot.Lifts ?? [];
+        bool liftsSame = baseline is not null && lifts.AsSpan().SequenceEqual(baseline.Lifts ?? []);
+        writer.WriteBool(liftsSame);
+        if (!liftsSame)
+        {
+            int count = Math.Min(lifts.Length, ReplicatedLift.MaxPerSnapshot);
+            writer.WriteVarUInt((uint)count);
+            for (int i = 0; i < count; i++)
+            {
+                lifts[i].Write(writer);
+            }
+        }
+
         // The rounds that landed: events, not state, so written whole and never against the baseline.
         ReplicatedImpact[] impacts = snapshot.Impacts ?? [];
         int first = Math.Max(0, impacts.Length - ReplicatedImpact.MaxPerSnapshot);
@@ -232,6 +252,26 @@ public static class SnapshotCodec
             return false;
         }
 
+        ReplicatedLift[]? lifts = baseline?.Lifts;
+        if (!reader.ReadBool())
+        {
+            uint length = reader.ReadVarUInt();
+            if (reader.IsOverflowed || length > ReplicatedLift.MaxPerSnapshot)
+            {
+                return false;
+            }
+
+            lifts = length == 0 ? null : new ReplicatedLift[length];
+            for (int i = 0; i < length; i++)
+            {
+                lifts![i] = ReplicatedLift.Read(ref reader);
+            }
+        }
+        else if (baseline is null)
+        {
+            return false;
+        }
+
         uint impactCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
         if (reader.IsOverflowed || impactCount > ReplicatedImpact.MaxPerSnapshot)
         {
@@ -261,7 +301,7 @@ public static class SnapshotCodec
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors, impacts, senses);
+        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts);
         return true;
     }
 

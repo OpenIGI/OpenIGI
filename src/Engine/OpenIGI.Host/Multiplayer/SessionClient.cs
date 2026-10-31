@@ -71,6 +71,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <summary>Gets the session once connecting has started, or <see langword="null"/>.</summary>
     public ClientSession? Session => _session;
 
+    /// <summary>Gets this client's copy of the level as the session drives it, once there is one.</summary>
+    public IReplicatedClientWorld? World => _world;
+
     /// <inheritdoc/>
     public Scoreboard? CurrentScoreboard => _session?.Scoreboard;
 

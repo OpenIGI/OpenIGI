@@ -14,6 +14,13 @@ public sealed record ElevatorFloor(int TaskId, Vector3d Position)
     public double? SegmentLength { get; init; }
 }
 
+/// <summary>Where a lift's car is and where it is going: what a co-op server tells its clients of each lift.</summary>
+/// <param name="Position">The car's position, in world units.</param>
+/// <param name="Floor">The floor it last stood at or passed.</param>
+/// <param name="Target">The floor it travels to, or <see langword="null"/> when it stands.</param>
+/// <param name="Speed">Its speed, in world units a second.</param>
+public readonly record struct ElevatorMotion(Vector3d Position, int Floor, int? Target, double Speed);
+
 /// <summary>
 /// The deterministic movement state for one retail <c>Elevator</c> task.
 /// </summary>
@@ -161,6 +168,43 @@ public sealed class ElevatorState
 
     public bool TransformChangedThisTick => Position != PreviousPosition;
     public double SpeedUnitsPerSecond => _speed;
+
+    /// <summary>Gets where the car is and where it is going, as another game's copy of the lift takes it (<see cref="Restore"/>).</summary>
+    public ElevatorMotion Motion => new(Position, CurrentFloorIndex, TargetFloorIndex, _speed);
+
+    /// <summary>Puts the car where another game's copy of the lift had it, its requests still waiting dropped.</summary>
+    /// <param name="motion">The other copy's <see cref="Motion"/>.</param>
+    /// <remarks>
+    /// A co-op client's lift takes the server's this way. The previous position stays where the car was, so the collision
+    /// placed after it (<see cref="ElevatorRegistry.Restore"/>) moves the car and what rides it by the jump.
+    /// </remarks>
+    public void Restore(ElevatorMotion motion)
+    {
+        PreviousPosition = Position;
+        Position = motion.Position;
+        CurrentFloorIndex = Math.Clamp(motion.Floor, 0, _floors.Count - 1);
+        TargetFloorIndex = motion.Target is int target && (uint)target < (uint)_floors.Count && target != CurrentFloorIndex ? target : null;
+        _speed = TargetFloorIndex is null ? 0.0 : motion.Speed;
+        _pendingTargetFloor = null;
+        _pendingDirection = 0;
+        LastFloorPosition = FloorPosition;
+    }
+
+    /// <summary>Gets where the car will be some ticks on from a motion, moving as it was told and told nothing more.</summary>
+    /// <param name="motion">Where it starts.</param>
+    /// <param name="ticks">How many ticks on.</param>
+    /// <returns>The motion then.</returns>
+    public ElevatorMotion Project(ElevatorMotion motion, int ticks)
+    {
+        ElevatorState copy = new(StartPosition, _floors, _maxSpeed, _inertia);
+        copy.Restore(motion);
+        for (int i = 0; i < ticks && copy.TargetFloorIndex is not null; i++)
+        {
+            copy.Tick(canStart: true, floorUp: false, floorDown: false);
+        }
+
+        return copy.Motion;
+    }
 
     public void Tick(bool canStart, bool floorUp, bool floorDown, int? wantedFloor = null, bool enabled = true)
     {
