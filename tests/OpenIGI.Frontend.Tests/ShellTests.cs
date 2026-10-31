@@ -162,7 +162,17 @@ public sealed class ShellTests : ShellTestHarness
             PlayerCheatCVars.CheatsEnabled.Value = false;
             PlayerCheatCVars.InfiniteAmmo.Value = false;
 
-            (Shell shell, _) = BuildShell(dir, cvars: Core.Configuration.CVarRegistry.Default);
+            // A registry of the cheats alone: the shared one is filled from other tests' threads as this one reads it.
+            var cvars = new Core.Configuration.CVarRegistry();
+            foreach (Core.Configuration.ICVar cheat in (Core.Configuration.ICVar[])[
+                PlayerCheatCVars.CheatsEnabled, PlayerCheatCVars.InfiniteHealth, PlayerCheatCVars.InfiniteAmmo, PlayerCheatCVars.NoReload,
+                PlayerCheatCVars.NoRecoil, PlayerCheatCVars.AllWeapons, PlayerCheatCVars.UnlockAllLevels, PlayerCheatCVars.Speed,
+                PlayerCheatCVars.Jump, PlayerCheatCVars.HealthScale])
+            {
+                cvars.Add(cheat);
+            }
+
+            (Shell shell, _) = BuildShell(dir, cvars: cvars);
             Assert.True(shell.OpenOn("settings"));
             Pump(shell, 0.6f);
             List<Control> rows = [.. shell.Stack.Top!.Root!.Descendants().OfType<Control>().Where(c => c is Slider or Toggle or Dropdown)];
