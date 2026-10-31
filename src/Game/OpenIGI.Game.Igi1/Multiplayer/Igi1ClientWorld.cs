@@ -63,6 +63,11 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // Ticks of a lift's travel a rider may be off by: the server's queue of this client's commands moving a tick or two.
     private const int RidingSlackTicks = 4;
 
+    // How many snapshots running this player has been on a ladder here and off it on the server, and how many it may be:
+    // a second and a half, past a mount's round trip.
+    private int _offLadderThere;
+    private const int LadderPatience = 45;
+
     /// <summary>Initializes a new instance of the <see cref="Igi1ClientWorld"/> class.</summary>
     /// <param name="game">The client's own mission.</param>
     public Igi1ClientWorld(Igi1Gameplay game)
@@ -166,6 +171,17 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         if (!alive)
         {
             return;
+        }
+
+        // On a ladder here and off it on the server, for longer than this player's own mount takes to reach the server and
+        // come back: the server's slide ended, or it never climbed. Let go, as the server has, rather than be held on the
+        // ladder here while every snapshot pulls the player to where the server has it standing or falling.
+        bool climbingThere = (self.Flags & ReplicatedHumanCondition.Climbing) != 0;
+        _offLadderThere = _game.World.Player is { IsOnLadder: true } && !climbingThere ? _offLadderThere + 1 : 0;
+        if (_offLadderThere > LadderPatience && _game.World.Player is { } climber)
+        {
+            climber.ReleaseLadder();
+            _offLadderThere = 0;
         }
 
         HumanHealth health = _game.World.PlayerHealth;
@@ -281,7 +297,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     {
         if (_game.World.Player is { } player)
         {
-            player.Body.Position += offset;
+            // Through the player, so a climber's ladder takes it too: corrected on the body alone, the climb's next step put
+            // the body back, and the server's word was given again every snapshot.
+            player.Shift(offset);
             player.ViewError.Note(offset);
         }
     }
