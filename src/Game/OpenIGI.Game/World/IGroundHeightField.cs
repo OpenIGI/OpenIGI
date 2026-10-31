@@ -52,6 +52,45 @@ public interface IGroundHeightField
     bool TryGetGround(double x, double y, double z, out TerrainGround ground) =>
         TryGetGround(x, y, z, aboveUnits: 0.0, out ground);
 
+    /// <summary>
+    /// The original's vertical drop (<c>0x4CB050</c>, behind <c>0x4CBE40</c>): from
+    /// <see cref="TerrainHeightQuery.DropLeadUnits"/> beyond the point, the first surface met going down (or up), taken
+    /// when it lies within <paramref name="range"/> of the point.
+    /// </summary>
+    /// <param name="x">The point's X, in world units.</param>
+    /// <param name="y">The point's Y, in world units.</param>
+    /// <param name="z">The point's Z.</param>
+    /// <param name="range">How far from the point a surface is still taken, in world units.</param>
+    /// <param name="upward">Whether the drop goes up, starting below the point, rather than down from above it.</param>
+    /// <param name="ground">Receives the surface when one is found.</param>
+    /// <returns><see langword="false"/> when no surface is met within range.</returns>
+    /// <remarks>
+    /// Starting beyond the point is what keeps a body whose feet have dipped under a surface on it: the drop begins
+    /// above the feet and meets the surface on the way down. A height field has one surface under any point, so its
+    /// window query answers this as well; a terrain whose triangles hang out of their cells answers it its own way.
+    /// </remarks>
+    bool TryDrop(double x, double y, double z, double range, bool upward, out TerrainGround ground)
+    {
+        range = Math.Abs(range);
+        if (upward)
+        {
+            return TryGetGround(x, y, z - TerrainHeightQuery.DropLeadUnits, range + TerrainHeightQuery.DropLeadUnits, out ground)
+                && ground.Height <= z + range;
+        }
+
+        for (double from = z; from > z - range - TerrainHeightQuery.SearchDepthUnits; from -= TerrainHeightQuery.SearchDepthUnits)
+        {
+            double above = from == z ? TerrainHeightQuery.DropLeadUnits : 0.0;
+            if (TryGetGround(x, y, from, above, out ground))
+            {
+                return ground.Height >= z - range;
+            }
+        }
+
+        ground = default;
+        return false;
+    }
+
     /// <summary>Finds the surface a body crossed on its way down between two points.</summary>
     /// <param name="from">Where the body was.</param>
     /// <param name="target">Where it would be.</param>
