@@ -237,8 +237,14 @@ export class Room {
       return;
     }
 
-    await this.publish(room);
+    // The next alarm first: a publish that fails -- the list restarting, a moment's error between the two -- must not
+    // be the room's last, or it stays open but drops off the list for good once the runtime stops retrying.
     await this.ctx.storage.setAlarm(Date.now() + PUBLISH_MS);
+    try {
+      await this.publish(room);
+    } catch {
+      // The next alarm publishes it again.
+    }
   }
 
   async close(reason) {
