@@ -54,6 +54,9 @@ public readonly record struct ComputerObject(GameTask Task, ComputerObjectKind K
 
     /// <summary>Gets a lens's sprite frame, which turns with it.</summary>
     public int Frame { get; init; }
+
+    /// <summary>Gets the name a co-op teammate is shown under, or empty for anything else.</summary>
+    public string Name { get; init; } = string.Empty;
 }
 
 /// <summary>A <c>ComputerHilight</c> as the computer reads it (<c>0x4687A0</c>).</summary>

@@ -238,7 +238,14 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     }
 
     /// <inheritdoc/>
-    public void Name(int entity, string name) => _names[entity] = name;
+    public void Name(int entity, string name)
+    {
+        _names[entity] = name;
+        if (_others.TryGetValue(entity, out Igi1NetworkPlayer? other))
+        {
+            other.Name = name;
+        }
+    }
 
     /// <inheritdoc/>
     public void Skin(int entity, string skin) => _skins[entity] = skin;
