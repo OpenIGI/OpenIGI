@@ -23,6 +23,11 @@ public sealed class ServerSession
     // Which of the server's levels a message belongs to, counted on at each travel: a snapshot or a command from the level
     // before is dropped, its ticks being another level's.
     private byte _epoch;
+
+    // The players who dropped, by name, kept under a parked key of their own until they come back or their time is up.
+    private readonly Dictionary<string, (int Parked, double Since)> _away = new(StringComparer.Ordinal);
+    private int _nextParked = -1;
+    private double _now;
     private readonly Dictionary<int, ClientState> _clients = [];
     private readonly UserCommandCodec _codec;
     private readonly BitWriter _writer = new(2048);
@@ -97,6 +102,7 @@ public sealed class ServerSession
     /// <param name="serverTick">The tick the world is about to run.</param>
     public void Receive(double now, long serverTick)
     {
+        _now = now;
         _net.Update(now);
         while (_net.TryReceive(out NetEvent e))
         {
@@ -107,10 +113,19 @@ public sealed class ServerSession
                     Join(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
                     break;
                 case NetEventKind.Disconnected:
-                    if (_clients.Remove(e.Peer))
+                    if (_clients.Remove(e.Peer, out ClientState? gone))
                     {
-                        _world.RemovePlayer(e.Peer);
-                        Match.Leave(e.Peer);
+                        // Kept aside a while, in case the line dropped rather than the player leaving.
+                        int parked = _nextParked--;
+                        if (_world.ParkPlayer(e.Peer, parked))
+                        {
+                            Match.Move(e.Peer, parked);
+                            _away[gone.Name] = (parked, now);
+                        }
+                        else
+                        {
+                            Match.Leave(e.Peer);
+                        }
                     }
 
                     break;
@@ -127,6 +142,13 @@ public sealed class ServerSession
     public void Send(double now, long tick)
     {
         double seconds = (double)tick / TickRate;
+        foreach ((string name, (int parked, double since)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
+        {
+            _world.ForgetPlayer(parked);
+            Match.Leave(parked);
+            _away.Remove(name);
+        }
+
         RunRound(tick);
         foreach (WorldDeath death in _world.TakeDeaths())
         {
@@ -269,7 +291,15 @@ public sealed class ServerSession
 
     private void Join(int slot, string name, string skin)
     {
-        int? entity = _world.AddPlayer(slot, name);
+        // One who dropped and comes back under its name has its player back, where and as it was, and its standing.
+        int? entity = null;
+        if (_away.Remove(name, out (int Parked, double Since) away) && _world.UnparkPlayer(away.Parked, slot) is { } back)
+        {
+            entity = back;
+            Match.Move(away.Parked, slot);
+        }
+
+        entity ??= _world.AddPlayer(slot, name);
         if (entity is null)
         {
             _net.Disconnect(slot, "no room in the level");
@@ -277,7 +307,12 @@ public sealed class ServerSession
         }
 
         _clients[slot] = new ClientState(name, entity.Value);
-        Match.Join(slot, name, _world.TeamOf(slot)).Skin = skin;
+        if (!Match.Players.ContainsKey(slot))
+        {
+            Match.Join(slot, name, _world.TeamOf(slot));
+        }
+
+        Match.Players[slot].Skin = skin;
         _world.SetSkin(slot, skin);
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.Welcome, 8);
@@ -302,6 +337,14 @@ public sealed class ServerSession
         _world = world;
         Map = map;
         _epoch++;
+
+        // A player away when the level changed is not kept into the next: if it comes back, it joins as anyone does.
+        foreach ((int parked, double _) in _away.Values)
+        {
+            Match.Leave(parked);
+        }
+
+        _away.Clear();
         LagCompensationHistory.Clear();
         world.LagCompensation = new LagCompensation(LagCompensationHistory, TickRate);
         if (Match.Players.TryGetValue(HostSlot, out MatchPlayer? host))

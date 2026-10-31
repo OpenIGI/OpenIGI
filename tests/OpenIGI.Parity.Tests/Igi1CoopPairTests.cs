@@ -168,6 +168,36 @@ public sealed class Igi1CoopPairTests
         Assert.True(pair.Joiner.World.Player.Weapons!.HasWeapon(dropped.Weapon.WeaponId), "the joiner's own player never got the gun");
     }
 
+    [RequiresGameDataFact]
+    public void A_joiner_whose_line_drops_comes_back_to_its_own_player_where_it_was()
+    {
+        using Igi1CoopPair pair = Joined();
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Vector3d away = partner.Player.Body.Position + new Vector3d(8192, 0, 0);
+        partner.Player.Body.Position = away;
+        pair.Joiner!.World.Player!.Body.Position = away;
+        pair.RunUntil(() => false, 10);
+
+        // Dropped: out of the host's level, but kept.
+        pair.Reconnect(frames: 60);
+        Assert.Empty(pair.Host.World.NetworkPlayers);
+
+        // Back under the same name: the same player, where it was.
+        Assert.True(pair.RunUntil(() => pair.Host.World.NetworkPlayers.Count == 1 && pair.Client.LocalEntity is not null, 600) >= 0, "the joiner never came back");
+        Igi1NetworkPlayer back = Assert.Single(pair.Host.World.NetworkPlayers);
+        Assert.Same(partner, back);
+        Assert.True(Vector3d.Distance(back.Player.Body.Position, away) < 2048, $"the joiner came back {Vector3d.Distance(back.Player.Body.Position, away)} units from where it was");
+    }
+
+    [RequiresGameDataFact]
+    public void The_host_closing_the_room_ends_the_joiners_session_with_a_reason()
+    {
+        using Igi1CoopPair pair = Joined();
+        Assert.Null(pair.Client.Ended);
+        pair.Session.Dispose();
+        Assert.True(pair.RunUntil(() => pair.Client.Ended is not null, 120) >= 0, "the joiner never heard the room close");
+    }
+
     private static Igi1CoopPair Joined(params string[] hostArgs)
     {
         Igi1CoopPair pair = new(hostArgs: hostArgs);

@@ -77,6 +77,9 @@ public sealed record MultiplayerRules
     /// <summary>Gets the seconds before a silent client is dropped (<c>timeout</c>).</summary>
     public int TimeoutSeconds { get; init; } = 90;
 
+    /// <summary>Gets the seconds a player who dropped is kept, to be given back as it was if it comes back under its name.</summary>
+    public int RejoinSeconds { get; init; } = 180;
+
     /// <summary>Gets the seconds an idle player may stand before being kicked, or zero never (<c>autokick</c>).</summary>
     public int AutoKickSeconds { get; init; } = 300;
 

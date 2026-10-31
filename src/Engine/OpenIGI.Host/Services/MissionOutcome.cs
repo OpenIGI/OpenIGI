@@ -38,11 +38,8 @@ internal interface IMissionOutcomeHost
     /// <summary>Gets the session's events, which are told the mission is decided; null before a session is up.</summary>
     GameEvents? Events { get; }
 
-    /// <summary>Closes the map computer, if it is open, and tells the player it has gone.</summary>
-    void CloseComputer();
-
-    /// <summary>Tells the player's look to let go of the pointer and hold still.</summary>
-    void HoldPlayerStill();
+    /// <summary>Opens a shell page over the mission, its level still loaded under it: the failed page.</summary>
+    void OpenOverMission(Frontend.Shell shell, Action<Frontend.Shell> page);
 
     /// <summary>Writes the player's settings and profiles.</summary>
     void SaveConfiguration();
@@ -111,22 +108,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
                 logger.Information(
                     "Mission",
                     $"The level's LevelFlow has failed the mission; opening the failed page.");
-                host.CloseComputer();
-
-                // The result is a shell page, not a drawn card, so its two choices can be clicked
-                // and navigated like every other page and the shell's own cursor is the one on
-                // screen. Menu mode hands it the frame's input and draw; the pause flag holds the
-                // showcase off, because the level this is drawn over is still loaded -- the same
-                // pair the pause menu sets.
-                host.Menu.MenuMode = true;
-                host.Menu.PauseMenu = true;
-                state.Shell.OpenMissionFailed();
-
-                // The platform cursor stays hidden: the shell draws its own, so revealing this one
-                // would put a second, unrelated pointer beside it.
-                host.Window.CursorVisible = false;
-                host.HoldPlayerStill();
-                host.Window.CursorLocked = false;
+                host.OpenOverMission(state.Shell, static shell => shell.OpenMissionFailed());
             }
         }
         else

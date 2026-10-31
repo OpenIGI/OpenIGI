@@ -30,7 +30,8 @@ internal sealed class Igi1CoopPair : IDisposable
     private readonly RecordingGraphicsDevice _hostDevice = new() { IsRecording = false };
     private readonly RecordingGraphicsDevice _joinerDevice = new() { IsRecording = false };
     private readonly HostedSession _session;
-    private readonly SessionClient _client;
+    private readonly LoopbackNetwork _network = new();
+    private SessionClient _client;
     private readonly Watch _hostWatch;
     private readonly FollowingWatch _joinerWatch;
 
@@ -42,14 +43,13 @@ internal sealed class Igi1CoopPair : IDisposable
     {
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
-        LoopbackNetwork network = new();
         _session = new HostedSession(
-            network.Open(26001),
+            _network.Open(26001),
             new HostedSessionOptions("coop", 4, string.Empty, "coop", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
             "igi1",
             30,
             NullLogger.Instance);
-        _client = new SessionClient(network.Open(), _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
+        _client = NewClient();
 
         HostGame = Make([.. args, .. hostArgs], HostWindow, _hostDevice);
         JoinerGame = Make(args, JoinerWindow, _joinerDevice);
@@ -128,6 +128,17 @@ internal sealed class Igi1CoopPair : IDisposable
         return until() ? frames : -1;
     }
 
+    /// <summary>Drops the joiner's connection, as a line going down does, and connects again under the same name.</summary>
+    /// <param name="frames">How many frames both run between dropping and coming back.</param>
+    public void Reconnect(int frames)
+    {
+        _client.Dispose();
+        _joinerWatch.Inner = new Watch(new NoSession());
+        RunUntil(() => false, frames);
+        _client = NewClient();
+        _joinerWatch.Inner = _client;
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -138,6 +149,9 @@ internal sealed class Igi1CoopPair : IDisposable
         _hostDevice.Dispose();
         _joinerDevice.Dispose();
     }
+
+    private SessionClient NewClient() =>
+        new(_network.Open(), _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
 
     private static GameHost Make(string[] args, HeadlessGameWindow window, RecordingGraphicsDevice device)
     {
@@ -154,19 +168,37 @@ internal sealed class Igi1CoopPair : IDisposable
     // A client's watch follows its session where the server goes.
     private sealed class FollowingWatch(SessionClient inner) : Watch(inner), ISessionFollower
     {
-        public string? TakeTravel() => inner.TakeTravel();
+        public string? TakeTravel() => (Inner as SessionClient)?.TakeTravel();
+
+        public string? Ended => (Inner as SessionClient)?.Ended;
+
+        public string? RoomCode => (Inner as SessionClient)?.RoomCode;
+    }
+
+    // Between a dropped connection and the next: no session at all.
+    private sealed class NoSession : IHostTickObserver
+    {
+        public void BeforeTitleTick(object title)
+        {
+        }
+
+        public void AfterTitleTick(object title)
+        {
+        }
     }
 
     private class Watch(IHostTickObserver inner) : IHostTickObserver
     {
+        public IHostTickObserver Inner { get; set; } = inner;
+
         public Igi1Gameplay? Game { get; private set; }
 
         public void BeforeTitleTick(object title)
         {
             Game = title as Igi1Gameplay ?? Game;
-            inner.BeforeTitleTick(title);
+            Inner.BeforeTitleTick(title);
         }
 
-        public void AfterTitleTick(object title) => inner.AfterTitleTick(title);
+        public void AfterTitleTick(object title) => Inner.AfterTitleTick(title);
     }
 }

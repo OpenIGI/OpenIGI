@@ -101,7 +101,7 @@ public sealed partial class GameHost
         _window.PumpEvents();
         ApplyTouchControls();
         _coop?.Update();
-        FollowSessionTravel(state);
+        FollowSession(state);
         UpdateLookPreview();
 
         // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.

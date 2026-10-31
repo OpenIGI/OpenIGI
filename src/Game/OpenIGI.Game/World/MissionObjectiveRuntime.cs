@@ -231,7 +231,8 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
 
     /// <summary>Takes a co-op server's running state, as <see cref="WriteState"/> wrote it.</summary>
     /// <param name="reader">The state.</param>
-    public void ReadState(ref BitReader reader)
+    /// <param name="catchingUp">Whether this is the client's first word from the server, joining a level under way.</param>
+    public void ReadState(ref BitReader reader, bool catchingUp)
     {
         int edits = (int)reader.ReadVarUInt();
         for (int i = 0; i < edits && !reader.IsOverflowed; i++)
@@ -243,7 +244,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
             }
         }
 
-        _messages.ReadSends(ref reader);
+        _messages.ReadSends(ref reader, catchingUp);
         int flows = (int)reader.ReadVarUInt();
         for (int i = 0; i < flows && !reader.IsOverflowed; i++)
         {

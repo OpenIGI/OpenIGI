@@ -32,6 +32,28 @@ public interface IReplicatedWorld
     {
     }
 
+    /// <summary>Takes a dropped client's player out of the level and keeps it aside, to be given back if the player comes back.</summary>
+    /// <param name="slot">The client's slot.</param>
+    /// <param name="parked">What the player is kept under.</param>
+    /// <returns><see langword="true"/> when it was kept; a world that keeps none takes it out for good.</returns>
+    bool ParkPlayer(int slot, int parked)
+    {
+        RemovePlayer(slot);
+        return false;
+    }
+
+    /// <summary>Gives a kept player back to a client coming back, under its new slot, where and as it was.</summary>
+    /// <param name="parked">What it was kept under.</param>
+    /// <param name="slot">The client's new slot.</param>
+    /// <returns>The entity it goes by now, or <see langword="null"/> when none was kept.</returns>
+    int? UnparkPlayer(int parked, int slot) => null;
+
+    /// <summary>Forgets a kept player whose client never came back.</summary>
+    /// <param name="parked">What it was kept under.</param>
+    void ForgetPlayer(int parked)
+    {
+    }
+
     /// <summary>Takes out a client's player, as it leaves.</summary>
     /// <param name="slot">The client's slot.</param>
     void RemovePlayer(int slot);

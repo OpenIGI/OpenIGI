@@ -65,7 +65,8 @@ internal sealed class MissionStatusMessages
 
     /// <summary>Sends each declared message as many more times as a co-op server has sent it beyond this level.</summary>
     /// <param name="reader">The server's counts.</param>
-    public void ReadSends(ref BitReader reader)
+    /// <param name="catchingUp">Whether this is the client's first word from the server, whose sends are logged, not shown.</param>
+    public void ReadSends(ref BitReader reader, bool catchingUp)
     {
         int count = (int)reader.ReadVarUInt();
         for (int i = 0; i < count && !reader.IsOverflowed; i++)
@@ -75,7 +76,7 @@ internal sealed class MissionStatusMessages
             {
                 while (_statusMessages[i].SendCount < sent)
                 {
-                    Send(_statusMessages[i]);
+                    Send(_statusMessages[i], show: !catchingUp);
                 }
             }
         }
@@ -266,34 +267,33 @@ internal sealed class MissionStatusMessages
         }
     }
 
-    // The send itself: into the lowest free slot to be shown, its sound, and the computer's log.
-    private void Send(StatusMessage message)
+    // The send itself: into the lowest free slot to be shown, its sound, and the computer's log. One sent before a co-op
+    // client joined goes only into the log: what was said is on the computer, not all said again at once.
+    private void Send(StatusMessage message, bool show = true)
     {
+        message.IsSent = true;
+        message.SentTick = _tick();
+        message.SendCount++;
+
+        // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
+        // only begins if it got one: a message with nowhere to go is not shown, and the original does not
+        // queue it for later.
+        if (show && TryTakeMessageSlot(message))
         {
-            message.IsSent = true;
-            message.SentTick = _tick();
-            message.SendCount++;
-
-            // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
-            // only begins if it got one: a message with nowhere to go is not shown, and the original does not
-            // queue it for later.
-            if (TryTakeMessageSlot(message))
+            message.BeginDisplay(_resolveText(message.TextResource));
+            if (message.Sound.Length > 0)
             {
-                message.BeginDisplay(_resolveText(message.TextResource));
-                if (message.Sound.Length > 0)
-                {
-                    MessageSound?.Invoke(message.Sound);
-                }
+                MessageSound?.Invoke(message.Sound);
             }
+        }
 
-            if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
+        if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
+        {
+            if (_log.Count == 50)
             {
-                if (_log.Count == 50)
-                {
-                    _log.RemoveAt(0);
-                }
-                _log.Add(new MissionComputerLogEntry(message.TextResource));
+                _log.RemoveAt(0);
             }
+            _log.Add(new MissionComputerLogEntry(message.TextResource));
         }
     }
 

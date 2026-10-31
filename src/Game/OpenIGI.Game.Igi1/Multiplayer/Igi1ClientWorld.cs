@@ -17,6 +17,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // This client's own entity, as the server's snapshots name it.
     private int _ownEntity = -1;
 
+    // Whether the server's level state has been taken yet: the first is a catching-up.
+    private bool _levelTaken;
+
     // The other players' names and looks, by entity, from the server's scoreboard.
     private readonly Dictionary<int, string> _names = [];
     private readonly Dictionary<int, string> _skins = [];
@@ -157,7 +160,8 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     {
         ArgumentNullException.ThrowIfNull(state);
         BitReader reader = new(state);
-        _game.World.Objectives?.ReadState(ref reader);
+        _game.World.Objectives?.ReadState(ref reader, catchingUp: !_levelTaken);
+        _levelTaken = true;
         if (reader.ReadBool() && _game.World.Cutscenes is { } cutscenes)
         {
             cutscenes.ReadRuns(ref reader);

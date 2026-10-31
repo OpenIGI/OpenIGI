@@ -32,6 +32,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
     private const double SpawnSpacing = 4096;
 
+    // How far from the level's start the host must have gone for one joining to be stood beside the host instead: 30 m.
+    private const double LateJoinDistance = 30 * 4096;
+
     /// <summary>How long a teammate stands by a fallen player to bring it back, in ticks: five seconds.</summary>
     public const int ReviveTicks = 5 * 30;
 
@@ -46,6 +49,9 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
     // The scale the soldiers' health was last set to.
     private float _enemyScale = 1f;
+
+    // The players whose clients dropped, kept aside out of the level by their parked keys.
+    private readonly Dictionary<int, Igi1NetworkPlayer> _parked = [];
 
     // Who took each pickup, by entity: a client shows it gone, and takes what its own player took into its own hands.
     private readonly Dictionary<object, int> _takenBy = [];
@@ -141,6 +147,38 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             player.Skin = skin;
         }
     }
+
+    /// <inheritdoc/>
+    public bool ParkPlayer(int slot, int parked)
+    {
+        if (!_bySlot.Remove(slot, out Igi1NetworkPlayer? player))
+        {
+            return false;
+        }
+
+        _game.World.NetworkPlayers.Remove(player);
+        _reviving.Remove(player.Entity);
+        _dead.Remove(player.Entity);
+        _parked[parked] = player;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int? UnparkPlayer(int parked, int slot)
+    {
+        if (!_parked.Remove(parked, out Igi1NetworkPlayer? player))
+        {
+            return null;
+        }
+
+        player.Entity = slot + 1;
+        _bySlot[slot] = player;
+        _game.World.NetworkPlayers.Add(player);
+        return player.Entity;
+    }
+
+    /// <inheritdoc/>
+    public void ForgetPlayer(int parked) => _parked.Remove(parked);
 
     /// <inheritdoc/>
     public void RemovePlayer(int slot)
@@ -492,10 +530,20 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         _enemyScale = scale;
     }
 
+    // Where a player is stood: beside the level's start, or -- joining a level the host has gone on into -- where the host is.
     private void Stand(Igi1NetworkPlayer player, int slot)
     {
         if (_game.PlayerSetup?.LevelSpawn() is not { } spawn)
         {
+            return;
+        }
+
+        if (IncludesHost
+            && _game.World.Player is { } host
+            && !_game.World.IsPlayerDead
+            && Vector3d.Distance(host.Body.Position, spawn.Position) > LateJoinDistance)
+        {
+            player.Player.PlaceAt(_game.World.Ground, spawn with { Position = host.Body.Position, Gamma = -host.Body.Yaw });
             return;
         }
 

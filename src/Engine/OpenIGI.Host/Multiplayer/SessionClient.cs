@@ -141,6 +141,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     public string? TakeTravel() => _session?.TakeTravel();
 
     /// <inheritdoc/>
+    public string? Ended => _ended;
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_netClient is { } client)

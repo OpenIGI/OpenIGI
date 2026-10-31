@@ -45,11 +45,33 @@ public sealed partial class GameHost
         }
     }
 
-    // A co-op client goes where its server goes: on to the next mission, or into the same one again.
-    private void FollowSessionTravel(FrameLoopState state)
+    // Whether the page saying a co-op client's room is gone has been opened, so it is opened once.
+    private bool _roomClosedShown;
+
+    // A co-op client goes where its server goes: on to the next mission, or into the same one again; and is told, over its
+    // mission, when the room is gone.
+    private void FollowSession(FrameLoopState state)
     {
-        if (TickObserver is ISessionFollower follower
-            && follower.TakeTravel() is { } map
+        if (TickObserver is not ISessionFollower follower)
+        {
+            _roomClosedShown = false;
+            return;
+        }
+
+        if (follower.Ended is { } reason)
+        {
+            if (!_roomClosedShown && _session.Mission is not null && state.Shell is { } shell)
+            {
+                _roomClosedShown = true;
+                _logger.Information("Coop", $"The room is gone ({reason}); opening the room-closed page.");
+                string? code = follower.RoomCode;
+                OpenOverMission(shell, page => page.OpenRoomClosed(reason, code));
+            }
+
+            return;
+        }
+
+        if (follower.TakeTravel() is { } map
             && int.TryParse(map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int missionId))
         {
             _logger.Information("Coop", $"Following the room's host into mission {missionId}.");

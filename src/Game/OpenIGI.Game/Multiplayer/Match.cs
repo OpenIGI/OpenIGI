@@ -4,7 +4,7 @@ namespace OpenIGI.Game.Multiplayer;
 public sealed class MatchPlayer(int slot, string name, int team, int money)
 {
     /// <summary>Gets the player's slot.</summary>
-    public int Slot { get; } = slot;
+    public int Slot { get; internal set; } = slot;
 
     /// <summary>Gets the player's name.</summary>
     public string Name { get; } = name;
@@ -88,6 +88,18 @@ public sealed class Match
     /// <summary>Takes out a player who has left.</summary>
     /// <param name="slot">The player's slot.</param>
     public void Leave(int slot) => _players.Remove(slot);
+
+    /// <summary>Moves a player's standing to another slot, as one who dropped comes back on a new connection.</summary>
+    /// <param name="from">The slot it stood under.</param>
+    /// <param name="to">The slot it stands under now.</param>
+    public void Move(int from, int to)
+    {
+        if (_players.Remove(from, out MatchPlayer? player))
+        {
+            player.Slot = to;
+            _players[to] = player;
+        }
+    }
 
     /// <summary>Records a death and pays its killer: the kill award for an enemy, the team-kill award (a fine) for a team mate.</summary>
     /// <param name="victim">The slot of the player killed.</param>
