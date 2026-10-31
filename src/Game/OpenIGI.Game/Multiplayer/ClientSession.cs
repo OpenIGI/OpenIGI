@@ -56,6 +56,24 @@ public sealed class ClientSession
     /// <summary>Gets the newest scoreboard, or <see langword="null"/>.</summary>
     public Scoreboard? Scoreboard { get; private set; }
 
+    /// <summary>Gets the server level's running state as last sent, or <see langword="null"/> before any.</summary>
+    public byte[]? Level { get; private set; }
+
+    private bool _levelTaken;
+
+    /// <summary>Takes the server level's running state once each time a new one comes.</summary>
+    /// <returns>The state, or <see langword="null"/> when none has come since the last call.</returns>
+    public byte[]? TakeLevel()
+    {
+        if (_levelTaken || Level is null)
+        {
+            return null;
+        }
+
+        _levelTaken = true;
+        return Level;
+    }
+
     /// <summary>Gets why the session ended or never started, or <see langword="null"/> while it goes on.</summary>
     public string? EndReason { get; private set; }
 
@@ -203,6 +221,24 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
+                break;
+            case SessionMessage.Level:
+                uint length = reader.ReadVarUInt();
+                if (length <= 65536)
+                {
+                    byte[] level = new byte[length];
+                    for (int i = 0; i < level.Length; i++)
+                    {
+                        level[i] = (byte)reader.ReadBits(8);
+                    }
+
+                    if (!reader.IsOverflowed)
+                    {
+                        Level = level;
+                        _levelTaken = false;
+                    }
+                }
+
                 break;
             case SessionMessage.Snapshot when Clock is { } clock:
                 int part = (int)reader.ReadBits(8);

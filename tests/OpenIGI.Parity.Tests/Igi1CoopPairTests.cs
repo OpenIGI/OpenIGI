@@ -85,6 +85,27 @@ public sealed class Igi1CoopPairTests
         Assert.True(Count(pair.Joiner, active) >= 2, $"{active} on the joiner counts {Count(pair.Joiner, active)} with both players inside it");
     }
 
+    [RequiresGameDataFact]
+    public void The_hosts_level_decides_and_the_joiners_follows_its_counters_and_scenes()
+    {
+        using Igi1CoopPair pair = Joined();
+
+        // Mission 1's landing scene waits on a counter an area adds to: set on the host, the scene runs on both.
+        Assert.True(pair.Host!.World.Soldiers!.ScriptVariables!.TryWrite("EditVariable_199.nValue", QvmValue.FromInt32(1)));
+        Assert.True(pair.RunUntil(() => pair.Host.World.Cutscenes?.ActiveScene?.Id == 1204, 60) >= 0, "the host's scene never ran");
+        Assert.True(pair.RunUntil(() => pair.Joiner!.World.Cutscenes?.ActiveScene?.Id == 1204, 60) >= 0, "the joiner's scene never ran");
+        Assert.Equal(Count(pair.Host, "EditVariable_199.nValue"), Count(pair.Joiner!, "EditVariable_199.nValue"));
+
+        // The joiner's own counters are the host's: one written there is put back.
+        Assert.True(pair.Joiner!.World.Soldiers!.ScriptVariables!.TryWrite("EditVariable_199.nValue", QvmValue.FromInt32(7)));
+        pair.RunUntil(() => false, 40);
+        Assert.Equal(Count(pair.Host, "EditVariable_199.nValue"), Count(pair.Joiner, "EditVariable_199.nValue"));
+
+        // And the scene ends on both.
+        Assert.True(pair.RunUntil(() => pair.Host.World.Cutscenes?.ActiveScene is null && pair.Joiner.World.Cutscenes?.ActiveScene is null, 3000) >= 0,
+            $"the scene runs on: host {pair.Host.World.Cutscenes?.ActiveScene?.Id}, joiner {pair.Joiner.World.Cutscenes?.ActiveScene?.Id}");
+    }
+
     private static Igi1CoopPair Joined()
     {
         Igi1CoopPair pair = new();

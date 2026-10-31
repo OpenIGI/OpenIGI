@@ -41,6 +41,10 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         _game = game ?? throw new ArgumentNullException(nameof(game));
         game.World.PartnerBodies = PartnerBodies;
         game.World.CoopClient = true;
+
+        // The level's running state is the server's: counters, messages, result and scenes come with each change.
+        game.World.Objectives?.Mirrored = true;
+        game.World.Cutscenes?.Mirrored = true;
         if (game.World.Soldiers is { } soldiers)
         {
             soldiers.PuppetsOnly = true;
@@ -139,6 +143,18 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         else if (server < local - 0.01f)
         {
             health.ApplyDirect(0, (local - server) * health.MaximumHealth);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void ApplyLevel(byte[] state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        BitReader reader = new(state);
+        _game.World.Objectives?.ReadState(ref reader);
+        if (reader.ReadBool() && _game.World.Cutscenes is { } cutscenes)
+        {
+            cutscenes.ReadRuns(ref reader);
         }
     }
 

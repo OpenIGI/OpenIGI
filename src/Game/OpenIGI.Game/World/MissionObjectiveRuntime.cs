@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Input;
+using OpenIGI.Net;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 using static OpenIGI.Game.World.DeclaredTaskValues;
@@ -197,6 +198,64 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// </para>
     /// </remarks>
     public float ExtraMessageHoldSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether this level takes its running state from a co-op server's rather than working it out: its counters,
+    /// the messages sent and the mission's result. Everything else it works out as ever, from those.
+    /// </summary>
+    public bool Mirrored
+    {
+        get => _messages.Mirrored;
+        set => _messages.Mirrored = value;
+    }
+
+    /// <summary>Writes the level's running state, for a co-op server's clients: counters, messages sent, result.</summary>
+    /// <param name="writer">Where to.</param>
+    public void WriteState(BitWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteVarUInt((uint)_editVariables.Count);
+        foreach (EditVariable edit in _editVariables)
+        {
+            writer.WriteVarInt(edit.Value);
+        }
+
+        _messages.WriteSends(writer);
+        writer.WriteVarUInt((uint)_levelFlows.Count);
+        foreach (LevelFlow flow in _levelFlows)
+        {
+            writer.WriteBits(unchecked((byte)flow.Complete), 8);
+            writer.WriteBits(unchecked((byte)flow.Failed), 8);
+        }
+    }
+
+    /// <summary>Takes a co-op server's running state, as <see cref="WriteState"/> wrote it.</summary>
+    /// <param name="reader">The state.</param>
+    public void ReadState(ref BitReader reader)
+    {
+        int edits = (int)reader.ReadVarUInt();
+        for (int i = 0; i < edits && !reader.IsOverflowed; i++)
+        {
+            int value = reader.ReadVarInt();
+            if (i < _editVariables.Count)
+            {
+                _editVariables[i].Value = value;
+            }
+        }
+
+        _messages.ReadSends(ref reader);
+        int flows = (int)reader.ReadVarUInt();
+        for (int i = 0; i < flows && !reader.IsOverflowed; i++)
+        {
+            sbyte complete = unchecked((sbyte)reader.ReadBits(8));
+            sbyte failed = unchecked((sbyte)reader.ReadBits(8));
+            if (i < _levelFlows.Count)
+            {
+                _levelFlows[i].Complete = complete;
+                _levelFlows[i].Failed = failed;
+            }
+        }
+    }
 
     /// <summary>Gets or sets what reads the level's other players, a co-op session's, whom the areas count as they count the player.</summary>
     public Func<IEnumerable<AreaPlayer>>? PartnerPlayers
@@ -447,6 +506,12 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// <summary>EditVariable::Update (<c>0x4889B0</c>): Add first, Sub second, every tick.</summary>
     private void UpdateEdit(EditVariable edit)
     {
+        // A co-op client's counters are the server's.
+        if (Mirrored)
+        {
+            return;
+        }
+
         if (!string.IsNullOrEmpty(edit.AddExpression))
         {
             edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
@@ -492,7 +557,16 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
         // messages above see the result of the tick before this one -- as Level 14's MISSION_FAILED does.
         foreach (LevelFlow flow in _levelFlows)
         {
-            flow.Update(_expressions);
+            // A co-op client's result is the server's: its own player falling does not fail the mission.
+            if (Mirrored)
+            {
+                flow.Tick++;
+            }
+            else
+            {
+                flow.Update(_expressions);
+            }
+
             SampleDigitKeys();
         }
 

@@ -161,6 +161,32 @@ public sealed class ServerSession
             _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
         }
 
+        // The level's running state, to each client that hasn't the newest -- a client joining has none -- and to every client
+        // once a second besides, which puts right whatever its own level wrote over it.
+        if (_world.CaptureLevel() is { } level)
+        {
+            foreach (ClientState client in _clients.Values.Where(c => tick % TickRate == 0 || c.Level is null || !c.Level.AsSpan().SequenceEqual(level)))
+            {
+                client.Level = level;
+            }
+
+            foreach ((int slot, ClientState client) in _clients)
+            {
+                if (ReferenceEquals(client.Level, level))
+                {
+                    _writer.Reset();
+                    _writer.WriteBits((uint)SessionMessage.Level, 8);
+                    _writer.WriteVarUInt((uint)level.Length);
+                    foreach (byte b in level)
+                    {
+                        _writer.WriteBits(b, 8);
+                    }
+
+                    _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+                }
+            }
+        }
+
         Snapshot snapshot = _world.Capture(tick);
         LagCompensationHistory.Add(snapshot);
         if (tick % Math.Max(1, SnapshotInterval) == 0)
@@ -334,5 +360,8 @@ public sealed class ServerSession
         public int Entity { get; } = entity;
 
         public SnapshotHistory History { get; } = new();
+
+        // The level state this client was last sent.
+        public byte[]? Level { get; set; }
     }
 }

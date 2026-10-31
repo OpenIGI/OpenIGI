@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Net;
 
 namespace OpenIGI.Game.World;
 
@@ -47,6 +48,38 @@ internal sealed class MissionStatusMessages
 
     /// <summary>Gets how many authored status-message tasks the mission contains.</summary>
     public int Count => _statusMessages.Count;
+
+    /// <summary>Gets or sets whether the messages are sent when a co-op server's were, rather than when their own expressions hold.</summary>
+    public bool Mirrored { get; set; }
+
+    /// <summary>Writes how many times each declared message has been sent.</summary>
+    /// <param name="writer">Where to.</param>
+    public void WriteSends(BitWriter writer)
+    {
+        writer.WriteVarUInt((uint)_statusMessages.Count);
+        foreach (StatusMessage message in _statusMessages)
+        {
+            writer.WriteVarUInt((uint)message.SendCount);
+        }
+    }
+
+    /// <summary>Sends each declared message as many more times as a co-op server has sent it beyond this level.</summary>
+    /// <param name="reader">The server's counts.</param>
+    public void ReadSends(ref BitReader reader)
+    {
+        int count = (int)reader.ReadVarUInt();
+        for (int i = 0; i < count && !reader.IsOverflowed; i++)
+        {
+            int sent = (int)reader.ReadVarUInt();
+            if (i < _statusMessages.Count)
+            {
+                while (_statusMessages[i].SendCount < sent)
+                {
+                    Send(_statusMessages[i]);
+                }
+            }
+        }
+    }
 
     /// <summary>Adds one authored message and exports its fields on its task.</summary>
     /// <param name="declared">The message's task.</param>
@@ -224,12 +257,22 @@ internal sealed class MissionStatusMessages
             message.TicksSinceFinishedDisplay++;
         }
 
-        if ((!message.SendOnce || !message.IsSent)
+        if (!Mirrored
+            && (!message.SendOnce || !message.IsSent)
             && _tick() > message.SentTick + 210
             && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false, message.Task))
         {
+            Send(message);
+        }
+    }
+
+    // The send itself: into the lowest free slot to be shown, its sound, and the computer's log.
+    private void Send(StatusMessage message)
+    {
+        {
             message.IsSent = true;
             message.SentTick = _tick();
+            message.SendCount++;
 
             // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
             // only begins if it got one: a message with nowhere to go is not shown, and the original does not

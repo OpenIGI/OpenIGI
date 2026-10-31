@@ -47,6 +47,12 @@ public static class ClientReplication
             }
         }
 
+        // The server level's running state, taken each time a new one comes.
+        if (session.TakeLevel() is { } level)
+        {
+            world.ApplyLevel(level);
+        }
+
         if (session.Latest is not { } latest || session.Clock is not { HasSample: true } clock)
         {
             return;

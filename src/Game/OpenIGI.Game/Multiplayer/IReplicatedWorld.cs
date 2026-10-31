@@ -65,6 +65,11 @@ public interface IReplicatedWorld
     /// <param name="slot">The client's slot.</param>
     void Respawn(int slot);
 
+    /// <summary>Writes the level's running state for the clients to take, or nothing for a world without one.</summary>
+    /// <returns>The state, or <see langword="null"/>.</returns>
+    /// <remarks>Sent reliably to each client whenever it differs from what that client last had.</remarks>
+    byte[]? CaptureLevel() => null;
+
     /// <summary>Gets whether this world holds its dead until another player revives them, rather than respawning them.</summary>
     bool HoldsTheDead => false;
 
@@ -138,6 +143,12 @@ public interface IReplicatedClientWorld
     /// <param name="id">Its entity id.</param>
     void Hide(int id);
 
+    /// <summary>Takes the server level's running state, as its world's <see cref="IReplicatedWorld.CaptureLevel"/> wrote it.</summary>
+    /// <param name="state">The state.</param>
+    void ApplyLevel(byte[] state)
+    {
+    }
+
     /// <summary>Takes the rest of the world from the newest snapshot: what is not a human, such as the doors.</summary>
     /// <param name="snapshot">The newest snapshot.</param>
     /// <param name="ownEntity">This client's own entity, whose rounds it showed already, or <see langword="null"/>.</param>
@@ -163,4 +174,7 @@ public enum SessionMessage : byte
 
     /// <summary>Server to client, reliable: every player's standing, the team scores and the round.</summary>
     Scoreboard = 5,
+
+    /// <summary>Server to client, reliable: the level's running state, as the title writes it.</summary>
+    Level = 6,
 }

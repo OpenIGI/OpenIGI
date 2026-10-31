@@ -317,6 +317,24 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     /// <remarks>Co-op: a fallen player lies where it fell until a teammate stands by it for <see cref="ReviveTicks"/>.</remarks>
     public bool HoldsTheDead => true;
 
+    // The level's running state as a client takes it: the objectives' counters, messages and result, and the scenes.
+    private readonly BitWriter _level = new(1024);
+
+    /// <inheritdoc/>
+    public byte[]? CaptureLevel()
+    {
+        if (_game.World.Objectives is not { } objectives)
+        {
+            return null;
+        }
+
+        _level.Reset();
+        objectives.WriteState(_level);
+        _level.WriteBool(_game.World.Cutscenes is not null);
+        _game.World.Cutscenes?.WriteRuns(_level);
+        return _level.AsSpan().ToArray();
+    }
+
     /// <inheritdoc/>
     public float? ReviveProgressOf(int entity)
     {
