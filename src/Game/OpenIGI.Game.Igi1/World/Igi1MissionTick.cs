@@ -352,16 +352,42 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // you were shot frames the whole of it.
         // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick: the body's
         // own eye height over where it fell when nothing simulates the corpse.
+        // A co-op player who is down watches a teammate still standing instead, the same camera around them.
         if (mission.IsPlayerDead && mission.Player is { } fallen)
         {
             Vector3d feet = fallen.Body.Position;
-            host.FollowCorpse(soldiers?.PlayerRagdollCentre
+            host.FollowCorpse(WatchedPartner(fallen)
+                ?? soldiers?.PlayerRagdollCentre
                 ?? new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
         }
 
         TickClimbsAndInteractions();
         FollowPlayerBody();
         host.CloseTick();
+    }
+
+    // Which of the teammates still standing a downed co-op player watches, fire stepping on to the next.
+    private int _watching;
+    private bool _watchStepHeld;
+
+    // Where a downed co-op player's camera looks: a teammate still standing, or nowhere when none is.
+    private Vector3d? WatchedPartner(PlayerCamera fallen)
+    {
+        List<Multiplayer.Igi1NetworkPlayer> standing = [.. mission.Partners.Where(static p => !p.IsDead)];
+        if (standing.Count == 0)
+        {
+            return null;
+        }
+
+        bool step = fallen.IsActionDown(host.Input, PlayerAction.Fire);
+        if (step && !_watchStepHeld)
+        {
+            _watching++;
+        }
+
+        _watchStepHeld = step;
+        Vector3d feet = standing[(_watching % standing.Count + standing.Count) % standing.Count].Player.Body.Position;
+        return new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5));
     }
 
     /// <summary>Advances the ladder and the world interactions on the fixed tick, and the camera that frames them.</summary>

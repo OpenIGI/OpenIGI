@@ -325,7 +325,9 @@ internal sealed partial class RemasteredHudRenderer
         float titleWidth = type.Heading.MeasureWidth(title, titleSize) * 1.06f;
         painter.DrawLabel(type.Heading, title, new UiVec2(x + ((width - titleWidth) * 0.5f), y + Px(22f)), titleSize, progress > 0f ? Accent : Bad, 0.06f);
 
-        string line = progress > 0f ? "Stay put, a teammate is with you" : "A teammate can revive you by standing beside you for 5 seconds";
+        string line = progress > 0f
+            ? "Stay put, a teammate is with you"
+            : "A teammate can revive you by standing beside you for 5 seconds  ·  Fire to watch another";
         float lineSize = Px(17f);
         float lineWidth = type.Body.MeasureWidth(line, lineSize);
         painter.DrawLabel(type.Body, line, new UiVec2(x + ((width - lineWidth) * 0.5f), y + Px(68f)), lineSize, UiPalette.TextSecondary, 0.01f);
