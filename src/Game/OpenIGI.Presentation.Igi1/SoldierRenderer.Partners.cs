@@ -19,10 +19,21 @@ public sealed partial class SoldierRenderer
     // A body lying a little above its feet: where a revive mark stands over it, in metres.
     private const double ReviveMarkLift = 0.7;
 
+    // Whether the partners are out of sight -- a scene playing -- though still followed, so each is as it was after.
+    private bool _partnersHidden;
+
+    /// <inheritdoc/>
+    public void HidePartnerBodies(bool hidden) => _partnersHidden = hidden;
+
     /// <inheritdoc/>
     public IReadOnlyList<WorldNameTag> NameTags()
     {
         List<WorldNameTag> tags = [];
+        if (_partnersHidden)
+        {
+            return tags;
+        }
+
         foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
             if (!_fallen.ContainsKey(key) && _partnerNames.TryGetValue(key, out string? name) && body.HeadAnchorMetres() is { } head)
@@ -37,6 +48,11 @@ public sealed partial class SoldierRenderer
     public IReadOnlyList<ReviveMarker> ReviveMarkers()
     {
         List<ReviveMarker> marks = [];
+        if (_partnersHidden)
+        {
+            return marks;
+        }
+
         foreach ((object key, (Vector3d feet, float progress)) in _fallen)
         {
             Vector3d metres = feet / OpenIGI.Game.Ai.AiViewCone.UnitsPerMetre;
@@ -219,6 +235,11 @@ public sealed partial class SoldierRenderer
 
     private void DrawPartners(in Camera3D camera, in Matrix4f projection)
     {
+        if (_partnersHidden)
+        {
+            return;
+        }
+
         foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
             body.Draw(in camera, in projection);
@@ -236,6 +257,11 @@ public sealed partial class SoldierRenderer
     // The flames of the partners that fired this tick, in the forward pass with the soldiers'.
     private void DrawPartnerMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
     {
+        if (_partnersHidden)
+        {
+            return;
+        }
+
         foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
             if (_partnerGuns.TryGetValue(key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) gun)

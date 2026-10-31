@@ -540,6 +540,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets the body's animation set, skeleton 0, once given; a co-op partner's ladder climbs on it.</summary>
     public BoneAnimationSet? BodyAnimations { get; private set; }
 
+    /// <summary>Gets whether the body plays a world interaction's own clip: any interaction but the mounted gun's sight.</summary>
+    public bool PlaysInteractionClip => IsInWorldInteraction && !IsMountedStationaryGun && InteractionAnimation >= 0;
+
     /// <summary>Gets the ladder clip the climb is in, or -1 off a ladder: what another player's window draws it doing.</summary>
     public int LadderAnimation => !IsOnLadder
         ? -1

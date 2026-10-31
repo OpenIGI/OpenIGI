@@ -124,8 +124,11 @@ public interface IReplicatedTitle
     /// <summary>Gets the map the level is, as a session names it: the mission's id for a campaign level.</summary>
     string Map => string.Empty;
 
-    /// <summary>Gets what stands for the level now loaded: another object once another level is, the same one again included.</summary>
-    object Level => this;
+    /// <summary>
+    /// Gets what stands for the level now loaded: another object once another level is, the same one again included; or
+    /// <see langword="null"/> between levels, when none is up -- which is never a level of its own to travel to.
+    /// </summary>
+    object? Level => this;
 
     /// <summary>Makes the level's replicated world.</summary>
     /// <param name="includesHost">Whether the level's own player is a player of the session: a listen server, not a dedicated one.</param>

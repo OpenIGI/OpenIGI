@@ -32,13 +32,13 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     private readonly LadderClimb _ownClimb = new();
 
     // Whether the player's world interaction has begun its body animation.
-    private bool _worldInteractionActive;
+    private readonly InteractionMotion _ownInteraction = new();
 
     /// <summary>Forgets a climb or an interaction in progress, as a new mission starts.</summary>
     public void ResetClimbs()
     {
         _ownClimb.Reset();
-        _worldInteractionActive = false;
+        _ownInteraction.Reset();
     }
 
     /// <summary>Runs one pass of the loop.</summary>
@@ -436,43 +436,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         if (mission.Player is { IsInWorldInteraction: true } interacting)
         {
-            if (!_worldInteractionActive)
-            {
-                _worldInteractionActive = true;
-                if (interacting.InteractionAnimation >= 0)
-                {
-                    soldiers?.StartPlayerInteractionAnimation(
-                        interacting.InteractionAnimation,
-                        loops: interacting.InteractionAnimationLoops);
-                }
-            }
-
+            _ownInteraction.Tick(interacting, soldiers is null ? null : new PresentedLadderBody(soldiers), audio.PlayLadderStepSound);
             if (interacting.IsMountedStationaryGun)
             {
                 // The gun's sight sits just in front of the gunner's own chest, and retail draws
                 // no body in that view (captured in mission 4: barrel, stand and scenery only).
                 mission.Soldiers?.HidePlayerBodyClimbing();
-            }
-            else if (soldiers is not null)
-            {
-                // State 42 plays its drag clip only while a step is under way (0x40DDA0).
-                if (interacting.IsOnLevelWire)
-                {
-                    mission.Soldiers?.SetPlayerLadderPlaybackDirection(interacting.WireDragDirection);
-                    if (interacting.TakeWireDragSound() is { } dragSound)
-                    {
-                        audio.PlayLadderStepSound(dragSound, interacting.InteractionFeet);
-                    }
-                }
-
-                soldiers.AdvancePlayerLadderAnimation(
-                    interacting.InteractionFacing,
-                    out Vector3d interactionRootDelta,
-                    out float? interactionStepTime,
-                    out bool interactionClipEnded);
-                interacting.ApplyInteractionRootMotion(interactionRootDelta, interactionClipEnded, interactionStepTime);
-                soldiers.PlacePlayerBodyClimbing(
-                    interacting.InteractionFeet, interacting.InteractionFacing);
             }
 
             Vector3d interactionCameraFeet = mission.Soldiers?.PlayerInteractionCameraFeet(
@@ -501,12 +470,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         if ((mission.Player is null || (!mission.Player.IsOnLadder && !mission.Player.IsInWorldInteraction))
-            && (_ownClimb.IsActive || _worldInteractionActive || host.IsInteractionViewActive))
+            && (_ownClimb.IsActive || _ownInteraction.IsActive || host.IsInteractionViewActive))
         {
             mission.Soldiers?.HidePlayerBodyClimbing();
             host.ResetInteractionView();
             _ownClimb.Reset();
-            _worldInteractionActive = false;
+            _ownInteraction.Reset();
         }
     }
 
@@ -1024,9 +993,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 followedBody.Simulation.HidePlayerBodyFollowing();
             }
 
-            // A co-op session's partners, followed on the same tick the player's body is.
+            // A co-op session's partners, followed on the same tick the player's body is -- and kept out of sight while a
+            // scene plays, whose own actors stand for the players as they stand for the player alone: the outro's Jones at
+            // the wheel, not a partner running at the truck.
             if (mission.PartnerBodies is { } partners)
             {
+                followedBody.HidePartnerBodies(mission.Cutscenes?.IsPlaying == true);
                 IReadOnlyList<PartnerBody> bodies = partners();
                 followedBody.FollowPartnerBodies(bodies);
 

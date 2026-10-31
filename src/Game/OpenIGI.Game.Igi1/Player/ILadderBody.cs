@@ -20,6 +20,11 @@ public interface ILadderBody
     /// <param name="backwards">Whether it plays from its end.</param>
     void StartLadderClip(int animation, bool loops, bool backwards = false);
 
+    /// <summary>Starts a world interaction's clip: a computer, a wire, a vault.</summary>
+    /// <param name="animation">The clip.</param>
+    /// <param name="loops">Whether it repeats.</param>
+    void StartInteractionClip(int animation, bool loops);
+
     /// <summary>Changes the clip's playback direction without restarting it.</summary>
     /// <param name="direction">−1 down, 0 paused at a boundary, or +1 up.</param>
     void SetLadderPlaybackDirection(int direction);
@@ -46,6 +51,9 @@ public sealed class PresentedLadderBody(ISoldierPresenter soldiers) : ILadderBod
     /// <inheritdoc/>
     public void StartLadderClip(int animation, bool loops, bool backwards = false) =>
         _soldiers.StartPlayerLadderAnimation(animation, loops, backwards);
+
+    /// <inheritdoc/>
+    public void StartInteractionClip(int animation, bool loops) => _soldiers.StartPlayerInteractionAnimation(animation, loops);
 
     /// <inheritdoc/>
     public void SetLadderPlaybackDirection(int direction) => _soldiers.Simulation.SetPlayerLadderPlaybackDirection(direction);
@@ -87,6 +95,10 @@ public sealed class SimulatedLadderBody : ILadderBody
     /// <inheritdoc/>
     public void StartLadderClip(int animation, bool loops, bool backwards = false) =>
         _view.StartLadderAnimation(animation, loops, backwards);
+
+    /// <inheritdoc/>
+    /// <remarks>Undrawn, so the root height a drawn body keeps or drops for its picture is nothing to it.</remarks>
+    public void StartInteractionClip(int animation, bool loops) => _view.StartLadderAnimation(animation, loops);
 
     /// <inheritdoc/>
     public void SetLadderPlaybackDirection(int direction) => _view.SetLadderPlaybackDirection(direction);

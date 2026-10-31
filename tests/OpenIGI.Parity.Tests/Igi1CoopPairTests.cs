@@ -133,6 +133,33 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void The_host_going_on_to_the_next_mission_takes_the_joiner_there_and_never_back()
+    {
+        using Igi1CoopPair pair = Joined();
+        Assert.Equal(1, pair.Joiner!.World.MissionId);
+
+        // As a completed mission goes on: the host starts the next one itself.
+        typeof(Host.GameHost).GetMethod("StartMission", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(pair.HostGame, [2]);
+
+        List<string> told = [];
+        Assert.True(
+            pair.RunUntil(
+                () =>
+                {
+                    if (pair.Client.Session?.Map is { } map && (told.Count == 0 || told[^1] != map))
+                    {
+                        told.Add(map);
+                    }
+
+                    return pair.Joiner.World.MissionId == 2 && pair.Host!.World.NetworkPlayers.Count == 1;
+                },
+                3000) >= 0,
+            $"the joiner never came into mission 2 (told {string.Join(", ", told)}, in {pair.Joiner.World.MissionId})");
+        Assert.DoesNotContain("1", told.Skip(1));
+    }
+
+    [RequiresGameDataFact]
     public void What_a_player_takes_is_taken_by_that_player_and_gone_for_the_other()
     {
         using Igi1CoopPair pair = Joined();

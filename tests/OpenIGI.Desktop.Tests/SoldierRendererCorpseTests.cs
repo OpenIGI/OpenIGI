@@ -164,45 +164,7 @@ public sealed class SoldierRendererCorpseTests
     {
         using RagdollScope ragdoll = new(enabled: false);
         using Scenario scenario = CreateScenario(prepareContainers: true);
-        SoldierView firstLife = Assert.Single(
-            RendererSoldiers(scenario.Renderer),
-            view => view.Soldier.Id == taskId);
-        Assert.False(ConditionalContainerGate.IsTaskActive(firstLife.Soldier));
-
-        scenario.Cutscenes!.Tick();
-        Assert.True(scenario.Loop.Variables.TryWrite(
-            "StatusMessage_977.isSendt",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
-        ForceContainer(scenario, 307, run: true);
-        ForceContainer(scenario, 3901, run: true);
-        scenario.Renderer.Tick(enemyAlive: false);
-        Assert.True(
-            ConditionalContainerGate.IsTaskActive(firstLife.Soldier),
-            DescribeAncestry(firstLife.Soldier));
-
-        SoldierMember firstMember = MemberFor(scenario.Renderer, firstLife);
-        Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(firstMember.Agent.WeaponType).ScriptId);
-        Assert.NotNull(firstMember.Weapon);
-
-        MeshHitRay ray = FindAnyMeshHitRay(
-            scenario.Renderer,
-            view => ReferenceEquals(view, firstLife));
-        int maxHitsToKill = HumanHitZoneTable.HitsToKill(
-            damageFactor: 0.5f,
-            HumanHitZoneTable.Soldier.Min(zone => zone.Multiplier));
-        for (int shot = 0; shot < maxHitsToKill && !firstLife.IsDead; shot++)
-        {
-            ray = FindAnyMeshHitRay(
-                scenario.Renderer,
-                view => ReferenceEquals(view, firstLife));
-            Assert.True(scenario.Renderer.TryShoot(
-                ray.Origin,
-                ray.End,
-                damageFactor: 0.5f,
-                WeaponCategory.Gun,
-                out _));
-        }
-        Assert.True(firstLife.IsDead);
+        (SoldierView firstLife, SoldierMember firstMember, MeshHitRay ray, int maxHitsToKill) = KillPostRescueGuard(scenario, taskId);
         MeshHandle corpseMesh = firstMember.Mesh;
 
         // Retail GuardGenerator replaces its guard only once he is dead AND out of the world, and deletes the
@@ -285,6 +247,83 @@ public sealed class SoldierRendererCorpseTests
                 out _));
         }
         Assert.True(replacement.IsDead);
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData(429)]
+    public void A_clients_dead_generated_guard_leaves_the_world_as_the_servers_replacement_comes(int taskId)
+    {
+        using RagdollScope ragdoll = new(enabled: false);
+        using Scenario scenario = CreateScenario(prepareContainers: true);
+        (SoldierView firstLife, SoldierMember firstMember, MeshHitRay ray, _) = KillPostRescueGuard(scenario, taskId);
+        MeshHandle corpseMesh = firstMember.Mesh;
+        int soldiersAlive = scenario.Renderer.Count;
+        int generator = Assert.IsType<int>(scenario.Renderer.Simulation.GeneratorIdOf(firstLife));
+
+        // A client's guards are puppets: no mind of theirs takes the body out, so it is still in the world when the server's
+        // snapshot names the replacement.
+        scenario.Renderer.Simulation.PuppetsOnly = true;
+        for (int tick = 0; tick < 30; tick++)
+        {
+            scenario.Renderer.Tick(enemyAlive: false);
+        }
+
+        SoldierView? replacement = scenario.Renderer.Simulation.ReplaceAsServerDid(generator, runtimeId: 9001);
+
+        Assert.NotNull(replacement);
+        Assert.False(replacement.IsDead);
+        Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == taskId);
+        Assert.Equal(soldiersAlive, scenario.Renderer.Count);
+        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.Draw(new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)), Matrix4f.Identity);
+        Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
+    }
+
+    // Mission 1's post-rescue generated guard: brought into play as the rescue does, then shot dead.
+    private static (SoldierView FirstLife, SoldierMember FirstMember, MeshHitRay Ray, int MaxHitsToKill) KillPostRescueGuard(Scenario scenario, int taskId)
+    {
+        SoldierView firstLife = Assert.Single(
+            RendererSoldiers(scenario.Renderer),
+            view => view.Soldier.Id == taskId);
+        Assert.False(ConditionalContainerGate.IsTaskActive(firstLife.Soldier));
+
+        scenario.Cutscenes!.Tick();
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            "StatusMessage_977.isSendt",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        ForceContainer(scenario, 307, run: true);
+        ForceContainer(scenario, 3901, run: true);
+        scenario.Renderer.Tick(enemyAlive: false);
+        Assert.True(
+            ConditionalContainerGate.IsTaskActive(firstLife.Soldier),
+            DescribeAncestry(firstLife.Soldier));
+
+        SoldierMember firstMember = MemberFor(scenario.Renderer, firstLife);
+        Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(firstMember.Agent.WeaponType).ScriptId);
+        Assert.NotNull(firstMember.Weapon);
+
+        MeshHitRay ray = FindAnyMeshHitRay(
+            scenario.Renderer,
+            view => ReferenceEquals(view, firstLife));
+        int maxHitsToKill = HumanHitZoneTable.HitsToKill(
+            damageFactor: 0.5f,
+            HumanHitZoneTable.Soldier.Min(zone => zone.Multiplier));
+        for (int shot = 0; shot < maxHitsToKill && !firstLife.IsDead; shot++)
+        {
+            ray = FindAnyMeshHitRay(
+                scenario.Renderer,
+                view => ReferenceEquals(view, firstLife));
+            Assert.True(scenario.Renderer.TryShoot(
+                ray.Origin,
+                ray.End,
+                damageFactor: 0.5f,
+                WeaponCategory.Gun,
+                out _));
+        }
+        Assert.True(firstLife.IsDead);
+        MeshHandle corpseMesh = firstMember.Mesh;
+        return (firstLife, firstMember, ray, maxHitsToKill);
     }
 
     private static void AssertBodyRemainsDrawableNearSpawn(

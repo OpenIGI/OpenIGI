@@ -27,7 +27,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, IDisposable
+public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -103,11 +103,14 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             : map;
 
     /// <inheritdoc/>
+    public string OwnSkin => _options.HostSkin;
+
+    /// <inheritdoc/>
     public void BeforeTitleTick(object title)
     {
         if (_session is null)
         {
-            if (title is not IReplicatedTitle replicated)
+            if (title is not IReplicatedTitle { Level: not null } replicated)
             {
                 return;
             }
@@ -120,9 +123,10 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
         }
 
-        else if (title is IReplicatedTitle next && !ReferenceEquals(next.Level, _level))
+        else if (title is IReplicatedTitle { Level: { } level } next && !ReferenceEquals(level, _level))
         {
-            // Another level: the next mission, or this one again. The room goes on, and every player with it.
+            // Another level: the next mission, or this one again. The room goes on, and every player with it -- once that
+            // level is up, never to the gap between two, which would send them back to the mission just left.
             _world = next.CreateReplicatedWorld(_options.IncludesHost);
             _level = next.Level;
             string map = next.Map.Length > 0 ? next.Map : _session.Map;

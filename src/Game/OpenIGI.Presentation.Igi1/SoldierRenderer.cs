@@ -646,10 +646,17 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool LoadPlayerBody(LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma)
+    public bool LoadPlayerBody(LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma, string? look = null)
     {
         RememberPartnerLoad(mission, model, animations);
-        return _playerBody.Load(mission, model, animations, position, gamma);
+        if (look is null)
+        {
+            return _playerBody.Load(mission, model, animations, position, gamma);
+        }
+
+        // The look a co-op player is seen in, the same way its partners' are found: this level's, or another's.
+        (LoadedMission lookMission, string resolved) = ResolveLook(mission, look, model);
+        return _playerBody.Load(lookMission, resolved, AnimationsFor(resolved, lookMission, animations), position, gamma);
     }
 
     /// <inheritdoc/>

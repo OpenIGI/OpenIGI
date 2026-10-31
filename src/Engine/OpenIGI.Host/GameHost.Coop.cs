@@ -48,6 +48,10 @@ public sealed partial class GameHost
     // Whether the page saying a co-op client's room is gone has been opened, so it is opened once.
     private bool _roomClosedShown;
 
+    // Where the server last went, until this client has gone there too: one told it during another load waits for that to
+    // finish rather than being lost, and only the latest is kept.
+    private int? _followInto;
+
     // A co-op client goes where its server goes: on to the next mission, or into the same one again; and is told, over its
     // mission, when the room is gone.
     private void FollowSession(FrameLoopState state)
@@ -55,6 +59,7 @@ public sealed partial class GameHost
         if (TickObserver is not ISessionFollower follower)
         {
             _roomClosedShown = false;
+            _followInto = null;
             return;
         }
 
@@ -74,8 +79,14 @@ public sealed partial class GameHost
         if (follower.TakeTravel() is { } map
             && int.TryParse(map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int missionId))
         {
-            _logger.Information("Coop", $"Following the room's host into mission {missionId}.");
-            GoIntoMission(state, missionId);
+            _followInto = missionId;
+        }
+
+        if (_followInto is { } into && !_loadSequence.IsActive)
+        {
+            _followInto = null;
+            _logger.Information("Coop", $"Following the room's host into mission {into}.");
+            GoIntoMission(state, into);
         }
     }
 

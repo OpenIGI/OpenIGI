@@ -208,7 +208,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(WithRevive(Replicate(HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder ? _game.World.Soldiers?.PlayerLadderClipTime : null)));
+            humans.Add(WithRevive(Replicate(
+                HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder || host.PlaysInteractionClip ? _game.World.Soldiers?.PlayerLadderClipTime : null)));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
@@ -316,7 +317,14 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         ArgumentNullException.ThrowIfNull(player);
         bool dead = health?.IsDead == true;
         ReplicatedHumanCondition condition = dead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive;
-        if (player.LadderAnimation >= 0 && ladderTime is not null)
+
+        // A ladder's clip, or a world interaction's -- a computer, a wire -- played on the same climbing body: its clip held
+        // at its time, where the clip has the body, facing as the clip faces it.
+        (int Animation, Vector3d Feet, float Facing)? clip = ladderTime is null ? null
+            : player.LadderAnimation >= 0 ? (player.LadderAnimation, player.LadderFeet, player.LadderFacing)
+            : player.PlaysInteractionClip ? (player.InteractionAnimation, player.InteractionFeet, player.InteractionFacing)
+            : null;
+        if (clip is not null)
         {
             condition |= ReplicatedHumanCondition.Climbing;
         }
@@ -328,13 +336,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         return new ReplicatedHuman(
             id,
-            Int3.From(player.LadderAnimation >= 0 ? player.LadderFeet : player.Body.Position),
+            Int3.From(clip?.Feet ?? player.Body.Position),
             default,
 
-            // On a ladder the body faces the ladder (its gamma, the yaw negated) and plays the climb's clip.
-            Quantize.AngleToBits(player.LadderAnimation >= 0 ? -player.LadderFacing : player.Body.Yaw),
+            // In a clip the body faces as the clip does (its gamma, the yaw negated) and plays it.
+            Quantize.AngleToBits(clip is { } facing ? -facing.Facing : player.Body.Yaw),
             Quantize.AngleToBits(player.Body.Pitch),
-            (ushort)Math.Clamp((player.LadderAnimation >= 0 ? player.LadderAnimation : player.LocomotionAnimation) + 1, 0, ushort.MaxValue),
+            (ushort)Math.Clamp((clip?.Animation ?? player.LocomotionAnimation) + 1, 0, ushort.MaxValue),
             (ushort)Math.Clamp(player.UpperBodyAnimation + 1, 0, ushort.MaxValue),
             (ushort)Math.Clamp((player.Weapons?.InHand?.Weapon.WeaponId ?? -1) + 1, 0, ushort.MaxValue),
             (byte)Math.Round(Math.Clamp(health?.RemainingFraction ?? 1f, 0f, 1f) * 255),

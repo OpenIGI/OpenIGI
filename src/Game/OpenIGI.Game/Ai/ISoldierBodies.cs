@@ -228,6 +228,10 @@ public interface ISoldierBodies : IDisposable
     /// <param name="animations">Skeleton 0's animation set (<c>000.iff</c>), the same one the player walks on.</param>
     /// <param name="position">Where the level places the player, in engine units.</param>
     /// <param name="gamma">The heading the player starts facing.</param>
+    /// <param name="look">
+    /// The model a co-op player chose to be seen as, in place of the level's -- borrowed from another level when this one
+    /// doesn't ship it -- or <see langword="null"/> for the level's own.
+    /// </param>
     /// <returns><see langword="false"/> when the model does not resolve or does not upload.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
@@ -237,7 +241,7 @@ public interface ISoldierBodies : IDisposable
     /// It is kept out of <c>_groups</c> so nothing else draws or ticks it; only the death path does.
     /// </remarks>
     bool LoadPlayerBody(
-        LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma);
+        LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma, string? look = null);
 
     /// <summary>Stands the player's body at a place and draws it, outside death and outside climbing.</summary>
     /// <param name="feetUnits">Where the body stands, in engine units — the level's own spawn.</param>

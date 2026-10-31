@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, IDisposable
+public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -108,7 +108,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
         if (_session is null)
         {
-            if (title is not IReplicatedTitle replicated)
+            if (title is not IReplicatedTitle { Level: not null } replicated)
             {
                 return;
             }
@@ -121,7 +121,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
 
-        else if (title is IReplicatedTitle next && !ReferenceEquals(next.Level, _level))
+        else if (title is IReplicatedTitle { Level: { } level } next && !ReferenceEquals(level, _level))
         {
             // The level the server travelled to is up: this one's players and state are shown on it from now.
             _world = next.CreateClientWorld();
@@ -146,6 +146,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     /// <inheritdoc/>
     public string? TakeTravel() => _session?.TakeTravel();
+
+    /// <inheritdoc/>
+    public string OwnSkin => _request.Skin;
 
     /// <inheritdoc/>
     public string? Ended => _ended;

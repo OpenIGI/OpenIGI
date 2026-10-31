@@ -150,6 +150,12 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
     {
     }
 
+    /// <summary>Keeps the partners' bodies out of sight, or shows them again: followed all the while, drawn only when shown.</summary>
+    /// <param name="hidden">Whether they are hidden, as a scene playing hides them.</param>
+    void HidePartnerBodies(bool hidden)
+    {
+    }
+
     /// <summary>Starts the third-person body in one of IGI1's ladder animation states.</summary>
     /// <param name="animation">The state's authored clip.</param>
     /// <param name="loops">Whether the clip loops.</param>

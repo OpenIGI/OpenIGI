@@ -384,10 +384,13 @@ public sealed partial class GameHost
                     && playerBodySet is { } bodySet
                     && !string.IsNullOrEmpty(spawn.Model))
                 {
-                    bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma);
-
-                    // A co-op partner's look this level doesn't ship is borrowed from one that does.
+                    // A co-op partner's look this level doesn't ship is borrowed from one that does; and so is this
+                    // player's own, which it is seen in climbing or fallen as the others see it.
                     bodies.BorrowLevel = level => Borrow(loaded, _resources, level);
+                    string? look = TickObserver is Multiplayer.ISessionLook { OwnSkin.Length: > 0 } session
+                        ? Game.Multiplayer.PlayerSkins.Of(session.OwnSkin).Model
+                        : null;
+                    bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma, look);
                 }
 
                 EndStage("standing the player up and building its third-person body");

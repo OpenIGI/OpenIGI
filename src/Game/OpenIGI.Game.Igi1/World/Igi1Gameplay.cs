@@ -40,8 +40,8 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     public string Map => World.MissionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <inheritdoc/>
-    /// <remarks>The title outlives its missions; each load builds a new level tree.</remarks>
-    public object Level => World.LevelRoot ?? (object)this;
+    /// <remarks>The title outlives its missions; each load builds a new level tree, and between two there is none.</remarks>
+    public object? Level => World.LevelRoot;
 
     /// <summary>Gets the player the host steers and looks through, or <see langword="null"/> before a level places one.</summary>
     public IHostedPlayer? Player => World.Player;

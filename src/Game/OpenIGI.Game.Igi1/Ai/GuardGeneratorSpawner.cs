@@ -161,11 +161,21 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
     public SoldierView? ReplaceAsServerDid(int generatorId, int runtimeId)
     {
         GuardGeneratorTask? generator = GuardGenerators.Keys.FirstOrDefault(g => g.Id == generatorId);
-        if (generator is null
-            || !GuardGenerators.TryGetValue(generator, out SoldierView? dead)
-            || _context.FindAgent(dead) is not { } agent
-            || _context.FindRoster(dead) is not { } group
-            || SpawnGeneratedGuard(generator, dead, agent, group, runtimeId) is not { } fresh)
+        if (generator is null || !GuardGenerators.TryGetValue(generator, out SoldierView? dead))
+        {
+            return null;
+        }
+
+        // The server's dead guard left the world the tick before it cloned the next; this client's, which runs no mind to
+        // take it out, goes now -- or its body would lie on in the world beside its replacement, both standing for one task.
+        // Gone already when a clone that failed is tried again.
+        if (!_context.GoneBodies.ContainsKey(dead))
+        {
+            _context.RemoveBody(dead);
+        }
+
+        if (!_context.GoneBodies.TryGetValue(dead, out (SoldierAgent Agent, SoldierModelGroup Group) body)
+            || SpawnGeneratedGuard(generator, dead, body.Agent, body.Group, runtimeId) is not { } fresh)
         {
             return null;
         }

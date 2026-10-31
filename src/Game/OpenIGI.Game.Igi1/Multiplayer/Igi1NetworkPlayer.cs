@@ -100,10 +100,13 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
     /// <summary>Gets the partner's ladder, climbed on a body of its own that only the simulation keeps.</summary>
     public World.LadderClimb Climb { get; } = new();
 
+    /// <summary>Gets the partner's world interaction, played on that same body.</summary>
+    public World.InteractionMotion Interaction { get; } = new();
+
     private SimulatedLadderBody? _ladderBody;
 
-    /// <summary>Gets where the partner is in its ladder clip, or <see langword="null"/> off a ladder.</summary>
-    public float? LadderClipTime => Player.IsOnLadder ? _ladderBody?.ClipTime : null;
+    /// <summary>Gets where the partner is in its ladder or interaction clip, or <see langword="null"/> when it plays neither.</summary>
+    public float? LadderClipTime => Player.IsOnLadder || Player.PlaysInteractionClip ? _ladderBody?.ClipTime : null;
 
     /// <summary>Runs the partner a tick on its client's command for the tick, its ladder climbed as the mission's own player's is.</summary>
     /// <param name="tick">The tick.</param>
@@ -141,6 +144,17 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
         Player.Body.Yaw = yaw;
         Player.Body.Pitch = Math.Clamp(pitch, -PlayerBody.PitchLimit, PlayerBody.PitchLimit);
         Player.TickFrame(frame, ground);
+        _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
+
+        // At a computer, on a wire, over a wall: the interaction's clip on the partner's body, as the player's own plays.
+        if (Player.IsInWorldInteraction)
+        {
+            Interaction.Tick(Player, _ladderBody);
+        }
+        else
+        {
+            Interaction.Reset();
+        }
 
         if (!Player.IsOnLadder)
         {
@@ -150,7 +164,6 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
 
         if (ground is not null)
         {
-            _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
             Climb.Tick(
                 Player,
                 _ladderBody,
