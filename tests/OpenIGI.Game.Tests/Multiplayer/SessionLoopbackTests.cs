@@ -109,6 +109,48 @@ public sealed class SessionLoopbackTests
         Assert.Equal(0, moved.Commands.Late);
     }
     [Fact]
+    public void A_line_too_slow_for_every_snapshot_keeps_its_round_trip_and_still_gets_the_world()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new() { Crowd = 300 };
+        SimulatedLinkTransport serverLine = Line(network.Open(26001), () => now, 0.15, 0, 0, 1);
+
+        // A few snapshots' worth a second, where the world fills several packets a tick: a slow relay.
+        serverLine.Send.Bandwidth = 40_000;
+        using NetServer serverNet = new(serverLine, new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, 0.15, 0, 0, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        float[] walk = new float[ToyWorld.Channels];
+        walk[0] = 1f;
+        double worstRoundTrip = 0;
+        for (long tick = 0; tick < 20 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            client.SendCommand(walk, now);
+            client.Flush(now);
+            if (tick > 5 * TickRate && server.Clients.Any() && serverNet.GetConnection(server.Clients.First()) is { } line)
+            {
+                worstRoundTrip = Math.Max(worstRoundTrip, line.Statistics.RoundTripTime);
+            }
+        }
+
+        // The round trip is the line's and the queue's few packets, never seconds of snapshots waiting their turn.
+        Assert.InRange(worstRoundTrip, 0.1, 0.6);
+
+        // Fewer snapshots, but whole and recent ones.
+        Snapshot newest = Assert.IsType<Snapshot>(client.Latest);
+        Assert.Equal(301, newest.Humans.Length);
+        Assert.InRange(newest.Tick, (20 * TickRate) - TickRate, 20 * TickRate);
+    }
+
+    [Fact]
     public void A_world_too_big_for_one_packet_arrives_in_parts_and_whole()
     {
         double now = 0;

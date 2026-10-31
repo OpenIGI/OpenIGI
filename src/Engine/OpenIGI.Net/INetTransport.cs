@@ -25,6 +25,11 @@ public interface INetTransport : IDisposable
     /// <param name="length">How many bytes it holds.</param>
     /// <returns><see langword="true"/> when a datagram was taken.</returns>
     bool TryReceive(Span<byte> buffer, out NetAddress source, out int length);
+
+    /// <summary>Gets the bytes sent to a destination that the transport still holds, not yet on the wire.</summary>
+    /// <param name="destination">Where to.</param>
+    /// <returns>The bytes; nought for a transport that hands everything straight to the network.</returns>
+    int Backlog(NetAddress destination) => 0;
 }
 
 /// <summary>A transport that can also send to every host on the local network, for LAN server discovery.</summary>
