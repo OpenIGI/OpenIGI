@@ -133,30 +133,63 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
-    public void The_host_going_on_to_the_next_mission_takes_the_joiner_there_and_never_back()
+    public void The_host_going_on_to_the_next_mission_takes_the_joiner_there_and_both_begin_it_together()
     {
         using Igi1CoopPair pair = Joined();
         Assert.Equal(1, pair.Joiner!.World.MissionId);
+
+        // Into the mission a while, as a mission is finished: both levels long revealed.
+        pair.RunUntil(() => false, 150);
+        object hostLevel = pair.Host!.World.LevelRoot!;
+        object joinerLevel = pair.Joiner.World.LevelRoot!;
 
         // As a completed mission goes on: the host starts the next one itself.
         typeof(Host.GameHost).GetMethod("StartMission", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .Invoke(pair.HostGame, [2]);
 
+        // Each level's first frame up, and the first frame it ran: the joiner loads alongside the host, and the two begin
+        // together, whichever was up first holding for the other.
         List<string> told = [];
+        int frame = 0;
+        int heard = -1;
+        (int Up, long Ticks, int Began) host = (-1, 0, -1);
+        (int Up, long Ticks, int Began) joiner = (-1, 0, -1);
+        void Watch(Igi1Gameplay game, object before, ref (int Up, long Ticks, int Began) side)
+        {
+            if (side.Up < 0 && game.World.LevelRoot is { } now && !ReferenceEquals(now, before))
+            {
+                side = (frame, game.World.PlayerTicks, -1);
+            }
+            else if (side.Up >= 0 && side.Began < 0 && game.World.PlayerTicks > side.Ticks)
+            {
+                side.Began = frame;
+            }
+        }
+
         Assert.True(
             pair.RunUntil(
                 () =>
                 {
+                    frame++;
                     if (pair.Client.Session?.Map is { } map && (told.Count == 0 || told[^1] != map))
                     {
                         told.Add(map);
                     }
 
-                    return pair.Joiner.World.MissionId == 2 && pair.Host!.World.NetworkPlayers.Count == 1;
+                    if (heard < 0 && pair.Client.Session?.WaitingForServer == true)
+                    {
+                        heard = frame;
+                    }
+
+                    Watch(pair.Host!, hostLevel, ref host);
+                    Watch(pair.Joiner!, joinerLevel, ref joiner);
+                    return host.Began >= 0 && joiner.Began >= 0 && pair.Host!.World.NetworkPlayers.Count == 1;
                 },
                 3000) >= 0,
-            $"the joiner never came into mission 2 (told {string.Join(", ", told)}, in {pair.Joiner.World.MissionId})");
+            $"the two never both began mission 2 (host {host}, joiner {joiner}, joiner in {pair.Joiner.World.MissionId})");
+        Assert.Equal(2, pair.Joiner.World.MissionId);
         Assert.DoesNotContain("1", told.Skip(1));
+        Assert.True(Math.Abs(host.Began - joiner.Began) <= 3, $"the joiner heard on frame {heard}; the host was up on frame {host.Up} and began on {host.Began}, the joiner up on {joiner.Up} and began on {joiner.Began}");
     }
 
     [RequiresGameDataFact]

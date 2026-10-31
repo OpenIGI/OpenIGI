@@ -33,6 +33,12 @@ public sealed partial class GameHost
             return;
         }
 
+        // A co-op host's players load the mission alongside it, from now rather than once its own is up.
+        if (TickObserver is Multiplayer.ISessionHold hosting)
+        {
+            hosting.AnnounceGoing(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         // The hold starts before anything blocks, and so does the panel. Everything below this line
         // runs on the render thread without presenting, so without a frame pushed out here the window
         // simply freezes on whatever it was last showing for the half second it takes -- and the warm-up

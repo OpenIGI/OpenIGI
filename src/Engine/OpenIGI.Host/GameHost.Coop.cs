@@ -35,13 +35,21 @@ public sealed partial class GameHost
             _window.CursorVisible = false;
         }
 
-        if (CinematicLoadAvailable)
+        // The departure's picture is taken where the menu is drawn, so only from the menu: a player already in a mission --
+        // following its host on to the next -- goes in as the host itself did, or the load would wait on a picture never
+        // taken, under a card still naming the mission it left.
+        if (CinematicLoadAvailable && _menuFlow.MenuMode)
         {
             BeginCinematicLoad(missionId, Go);
         }
-        else
+        else if (_menuFlow.MenuMode)
         {
             Go();
+        }
+        else
+        {
+            // Once its files are there: a browser fetches the next level's as it is first wanted.
+            StartMissionWhenReadable(missionId);
         }
     }
 

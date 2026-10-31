@@ -27,7 +27,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, IDisposable
+public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -105,6 +105,38 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public string OwnSkin => _options.HostSkin;
 
+    // The longest a level is held for players still loading it: past this, those there begin without the rest.
+    private const double LongestWaitSeconds = 30.0;
+
+    // When the level now loading was announced, or null with none.
+    private double? _goingSince;
+
+    /// <inheritdoc/>
+    public void AnnounceGoing(string map)
+    {
+        if (_session is { } session)
+        {
+            session.AnnounceGoing(map);
+            _goingSince = _clock.Elapsed.TotalSeconds;
+            _logger.Information(LogCategory, $"Going on to {MapName(map)}; its players load it alongside.");
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool HoldsLevel =>
+        _session is { EveryoneReady: false } && _goingSince is { } since && _clock.Elapsed.TotalSeconds - since < LongestWaitSeconds;
+
+    /// <inheritdoc/>
+    public void Pump(object? title)
+    {
+        if (_session is { } session && _world is not null)
+        {
+            session.Receive(_clock.Elapsed.TotalSeconds, _world.CurrentTick);
+            ReportJoinsAndDepartures();
+            session.Flush(_clock.Elapsed.TotalSeconds);
+        }
+    }
+
     /// <inheritdoc/>
     public void BeforeTitleTick(object title)
     {
@@ -131,6 +163,9 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             _level = next.Level;
             string map = next.Map.Length > 0 ? next.Map : _session.Map;
             _session.Travel(_world, map);
+
+            // Begun: whoever loaded it is held no longer, and whoever didn't follows as it can.
+            _goingSince = null;
             _room?.ReportState(_known.Count + (_options.IncludesHost ? 1 : 0), map);
             _logger.Information(LogCategory, $"The room goes on to {MapName(map)}; its players follow.");
         }

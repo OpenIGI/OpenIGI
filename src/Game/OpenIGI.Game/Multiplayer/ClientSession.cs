@@ -49,6 +49,28 @@ public sealed class ClientSession
 
     private string? _travel;
 
+    // The level the server said it is going on to, and which announcement it was: loaded here at once, and begun only on
+    // the server's Travel to it.
+    private string? _going;
+    private byte _goingId;
+
+    /// <summary>Gets whether a level the server is going on to is loaded or loading here, waiting for the server to begin it.</summary>
+    public bool WaitingForServer => _going is not null;
+
+    /// <summary>Tells the server the level it is going on to is loaded here.</summary>
+    public void ReportReady()
+    {
+        if (_going is null)
+        {
+            return;
+        }
+
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Ready, 8);
+        _writer.WriteBits(_goingId, 8);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
     // What the server told this client was said and marked, since it last took them.
     private readonly List<ChatLine> _heard = [];
     private readonly List<WorldMark> _marked = [];
@@ -320,12 +342,33 @@ public sealed class ClientSession
             case SessionMessage.Voice when SessionTalk.ReadVoice(ref reader) is { } voice:
                 _voices.Add(voice);
                 break;
+            case SessionMessage.Going:
+                _goingId = (byte)reader.ReadBits(8);
+                string going = reader.ReadString(64);
+                if (!reader.IsOverflowed)
+                {
+                    _going = going;
+                    _travel = going;
+                }
+
+                break;
             case SessionMessage.Travel:
                 Epoch = (byte)reader.ReadBits(8);
                 EntityId = (int)reader.ReadVarUInt();
                 Map = reader.ReadString(64);
                 ForgetLevel();
-                _travel = Map;
+
+                // The level announced and loaded already is begun now, not loaded again; any other is gone to.
+                if (_going == Map)
+                {
+                    _going = null;
+                }
+                else
+                {
+                    _going = null;
+                    _travel = Map;
+                }
+
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;

@@ -36,6 +36,9 @@ public sealed class ServerSession
     private readonly List<WorldMark> _marked = [];
     private readonly List<VoicePacket> _voices = [];
 
+    // The levels announced as going on to, counted; a client's Ready names the one it loaded.
+    private byte _going;
+
     /// <summary>Gets the newest snapshot the world gave, where every human stood at the end of the last tick.</summary>
     public Snapshot? LastSnapshot { get; private set; }
     private double _now;
@@ -435,6 +438,34 @@ public sealed class ServerSession
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    /// <summary>Tells every player the level the server has begun loading, for each to load alongside it.</summary>
+    /// <param name="map">Its map.</param>
+    /// <remarks>
+    /// Said before the server's own load blocks, so all of them load at once; each says when it has (<see cref="EveryoneReady"/>),
+    /// and <see cref="Travel"/>, once the server's level is up and begun, is every player's word to begin theirs.
+    /// </remarks>
+    public void AnnounceGoing(string map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        _going++;
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Going, 8);
+        _writer.WriteBits(_going, 8);
+        _writer.WriteString(map, 64);
+        foreach ((int slot, ClientState client) in _clients)
+        {
+            client.ReadyFor = null;
+            _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+        }
+    }
+
+    /// <summary>Gets whether every player has loaded the level last announced: the server's to begin when it is.</summary>
+    public bool EveryoneReady => _clients.Values.All(c => c.ReadyFor is null ? _going == 0 : c.ReadyFor == _going);
+
+    /// <summary>Sends what is waiting to go without capturing the level: for while the level is held, not run.</summary>
+    /// <param name="now">The clock, in seconds.</param>
+    public void Flush(double now) => _net.Flush(now);
+
     /// <summary>Goes on to another level with every player: the next mission, or the same one again.</summary>
     /// <param name="world">The new level's world.</param>
     /// <param name="map">Its map.</param>
@@ -552,6 +583,14 @@ public sealed class ServerSession
             case SessionMessage.Voice when SessionTalk.ReadVoice(ref reader) is { } voice:
                 Speak(voice with { Entity = client.Entity }, except: slot);
                 return;
+            case SessionMessage.Ready:
+                byte ready = (byte)reader.ReadBits(8);
+                if (!reader.IsOverflowed)
+                {
+                    client.ReadyFor = ready;
+                }
+
+                return;
             case SessionMessage.Commands when reader.ReadBits(8) == _epoch:
                 break;
             default:
@@ -585,5 +624,8 @@ public sealed class ServerSession
 
         // The level state this client was last sent.
         public byte[]? Level { get; set; }
+
+        // The announced level it has loaded, or null before it has loaded the one announced.
+        public byte? ReadyFor { get; set; }
     }
 }

@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, IDisposable
+public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -121,12 +121,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
 
-        else if (title is IReplicatedTitle { Level: { } level } next && !ReferenceEquals(level, _level))
+        else
         {
-            // The level the server travelled to is up: this one's players and state are shown on it from now.
-            _world = next.CreateClientWorld();
-            _level = next.Level;
-            _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
+            FollowLevel(title);
         }
 
         ClientReplication.Tick(_session, _world!, now);
@@ -149,6 +146,58 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
     /// <inheritdoc/>
     public string OwnSkin => _request.Skin;
+
+    // The longest a loaded level waits for the server's word: past this the server is taken to have gone on without it.
+    private const double LongestWaitSeconds = 45.0;
+
+    // When the level the server is going on to came up here, held for its word, or null when none is.
+    private double? _heldSince;
+
+    /// <inheritdoc/>
+    public bool HoldsLevel =>
+        _session is { WaitingForServer: true } && _heldSince is { } since && _clock.Elapsed.TotalSeconds - since < LongestWaitSeconds;
+
+    /// <inheritdoc/>
+    public void Pump(object? title)
+    {
+        if (_session is not { } session)
+        {
+            return;
+        }
+
+        double now = _clock.Elapsed.TotalSeconds;
+        if (title is not null)
+        {
+            FollowLevel(title);
+        }
+
+        session.Receive(now);
+        if (!session.WaitingForServer)
+        {
+            _heldSince = null;
+        }
+
+        session.Flush(now);
+    }
+
+    // A new level up -- gone to, or loaded on the server's announcement and held: this one's players and state are shown on
+    // it from now, and the server is told it is here.
+    private void FollowLevel(object title)
+    {
+        if (_session is null || title is not IReplicatedTitle { Level: { } level } next || ReferenceEquals(level, _level))
+        {
+            return;
+        }
+
+        _world = next.CreateClientWorld();
+        _level = level;
+        _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
+        if (_session.WaitingForServer)
+        {
+            _session.ReportReady();
+            _heldSince = _clock.Elapsed.TotalSeconds;
+        }
+    }
 
     /// <inheritdoc/>
     public string? Ended => _ended;

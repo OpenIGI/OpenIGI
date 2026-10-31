@@ -741,6 +741,12 @@ public sealed partial class GameHost : IDisposable
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
             if (outcome == FrameOutcome.Tick && (_session.FailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel))
             {
+                // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
+                if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
+                {
+                    hold.Pump(_hosted);
+                }
+
                 continue;
             }
 

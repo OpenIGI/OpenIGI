@@ -203,9 +203,23 @@ internal sealed class Igi1CoopPair : IDisposable
     }
 
     // The session's talk passes through too, as the game finds it on the session itself.
-    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk
+    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold
     {
         public IHostTickObserver Inner { get; set; } = inner;
+
+        public bool HoldsLevel => Inner is ISessionHold { HoldsLevel: true };
+
+        public void AnnounceGoing(string map) => (Inner as ISessionHold)?.AnnounceGoing(map);
+
+        public void Pump(object? title)
+        {
+            if (title is not null)
+            {
+                Game = title as Igi1Gameplay ?? Game;
+            }
+
+            (Inner as ISessionHold)?.Pump(title);
+        }
 
         public bool Talks { get; init; }
 

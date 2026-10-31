@@ -225,4 +225,13 @@ public enum SessionMessage : byte
 
     /// <summary>Either way, unreliable: a moment of one player's voice, encoded.</summary>
     Voice = 9,
+
+    /// <summary>
+    /// Server to client, reliable: the server has begun loading another level, which the client loads alongside it; the
+    /// <see cref="Travel"/> that follows, once the server's is up and everyone's is loaded, is the word to begin it.
+    /// </summary>
+    Going = 10,
+
+    /// <summary>Client to server, reliable: the level the server went to is loaded here, held until the word to begin.</summary>
+    Ready = 11,
 }
