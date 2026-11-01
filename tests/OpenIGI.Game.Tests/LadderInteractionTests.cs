@@ -148,6 +148,35 @@ public sealed class LadderInteractionTests
         Assert.False(climb.IsOnLadder);
     }
 
+    /// <summary>0x40D6B0 tests back after forward in one block: with both held, back wins, and at the foot lets go.</summary>
+    [Fact]
+    public void WithUpAndDownBothHeldDownWins()
+    {
+        HumanLadderClimb atFoot = MountedAtFoot();
+        Assert.Equal(LadderStepResult.Dismounted, atFoot.Decide(up: true, down: true, slide: false));
+
+        HumanLadderClimb climbing = MountedAtFoot();
+        climbing.Decide(up: true, down: false, slide: false);
+        climbing.CompleteStep();
+        Assert.Equal(LadderStepResult.SteppingDown, climbing.Decide(up: true, down: true, slide: false));
+        Assert.Equal(-1, climbing.Direction);
+    }
+
+    /// <summary>The direction block runs before the use key: forward at the top rung leaves for state 39, not the slide.</summary>
+    [Fact]
+    public void UpAtTheTopRungBeatsAUsePressTheSameTick()
+    {
+        HumanLadderClimb climb = new();
+        climb.Mount(Ladder(), atTop: true);
+        climb.CompleteTopTransition();
+
+        Assert.Equal(LadderStepResult.ReachedTop, climb.Decide(up: true, down: false, slide: true));
+        Assert.Equal(LadderTraversalPhase.GettingOffTop, climb.Phase);
+
+        HumanLadderClimb foot = MountedAtFoot();
+        Assert.Equal(LadderStepResult.Dismounted, foot.Decide(up: false, down: true, slide: true));
+    }
+
     [Fact]
     public void UseCanEnterTheSlideHalfwayThroughARung()
     {
@@ -308,6 +337,64 @@ public sealed class LadderInteractionTests
         Assert.Equal(LadderStepResult.Dismounted, controller.DecideStep(up: false, down: true, slide: false));
         Assert.Equal(ladder.BottomMount.Z - PlayerBody.StandingOriginHeight, body.Position.Z, 6);
         Assert.False(body.IsGrounded);
+    }
+
+    /// <summary>
+    /// State 40 slides on the feet, the origin's standing height under the climb's origin; its entry tick only takes the
+    /// clip's step, and it lets go the tick after the ground bit is set (0x40DBA0, 0x40DBF0).
+    /// </summary>
+    [Fact]
+    public void ASlideLandsOnItsFeetAndLetsGoTheTickAfter()
+    {
+        LadderPlacement ladder = Ladder();
+        PlayerBody body = new() { Position = new Vector3d(ladder.BottomMount.X, ladder.BottomMount.Y, Foot.Z) };
+        PlayerLadderController controller = new(body);
+        controller.Use([ladder]);
+        body.Yaw = new[] { 0f, MathF.PI / 2f, MathF.PI, -MathF.PI / 2f }.First(yaw => ladder.CanActivate(body.Eye, yaw, out _));
+        controller.UpdateNear();
+        controller.Mount();
+        controller.DecideStep(up: true, down: false, slide: false);
+        controller.Move(new Vector3d(0.0, 0.0, 2.0 * 4096.0));
+        Assert.Equal(LadderStepResult.Sliding, controller.DecideStep(up: false, down: false, slide: true));
+
+        Flat floor = new();
+        Assert.False(controller.TickSlide(default, floor, entering: true));
+        Assert.Equal(0f, body.Velocity.Z);
+
+        int ticks = 0;
+        bool landedTick = false;
+        while (ticks++ < 300)
+        {
+            bool groundedBefore = body.IsGrounded;
+            if (controller.TickSlide(default, floor, entering: false))
+            {
+                // Let go a tick after the move that found the ground, the feet on it.
+                Assert.True(groundedBefore);
+                landedTick = true;
+                break;
+            }
+
+            // Still on the ladder, the body carries the origin -- never lower than standing height over the floor.
+            Assert.True(body.Position.Z >= PlayerBody.StandingOriginHeight - 1e-6);
+        }
+
+        Assert.True(landedTick);
+        Assert.Equal(0.0, body.Position.Z, 6);
+    }
+
+    private sealed class Flat : IGroundHeightField
+    {
+        public bool TryGetGround(double x, double y, double z, double aboveUnits, out TerrainGround ground)
+        {
+            ground = new TerrainGround(0, 0, 0, 1);
+            return true;
+        }
+
+        public bool TryTraceDescent(Vector3d from, Vector3d target, out TerrainGround ground)
+        {
+            ground = new TerrainGround(0, 0, 0, 1);
+            return true;
+        }
     }
 
     private static LadderPlacement Ladder() =>

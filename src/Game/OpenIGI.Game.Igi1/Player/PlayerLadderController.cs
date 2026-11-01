@@ -21,6 +21,9 @@ internal sealed class PlayerLadderController
 
     private readonly PlayerBody _body;
     private readonly HumanLadderClimb _climb = new();
+
+    // The ground bit the slide's last move set, which 0x40DBF0 reads on the next tick.
+    private bool _slideLanded;
     private IReadOnlyList<LadderPlacement> _ladders = [];
     private LadderPlacement? _nearLadder;
     private bool _nearLadderAtTop;
@@ -115,6 +118,7 @@ internal sealed class PlayerLadderController
     // Puts the player on the ladder in reach: face it and snap onto it.
     internal void Mount()
     {
+        _slideLanded = false;
         LadderPlacement ladder = _nearLadder!;
 
         // sub_4113E0 takes the task's gamma, adds PI and commits both exact column-based mount offsets.
@@ -243,27 +247,50 @@ internal sealed class PlayerLadderController
         _body.EndLadderTraversal();
     }
 
-    /// <summary>Advances state 40 and detaches when the normal mover reports ground contact.</summary>
+    /// <summary>Advances state 40 and detaches on the ground bit the last tick's move set.</summary>
     /// <param name="rootDelta">Animation 169's world-space root delta.</param>
     /// <param name="terrain">The level terrain.</param>
+    /// <param name="entering">Whether this is the tick the slide began on.</param>
     /// <returns><see langword="true"/> when the slide ended this tick.</returns>
-    internal bool TickSlide(Vector3d rootDelta, IGroundHeightField? terrain)
+    /// <remarks>
+    /// <para>
+    /// 0x40DBF0 damps the velocity and then reads the ground bit -- the one the previous tick's move (0x4614B0) set -- and
+    /// lets go on it, so the slide ends the tick after the body touches down. The tick it began on runs no 0x40DBF0 at all:
+    /// state 37's update entered 40 (0x40DBA0, collision back on), and that update's move took only animation 169's first
+    /// step, the velocity standing at the zero the mount gave it.
+    /// </para>
+    /// <para>
+    /// The climb carries the Human's origin, but the mover's sweep and ground probe stand on the feet,
+    /// <see cref="PlayerBody.StandingOriginHeight"/> under it (state 40's entry clears the crouch). Run on the origin, the
+    /// slide went on until the origin itself reached the floor, the body sunk to its hips.
+    /// </para>
+    /// </remarks>
+    internal bool TickSlide(Vector3d rootDelta, IGroundHeightField? terrain, bool entering)
     {
         if (_climb.Phase != LadderTraversalPhase.SlidingDown)
         {
             return false;
         }
 
-        bool grounded = _body.TickLadderSlide(terrain, rootDelta);
-        _climb.UpdateSlidePosition(_body.Position);
-        if (!grounded)
+        Vector3d origin = _climb.Position;
+        Vector3d feet = new(origin.X, origin.Y, origin.Z - PlayerBody.StandingOriginHeight);
+        if (!entering && _slideLanded)
         {
-            return false;
+            _slideLanded = false;
+            _body.Position = feet;
+            _climb.CompleteSlide();
+            _body.EndLadderTraversal();
+            return true;
         }
 
-        _climb.CompleteSlide();
-        _body.EndLadderTraversal();
-        return true;
+        _body.Position = feet;
+        _slideLanded = _body.TickLadderSlide(terrain, rootDelta, damp: !entering);
+        Vector3d landed = _body.Position;
+        _climb.UpdateSlidePosition(new Vector3d(landed.X, landed.Y, landed.Z + PlayerBody.StandingOriginHeight));
+
+        // On the ladder the body stands where the climb has the origin, as it does on every rung.
+        _body.Position = _climb.Position;
+        return false;
     }
 
     private static InteractionPromptTarget DescribeLadder(LadderPlacement ladder, bool atTop, int index) =>

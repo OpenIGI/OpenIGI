@@ -55,8 +55,6 @@ public enum LadderStepResult
 public sealed class HumanLadderClimb
 {
     private Vector3d _position;
-    private double _bottomZ;
-    private double _topZ;
     private int _topStep;
     private int _step;
     private int _direction;
@@ -107,8 +105,6 @@ public sealed class HumanLadderClimb
     {
         ArgumentNullException.ThrowIfNull(ladder);
 
-        _bottomZ = ladder.Bottom.Z;
-        _topZ = ladder.Top.Z;
         _topStep = ladder.ClimbLine.TopStep;
         Facing = ladder.Facing;
         _position = atTop ? ladder.TopMount : ladder.BottomMount;
@@ -169,8 +165,39 @@ public sealed class HumanLadderClimb
             return LadderStepResult.Idle;
         }
 
-        // sub_40D6B0 checks Activate after the rung-direction block, but does not require direction zero:
-        // unlike changing direction, a slide is allowed to interrupt a rung in progress.
+        // 0x40D6B0's direction block, at a rung boundary only. Forward is tested first and back after it in the same
+        // block, so with both held back wins -- and at the foot lets go of the ladder, forward or not. Only forward at the
+        // top rung leaves first, for state 39.
+        LadderStepResult result = LadderStepResult.Idle;
+        if (_direction == 0)
+        {
+            if (up)
+            {
+                if (_step == _topStep)
+                {
+                    Phase = LadderTraversalPhase.GettingOffTop;
+                    return LadderStepResult.ReachedTop;
+                }
+
+                _direction = 1;
+                result = LadderStepResult.SteppingUp;
+            }
+
+            if (down)
+            {
+                if (_step == 0)
+                {
+                    Phase = LadderTraversalPhase.Inactive;
+                    return LadderStepResult.Dismounted;
+                }
+
+                _direction = -1;
+                result = LadderStepResult.SteppingDown;
+            }
+        }
+
+        // Then the use key, after the direction block and whatever it did -- a rung in progress, or one begun this very
+        // tick: the slide may interrupt either.
         if (slide)
         {
             _direction = 0;
@@ -178,36 +205,7 @@ public sealed class HumanLadderClimb
             return LadderStepResult.Sliding;
         }
 
-        if (_direction != 0)
-        {
-            return LadderStepResult.Idle;
-        }
-
-        if (up)
-        {
-            if (_step == _topStep)
-            {
-                Phase = LadderTraversalPhase.GettingOffTop;
-                return LadderStepResult.ReachedTop;
-            }
-
-            _direction = 1;
-            return LadderStepResult.SteppingUp;
-        }
-
-        if (down)
-        {
-            if (_step == 0)
-            {
-                Phase = LadderTraversalPhase.Inactive;
-                return LadderStepResult.Dismounted;
-            }
-
-            _direction = -1;
-            return LadderStepResult.SteppingDown;
-        }
-
-        return LadderStepResult.Idle;
+        return result;
     }
 
     /// <summary>Applies this tick's already-rotated animation root motion.</summary>
@@ -247,16 +245,8 @@ public sealed class HumanLadderClimb
         }
     }
 
-    private void Apply(Vector3d delta)
-    {
-        double z = _position.Z + delta.Z;
-        if (Phase == LadderTraversalPhase.Climbing)
-        {
-            z = Math.Clamp(z, _bottomZ, _topZ);
-        }
-
-        _position = new Vector3d(_position.X + delta.X, _position.Y + delta.Y, z);
-    }
+    // 0x4614B0 with collision off (0x463570 at the mount): the origin moves by the root step, nothing bounding it.
+    private void Apply(Vector3d delta) => _position += delta;
 
     /// <summary>Commits the rung when animation 168 crosses authored event 8.</summary>
     /// <returns><see langword="true"/> when a moving rung was committed.</returns>

@@ -905,7 +905,8 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void CompleteLadderTopTransition() => _ladder.CompleteTopTransition();
 
     /// <inheritdoc cref="PlayerLadderController.TickSlide"/>
-    public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain) => _ladder.TickSlide(rootDelta, terrain);
+    public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain, bool entering = false) =>
+        _ladder.TickSlide(rootDelta, terrain, entering);
 
     private void TickWeapons()
     {

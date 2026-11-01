@@ -362,10 +362,15 @@ public sealed class PlayerBody
     /// <summary>Runs state 40's damped slide velocity through the normal wall and ground collision pass.</summary>
     /// <param name="terrain">The level terrain, or <see langword="null"/> for an object-only interior.</param>
     /// <param name="animationDelta">Animation 169's world-space root delta for this tick.</param>
+    /// <param name="damp">Whether 0x40DBF0 runs first: not on the tick state 40 is entered, whose move takes only the root step.</param>
     /// <returns><see langword="true"/> when the slide generated the ground-collision signal.</returns>
-    public bool TickLadderSlide(IGroundHeightField? terrain, Vector3d animationDelta)
+    public bool TickLadderSlide(IGroundHeightField? terrain, Vector3d animationDelta, bool damp = true)
     {
-        Velocity = HumanMotion.IntegrateLadderSlide(Velocity);
+        if (damp)
+        {
+            Velocity = HumanMotion.IntegrateLadderSlide(Velocity);
+        }
+
         Vector3d next = new(
             Position.X + animationDelta.X + Velocity.X,
             Position.Y + animationDelta.Y + Velocity.Y,
