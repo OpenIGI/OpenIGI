@@ -12,6 +12,7 @@ import * as platform from './platform.js';
 import * as rtc from './rtc.js';
 import * as audio from './audio.js';
 import * as files from './game-files.js';
+import * as userFiles from './user-files.js';
 
 const GAME_ROOT = '/game';
 
@@ -307,6 +308,10 @@ async function start() {
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
   const game = exports.OpenIGI.Web.Program;
 
+  // The player's own profile, settings and saves from an earlier visit, back where the game reads them before it boots.
+  const kept = await userFiles.keep(fs, game.UserDirectory());
+  if (kept.files) console.log(`Restored ${kept.files} of the player's files.`);
+
   // The canvas takes the page before Boot: the game sizes itself to it.
   landing.hidden = true;
   canvas.hidden = false;
@@ -372,6 +377,7 @@ async function start() {
     // picture, which the page replaces.
     platform.uninstall();
     device.destroy();
+    kept.flush();
     offerReload('Play again', 'The game has closed. Your settings are saved.', 'neutral');
   };
   next();
