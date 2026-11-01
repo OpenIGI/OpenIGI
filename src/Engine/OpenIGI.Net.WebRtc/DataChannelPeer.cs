@@ -204,6 +204,48 @@ internal sealed unsafe class DataChannelPeer : IRtcPeer
                 _ = Native.SendMessage(dc, bytes, datagram.Length);
             }
         }
+        else if (_state == RtcPeerState.Open)
+        {
+            _dropped++;
+        }
+    }
+
+    private long _dropped;
+    private string? _route;
+
+    /// <inheritdoc/>
+    public long Dropped => _dropped;
+
+    /// <inheritdoc/>
+    /// <remarks>The candidate pair ICE settled on, each end's type and address: "local relay 1.2.3.4:5 / remote srflx 6.7.8.9:10".</remarks>
+    public string Route
+    {
+        get
+        {
+            if (_route is { } known || _state != RtcPeerState.Open)
+            {
+                return _route ?? "not open";
+            }
+
+            const int Size = 256;
+            byte* local = stackalloc byte[Size];
+            byte* remote = stackalloc byte[Size];
+            if (Native.GetSelectedCandidatePair(_pc, local, Size, remote, Size) < 0)
+            {
+                return "unknown";
+            }
+
+            _route = $"local {Candidate(Native.Text(local))} / remote {Candidate(Native.Text(remote))}";
+            return _route;
+        }
+    }
+
+    // "candidate:1 1 UDP 2122317823 192.168.1.2 50000 typ host ..." -> "host 192.168.1.2:50000".
+    private static string Candidate(string? line)
+    {
+        string[] parts = (line ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        int typ = Array.IndexOf(parts, "typ");
+        return typ >= 2 && typ + 1 < parts.Length ? $"{parts[typ + 1]} {parts[typ - 2]}:{parts[typ - 1]}" : (line ?? "?");
     }
 
     public bool TryReceive(Span<byte> buffer, out int length)

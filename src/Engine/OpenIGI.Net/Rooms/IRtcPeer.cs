@@ -73,6 +73,12 @@ public interface IRtcPeer : IDisposable
     /// <summary>Gets the bytes sent that the channel still holds, not yet on the wire.</summary>
     /// <remarks>Past <see cref="NetConstants.MaxSendBacklog"/>, <see cref="Send"/> drops the datagram instead.</remarks>
     int Backlog => 0;
+
+    /// <summary>Gets how the open connection runs, for diagnostics: each end's candidate type and address.</summary>
+    string Route => Relayed ? "relay" : "direct";
+
+    /// <summary>Gets how many datagrams <see cref="Send"/> dropped because the channel already held its most.</summary>
+    long Dropped => 0;
 }
 
 /// <summary>Makes <see cref="IRtcPeer"/>s: the one platform-specific part of playing through a room.</summary>

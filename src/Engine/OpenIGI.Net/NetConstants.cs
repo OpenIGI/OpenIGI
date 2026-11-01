@@ -1,4 +1,4 @@
-namespace OpenIGI.Net;
+﻿namespace OpenIGI.Net;
 
 /// <summary>The fixed sizes and limits of the wire format.</summary>
 public static class NetConstants
@@ -41,7 +41,21 @@ public static class NetConstants
     public const int MaxSendBacklog = 32 * 1024;
 
     /// <summary>The bytes waiting to go to a client past which the server skips its snapshot that tick (Source's choke).</summary>
-    public const int ChokeBacklog = 4 * MaxPacketSize;
+    /// <remarks>
+    /// Two packets: a snapshot or two in flight. A healthy line holds next to nothing; a lossy one, slowed to a couple of KiB a
+    /// second by WebRTC's congestion control, held four packets' worth for seconds, and every snapshot reached its client
+    /// that much older.
+    /// </remarks>
+    public const int ChokeBacklog = 2 * MaxPacketSize;
+
+    /// <summary>The bytes waiting to go to the server past which a client holds its command packet that tick.</summary>
+    /// <remarks>
+    /// A command packet is some seventy bytes, thirty a second: <see cref="ChokeBacklog"/> would be two seconds of them. A
+    /// client sending on regardless over a lossy line -- WebRTC's congestion control then carries a couple of KiB a second
+    /// -- queued every command behind the last, and its round trip climbed by seconds without end. Held at this, the
+    /// commands wait no longer than a quarter of a second; the next packet sent carries those held, as many as fit.
+    /// </remarks>
+    public const int CommandChokeBacklog = 512;
 }
 
 /// <summary>How a message is delivered.</summary>
