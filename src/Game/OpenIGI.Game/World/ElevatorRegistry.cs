@@ -657,6 +657,17 @@ public sealed class ElevatorRegistry
 
     private sealed record ExteriorSwitchCall(DeclaredTask Switch, int FloorIndex);
 
+    /// <summary>Gets whether someone stands in a lift: on its floor, or in its cab.</summary>
+    /// <param name="elevator">The lift.</param>
+    /// <param name="passenger">Where they stand, in world units.</param>
+    /// <param name="solids">The live collision, whose ground-hit owner says what they stand on.</param>
+    /// <returns>Whether they ride it.</returns>
+    public static bool IsPassenger(PlacedElevator elevator, Vector3d passenger, ObjectCollisionIndex? solids)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        return IsPassengerOn(elevator, passenger, solids);
+    }
+
     private static bool IsPassengerOn(
         PlacedElevator elevator,
         Vector3d passenger,

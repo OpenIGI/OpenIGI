@@ -14,6 +14,9 @@ internal sealed class ObjectCollisionEntry
     // is orders above the rounding of any coordinate a level has.
     private const double CastBoxSlack = 1.0;
 
+    // 0x4C1840's tie window: hits within a tenth of a unit of each other are settled by their facing.
+    private const double LocateTieUnits = 0.1;
+
     private readonly Vector3f[] _localVertices;
     private readonly Vector3d[] _closedVertices;
     private readonly Vector3f _rootCentre;
@@ -279,6 +282,100 @@ internal sealed class ObjectCollisionEntry
         return (min, max);
     }
 
+    /// <summary>
+    /// Casts the sector locate's line at this entry, portal faces included, keeping a hit by the original's own rule rather than
+    /// the strictly nearest: <c>0x4C1840</c>, the line handler every sector of a building is sent in turn.
+    /// </summary>
+    /// <param name="origin">Where the line starts, in world units.</param>
+    /// <param name="direction">The line, start to end.</param>
+    /// <param name="best">The hit kept so far, across every entry asked before this one; replaced when this one's wins.</param>
+    /// <returns><see langword="true"/> when a face of this entry replaced it.</returns>
+    /// <remarks>
+    /// Face by face, against the hit kept so far: one more than a tenth of a unit nearer wins and one more than a tenth farther
+    /// loses; within that tenth a face the line meets from its front beats one it meets from behind, whichever is nearer, and
+    /// two of the same facing go to the nearer. What this entry ends up with is then kept only if it is strictly nearer than the
+    /// hit it started from -- the handler writes its result back on that test alone -- so across entries the first of two at
+    /// one depth stands. A portal two rooms share is met at one depth in both, and this is what decides which room's copy
+    /// names the eye's sector.
+    /// </remarks>
+    public bool TryLocateCast(Vector3d origin, Vector3d direction, ref LocateHit best)
+    {
+        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return false;
+        }
+
+        double lowX = Math.Min(origin.X, origin.X + direction.X) - CastBoxSlack;
+        double highX = Math.Max(origin.X, origin.X + direction.X) + CastBoxSlack;
+        double lowY = Math.Min(origin.Y, origin.Y + direction.Y) - CastBoxSlack;
+        double highY = Math.Max(origin.Y, origin.Y + direction.Y) + CastBoxSlack;
+        double lowZ = Math.Min(origin.Z, origin.Z + direction.Z) - CastBoxSlack;
+        double highZ = Math.Max(origin.Z, origin.Z + direction.Z) + CastBoxSlack;
+
+        LocateHit kept = best;
+        bool replaced = false;
+        foreach (MefCollisionFace face in Mesh.Faces)
+        {
+            Vector3d a = _vertices[face.I0];
+            Vector3d b = _vertices[face.I1];
+            Vector3d c = _vertices[face.I2];
+            if ((a.X < lowX && b.X < lowX && c.X < lowX) || (a.X > highX && b.X > highX && c.X > highX)
+                || (a.Y < lowY && b.Y < lowY && c.Y < lowY) || (a.Y > highY && b.Y > highY && c.Y > highY)
+                || (a.Z < lowZ && b.Z < lowZ && c.Z < lowZ) || (a.Z > highZ && b.Z > highZ && c.Z > highZ))
+            {
+                continue;
+            }
+
+            if (!RayTriangle.Intersect(origin, direction, a, b, c, out double t))
+            {
+                continue;
+            }
+
+            Vector3d normal = RayTriangle.Normal(a, b, c);
+            if (normal is { X: 0.0, Y: 0.0, Z: 0.0 })
+            {
+                continue;
+            }
+
+            // The front is the face the line enters by (TryCast's facing test, the original's negative denominator).
+            bool front = (normal.X * direction.X) + (normal.Y * direction.Y) + (normal.Z * direction.Z) > 0.0;
+            double distance = t * length;
+            if (kept.Found && distance + LocateTieUnits >= kept.Distance)
+            {
+                bool loses = distance >= kept.Distance
+                    ? distance - LocateTieUnits >= kept.Distance || !front || kept.Front
+                    : !front && kept.Front;
+                if (loses)
+                {
+                    continue;
+                }
+            }
+
+            // Reported turned to oppose the line, as TryCast reports it.
+            Vector3d facingLine = front ? new Vector3d(-normal.X, -normal.Y, -normal.Z) : normal;
+            kept = new LocateHit(
+                true,
+                distance,
+                front,
+                new WorldRayHit(
+                    new Vector3d(origin.X + (direction.X * t), origin.Y + (direction.Y * t), origin.Z + (direction.Z * t)),
+                    new Vector3f((float)facingLine.X, (float)facingLine.Y, (float)facingLine.Z),
+                    distance,
+                    Mesh.GlobalMaterial(face.Material),
+                    !front));
+            replaced = true;
+        }
+
+        if (!replaced || (best.Found && !(kept.Distance < best.Distance)))
+        {
+            return false;
+        }
+
+        best = kept;
+        return true;
+    }
+
     public void CollectTriangles(Vector3d min, Vector3d max, List<CollisionTriangle> into)
     {
         foreach (MefCollisionFace face in Mesh.Faces)
@@ -410,3 +507,10 @@ internal sealed class ObjectCollisionEntry
         return found;
     }
 }
+
+/// <summary>The hit the sector locate keeps so far: whether there is one, how far along the line, and which face of it was met.</summary>
+/// <param name="Found">Whether anything has been met.</param>
+/// <param name="Distance">How far along the line, in world units.</param>
+/// <param name="Front">Whether the line met the face from its front -- entered by it.</param>
+/// <param name="Hit">The contact.</param>
+internal readonly record struct LocateHit(bool Found, double Distance, bool Front, WorldRayHit Hit);

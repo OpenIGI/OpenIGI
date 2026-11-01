@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// <summary>
 /// All direct retail world interactions, with the original two-metre, most-head-on resolver.
 /// </summary>
-public sealed class WorldInteractionRegistry : IPlacementVariant
+public sealed partial class WorldInteractionRegistry : IPlacementVariant
 {
     /// <summary><c>Human_UpdateActivate</c>'s regular query radius: two metres.</summary>
     public const double ActivateRadius = 8192.0;

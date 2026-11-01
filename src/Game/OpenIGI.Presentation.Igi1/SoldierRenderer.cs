@@ -128,9 +128,6 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
     /// <inheritdoc/>
     public bool IsPlayerBodyActive => _playerBody.IsActive;
 
-    /// <inheritdoc/>
-    public Vector3d? PlayerRagdollCentre => _playerBody.RagdollCentre;
-
     /// <summary>Gets how far this frame sits between the last two ticks, as <see cref="BeginFrame"/> resolved it.</summary>
     internal float FrameAlpha => _frames.FrameAlpha;
 

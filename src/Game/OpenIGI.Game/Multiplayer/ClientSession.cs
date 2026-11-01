@@ -333,7 +333,7 @@ public sealed class ClientSession
         }
 
         Snapshot first = gathered[0]!;
-        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses, first.Lifts);
+        return new Snapshot(piece.Tick, [.. gathered.SelectMany(static p => p!.Humans)], first.Doors, first.Impacts, first.Senses, first.Lifts, first.Cameras, first.Wrecks, first.Projectiles, first.Tasks);
     }
 
     private void Read(byte[] data, double now)

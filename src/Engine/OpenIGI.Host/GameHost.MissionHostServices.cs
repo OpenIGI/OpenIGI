@@ -88,8 +88,6 @@ public sealed partial class GameHost
 
         public void CheatWeaponsGranted() => host.ShowCheatWeapons();
 
-        public void PlayMineTrigger(Vector3d origin) =>
-            host._audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
 
 
 
@@ -127,10 +125,10 @@ public sealed partial class GameHost
 
         public bool IsInteractionViewActive => host.Viewpoint?.IsInteractionViewActive == true;
 
-        public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls) =>
-            host.Viewpoint?.BeginInteractionView(feet, facing, walls);
+        public void BeginInteractionView(Vector3d origin, float facing, WorldRayCast? walls) =>
+            host.Viewpoint?.BeginInteractionView(origin, facing, walls);
 
-        public void FollowInteractionView(Vector3d feet) => host.Viewpoint?.FollowInteractionView(feet);
+        public void FollowInteractionView(Vector3d origin) => host.Viewpoint?.FollowInteractionView(origin);
 
         public void TickInteractionView() => host.Viewpoint?.TickInteractionView();
 

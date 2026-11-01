@@ -48,7 +48,10 @@ public sealed partial class ObjectCollisionIndex
             return false;
         }
 
-        double nearest = double.MaxValue;
+        // Each sector in the original's order -- the shell, then the rooms -- settled against the hit kept so far by 0x4C1840's
+        // own rule (ObjectCollisionEntry.TryLocateCast): where two rooms share a portal face, that rule names one of them, not
+        // whichever copy float rounding put nearer.
+        LocateHit best = default;
         for (int i = 0; i < placements.Count; i++)
         {
             if (!_entriesByPlacement.TryGetValue(placements[i], out ObjectCollisionEntry[]? entries))
@@ -62,16 +65,9 @@ public sealed partial class ObjectCollisionIndex
                 // the default level does not, and a ray meeting it named the shell where the original names the room below.
                 if (!entry.IsPlayerSet
                     && MeetsSphere(origin, direction, entry.Centre, entry.Radius)
-                    && entry.TryCast(
-                        origin,
-                        direction,
-                        ref nearest,
-                        useClosedTransform: false,
-                        includePortals: true,
-                        portalIsOpening: null,
-                        out WorldRayHit candidate))
+                    && entry.TryLocateCast(origin, direction, ref best))
                 {
-                    hit = candidate;
+                    hit = best.Hit;
                     struck = i;
                 }
             }

@@ -40,7 +40,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <para>
 /// <b>Clipped as well as culled.</b> The display area the queue narrows for an outside object is what the rigid mesh's triangles
 /// are clipped against (<c>0x4A0340</c>, called from the mesh draw <c>0x49BE10</c>), so such an object is drawn only within the
-/// outside's window (<see cref="ClipOf"/>). The ground is drawn before the queue, through the whole display area, and is not.
+/// outside's window (<see cref="ClipOf(WorldPlacement)"/>). The ground is drawn before the queue, through the whole display area, and is not.
 /// </para>
 /// <para>
 /// <b>The one type always outside never is.</b> The queue also treats as outside any object of the type in <c>word_C30064</c>.
@@ -211,6 +211,14 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
             }
         }
 
+        // A building encloses the eye when it is the one the eye was located in, or when the eye stands within one of its rooms'
+        // own bounds: a yard or hall that is a room of one building with a corridor building set into its wall, where the
+        // located building is the corridor's but the room around the eye is the hall's.
+        foreach (Building building in _buildings)
+        {
+            building.Encloses = ReferenceEquals(building, _inside) || building.IsWithinARoom(eye.Position);
+        }
+
         SectorScreenRect display = projection.DisplayArea;
         if (_inside is not null && start is not null)
         {
@@ -272,20 +280,44 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
             return sector.IsShell && (ReferenceEquals(sector.Building, _inside) || !IsGated(sector.Building));
         }
 
-        if (_inside is null || !_owners.TryGetValue(placement.Owner, out Owner owner) || !IsOutside(owner))
-        {
-            return true;
-        }
-
-        return _outsideWindow is { } window
-            && SectorPortalProjection.SphereInAnyWindow(_eye, _projection, owner.Centre, owner.Radius, [window]);
+        return !_owners.TryGetValue(placement.Owner, out Owner owner) || IsOwnerVisible(owner);
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A lift's car, a door or a vehicle is weighed where it is drawn: the queue's object moves with it, so a car ridden up to
+    /// the top of its shaft is measured there, not at the bottom where the level placed it and where it fell outside the window.
+    /// </remarks>
+    public bool IsVisible(WorldPlacement placement, Vector3d drawnAt)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return _parts.ContainsKey(placement) || drawnAt == placement.Position || !_owners.TryGetValue(placement.Owner, out Owner owner)
+            ? IsVisible(placement)
+            : IsOwnerVisible(owner.Moved(WorldScene.ToUnits(drawnAt) - WorldScene.ToUnits(placement.Position)));
+    }
+
+    /// <inheritdoc/>
+    public ViewClip? ClipOf(WorldPlacement placement, Vector3d drawnAt)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return _parts.ContainsKey(placement) || drawnAt == placement.Position || !_owners.TryGetValue(placement.Owner, out Owner owner)
+            ? ClipOf(placement)
+            : ClipOfOwner(owner.Moved(WorldScene.ToUnits(drawnAt) - WorldScene.ToUnits(placement.Position)));
+    }
+
+    private bool IsOwnerVisible(Owner owner) =>
+        _inside is null
+        || !IsOutside(owner)
+        || (_outsideWindow is { } window && SectorPortalProjection.SphereInAnyWindow(_eye, _projection, owner.Centre, owner.Radius, [window]));
+
+    private ViewClip? ClipOfOwner(Owner owner) =>
+        _inside is not null && _outsideWindow is { } window && IsOutside(owner) ? _projection.ToViewClip(window) : null;
 
     /// <inheritdoc/>
     public bool EnclosesEye(WorldPlacement placement)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        return !_parts.TryGetValue(placement, out Sector? sector) || ReferenceEquals(sector.Building, _inside);
+        return !_parts.TryGetValue(placement, out Sector? sector) || sector.Building.Encloses;
     }
 
     /// <inheritdoc/>
@@ -297,7 +329,7 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
     public ViewClip? ClipOf(WorldPlacement placement)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        if (_inside is null || _outsideWindow is not { } window || !_owners.TryGetValue(placement.Owner, out Owner owner))
+        if (_inside is null || _outsideWindow is null || !_owners.TryGetValue(placement.Owner, out Owner owner))
         {
             return null;
         }
@@ -308,7 +340,7 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
             return null;
         }
 
-        return IsOutside(owner) ? _projection.ToViewClip(window) : null;
+        return ClipOfOwner(owner);
     }
 
     /// <summary>Gets a value indicating whether a camera is the eye the frame was decided from, rather than a light's.</summary>
@@ -468,7 +500,12 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
         }
     }
 
-    private readonly record struct Owner(Vector3d Origin, Vector3d Centre, float Radius);
+    private readonly record struct Owner(Vector3d Origin, Vector3d Centre, float Radius)
+    {
+        // The same object carried by a displacement in world units: a lift's car or a door is drawn where it has moved to.
+        public Owner Moved(Vector3d by) =>
+            new(new Vector3d(Origin.X + by.X, Origin.Y + by.Y, Origin.Z + by.Z), new Vector3d(Centre.X + by.X, Centre.Y + by.Y, Centre.Z + by.Z), Radius);
+    }
 
     private sealed class Building(GameTask task, float radius)
     {
@@ -480,6 +517,27 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
         public Sector Shell { get; set; } = null!;
 
         public List<Sector> Rooms { get; } = [];
+
+        // Whether the eye stands inside this building this frame (EnclosesEye).
+        public bool Encloses { get; set; }
+
+        // Within the render sphere of any of the building's rooms, each placed where the walk put it.
+        public bool IsWithinARoom(Vector3d eye)
+        {
+            foreach (Sector room in Rooms)
+            {
+                MefModel model = room.Placement.Model;
+                Vector3f c = room.Orientation.Transposed().Transform(model.RenderSphereCentre);
+                double dx = eye.X - (room.Position.X + c.X), dy = eye.Y - (room.Position.Y + c.Y), dz = eye.Z - (room.Position.Z + c.Z);
+                double r = model.RenderSphereRadius;
+                if ((dx * dx) + (dy * dy) + (dz * dz) <= r * r)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         public Vector3f InsideCentre { get; set; }
 

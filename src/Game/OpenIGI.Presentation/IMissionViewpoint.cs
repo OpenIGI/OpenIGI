@@ -112,14 +112,14 @@ public interface IMissionViewpoint
     void ControlInteractionView(float deltaX, float deltaY);
 
     /// <summary>Hands the view to the orbit behind a climbing or interacting body.</summary>
-    /// <param name="feet">The body's feet, in world units.</param>
+    /// <param name="origin">The body's origin (<c>Human+32</c>, which a climb carries), in world units.</param>
     /// <param name="facing">The yaw the body faces.</param>
     /// <param name="walls">What pulls the orbit in, or <see langword="null"/>.</param>
-    void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls);
+    void BeginInteractionView(Vector3d origin, float facing, WorldRayCast? walls);
 
     /// <summary>Moves the orbit's pivot after the body.</summary>
-    /// <param name="feet">The body's feet, in world units.</param>
-    void FollowInteractionView(Vector3d feet);
+    /// <param name="origin">The body's origin, in world units.</param>
+    void FollowInteractionView(Vector3d origin);
 
     /// <summary>Eases the orbit once on the tick.</summary>
     void TickInteractionView();

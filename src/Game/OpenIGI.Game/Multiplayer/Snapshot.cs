@@ -13,13 +13,33 @@ namespace OpenIGI.Game.Multiplayer;
 /// <param name="Impacts">The rounds that landed since the server's last snapshot, for every client to show.</param>
 /// <param name="Senses">What players felt since the server's last snapshot, for each one's own game to feel.</param>
 /// <param name="Lifts">The level's lifts as the server has them, in the level's own order, or <see langword="null"/> where the world sends none.</param>
+/// <param name="Cameras">
+/// The level's security cameras as the server has them, in the level's own order, or <see langword="null"/> where the world
+/// sends none.
+/// </param>
+/// <param name="Wrecks">
+/// What the server's level has struck for good -- broken, blown up, shot out -- one bit each in the world's own order, or
+/// <see langword="null"/> where the world sends none.
+/// </param>
+/// <param name="Projectiles">
+/// What the players' weapons have in the world -- grenades, mines, rockets, launcher rounds -- or <see langword="null"/>
+/// for none.
+/// </param>
+/// <param name="Tasks">
+/// What the server's switches, terminals, TBAs, cabinets, locks, fences, generators and radios are, as the world writes them,
+/// or <see langword="null"/> where it sends none.
+/// </param>
 public sealed record Snapshot(
     long Tick,
     ReplicatedHuman[] Humans,
     byte[]? Doors = null,
     ReplicatedImpact[]? Impacts = null,
     ReplicatedSense[]? Senses = null,
-    ReplicatedLift[]? Lifts = null)
+    ReplicatedLift[]? Lifts = null,
+    ReplicatedCamera[]? Cameras = null,
+    byte[]? Wrecks = null,
+    ReplicatedProjectile[]? Projectiles = null,
+    byte[]? Tasks = null)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -74,6 +94,12 @@ public static class SnapshotCodec
 
     // A level's doors, eight to a byte: the largest of the original's levels has some hundreds.
     private const int MaxDoorBytes = 512;
+
+    // The level's wrecks, eight to a byte: its panes, barrels, cars, speakers, cameras and switches.
+    private const int MaxWreckBytes = 1024;
+
+    // The level's tasks' state: a few bits each, and a plant's place.
+    private const int MaxTaskBytes = 4096;
     private const uint AllFields = (1u << FieldCount) - 1;
 
     /// <summary>Writes a snapshot.</summary>
@@ -121,10 +147,19 @@ public static class SnapshotCodec
             WriteFields(writer, mask, before, human);
         }
 
+        // The rest of the world -- doors, lifts, cameras, wrecks, projectiles, tasks: one bit for all of it while it stands as
+        // the baseline had it, which is most ticks; else one bit each.
+        bool worldSame = baseline is not null && SameWorld(snapshot, baseline);
+        writer.WriteBool(worldSame);
+
         // The doors: one bit when they stand as the baseline had them, which is nearly always.
         byte[] doors = snapshot.Doors ?? [];
         bool same = baseline is not null && doors.AsSpan().SequenceEqual(baseline.Doors ?? []);
-        writer.WriteBool(same);
+        if (!worldSame)
+        {
+            writer.WriteBool(same);
+        }
+
         if (!same)
         {
             writer.WriteVarUInt((uint)doors.Length);
@@ -137,7 +172,11 @@ public static class SnapshotCodec
         // The lifts: one bit when they stand as the baseline had them, which is all but while one moves.
         ReplicatedLift[] lifts = snapshot.Lifts ?? [];
         bool liftsSame = baseline is not null && lifts.AsSpan().SequenceEqual(baseline.Lifts ?? []);
-        writer.WriteBool(liftsSame);
+        if (!worldSame)
+        {
+            writer.WriteBool(liftsSame);
+        }
+
         if (!liftsSame)
         {
             int count = Math.Min(lifts.Length, ReplicatedLift.MaxPerSnapshot);
@@ -146,6 +185,66 @@ public static class SnapshotCodec
             {
                 lifts[i].Write(writer);
             }
+        }
+
+        // The cameras: one bit when they stand as the baseline had them, which is while none sweeps or sees anyone.
+        ReplicatedCamera[] cameras = snapshot.Cameras ?? [];
+        bool camerasSame = baseline is not null && cameras.AsSpan().SequenceEqual(baseline.Cameras ?? []);
+        if (!worldSame)
+        {
+            writer.WriteBool(camerasSame);
+        }
+
+        if (!camerasSame)
+        {
+            int count = Math.Min(cameras.Length, ReplicatedCamera.MaxPerSnapshot);
+            writer.WriteVarUInt((uint)count);
+            for (int i = 0; i < count; i++)
+            {
+                cameras[i].Write(writer);
+            }
+        }
+
+        // The wrecks: one bit when they stand as the baseline had them, which is all but the tick something breaks.
+        byte[] wrecks = snapshot.Wrecks ?? [];
+        bool wrecksSame = baseline is not null && wrecks.AsSpan().SequenceEqual(baseline.Wrecks ?? []);
+        if (!worldSame)
+        {
+            writer.WriteBool(wrecksSame);
+        }
+
+        if (!wrecksSame)
+        {
+            int length = Math.Min(wrecks.Length, MaxWreckBytes);
+            writer.WriteVarUInt((uint)length);
+            for (int i = 0; i < length; i++)
+            {
+                writer.WriteBits(wrecks[i], 8);
+            }
+        }
+
+        // The players' grenades, mines, rockets and launcher rounds: one bit while they lie as the baseline had them.
+        ReplicatedProjectile[] projectiles = snapshot.Projectiles ?? [];
+        bool projectilesSame = baseline is not null && projectiles.AsSpan().SequenceEqual(baseline.Projectiles ?? []);
+        if (!worldSame)
+        {
+            writer.WriteBool(projectilesSame);
+        }
+
+        if (!projectilesSame)
+        {
+            int count = Math.Min(projectiles.Length, ReplicatedProjectile.MaxPerSnapshot);
+            writer.WriteVarUInt((uint)count);
+            for (int i = 0; i < count; i++)
+            {
+                projectiles[i].Write(writer);
+            }
+        }
+
+        // The tasks: one bit while they stand as the baseline had them.
+        if (!worldSame)
+        {
+            WriteBlob(writer, snapshot.Tasks, baseline is null ? null : baseline.Tasks ?? [], MaxTaskBytes);
         }
 
         // The rounds that landed: events, not state, so written whole and never against the baseline.
@@ -232,8 +331,14 @@ public static class SnapshotCodec
             }
         }
 
+        bool worldSame = reader.ReadBool();
+        if (worldSame && baseline is null)
+        {
+            return false;
+        }
+
         byte[]? doors = baseline?.Doors;
-        if (!reader.ReadBool())
+        if (!worldSame && !reader.ReadBool())
         {
             uint length = reader.ReadVarUInt();
             if (reader.IsOverflowed || length > MaxDoorBytes)
@@ -253,7 +358,7 @@ public static class SnapshotCodec
         }
 
         ReplicatedLift[]? lifts = baseline?.Lifts;
-        if (!reader.ReadBool())
+        if (!worldSame && !reader.ReadBool())
         {
             uint length = reader.ReadVarUInt();
             if (reader.IsOverflowed || length > ReplicatedLift.MaxPerSnapshot)
@@ -268,6 +373,72 @@ public static class SnapshotCodec
             }
         }
         else if (baseline is null)
+        {
+            return false;
+        }
+
+        ReplicatedCamera[]? cameras = baseline?.Cameras;
+        if (!worldSame && !reader.ReadBool())
+        {
+            uint length = reader.ReadVarUInt();
+            if (reader.IsOverflowed || length > ReplicatedCamera.MaxPerSnapshot)
+            {
+                return false;
+            }
+
+            cameras = length == 0 ? null : new ReplicatedCamera[length];
+            for (int i = 0; i < length; i++)
+            {
+                cameras![i] = ReplicatedCamera.Read(ref reader);
+            }
+        }
+        else if (baseline is null)
+        {
+            return false;
+        }
+
+        byte[]? wreckBits = baseline?.Wrecks;
+        if (!worldSame && !reader.ReadBool())
+        {
+            uint length = reader.ReadVarUInt();
+            if (reader.IsOverflowed || length > MaxWreckBytes)
+            {
+                return false;
+            }
+
+            wreckBits = length == 0 ? null : new byte[length];
+            for (int i = 0; i < length; i++)
+            {
+                wreckBits![i] = (byte)reader.ReadBits(8);
+            }
+        }
+        else if (baseline is null)
+        {
+            return false;
+        }
+
+        ReplicatedProjectile[]? projectiles = baseline?.Projectiles;
+        if (!worldSame && !reader.ReadBool())
+        {
+            uint length = reader.ReadVarUInt();
+            if (reader.IsOverflowed || length > ReplicatedProjectile.MaxPerSnapshot)
+            {
+                return false;
+            }
+
+            projectiles = length == 0 ? null : new ReplicatedProjectile[length];
+            for (int i = 0; i < length; i++)
+            {
+                projectiles![i] = ReplicatedProjectile.Read(ref reader);
+            }
+        }
+        else if (baseline is null)
+        {
+            return false;
+        }
+
+        byte[]? tasks = baseline?.Tasks;
+        if (!worldSame && !ReadBlob(ref reader, baseline, baseline?.Tasks, MaxTaskBytes, out tasks))
         {
             return false;
         }
@@ -301,7 +472,55 @@ public static class SnapshotCodec
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts);
+        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks);
+        return true;
+    }
+
+    private static bool SameWorld(Snapshot a, Snapshot b) =>
+        (a.Doors ?? []).AsSpan().SequenceEqual(b.Doors ?? [])
+        && (a.Lifts ?? []).AsSpan().SequenceEqual(b.Lifts ?? [])
+        && (a.Cameras ?? []).AsSpan().SequenceEqual(b.Cameras ?? [])
+        && (a.Wrecks ?? []).AsSpan().SequenceEqual(b.Wrecks ?? [])
+        && (a.Projectiles ?? []).AsSpan().SequenceEqual(b.Projectiles ?? [])
+        && (a.Tasks ?? []).AsSpan().SequenceEqual(b.Tasks ?? []);
+
+    // A blob of the world's: one bit when it is as the baseline had it, else its bytes.
+    private static void WriteBlob(BitWriter writer, byte[]? blob, byte[]? baseline, int maxBytes)
+    {
+        byte[] bytes = blob ?? [];
+        bool same = baseline is not null && bytes.AsSpan().SequenceEqual(baseline);
+        writer.WriteBool(same);
+        if (!same)
+        {
+            int length = Math.Min(bytes.Length, maxBytes);
+            writer.WriteVarUInt((uint)length);
+            for (int i = 0; i < length; i++)
+            {
+                writer.WriteBits(bytes[i], 8);
+            }
+        }
+    }
+
+    private static bool ReadBlob(ref BitReader reader, Snapshot? baseline, byte[]? kept, int maxBytes, out byte[]? blob)
+    {
+        blob = kept;
+        if (reader.ReadBool())
+        {
+            return baseline is not null;
+        }
+
+        uint length = reader.ReadVarUInt();
+        if (reader.IsOverflowed || length > maxBytes)
+        {
+            return false;
+        }
+
+        blob = length == 0 ? null : new byte[length];
+        for (int i = 0; i < length; i++)
+        {
+            blob![i] = (byte)reader.ReadBits(8);
+        }
+
         return true;
     }
 

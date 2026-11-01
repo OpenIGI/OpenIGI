@@ -14,7 +14,10 @@ public sealed class LadderClimb
 {
     private bool _active;
     private bool _slideArmed;
-    private bool _topOffEnded;
+    private bool _topEnded;
+
+    // The rung event the last advance crossed, which the next tick's state update takes.
+    private float? _pendingEvent;
 
     /// <summary>Gets a value indicating whether a climb is under way.</summary>
     public bool IsActive => _active;
@@ -24,7 +27,8 @@ public sealed class LadderClimb
     {
         _active = false;
         _slideArmed = false;
-        _topOffEnded = false;
+        _topEnded = false;
+        _pendingEvent = null;
     }
 
     /// <summary>Runs the climb a tick.</summary>
@@ -40,22 +44,62 @@ public sealed class LadderClimb
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(rung);
 
-        // Mount and use share E. The release gate is a shell detail that prevents the mounting press
-        // from becoming state 40 on the immediately following tick.
+        // The mount tick: 0x4113E0 sets state 37 or 38 after HumanPlayer_Update's state machine has run (0x4109A0), so no
+        // state update reads this tick's keys; only the update's clip advance and move follow -- 168's first frame at the
+        // foot, 170's first frame back from the top. Climbing starts on the next tick.
         if (!_active)
         {
             _active = true;
             _slideArmed = false;
+            _topEnded = false;
+            _pendingEvent = null;
             if (player.LadderPhase == LadderTraversalPhase.GettingOnTop)
             {
                 body?.StartLadderClip(PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
+                Advance(player, body, LadderStepResult.Idle, ground);
             }
             else
             {
-                StartClimbClip(player, body, rung);
+                StartClimbClip(player, body);
+            }
+
+            Place(player, body);
+            return;
+        }
+
+        // Each state's update opens on the event the last tick's advance crossed (0x40D6B0, 0x40D920, 0x40DA80): event 8 at a
+        // time other than the latched one sounds a rung, and in state 37 pauses the clip and commits the step it ends.
+        if (_pendingEvent is { } time)
+        {
+            _pendingEvent = null;
+            if (player.AcceptLadderRungEvent(time))
+            {
+                rung(player);
+                if (player.LadderPhase == LadderTraversalPhase.Climbing)
+                {
+                    player.CompleteLadderStep();
+                    body?.SetLadderPlaybackDirection(0);
+                }
             }
         }
 
+        // States 38 and 39 read the clip-done bit the last tick's advance set, the clip held on its last frame meanwhile.
+        // 38 then enters 37, whose update first runs next tick: this tick only takes 168's first frame. 39 lets go.
+        if (_topEnded && player.LadderPhase is LadderTraversalPhase.GettingOnTop or LadderTraversalPhase.GettingOffTop)
+        {
+            _topEnded = false;
+            player.CompleteLadderTopTransition();
+            if (player.LadderPhase == LadderTraversalPhase.Climbing)
+            {
+                StartClimbClip(player, body);
+            }
+
+            Place(player, body);
+            return;
+        }
+
+        // The use key counts only once it has been let go since the mount: the press that took hold of the ladder is no
+        // fresh press (0x40D6B0 wants input 9 down this tick and up the last).
         if (!use)
         {
             _slideArmed = true;
@@ -79,6 +123,14 @@ public sealed class LadderClimb
                 break;
         }
 
+        Advance(player, body, decision, ground);
+        Place(player, body);
+    }
+
+    // HumanPlayer_Update's clip advance and move, after the state update: the root step moves the origin, and the event it
+    // crossed waits for the next tick's update.
+    private void Advance(PlayerCamera player, ILadderBody? body, LadderStepResult decision, IGroundHeightField ground)
+    {
         if (!player.IsOnLadder || body is null)
         {
             return;
@@ -87,70 +139,40 @@ public sealed class LadderClimb
         switch (player.LadderPhase)
         {
             case LadderTraversalPhase.Climbing when player.LadderDirection != 0:
-                body.AdvanceLadderClip(player.LadderFacing, out Vector3d climbDelta, out float? rungEventTime, out _);
+                body.AdvanceLadderClip(player.LadderFacing, out Vector3d climbDelta, out float? climbEvent, out _);
                 player.MoveLadder(climbDelta);
-                if (TakeRung(player, rungEventTime, rung))
-                {
-                    player.CompleteLadderStep();
-                    body.SetLadderPlaybackDirection(0);
-                }
-
-                break;
-
-            case LadderTraversalPhase.GettingOffTop when _topOffEnded:
-                // State 39 (0x40DA80) reads the clip-done bit the previous tick's advance set, in the state machine
-                // ahead of this tick's advance: it lets go of the ladder a tick after animation 170 ends, the clip
-                // held on its last frame meanwhile.
-                _topOffEnded = false;
-                player.CompleteLadderTopTransition();
+                _pendingEvent = climbEvent;
                 break;
 
             case LadderTraversalPhase.GettingOnTop:
             case LadderTraversalPhase.GettingOffTop:
-                body.AdvanceLadderClip(player.LadderFacing, out Vector3d topDelta, out float? topEventTime, out bool topEnded);
+                body.AdvanceLadderClip(player.LadderFacing, out Vector3d topDelta, out float? topEvent, out bool topEnded);
                 player.MoveLadder(topDelta);
-                TakeRung(player, topEventTime, rung);
-
-                if (topEnded && player.LadderPhase == LadderTraversalPhase.GettingOffTop)
-                {
-                    _topOffEnded = true;
-                }
-                else if (topEnded)
-                {
-                    player.CompleteLadderTopTransition();
-                    if (player.LadderPhase == LadderTraversalPhase.Climbing)
-                    {
-                        StartClimbClip(player, body, rung);
-                    }
-                }
-
+                _pendingEvent = topEvent;
+                _topEnded = topEnded;
                 break;
 
             case LadderTraversalPhase.SlidingDown:
                 body.AdvanceLadderClip(player.LadderFacing, out Vector3d slideDelta, out _, out _);
-
-                // State 40's entry only installs animation 169 and the sound. Its damped
-                // velocity function first runs on the following tick.
-                if (decision != LadderStepResult.Sliding)
-                {
-                    player.TickLadderSlide(slideDelta, ground);
-                }
-
+                player.TickLadderSlide(slideDelta, ground, entering: decision == LadderStepResult.Sliding);
                 break;
         }
+    }
 
-        // All four states stay in third person until their actual deinitialization signal.
+    // All four states stay in third person until their actual deinitialization signal.
+    private static void Place(PlayerCamera player, ILadderBody? body)
+    {
         if (player.IsOnLadder)
         {
-            body.PlaceClimbing(player.LadderFeet, player.LadderFacing);
+            body?.PlaceClimbing(player.LadderFeet, player.LadderFacing);
         }
     }
 
     /// <summary>
-    /// Starts the climb clip and takes its mount frame: the root step to the first rung and the rung event of getting on,
-    /// all in one go, so the pause is in place before any input can start a rung.
+    /// Enters state 37 (<c>0x40D660</c>): animation 168 from its start, and the frame the same update advances it, whose rung
+    /// event at zero the next tick's update takes -- the sound of getting on, nothing committed.
     /// </summary>
-    private static void StartClimbClip(PlayerCamera player, ILadderBody? body, Action<PlayerCamera> rung)
+    private void StartClimbClip(PlayerCamera player, ILadderBody? body)
     {
         if (body is null)
         {
@@ -158,21 +180,9 @@ public sealed class LadderClimb
         }
 
         body.StartLadderClip(PlayerCamera.LadderClimbAnimation, loops: true);
-        body.AdvanceLadderClip(player.LadderFacing, out Vector3d entryDelta, out float? mountEventTime, out _);
+        body.AdvanceLadderClip(player.LadderFacing, out Vector3d entryDelta, out float? mountEvent, out _);
         player.MoveLadderEntryFrame(entryDelta);
-        TakeRung(player, mountEventTime, rung);
+        _pendingEvent = mountEvent;
         body.SetLadderPlaybackDirection(0);
-    }
-
-    // Sounds a ladder state's crossing of event 8 when the latch lets it count; true when state 37 should commit its rung.
-    private static bool TakeRung(PlayerCamera player, float? eventTime, Action<PlayerCamera> rung)
-    {
-        if (eventTime is not { } time || !player.AcceptLadderRungEvent(time))
-        {
-            return false;
-        }
-
-        rung(player);
-        return true;
     }
 }

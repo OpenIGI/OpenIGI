@@ -42,6 +42,8 @@ public sealed partial class PlayerCamera
     {
         ApplyCheats(PlayerCheatOptions.Current);
 
+        FrameYaw = _body.Yaw;
+        FramePitch = _body.Pitch;
         _input.Accept(frame);
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();

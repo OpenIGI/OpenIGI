@@ -80,9 +80,6 @@ internal sealed class PlayerBodyRenderer(
     /// <inheritdoc cref="ISoldierPresenter.IsPlayerBodyActive"/>
     public bool IsActive => _active;
 
-    /// <inheritdoc cref="ISoldierPresenter.PlayerRagdollCentre"/>
-    public Vector3d? RagdollCentre => _ragdoll?.Centre;
-
     /// <inheritdoc cref="ISoldierBodies.LoadPlayerBody"/>
     public bool Load(
         LoadedMission mission, string model, BoneAnimationSet animations, Vector3d position, float gamma)

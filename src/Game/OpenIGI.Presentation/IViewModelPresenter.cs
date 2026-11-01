@@ -270,6 +270,16 @@ public interface IMissilePresenter : IDisposable
     /// <param name="projection">The projection to draw under.</param>
     /// <param name="alpha">How far the frame sits between the previous tick and the next.</param>
     void Draw(M203Simulation projectiles, in Camera3D camera, in Matrix4f projection, float alpha);
+
+    /// <summary>
+    /// Draws what another game's weapons have in the world -- a co-op server's word on its players' grenades, mines, rockets
+    /// and launcher rounds -- each by its own model.
+    /// </summary>
+    /// <param name="shown">What is shown.</param>
+    /// <param name="camera">Where they are seen from.</param>
+    /// <param name="projection">The projection to draw under.</param>
+    /// <param name="alpha">How far the frame sits between the previous tick and the next.</param>
+    void Draw(IReadOnlyList<ShownProjectile> shown, in Camera3D camera, in Matrix4f projection, float alpha);
 }
 
 /// <summary>Draws the weapons lying in the world for the player to pick up.</summary>

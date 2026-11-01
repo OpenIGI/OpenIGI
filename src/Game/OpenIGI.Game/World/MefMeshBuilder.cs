@@ -82,12 +82,42 @@ public static class MefMeshBuilder
             subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot, record.LightmapPage, Blend: blend));
         }
 
-        RepairWinding(vertices, indices);
+        // A room is wound by its authored order, not its normals: some rooms carry their normals out of the room (mission 14's
+        // yard and halls), and wound to them the whole interior became the back -- culled, a room seen into through a doorway
+        // lost its floor and walls. The authored order faces every room's inside the same way, so it is mirrored whole into
+        // this renderer's facing, which for a room with inward normals is exactly what the repair gave.
+        if (model.IsSector && HasNormals(vertices))
+        {
+            MirrorWinding(indices);
+        }
+        else
+        {
+            RepairWinding(vertices, indices);
+        }
 
         // Wound to their normals, a sheet's two faces now face apart, and the faces that coincide can be drawn culled.
         MeshSubset[] partitioned = CoincidentSkins.Partition(vertices, indices, subsets, SkinPlaneToleranceUnits * scale);
         return new MeshGeometry(vertices, indices, partitioned);
     }
+
+    /// <summary>Turns every triangle over: the authored draw order faces the other way to this renderer's front.</summary>
+    /// <param name="indices">The triangle-list indices, rewound in place.</param>
+    /// <remarks>
+    /// The authored order faces each surface away from whoever is meant to see it, props and rooms alike (most of a prop's
+    /// triangles disagree with its outward normals before <see cref="RepairWinding"/>), so turning all of them over gives the
+    /// front without consulting a normal.
+    /// </remarks>
+    public static void MirrorWinding(ushort[] indices)
+    {
+        ArgumentNullException.ThrowIfNull(indices);
+        for (int t = 0; t + 2 < indices.Length; t += 3)
+        {
+            (indices[t + 1], indices[t + 2]) = (indices[t + 2], indices[t + 1]);
+        }
+    }
+
+    private static bool HasNormals(Vertex3D[] vertices) =>
+        Array.TrueForAll(vertices, static v => float.IsFinite(v.Normal.LengthSquared) && v.Normal.LengthSquared > 0.000001f);
 
     /// <summary>Makes every triangle wind to agree with its vertices' own normals, so a front face exists.</summary>
     /// <remarks>

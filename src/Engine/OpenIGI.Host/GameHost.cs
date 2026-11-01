@@ -892,6 +892,7 @@ public sealed partial class GameHost : IDisposable
     {
         // First, so nothing below can be reached through a setting changed after this game has gone.
         ReleaseSettingHandlers();
+        ReleaseSessionCheatLock();
 
         _sky?.Dispose();
         _rain?.Dispose();

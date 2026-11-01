@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -74,6 +75,74 @@ public sealed class SecurityCameraRegistryTests
         Assert.True(fixture.Registry.Destroy(camera.Task));
         fixture.Registry.Tick(default, targetCrouching: false, targetAlive: false);
         Assert.False(camera.IsPowered);
+    }
+
+    [RequiresGameDataFact]
+    public void A_co_op_partner_in_view_is_confirmed_as_the_player_is()
+    {
+        // The detector registers every human (0x489750), so a joiner the host's own player is nowhere near is seen too.
+        Fixture fixture = Build();
+        SecurityCamera camera = fixture.Registry.Cameras[0];
+        object partner = new();
+        SecurityCameraSubject seen = SecurityCameraScan.PlayerSubject(
+            partner, TargetStraightAhead(camera, 5.0), crouching: false, camerasSide: false, alive: true);
+        SecurityCameraScan scan = new(default, false, TargetAlive: false, PlayerOnCamerasSide: false, [], [seen]);
+
+        for (int tick = 1; tick <= 90; tick++)
+        {
+            fixture.Registry.Tick(scan);
+        }
+
+        Assert.True(camera.IsDetection);
+        Assert.Equal(SecurityCameraBeep.Detected, camera.Beep);
+        AssertScript(fixture.Variables, "SCameraControl_90.isDetection", 1);
+
+        // A fallen partner is of the other side: the lens never registers it, and it forgets the target.
+        fixture.Registry.Tick(scan with { Partners = [seen with { Alive = false }] });
+        Assert.False(camera.IsDetection);
+        Assert.Equal(SecurityCameraBeep.None, camera.Beep);
+    }
+
+    [RequiresGameDataFact]
+    public void A_clients_lens_is_posed_by_the_servers()
+    {
+        Fixture server = Build();
+        Fixture client = Build();
+        client.Registry.Mirrored = true;
+        SecurityCamera there = server.Registry.Cameras[0];
+        SecurityCamera here = client.Registry.Cameras[0];
+        Vector3d targetFeet = TargetStraightAhead(there, 5.0);
+
+        // The server's camera sees its target; the client's own player stands nowhere near, and its lens follows anyway.
+        for (int tick = 1; tick <= 95; tick++)
+        {
+            server.Registry.Tick(targetFeet, targetCrouching: false, targetAlive: true);
+            client.Registry.Mirror(server.Registry.Replicate());
+            client.Registry.Tick(default, targetCrouching: false, targetAlive: false);
+        }
+
+        Assert.True(here.IsDetection);
+        Assert.Equal(there.Beep, here.Beep);
+        Assert.Equal(there.Lamp, here.Lamp);
+        Assert.Equal(there.DetectionTime, here.DetectionTime);
+        Assert.Equal(there.CurrentGamma, here.CurrentGamma, 3);
+        Assert.Equal(there.CurrentAlpha, here.CurrentAlpha, 3);
+        AssertScript(client.Variables, "SCameraControl_90.isDetection", 1);
+
+        // Shot out there: the client hears of it once, before its lens is marked so.
+        int destroyed = 0;
+        client.Registry.MirroredDestruction = _ => destroyed++;
+        Assert.True(server.Registry.Destroy(there.Task));
+        for (int tick = 0; tick < 3; tick++)
+        {
+            server.Registry.Tick(targetFeet, targetCrouching: false, targetAlive: true);
+            client.Registry.Mirror(server.Registry.Replicate());
+            client.Registry.Tick(default, targetCrouching: false, targetAlive: false);
+        }
+
+        Assert.Equal(1, destroyed);
+        Assert.True(here.IsExploded);
+        Assert.Equal(SecurityCameraLamp.Off, here.Lamp);
     }
 
     [RequiresGameDataFact]

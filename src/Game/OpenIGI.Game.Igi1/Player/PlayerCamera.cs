@@ -66,6 +66,20 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     private readonly PlayerFirstPersonView _firstPerson;
     private readonly PlayerPickups _pickups;
     private readonly PlayerShotResolver _shots;
+
+    /// <summary>
+    /// Advances what this player's weapons put in the world -- its grenades, mines, rockets and launcher rounds, and in the
+    /// mission's own player's pool the soldiers' lobs -- without the rest of its update: they are tasks of their own, and a
+    /// level runs on while this player lies dead or stands at the map computer.
+    /// </summary>
+    /// <remarks>
+    /// The rounds of its last update go first: nothing fires here, and its world contacts must not be handed on a second time.
+    /// </remarks>
+    internal void TickProjectilesAlone()
+    {
+        _shots.ClearImpacts();
+        _shots.TickProjectiles();
+    }
     private readonly PlayerInteractionDriver _interaction;
     private readonly PlayerLadderController _ladder;
     private readonly PlayerFootsteps _footsteps;
@@ -101,6 +115,17 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
     /// <summary>Gets the input frame the last tick ran on: on a co-op client, the command sent up for it.</summary>
     public PlayerInputFrame LastFrame => _input.Current;
+
+    /// <summary>Gets the heading the last tick ran with, before anything in it turned the body.</summary>
+    /// <remarks>
+    /// What a co-op client sends with <see cref="LastFrame"/>: its server sets the heading and then runs the frame, so it must
+    /// be the heading the frame met. Getting on a ladder at its top turns the body round to face the ladder; sent that,
+    /// the server's copy faces away from the ladder's head as it takes the use key and never gets on.
+    /// </remarks>
+    public float FrameYaw { get; private set; }
+
+    /// <summary>Gets the view's pitch the last tick ran with; see <see cref="FrameYaw"/>.</summary>
+    public float FramePitch { get; private set; }
 
     /// <summary>Uses the owning runtime's live player-health accumulator.</summary>
     public void UseHealth(HumanHealth health) => _body.UseHealth(health);
@@ -894,7 +919,8 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void CompleteLadderTopTransition() => _ladder.CompleteTopTransition();
 
     /// <inheritdoc cref="PlayerLadderController.TickSlide"/>
-    public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain) => _ladder.TickSlide(rootDelta, terrain);
+    public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain, bool entering = false) =>
+        _ladder.TickSlide(rootDelta, terrain, entering);
 
     private void TickWeapons()
     {

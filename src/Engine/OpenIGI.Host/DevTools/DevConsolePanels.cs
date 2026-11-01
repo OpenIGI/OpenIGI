@@ -144,7 +144,7 @@ internal sealed class DevConsolePanels
         Body = new ConsoleBody(_model, theme) { Surfaces = surfaces };
         ConsoleWindow = Panel(ConsolePanel, "Console", new UiRect(40f, 40f, 1180f, 600f), Body, new UiVec2(420f, 200f), surfaces);
 
-        CVars = new CVarBrowserBody(console.Variables, theme) { Surfaces = surfaces };
+        CVars = new CVarBrowserBody(console.Variables, theme) { Surfaces = surfaces, Console = console };
         CVarWindow = Panel(CVarPanel, "Variables", new UiRect(1240f, 40f, 620f, 720f), CVars, new UiVec2(460f, 240f), surfaces);
         CVarWindow.IsOpen = false;
 

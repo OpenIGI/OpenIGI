@@ -33,7 +33,10 @@ public readonly record struct PlayerCheatOptions(
         NoRecoil: false,
         NoReload: false);
 
-    /// <summary>Gets the cheats the variables ask for, or <see cref="Retail"/> while cheats are not enabled.</summary>
+    /// <summary>
+    /// Gets the cheats the variables ask for, or <see cref="Retail"/> while cheats are not enabled or a multiplayer
+    /// session holds them off (<see cref="PlayerCheatLock"/>).
+    /// </summary>
     public static PlayerCheatOptions Current => Activate(
         new PlayerCheatOptions(
             PlayerCheatCVars.Speed.Value,
@@ -45,7 +48,7 @@ public readonly record struct PlayerCheatOptions(
             PlayerCheatCVars.UnlockAllLevels.Value,
             PlayerCheatCVars.NoRecoil.Value,
             PlayerCheatCVars.NoReload.Value),
-        PlayerCheatCVars.CheatsEnabled.Value);
+        PlayerCheatCVars.CheatsEnabled.Value && !PlayerCheatLock.IsHeld);
 
     /// <summary>Applies the session's gate to a configured set.</summary>
     /// <param name="configured">The cheats the variables ask for.</param>

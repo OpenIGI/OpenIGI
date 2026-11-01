@@ -116,6 +116,12 @@ public static class BuiltInConsoleCommands
             return;
         }
 
+        if (!context.Console.MayAssign(variable, out string refusal))
+        {
+            context.Error(refusal);
+            return;
+        }
+
         variable.Reset();
         context.Print(ConsoleSystem.Describe(variable));
     }
@@ -285,6 +291,13 @@ public static class BuiltInConsoleCommands
 
     private static void Apply(ConsoleCommandContext context, ICVar variable, string value)
     {
+        // The same gate as typing the variable's name and a value: no way round a cheat's or a read-only's.
+        if (!context.Console.MayAssign(variable, out string refusal))
+        {
+            context.Error(refusal);
+            return;
+        }
+
         if (!variable.TrySetText(value, out string? reason))
         {
             context.Error(reason ?? $"'{value}' is not valid for {variable.Name}.");

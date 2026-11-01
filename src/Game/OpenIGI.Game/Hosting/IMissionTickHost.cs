@@ -74,9 +74,6 @@ public interface IMissionTickHost
     /// <summary>Gives the hand a presenter, once the all-weapons cheat has put weapons in it.</summary>
     void CheatWeaponsGranted();
 
-    /// <summary>Plays a proximity mine's arming cue.</summary>
-    /// <param name="origin">Where the mine is, in world units.</param>
-    void PlayMineTrigger(Vector3d origin);
 
 
     /// <summary>Plays and shows what the player's rounds struck, and lays the rockets' trails.</summary>
@@ -117,14 +114,14 @@ public interface IMissionTickHost
     bool IsInteractionViewActive { get; }
 
     /// <summary>Hands the view to the orbit behind a climbing or interacting body.</summary>
-    /// <param name="feet">The body's feet, in world units.</param>
+    /// <param name="origin">The body's origin (<c>Human+32</c>, which a climb carries), in world units.</param>
     /// <param name="facing">The yaw the body faces.</param>
     /// <param name="walls">What pulls the orbit in, or <see langword="null"/>.</param>
-    void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls);
+    void BeginInteractionView(Vector3d origin, float facing, WorldRayCast? walls);
 
     /// <summary>Moves the orbit's pivot after the body.</summary>
-    /// <param name="feet">The body's feet, in world units.</param>
-    void FollowInteractionView(Vector3d feet);
+    /// <param name="origin">The body's origin, in world units.</param>
+    void FollowInteractionView(Vector3d origin);
 
     /// <summary>Eases the orbit once on the tick.</summary>
     void TickInteractionView();

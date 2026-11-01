@@ -89,6 +89,78 @@ public sealed class SnapshotTests
     }
 
     [Fact]
+    public void The_cameras_and_the_wrecks_ride_whole_and_against_a_baseline()
+    {
+        ReplicatedCamera sweeping = new(Quantize.AngleToBits(-0.3f), Quantize.AngleToBits(0.5f), 0, ReplicatedCameraCondition.Powered | ReplicatedCameraCondition.Active);
+        ReplicatedCamera seeing = sweeping with { DetectionTime = 42, Flags = sweeping.Flags | ReplicatedCameraCondition.Seeing | ReplicatedCameraCondition.Moving };
+        Snapshot whole = new(20, [Human(1, 0, 0)], Cameras: [sweeping, sweeping], Wrecks: [0b0000_0001, 0, 0b1000_0000]);
+        Assert.True(RoundTrip(whole, baseline: null, out Snapshot? read));
+        Assert.Equal(whole.Cameras, read!.Cameras);
+        Assert.Equal(whole.Wrecks, read.Wrecks);
+
+        Assert.True(RoundTrip(whole with { Tick = 21 }, whole, out Snapshot? kept));
+        Assert.Equal(whole.Cameras, kept!.Cameras);
+        Assert.Equal(whole.Wrecks, kept.Wrecks);
+
+        Snapshot changed = new(22, [Human(1, 0, 0)], Cameras: [sweeping, seeing], Wrecks: [0b0000_0011, 0, 0b1000_0000]);
+        Assert.True(RoundTrip(changed, whole, out Snapshot? moved));
+        Assert.Equal(changed.Cameras, moved!.Cameras);
+        Assert.Equal(changed.Wrecks, moved.Wrecks);
+    }
+
+    [Fact]
+    public void The_projectiles_and_the_tasks_ride_whole_and_against_a_baseline()
+    {
+        Matrix3f frame = Matrix3f.FromRows(new Vector3f(0f, 1f, 0f), new Vector3f(-1f, 0f, 0f), new Vector3f(0f, 0f, 1f));
+        ReplicatedProjectile grenade = new(0, new Int3(100, -200, 300), Matrix3f.Identity, "135_01_1");
+        ReplicatedProjectile rocket = new(2, new Int3(-5000, 6000, 700), frame, "110_02_1");
+        Snapshot whole = new(20, [Human(1, 0, 0)], Projectiles: [grenade, rocket], Tasks: [1, 2, 3]);
+        Assert.True(RoundTrip(whole, baseline: null, out Snapshot? read));
+        Assert.Equal(2, read!.Projectiles!.Length);
+        Assert.Equal(rocket.Owner, read.Projectiles[1].Owner);
+        Assert.Equal(rocket.Position, read.Projectiles[1].Position);
+        Assert.Equal(rocket.Model, read.Projectiles[1].Model);
+        Assert.Equal(-1f, read.Projectiles[1].Orientation.M21, 2);
+        Assert.Equal(1f, read.Projectiles[0].Orientation.M33, 2);
+        Assert.Equal(whole.Tasks, read.Tasks);
+
+        Assert.True(RoundTrip(read with { Tick = 21 }, read, out Snapshot? kept));
+        Assert.Equal(read.Projectiles, kept!.Projectiles);
+        Assert.Equal(whole.Tasks, kept.Tasks);
+
+        Snapshot landed = new(22, [Human(1, 0, 0)], Tasks: [1, 2, 4]);
+        Assert.True(RoundTrip(landed, read, out Snapshot? moved));
+        Assert.Null(moved!.Projectiles);
+        Assert.Equal(landed.Tasks, moved.Tasks);
+    }
+
+    [Fact]
+    public void A_blast_rides_as_its_weapon_and_size()
+    {
+        ReplicatedImpact rocket = new(ImpactKind.Blast, 2, new Int3(5000, -6000, 700), default, ReplicatedBlastKind.Missile, 10240, 2048);
+        ReplicatedImpact launcher = new(ImpactKind.Blast, 0, new Int3(1, 2, 3), new Vector3f(0f, 0f, 1f), ReplicatedBlastKind.M203, 4096, 1024);
+        ReplicatedImpact wall = new(ImpactKind.Surface, 2, new Int3(1000, -2000, 300), new Vector3f(0.6f, 0.8f, 0f));
+        Snapshot after = new(31, [Human(1, 0, 0)], Impacts: [rocket, wall, launcher]);
+
+        Assert.True(RoundTrip(after, new Snapshot(30, [Human(1, 0, 0)]), out Snapshot? read));
+        Assert.Equal(rocket with { Direction = default }, read!.Impacts![0] with { Direction = default });
+        Assert.Equal(ImpactKind.Surface, read.Impacts[1].Kind);
+        Assert.Equal(ReplicatedBlastKind.M203, read.Impacts[2].Blast);
+        Assert.Equal(4096, read.Impacts[2].RadiusUnits);
+        Assert.Equal(1024, read.Impacts[2].FalloffUnits);
+        Assert.Equal(1f, read.Impacts[2].Direction.Z, 2);
+
+        // A mine's click and a grenade's knock: where, and whose.
+        ReplicatedImpact click = new(ImpactKind.MineArmed, 3, new Int3(10, 20, 30), default);
+        ReplicatedImpact knock = new(ImpactKind.Bounce, 0, new Int3(-10, -20, -30), default);
+        Assert.True(RoundTrip(new Snapshot(32, [Human(1, 0, 0)], Impacts: [click, knock]), read, out Snapshot? heard));
+        Assert.Equal(ImpactKind.MineArmed, heard!.Impacts![0].Kind);
+        Assert.Equal(3, heard.Impacts[0].Source);
+        Assert.Equal(click.Position, heard.Impacts[0].Position);
+        Assert.Equal(ImpactKind.Bounce, heard.Impacts[1].Kind);
+    }
+
+    [Fact]
     public void A_climbers_clip_time_and_counters_ride_a_delta()
     {
         Snapshot before = new(10, [Human(1, 0, 0)]);

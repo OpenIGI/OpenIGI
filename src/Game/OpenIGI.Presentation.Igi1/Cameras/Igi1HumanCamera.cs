@@ -98,8 +98,8 @@ public sealed class Igi1HumanCamera
     public double Distance => _distance;
 
     /// <summary>Takes the view in mode 3 (<c>0x483360</c>) or mode 5 (<c>0x483D40</c>).</summary>
-    /// <param name="look">The point it orbits and looks at — the body's eye, in world units.</param>
-    /// <param name="feet">The body's feet, which the eight hidden-body points stand around.</param>
+    /// <param name="look">The point it orbits and looks at — the body's eye (<c>0x465800</c>), in world units.</param>
+    /// <param name="feet">The body's task position, which the eight hidden-body points stand around (<c>0x483A00</c> reads <c>+32</c>).</param>
     /// <param name="facing">The body's heading; the orbit starts straight behind it.</param>
     /// <param name="walls">The world line test, or <see langword="null"/> for none.</param>
     /// <param name="death">Whether this is mode 5, over the dead player.</param>
@@ -119,12 +119,12 @@ public sealed class Igi1HumanCamera
         _hasTickPair = false;
         _presentedAlpha = 1f;
         IsActive = true;
-        BuildCamera(_look, _target);
+        _ = BuildCamera(_look, _target);
     }
 
     /// <summary>Moves the look point and the body with the tick, and runs the tick's easing and, in mode 5, collision.</summary>
     /// <param name="look">The body's eye, in world units.</param>
-    /// <param name="feet">The body's feet.</param>
+    /// <param name="feet">The body's task position.</param>
     public void Tick(Vector3d look, Vector3d feet)
     {
         if (!IsActive)
@@ -145,7 +145,11 @@ public sealed class Igi1HumanCamera
             Collide();
         }
 
-        BuildCamera(_look, _target);
+        // 0x4834D0's follow keeps the length it was pulled in to as the distance the next tick eases from.
+        if (BuildCamera(_look, _target) is { } pulled)
+        {
+            _distance = pulled;
+        }
     }
 
     /// <summary>Places the camera for a frame drawn between two ticks.</summary>
@@ -160,11 +164,11 @@ public sealed class Igi1HumanCamera
         _presentedAlpha = Math.Clamp(alpha, 0f, 1f);
         if (!_hasTickPair)
         {
-            BuildCamera(_look, _target);
+            _ = BuildCamera(_look, _target);
             return;
         }
 
-        BuildCamera(
+        _ = BuildCamera(
             Vector3d.Lerp(_lookPrevTick, _look, _presentedAlpha),
             _targetPrevTick + ((_target - _targetPrevTick) * _presentedAlpha));
     }
@@ -179,8 +183,20 @@ public sealed class Igi1HumanCamera
             return;
         }
 
-        _yaw += LookSettings.YawDelta(mouseDeltaX);
-        _pitch = Math.Clamp(_pitch + LookSettings.PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
+        // The two modes turn their orbit opposite ways. Mode 3 (0x483390) takes yaw -= dx: the camera swings round the
+        // body so the view turns with the mouse, mouse right looking right. Mode 5 (0x483D80, through 0x483EC0) takes
+        // yaw += dx and its pitch from the raw dy, the profile's invert never read. Our pitch is the original's negated
+        // (Back's z is +sin), so an uninverted PitchDelta is that same raw dy.
+        if (_death)
+        {
+            _yaw += LookSettings.YawDelta(mouseDeltaX);
+            _pitch = Math.Clamp(_pitch + (LookSettings with { InvertPitch = false }).PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
+        }
+        else
+        {
+            _yaw -= LookSettings.YawDelta(mouseDeltaX);
+            _pitch = Math.Clamp(_pitch + LookSettings.PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
+        }
         Present(_presentedAlpha);
     }
 
@@ -245,15 +261,18 @@ public sealed class Igi1HumanCamera
         }
     }
 
-    // 0x4834D0's follow: the camera at the target distance, pulled in only for a body hidden from it.
-    private void BuildCamera(Vector3d look, double target)
+    // 0x4834D0's follow: the camera at the target distance, pulled in only for a body hidden from it. Returns the length to
+    // the wall it was pulled in front of, or null when it stands at the target.
+    private double? BuildCamera(Vector3d look, double target)
     {
         Vector3d back = Back();
         Vector3d eye = look + (back * target);
+        double? pulled = null;
         if (_walls is { } walls && walls(look, eye, out WorldRayHit hit) && IsBodyHidden(walls, eye))
         {
             double reach = Vector3d.Distance(look, hit.Position);
             eye = look + (back * Math.Max(0.0, reach - KeepOffInUnits));
+            pulled = reach;
         }
 
         Vector3d toLook = look - eye;
@@ -261,6 +280,7 @@ public sealed class Igi1HumanCamera
         float yaw = (float)Math.Atan2(toLook.X, toLook.Y);
         float pitch = length > 0.0 ? (float)Math.Asin(toLook.Z / length) : 0f;
         _camera = new Camera3D(eye / UnitsPerMetre, Camera3D.LookRotation(yaw, pitch));
+        return pulled;
     }
 
     // 0x483A00: whether every line from the eight points around the body to the camera is blocked.

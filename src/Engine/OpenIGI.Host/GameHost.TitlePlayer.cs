@@ -332,6 +332,13 @@ public sealed partial class GameHost
                 return;
             }
 
+            // A menu script can do what any menu entry can -- end a mission, load another -- so not in a session.
+            if (Game.Player.PlayerCheatLock.IsHeld)
+            {
+                context.Error("menu_action is off in co-op.");
+                return;
+            }
+
             menus.RunAction(string.Join(' ', context.Arguments));
         }, "<expression...>");
 

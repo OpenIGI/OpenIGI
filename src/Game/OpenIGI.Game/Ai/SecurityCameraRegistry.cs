@@ -1,6 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.World;
+using OpenIGI.Net;
 using OpenIGI.Scripting.Runtime;
 using static OpenIGI.Game.World.DeclaredTaskValues;
 
@@ -50,12 +52,35 @@ public readonly record struct SecurityCameraSubject(
 /// <param name="TargetAlive">Whether the player is alive.</param>
 /// <param name="PlayerOnCamerasSide">Whether the player is on team 1, the cameras' side.</param>
 /// <param name="Soldiers">Every live soldier in the global human list's order (<c>0x45FE30</c>).</param>
+/// <param name="Partners">
+/// A co-op session's other players, offered after the player as the humans they are: the detector (<c>0x489750</c>)
+/// registers every human, not only the first player, so a camera sees a partner as it sees the player.
+/// </param>
 public readonly record struct SecurityCameraScan(
     Vector3d TargetFeet,
     bool TargetCrouching,
     bool TargetAlive,
     bool PlayerOnCamerasSide,
-    IReadOnlyList<SecurityCameraSubject> Soldiers);
+    IReadOnlyList<SecurityCameraSubject> Soldiers,
+    IReadOnlyList<SecurityCameraSubject>? Partners = null)
+{
+    /// <summary>Gets a player's subject as a lens tests it: its mark is above the feet, lower while crouching.</summary>
+    /// <param name="key">Who it is.</param>
+    /// <param name="feet">Its feet, in engine units.</param>
+    /// <param name="crouching">Whether it is crouching.</param>
+    /// <param name="camerasSide">Whether it is on team 1, the cameras' side.</param>
+    /// <param name="alive">Whether it is alive.</param>
+    /// <returns>The subject.</returns>
+    public static SecurityCameraSubject PlayerSubject(object key, Vector3d feet, bool crouching, bool camerasSide, bool alive) =>
+        new(
+            key,
+            new Vector3d(
+                feet.X,
+                feet.Y,
+                feet.Z + (crouching ? SecurityCamera.CrouchingTargetHeight : SecurityCamera.StandingTargetHeight)),
+            camerasSide,
+            alive);
+}
 
 /// <summary>The lens lamp selected by retail <c>SCameraLens</c>'s render callback.</summary>
 public enum SecurityCameraLamp
@@ -267,6 +292,56 @@ public sealed class SecurityCamera
     /// <summary>Gets whether the confirmed target is one of the camera's own side fallen.</summary>
     public bool IsBodyTarget { get; private set; }
 
+    /// <summary>Gets the camera as a co-op server sends it to its clients.</summary>
+    /// <returns>Its state.</returns>
+    public ReplicatedCamera Replicate()
+    {
+        ReplicatedCameraCondition flags = ReplicatedCameraCondition.None;
+        if (IsPowered) { flags |= ReplicatedCameraCondition.Powered; }
+        if (IsActive) { flags |= ReplicatedCameraCondition.Active; }
+        if (IsExploded) { flags |= ReplicatedCameraCondition.Exploded; }
+        if (IsDetection) { flags |= ReplicatedCameraCondition.Detection; }
+        if (IsLastDetection) { flags |= ReplicatedCameraCondition.LastDetection; }
+        if (Beep != SecurityCameraBeep.None) { flags |= ReplicatedCameraCondition.Seeing; }
+        if (IsBodyTarget) { flags |= ReplicatedCameraCondition.Body; }
+        if (IsMoving) { flags |= ReplicatedCameraCondition.Moving; }
+        return new ReplicatedCamera(
+            Quantize.AngleToBits(CurrentAlpha),
+            Quantize.AngleToBits(CurrentGamma),
+            (byte)Math.Clamp(DetectionTime, 0, byte.MaxValue),
+            flags);
+    }
+
+    // A co-op client's lens, posed by the server's as the newest snapshot has it instead of scanning: the client's copy of
+    // the level holds only its own player, and a camera that answered to it alone would be red for a joiner no alarm heard
+    // and green for a host the server's had seen. The lamp keeps its own pulse.
+    internal void TickMirrored(in ReplicatedCamera state)
+    {
+        _previousAlpha = CurrentAlpha;
+        _previousGamma = CurrentGamma;
+        PulseLamp();
+        ReplicatedCameraCondition flags = state.Flags;
+        if ((flags & ReplicatedCameraCondition.Exploded) != 0 && !IsExploded)
+        {
+            Destroy();
+        }
+
+        IsPowered = (flags & ReplicatedCameraCondition.Powered) != 0;
+        IsActive = (flags & ReplicatedCameraCondition.Active) != 0 && !IsExploded;
+        IsDetection = (flags & ReplicatedCameraCondition.Detection) != 0;
+        IsLastDetection = (flags & ReplicatedCameraCondition.LastDetection) != 0;
+        IsBodyTarget = (flags & ReplicatedCameraCondition.Body) != 0;
+        IsMoving = (flags & ReplicatedCameraCondition.Moving) != 0;
+        DetectionTime = state.DetectionTime;
+        Beep = (flags & ReplicatedCameraCondition.Seeing) == 0 ? SecurityCameraBeep.None
+            : !IsDetection ? SecurityCameraBeep.Suspicious
+            : IsBodyTarget ? SecurityCameraBeep.BodyDetected
+            : SecurityCameraBeep.Detected;
+        CurrentAlpha = Quantize.AngleFromBits(state.Alpha);
+        CurrentGamma = Quantize.AngleFromBits(state.Gamma);
+        RefreshTransform();
+    }
+
     internal void Tick(
         bool powered,
         IReadOnlyList<SecurityCameraSubject> subjects,
@@ -274,15 +349,7 @@ public sealed class SecurityCamera
     {
         _previousAlpha = CurrentAlpha;
         _previousGamma = CurrentGamma;
-        if (_lampPulseCountdown > 0)
-        {
-            _lampPulseCountdown--;
-        }
-        else
-        {
-            _lampPulseCountdown = 7;
-            _lampPulseLarge = !_lampPulseLarge;
-        }
+        PulseLamp();
 
         IsLastDetection = IsDetection;
         IsDetection = false;
@@ -374,6 +441,19 @@ public sealed class SecurityCamera
         }
 
         RefreshTransform();
+    }
+
+    private void PulseLamp()
+    {
+        if (_lampPulseCountdown > 0)
+        {
+            _lampPulseCountdown--;
+        }
+        else
+        {
+            _lampPulseCountdown = 7;
+            _lampPulseLarge = !_lampPulseLarge;
+        }
     }
 
     private void Track(Vector3d target, Vector3d origin, Matrix3f orientation)
@@ -503,6 +583,8 @@ public sealed class SecurityCameraRegistry
 
     private readonly List<SecurityCamera> _cameras = [];
     private readonly Dictionary<GameTask, SecurityCamera> _byTask = [];
+    private readonly Dictionary<SecurityCamera, int> _order = [];
+    private ReplicatedCamera[]? _mirror;
     private readonly List<Control> _controls = [];
     private readonly List<SecurityCameraSubject> _subjects = [];
     private readonly LevelExpressionRuntime _expressions;
@@ -519,6 +601,37 @@ public sealed class SecurityCameraRegistry
 
     /// <summary>Gets the number of <c>SCameraControl</c> aggregators.</summary>
     public int ControlCount => _controls.Count;
+
+    /// <summary>
+    /// Gets or sets whether the lenses take their state from a co-op server's (<see cref="Mirror"/>) instead of scanning:
+    /// a client's. Their controls still read them as ever.
+    /// </summary>
+    public bool Mirrored { get; set; }
+
+    /// <summary>Raised on a client when the server's word is that an intact lens here was destroyed, before it is marked so.</summary>
+    public Action<SecurityCamera>? MirroredDestruction { get; set; }
+
+    /// <summary>Gets every camera as a co-op server sends them, in the level's own order.</summary>
+    /// <returns>Their states, or <see langword="null"/> when the level has none.</returns>
+    public ReplicatedCamera[]? Replicate()
+    {
+        if (_cameras.Count == 0)
+        {
+            return null;
+        }
+
+        ReplicatedCamera[] states = new ReplicatedCamera[Math.Min(_cameras.Count, ReplicatedCamera.MaxPerSnapshot)];
+        for (int i = 0; i < states.Length; i++)
+        {
+            states[i] = _cameras[i].Replicate();
+        }
+
+        return states;
+    }
+
+    /// <summary>Takes the server's cameras, as the newest snapshot has them, for each lens's next update to be posed by.</summary>
+    /// <param name="states">Their states, in the level's own order.</param>
+    public void Mirror(ReplicatedCamera[]? states) => _mirror = states;
 
     /// <summary>Collects cameras, exports their retail script variables and prepares their controllers.</summary>
     public static SecurityCameraRegistry Build(
@@ -601,6 +714,24 @@ public sealed class SecurityCameraRegistry
     public void Tick(Vector3d targetFeet, bool targetCrouching, bool targetAlive) =>
         Tick(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide: false, []);
 
+    /// <summary>Advances all lenses against what a scan offers, then the <c>SCameraControl</c> expressions that consume them.</summary>
+    /// <param name="scan">The player, its partners and the soldiers.</param>
+    public void Tick(SecurityCameraScan scan)
+    {
+        ArgumentNullException.ThrowIfNull(scan.Soldiers);
+        List<SecurityCameraSubject> subjects = BuildSubjects(scan);
+        foreach (SecurityCamera camera in _cameras)
+        {
+            TickLens(camera, subjects);
+            UpdatePower(camera);
+        }
+
+        foreach (Control control in _controls)
+        {
+            UpdateDetection(control);
+        }
+    }
+
     /// <summary>Advances all lenses, then the <c>SCameraControl</c> expressions that consume them.</summary>
     /// <param name="targetFeet">The player's feet, in engine units.</param>
     /// <param name="targetCrouching">Whether the player is crouching, which lowers the mark.</param>
@@ -618,28 +749,43 @@ public sealed class SecurityCameraRegistry
         IReadOnlyList<SecurityCameraSubject> soldiers)
     {
         ArgumentNullException.ThrowIfNull(soldiers);
-
-        List<SecurityCameraSubject> subjects = BuildSubjects(
-            new SecurityCameraScan(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide, soldiers));
-        foreach (SecurityCamera camera in _cameras)
-        {
-            TickLens(camera, subjects);
-            UpdatePower(camera);
-        }
-
-        foreach (Control control in _controls)
-        {
-            UpdateDetection(control);
-        }
+        Tick(new SecurityCameraScan(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide, soldiers));
     }
 
-    // The lens's update (0x441770), against the holder's power as last tick left it.
-    private void TickLens(SecurityCamera camera, IReadOnlyList<SecurityCameraSubject> subjects) =>
-        camera.Tick(camera.IsPowered, subjects, _sight);
+    // The lens's update (0x441770), against the holder's power as last tick left it -- or, on a co-op client, the server's.
+    private void TickLens(SecurityCamera camera, IReadOnlyList<SecurityCameraSubject> subjects)
+    {
+        if (!Mirrored)
+        {
+            camera.Tick(camera.IsPowered, subjects, _sight);
+            return;
+        }
 
-    // The rest of the holder's update (0x442610): off once exploded, otherwise its On Expression when it has one.
+        // Nothing from the server yet: the lens holds as it stands.
+        int at = _order[camera];
+        if (_mirror is not { } states || at >= states.Length)
+        {
+            return;
+        }
+
+        ReplicatedCamera state = states[at];
+        if ((state.Flags & ReplicatedCameraCondition.Exploded) != 0 && !camera.IsExploded)
+        {
+            MirroredDestruction?.Invoke(camera);
+        }
+
+        camera.TickMirrored(state);
+    }
+
+    // The rest of the holder's update (0x442610): off once exploded, otherwise its On Expression when it has one. A client's
+    // holder takes its power from the server's with the lens.
     private void UpdatePower(SecurityCamera camera)
     {
+        if (Mirrored)
+        {
+            return;
+        }
+
         if (camera.IsExploded)
         {
             camera.IsPowered = false;
@@ -664,22 +810,18 @@ public sealed class SecurityCameraRegistry
         }
     }
 
-    // What 0x489750 is offered: the player, the soldiers in the global human list's order, then every camera (0x442A30).
+    // What 0x489750 is offered: the player, a co-op session's other players, the soldiers in the global human list's order,
+    // then every camera (0x442A30).
     private List<SecurityCameraSubject> BuildSubjects(SecurityCameraScan scan)
     {
-        Vector3d targetFeet = scan.TargetFeet;
-        bool targetCrouching = scan.TargetCrouching;
         _subjects.Clear();
-        _subjects.Add(new SecurityCameraSubject(
-            PlayerKey,
-            new Vector3d(
-                targetFeet.X,
-                targetFeet.Y,
-                targetFeet.Z + (targetCrouching
-                    ? SecurityCamera.CrouchingTargetHeight
-                    : SecurityCamera.StandingTargetHeight)),
-            scan.PlayerOnCamerasSide,
-            scan.TargetAlive));
+        _subjects.Add(SecurityCameraScan.PlayerSubject(
+            PlayerKey, scan.TargetFeet, scan.TargetCrouching, scan.PlayerOnCamerasSide, scan.TargetAlive));
+        if (scan.Partners is { } partners)
+        {
+            _subjects.AddRange(partners);
+        }
+
         _subjects.AddRange(scan.Soldiers);
         foreach (SecurityCamera camera in _cameras)
         {
@@ -732,6 +874,7 @@ public sealed class SecurityCameraRegistry
             && string.Equals(task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal))
         {
             SecurityCamera camera = new(declared);
+            _order[camera] = _cameras.Count;
             _cameras.Add(camera);
             _byTask[task] = camera;
             variables.BindBool(task, "isDetection", () => camera.IsDetection, value => camera.IsDetection = value);

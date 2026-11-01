@@ -396,6 +396,36 @@ public sealed class RetailInteractionInventoryTests
             emptyValue: false));
     }
 
+    /// <summary>
+    /// The pick-lock entry (0x40BED0) picks the door's side along its local Y and stands the body out along the same
+    /// axis, so a player picking from anywhere on one side, centred or off to either edge, kneels on that side.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_picked_door_keeps_the_player_on_the_side_they_picked_it_from()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(3);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, DoorRegistry.Build(root), variables);
+        WorldInteraction[] doors = [.. interactions.Items.Where(static item => item.Type == InteractionActivateType.Door)];
+        Assert.NotEmpty(doors);
+
+        foreach (WorldInteraction door in doors)
+        {
+            Matrix3f toWorld = door.Orientation.Transposed();
+            foreach (double side in (double[])[-4096.0, 4096.0])
+            {
+                foreach (double across in (double[])[-1536.0, 0.0, 1536.0])
+                {
+                    Vector3d from = door.Anchor + toWorld.Transform(new Vector3d(across, side, 0.0));
+                    (Vector3d pose, _) = door.BodyPose(from);
+                    double poseSide = door.Orientation.Transform(pose - door.Anchor).Y;
+                    Assert.True(
+                        Math.Sign(poseSide) == Math.Sign(side),
+                        $"door {door.Task.Id} from local ({across}, {side}) knelt at local Y {poseSide}");
+                }
+            }
+        }
+    }
+
     [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {

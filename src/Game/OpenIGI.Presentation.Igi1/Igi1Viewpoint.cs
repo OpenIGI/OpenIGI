@@ -23,10 +23,18 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     private Igi1HumanCamera _interaction = new();
     private readonly TeammateView _teammate = new();
     private WorldRayCast? _deathWalls;
-    private Vector3d _interactionFeet;
+    private Vector3d _interactionOrigin;
 
     // Where the orbit looks: the body's eye (HumanCamera's info.pos, HumanView_GetEye), standing over its feet.
     private static Vector3d EyeOver(Vector3d feet) => new(feet.X, feet.Y, feet.Z + PlayerBody.StandingEyeHeight);
+
+    // The orbit's look point over a climbing or interacting body: HumanView_GetEye (0x465800), which the view update
+    // takes from Human_GetEyePos (0x465820) -- the Human's origin raised 2826.24. A climb carries that origin, not the
+    // feet, so the feet's full eye height put the pivot 3877.2 too high.
+    private static Vector3d EyeOverOrigin(Vector3d origin) => new(origin.X, origin.Y, origin.Z + PlayerBody.StandingEyeOverOrigin);
+
+    // The human's origin over its feet: the task position HumanCamera_IsBlocked (0x483A00) stands its eight points around.
+    private static Vector3d OriginOver(Vector3d feet) => new(feet.X, feet.Y, feet.Z + PlayerBody.StandingOriginHeight);
 
     // A corpse's feet under the centre the death camera follows.
     private static Vector3d FeetUnder(Vector3d centre) => new(centre.X, centre.Y, centre.Z - (PlayerBody.StandingEyeHeight * 0.5));
@@ -138,17 +146,17 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public void ControlInteractionView(float deltaX, float deltaY) => _interaction.Control(deltaX, deltaY);
 
     /// <inheritdoc/>
-    public void BeginInteractionView(Vector3d feet, float facing, WorldRayCast? walls)
+    public void BeginInteractionView(Vector3d origin, float facing, WorldRayCast? walls)
     {
-        _interactionFeet = feet;
-        _interaction.Begin(EyeOver(feet), feet, facing, walls, death: false);
+        _interactionOrigin = origin;
+        _interaction.Begin(EyeOverOrigin(origin), origin, facing, walls, death: false);
     }
 
     /// <inheritdoc/>
-    public void FollowInteractionView(Vector3d feet) => _interactionFeet = feet;
+    public void FollowInteractionView(Vector3d origin) => _interactionOrigin = origin;
 
     /// <inheritdoc/>
-    public void TickInteractionView() => _interaction.Tick(EyeOver(_interactionFeet), _interactionFeet);
+    public void TickInteractionView() => _interaction.Tick(EyeOverOrigin(_interactionOrigin), _interactionOrigin);
 
     /// <inheritdoc/>
     public void ResetInteractionView() => _interaction.Reset();
@@ -158,7 +166,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     {
         ArgumentNullException.ThrowIfNull(walls);
         _deathWalls = walls;
-        _death.Begin(EyeOver(position), position, facing, walls, death: true);
+        _death.Begin(EyeOver(position), OriginOver(position), facing, walls, death: true);
     }
 
     /// <inheritdoc/>
@@ -166,7 +174,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     {
         _teammate.Reset();
         Vector3d feet = FeetUnder(centre);
-        _death.Tick(EyeOver(feet), feet);
+        _death.Tick(EyeOver(feet), OriginOver(feet));
     }
 
     /// <inheritdoc/>

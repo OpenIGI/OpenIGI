@@ -25,6 +25,23 @@ public sealed class Igi1HumanCameraTests
         Assert.Equal(Eye.Z, eye.Z, 3);
     }
 
+    /// <summary>
+    /// Mouse right turns the ladder view right (<c>0x483390</c>: yaw -= dx), swinging the camera out to the body's left;
+    /// the death orbit turns the other way (<c>0x483D80</c>: yaw += dx).
+    /// </summary>
+    [Theory]
+    [InlineData(false, -1.0)]
+    [InlineData(true, 1.0)]
+    public void MouseRightSwingsTheLadderCameraLeftAndTheDeathCameraRight(bool death, double side)
+    {
+        Igi1HumanCamera camera = new();
+        camera.Begin(Eye, Feet, facing: 0f, walls: null, death);
+        camera.Control(mouseDeltaX: 100f, mouseDeltaY: 0f);
+
+        // Facing zero looks along +Y from a camera down -Y; turned, the camera leaves the Y axis.
+        Assert.Equal(side, Math.Sign(camera.Camera.Position.X));
+    }
+
     /// <summary>A wall between the eye and the camera pulls it in only when it hides the whole body (<c>0x483A00</c>).</summary>
     [Fact]
     public void ItPullsInOnlyWhenTheBodyIsHidden()

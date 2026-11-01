@@ -311,8 +311,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // A level the walk does not reach updates its cameras here, after everything else.
         if (!mission.CamerasInWalk && mission.SecurityCameras is { } cameras)
         {
-            SecurityCameraScan scan = CameraScanNow();
-            cameras.Tick(scan.TargetFeet, scan.TargetCrouching, scan.TargetAlive, scan.PlayerOnCamerasSide, scan.Soldiers);
+            cameras.Tick(CameraScanNow());
             foreach (SecurityCamera camera in cameras.Cameras)
             {
                 CarryCameraHead(camera);
@@ -347,11 +346,10 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // it does nothing until the player has died and the body was posed.
         soldiers?.TickPlayerBody();
 
-        // A simulated corpse decides for itself where it ends up, so the death camera has to
-        // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
-        // you were shot frames the whole of it.
-        // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick: the body's
-        // own eye height over where it fell when nothing simulates the corpse.
+        // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick. It orbits the
+        // human's own eye -- Human_GetEyePos (0x465820), the origin raised 2826.24, read through HumanView_GetEye -- not a
+        // simulated corpse: a ragdoll wedged against a tunnel wall carried the orbit out of the room, and from there the
+        // sector cull drew nothing but fog.
         // A co-op player who is down sees through a teammate still standing instead: its eye, where it looks.
         if (mission.IsPlayerDead && mission.Player is { } fallen)
         {
@@ -362,7 +360,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             else
             {
                 Vector3d feet = fallen.Body.Position;
-                host.FollowCorpse(soldiers?.PlayerRagdollCentre ?? new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
+                host.FollowCorpse(new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
             }
         }
 
@@ -412,12 +410,30 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 : null;
             // Its rounds are its own in the server's record, so the client that fired them doesn't show them twice.
             mission.ImpactSource = other.Entity;
+            other.CommandRan ??= ResolvePartnerCommand;
             other.Run(mission.PlayerTicks, host.Ground, LadderRung);
             mission.PartnerRan?.Invoke(other);
             mission.ImpactSource = 0;
         }
 
         mission.PlayerTicks++;
+    }
+
+    // What one of a partner's commands set off, resolved as the mission's own player's is: the soldiers hear its throws and
+    // blasts, its grenades, mines, rockets and launcher rounds go off, and its rounds reach the panes, barrels, speakers,
+    // cameras and switches they struck. Each command's, since the next clears them; the soldiers stand where they are now.
+    private void ResolvePartnerCommand(Multiplayer.Igi1NetworkPlayer partner)
+    {
+        PlayerCamera rig = partner.Player;
+        if (mission.Soldiers is { } soldiers)
+        {
+            NotifyGrenadeAiEvents(rig, soldiers);
+        }
+
+        blasts.ResolveDetonations(rig);
+        blasts.ApplyRounds(rig);
+        audio.PlayGrenadeBounces(rig);
+        blasts.RecordBounces(rig);
     }
 
     /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
@@ -452,6 +468,10 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         if (host.ComputerOpen)
         {
             TickMapComputer(player);
+
+            // The computer is a task under the player that pauses nothing (Computer_Create, 0x46BB10): what its weapons put
+            // in the world is the level's own (Level_GetDynamic), and flies, rests and goes off while the map is up.
+            player.TickProjectilesAlone();
         }
         else
         {
@@ -521,28 +541,39 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
-        foreach (Vector3d origin in mission.Player.Grenades.Thrown)
+        NotifyGrenadeAiEvents(mission.Player, soldiers);
+        foreach (MissileDetonation blast in mission.VehicleMissiles.Detonations)
+        {
+            soldiers.NotifyExplosion(blast.Position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
+        }
+    }
+
+    // One player's throws, bounces, mine triggers and blasts, as the soldiers hear them.
+    private void NotifyGrenadeAiEvents(PlayerCamera rig, SoldierSimulation soldiers)
+    {
+        foreach (Vector3d origin in rig.Grenades.Thrown)
         {
             soldiers.NotifyGrenadeThrown(origin);
         }
 
-        mission.Player.Grenades.ClearThrownEvents();
+        rig.Grenades.ClearThrownEvents();
 
-        foreach (Vector3d origin in mission.Player.Grenades.Bounces)
+        foreach (Vector3d origin in rig.Grenades.Bounces)
         {
             soldiers.NotifyGrenadeLand(origin);
         }
 
         // IGI1's proximity task emits proxy_arm on the first human entering its activation radius.
         // This is a one-shot rising-edge cue, not the mine's placement/arming sound.
-        foreach (Vector3d origin in mission.Player.Grenades.MineTriggers)
+        foreach (Vector3d origin in rig.Grenades.MineTriggers)
         {
-            host.PlayMineTrigger(origin);
+            audio.PlayMineArm(origin);
+            blasts.RecordMineArmed(origin);
         }
 
-        mission.Player.Grenades.ClearMineTriggerEvents();
+        rig.Grenades.ClearMineTriggerEvents();
 
-        foreach (GrenadeDetonation blast in mission.Player.Grenades.Detonations)
+        foreach (GrenadeDetonation blast in rig.Grenades.Detonations)
         {
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
@@ -556,21 +587,16 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         // A mine's is its ExplodeObject's (0x481A60), heard over 25 m.
-        foreach (PlacedMine mine in mission.Player.Grenades.MineBlasts)
+        foreach (PlacedMine mine in rig.Grenades.MineBlasts)
         {
             soldiers.NotifyExplosion(mine.BlastPoint, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
         }
 
-        foreach (MissileDetonation blast in mission.Player.Missiles.Detonations)
+        foreach (MissileDetonation blast in rig.Missiles.Detonations)
         {
             soldiers.NotifyExplosion(blast.Position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
         }
-        foreach (MissileDetonation blast in mission.VehicleMissiles.Detonations)
-        {
-            soldiers.NotifyExplosion(blast.Position, Igi1HumanAi.LargeExplosionEventRadiusInUnits);
-        }
-
-        foreach (M203Detonation blast in mission.Player.M203.Detonations)
+        foreach (M203Detonation blast in rig.M203.Detonations)
         {
             soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
@@ -660,20 +686,43 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
     // What a lens scans as it updates (0x489750): every human and every camera, so a guard's body or a destroyed camera
     // in view raises the alarm at once, as the player does after 90 ticks. In the fly-through the free camera stands in
-    // for the player's feet.
+    // for the player's feet. A co-op session's other players are humans too, seen as the player is: the detector
+    // registers every human, and a camera that knew only the host's player let a joiner walk past it.
     private SecurityCameraScan CameraScanNow()
     {
         bool walking = Walking();
         Vector3d feet = walking
             ? PlayerFeet
             : host.FreeCameraPosition ?? PlayerEyeIfAny ?? default;
+        bool camerasSide = (mission.Soldiers?.PlayerTeam ?? 0) == 1;
         return new SecurityCameraScan(
             feet,
             walking && PlayerCrouched,
             TargetAlive: !mission.IsPlayerDead,
-            PlayerOnCamerasSide: (mission.Soldiers?.PlayerTeam ?? 0) == 1,
-            mission.Soldiers?.CameraSubjects() ?? []);
+            PlayerOnCamerasSide: camerasSide,
+            mission.Soldiers?.CameraSubjects() ?? [],
+            PartnerCameraSubjects(camerasSide));
     }
+
+    // The partners as a lens scans them, each where its body stands now.
+    private List<SecurityCameraSubject>? PartnerCameraSubjects(bool camerasSide)
+    {
+        if (mission.NetworkPlayers.Count == 0)
+        {
+            return null;
+        }
+
+        _partnerSubjects.Clear();
+        foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+        {
+            _partnerSubjects.Add(SecurityCameraScan.PlayerSubject(
+                partner, partner.Player.Body.Position, partner.Player.IsCrouched, camerasSide, alive: !partner.IsDead));
+        }
+
+        return _partnerSubjects;
+    }
+
+    private readonly List<SecurityCameraSubject> _partnerSubjects = [];
 
     // A camera's head collides where its update left it.
     // A rung the mission's own player crossed, sounded where it stands.
@@ -743,6 +792,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             blasts.ResolveMissileDetonations();
             blasts.ResolveM203Detonations();
             audio.PlayGrenadeBounces();
+            blasts.RecordBounces(player);
             audio.SoundMissiles();
 
             // The alarm speakers, following their own level expressions -- the siren the
@@ -765,7 +815,31 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         else if (mission.IsPlayerDead)
         {
             host.StepWorldEffects();
+            StepLevelWhileDown(player);
         }
+    }
+
+    // The level runs on while the mission's own player lies dead -- through the death camera alone, for a teammate's revive
+    // in co-op: the grenades, mines, rockets and launcher rounds are the level's own tasks (Grenade_Throw, Mine_New,
+    // Missile_New and M203_New all make them under Level_GetDynamic), the soldiers' lobs among them, which fly in this
+    // player's pool; then the vehicles' rockets, the fuses and wrecks of what is burning, the minefields, the smoke, the
+    // sirens and the alarm lights.
+    private void StepLevelWhileDown(PlayerCamera player)
+    {
+        player.TickProjectilesAlone();
+        mission.TickVehicleMissiles();
+        NotifyGrenadeAiEvents();
+        blasts.ResolveGrenadeDetonations();
+        blasts.ResolveMissileDetonations();
+        blasts.ResolveM203Detonations();
+        audio.PlayGrenadeBounces();
+        blasts.RecordBounces(player);
+        audio.SoundMissiles();
+        blasts.TickDestructibles();
+        blasts.TickMineFields();
+        mission.SmokePlumes?.Tick();
+        audio.SoundAlarms();
+        mission.AlarmSpeakers?.RunLights();
     }
 
     // Tops the player's inventory up to the whole roster while the all-weapons cheat is in force. Runs
