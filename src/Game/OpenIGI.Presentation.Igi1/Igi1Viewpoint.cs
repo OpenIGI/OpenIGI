@@ -33,6 +33,9 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     // feet, so the feet's full eye height put the pivot 3877.2 too high.
     private static Vector3d EyeOverOrigin(Vector3d origin) => new(origin.X, origin.Y, origin.Z + PlayerBody.StandingEyeOverOrigin);
 
+    // The human's origin over its feet: the task position HumanCamera_IsBlocked (0x483A00) stands its eight points around.
+    private static Vector3d OriginOver(Vector3d feet) => new(feet.X, feet.Y, feet.Z + PlayerBody.StandingOriginHeight);
+
     // A corpse's feet under the centre the death camera follows.
     private static Vector3d FeetUnder(Vector3d centre) => new(centre.X, centre.Y, centre.Z - (PlayerBody.StandingEyeHeight * 0.5));
     private int _thirdPersonMilliseconds;
@@ -163,7 +166,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     {
         ArgumentNullException.ThrowIfNull(walls);
         _deathWalls = walls;
-        _death.Begin(EyeOver(position), position, facing, walls, death: true);
+        _death.Begin(EyeOver(position), OriginOver(position), facing, walls, death: true);
     }
 
     /// <inheritdoc/>
@@ -171,7 +174,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     {
         _teammate.Reset();
         Vector3d feet = FeetUnder(centre);
-        _death.Tick(EyeOver(feet), feet);
+        _death.Tick(EyeOver(feet), OriginOver(feet));
     }
 
     /// <inheritdoc/>

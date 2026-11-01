@@ -47,17 +47,6 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
     /// <remarks>Set once the player has died and <see cref="KillPlayerBody"/> has run; the death camera reads it.</remarks>
     bool IsPlayerBodyActive { get; }
 
-    /// <summary>Gets where the player's corpse actually is, in engine units — what the death camera frames.</summary>
-    /// <value>
-    /// The body's centre of mass, or <see langword="null"/> when no ragdoll is running — in which case
-    /// the death camera's own fixed point off the authoritative body is still the right answer.
-    /// </value>
-    /// <remarks>
-    /// Without this the camera keeps looking at the point the retail clip moved the body to, which once
-    /// physics is drawing it somewhere else means framing an empty patch of floor.
-    /// </remarks>
-    Vector3d? PlayerRagdollCentre { get; }
-
     /// <summary>Gets the number of soldiers that resolved and will draw.</summary>
     int Count { get; }
 

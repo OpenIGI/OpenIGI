@@ -346,11 +346,10 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // it does nothing until the player has died and the body was posed.
         soldiers?.TickPlayerBody();
 
-        // A simulated corpse decides for itself where it ends up, so the death camera has to
-        // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
-        // you were shot frames the whole of it.
-        // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick: the body's
-        // own eye height over where it fell when nothing simulates the corpse.
+        // The death camera eases and collides on this tick too (HumanCamera mode 5), so it is fed every tick. It orbits the
+        // human's own eye -- Human_GetEyePos (0x465820), the origin raised 2826.24, read through HumanView_GetEye -- not a
+        // simulated corpse: a ragdoll wedged against a tunnel wall carried the orbit out of the room, and from there the
+        // sector cull drew nothing but fog.
         // A co-op player who is down sees through a teammate still standing instead: its eye, where it looks.
         if (mission.IsPlayerDead && mission.Player is { } fallen)
         {
@@ -361,7 +360,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             else
             {
                 Vector3d feet = fallen.Body.Position;
-                host.FollowCorpse(soldiers?.PlayerRagdollCentre ?? new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
+                host.FollowCorpse(new Vector3d(feet.X, feet.Y, feet.Z + (PlayerBody.StandingEyeHeight * 0.5)));
             }
         }
 
