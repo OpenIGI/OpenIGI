@@ -325,13 +325,16 @@ public sealed class WorldInteraction
     /// <c>0x40C670</c>, <c>0x40C970</c> and <c>0x40CF70</c>. The interaction animations were authored
     /// against these roots; playing them at the player's arbitrary standing point leaves the hands
     /// visibly detached from the lock, cabinet, keyboard or gun.
+    /// The door picks its side along its local Y, the axis it then stands the body 2949.12 units out along
+    /// (<c>0x40BFE5</c> dots the body's offset with that column), so the pick keeps the player on the side they
+    /// came from. Testing local X there put a player standing off the door's centre on its far side.
     /// </remarks>
     public (Vector3d Position, float Facing) BodyPose(Vector3d from)
     {
         Vector3d local = Orientation.Transform(from - Anchor);
         return Type switch
         {
-            InteractionActivateType.Door when local.X >= 0.0 =>
+            InteractionActivateType.Door when local.Y >= 0.0 =>
                 Pose(new Vector3d(-409.6, 2949.12, 0.0), Facing + MathF.PI),
             InteractionActivateType.Door =>
                 Pose(new Vector3d(-409.6, -2949.12, 0.0), Facing),
