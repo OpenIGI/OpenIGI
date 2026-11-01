@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
 
@@ -36,6 +37,16 @@ public interface IPlacementVisibility
     /// <returns><see langword="false"/> when the title's culling leaves it out.</returns>
     bool IsVisible(WorldPlacement placement);
 
+    /// <summary>Gets a value indicating whether a placement drawn away from where it was placed is drawn this frame.</summary>
+    /// <param name="placement">The placement as the walk produced it.</param>
+    /// <param name="drawnAt">Where it is drawn this frame, in metres -- a lift's car, a door or a vehicle that has moved.</param>
+    /// <returns><see langword="false"/> when the title's culling leaves it out.</returns>
+    /// <remarks>
+    /// A moving object's cube entry moves with it, so the original's gate measures it where it stands now, not where the level
+    /// put it. A title that cannot tell answers as for the placement itself.
+    /// </remarks>
+    bool IsVisible(WorldPlacement placement, Vector3d drawnAt) => IsVisible(placement);
+
     /// <summary>Gets the part of the view a placement is drawn through this frame, or <see langword="null"/> for all of it.</summary>
     /// <param name="placement">The placement as the walk produced it.</param>
     /// <returns>The window it is clipped to, for a placement seen only through one.</returns>
@@ -44,6 +55,12 @@ public interface IPlacementVisibility
     /// narrowing the display area its triangles are clipped against. Applied only in passes drawn from the eye.
     /// </remarks>
     ViewClip? ClipOf(WorldPlacement placement) => null;
+
+    /// <summary>Gets the part of the view a placement drawn away from where it was placed is drawn through this frame.</summary>
+    /// <param name="placement">The placement as the walk produced it.</param>
+    /// <param name="drawnAt">Where it is drawn this frame, in metres.</param>
+    /// <returns>The window it is clipped to, or <see langword="null"/> for all of the view.</returns>
+    ViewClip? ClipOf(WorldPlacement placement, Vector3d drawnAt) => ClipOf(placement);
 
     /// <summary>
     /// Gets a value indicating whether the eye stands inside the enclosure a placement is part of this frame -- or whether the

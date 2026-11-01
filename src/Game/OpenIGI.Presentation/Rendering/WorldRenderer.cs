@@ -280,7 +280,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// </param>
     /// <param name="fromEye">
     /// Whether the pass is drawn from the frame's eye, so a placement the title's culling sees through a window is scissored to it
-    /// (<see cref="IPlacementVisibility.ClipOf"/>). A light's pass is never narrowed.
+    /// (<see cref="IPlacementVisibility.ClipOf(WorldPlacement)"/>). A light's pass is never narrowed.
     /// </param>
     /// <param name="blendedOnly">Draws only the face groups the original sorts and blends, over the opaque world.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>

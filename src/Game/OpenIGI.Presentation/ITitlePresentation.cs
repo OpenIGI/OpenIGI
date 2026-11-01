@@ -28,7 +28,7 @@ namespace OpenIGI.Presentation;
 /// </param>
 /// <param name="FromEye">
 /// Whether the pass is drawn from the frame's eye, so the title's view culling may narrow a placement to the part of the view it
-/// is seen through (<see cref="IPlacementVisibility.ClipOf"/>). False for a light's view, which has no window onto anything.
+/// is seen through (<see cref="IPlacementVisibility.ClipOf(WorldPlacement)"/>). False for a light's view, which has no window onto anything.
 /// </param>
 /// <param name="BlendedOnly">
 /// Draws only the face groups the original sorts and blends (<see cref="IWorldPresenter.FaceGroupBlending"/>), over the opaque world,

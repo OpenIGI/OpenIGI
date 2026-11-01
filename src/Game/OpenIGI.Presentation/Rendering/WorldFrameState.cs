@@ -128,11 +128,8 @@ internal sealed class WorldFrameState
             ref WorldFrameEntry entry = ref _frame[i];
             WorldPlacement authored = scene.Placements[i];
 
-            // The title's own culling as well as the gates: the eye it was decided from is the frame's, and every pass
-            // shares the verdict, so what the eye cannot see casts nothing into what it can.
             if (GenericPickups?.IsCollected(authored.Owner) == true
-                || !ConditionalContainerGate.IsTaskActive(authored.Owner)
-                || Visibility?.IsVisible(authored) == false)
+                || !ConditionalContainerGate.IsTaskActive(authored.Owner))
             {
                 entry.Skip = true;
                 continue;
@@ -150,7 +147,6 @@ internal sealed class WorldFrameState
 
             entry.Skip = false;
             entry.IsRotor = authored.IsRotor;
-            entry.Clip = Visibility?.ClipOf(authored);
 
             bool destroyed = _transforms.UsesDestroyedReplacement(authored);
             int variant = _transforms.VariantOf(authored);
@@ -175,6 +171,24 @@ internal sealed class WorldFrameState
                 out entry.Orientation,
                 out entry.Rotor,
                 out entry.HasRotor);
+
+            // The title's own culling: the eye it was decided from is the frame's, and every pass shares the verdict, so what
+            // the eye cannot see casts nothing into what it can. Asked where the placement is drawn, so a lift's car ridden away
+            // from where the level put it is weighed where it now stands.
+            if (Visibility is { } visibility)
+            {
+                if (!visibility.IsVisible(authored, entry.Position))
+                {
+                    entry.Skip = true;
+                    continue;
+                }
+
+                entry.Clip = visibility.ClipOf(authored, entry.Position);
+            }
+            else
+            {
+                entry.Clip = null;
+            }
 
             // Anything drawn away from where it was placed is a mover -- a vehicle, a door, a fan, a camera
             // head -- and stays one, so the frame it comes to rest on is paired against the one before.

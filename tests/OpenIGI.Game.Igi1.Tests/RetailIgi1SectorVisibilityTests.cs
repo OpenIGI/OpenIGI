@@ -8,6 +8,7 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
@@ -37,6 +38,8 @@ public sealed class RetailIgi1SectorVisibilityTests
     private static readonly Lazy<Setup> Mission1 = new(() => Load(1));
 
     private static readonly Lazy<Setup> Mission3 = new(() => Load(3));
+
+    private static readonly Lazy<Setup> Mission14 = new(() => Load(14));
 
     // A standing player's eye above the feet, world units.
     private static readonly double Eye = new PlayerBody().EyeHeight;
@@ -115,6 +118,97 @@ public sealed class RetailIgi1SectorVisibilityTests
         Assert.NotEmpty(garage);
         Assert.All(garage, p => Assert.False(m.Visibility.EnclosesEye(p)));
         Assert.True(m.Visibility.EnclosesEye(m.Fence), "a placement that is no building's part has no opinion");
+    }
+
+    /// <summary>
+    /// In mission 14's ammo yard, standing in the doorway of a corridor building (<c>476_01_1</c>) set into the yard's wall, the
+    /// eye is located in the corridor, but the yard around it is a room of another building (<c>462_04_1</c>,
+    /// <c>LEVEL14_AMMO_AREA</c>). That room encloses the eye too: culled from outside, its floor and walls vanished and the
+    /// crates stood on fog.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_room_around_the_eye_encloses_it_though_the_eye_is_located_in_another_building()
+    {
+        Setup m = Mission14.Value;
+        m.Visibility.Decide(
+            new Camera3D(new Vector3d(24712755, -56216826, 174087119 + Eye), Camera3D.LookRotation(80.9f * MathF.PI / 180f, 4.9f * MathF.PI / 180f)),
+            Projection());
+
+        WorldPlacement yard = m.Scene.Placements.First(static p => p.Instance.Name == "462_04_1");
+        Assert.NotSame(m.Visibility.EyeBuilding, yard.Owner);
+        Assert.True(m.Visibility.IsVisible(yard));
+        Assert.True(m.Visibility.EnclosesEye(yard));
+    }
+
+    /// <summary>
+    /// In mission 14's upper lift room, facing the shaft door, the car of <c>Elevator_1701</c> ridden up stands behind the door,
+    /// and is drawn there: it is weighed where it is drawn, not at the bottom of the shaft where the level places it, which
+    /// lies outside the doorway's window and left the shaft empty.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_lift_car_is_weighed_where_it_stands()
+    {
+        Setup m = Mission14.Value;
+        m.Visibility.Decide(
+            new Camera3D(new Vector3d(24583283, -56221005, 174145533 + Eye), Camera3D.LookRotation(-540.5f * MathF.PI / 180f, -1.1f * MathF.PI / 180f)),
+            Projection());
+
+        ElevatorRegistry lifts = ElevatorRegistry.Build(m.Root, new ScriptVarRegistry(new NativeRegistry()));
+        PlacedElevator lift = lifts.Elevators.Single(static l => l.Task.Name == "Elevator_1701");
+        WorldPlacement car = m.Scene.Placements.First(p => ReferenceEquals(p.Owner, lift.Task));
+        Vector3d top = car.Position + ((lift.State.Floors[^1].Position - lift.State.StartPosition) / WorldScene.UnitsPerMetre);
+
+        Assert.False(m.Visibility.IsVisible(car), "at the bottom of the shaft the car is beyond the doorway");
+        Assert.True(m.Visibility.IsVisible(car, top), "ridden up, the car behind the doorway is culled");
+    }
+
+    /// <summary>
+    /// Mission 14's halls carry their normals out of the room, so wound to them their floors faced the ground beneath and a
+    /// hall seen into from a corridor, culled, lost its floor and walls. Built from the authored order, every hall's floor faces
+    /// up into it, and the rooms whose normals face in are wound as they were.
+    /// </summary>
+    /// <param name="room">The room model's instance name.</param>
+    [RequiresGameDataTheory]
+    [InlineData("482_02_1")]
+    [InlineData("481_02_1")]
+    [InlineData("462_04_1")]
+    [InlineData("476_02_1")]
+    public void A_room_floor_faces_up_into_the_room(string room)
+    {
+        Setup m = Mission14.Value;
+        MeshGeometry mesh = MefMeshBuilder.Build(m.Scene.Placements.First(p => p.Instance.Name == room).Model)!;
+        float bottom = mesh.Vertices.Min(static v => v.Position.Z), top = mesh.Vertices.Max(static v => v.Position.Z);
+        int up = 0, down = 0;
+        for (int t = 0; t + 2 < mesh.Indices.Length; t += 3)
+        {
+            Vertex3D a = mesh.Vertices[mesh.Indices[t]], b = mesh.Vertices[mesh.Indices[t + 1]], c = mesh.Vertices[mesh.Indices[t + 2]];
+            Vector3f face = Vector3f.Cross(b.Position - a.Position, c.Position - a.Position);
+            if ((a.Position.Z + b.Position.Z + c.Position.Z) / 3f < bottom + ((top - bottom) * 0.2f) && MathF.Abs(face.Z) > 0.9f * MathF.Sqrt(face.LengthSquared))
+            {
+                up += face.Z > 0f ? 1 : 0;
+                down += face.Z < 0f ? 1 : 0;
+            }
+        }
+
+        Assert.True(up > 0 && down == 0, $"{room}: {up} floor faces up, {down} down");
+    }
+
+    /// <summary>
+    /// On the stairs of mission 3's security building the eye stands just above the portal the stairwell (<c>400_08_1</c>) and
+    /// the floor below (<c>400_09_1</c>) share, and the locate's line meets it at one depth in both rooms. The original's line
+    /// handler (<c>0x4C1840</c>) keeps the face it meets from the front, the stairwell's, so the eye is in the stairwell; keeping
+    /// whichever copy rounded nearer put it below, behind the portal, and the stairwell's walls vanished.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void On_the_security_building_stairs_the_eye_stands_in_the_stairwell()
+    {
+        Setup m = Mission3.Value;
+        m.Visibility.Decide(
+            new Camera3D(new Vector3d(23273798, -54832592, 174408581 + Eye), Camera3D.LookRotation(-219.5f * MathF.PI / 180f, 13.6f * MathF.PI / 180f)),
+            Projection());
+
+        Assert.StartsWith("sector: Building_3072 room 3", m.Visibility.DescribeView(), StringComparison.Ordinal);
+        Assert.True(m.Visibility.IsVisible(m.Scene.Placements.Single(static p => p.Owner.Name == "Building_3072" && p.Instance.Name == "400_08_1")));
     }
 
     /// <summary>Mission 1 places 26 buildings, 21 rooms among them.</summary>
