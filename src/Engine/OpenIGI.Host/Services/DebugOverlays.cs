@@ -200,6 +200,19 @@ internal sealed class DebugOverlays(
             if (host.PlayerMode && host.Viewpoint?.DebugLines() is { } walking)
             {
                 lines = [.. walking, target];
+
+                // Where the frame was drawn from, when that is not the walking eye -- the camera over a dead body, the orbit
+                // round a climber -- and the sector the cull found it in, which together say why a view lost its rooms.
+                Vector3d drawnFrom = eye.Position * WorldScene.UnitsPerMetre;
+                if (host.Viewpoint.EyeUnits is not { } walkingEye || (walkingEye - drawnFrom).Length > 1.0)
+                {
+                    lines.Add(I($"view units ({drawnFrom.X:F0}, {drawnFrom.Y:F0}, {drawnFrom.Z:F0})"));
+                }
+
+                if (worldPresenter.Visibility?.DescribeView() is { } walkingSector)
+                {
+                    lines.Add(walkingSector);
+                }
             }
             else
             {
