@@ -232,6 +232,19 @@ public sealed class PlayerCheatTests
     }
 
     [Fact]
+    public void TheSessionLockIsCountedPerSession()
+    {
+        PlayerCheatLock.Hold();
+        PlayerCheatLock.Hold();
+        PlayerCheatLock.Release();
+        Assert.True(PlayerCheatLock.IsHeld);
+        Assert.Equal(PlayerCheatOptions.Retail, PlayerCheatOptions.Current);
+
+        PlayerCheatLock.Release();
+        Assert.False(PlayerCheatLock.IsHeld);
+    }
+
+    [Fact]
     public void CheatVariablesAreCheatGatedAndRetailByDefault()
     {
         Assert.Equal(CVarOptions.Cheat, PlayerCheatCVars.Speed.Flags);

@@ -87,6 +87,43 @@ public sealed class ConsoleSystemTests
     }
 
     [Fact]
+    public void ALockedConsoleRefusesCheatsWhateverWasSet()
+    {
+        NumericCVar<int> godMode = CVar.Int("g_test_locked_god", 0, 0, 1, CVarOptions.Cheat, registry: _variables);
+        _console.CheatsEnabled = true;
+        _console.CheatsLocked = static () => true;
+
+        Assert.False(_console.CheatsEnabled);
+        Assert.False(_console.Execute("g_test_locked_god 1"));
+        _console.Execute("toggle g_test_locked_god");
+        _console.Execute("inc g_test_locked_god");
+        Assert.Equal(0, godMode.Value);
+
+        _console.CheatsLocked = null;
+        Assert.True(_console.CheatsEnabled);
+        Assert.True(_console.Execute("g_test_locked_god 1"));
+        Assert.Equal(1, godMode.Value);
+    }
+
+    [Fact]
+    public void TheBuiltInSettersPassTheCheatGate()
+    {
+        NumericCVar<int> godMode = CVar.Int("g_test_gate_god", 0, 0, 1, CVarOptions.Cheat, registry: _variables);
+
+        _console.Execute("toggle g_test_gate_god");
+        _console.Execute("inc g_test_gate_god");
+        Assert.Equal(0, godMode.Value);
+
+        _console.CheatsEnabled = true;
+        _console.Execute("toggle g_test_gate_god");
+        Assert.Equal(1, godMode.Value);
+
+        _console.CheatsEnabled = false;
+        _console.Execute("reset g_test_gate_god");
+        Assert.Equal(1, godMode.Value);
+    }
+
+    [Fact]
     public void ARestartOnlyVariableSaysSo()
     {
         CVar.Int("r_test_msaa", 4, 0, 8, CVarOptions.RequiresRestart, registry: _variables);

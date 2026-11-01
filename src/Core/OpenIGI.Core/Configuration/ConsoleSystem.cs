@@ -44,8 +44,41 @@ public sealed class ConsoleSystem
     /// <summary>Gets the command registry this console dispatches through.</summary>
     public CommandRegistry Commands { get; }
 
+    private bool _cheatsEnabled;
+
     /// <summary>Gets or sets a value indicating whether commands and variables flagged as cheats may be used.</summary>
-    public bool CheatsEnabled { get; set; }
+    /// <remarks>Reads <see langword="false"/> while <see cref="CheatsLocked"/> says so, whatever was set.</remarks>
+    public bool CheatsEnabled
+    {
+        get => _cheatsEnabled && CheatsLocked?.Invoke() != true;
+        set => _cheatsEnabled = value;
+    }
+
+    /// <summary>Gets or sets what holds cheats off whatever <see cref="CheatsEnabled"/> was set to -- a multiplayer session -- or <see langword="null"/>.</summary>
+    public Func<bool>? CheatsLocked { get; set; }
+
+    /// <summary>Decides whether a variable may be assigned now: not read-only, and not a cheat while cheats are off.</summary>
+    /// <param name="variable">The variable.</param>
+    /// <param name="reason">Why not, when it may not.</param>
+    /// <returns><see langword="true"/> when it may be assigned.</returns>
+    public bool MayAssign(ICVar variable, out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(variable);
+        if ((variable.Flags & CVarOptions.ReadOnly) != 0)
+        {
+            reason = $"'{variable.Name}' is read-only.";
+            return false;
+        }
+
+        if ((variable.Flags & CVarOptions.Cheat) != 0 && !CheatsEnabled)
+        {
+            reason = $"'{variable.Name}' is a cheat variable and cheats are disabled.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
 
     /// <summary>Gets or sets the source of the seconds stamped onto each line written.</summary>
     /// <remarks>
@@ -343,15 +376,9 @@ public sealed class ConsoleSystem
 
     private bool Assign(ICVar variable, IReadOnlyList<string> tokens)
     {
-        if ((variable.Flags & CVarOptions.ReadOnly) != 0)
+        if (!MayAssign(variable, out string refusal))
         {
-            Write($"'{variable.Name}' is read-only.", ConsoleSeverity.Error);
-            return false;
-        }
-
-        if ((variable.Flags & CVarOptions.Cheat) != 0 && !CheatsEnabled)
-        {
-            Write($"'{variable.Name}' is a cheat variable and cheats are disabled.", ConsoleSeverity.Error);
+            Write(refusal, ConsoleSeverity.Error);
             return false;
         }
 

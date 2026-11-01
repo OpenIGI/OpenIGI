@@ -1,3 +1,5 @@
+using OpenIGI.Core.Diagnostics;
+
 namespace OpenIGI.Host;
 
 /// <summary>A session the host's frame can show the scoreboard of.</summary>
@@ -47,6 +49,34 @@ public interface IHostTickObserver
 /// <summary>The host's observers.</summary>
 public sealed partial class GameHost
 {
+    private IHostTickObserver? _tickObserver;
+
     /// <summary>Gets or sets what runs either side of each tick of the title's player, or <see langword="null"/>.</summary>
-    public IHostTickObserver? TickObserver { get; set; }
+    /// <remarks>
+    /// One set is a multiplayer session, and while it is set every cheat is held off (<see cref="Game.Player.PlayerCheatLock"/>)
+    /// and the free camera is not offered: the session switches cheats off as it begins, and nothing turns them on until it
+    /// ends.
+    /// </remarks>
+    public IHostTickObserver? TickObserver
+    {
+        get => _tickObserver;
+        set
+        {
+            bool was = _tickObserver is not null;
+            _tickObserver = value;
+            if (value is not null && !was)
+            {
+                Game.Player.PlayerCheatLock.Hold();
+                Game.Player.PlayerCheatCVars.CheatsEnabled.Value = false;
+                _logger.Information("Coop", "Cheats and the free camera are off for the session.");
+            }
+            else if (value is null && was)
+            {
+                Game.Player.PlayerCheatLock.Release();
+            }
+        }
+    }
+
+    // A game that goes with its session still set gives the session's hold back, so it outlives nothing.
+    private void ReleaseSessionCheatLock() => TickObserver = null;
 }

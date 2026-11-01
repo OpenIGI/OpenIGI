@@ -61,6 +61,7 @@ public sealed class HostConsole : IDisposable
         GraphicsPresetCommands.Register(System);
         PlayerCheatCVars.CheatsEnabled.Changed += OnCheatsEnabledChanged;
         System.CheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
+        System.CheatsLocked = static () => PlayerCheatLock.IsHeld;
         RegisterShellCommands();
 
         // Registered here rather than when the view loads, so a settings file or a +command naming a
@@ -445,6 +446,12 @@ public sealed class HostConsole : IDisposable
                     // The console's gate and the player cheats' session gate move together, so
                     // `cheats 1` makes the g_cheat_* variables both assignable and in force.
                     bool enabled = context[0] is "1" or "on" or "true" or "yes";
+                    if (enabled && PlayerCheatLock.IsHeld)
+                    {
+                        context.Error("Cheats are off in co-op, for every player.");
+                        return;
+                    }
+
                     System.CheatsEnabled = enabled;
                     PlayerCheatCVars.CheatsEnabled.Value = enabled;
                 }
@@ -499,7 +506,16 @@ public sealed class HostConsole : IDisposable
 
     private void DrainLog() => _logLines.Drain(_writeLine);
 
-    // The Extras screen's "Enable cheats" toggle writes the variable directly; the console follows it.
-    private void OnCheatsEnabledChanged(object? sender, CVarChangedEventArgs e) =>
+    // The Extras screen's "Enable cheats" toggle writes the variable directly; the console follows it. In a multiplayer
+    // session the switch is put straight back off, so the menu shows what is in force.
+    private void OnCheatsEnabledChanged(object? sender, CVarChangedEventArgs e)
+    {
+        if (PlayerCheatCVars.CheatsEnabled.Value && PlayerCheatLock.IsHeld)
+        {
+            PlayerCheatCVars.CheatsEnabled.Value = false;
+            return;
+        }
+
         System.CheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
+    }
 }

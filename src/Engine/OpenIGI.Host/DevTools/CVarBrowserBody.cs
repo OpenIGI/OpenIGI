@@ -41,6 +41,9 @@ public sealed class CVarBrowserBody : UiElement
     private bool _editing;
     private string _error = string.Empty;
 
+    /// <summary>Gets the console whose gate an edit passes -- read-only and cheat variables -- or <see langword="null"/> for none.</summary>
+    public ConsoleSystem? Console { get; init; }
+
     /// <summary>Initialises a new instance of the <see cref="CVarBrowserBody"/> class.</summary>
     /// <param name="registry">The registry listed.</param>
     /// <param name="theme">The palette, type scale and spacing.</param>
@@ -156,6 +159,12 @@ public sealed class CVarBrowserBody : UiElement
             return false;
         }
 
+        if (Console?.MayAssign(variable, out string refusal) == false)
+        {
+            _error = refusal;
+            return false;
+        }
+
         if (!variable.TrySetText(ValueEdit.Text, out string? reason))
         {
             _error = reason ?? $"'{ValueEdit.Text}' is not valid for {variable.Name}.";
@@ -201,6 +210,12 @@ public sealed class CVarBrowserBody : UiElement
                 at = i;
                 break;
             }
+        }
+
+        if (Console?.MayAssign(variable, out string refusal) == false)
+        {
+            _error = refusal;
+            return false;
         }
 
         string next = choices[(at + 1) % choices.Count];
