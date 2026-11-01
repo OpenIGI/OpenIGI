@@ -81,6 +81,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         game.World.Cutscenes?.Mirrored = true;
         game.World.GunPickups?.Mirrored = true;
         game.World.GenericPickups?.Mirrored = true;
+
+        // The switches, terminals, TBAs, cabinets, locks, fences, generators and radios are what the server's are.
+        game.World.Interactions?.Mirrored = true;
+
+        // The cameras look as the server's do, whom they see there: here they would see this client's player alone.
+        if (game.World.SecurityCameras is { } cameras)
+        {
+            cameras.Mirrored = true;
+            cameras.MirroredDestruction = camera => game.Blasts.ShootOut(camera.Task);
+        }
         if (game.World.Soldiers is { } soldiers)
         {
             soldiers.PuppetsOnly = true;
@@ -117,6 +127,68 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
 
         return bodies;
     }
+
+    /// <summary>Gets how many of the level's objects were struck here on the server's word: broken, blown up or shot out there.</summary>
+    public int WrecksTaken { get; private set; }
+
+    // The newest snapshot whose projectiles were taken.
+    private long _projectilesTaken = long.MinValue;
+
+    // Further than this between two snapshots, a projectile is another one that took its place, and is not drawn sliding there.
+    private const double ProjectileJumpUnits = 16384.0;
+
+    // The others' grenades, mines, rockets and launcher rounds, drawn from where the last snapshot had each to where this one
+    // does: each matched to the one before it by whose it is and which of that player's it is. This client's own it draws from
+    // its own weapons.
+    private void ShowProjectiles(ReplicatedProjectile[]? sent, int? ownEntity)
+    {
+        List<OpenIGI.Game.Weapons.ShownProjectile> shown = _game.World.ShownProjectiles;
+        _previousProjectiles.Clear();
+        _previousProjectiles.AddRange(shown);
+        _previousOwners.Clear();
+        _previousOwners.AddRange(_shownOwners);
+        shown.Clear();
+        _shownOwners.Clear();
+        foreach (ReplicatedProjectile projectile in sent ?? [])
+        {
+            if (projectile.Owner == ownEntity)
+            {
+                continue;
+            }
+
+            Vector3d at = projectile.Position.ToVector();
+            int ordinal = _shownOwners.Count(o => o == projectile.Owner);
+            Vector3d from = at;
+            for (int i = 0, seen = 0; i < _previousProjectiles.Count; i++)
+            {
+                if (_previousOwners[i] != projectile.Owner)
+                {
+                    continue;
+                }
+
+                if (seen++ == ordinal)
+                {
+                    OpenIGI.Game.Weapons.ShownProjectile before = _previousProjectiles[i];
+                    if (before.Model == projectile.Model && Vector3d.Distance(before.Position, at) <= ProjectileJumpUnits)
+                    {
+                        from = before.Position;
+                    }
+
+                    break;
+                }
+            }
+
+            shown.Add(new OpenIGI.Game.Weapons.ShownProjectile(projectile.Model, from, at, projectile.Orientation, projectile.Owner, ordinal));
+            _shownOwners.Add(projectile.Owner);
+        }
+    }
+
+    private readonly List<OpenIGI.Game.Weapons.ShownProjectile> _previousProjectiles = [];
+    private readonly List<int> _previousOwners = [];
+    private readonly List<int> _shownOwners = [];
+
+    // The newest snapshot whose wrecks were taken.
+    private long _wrecksChecked = long.MinValue;
 
     /// <summary>Gets how many times a lift here was put where the server's stood: once per partner's call, not every tick.</summary>
     public int LiftsTaken { get; private set; }
@@ -395,9 +467,39 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                         _bloodOwners[impact.Source] = owner = new object();
                     }
 
-                    _game.Impacts.Replay(impact, owner);
+                    if (impact.Kind == ImpactKind.Blast)
+                    {
+                        _game.Blasts.ReplayBlast(impact);
+                    }
+                    else if (impact.Kind == ImpactKind.Bounce)
+                    {
+                        _game.Audio.PlayGrenadeBounce(impact.Position.ToVector());
+                    }
+                    else if (impact.Kind == ImpactKind.MineArmed)
+                    {
+                        _game.Audio.PlayMineArm(impact.Position.ToVector());
+                    }
+                    else
+                    {
+                        _game.Impacts.Replay(impact, owner);
+                    }
                 }
             }
+        }
+
+        if (snapshot.Tick > _projectilesTaken)
+        {
+            _projectilesTaken = snapshot.Tick;
+            ShowProjectiles(snapshot.Projectiles, ownEntity);
+        }
+
+        // The server's cameras, which each lens here takes as it updates; and what the server has broken for good.
+        _game.World.SecurityCameras?.Mirror(snapshot.Cameras);
+        if (snapshot.Tick > _wrecksChecked)
+        {
+            _wrecksChecked = snapshot.Tick;
+            WrecksTaken += _game.Blasts.ApplyWrecks(snapshot.Wrecks);
+            _game.World.Interactions?.ApplyState(snapshot.Tasks);
         }
 
         if (snapshot.Doors is not { } bits || _game.World.Doors is not { Doors.Count: > 0 } registry)

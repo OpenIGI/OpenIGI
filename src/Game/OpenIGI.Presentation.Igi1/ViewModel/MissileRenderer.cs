@@ -60,22 +60,10 @@ internal sealed class MissileRenderer : IMissilePresenter
                 missile.PreviousPosition.X + ((missile.Position.X - missile.PreviousPosition.X) * alpha),
                 missile.PreviousPosition.Y + ((missile.Position.Y - missile.PreviousPosition.Y) * alpha),
                 missile.PreviousPosition.Z + ((missile.Position.Z - missile.PreviousPosition.Z) * alpha));
-            Vector3f direction = missile.Velocity;
-            float length = MathF.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-            if (length <= float.Epsilon)
+            if (!ShownProjectile.TryAlongFlight(missile.Velocity, out Matrix3f rotation))
             {
                 continue;
             }
-            direction *= 1f / length;
-
-            Vector3f referenceUp = MathF.Abs(direction.Z) < 0.95f ? Vector3f.UnitZ : Vector3f.UnitX;
-            Vector3f right = Vector3f.Cross(referenceUp, direction);
-            right *= 1f / MathF.Sqrt((right.X * right.X) + (right.Y * right.Y) + (right.Z * right.Z));
-            Vector3f up = Vector3f.Cross(direction, right);
-            Matrix3f rotation = Matrix3f.FromRows(
-                new Vector3f(right.X, direction.X, up.X),
-                new Vector3f(right.Y, direction.Y, up.Y),
-                new Vector3f(right.Z, direction.Z, up.Z));
 
             model.Sun = Sun;
             model.Draw(new BoneAttachment(position, rotation), camera, projection, false, 0, WeaponDrawParts.BodyOnly);
@@ -110,6 +98,34 @@ internal sealed class MissileRenderer : IMissilePresenter
             model.Sun = Sun;
             model.Draw(
                 new BoneAttachment(position, projectile.Orientation),
+                camera,
+                projection,
+                false,
+                0,
+                WeaponDrawParts.BodyOnly);
+        }
+    }
+
+    /// <summary>Draws what another game's weapons have in the world, each by its own model.</summary>
+    public void Draw(IReadOnlyList<ShownProjectile> shown, in Camera3D camera, in Matrix4f projection, float alpha)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(shown);
+        if (_mission is null)
+        {
+            return;
+        }
+
+        foreach (ShownProjectile projectile in shown)
+        {
+            if (GetModel(projectile.Model) is not { } model)
+            {
+                continue;
+            }
+
+            model.Sun = Sun;
+            model.Draw(
+                new BoneAttachment(Vector3d.Lerp(projectile.PreviousPosition, projectile.Position, alpha), projectile.Orientation),
                 camera,
                 projection,
                 false,

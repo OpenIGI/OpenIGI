@@ -121,8 +121,12 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
         int shots = Player.Weapons?.ShotSequence ?? 0;
         for (int due = Commands.Due(); due > 0 && Commands.TryTake(_channels); due--)
         {
+            // A fallen partner runs nothing of its own, but what its weapons put in the world is the level's (Level_GetDynamic):
+            // it flies on, a step for each of its client's commands, as it would have.
             if (IsDead)
             {
+                Player.TickProjectilesAlone();
+                CommandRan?.Invoke(this);
                 continue;
             }
 
@@ -135,6 +139,8 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
             {
                 AfterCommand?.Invoke();
             }
+
+            CommandRan?.Invoke(this);
         }
 
         FiredThisTick = (Player.Weapons?.ShotSequence ?? 0) != shots;
@@ -149,6 +155,12 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
 
     /// <summary>Gets or sets what the world does once a command has run: the soldiers put back where they stand now.</summary>
     public Action? AfterCommand { get; set; }
+
+    /// <summary>
+    /// Gets or sets what the world makes of a command once the soldiers are back where they stand: the grenades, rockets and
+    /// launcher rounds it set off and the rounds it fired at the level's objects, each command's before the next clears them.
+    /// </summary>
+    public Action<Igi1NetworkPlayer>? CommandRan { get; set; }
 
     /// <summary>Gets whether it fired on its last tick, in any of the commands the tick ran.</summary>
     /// <remarks>

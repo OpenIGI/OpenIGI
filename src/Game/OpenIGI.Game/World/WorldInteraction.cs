@@ -119,6 +119,47 @@ public sealed class WorldInteraction
     public bool IsLocked { get; private set; }
     public bool IsDestroyed { get; internal set; }
 
+    /// <summary>
+    /// Gets or sets the co-op server's word on <see cref="IsOn"/>, which a client's update takes in place of its own On
+    /// expression; <see langword="null"/> where the level decides for itself.
+    /// </summary>
+    internal bool? MirroredOn { get; set; }
+
+    /// <summary>Gets or sets the co-op server's word on whether a fence is electrified, in place of its Electric Expression.</summary>
+    internal bool? MirroredElectrified { get; set; }
+
+    /// <summary>Gets the facing of the last plant, which with <see cref="PlacedPosition"/> places the charge.</summary>
+    public float PlacedFacing { get; private set; }
+
+    /// <summary>The switch is pressed as a co-op server's was: the pulse and its stamp, with nothing it calls -- a lift's own word comes with it.</summary>
+    internal void PressAsServerDid()
+    {
+        Pressed.Shift(true);
+        _pressStamp = Clock();
+    }
+
+    /// <summary>
+    /// The task is finished as a co-op server's was: its this-tick pulse and stamp and the latch it leaves -- a cabinet searched,
+    /// a lock picked, a terminal hacked, a TBA done. A picked door's swing is the doors' own to send.
+    /// </summary>
+    internal void FinishAsServerDid()
+    {
+        CompletedThisTick = true;
+        _completeStamp = Clock();
+        switch (Type)
+        {
+            case InteractionActivateType.Cabinet:
+                IsSearched = true;
+                break;
+            case InteractionActivateType.Door:
+                IsPicked = true;
+                break;
+            default:
+                IsCompleted = true;
+                break;
+        }
+    }
+
     /// <summary>Gets or sets what <see cref="IsOn"/> was the last tick the task ran, its <c>isLastOn</c>.</summary>
     internal bool LastOn { get; set; } = true;
 
@@ -415,6 +456,7 @@ public sealed class WorldInteraction
         }
 
         PlacedPosition = contact;
+        PlacedFacing = facing;
         PlacedOrientation = WorldScene.ToOrientation(new Vector3f(MathF.PI / 2f, 0f, facing));
     }
 
@@ -636,7 +678,7 @@ public sealed class WorldInteraction
         switch (Type)
         {
             case InteractionActivateType.Switch:
-                if (_onCondition?.Invoke() is bool switchedOn)
+                if ((MirroredOn ?? _onCondition?.Invoke()) is bool switchedOn)
                 {
                     IsOn = switchedOn;
                 }
@@ -663,7 +705,7 @@ public sealed class WorldInteraction
             case InteractionActivateType.Terminal:
             case InteractionActivateType.Generic:
             case InteractionActivateType.PlaceExplosive:
-                if (_onCondition?.Invoke() is bool on)
+                if ((MirroredOn ?? _onCondition?.Invoke()) is bool on)
                 {
                     IsOn = on;
                 }
@@ -679,7 +721,7 @@ public sealed class WorldInteraction
                 ClearUse(now);
                 break;
             case InteractionActivateType.Fence:
-                IsElectrified = _electricCondition?.Invoke() ?? false;
+                IsElectrified = MirroredElectrified ?? _electricCondition?.Invoke() ?? false;
                 RunFenceHum();
                 InUse.CommitTick();
                 break;

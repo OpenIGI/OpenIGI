@@ -75,6 +75,12 @@ public sealed class MissionWorld : MissionState
     public List<Multiplayer.Igi1NetworkPlayer> ShownPartners { get; } = [];
 
     /// <summary>
+    /// Gets what the other players' weapons -- and the soldiers' -- have in the world as a co-op client's level shows it, from
+    /// the server's snapshots: their grenades, mines, rockets and launcher rounds.
+    /// </summary>
+    public List<OpenIGI.Game.Weapons.ShownProjectile> ShownProjectiles { get; } = [];
+
+    /// <summary>
     /// Gets every other player in the level as this machine knows it: on a server the partners it runs, on a client those the
     /// server's snapshots show. What the level asks of "the player" -- an area entered -- it asks of each of these too.
     /// </summary>
@@ -232,6 +238,7 @@ public sealed class MissionWorld : MissionState
     {
         NetworkPlayers.Clear();
         ShownPartners.Clear();
+        ShownProjectiles.Clear();
         PartnerBodies = null;
         PartnerRan = null;
         CoopClient = false;

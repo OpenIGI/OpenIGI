@@ -66,6 +66,20 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     private readonly PlayerFirstPersonView _firstPerson;
     private readonly PlayerPickups _pickups;
     private readonly PlayerShotResolver _shots;
+
+    /// <summary>
+    /// Advances what this player's weapons put in the world -- its grenades, mines, rockets and launcher rounds, and in the
+    /// mission's own player's pool the soldiers' lobs -- without the rest of its update: they are tasks of their own, and a
+    /// level runs on while this player lies dead or stands at the map computer.
+    /// </summary>
+    /// <remarks>
+    /// The rounds of its last update go first: nothing fires here, and its world contacts must not be handed on a second time.
+    /// </remarks>
+    internal void TickProjectilesAlone()
+    {
+        _shots.ClearImpacts();
+        _shots.TickProjectiles();
+    }
     private readonly PlayerInteractionDriver _interaction;
     private readonly PlayerLadderController _ladder;
     private readonly PlayerFootsteps _footsteps;

@@ -88,8 +88,6 @@ public sealed partial class GameHost
 
         public void CheatWeaponsGranted() => host.ShowCheatWeapons();
 
-        public void PlayMineTrigger(Vector3d origin) =>
-            host._audioOut.Sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
 
 
 

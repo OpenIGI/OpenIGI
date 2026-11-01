@@ -94,6 +94,9 @@ public sealed class RadioRuntime
     /// <summary>Gets or sets <c>isOn</c>.</summary>
     public bool IsOn { get; set; }
 
+    /// <summary>Gets or sets the co-op server's word on <see cref="IsOn"/>, which a client's update takes in place of its own.</summary>
+    internal bool? MirroredOn { get; set; }
+
     /// <summary>Gets the ticks left before the next sound (<c>+572</c>).</summary>
     public int Countdown { get; private set; }
 
@@ -102,7 +105,11 @@ public sealed class RadioRuntime
     public void Tick(IRadioSoundPlayer? sounds)
     {
         bool wasOn = IsOn;
-        if (_isExploded())
+        if (MirroredOn is bool told)
+        {
+            IsOn = told;
+        }
+        else if (_isExploded())
         {
             IsOn = false;
         }

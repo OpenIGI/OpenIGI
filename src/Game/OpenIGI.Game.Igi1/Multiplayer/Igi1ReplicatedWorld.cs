@@ -253,9 +253,46 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             Doors(_game.World.Doors),
             _impacts.Count == 0 ? null : [.. _impacts],
             senses.Count == 0 ? null : [.. senses],
-            Lifts(_game.World.Elevators));
+            Lifts(_game.World.Elevators),
+            _game.World.SecurityCameras?.Replicate(),
+            _game.Blasts.CaptureWrecks(),
+            CaptureProjectiles(),
+            _game.World.Interactions?.CaptureState());
         _impacts.Clear();
         return snapshot;
+    }
+
+    private readonly List<OpenIGI.Game.Weapons.ShownProjectile> _shownProjectiles = [];
+
+    // What every player's weapons have in the world, each under its player's entity: the mission's own player's pool holds
+    // the soldiers' lobs as well, which go out as the host's.
+    private ReplicatedProjectile[]? CaptureProjectiles()
+    {
+        List<ReplicatedProjectile> sent = [];
+        void Add(int entity, PlayerCamera rig)
+        {
+            _shownProjectiles.Clear();
+            OpenIGI.Game.Weapons.ShownProjectile.Collect(rig.Grenades, rig.Missiles, rig.M203, _shownProjectiles);
+            foreach (OpenIGI.Game.Weapons.ShownProjectile shown in _shownProjectiles)
+            {
+                if (sent.Count < ReplicatedProjectile.MaxPerSnapshot)
+                {
+                    sent.Add(ReplicatedProjectile.Of(entity, shown));
+                }
+            }
+        }
+
+        if (_game.World.Player is { } own)
+        {
+            Add(HostEntity, own);
+        }
+
+        foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
+        {
+            Add(slot + 1, other.Player);
+        }
+
+        return sent.Count == 0 ? null : [.. sent];
     }
 
     /// <inheritdoc/>

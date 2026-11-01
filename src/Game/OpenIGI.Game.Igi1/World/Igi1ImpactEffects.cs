@@ -138,6 +138,15 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     public void Replay(in OpenIGI.Game.Multiplayer.ReplicatedImpact impact, object bloodOwner)
     {
         ArgumentNullException.ThrowIfNull(bloodOwner);
+
+        // A blast is the blasts' to show (Igi1Blasts.ReplayBlast) and a bounce the audio's, not a round's mark.
+        if (impact.Kind is OpenIGI.Game.Multiplayer.ImpactKind.Blast
+            or OpenIGI.Game.Multiplayer.ImpactKind.Bounce
+            or OpenIGI.Game.Multiplayer.ImpactKind.MineArmed)
+        {
+            return;
+        }
+
         Vector3d at = impact.Position.ToVector();
         Vector3f along = impact.Direction;
         if (impact.Kind == OpenIGI.Game.Multiplayer.ImpactKind.Blood)
@@ -174,6 +183,38 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             Runtime.SpawnSurfaceImpact(hit.Position, hit.Normal, along, material.Entry, struckHuman: false);
         }
     }
+
+    /// <summary>Records a grenade's bounce this game heard, for a co-op server to send to every client to hear.</summary>
+    /// <param name="position">Where it struck, in world units.</param>
+    public void RecordBounce(Vector3d position) => RecordSound(OpenIGI.Game.Multiplayer.ImpactKind.Bounce, position);
+
+    /// <summary>Records a proximity mine arming, for a co-op server to send to every client to hear.</summary>
+    /// <param name="position">Where the mine is, in world units.</param>
+    public void RecordMineArmed(Vector3d position) => RecordSound(OpenIGI.Game.Multiplayer.ImpactKind.MineArmed, position);
+
+    private void RecordSound(OpenIGI.Game.Multiplayer.ImpactKind kind, Vector3d position) =>
+        Recorded?.Invoke(new OpenIGI.Game.Multiplayer.ReplicatedImpact(
+            kind,
+            mission.ImpactSource,
+            OpenIGI.Game.Multiplayer.Int3.From(position),
+            default));
+
+    /// <summary>Records a blast this game set off, for a co-op server to send to every client to show.</summary>
+    /// <param name="kind">Which weapon's.</param>
+    /// <param name="position">Its centre, in world units.</param>
+    /// <param name="normal">The face it scorches, for a launcher round's.</param>
+    /// <param name="radiusUnits">Its radius, in world units.</param>
+    /// <param name="falloffUnits">Its falloff, in world units.</param>
+    public void RecordBlast(
+        OpenIGI.Game.Multiplayer.ReplicatedBlastKind kind, Vector3d position, Vector3f normal, float radiusUnits, float falloffUnits) =>
+        Recorded?.Invoke(new OpenIGI.Game.Multiplayer.ReplicatedImpact(
+            OpenIGI.Game.Multiplayer.ImpactKind.Blast,
+            mission.ImpactSource,
+            OpenIGI.Game.Multiplayer.Int3.From(position),
+            normal,
+            kind,
+            (int)Math.Clamp(radiusUnits, 0f, int.MaxValue),
+            (int)Math.Clamp(falloffUnits, 0f, int.MaxValue)));
 
     private void Record(bool blood, Vector3d position, Vector3f direction) =>
         Recorded?.Invoke(new OpenIGI.Game.Multiplayer.ReplicatedImpact(

@@ -74,9 +74,6 @@ public interface IMissionTickHost
     /// <summary>Gives the hand a presenter, once the all-weapons cheat has put weapons in it.</summary>
     void CheatWeaponsGranted();
 
-    /// <summary>Plays a proximity mine's arming cue.</summary>
-    /// <param name="origin">Where the mine is, in world units.</param>
-    void PlayMineTrigger(Vector3d origin);
 
 
     /// <summary>Plays and shows what the player's rounds struck, and lays the rockets' trails.</summary>

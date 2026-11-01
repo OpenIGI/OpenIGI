@@ -500,7 +500,7 @@ public sealed class Igi1PlayerSetup(
         // The partner's rounds reach the soldiers as the mission's own player's do.
         if (mission.SoldierPresenter is { } guards)
         {
-            ConnectSoldiers(extra, guards, _deflected ?? (static _ => { }));
+            ConnectSoldiers(extra, guards, _deflected ?? (static _ => { }), soldiersThrowHere: false);
         }
 
         return (extra, health);
@@ -789,7 +789,12 @@ public sealed class Igi1PlayerSetup(
     /// <param name="candidate">The player's rig.</param>
     /// <param name="guards">The soldiers as they are drawn, whose drawn poses the player's rounds strike.</param>
     /// <param name="deflected">Where a glancing round whizzes.</param>
-    public void ConnectSoldiers(PlayerCamera candidate, ISoldierPresenter guards, Action<Vector3d> deflected)
+    /// <param name="soldiersThrowHere">
+    /// Whether the soldiers' grenades fly in this rig's pool: the mission's own player's. A co-op partner's rig keeps its
+    /// own, and taking the soldiers' with it left every lob a guard made after someone joined in a pool only that partner's
+    /// commands step -- frozen while it lay dead, orphaned when it left.
+    /// </param>
+    public void ConnectSoldiers(PlayerCamera candidate, ISoldierPresenter guards, Action<Vector3d> deflected, bool soldiersThrowHere = true)
     {
         ArgumentNullException.ThrowIfNull(candidate);
         ArgumentNullException.ThrowIfNull(guards);
@@ -836,19 +841,39 @@ public sealed class Igi1PlayerSetup(
         candidate.Deflected = deflected;
 
         // Every human's run tells the laid mines its place: the soldiers in the roster's order, then the player (0x463080),
-        // whose update (0x410960) sends it dead or alive.
+        // whose update (0x410960) sends it dead or alive. A co-op session's players are all humans to every mine, whoever
+        // laid it: the mission's own, then the others.
         List<HumanPlace> places = [];
         candidate.Grenades.MineSensors = () =>
         {
             places.Clear();
             guards.Simulation.AddHumanPlaces(places);
-            places.Add(new HumanPlace(candidate.Body.Origin, guards.Simulation.PlayerHumanRadius));
+            float radius = guards.Simulation.PlayerHumanRadius;
+            if (mission.Player is { } own)
+            {
+                places.Add(new HumanPlace(own.Body.Origin, radius));
+            }
+
+            foreach (Multiplayer.Igi1NetworkPlayer partner in mission.Partners)
+            {
+                places.Add(new HumanPlace(partner.Player.Body.Origin, radius));
+            }
+
+            // The rig being brought up, before it is the mission's own player or one of the partners.
+            if (!ReferenceEquals(mission.Player, candidate) && !mission.Partners.Any(p => ReferenceEquals(p.Player, candidate)))
+            {
+                places.Add(new HumanPlace(candidate.Body.Origin, radius));
+            }
+
             return places;
         };
 
         // One grenade pool for both throwers: the player's own and every guard's lob fly,
         // bounce and detonate through the same simulation and the same drain.
-        guards.Simulation.SetGrenades(candidate.Grenades);
+        if (soldiersThrowHere)
+        {
+            guards.Simulation.SetGrenades(candidate.Grenades);
+        }
     }
 
     // 0x4755A0 refuses a contact whose task is a Glass, a Door or a Vehicle (Heli, Missile, Train, Plane, Car, KnifeStab).

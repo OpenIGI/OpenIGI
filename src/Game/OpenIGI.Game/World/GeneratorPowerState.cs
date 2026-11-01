@@ -27,6 +27,9 @@ internal sealed class GeneratorPowerState(
     public bool IsOn { get; set; }
     public int BackupTimer { get; set; } = -1;
 
+    /// <summary>Gets or sets the co-op server's word on the power, which a client's update takes in place of its own.</summary>
+    public bool? MirroredOn { get; set; }
+
     public void Initialize() => IsOn = onCondition?.Invoke() ?? IsOn;
 
     public void Tick()
@@ -87,6 +90,12 @@ internal sealed class GeneratorPowerState(
     {
         // 0x43B500: off once exploded; else its On expression, when it has one that compiled -- a generator with none
         // keeps what it had, off from the constructor, and comes on only by its backup.
+        if (MirroredOn is bool told)
+        {
+            IsOn = told;
+            return;
+        }
+
         if (exploded)
         {
             IsOn = false;

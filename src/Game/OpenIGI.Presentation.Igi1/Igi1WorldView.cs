@@ -41,6 +41,20 @@ internal sealed class Igi1WorldView(Igi1Gameplay gameplay) : IMissionWorldView
             missiles.Draw(mission.VehicleMissiles, eye, projection, tickBlend);
             missiles.Draw(player.M203, eye, projection, tickBlend);
         }
+
+        // A co-op server's partners throw, lay and fire in its own simulation; a client draws the others' as the server's
+        // snapshots have them.
+        foreach (Game.Igi1.Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+        {
+            grenades?.Draw(partner.Player.Grenades, eye, projection, tickBlend);
+            missiles?.Draw(partner.Player.Missiles, eye, projection, tickBlend);
+            missiles?.Draw(partner.Player.M203, eye, projection, tickBlend);
+        }
+
+        if (mission.ShownProjectiles.Count > 0)
+        {
+            missiles?.Draw(mission.ShownProjectiles, eye, projection, tickBlend);
+        }
     }
 
     /// <inheritdoc/>

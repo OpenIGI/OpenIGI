@@ -51,6 +51,38 @@ public sealed class CarDestructionTests
     }
 
     [RequiresGameDataFact]
+    public void A_car_a_co_op_server_struck_blows_up_on_the_client_as_it_did_there()
+    {
+        // A partner's LAW blew the truck up on the server; the client's copy is struck by the server's word, and its own
+        // car tick runs the same two blasts and the same wreck.
+        (LevelTask root, WorldScene world, ScriptVarRegistry variables, VehiclePhysicsRegistry physics) = LoadMissionOne();
+        DeclaredTask truckTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(EscapeTruckId));
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
+            root, world.Placements, variables, physics, new IgiRandom());
+        DestructibleObject truck = Assert.Single(
+            destructibles.Objects,
+            item => ReferenceEquals(item.Owner, truckTask) && item.Kind == DestructibleObjectKind.Vehicle);
+        Assert.False(DestructibleObjectRegistry.IsStruck(truck));
+
+        Assert.Null(DestructibleObjectRegistry.Strike(truck));
+        Assert.True(DestructibleObjectRegistry.IsStruck(truck));
+        Assert.True(truck.IsDying);
+
+        // Struck once: the server's word on the next snapshot changes nothing.
+        Assert.Null(DestructibleObjectRegistry.Strike(truck));
+
+        int blasts = 0;
+        for (int tick = 0; tick < 40 && !truck.IsDestroyed; tick++)
+        {
+            destructibles.Tick();
+            blasts += destructibles.ConsumeVehicleBlasts().Count;
+        }
+
+        Assert.True(truck.IsDestroyed);
+        Assert.Equal(2, blasts);
+    }
+
+    [RequiresGameDataFact]
     public void MissionOneSeesItsEscapeTruckExplode()
     {
         (LevelTask root, WorldScene world, ScriptVarRegistry variables, VehiclePhysicsRegistry physics) = LoadMissionOne();

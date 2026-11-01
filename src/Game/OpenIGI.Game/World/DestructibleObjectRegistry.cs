@@ -443,6 +443,50 @@ public sealed class DestructibleObjectRegistry
         return null;
     }
 
+    /// <summary>Gets whether an object has been struck for good: broken, dying, gone, or its fuse lit.</summary>
+    /// <param name="item">The object.</param>
+    /// <returns>Whether nothing can now stop it ending as a wreck.</returns>
+    public static bool IsStruck(DestructibleObject item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return item.IsDestroyed || item.IsDying || item.Countdown >= 0 || item.PendingExplosionTicks > 0 || item.ExplosionStarted;
+    }
+
+    /// <summary>
+    /// Strikes an object for good, as a co-op server's word that it was: through the same handler state a fatal round or
+    /// blast leaves, so it then breaks, burns and blows up here as it did there.
+    /// </summary>
+    /// <param name="item">The object.</param>
+    /// <returns>The object, when it broke at once and its presentation is due now; otherwise <see langword="null"/>.</returns>
+    /// <remarks>
+    /// A car starts dying (<c>0x42FB40</c>'s <c>Car+2332</c>) and <see cref="Tick"/> takes it from there; an
+    /// <c>ExplodeObject</c> has its countdown set to explode on its next update (<c>0x481E60</c>); a pane or an explosive
+    /// object breaks now. One already struck is left as it is.
+    /// </remarks>
+    public static DestructibleObject? Strike(DestructibleObject item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (IsStruck(item))
+        {
+            return null;
+        }
+
+        if (item.Kind == DestructibleObjectKind.Vehicle)
+        {
+            item.IsDying = true;
+            return null;
+        }
+
+        if (item.ExplodesOnCountdown)
+        {
+            item.Countdown = 0;
+            return null;
+        }
+
+        item.IsDestroyed = true;
+        return item;
+    }
+
     /// <summary>
     /// Applies one native <c>Explosion0</c> contact to every authored destructible in its blast.
     /// </summary>

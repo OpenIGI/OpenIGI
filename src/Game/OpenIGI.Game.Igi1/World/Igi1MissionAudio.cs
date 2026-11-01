@@ -759,11 +759,30 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             return;
         }
 
-        foreach (Vector3d at in mission.Player.Grenades.Bounces)
+        PlayGrenadeBounces(mission.Player);
+    }
+
+    /// <summary>
+    /// Plays the bounces one player's grenades -- and, in the mission's own player's pool, the soldiers' -- made in its last
+    /// update.
+    /// </summary>
+    /// <param name="rig">The player.</param>
+    public void PlayGrenadeBounces(PlayerCamera rig)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        foreach (Vector3d at in rig.Grenades.Bounces)
         {
-            host.SoundOutput?.PlayDefinition("grenade_bnc_1", at, priority: 120);
+            PlayGrenadeBounce(at);
         }
     }
+
+    /// <summary>Plays a proximity mine's arming cue, <c>proxy_arm</c>, where it lies: this game's, or one a co-op server's armed.</summary>
+    /// <param name="at">Where the mine is, in world units.</param>
+    public void PlayMineArm(Vector3d at) => host.SoundOutput?.PlayDefinition("proxy_arm", at, priority: 180);
+
+    /// <summary>Plays one grenade's knock where it struck: this game's, or one a co-op server heard.</summary>
+    /// <param name="at">Where, in world units.</param>
+    public void PlayGrenadeBounce(Vector3d at) => host.SoundOutput?.PlayDefinition("grenade_bnc_1", at, priority: 120);
 
     /// <summary>The sounds of the player's update: the binoculars' zoom and the medipack.</summary>
     public void SoundPlayerUpdate()
