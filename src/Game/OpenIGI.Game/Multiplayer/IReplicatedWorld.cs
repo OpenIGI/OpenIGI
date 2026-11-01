@@ -154,7 +154,8 @@ public interface IReplicatedClientWorld
 
     /// <summary>Moves the client's own player, as a correction from the server puts it where the server has it.</summary>
     /// <param name="offset">How far, in world units.</param>
-    void MoveLocal(Vector3d offset);
+    /// <param name="serverGrounded">Whether the server has the player standing on the ground there.</param>
+    void MoveLocal(Vector3d offset, bool serverGrounded);
 
     /// <summary>Takes another player's look, a <see cref="PlayerSkins"/> id, from the server's scoreboard.</summary>
     /// <param name="entity">Its entity.</param>

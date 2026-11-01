@@ -39,7 +39,7 @@ public readonly record struct PlayerCommand(
 /// own them (ladder, wire, uses, death).
 /// </para>
 /// </remarks>
-public sealed class PlayerBody
+public sealed partial class PlayerBody
 {
     private float? _pendingLandingVelocityZ;
 
@@ -466,7 +466,7 @@ public sealed class PlayerBody
         // 0x4614B0 damps the shove by 0.9 BEFORE adding it to the move (+1648 *= 0.9, then the sum), so a
         // round's knock is felt at nine tenths from the very first tick. Adding first and damping after
         // carried the player 11% further per tick than retail -- measured against a T80's coaxial gun.
-        HitShove = HumanSlopeSlide.Damp(HitShove);
+        HitShove = FadeHitShove(HitShove);
 
         // The move is velocity PLUS the animation's step, always - 0x4614B0 adds them rather than
         // choosing between them. On the ground the velocity is zero and the step carries; in the air

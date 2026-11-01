@@ -31,7 +31,7 @@ public sealed class Igi2ClientWorld : IReplicatedClientWorld
     }
 
     /// <inheritdoc/>
-    public void MoveLocal(Vector3d offset)
+    public void MoveLocal(Vector3d offset, bool serverGrounded)
     {
         _level.Human.Position += offset;
         _level.Human.UpdateViewBody(updateAnimation: false);

@@ -903,6 +903,11 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <param name="delta">The correction, in world units.</param>
     public void Shift(Vector3d delta) => _ladder.Shift(delta);
 
+    /// <inheritdoc cref="PlayerBody.CatchUpHitShove"/>
+    /// <remarks>A climber's collision is off (0x463570 at the mount): the ladder takes each share whole, its climb with it.</remarks>
+    public List<Vector3d> CatchUpHitShove(Vector3f push, int ticks) =>
+        Body.CatchUpHitShove(push, ticks, _ladder.IsOnLadder ? delta => { _ladder.Shift(delta); return delta; } : null);
+
     /// <inheritdoc cref="PlayerLadderController.Release"/>
     public void ReleaseLadder() => _ladder.Release();
 
