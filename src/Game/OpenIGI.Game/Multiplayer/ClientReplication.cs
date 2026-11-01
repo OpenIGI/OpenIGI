@@ -42,7 +42,7 @@ public static class ClientReplication
             session.Reconciler.Tolerance = Math.Max(PredictionReconciler.DefaultTolerance, world.PredictionSlack);
             if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector()) is { } correction)
             {
-                world.MoveLocal(correction);
+                world.MoveLocal(correction, (own.Flags & ReplicatedHumanCondition.OnGround) != 0);
             }
 
             world.ApplyOwn(own);

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
@@ -29,6 +29,18 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     // The level the session was last bound to.
     private object? _level;
     private string? _ended;
+
+    // The readout's last write: the counts it was taken at, and the ticks and pumps since (a client that ticks slowly reads
+    // the server's packets late, and acknowledges them late).
+    private double _diagnosedAt;
+    private int _ticksSinceDiagnosed;
+    private int _pumpsSinceDiagnosed;
+    private long _partsAt;
+    private long _snapshotsAt;
+    private long _snapshotBytesAt;
+    private long _correctionsAt;
+    private long _droppedSnapshotsAt;
+    private long _heldAt;
 
     /// <summary>Initializes a new instance of the <see cref="SessionClient"/> class.</summary>
     /// <param name="transport">What it sends on; the client disposes it.</param>
@@ -112,6 +124,50 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _ended = reason;
             _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
         }
+
+        _ticksSinceDiagnosed++;
+        Diagnose(now);
+    }
+
+    // Every few seconds, this client's connection as it sees it: what came in, how late, and how its own commands fare.
+    private void Diagnose(double now)
+    {
+        double seconds = now - _diagnosedAt;
+        if (_session is not { } session || seconds < NetDiagnostics.IntervalSeconds)
+        {
+            return;
+        }
+
+        NetConnection? connection = _netClient?.Connection;
+        NetStatistics? stats = connection?.Statistics;
+        long sent = session.SentCommands.Count > 0 ? session.SentCommands[^1].Tick : long.MinValue;
+        string age = session.Clock is { HasSample: true } clock && session.Latest is { } latest
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{clock.ServerTick(now) - latest.Tick:F1}")
+            : "-";
+        string ahead = sent != long.MinValue && session.LastRunCommandTick != long.MinValue
+            ? (sent - session.LastRunCommandTick).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : "-";
+        _logger.Information(NetDiagnostics.LogCategory, string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"client ({_request.PlayerName}): {_ticksSinceDiagnosed / seconds:F1} ticks/s {_pumpsSinceDiagnosed / seconds:F1} pumps/s | " +
+            $"rtt {stats?.RoundTripTime * 1000:F0} ms jitter {stats?.RoundTripJitter * 1000:F0} ms loss {stats?.PacketLoss * 100:F1}% " +
+            $"resends {stats?.ReliableResends} unacked {connection?.PendingReliableCount} backlog {connection?.Backlog} B | " +
+            $"out {stats?.BytesSentPerSecond / 1024:F1} KiB/s in {stats?.BytesReceivedPerSecond / 1024:F1} KiB/s | " +
+            $"snapshots {(session.SnapshotsAssembled - _snapshotsAt) / seconds:F1}/s parts {(session.SnapshotPartsReceived - _partsAt) / seconds:F1}/s " +
+            $"{(session.SnapshotBytesReceived - _snapshotBytesAt) / seconds / 1024:F1} KiB/s unreadable {session.DroppedSnapshots - _droppedSnapshotsAt} | " +
+            $"newest snapshot {age} ticks old, commands ahead {ahead}, server queue {session.CommandLead}, packets held {(session.CommandPacketsHeld - _heldAt) / seconds:F1}/s | " +
+            $"corrections {session.Reconciler.Corrections - _correctionsAt} last error {session.Reconciler.LastError:F0} | " +
+            $"{(connection is null ? "-" : NetDiagnostics.Route(_transport, connection.RemoteAddress))}"));
+
+        _diagnosedAt = now;
+        _ticksSinceDiagnosed = 0;
+        _pumpsSinceDiagnosed = 0;
+        _partsAt = session.SnapshotPartsReceived;
+        _snapshotsAt = session.SnapshotsAssembled;
+        _snapshotBytesAt = session.SnapshotBytesReceived;
+        _correctionsAt = session.Reconciler.Corrections;
+        _droppedSnapshotsAt = session.DroppedSnapshots;
+        _heldAt = session.CommandPacketsHeld;
     }
 
     // The session, as far as it can be brought up this call: the room's channel opened, the session made on the first level
@@ -195,6 +251,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         session.Receive(now);
+        _pumpsSinceDiagnosed++;
 
         // The server's level state, taken while the level is held, so its first tick is already the server's: nothing of a
         // level the server has left is taken for the one here.

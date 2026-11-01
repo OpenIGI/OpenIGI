@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
 using Xunit;
@@ -148,6 +148,51 @@ public sealed class SessionLoopbackTests
         Snapshot newest = Assert.IsType<Snapshot>(client.Latest);
         Assert.Equal(301, newest.Humans.Length);
         Assert.InRange(newest.Tick, (20 * TickRate) - TickRate, 20 * TickRate);
+    }
+
+    [Fact]
+    public void A_client_whose_line_carries_less_than_its_commands_keeps_its_round_trip_and_still_moves()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.15, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        SimulatedLinkTransport clientLine = Line(network.Open(), () => now, 0.15, 0, 0, 2);
+
+        // Less up than thirty command packets a second need: a lossy relay WebRTC's congestion control has slowed to a crawl.
+        clientLine.Send.Bandwidth = 1200;
+        ClientSession client = new(new NetClient(clientLine, Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        float[] walk = new float[ToyWorld.Channels];
+        walk[0] = 1f;
+        double worstRoundTrip = 0;
+        int worstBacklog = 0;
+        for (long tick = 0; tick < 30 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            client.SendCommand(walk, now);
+            client.Flush(now);
+            if (tick > 5 * TickRate && server.Clients.Any() && serverNet.GetConnection(server.Clients.First()) is { } line)
+            {
+                worstRoundTrip = Math.Max(worstRoundTrip, line.Statistics.RoundTripTime);
+                worstBacklog = Math.Max(worstBacklog, clientLine.Backlog(serverNet.LocalAddress));
+            }
+        }
+
+        // The client's packets wait behind no more than a few of their own: the round trip stays the line's, not seconds
+        // of commands queued -- before the hold it climbed past ten seconds and on.
+        Assert.InRange(worstRoundTrip, 0.1, 1.0);
+        Assert.InRange(worstBacklog, 0, NetConstants.CommandChokeBacklog + NetConstants.MaxPacketSize);
+        Assert.True(client.CommandPacketsHeld > 0, "the line never filled");
+
+        // Its commands still get there, several to a packet, and its player walks on the server.
+        Assert.True(world.PlayerOf(client.EntityId!.Value).Position.X > 600 * 100, $"walked only {world.PlayerOf(client.EntityId!.Value).Position.X}");
     }
 
     [Fact]

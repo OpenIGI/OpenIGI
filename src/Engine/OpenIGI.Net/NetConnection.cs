@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 
 namespace OpenIGI.Net;
 
@@ -78,6 +78,9 @@ public sealed class NetConnection
 
     /// <summary>Gets whether the transport still holds more than <see cref="NetConstants.ChokeBacklog"/> bytes for the other end: the line is full.</summary>
     public bool IsChoked => _transport.Backlog(RemoteAddress) > NetConstants.ChokeBacklog;
+
+    /// <summary>Gets the bytes the transport still holds for the other end, not yet on the wire.</summary>
+    public int Backlog => _transport.Backlog(RemoteAddress);
 
     internal uint Salt { get; }
 

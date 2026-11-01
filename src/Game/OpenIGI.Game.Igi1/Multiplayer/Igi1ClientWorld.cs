@@ -365,7 +365,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     public void Skin(int entity, string skin) => _skins[entity] = skin;
 
     /// <inheritdoc/>
-    public void MoveLocal(Vector3d offset)
+    public void MoveLocal(Vector3d offset, bool serverGrounded)
     {
         if (_game.World.Player is { } player)
         {
@@ -373,6 +373,13 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             // the body back, and the server's word was given again every snapshot.
             player.Shift(offset);
             player.ViewError.Note(offset);
+
+            // Put back up onto the floor the server has it standing on, while this body was falling: the fall is this client's
+            // alone, and kept, it carried the body through the floor again before the next word came -- fall, put back, fall.
+            if (serverGrounded && offset.Z > 0 && !player.IsOnLadder && !player.Body.IsGrounded && player.Body.Velocity.Z < 0f)
+            {
+                player.Body.StopStrayFall();
+            }
         }
     }
 
@@ -547,21 +554,11 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             return;
         }
 
-        // The body damps the knock and then moves by it, each tick (PlayerBody's move, 0x4614B0).
-        Vector3f left = push;
-        Vector3d moved = default;
-        List<Vector3d> each = new(commands);
-        for (int i = 0; i < commands; i++)
-        {
-            left = OpenIGI.Game.Player.HumanSlopeSlide.Damp(left);
-            moved += new Vector3d(left.X, left.Y, left.Z);
-            each.Add(moved);
-        }
+        // Each command's share of the knock, through the walls as the server's body took it.
+        List<Vector3d> each = player.CatchUpHitShove(push, commands);
 
         // The player now stands after the newest of those commands, whose prediction is yet to be recorded: the ones before it
         // were, and move with it.
-        player.Shift(moved);
-        player.Body.AddHitShove(left.X, left.Y);
         if (each.Count > 1)
         {
             predictions.ShiftNewest(each.GetRange(0, each.Count - 1));

@@ -168,6 +168,18 @@ public sealed class RoomTransport : INetTransport
     public int Backlog(NetAddress destination) =>
         destination.Kind == NetAddressKind.Peer && _peers.TryGetValue((int)(uint)destination.Host, out IRtcPeer? peer) ? peer.Backlog : 0;
 
+    /// <summary>Gets how the connection to a peer runs, for diagnostics.</summary>
+    /// <param name="destination">The peer.</param>
+    /// <returns>Its route, or "none" when there is no such peer.</returns>
+    public string Route(NetAddress destination) =>
+        destination.Kind == NetAddressKind.Peer && _peers.TryGetValue((int)(uint)destination.Host, out IRtcPeer? peer) ? peer.Route : "none";
+
+    /// <summary>Gets how many datagrams to a peer were dropped because its channel was full.</summary>
+    /// <param name="destination">The peer.</param>
+    /// <returns>The count.</returns>
+    public long Dropped(NetAddress destination) =>
+        destination.Kind == NetAddressKind.Peer && _peers.TryGetValue((int)(uint)destination.Host, out IRtcPeer? peer) ? peer.Dropped : 0;
+
     /// <inheritdoc/>
     public bool TryReceive(Span<byte> buffer, out NetAddress source, out int length)
     {

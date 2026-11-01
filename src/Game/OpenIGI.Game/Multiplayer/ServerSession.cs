@@ -1,4 +1,4 @@
-using OpenIGI.Net;
+﻿using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;
 
@@ -223,6 +223,8 @@ public sealed class ServerSession
                     }
 
                     _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+                    client.LevelMessages++;
+                    client.LevelBytes += _writer.ByteCount;
                 }
             }
         }
@@ -238,6 +240,7 @@ public sealed class ServerSession
                 // arrive late, and push the round trip out with it.
                 if (_net.GetConnection(slot) is { IsChoked: true })
                 {
+                    client.SnapshotsChoked++;
                     continue;
                 }
 
@@ -295,11 +298,50 @@ public sealed class ServerSession
                 foreach (byte[] message in written)
                 {
                     _net.Send(slot, parts == 1 ? NetChannel.Sequenced : NetChannel.Unreliable, message);
+                    if (_clients.TryGetValue(slot, out ClientState? sent))
+                    {
+                        sent.SnapshotBytes += message.Length;
+                    }
+                }
+
+                if (_clients.TryGetValue(slot, out ClientState? counted))
+                {
+                    counted.SnapshotsSent++;
+                    counted.SnapshotParts += parts;
                 }
 
                 return;
             }
         }
+    }
+
+    /// <summary>Describes each client's connection since the last call, for finding where its round trip goes, and starts afresh.</summary>
+    /// <param name="seconds">How long since the last call.</param>
+    /// <param name="route">Describes a client's address: its route and what its transport dropped; <see langword="null"/> for none.</param>
+    /// <returns>One line per client.</returns>
+    public IEnumerable<string> Diagnose(double seconds, Func<NetAddress, string>? route = null)
+    {
+        double per = Math.Max(0.001, seconds);
+        List<string> lines = [];
+        foreach ((int slot, ClientState client) in _clients)
+        {
+            NetConnection? connection = _net.GetConnection(slot);
+            NetStatistics? stats = connection?.Statistics;
+            UserCommandBuffer? commands = _world.CommandsFor(slot);
+            lines.Add(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"to {client.Name} (slot {slot}): rtt {stats?.RoundTripTime * 1000:F0} ms jitter {stats?.RoundTripJitter * 1000:F0} ms loss {stats?.PacketLoss * 100:F1}% " +
+                $"resends {stats?.ReliableResends} unacked {connection?.PendingReliableCount} backlog {connection?.Backlog} B choked {connection?.IsChoked} | " +
+                $"out {stats?.BytesSentPerSecond / 1024:F1} KiB/s in {stats?.BytesReceivedPerSecond / 1024:F1} KiB/s | " +
+                $"snapshots {client.SnapshotsSent / per:F1}/s skipped {client.SnapshotsChoked / per:F1}/s parts {(client.SnapshotsSent == 0 ? 0 : (double)client.SnapshotParts / client.SnapshotsSent):F1} " +
+                $"avg {(client.SnapshotsSent == 0 ? 0 : client.SnapshotBytes / client.SnapshotsSent)} B | level {client.LevelMessages / per:F1}/s {client.LevelBytes / per / 1024:F1} KiB/s | " +
+                $"commands waiting {commands?.Buffered} | {(connection is null || route is null ? "-" : route(connection.RemoteAddress))}"));
+            client.SnapshotsSent = client.SnapshotsChoked = client.SnapshotParts = 0;
+            client.SnapshotBytes = client.LevelBytes = 0;
+            client.LevelMessages = 0;
+        }
+
+        return lines;
     }
 
     /// <summary>Gets the scoreboard as it stands: every player's standing, entity and round trip.</summary>
@@ -639,5 +681,18 @@ public sealed class ServerSession
 
         // The announced level it has loaded, or null before it has loaded the one announced.
         public byte? ReadyFor { get; set; }
+
+        // Counted for Diagnose since its last call.
+        public int SnapshotsSent { get; set; }
+
+        public int SnapshotsChoked { get; set; }
+
+        public int SnapshotParts { get; set; }
+
+        public long SnapshotBytes { get; set; }
+
+        public int LevelMessages { get; set; }
+
+        public long LevelBytes { get; set; }
     }
 }

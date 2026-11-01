@@ -1,4 +1,4 @@
-using OpenIGI.Net;
+﻿using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;
 
@@ -203,6 +203,15 @@ public sealed class ClientSession
     /// <summary>Gets the snapshots that could not be read because their baseline was gone.</summary>
     public long DroppedSnapshots { get; private set; }
 
+    /// <summary>Gets the snapshot parts received, for the connection readout.</summary>
+    public long SnapshotPartsReceived { get; private set; }
+
+    /// <summary>Gets the snapshots whole once their parts were in, for the connection readout.</summary>
+    public long SnapshotsAssembled { get; private set; }
+
+    /// <summary>Gets the bytes of snapshot parts received, for the connection readout.</summary>
+    public long SnapshotBytesReceived { get; private set; }
+
     private SnapshotHistory Received { get; } = new();
 
     /// <summary>Starts joining a server.</summary>
@@ -236,10 +245,22 @@ public sealed class ClientSession
         }
     }
 
-    /// <summary>Sends this tick's command, once welcomed and the clock is set.</summary>
+    /// <summary>Gets how many command packets were held because the line to the server was full, for the connection readout.</summary>
+    public long CommandPacketsHeld { get; private set; }
+
+    // The newest tick a command packet carried, or null before the first: a packet after some were held carries every
+    // command since, as many as fit.
+    private long? _lastSentTick;
+
+    /// <summary>Makes this tick's command and sends it, once welcomed and the clock is set.</summary>
     /// <param name="channels">The title's channel frame for this tick; copied.</param>
     /// <param name="now">The current time in seconds.</param>
-    /// <returns>The tick the command was stamped for, or <see langword="null"/> when it was not sent.</returns>
+    /// <returns>The tick the command was stamped for, or <see langword="null"/> when none was made.</returns>
+    /// <remarks>
+    /// While the line to the server is full (<see cref="NetConstants.CommandChokeBacklog"/>) the command is kept but its
+    /// packet is held: queued behind the rest it would only arrive late, and push the round trip out with it. The next
+    /// packet sent carries it, with every command since the last one sent.
+    /// </remarks>
     public long? SendCommand(ReadOnlySpan<float> channels, double now)
     {
         if (Clock is not { HasSample: true } clock || _net.Connection is not { } connection)
@@ -252,7 +273,14 @@ public sealed class ClientSession
         long tick = _sent.Count > 0 ? _sent[^1].Tick + 1 : clock.CommandTick(now, connection.Statistics.RoundTripTime);
         long viewTick = (long)Math.Floor(clock.InterpolationTick(now));
         Keep(new UserCommand(tick, channels.ToArray(), viewTick));
-        int count = Math.Clamp(CommandRedundancy, 1, UserCommandCodec.MaxCommandsPerPacket);
+        if (connection.Backlog > NetConstants.CommandChokeBacklog)
+        {
+            CommandPacketsHeld++;
+            return tick;
+        }
+
+        long unsent = _lastSentTick is { } last ? tick - last : 1;
+        int count = (int)Math.Clamp(Math.Max(CommandRedundancy, unsent), 1, UserCommandCodec.MaxCommandsPerPacket);
         int first = _sent.Count - 1;
         while (first > 0 && _sent.Count - first < count && _sent[first - 1].Tick == _sent[first].Tick - 1)
         {
@@ -266,6 +294,7 @@ public sealed class ClientSession
         _writer.WriteBits((uint)(_newestReceived >> 32), 32);
         _codec.Write(_writer, _sent.ToArray().AsSpan(first));
         _net.Send(NetChannel.Sequenced, _writer.AsSpan());
+        _lastSentTick = tick;
         return tick;
     }
 
@@ -277,6 +306,7 @@ public sealed class ClientSession
     private void ForgetLevel()
     {
         _sent.Clear();
+        _lastSentTick = null;
         _parts.Clear();
         _newestReceived = -1;
         Received.Clear();
@@ -423,10 +453,14 @@ public sealed class ClientSession
 
                 long ran = reader.ReadBits(32) | ((long)reader.ReadBits(32) << 32);
                 short lead = (short)(ushort)reader.ReadBits(16);
+                SnapshotPartsReceived++;
+                SnapshotBytesReceived += data.Length;
                 if (Assemble(piece, part, parts) is not { } snapshot)
                 {
                     return;
                 }
+
+                SnapshotsAssembled++;
 
                 Received.Add(snapshot);
                 Remote.Add(snapshot);

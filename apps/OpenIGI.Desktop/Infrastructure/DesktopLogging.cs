@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Host;
 using OpenIGI.Host.Infrastructure;
@@ -55,6 +55,12 @@ internal sealed class DesktopLogging : IDisposable
         if (!policy.Overrides.ContainsKey(GameHost.MemoryLogCategory))
         {
             policy.SetOverride(GameHost.MemoryLogCategory, LogLevel.Information);
+        }
+
+        // The connection readout (every two seconds while in a session), so a slow round trip can be traced from the file.
+        if (!policy.Overrides.ContainsKey(OpenIGI.Host.Multiplayer.NetDiagnostics.LogCategory))
+        {
+            policy.SetOverride(OpenIGI.Host.Multiplayer.NetDiagnostics.LogCategory, LogLevel.Information);
         }
 
         LogRouter router = new(policy);

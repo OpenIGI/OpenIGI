@@ -376,6 +376,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             condition |= ReplicatedHumanCondition.Firing;
         }
 
+        // Standing: a client its own correction puts back on this floor stops any fall it made alone.
+        if (clip is null && player.Body.IsGrounded)
+        {
+            condition |= ReplicatedHumanCondition.OnGround;
+        }
+
         return new ReplicatedHuman(
             id,
             Int3.From(clip?.Feet ?? player.Body.Position),

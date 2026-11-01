@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
@@ -44,6 +44,11 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     // The level the session was last bound to.
     private object? _level;
     private ServerSession? _session;
+    private readonly INetTransport _transport;
+
+    // The readout's last write, and the host's ticks since: a host that ticks slowly reads its players' packets late.
+    private double _diagnosedAt;
+    private int _ticksSinceDiagnosed;
 
     /// <summary>Initializes a new instance of the <see cref="HostedSession"/> class.</summary>
     /// <param name="transport">What it listens on; the session disposes it.</param>
@@ -58,6 +63,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         _tickRate = tickRate;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _room = transport as RoomTransport;
+        _transport = transport;
         _net = new NetServer(transport, new NetServerOptions
         {
             ProtocolId = MultiplayerProtocol.IdFor(titleId),
@@ -181,7 +187,34 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     }
 
     /// <inheritdoc/>
-    public void AfterTitleTick(object title) => _session?.Send(_clock.Elapsed.TotalSeconds, _world!.CurrentTick - 1);
+    public void AfterTitleTick(object title)
+    {
+        _session?.Send(_clock.Elapsed.TotalSeconds, _world!.CurrentTick - 1);
+        Diagnose();
+    }
+
+    // Every few seconds, each player's connection as the host sees it.
+    private void Diagnose()
+    {
+        _ticksSinceDiagnosed++;
+        double now = _clock.Elapsed.TotalSeconds;
+        double seconds = now - _diagnosedAt;
+        if (_session is null || seconds < NetDiagnostics.IntervalSeconds)
+        {
+            return;
+        }
+
+        _logger.Information(NetDiagnostics.LogCategory, string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"host: {_ticksSinceDiagnosed / seconds:F1} ticks/s, {_known.Count} client(s), relayed {_room?.Relayed == true}"));
+        foreach (string line in _session.Diagnose(seconds, address => NetDiagnostics.Route(_transport, address)))
+        {
+            _logger.Information(NetDiagnostics.LogCategory, line);
+        }
+
+        _diagnosedAt = now;
+        _ticksSinceDiagnosed = 0;
+    }
 
     /// <summary>Gets the server list's line for this server now.</summary>
     /// <returns>The line.</returns>

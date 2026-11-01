@@ -2,6 +2,7 @@
 using System.Runtime.Versioning;
 using OpenIGI.Audio.Web;
 using OpenIGI.Composition;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Configuration;
@@ -46,6 +47,11 @@ public static partial class Program
     public static void Main()
     {
     }
+
+    /// <summary>Gets the folder the player's own files are written to -- settings, profiles, saves -- which the page keeps.</summary>
+    /// <returns>The folder, made if it wasn't there.</returns>
+    [JSExport]
+    public static string UserDirectory() => SettingsPaths.GetUserDirectory();
 
     /// <summary>Builds the game over the page's canvas and starts it.</summary>
     /// <param name="args">Command-line options, as the desktop takes them, from the page's address.</param>

@@ -64,13 +64,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("game")
     parser.add_argument("output")
+    parser.add_argument(
+        "--config",
+        help="the config.qvm to ship in place of the installation's, which holds the profiles of whoever played it: "
+        "every player of the site starts from it. Write a clean one with the engine's defaults (one profile, Joe).")
     args = parser.parse_args()
 
     paths = collect(args.game)
     if "config.qvm" not in {p.lower() for p in paths}:
         parser.error(f"{args.game} is not a Project I.G.I. installation (no config.qvm).")
 
-    sizes = {p: os.path.getsize(os.path.join(args.game, p)) for p in paths}
+    def source_of(path):
+        return args.config if args.config and path.lower() == "config.qvm" else os.path.join(args.game, path)
+
+    sizes = {p: os.path.getsize(source_of(p)) for p in paths}
     mission_folders = {posixpath.dirname(p).lower() for p in paths if posixpath.basename(p).lower() == "mission.qvm"}
 
     groups = {}
@@ -84,7 +91,7 @@ def main():
         raw = bytearray()
         for path in groups[name]:
             entries.append({"path": path, "size": sizes[path], "bundle": name, "offset": len(raw)})
-            with open(os.path.join(args.game, path), "rb") as f:
+            with open(source_of(path), "rb") as f:
                 raw += f.read()
         packed = gzip.compress(bytes(raw), compresslevel=9, mtime=0)
         digest = hashlib.sha256(packed).hexdigest()
