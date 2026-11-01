@@ -98,8 +98,8 @@ public sealed class Igi1HumanCamera
     public double Distance => _distance;
 
     /// <summary>Takes the view in mode 3 (<c>0x483360</c>) or mode 5 (<c>0x483D40</c>).</summary>
-    /// <param name="look">The point it orbits and looks at — the body's eye, in world units.</param>
-    /// <param name="feet">The body's feet, which the eight hidden-body points stand around.</param>
+    /// <param name="look">The point it orbits and looks at — the body's eye (<c>0x465800</c>), in world units.</param>
+    /// <param name="feet">The body's task position, which the eight hidden-body points stand around (<c>0x483A00</c> reads <c>+32</c>).</param>
     /// <param name="facing">The body's heading; the orbit starts straight behind it.</param>
     /// <param name="walls">The world line test, or <see langword="null"/> for none.</param>
     /// <param name="death">Whether this is mode 5, over the dead player.</param>
@@ -124,7 +124,7 @@ public sealed class Igi1HumanCamera
 
     /// <summary>Moves the look point and the body with the tick, and runs the tick's easing and, in mode 5, collision.</summary>
     /// <param name="look">The body's eye, in world units.</param>
-    /// <param name="feet">The body's feet.</param>
+    /// <param name="feet">The body's task position.</param>
     public void Tick(Vector3d look, Vector3d feet)
     {
         if (!IsActive)
@@ -179,8 +179,20 @@ public sealed class Igi1HumanCamera
             return;
         }
 
-        _yaw += LookSettings.YawDelta(mouseDeltaX);
-        _pitch = Math.Clamp(_pitch + LookSettings.PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
+        // The two modes turn their orbit opposite ways. Mode 3 (0x483390) takes yaw -= dx: the camera swings round the
+        // body so the view turns with the mouse, mouse right looking right. Mode 5 (0x483D80, through 0x483EC0) takes
+        // yaw += dx and its pitch from the raw dy, the profile's invert never read. Our pitch is the original's negated
+        // (Back's z is +sin), so an uninverted PitchDelta is that same raw dy.
+        if (_death)
+        {
+            _yaw += LookSettings.YawDelta(mouseDeltaX);
+            _pitch = Math.Clamp(_pitch + (LookSettings with { InvertPitch = false }).PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
+        }
+        else
+        {
+            _yaw -= LookSettings.YawDelta(mouseDeltaX);
+            _pitch = Math.Clamp(_pitch + LookSettings.PitchDelta(mouseDeltaY), -PitchLimit, PitchLimit);
+        }
         Present(_presentedAlpha);
     }
 
