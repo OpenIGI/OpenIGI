@@ -77,7 +77,7 @@ public sealed partial class GameHost
 
         ResolveFrameHud(ref view);
 
-        DrawCharacters(view.Eye, view.Projection, view.TickBlend, view.ThirdPersonBody);
+        DrawCharacters(view.Eye, view.Projection, view.TickBlend, view.ThirdPersonBody, captured);
 
         _gi.LightScene(state, view.Eye, captured, view.SceneTarget, view.UnjitteredProjection);
 
@@ -91,6 +91,13 @@ public sealed partial class GameHost
 
         float? binocularRangeMetres = DrawFirstPersonView(
             view.Eye, view.ShowViewModel, view.Sight, view.SmoothPresentation, view.TickBlend);
+
+        // Drawn straight to the back buffer there is no foreground layer: the co-op look goes over the finished picture
+        // instead, its depth cleared first as the view model's is.
+        if (!captured)
+        {
+            DrawLookPreview(view.Eye, view.Projection, foregroundLayer: false);
+        }
 
         DumpScreenGatherOnce(state, captured, view.Eye, view.UnjitteredProjection);
 
