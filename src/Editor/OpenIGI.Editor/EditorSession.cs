@@ -109,10 +109,21 @@ internal sealed class EditorSession : IEditorSession
 
     /// <inheritdoc/>
     public UiRect? Viewport =>
-        _dock.GroupOf("viewport")?.ActivePanel?.Content == _viewport && _workspace.Mission is not null ? _viewport.Bounds : null;
+        !IsPlaying && _dock.GroupOf("viewport")?.ActivePanel?.Content == _viewport && _workspace.Mission is not null ? _viewport.Bounds : null;
 
     /// <inheritdoc/>
-    public bool IsPlaying => false;
+    public bool IsPlaying { get; private set; }
+
+    /// <inheritdoc/>
+    public void StopPlaying()
+    {
+        if (IsPlaying)
+        {
+            IsPlaying = false;
+            _host.ReloadMission(play: false);
+            Notify("Back to editing.");
+        }
+    }
 
     /// <inheritdoc/>
     public void Frame(float elapsedSeconds, bool hasInput)
@@ -137,6 +148,12 @@ internal sealed class EditorSession : IEditorSession
     /// <inheritdoc/>
     public void Draw(UiPainter painter)
     {
+        if (IsPlaying)
+        {
+            DrawPlayingBanner(painter);
+            return;
+        }
+
         // The system pointer stays visible over the editor, as in any desktop tool, so no drawn cursor goes on top.
         _root.Draw(painter);
     }
@@ -204,6 +221,12 @@ internal sealed class EditorSession : IEditorSession
         {
             Category = "File",
             Shortcut = KeyChord.Parse("Ctrl+R"),
+            CanExecute = () => _workspace.Document is not null,
+        });
+        actions.Add(new EditorAction("play.start", "Play", Play)
+        {
+            Category = "Play",
+            Shortcut = KeyChord.Parse("F5"),
             CanExecute = () => _workspace.Document is not null,
         });
         actions.Add(new EditorAction("file.revert", "Revert Mission to Game Files", () =>
@@ -339,6 +362,9 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["view.light"]),
                 MenuItem.For(actions["view.reset-layout"]),
             ])
+            .Add("Play", [
+                MenuItem.For(actions["play.start"]),
+            ])
             .Add("Window", [
                 MenuItem.For(actions["window.outliner"]),
                 MenuItem.For(actions["window.inspector"]),
@@ -351,7 +377,9 @@ internal sealed class EditorSession : IEditorSession
         ActionTable actions = _root.Actions;
         Toolbar toolbar = new(_theme);
         toolbar.Add(actions["file.save"], KitIcon.Save);
-        toolbar.Add(actions["file.reload"], KitIcon.Play);
+        toolbar.Add(actions["file.reload"], KitIcon.Rotate);
+        toolbar.AddSeparator();
+        toolbar.Add(actions["play.start"], KitIcon.Play, showText: true);
         toolbar.AddSeparator();
         toolbar.Add(actions["edit.undo"], KitIcon.Undo);
         toolbar.Add(actions["edit.redo"], KitIcon.Redo);
@@ -362,6 +390,29 @@ internal sealed class EditorSession : IEditorSession
         toolbar.AddSpring();
         toolbar.Add(actions["file.close"], KitIcon.Close, showText: true);
         return toolbar;
+    }
+
+    private void Play()
+    {
+        if (_workspace.Document is null || (_workspace.History.IsDirty && !Save()))
+        {
+            return;
+        }
+
+        _root.CloseAllPopups();
+        _root.SetFocus(null);
+        IsPlaying = true;
+        _host.ReloadMission(play: true);
+    }
+
+    private void DrawPlayingBanner(UiPainter painter)
+    {
+        const string text = "Playing  •  Esc returns to the editor";
+        float width = _theme.Font.MeasureWidth(text, _theme.TextSize) + _theme.Px(28f);
+        UiRect banner = new(MathF.Round((_host.Width - width) * 0.5f), _theme.Px(14f), width, _theme.ControlHeight + _theme.Px(4f));
+        EditorDraw.Shadow(painter, _theme, banner);
+        EditorDraw.Frame(painter, _theme, banner, _theme.Popup.WithAlpha(230), _theme.Accent);
+        EditorDraw.Label(painter, _theme, text, banner.Deflate(new Thickness(_theme.Px(14f), 0f)), _theme.Text);
     }
 
     private bool Save()

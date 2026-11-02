@@ -27,6 +27,7 @@ public sealed partial class GameHost
     private bool _editorOpenWanted;
     private bool _editorCloseWanted;
     private int? _editorMissionWanted;
+    private bool _editorPlayWanted;
     private int _editorLastMilliseconds;
     private EditorView _editorView;
     private readonly EditorPlacementMotion _editorMotion = new();
@@ -111,9 +112,15 @@ public sealed partial class GameHost
                 : null;
             CancelMissionWarmUp();
             _editorMotion.Clear();
+            bool play = _editorPlayWanted;
+            _editorPlayWanted = false;
             StartMission(id);
-            _playerMode = false;
-            _window.CursorVisible = true;
+
+            // Play stands the player up where the mission starts and hands over the window, as a played mission
+            // does; editing keeps the free camera and the pointer.
+            _playerMode = play;
+            _window.CursorVisible = !play;
+            _window.CursorLocked = false;
             if (pose is { } at)
             {
                 _camera?.MoveTo(at.Position, at.Yaw, at.Pitch);
@@ -174,6 +181,20 @@ public sealed partial class GameHost
     {
         if (_editor is not { } editor)
         {
+            return false;
+        }
+
+        // Playing: the game has the frame. Escape is the way back, taken before the game's own Escape could open the
+        // pause menu over a level the editor is about to reload.
+        if (editor.IsPlaying)
+        {
+            if (!state.Console.IsOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
+            {
+                editor.StopPlaying();
+                _window.Input.Captured = true;
+                return true;
+            }
+
             return false;
         }
 
@@ -344,11 +365,12 @@ public sealed partial class GameHost
 
         public void SetPlacementOffset(GameTask owner, Vector3d offsetMetres) => host._editorMotion.SetOffset(owner, offsetMetres);
 
-        public void ReloadMission()
+        public void ReloadMission(bool play = false)
         {
             if (host._session.Mission is { } mission)
             {
                 host._editorMissionWanted = mission.Id;
+                host._editorPlayWanted = play;
             }
         }
 

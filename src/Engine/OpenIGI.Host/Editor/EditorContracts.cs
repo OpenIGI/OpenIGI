@@ -36,7 +36,11 @@ public interface IEditorSession : IDisposable
     UiRect? Viewport { get; }
 
     /// <summary>Gets whether the level is running (play in editor) rather than held still for editing.</summary>
+    /// <remarks>While playing, the game has the whole window and the input; the session only draws its banner.</remarks>
     bool IsPlaying { get; }
+
+    /// <summary>Ends play and goes back to editing; the host calls it when the player presses Escape.</summary>
+    void StopPlaying();
 
     /// <summary>Lays out the interface and handles the frame's input.</summary>
     /// <param name="elapsedSeconds">The real time since the last frame.</param>
@@ -131,7 +135,8 @@ public interface IEditorHost
     void SetPlacementOffset(GameTask owner, Vector3d offsetMetres);
 
     /// <summary>Loads the open mission again from the files as they now stand, keeping the camera where it is.</summary>
-    void ReloadMission();
+    /// <param name="play">Whether to start it as the player (play in editor) rather than held still for editing.</param>
+    void ReloadMission(bool play = false);
 
     /// <summary>Loads a mission to edit, replacing any loaded one. Runs between frames.</summary>
     /// <param name="id">The mission id.</param>
