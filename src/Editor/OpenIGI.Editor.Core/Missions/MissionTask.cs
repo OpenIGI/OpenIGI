@@ -53,10 +53,20 @@ public sealed class MissionParameter
             throw new ArgumentException($"'{Name}' takes {Arguments.Count} values, not {values.Length}.", nameof(values));
         }
 
+        // An integer parameter stays an integer and a bool8 keeps level data's TRUE and FALSE: the engine reads each
+        // argument as its declared type, and a real where an integer belongs is not what the original tools wrote.
+        ScriptParamType? baseType = Declaration.Type is { } type ? ScriptParamTypeInfo.GetBaseType(type) : null;
         QscExpression[] arguments = new QscExpression[values.Length];
         for (int i = 0; i < arguments.Length; i++)
         {
-            arguments[i] = ScriptValues.KeepOrReal(Arguments[i], values[i]);
+            arguments[i] = baseType switch
+            {
+                ScriptParamType.Bool8 => ScriptValues.TryGetBool(Arguments[i], out bool was) && was == (values[i] != 0.0)
+                    ? Arguments[i]
+                    : ScriptValues.Bool(values[i] != 0.0),
+                ScriptParamType.Int32 or ScriptParamType.Int16 => ScriptValues.KeepOrInteger(Arguments[i], values[i]),
+                _ => ScriptValues.KeepOrReal(Arguments[i], values[i]),
+            };
         }
 
         return arguments;

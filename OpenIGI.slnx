@@ -20,6 +20,7 @@
     <Project Path="src/Core/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
   </Folder>
   <Folder Name="/src/Editor/">
+    <Project Path="src/Editor/OpenIGI.Editor/OpenIGI.Editor.csproj" />
     <Project Path="src/Editor/OpenIGI.Editor.Core/OpenIGI.Editor.Core.csproj" />
   </Folder>
   <Folder Name="/src/Engine/">

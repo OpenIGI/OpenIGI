@@ -31,6 +31,7 @@ public sealed partial class GameHost
         ResolvePostProcess(ref view);
         ResolveProjection(state, ref view);
         ComposeFrameEye(state, console, ref view);
+        NoteEditorView(view.Eye, view.UnjitteredProjection);
 
         // The title's own culling, decided once from the eye before the first pass draws: every pass of the frame -- the
         // cascades and the lamps' maps among them -- then leaves out what the eye's place in the level leaves out.

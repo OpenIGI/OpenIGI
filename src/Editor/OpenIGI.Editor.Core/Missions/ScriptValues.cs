@@ -78,6 +78,48 @@ public static class ScriptValues
             : new QscRealLiteral(narrowed);
     }
 
+    /// <summary>The symbols level data writes for a true and a false <c>bool8</c>.</summary>
+    public const string TrueSymbol = "TRUE";
+
+    /// <summary>The symbol for false.</summary>
+    public const string FalseSymbol = "FALSE";
+
+    /// <summary>Evaluates a constant truth value: <c>TRUE</c>, <c>FALSE</c>, or a number (non-zero is true).</summary>
+    /// <param name="expression">The expression.</param>
+    /// <param name="value">Receives the value.</param>
+    /// <returns><see langword="false"/> when the expression is not a truth constant.</returns>
+    public static bool TryGetBool(QscExpression? expression, out bool value)
+    {
+        switch (expression)
+        {
+            case QscSymbol { Name: TrueSymbol }:
+                value = true;
+                return true;
+            case QscSymbol { Name: FalseSymbol }:
+                value = false;
+                return true;
+            default:
+                bool ok = TryGetNumber(expression, out double number);
+                value = ok && number != 0.0;
+                return ok;
+        }
+    }
+
+    /// <summary>Builds a truth constant the way level data writes one.</summary>
+    /// <param name="value">The value.</param>
+    /// <returns><c>TRUE</c> or <c>FALSE</c>.</returns>
+    public static QscExpression Bool(bool value) => new QscSymbol(value ? TrueSymbol : FalseSymbol);
+
+    /// <summary>Replaces an integer constant only if its value changed.</summary>
+    /// <param name="current">The expression now in place.</param>
+    /// <param name="value">The value wanted, rounded to the nearest integer.</param>
+    /// <returns><paramref name="current"/> when it already evaluates to the value, else a new integer constant.</returns>
+    public static QscExpression KeepOrInteger(QscExpression current, double value)
+    {
+        int rounded = (int)Math.Round(value);
+        return TryGetNumber(current, out double existing) && existing == rounded ? current : Integer(rounded);
+    }
+
     /// <summary>
     /// Replaces a numeric constant only if its value changed, so an untouched field keeps its exact spelling
     /// (an integer <c>0</c> stays an integer).

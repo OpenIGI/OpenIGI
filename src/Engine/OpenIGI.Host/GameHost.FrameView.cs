@@ -159,6 +159,8 @@ public sealed partial class GameHost
             verticalFieldOfView = CutsceneVerticalFieldOfView(cutsceneLens.FieldOfView);
         }
 
+        ApplyEditorLens(ref aspectRatio, ref verticalFieldOfView);
+
         view.SmoothPresentation = smoothPresentation;
         view.TickBlend = tickBlend;
         view.Sight = sight;
@@ -317,6 +319,9 @@ public sealed partial class GameHost
             aspectRatio,
             near: NearPlane,
             far: FarPlane);
+
+        // Inside the editor the projection is built for the viewport panel's shape and then placed over it.
+        unjitteredProjection = ApplyEditorViewport(unjitteredProjection);
 
         // Temporal accumulation works by sampling a different point inside each pixel every frame
         // and averaging what comes back, so the jitter is not a refinement of the technique -- it
