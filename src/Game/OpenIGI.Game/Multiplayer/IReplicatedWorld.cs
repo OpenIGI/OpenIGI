@@ -201,12 +201,21 @@ public interface IReplicatedClientWorld
     {
     }
 
-    /// <summary>Gets how far, in world units, this client's own player may stand from the server's word without being put back.</summary>
+    /// <summary>Gets the platform -- a lift -- the client's own player stands on now, and where this client's car stands.</summary>
     /// <remarks>
-    /// Nought leaves the session's own tolerance. A player riding a moving lift is given more: the server carries it each of
-    /// its ticks and runs its commands as they come, so the two drift by a tick of the lift's travel and back as the queue does.
+    /// Its prediction is weighed on the platform: the server carries the player each of its ticks and runs its commands as
+    /// they come, a tick or two earlier or later in the car's travel than here, which in the world was an error of that much.
     /// </remarks>
-    double PredictionSlack => 0;
+    PlatformFrame? LocalPlatform => null;
+
+    /// <summary>Gets where this client's copy of a platform stands now, in world units, or <see langword="null"/>.</summary>
+    /// <param name="index">The platform, in the snapshot's order of lifts.</param>
+    /// <returns>Where it stands.</returns>
+    /// <remarks>
+    /// The others riding it are drawn on it: they are sampled in the past, and the car this client rides is the server's
+    /// projected on into its present, so drawn where the snapshots had them they stood under its floor or in its roof.
+    /// </remarks>
+    Vector3d? PlatformOrigin(int index) => null;
 }
 
 /// <summary>The kinds of message a session sends, the first byte of each.</summary>

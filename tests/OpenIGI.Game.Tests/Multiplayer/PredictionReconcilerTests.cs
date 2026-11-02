@@ -38,4 +38,19 @@ public sealed class PredictionReconcilerTests
         PredictionReconciler reconciler = new();
         Assert.Null(reconciler.Check(42, new Vector3d(1, 2, 3)));
     }
+
+    [Fact]
+    public void A_prediction_made_in_a_lift_is_weighed_as_a_place_in_the_car()
+    {
+        // The client stood 64 over its car's floor; the server ran the same command two ticks further into the car's
+        // travel, so its player and its car are both 300 higher. In the world that is an error; in the car it is none.
+        PredictionReconciler reconciler = new();
+        reconciler.Record(10, new Vector3d(0, 0, 1064), new PlatformFrame(3, new Vector3d(0, 0, 1000)));
+        Assert.Null(reconciler.Check(10, new Vector3d(0, 0, 1364), index => index == 3 ? new Vector3d(0, 0, 1300) : null));
+        Assert.Equal(0, reconciler.Corrections);
+
+        // Off its floor in the server's car -- a jump the server never made -- it is put back by as much.
+        reconciler.Record(11, new Vector3d(0, 0, 2064), new PlatformFrame(3, new Vector3d(0, 0, 1000)));
+        Assert.Equal(new Vector3d(0, 0, -1000), reconciler.Check(11, new Vector3d(0, 0, 1364), index => new Vector3d(0, 0, 1300)));
+    }
 }

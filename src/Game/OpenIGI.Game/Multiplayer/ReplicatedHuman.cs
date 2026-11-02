@@ -56,6 +56,10 @@ public enum ReplicatedHumanCondition : byte
 /// <param name="ActionSequence">How often its upper-body action has started, counted round in a byte: a change starts it again.</param>
 /// <param name="ClipTime">Where a whole-body clip the others must pose exactly is, in sixteenths of its time; a climb's.</param>
 /// <param name="Source">For a soldier a generator made, its generator's task id plus one, for a client to make the same replacement; else 0.</param>
+/// <param name="Platform">
+/// The lift it rides, its index in the snapshot's lifts plus one, or 0: a client draws it on its own copy of that car, which
+/// stands ahead of the moment the human is drawn at.
+/// </param>
 public readonly record struct ReplicatedHuman(
     int Id,
     Int3 Position,
@@ -71,7 +75,8 @@ public readonly record struct ReplicatedHuman(
     byte Shots = 0,
     byte ActionSequence = 0,
     ushort ClipTime = 0,
-    ushort Source = 0);
+    ushort Source = 0,
+    byte Platform = 0);
 
 /// <summary>A point in whole world units.</summary>
 /// <param name="X">X.</param>

@@ -208,13 +208,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder || host.PlaysInteractionClip ? _game.World.Soldiers?.PlayerLadderClipTime : null)));
+            humans.Add(OnLift(WithRevive(Replicate(
+                HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder || host.PlaysInteractionClip ? _game.World.Soldiers?.PlayerLadderClipTime : null)), host));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.LadderClipTime)));
+            humans.Add(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.LadderClipTime)), other.Player));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -631,6 +631,26 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         _checkpointTick = CurrentTick;
+    }
+
+    // The lift a player rides, by the rule its car carries it by: a client draws it on that car, wherever its own copy of
+    // the car stands.
+    private ReplicatedHuman OnLift(ReplicatedHuman human, PlayerCamera player)
+    {
+        if (_game.World.Elevators is not { Elevators.Count: > 0 } lifts || player.IsOnLadder)
+        {
+            return human;
+        }
+
+        for (int i = 0; i < lifts.Elevators.Count && i < ReplicatedLift.MaxPerSnapshot; i++)
+        {
+            if (OpenIGI.Game.World.ElevatorRegistry.IsPassenger(lifts.Elevators[i], player.Body.Position, _game.World.Solids))
+            {
+                return human with { Platform = (byte)(i + 1) };
+            }
+        }
+
+        return human;
     }
 
     // A fallen player's health byte carries its revival instead, for every client's prompt and panel to show.

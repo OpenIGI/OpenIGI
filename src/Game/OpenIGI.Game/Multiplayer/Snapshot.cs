@@ -90,7 +90,7 @@ public sealed record Snapshot(
 /// </remarks>
 public static class SnapshotCodec
 {
-    private const int FieldCount = 14;
+    private const int FieldCount = 15;
 
     // A level's doors, eight to a byte: the largest of the original's levels has some hundreds.
     private const int MaxDoorBytes = 512;
@@ -541,6 +541,7 @@ public static class SnapshotCodec
         if (a.ActionSequence != b.ActionSequence) { mask |= 1u << 11; }
         if (a.ClipTime != b.ClipTime) { mask |= 1u << 12; }
         if (a.Source != b.Source) { mask |= 1u << 13; }
+        if (a.Platform != b.Platform) { mask |= 1u << 14; }
         return mask;
     }
 
@@ -577,6 +578,7 @@ public static class SnapshotCodec
         if ((mask & (1u << 11)) != 0) { writer.WriteBits(human.ActionSequence, 8); }
         if ((mask & (1u << 12)) != 0) { writer.WriteBits(human.ClipTime, 16); }
         if ((mask & (1u << 13)) != 0) { writer.WriteVarUInt(human.Source); }
+        if ((mask & (1u << 14)) != 0) { writer.WriteBits(human.Platform, 8); }
     }
 
     private static ReplicatedHuman ReadFields(ref BitReader reader, uint mask, ReplicatedHuman human)
@@ -609,6 +611,7 @@ public static class SnapshotCodec
         if ((mask & (1u << 11)) != 0) { human = human with { ActionSequence = (byte)reader.ReadBits(8) }; }
         if ((mask & (1u << 12)) != 0) { human = human with { ClipTime = (ushort)reader.ReadBits(16) }; }
         if ((mask & (1u << 13)) != 0) { human = human with { Source = (ushort)reader.ReadVarUInt() }; }
+        if ((mask & (1u << 14)) != 0) { human = human with { Platform = (byte)reader.ReadBits(8) }; }
         return human;
     }
 }

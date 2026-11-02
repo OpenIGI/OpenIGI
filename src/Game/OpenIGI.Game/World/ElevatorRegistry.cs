@@ -149,8 +149,27 @@ public sealed class ElevatorRegistry
         TickCommand(command);
     }
 
+    /// <summary>
+    /// Gets or sets whether the lifts are another game's: a co-op client's, whose cars only coast on as the server's
+    /// last told them, the level's floor expressions and switches left to the server.
+    /// </summary>
+    /// <remarks>
+    /// Run on the client's own script, a car started when its late copy of the doors and switches said so -- early, late,
+    /// or not at all while a door the server had shut still stood open here -- and was put back where the server's stood
+    /// every few snapshots. Coasting, it stands each tick where the server's will be (<see cref="ElevatorState.Project"/>).
+    /// </remarks>
+    public bool Mirrored { get; set; }
+
     private void TickCommand(ElevatorCommand command)
     {
+        if (Mirrored)
+        {
+            bool wasCoasting = command.Elevator.State.HasMovementRequest;
+            command.Elevator.State.Coast();
+            Sound(command.Elevator, wasCoasting);
+            return;
+        }
+
         bool wasMoving = command.Elevator.State.HasMovementRequest;
         // The update (0x43D280) writes isWantedFloor[0..9] then, if there is no up/down pulse,
         // sets nWantedFloor to the last true index. A held expression is a destination, not a
@@ -173,25 +192,32 @@ public sealed class ElevatorRegistry
             wantedFloor,
             enabled);
         command.ClearExteriorRequestAfterStart();
+        Sound(command.Elevator, wasMoving);
+    }
 
-        if (_sounds is not null)
+    // The start, travel and stop sounds of a lift's tick.
+    private void Sound(PlacedElevator elevator, bool wasMoving)
+    {
+        if (_sounds is null)
         {
-            if (command.Elevator.State.IsStart)
-            {
-                _sounds(command.Elevator, ElevatorSoundEvent.Started);
-            }
+            return;
+        }
 
-            if (!wasMoving && command.Elevator.State.HasMovementRequest)
-            {
-                command.Elevator.IsSounding = true;
-                _sounds(command.Elevator, ElevatorSoundEvent.Traveling);
-            }
+        if (elevator.State.IsStart)
+        {
+            _sounds(elevator, ElevatorSoundEvent.Started);
+        }
 
-            if (command.Elevator.State.IsStop)
-            {
-                command.Elevator.IsSounding = false;
-                _sounds(command.Elevator, ElevatorSoundEvent.Stopped);
-            }
+        if (!wasMoving && elevator.State.HasMovementRequest)
+        {
+            elevator.IsSounding = true;
+            _sounds(elevator, ElevatorSoundEvent.Traveling);
+        }
+
+        if (elevator.State.IsStop)
+        {
+            elevator.IsSounding = false;
+            _sounds(elevator, ElevatorSoundEvent.Stopped);
         }
     }
 
@@ -231,6 +257,12 @@ public sealed class ElevatorRegistry
     public bool RequestFromSwitch(DeclaredTask switchTask)
     {
         ArgumentNullException.ThrowIfNull(switchTask);
+
+        // A co-op client's press reaches the server's lift by the command it went out with; its car comes with the snapshots.
+        if (Mirrored)
+        {
+            return false;
+        }
 
         foreach (ElevatorCommand command in _commands)
         {
@@ -569,7 +601,7 @@ public sealed class ElevatorRegistry
                 variables.BindReal(declared, "vLastFloor", () => state.LastFloorPosition, _ => { });
                 variables.BindInt(declared, "nWantedFloor", () => state.WantedFloorIndex, value =>
                 {
-                    if ((uint)value < (uint)state.FloorCount)
+                    if (!registry.Mirrored && (uint)value < (uint)state.FloorCount)
                     {
                         state.RequestFloor(value);
                     }
