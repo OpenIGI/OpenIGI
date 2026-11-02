@@ -34,6 +34,7 @@ public sealed class RatchetTests
         ["OpenIGI.Game.Igi1"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Audio", "OpenIGI.Platform"],
         ["OpenIGI.Game.Igi2"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Audio", "OpenIGI.Platform"],
         ["OpenIGI.Modding"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Host", "OpenIGI.Game.Igi1", "OpenIGI.Game.Igi2"],
+        ["OpenIGI.Editor.Core"] = ["OpenIGI.Rendering", "OpenIGI.Presentation", "OpenIGI.Host", "OpenIGI.Platform", "OpenIGI.Game.Igi1", "OpenIGI.Game.Igi2", "OpenIGI.UI"],
     };
 
     /// <summary>The helpers that were written again in file after file. One shared copy each is the goal.</summary>

@@ -19,6 +19,9 @@
     <Project Path="src/Core/OpenIGI.Releases/OpenIGI.Releases.csproj" />
     <Project Path="src/Core/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
   </Folder>
+  <Folder Name="/src/Editor/">
+    <Project Path="src/Editor/OpenIGI.Editor.Core/OpenIGI.Editor.Core.csproj" />
+  </Folder>
   <Folder Name="/src/Engine/">
     <Project Path="src/Engine/OpenIGI.Engine/OpenIGI.Engine.csproj" />
     <Project Path="src/Engine/OpenIGI.Host/OpenIGI.Host.csproj" />
@@ -75,6 +78,7 @@
     <Project Path="tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj" />
     <Project Path="tests/OpenIGI.Desktop.Tests/OpenIGI.Desktop.Tests.csproj" />
     <Project Path="tests/OpenIGI.Parity.Tests/OpenIGI.Parity.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Editor.Tests/OpenIGI.Editor.Tests.csproj" />
     <Project Path="tests/OpenIGI.Engine.Tests/OpenIGI.Engine.Tests.csproj" />
     <Project Path="tests/OpenIGI.Formats.Tests/OpenIGI.Formats.Tests.csproj" />
     <Project Path="tests/OpenIGI.Frontend.Tests/OpenIGI.Frontend.Tests.csproj" />
