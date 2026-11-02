@@ -70,7 +70,7 @@ internal sealed class EditorSession : IEditorSession
         _workspace = new MissionWorkspace(host, project);
 
         _live = new LiveWorldLink(host, _workspace);
-        _viewport = new ViewportPanel(_theme, host, _workspace);
+        _viewport = new ViewportPanel(_theme, host, _workspace, _live);
         _outliner = new OutlinerPanel(_theme, _workspace);
         _outliner.Activated += _viewport.Frame;
         _workspace.Selection.Changed += () =>
@@ -82,7 +82,7 @@ internal sealed class EditorSession : IEditorSession
         };
 
         _dock = new DockSpace(_theme);
-        _dock.Register(new DockPanel("viewport", "Viewport", _viewport) { Icon = KitIcon.Camera, CanClose = false });
+        _dock.Register(new DockPanel("viewport", "Viewport", _viewport) { Icon = KitIcon.Camera, CanClose = false, IsTransparent = true });
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
         _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace)) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
@@ -118,6 +118,41 @@ internal sealed class EditorSession : IEditorSession
     public bool IsPlaying { get; private set; }
 
     /// <inheritdoc/>
+    public string? RunCommand(IReadOnlyList<string> arguments)
+    {
+        if (arguments is not [string verb, ..] || !verb.Equals("select", StringComparison.OrdinalIgnoreCase) || arguments.Count < 2)
+        {
+            return null;
+        }
+
+        _pendingSelect = string.Join(' ', arguments.Skip(1));
+        return $"Selecting '{_pendingSelect}' once the mission is open.";
+    }
+
+    // A selection asked for by name, applied on the first frame the document has it.
+    private string? _pendingSelect;
+
+    private void ApplyPendingSelect()
+    {
+        if (_pendingSelect is not { } name || _workspace.Document is not { } document || _host.View.Width <= 0f)
+        {
+            return;
+        }
+
+        _pendingSelect = null;
+        MissionTask? task = document.EnumerateTasks().FirstOrDefault(t => string.Equals(t.Label, name, StringComparison.OrdinalIgnoreCase))
+            ?? document.EnumerateTasks().FirstOrDefault(t => t.Label.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (task is null)
+        {
+            Notify($"No object is called '{name}'.", isError: true);
+            return;
+        }
+
+        _workspace.Selection.Set(task);
+        _viewport.Frame(task);
+    }
+
+    /// <inheritdoc/>
     public void StopPlaying()
     {
         if (IsPlaying)
@@ -133,8 +168,9 @@ internal sealed class EditorSession : IEditorSession
     {
         _workspace.Sync();
         _live.Update();
+        ApplyPendingSelect();
         _noticeSeconds -= elapsedSeconds;
-        _menu.Caption = _workspace.Mission is { } mission ? $"{mission.Name}{(_workspace.History.IsDirty ? "  • modified" : string.Empty)}" : _host.Title.DisplayName;
+        _menu.Caption = _workspace.Mission is not null ? $"{_workspace.MissionName}{(_workspace.History.IsDirty ? "  • modified" : string.Empty)}" : _host.Title.DisplayName;
         UpdateStatus();
         if (hasInput)
         {
@@ -344,7 +380,7 @@ internal sealed class EditorSession : IEditorSession
     {
         ActionTable actions = _root.Actions;
         IReadOnlyList<MenuItem> missions = [.. _host.Missions.Select(m => MenuItem.Command(
-            FormattableString.Invariant($"{m.Id}. {m.Name}"),
+            FormattableString.Invariant($"{m.Id}. {_host.MissionName(m)}"),
             () => _host.OpenMission(m.Id)))];
 
         return new MenuBar(_theme)

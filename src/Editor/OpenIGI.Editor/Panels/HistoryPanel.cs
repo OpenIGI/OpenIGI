@@ -75,7 +75,7 @@ internal sealed class HistoryPanel(EditorTheme theme, MissionWorkspace workspace
             }
 
             string name = i == 0
-                ? workspace.Mission?.Name ?? "Opened"
+                ? workspace.Mission is null ? "Opened" : workspace.MissionName
                 : i <= current ? workspace.History.Done[i - 1].Name : workspace.History.Undone[^(i - current)].Name;
             if (i == current)
             {

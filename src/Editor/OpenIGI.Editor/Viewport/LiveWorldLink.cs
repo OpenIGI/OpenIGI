@@ -33,6 +33,30 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
     /// <summary>Gets how many document tasks are linked to the running level.</summary>
     public int LinkedCount => _links.Count;
 
+    /// <summary>Gets the radius, in metres, of everything a task placed, measured from the task's position.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The radius, or <see langword="null"/> when the task is not linked to anything placed.</returns>
+    public double? RadiusMetres(MissionTask task)
+    {
+        if (!_links.TryGetValue(task, out (Vector3d Loaded, GameTask Owner) link) || _boundPlacements is not { } placements)
+        {
+            return null;
+        }
+
+        double radius = 0.0;
+        foreach (WorldPlacement placement in placements)
+        {
+            if (ReferenceEquals(placement.Owner, link.Owner))
+            {
+                // The model's sphere is in world units; the placement's position is in metres.
+                double reach = (placement.Position - link.Loaded).Length + WorldUnits.ToMetres(placement.Model.RenderSphereRadius);
+                radius = Math.Max(radius, reach);
+            }
+        }
+
+        return radius > 0.0 ? radius : null;
+    }
+
     /// <summary>Binds to a newly opened document or rebuilt level. Called once a frame.</summary>
     public void Update()
     {
@@ -84,7 +108,9 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
 
         foreach (MissionTask task in document.EnumerateTasks())
         {
-            if (TaskPresentation.PositionMetres(task) is not { } loaded || !owners.TryGetValue((task.TypeName, task.Label), out List<(GameTask Owner, Vector3d At)>? candidates))
+            if (TaskPresentation.PositionMetres(task) is not { } loaded
+                || !owners.TryGetValue((task.TypeName, task.Label), out List<(GameTask Owner, Vector3d At)>? candidates)
+                || candidates.Count == 0)
             {
                 continue;
             }

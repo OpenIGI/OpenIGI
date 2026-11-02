@@ -39,6 +39,12 @@ public interface IEditorSession : IDisposable
     /// <remarks>While playing, the game has the whole window and the input; the session only draws its banner.</remarks>
     bool IsPlaying { get; }
 
+    /// <summary>Runs an editor command typed at the console after <c>editor</c>, such as <c>select Crate</c>.</summary>
+    /// <param name="arguments">The words after <c>editor</c>.</param>
+    /// <returns>What to print, or <see langword="null"/> when the session does not know the command.</returns>
+    /// <remarks>A command given before the mission has loaded waits for it, so a launch can name what to select.</remarks>
+    string? RunCommand(IReadOnlyList<string> arguments);
+
     /// <summary>Ends play and goes back to editing; the host calls it when the player presses Escape.</summary>
     void StopPlaying();
 
@@ -88,6 +94,11 @@ public interface IEditorHost
 
     /// <summary>Gets the running game's missions, in campaign order.</summary>
     IReadOnlyList<MissionDescriptor> Missions { get; }
+
+    /// <summary>Gets a mission's name as the menus show it, in the player's language.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <returns>The name.</returns>
+    string MissionName(MissionDescriptor mission);
 
     /// <summary>Gets the loaded mission, or <see langword="null"/>.</summary>
     MissionDescriptor? Mission { get; }

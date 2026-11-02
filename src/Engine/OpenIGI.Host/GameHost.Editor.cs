@@ -28,6 +28,7 @@ public sealed partial class GameHost
     private bool _editorCloseWanted;
     private int? _editorMissionWanted;
     private bool _editorPlayWanted;
+    private string[]? _editorPendingCommand;
     private int _editorLastMilliseconds;
     private EditorView _editorView;
     private readonly EditorPlacementMotion _editorMotion = new();
@@ -41,6 +42,9 @@ public sealed partial class GameHost
 
     /// <summary>Gets whether the editor is holding the level still for editing.</summary>
     private bool EditorHoldsLevel => _editor is { IsPlaying: false };
+
+    /// <summary>Gets the cut-scene frame the player is shown: none while the editor holds the level, whose view is its own.</summary>
+    private CutsceneFrame? CutsceneFrameShown => EditorHoldsLevel ? null : _mission.CutsceneFrameShown;
 
     /// <summary>Asks for the editor to open at the next frame boundary.</summary>
     /// <returns><see langword="false"/> when this build has no editor.</returns>
@@ -70,6 +74,18 @@ public sealed partial class GameHost
                 {
                     _editorCloseWanted = true;
                     return;
+                }
+
+                if (_editor is { } open && argument.Length > 0 && !int.TryParse(argument, out _))
+                {
+                    context.Print(open.RunCommand(context.Arguments) ?? $"Unknown editor command '{argument}'.");
+                    return;
+                }
+
+                if (_editorPendingCommand is null && argument.Length > 0 && !int.TryParse(argument, out _))
+                {
+                    // Given before the editor has opened (a launch's +editor select ...): run once it has.
+                    _editorPendingCommand = [.. context.Arguments];
                 }
 
                 if (!RequestEditor())
@@ -144,6 +160,11 @@ public sealed partial class GameHost
         _window.CursorLocked = false;
         _editorLastMilliseconds = _loop.TimeSource.Milliseconds;
         _editor = factory.Open(new EditorHostServices(this));
+        if (_editorPendingCommand is { } pending)
+        {
+            _editorPendingCommand = null;
+            _editor.RunCommand(pending);
+        }
     }
 
     private void CloseEditor(FrameLoopState state)
@@ -210,8 +231,18 @@ public sealed partial class GameHost
         float elapsed = Math.Clamp((now - _editorLastMilliseconds) / 1000f, 0f, 0.1f);
         _editorLastMilliseconds = now;
 
-        // The console keeps the keyboard while it is open, as it does over the shell.
-        editor.Frame(elapsed, hasInput: !state.Console.IsOpen);
+        // The console keeps the keyboard while it is open, as it does over the shell. A fault in the editor closes the
+        // editor, not the game: the player's session and whatever the editor saved are worth more than its frame.
+        try
+        {
+            editor.Frame(elapsed, hasInput: !state.Console.IsOpen);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            EditorFailed(state, error);
+            return false;
+        }
+
         DrainPressQueue(state, executeBinds: false);
         if (!state.Console.IsOpen)
         {
@@ -236,9 +267,23 @@ public sealed partial class GameHost
             state.Batch,
             new LayoutContext(MathF.Max(1f, _window.Width), MathF.Max(1f, _window.Height), new UiVec2(MathF.Max(1f, _window.Width), MathF.Max(1f, _window.Height))));
         state.Batch.Begin();
-        editor.Draw(painter);
+        try
+        {
+            editor.Draw(painter);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            EditorFailed(state, error);
+        }
+
         state.Batch.End();
         _device.EndStageTiming();
+    }
+
+    private void EditorFailed(FrameLoopState state, Exception error)
+    {
+        _logger.Error("Editor", $"The editor failed and was closed: {error}");
+        _editorCloseWanted = true;
     }
 
     /// <summary>Narrows the frame's lens to the editor viewport's shape, so the world is not stretched into it.</summary>
@@ -330,6 +375,8 @@ public sealed partial class GameHost
         public IReadOnlyList<MissionDescriptor> Missions => [.. host._missions.InCampaignOrder()];
 
         public MissionDescriptor? Mission => host._session.Mission;
+
+        public string MissionName(MissionDescriptor mission) => host._menuStrings?.Get(mission.Name) ?? mission.Name;
 
         public bool IsWarmingUp => host.IsWarmingUp;
 

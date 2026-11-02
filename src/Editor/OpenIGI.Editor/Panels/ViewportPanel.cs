@@ -26,16 +26,18 @@ internal sealed class ViewportPanel : EditorElement
 
     private readonly IEditorHost _host;
     private readonly MissionWorkspace _workspace;
+    private readonly LiveWorldLink _live;
     private readonly TranslateGizmo _gizmo = new();
     private readonly List<InspectableEntity> _entities = [];
     private MouseButton? _flying;
     private int _hoveredMission = -1;
 
-    public ViewportPanel(EditorTheme theme, IEditorHost host, MissionWorkspace workspace)
+    public ViewportPanel(EditorTheme theme, IEditorHost host, MissionWorkspace workspace, LiveWorldLink live)
         : base(theme)
     {
         _host = host;
         _workspace = workspace;
+        _live = live;
     }
 
     /// <summary>Gets whether the camera is being flown.</summary>
@@ -64,9 +66,12 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
-        // Backed off along the current heading, a little above, so the object sits in the middle of the view.
-        Vector3d back = new(-Math.Sin(camera.Yaw), -Math.Cos(camera.Yaw), 0.35);
-        camera.MoveTo(target + (back * 8.0), camera.Yaw, -0.3f);
+        // Backed off along the current heading by enough to see all of it, a little above and looking down, so the
+        // object fills the middle of the view whatever its size.
+        double radius = _live.RadiusMetres(task) ?? 2.0;
+        double distance = Math.Clamp(radius * 2.4, 3.0, 400.0);
+        Vector3d back = new(-Math.Sin(camera.Yaw) * Math.Cos(0.35), -Math.Cos(camera.Yaw) * Math.Cos(0.35), Math.Sin(0.35));
+        camera.MoveTo(target + (back * distance), camera.Yaw, -0.35f);
     }
 
     /// <summary>Flies the camera while a fly button is held. Called once per frame by the session.</summary>
@@ -261,7 +266,7 @@ internal sealed class ViewportPanel : EditorElement
 
     private void DrawChips(UiPainter painter)
     {
-        string mode = _workspace.Mission is { } mission ? $"{_host.Title.DisplayName}  •  {mission.Name}" : string.Empty;
+        string mode = _workspace.Mission is not null ? $"{_host.Title.DisplayName}  •  {_workspace.MissionName}" : string.Empty;
         UiRect chip = new(Bounds.X + Theme.Px(10f), Bounds.Y + Theme.Px(10f), Theme.Font.MeasureWidth(mode, Theme.TextSize) + Theme.Px(20f), Theme.ControlHeight);
         EditorDraw.Fill(painter, Theme, chip, Theme.Background.WithAlpha(170));
         EditorDraw.Label(painter, Theme, mode, chip.Deflate(new Thickness(Theme.Px(10f), 0f)), Theme.Text);
@@ -319,7 +324,7 @@ internal sealed class ViewportPanel : EditorElement
             UiRect row = new(list.X, list.Y + (i * rowHeight), list.Width, rowHeight - Theme.Px(4f));
             EditorDraw.Fill(painter, Theme, row, i == _hoveredMission ? Theme.Selection : Theme.Panel);
             EditorDraw.Icon(painter, Theme, KitIcon.Terrain, new UiRect(row.X + Theme.Px(8f), row.Y, Theme.IconSize, row.Height));
-            EditorDraw.Label(painter, Theme, FormattableString.Invariant($"{mission.Id}.  {mission.Name}"), new UiRect(row.X + Theme.Px(32f), row.Y, row.Width - Theme.Px(40f), row.Height), Theme.Text);
+            EditorDraw.Label(painter, Theme, FormattableString.Invariant($"{mission.Id}.  {_host.MissionName(mission)}"), new UiRect(row.X + Theme.Px(32f), row.Y, row.Width - Theme.Px(40f), row.Height), Theme.Text);
         }
 
         painter.PopClip();

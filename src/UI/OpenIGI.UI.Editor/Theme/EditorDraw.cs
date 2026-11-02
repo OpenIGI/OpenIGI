@@ -105,6 +105,8 @@ public static class EditorDraw
     {
         ArgumentNullException.ThrowIfNull(font);
         ArgumentNullException.ThrowIfNull(text);
+        // Half a pixel of slack: boxes are sized from the same measurement, and rounding must not ellipsise them.
+        width += 0.5f;
         if (font.MeasureWidth(text, size) <= width)
         {
             return text;

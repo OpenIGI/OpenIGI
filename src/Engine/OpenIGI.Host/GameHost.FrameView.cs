@@ -148,7 +148,7 @@ public sealed partial class GameHost
         // has no other way to know the lens the frame was actually drawn with.
         _inspectorTangent = horizontalTangent;
         _inspectorAspect = aspectRatio;
-        if (_mission.CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
+        if (CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
         {
             // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
             // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
@@ -512,7 +512,7 @@ public sealed partial class GameHost
         {
             eye = _entry.Camera;
         }
-        else if (_mission.CutsceneFrameShown is { } cutsceneView)
+        else if (CutsceneFrameShown is { } cutsceneView)
         {
             eye = cutsceneView.Camera;
         }

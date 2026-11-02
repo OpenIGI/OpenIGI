@@ -313,7 +313,28 @@ public sealed class DockSpace : EditorElement
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        painter.FillRect(Bounds, Theme.Background);
+        // Only the gaps between groups get the background, never the whole space: a transparent panel's body has to
+        // stay unpainted for what is drawn beneath to show through.
+        if (_root is null)
+        {
+            painter.FillRect(Bounds, Theme.Background);
+            return;
+        }
+
+        foreach (DockSplit split in Splits(_root))
+        {
+            bool horizontal = split.Orientation == Orientation.Horizontal;
+            for (int i = 0; i < split.Children.Count - 1; i++)
+            {
+                UiRect a = split.Children[i].Bounds;
+                painter.FillRect(
+                    horizontal
+                        ? new UiRect(a.Right, a.Y, Theme.SplitterSize, a.Height)
+                        : new UiRect(a.X, a.Bottom, a.Width, Theme.SplitterSize),
+                    Theme.Background);
+            }
+        }
+
         foreach (DockTabs group in Groups(_root))
         {
             DrawGroup(painter, group);
@@ -538,8 +559,12 @@ public sealed class DockSpace : EditorElement
     private void DrawGroup(UiPainter painter, DockTabs group)
     {
         UiRect area = group.Bounds;
-        painter.FillRect(area, Theme.Panel);
         UiRect strip = new(area.X, area.Y, area.Width, Theme.TabHeight);
+        if (group.ActivePanel is not { IsTransparent: true })
+        {
+            painter.FillRect(area, Theme.Panel);
+        }
+
         painter.FillRect(strip, Theme.Chrome);
         bool focused = group.ActivePanel?.Content is { } content && Root?.Focused is { } f && f.IsWithin(content);
         foreach ((DockTabs _, DockPanel panel, UiRect rect) in Tabs(group))

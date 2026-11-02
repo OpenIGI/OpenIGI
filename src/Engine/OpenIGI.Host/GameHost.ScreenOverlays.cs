@@ -257,7 +257,7 @@ public sealed partial class GameHost
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
         DrawModHudOverlays(state, view);
 
-        if (_mission.CutsceneFrameShown is { } cinematicFraming)
+        if (CutsceneFrameShown is { } cinematicFraming)
         {
             CutsceneFramingRenderer.Draw(
                 _device, state.Batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);

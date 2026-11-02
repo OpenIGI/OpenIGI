@@ -235,7 +235,15 @@ public class TextField : EditorElement
         UiFont font = Font;
         float size = Theme.TextSize;
         float y = MathF.Round(box.Y + ((box.Height - font.LineHeight(size)) * 0.5f));
-        KeepCaretVisible(font, size, box.Width);
+        // Only a field being typed in follows its caret; any other shows the start of its text.
+        if (IsFocused)
+        {
+            KeepCaretVisible(font, size, box.Width);
+        }
+        else
+        {
+            _scroll = 0f;
+        }
 
         painter.PushClip(box);
         if (_edit.Text.Length == 0 && !IsFocused && Placeholder is { } placeholder)

@@ -476,7 +476,8 @@ public sealed class MenuBar : EditorElement
         return new UiRect(x, Bounds.Y, TitleWidth(index), Bounds.Height);
     }
 
-    private float TitleWidth(int index) => Theme.Font.MeasureWidth(_menus[index].Title, Theme.TextSize) + Theme.Px(18f);
+    // A pixel of slack: the label is fitted to exactly its measured width, and rounding would otherwise ellipsise it.
+    private float TitleWidth(int index) => MathF.Ceiling(Theme.Font.MeasureWidth(_menus[index].Title, Theme.TextSize)) + Theme.Px(18f) + 1f;
 
     private int TitleAt(UiVec2 point)
     {

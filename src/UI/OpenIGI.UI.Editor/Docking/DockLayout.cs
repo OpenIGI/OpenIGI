@@ -23,6 +23,12 @@ public sealed class DockPanel(string id, string title, UiElement content)
     /// <summary>Gets the content.</summary>
     public UiElement Content { get; } = content;
 
+    /// <summary>
+    /// Gets or sets whether the panel's body is left unpainted, so what is drawn beneath the interface shows through:
+    /// the editor's viewport, over the world the game renders.
+    /// </summary>
+    public bool IsTransparent { get; set; }
+
     /// <summary>Gets or sets whether the panel's tab shows a close button.</summary>
     public bool CanClose { get; set; } = true;
 }

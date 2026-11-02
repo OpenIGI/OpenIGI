@@ -43,6 +43,9 @@ internal sealed class MissionWorkspace
     /// <summary>Gets the mission the document belongs to.</summary>
     public MissionDescriptor? Mission => Document is null ? null : _loadedFor;
 
+    /// <summary>Gets the open mission's name as the menus show it, or empty.</summary>
+    public string MissionName => Mission is { } mission ? _host.MissionName(mission) : string.Empty;
+
     /// <summary>Gets the edit history.</summary>
     public EditHistory History { get; } = new();
 
@@ -81,12 +84,12 @@ internal sealed class MissionWorkspace
 
             Document = MissionDocument.Read(image);
             Document.Changed += OnDocumentChanged;
-            _host.Logger.Information("Editor", $"Opened {mission.Name}: {Document.EnumerateTasks().Count()} tasks.");
+            _host.Logger.Information("Editor", $"Opened {_host.MissionName(mission)}: {Document.EnumerateTasks().Count()} tasks.");
         }
         catch (Exception error) when (error is IOException or Scripting.Qvm.QvmFormatException or Scripting.Qsc.QscDecompileException)
         {
             LoadError = error.Message;
-            _host.Logger.Warning("Editor", $"Could not open {mission.Name}'s objects: {error.Message}");
+            _host.Logger.Warning("Editor", $"Could not open {_host.MissionName(mission)}'s objects: {error.Message}");
         }
 
         Changed?.Invoke();
