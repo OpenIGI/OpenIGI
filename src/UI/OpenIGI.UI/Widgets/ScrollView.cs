@@ -68,6 +68,10 @@ public class ScrollView : UiElement, IWheelScrollable
     /// <param name="deltaPixels">The pixels to scroll by.</param>
     public void ScrollBy(float deltaPixels) => ScrollOffset += deltaPixels;
 
+    /// <summary>Puts the content at the target offset at once, without the glide.</summary>
+    /// <remarks>A screen opening on a row far down its list is shown there, rather than scrolling to it from the top.</remarks>
+    public void SnapToTarget() => _offset.SnapTo(_offset.Target);
+
     /// <summary>Scrolls to the bottom of the content.</summary>
     public void ScrollToEnd() => ScrollOffset = MaxScroll;
 
