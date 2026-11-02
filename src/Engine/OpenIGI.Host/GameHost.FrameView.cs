@@ -339,7 +339,7 @@ public sealed partial class GameHost
         // working any of them out separately is how a jitter ends up sized for one buffer and applied
         // to another. See RenderResolutionPolicy.
         ReconstructionPlan reconstruction = _device.PlanReconstruction(new ReconstructionRequest(
-            ReconstructionCVars.Reconstruction.Value,
+            ReconstructionCVars.Effective,
             ReconstructionCVars.DlssQualityMode.Value,
             _window.Width,
             _window.Height,

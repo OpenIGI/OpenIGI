@@ -25,15 +25,16 @@ public sealed partial class GameHost
         IReadOnlyDictionary<ReconstructionKind, string> support = _device.ReconstructionSupport;
         string dlss = support.GetValueOrDefault(ReconstructionKind.Dlss, string.Empty);
         string rayReconstruction = support.GetValueOrDefault(ReconstructionKind.RayReconstruction, string.Empty);
-        string nvidia = dlss.Length > 0 && rayReconstruction.Length > 0 ? dlss : string.Empty;
-
+        // DLSS and ray reconstruction are separate rows, each greyed for its own reason: a machine that can upscale
+        // but not trace keeps DLSS.
         return variable switch
         {
-            "r_reconstruction" or "r_dlss_quality" => nvidia,
+            "r_dlss_quality" => dlss,
+            "r_ray_reconstruction" => dlss.Length > 0 ? dlss : rayReconstruction,
             "r_frame_generation" => _device.FrameGenerationUnavailable,
             "r_low_latency" => _device.LowLatencyUnavailable,
             "r_scale" when _reconstructionActive != ReconstructionKind.Engine =>
-                "DLSS chooses the render size while it runs; set it with DLSS Quality",
+                "DLSS chooses the render size while it runs; set it with the DLSS setting",
             _ => DisplaySettingUnavailable(variable),
         };
     }
