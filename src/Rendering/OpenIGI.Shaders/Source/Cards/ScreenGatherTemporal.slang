@@ -196,14 +196,11 @@ bool ProbeSurface(int2 probe, out float3 world, out float3 viewPosition, out flo
     float3 storedNormal = (uSceneNormal.SampleLevel(uSceneNormalSampler, uv, 0.0).xyz * 2.0) - 1.0;
     worldNormal = normalize(storedNormal);
 
-    // Turned to face the eye. A surface the camera sees faces it, but a single-sided roof drawn from both
-    // sides can carry the normal of its underside: the hemisphere then pointed into the building, the
-    // march started a voxel and a half inside it, and the roof took the lit floor below for its bounce --
-    // the lamps' pools printed across the roof of every lit hall.
-    if (dot(worldNormal, world - uCameraToCache) > 0.0)
-    {
-        worldNormal = -worldNormal;
-    }
+    // Turned to face the eye. A single-sided roof drawn from both sides can carry the normal of its
+    // underside: the hemisphere then pointed into the building, the march started a voxel and a half inside
+    // it, and the roof took the lit floor below for its bounce -- the lamps' pools printed across the roof of
+    // every lit hall. See GatherNormal for when it is negated and when reflected.
+    worldNormal = GatherNormal(worldNormal, world - uCameraToCache, uv, viewPosition);
     return true;
 }
 

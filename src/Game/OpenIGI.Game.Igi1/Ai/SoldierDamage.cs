@@ -115,6 +115,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         // The heading the body has now. The authored one (the spawn's gamma) snapped every soldier that died back
         // to the way it was placed.
         float facing = brain?.Facing ?? MathF.Atan2(orientation.M21, orientation.M11);
+        float livingFacing = facing;
 
         int animation;
         if (brain?.Body.PostureDeathAnimation is { } postureDeath)
@@ -194,8 +195,9 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             // What the body was already doing. A soldier's clip root motion is its only velocity -- the port gives
             // one nothing else -- and it is a per-tick delta already, so it goes in as it stands, turned out of body
             // space by the heading.
-            Vector3d velocity = SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing);
-            BodyFell?.Invoke(new SoldierFall(view, ragdollOrigin, hit.Bone, travel, category, velocity, droppedWeapon is not null));
+            Vector3d velocity = SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), livingFacing);
+            BodyFell?.Invoke(new SoldierFall(
+                view, ragdollOrigin, hit.Bone, travel, category, velocity, droppedWeapon is not null, orientation, hit.Position));
 
             if (droppedWeapon is { } dropped)
             {

@@ -49,6 +49,44 @@ public sealed class CampaignShellTests : ShellTestHarness
     }
 
     [Fact]
+    public void A_campaign_opening_on_a_mission_far_down_the_list_shows_that_row_selected_and_scrolled_to()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Fourteen missions, the profile up to the last: more rows than the list has room for.
+            MissionInfo[] more = [.. Enumerable.Range(3, 12).Select(static n => new MissionInfo(n, n, $"Mission {n}", "Later.", $"m{n}.spr"))];
+            (Shell shell, FakeHost host) = BuildShell(dir, activeMission: 14, extraMissions: more);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.05f);
+
+            var screen = Assert.IsType<CampaignScreen>(shell.Stack.Top);
+            List<ListCard> rows = [.. screen.Root!.Descendants().OfType<ListCard>()];
+            Assert.Equal(14, rows.Count);
+            Assert.Equal(14, host.Previewed);
+
+            // The row is the one selected and focused, and it is within the list's viewport from the first frame:
+            // before, the list opened at its top with the chosen row out of sight below it.
+            ListCard last = rows[^1];
+            Assert.True(last.Selected);
+            Assert.Same(last, screen.Focus!.Focused);
+            ScrollView list = Assert.Single(screen.Root.Descendants().OfType<ScrollView>(), view => view.Descendants().Contains(last));
+            Assert.True(list.MaxScroll > 0f, "the list had room for every row, so nothing needed scrolling");
+            Assert.True(
+                last.Bounds.Y >= list.Bounds.Y - 0.5f && last.Bounds.Bottom <= list.Bounds.Bottom + 0.5f,
+                $"the selected row lies at {last.Bounds.Y:0}..{last.Bounds.Bottom:0}, the list shows {list.Bounds.Y:0}..{list.Bounds.Bottom:0}");
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void A_mods_campaign_is_listed_apart_and_every_one_of_its_missions_is_open()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));

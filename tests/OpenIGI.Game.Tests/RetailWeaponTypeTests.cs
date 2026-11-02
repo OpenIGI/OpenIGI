@@ -32,6 +32,24 @@ public sealed class RetailWeaponTypeTests
     }
 
     [RequiresGameDataFact]
+    public void The_table_reads_through_a_bare_script_namespace_and_names_the_mp5s_model()
+    {
+        // The co-op menu reads the table for its look's gun with nothing but the table's own natives registered, so
+        // the game's namespace is left alone.
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        WeaponTypeRegistry weapons = new();
+        NativeRegistry natives = new();
+        weapons.Register(natives);
+        weapons.Load(fileSystem, new ResourceRegistry(fileSystem), natives);
+
+        Assert.True(
+            weapons.TryGetByScriptId("WEAPON_ID_MP5SD", out WeaponType mp5),
+            $"{weapons.Weapons.Count} weapons: {string.Join(", ", weapons.Weapons.Select(static w => w.ScriptId))}");
+        Assert.False(string.IsNullOrEmpty(mp5.GunModel));
+    }
+
+    [RequiresGameDataFact]
     public void TheEnumeratedConstantsAreTheExecutablesOwnValues()
     {
         // 0x413DF0 registers all sixteen members by name, so these are read values rather than a

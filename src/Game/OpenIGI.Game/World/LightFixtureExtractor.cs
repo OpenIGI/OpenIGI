@@ -848,7 +848,7 @@ public static class LightFixtureExtractor
                         continue;
                     }
 
-                    Vector3d closest = ClosestOnTriangle(
+                    Vector3d closest = CollisionTriangle.ClosestPoint(
                         centre,
                         ToWorld(vertices[a].Position, mesh),
                         ToWorld(vertices[b].Position, mesh),
@@ -902,57 +902,6 @@ public static class LightFixtureExtractor
             return point.X >= box.Min.X - reach && point.X <= box.Max.X + reach
                 && point.Y >= box.Min.Y - reach && point.Y <= box.Max.Y + reach
                 && point.Z >= box.Min.Z - reach && point.Z <= box.Max.Z + reach;
-        }
-
-        /// <summary>The point of a triangle nearest a point (Ericson, Real-Time Collision Detection, 5.1.5).</summary>
-        private static Vector3d ClosestOnTriangle(Vector3d p, Vector3d a, Vector3d b, Vector3d c)
-        {
-            Vector3d ab = b - a;
-            Vector3d ac = c - a;
-            Vector3d ap = p - a;
-            double d1 = Vector3d.Dot(ab, ap);
-            double d2 = Vector3d.Dot(ac, ap);
-            if (d1 <= 0.0 && d2 <= 0.0)
-            {
-                return a;
-            }
-
-            Vector3d bp = p - b;
-            double d3 = Vector3d.Dot(ab, bp);
-            double d4 = Vector3d.Dot(ac, bp);
-            if (d3 >= 0.0 && d4 <= d3)
-            {
-                return b;
-            }
-
-            double vc = (d1 * d4) - (d3 * d2);
-            if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0)
-            {
-                return a + (ab * (d1 / (d1 - d3)));
-            }
-
-            Vector3d cp = p - c;
-            double d5 = Vector3d.Dot(ab, cp);
-            double d6 = Vector3d.Dot(ac, cp);
-            if (d6 >= 0.0 && d5 <= d6)
-            {
-                return c;
-            }
-
-            double vb = (d5 * d2) - (d1 * d6);
-            if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0)
-            {
-                return a + (ac * (d2 / (d2 - d6)));
-            }
-
-            double va = (d3 * d6) - (d5 * d4);
-            if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0)
-            {
-                return b + ((c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6))));
-            }
-
-            double denominator = 1.0 / (va + vb + vc);
-            return a + (ab * (vb * denominator)) + (ac * (vc * denominator));
         }
     }
 }

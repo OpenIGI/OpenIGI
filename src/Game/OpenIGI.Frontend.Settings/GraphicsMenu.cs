@@ -384,18 +384,27 @@ public static class GraphicsMenu
             [],
             [
                 new GraphicsSetting(
-                    "r_reconstruction",
-                    "Reconstruction",
-                    "What rebuilds the full-resolution picture each frame. Engine is the game's own temporal "
-                        + "filter; DLSS is NVIDIA's network, sharper and usually faster; Ray Reconstruction also "
-                        + "cleans up the traced lighting, at a higher cost. Needs an NVIDIA RTX GPU and the "
-                        + "NVIDIA DLSS download from the launcher."),
-                new GraphicsSetting(
                     "r_dlss_quality",
-                    "DLSS Quality",
-                    "How far below your window DLSS renders before it rebuilds the picture. DLAA renders at "
-                        + "full resolution and only smooths it; Performance renders a quarter of the pixels. "
-                        + "Takes the place of Upscaling while DLSS runs."),
+                    "DLSS",
+                    "NVIDIA's upscaler. Off uses the game's own, at the Upscaling setting. DLAA renders at full "
+                        + "resolution and only smooths the picture; Quality down to Ultra Performance render fewer "
+                        + "pixels and rebuild the rest, for more frame rate. Takes the place of Upscaling while on. "
+                        + "Needs an NVIDIA RTX GPU and the NVIDIA DLSS download from the launcher.",
+                    new Dictionary<string, string>
+                    {
+                        ["off"] = "Off",
+                        ["dlaa"] = "DLAA",
+                        ["quality"] = "Quality",
+                        ["balanced"] = "Balanced",
+                        ["performance"] = "Performance",
+                        ["ultraperformance"] = "Ultra Performance",
+                    }),
+                new GraphicsSetting(
+                    "r_ray_reconstruction",
+                    "Ray Reconstruction",
+                    "Lets DLSS also clean up the traced lighting, replacing the game's own denoisers, at some "
+                        + "cost. It is part of DLSS, so it works with any DLSS mode above and does nothing while "
+                        + "DLSS is off. Needs hardware ray tracing."),
                 new GraphicsSetting(
                     "r_frame_generation",
                     "Frame Generation",

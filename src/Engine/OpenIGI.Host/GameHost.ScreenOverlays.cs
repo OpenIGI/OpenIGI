@@ -453,6 +453,6 @@ public sealed partial class GameHost
 
         _device.EndStageTiming();
 
-        _debugOverlays.Draw(state, eye, cameraIndoors);
+        _debugOverlays.Draw(state, eye, cameraIndoors, horizontalTangent);
     }
 }

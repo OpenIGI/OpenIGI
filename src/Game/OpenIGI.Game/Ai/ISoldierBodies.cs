@@ -50,6 +50,15 @@ public interface ISoldierBodies : IDisposable
     /// <param name="radiusPixels">The glow's screen-space radius, in pixels.</param>
     void DrawBinocularOutlines(in Camera3D camera, float radiusPixels);
 
+    /// <summary>Collects every nearby soldier's bones, and the capsules a ragdoll of it collides with, for the debug view.</summary>
+    /// <param name="eye">Where the eye is, in metres.</param>
+    /// <param name="range">How far out to look, in metres.</param>
+    /// <param name="capsules">Whether to add the capsules as well as the bones.</param>
+    /// <param name="into">Receives the marks.</param>
+    void CollectBoneMarks(Vector3d eye, double range, bool capsules, List<BoneDebugMark> into)
+    {
+    }
+
     /// <summary>Draws each body's mark on the ground under it, over the lit world, for a title whose bodies cast one.</summary>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The world's projection.</param>
@@ -291,7 +300,9 @@ public interface ISoldierBodies : IDisposable
     /// <param name="model">Its model, or <see langword="null"/>.</param>
     /// <param name="feet">Where it stands, in world units.</param>
     /// <param name="facing">Its heading, a gamma.</param>
-    void ShowPreviewBody(OpenIGI.Game.World.LoadedMission mission, string? model, Vector3d feet, float facing)
+    /// <param name="gun">The weapon in its hand, held as a partner's is, or <see langword="null"/>.</param>
+    void ShowPreviewBody(
+        OpenIGI.Game.World.LoadedMission mission, string? model, Vector3d feet, float facing, OpenIGI.Game.Weapons.WeaponType? gun = null)
     {
     }
 

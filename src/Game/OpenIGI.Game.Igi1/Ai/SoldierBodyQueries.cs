@@ -436,6 +436,14 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
                     continue;
                 }
 
+                // A segment that passes nowhere near him cannot meet his body, and skinning the body to find
+                // that out costs every triangle of it -- for every soldier of the level, on every frame the
+                // remastered crosshair asks what is under it.
+                if (!PassesNear(origin, end, view.Position))
+                {
+                    continue;
+                }
+
                 Matrix3f m = view.Orientation;
                 Vector3f facing = new(m.M12, m.M22, m.M32);
                 double snappedZ = _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
@@ -455,5 +463,33 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
         }
 
         return found;
+    }
+
+    /// <summary>How far from a soldier's position, raised by <see cref="ReachLift"/>, any part of his body can be.</summary>
+    /// <remarks>
+    /// Deliberately loose, so the test never turns away a segment the body would have met: a man is under two metres
+    /// tall and a prone one reaches about two metres from his pelvis, and the position the body is placed from can
+    /// sit a little off the ground it is snapped to. Five metres covers all of that with room to spare.
+    /// </remarks>
+    private const double BodyReach = 5.0 * WorldScene.UnitsPerMetre;
+
+    /// <summary>How far above his position a soldier's reach is measured from: about his middle.</summary>
+    private const double ReachLift = 1.0 * WorldScene.UnitsPerMetre;
+
+    /// <summary>Whether a segment passes within <see cref="BodyReach"/> of a soldier's middle.</summary>
+    private static bool PassesNear(Vector3d origin, Vector3d end, Vector3d position)
+    {
+        double dx = end.X - origin.X;
+        double dy = end.Y - origin.Y;
+        double dz = end.Z - origin.Z;
+        double px = position.X - origin.X;
+        double py = position.Y - origin.Y;
+        double pz = position.Z + ReachLift - origin.Z;
+        double lengthSquared = (dx * dx) + (dy * dy) + (dz * dz);
+        double t = lengthSquared > 0.0 ? Math.Clamp(((px * dx) + (py * dy) + (pz * dz)) / lengthSquared, 0.0, 1.0) : 0.0;
+        double ox = px - (dx * t);
+        double oy = py - (dy * t);
+        double oz = pz - (dz * t);
+        return (ox * ox) + (oy * oy) + (oz * oz) <= BodyReach * BodyReach;
     }
 }

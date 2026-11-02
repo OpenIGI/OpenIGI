@@ -321,6 +321,8 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
             RagdollWorld corpses = _sim.RagdollWorldForCorpses();
             int substeps = GameplayCVars.RagdollSubsteps.Value;
             double fall = GameplayCVars.RagdollGravity.Value;
+            double muscle = MuscleTicks();
+            bool followClip = GameplayCVars.RagdollMuscleClip.Value;
             foreach (SoldierGroup group in _groups)
             {
                 foreach (SoldierMember member in group.Soldiers)
@@ -330,7 +332,10 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
                         continue;
                     }
 
-                    corpse.Step(corpses, substeps, fall);
+                    // The death clip is still playing underneath, and the joints follow it when asked to.
+                    // Evaluating its pose costs a palette build, so only while it is wanted.
+                    BonePose? clip = followClip && corpse.Age < muscle ? member.Agent.View.UnrotatedPose() : null;
+                    corpse.Step(corpses, substeps, fall, clip, muscle);
 
                     // A corpse whose solver has gone wrong is dropped rather than drawn: the retail
                     // death clip has been running underneath the whole time, so what the player sees is
@@ -344,6 +349,10 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
             }
         }
     }
+
+    /// <summary>How many ticks a corpse's joints follow its death clip for — <c>g_ragdoll_muscle</c> in ticks.</summary>
+    internal static double MuscleTicks() =>
+        GameplayCVars.RagdollMuscle.Value * RagdollImpulse.TicksPerSecond;
 
     /// <summary>Records where each body stands and faces this tick, once the poses are settled.</summary>
     public void CaptureTickStates()
@@ -375,7 +384,8 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
         WeaponCategory category,
         Vector3d carriedVelocity,
         MefModel? model,
-        SoldierHeldWeapon? weapon)
+        SoldierHeldWeapon? weapon,
+        Vector3d? struck = null)
     {
         if (!GameplayCVars.Ragdoll.Value || _sim.RagdollRigFor(view.Bones.Set, model) is not { } rig)
         {
@@ -400,11 +410,14 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
         }
 
         body.AddVelocity(carriedVelocity);
+        bool blast = category is WeaponCategory.Grenade or WeaponCategory.ProximityMine;
         RagdollImpulse.Apply(
             body,
             bone,
             travel,
-            RagdollImpulse.MomentumOf(rig, category, GameplayCVars.RagdollForce.Value));
+            RagdollImpulse.MomentumOf(rig, category, GameplayCVars.RagdollForce.Value),
+            blast,
+            blast ? null : struck);
         return body;
     }
 

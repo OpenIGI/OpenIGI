@@ -9,6 +9,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 
@@ -230,7 +231,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Draws the soldiers, the tasks' own presenters, the player's fallen body and what the characters hold, then the marks rounds left.</summary>
-    private void DrawCharacters(Camera3D eye, Matrix4f projection, float tickBlend, bool thirdPersonBody)
+    private void DrawCharacters(Camera3D eye, Matrix4f projection, float tickBlend, bool thirdPersonBody, bool captured)
     {
         Debug.Assert(_scene is not null && _world is not null, "Drawn only while a level is up; see RenderWorld.");
 
@@ -240,9 +241,10 @@ public sealed partial class GameHost
         _soldiers?.ObserveView(eye, projection);
         _soldiers?.Draw(eye, projection);
 
-        // A co-op look being chosen, standing in the level behind the menu.
-        _previewBodies?.ObserveView(eye, projection);
-        _previewBodies?.DrawPreviewBody(eye, projection);
+        if (captured)
+        {
+            DrawLookPreview(eye, projection, foregroundLayer: true);
+        }
 
         // Whatever the title, or a mod, draws for particular tasks of the level (PresenterRegistry.ForTask).
         foreach (ITaskPresenter taskPresenter in _taskPresenters)
@@ -292,6 +294,35 @@ public sealed partial class GameHost
         {
             WorldView?.DrawMarks(_marks, eye, projection, _world.DrawPoses);
         }
+    }
+
+    /// <summary>Draws the co-op look being chosen, held in front of the menu's camera and over everything else in the picture.</summary>
+    /// <param name="eye">The camera.</param>
+    /// <param name="projection">The lens.</param>
+    /// <param name="foregroundLayer">
+    /// Whether the scene's foreground layer takes it -- the view model's, in front of whatever the level drew and lit with
+    /// it -- or, drawn straight to the back buffer, it goes over the finished picture with its depth cleared.
+    /// </param>
+    /// <remarks>
+    /// Stood among the level's geometry, a wall the menu's camera passed close to came in front of it. It is also left out
+    /// of the metering and the bounced light, so it neither lights nor darkens the backdrop.
+    /// </remarks>
+    private void DrawLookPreview(Camera3D eye, Matrix4f projection, bool foregroundLayer)
+    {
+        if (_previewBodies is not { } look)
+        {
+            return;
+        }
+
+        if (!foregroundLayer)
+        {
+            ViewModelDepth.Begin(_device);
+        }
+
+        look.ObserveView(eye, projection);
+        _device.SetFirstPersonGeometry(true);
+        look.DrawPreviewBody(eye, projection);
+        _device.SetFirstPersonGeometry(false);
     }
 
     /// <summary>Draws what the forward pass owns over the lit picture: the translucent world, the water, the light streaks, the effects and the weather.</summary>

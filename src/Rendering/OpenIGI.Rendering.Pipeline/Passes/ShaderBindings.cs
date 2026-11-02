@@ -40,6 +40,13 @@ public sealed class ShaderBindings : IDisposable
     private readonly IRhiBindGroup?[] _groups;
     private readonly bool[] _stale;
     private readonly List<(RhiBindGroupEntry[] Entries, IRhiBindGroup Group)>[] _recent;
+
+    // Per group, the slots its module declares, worked out from the reflection the first time the group is
+    // asked for: they never change, and working them out again cost an allocation on every draw that rebound.
+    private readonly List<RhiBindGroupLayoutEntry>?[] _slots;
+
+    // What a group's slots are filled with, gathered for the lookup in GroupFor and reused by every call.
+    private readonly List<RhiBindGroupEntry> _filled = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ShaderBindings"/> class.</summary>
@@ -76,6 +83,7 @@ public sealed class ShaderBindings : IDisposable
         _groups = new IRhiBindGroup?[layouts.Count];
         _stale = new bool[layouts.Count];
         _recent = new List<(RhiBindGroupEntry[], IRhiBindGroup)>[layouts.Count];
+        _slots = new List<RhiBindGroupLayoutEntry>?[layouts.Count];
 
         for (int i = 0; i < _recent.Length; i++)
         {
@@ -272,9 +280,11 @@ public sealed class ShaderBindings : IDisposable
         Dictionary<int, RhiBindGroupEntry> entries =
             _bound.TryGetValue(group, out Dictionary<int, RhiBindGroupEntry>? bound) ? bound : [];
 
-        List<RhiBindGroupEntry> filled = [];
+        List<RhiBindGroupEntry> filled = _filled;
+        filled.Clear();
 
-        foreach (RhiBindGroupLayoutEntry slot in ShaderBindingLayout.EntriesFor(_reflection, _stages, group))
+        List<RhiBindGroupLayoutEntry> slots = _slots[group] ??= ShaderBindingLayout.EntriesFor(_reflection, _stages, group);
+        foreach (RhiBindGroupLayoutEntry slot in slots)
         {
             if (!entries.TryGetValue(slot.Binding, out RhiBindGroupEntry value))
             {
@@ -304,12 +314,14 @@ public sealed class ShaderBindings : IDisposable
             }
         }
 
+        // Its own copy, which the cache below keeps: the gathered list is refilled by the next call.
+        RhiBindGroupEntry[] entriesOfGroup = [.. filled];
         IRhiBindGroup built = _device.CreateBindGroup(new RhiBindGroupDescriptor(
             _layouts[group],
-            filled,
+            entriesOfGroup,
             $"{Label}-{group}"));
 
-        recent.Add(([.. filled], built));
+        recent.Add((entriesOfGroup, built));
 
         if (recent.Count > RecentCapacity)
         {

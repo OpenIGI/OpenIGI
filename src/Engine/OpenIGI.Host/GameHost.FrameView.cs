@@ -339,7 +339,7 @@ public sealed partial class GameHost
         // working any of them out separately is how a jitter ends up sized for one buffer and applied
         // to another. See RenderResolutionPolicy.
         ReconstructionPlan reconstruction = _device.PlanReconstruction(new ReconstructionRequest(
-            ReconstructionCVars.Reconstruction.Value,
+            ReconstructionCVars.Effective,
             ReconstructionCVars.DlssQualityMode.Value,
             _window.Width,
             _window.Height,
@@ -493,11 +493,8 @@ public sealed partial class GameHost
             state.LastMenuCameraMilliseconds = menuCameraNow;
             eye = _showcaseCamera.Update(menuCameraElapsed);
 
-            // A look being chosen holds the menu's eye on it, the orbit carrying on unseen behind.
-            if (_previewShot is { } lookShot)
-            {
-                eye = lookShot.Eye;
-            }
+            // A look being chosen stands in front of the menu's eye, wherever its orbit has it.
+            PlaceLook(eye);
         }
         else if (mapScene is { } liveMap)
         {

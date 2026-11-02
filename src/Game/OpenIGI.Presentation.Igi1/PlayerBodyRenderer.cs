@@ -265,10 +265,15 @@ internal sealed class PlayerBodyRenderer(
         // of it: that move is what the rest of the game believes, and only the drawing changes here.
         if (_ragdoll is { } playerCorpse)
         {
+            double muscle = SoldierFrameInterpolator.MuscleTicks();
             playerCorpse.Step(
                 _sim.RagdollWorldForCorpses(),
                 GameplayCVars.RagdollSubsteps.Value,
-                GameplayCVars.RagdollGravity.Value);
+                GameplayCVars.RagdollGravity.Value,
+                GameplayCVars.RagdollMuscleClip.Value && playerCorpse.Age < muscle && _state.View is { } dying
+                    ? dying.UnrotatedPose()
+                    : null,
+                muscle);
             if (!playerCorpse.IsValid)
             {
                 _ragdoll = null;
@@ -422,7 +427,7 @@ internal sealed class PlayerBodyRenderer(
         }
 
         (Vector3d where, Matrix3f orientation) = Placement();
-        if (_owner.FrameSmooth && _hasTickState)
+        if (_owner.FrameSmooth && _hasTickState && !PlacedEveryFrame)
         {
             where = Vector3d.Lerp(_prevTickWhere, _tickWhere, _owner.FrameAlpha);
         }
@@ -752,6 +757,12 @@ internal sealed class PlayerBodyRenderer(
     /// </para>
     /// </remarks>
     /// <summary>Resolves where the body is drawn this frame, between its last two ticks.</summary>
+    /// <summary>
+    /// Gets or sets whether the body is put where it stands every frame, not every tick: the co-op look held in front of
+    /// the menu's moving camera. Drawn between its last two ticks' places, it lagged the camera and caught up each tick.
+    /// </summary>
+    internal bool PlacedEveryFrame { get; set; }
+
     internal void ResolveFrameState()
     {
         if (_state.View is null || _member is not { } member)
@@ -760,7 +771,7 @@ internal sealed class PlayerBodyRenderer(
         }
 
         (Vector3d where, Matrix3f orientation) = Placement();
-        if (_owner.FrameSmooth && _hasTickState)
+        if (_owner.FrameSmooth && _hasTickState && !PlacedEveryFrame)
         {
             where = Vector3d.Lerp(_prevTickWhere, _tickWhere, _owner.FrameAlpha);
         }

@@ -99,6 +99,9 @@ public interface ITerrainPresenter : IDisposable
 /// passes it in because deriving one measures in tens of milliseconds and a level's worth is most of a
 /// second, which is not something to spend on the render thread.
 /// </param>
+/// <param name="Work">
+/// The host's work scheduler, which the ground hands the frame's parallel work to; none runs it in line.
+/// </param>
 /// <remarks>
 /// <see cref="Surface"/> is the shared <see cref="TerrainSurface"/> rather than anything title-shaped,
 /// which is what lets this request be common. When I.G.I. 2's ground arrives it will need its own
@@ -110,7 +113,8 @@ public readonly record struct TerrainPresentationRequest(
     TerrainSurface Surface,
     IOpenIgiLogger Logger,
     MaterialDetailPack? DetailMaps,
-    IReadOnlyList<Core.Graphics.Bgra32[]>? DerivedDetail);
+    IReadOnlyList<Core.Graphics.Bgra32[]>? DerivedDetail,
+    Core.Threading.IWorkScheduler? Work = null);
 
 /// <summary>Builds the renderers one title draws with.</summary>
 /// <remarks>

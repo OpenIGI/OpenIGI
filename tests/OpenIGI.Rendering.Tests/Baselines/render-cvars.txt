@@ -32,7 +32,7 @@ r_day_length	40	archive
 r_day_night_cycle	0	archive
 r_debug_view	none	-
 r_deferred	1	archive
-r_dlss_quality	quality	archive
+r_dlss_quality	off	archive
 r_dlssg_ui_recomposition	1	archive
 r_exposure	1.414	archive
 r_flashlight	1	archive
@@ -126,7 +126,8 @@ r_perflog_passes	0	-
 r_player_body	0	archive
 r_radiance_cache	0	archive
 r_radiance_cache_scale	3	archive
-r_reconstruction	engine	archive
+r_ray_reconstruction	0	archive
+r_reconstruction	engine	-
 r_reflection_texture	128	archive
 r_remastered_hud	1	archive
 r_renderer	auto	archive

@@ -222,7 +222,10 @@ public sealed partial class SoldierSimulation
     internal int BinocularVisibilityTick { get => _binoculars.VisibilityTick; set => _binoculars.VisibilityTick = value; }
 
     /// <inheritdoc cref="SoldierRagdolls.RagdollRigs"/>
-    internal Dictionary<BoneAnimationSet, RagdollSkeleton> RagdollRigs => _ragdolls.RagdollRigs;
+    internal Dictionary<(BoneAnimationSet Set, MefModel? Model), RagdollSkeleton> RagdollRigs => _ragdolls.RagdollRigs;
+
+    /// <inheritdoc cref="SoldierRagdolls.ForgetRigs"/>
+    internal void ForgetRagdollRigs() => _ragdolls.ForgetRigs();
 
     /// <inheritdoc cref="SoldierRagdolls.RagdollWorld"/>
     internal RagdollWorld? RagdollWorld { get => _ragdolls.RagdollWorld; set => _ragdolls.RagdollWorld = value; }

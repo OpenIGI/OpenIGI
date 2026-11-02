@@ -39,8 +39,12 @@ public static class ClientReplication
         // The server's word on where this client's player was after its newest command it has run, against the prediction.
         if (session.EntityId is { } self && session.Latest is { } newest && newest.TryGet(self, out ReplicatedHuman own))
         {
-            session.Reconciler.Tolerance = Math.Max(PredictionReconciler.DefaultTolerance, world.PredictionSlack);
-            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector()) is { } correction)
+            // A prediction made in a lift is weighed against the server's word as a place in the server's car, the car taken
+            // from the same snapshot: the two ran the command at a different moment of the car's travel.
+            ReplicatedLift[]? serverLifts = newest.Lifts;
+            Func<int, Core.Numerics.Vector3d?> serverPlatform = index =>
+                serverLifts is not null && (uint)index < (uint)serverLifts.Length ? serverLifts[index].Position.ToVector() : null;
+            if (session.Reconciler.Check(session.LastRunCommandTick, own.Position.ToVector(), serverPlatform) is { } correction)
             {
                 world.MoveLocal(correction, (own.Flags & ReplicatedHumanCondition.OnGround) != 0);
             }
@@ -50,7 +54,7 @@ public static class ClientReplication
 
         if (session.SendCommand(world.LocalFrame, now) is { } sent)
         {
-            session.Reconciler.Record(sent, world.LocalPosition);
+            session.Reconciler.Record(sent, world.LocalPosition, world.LocalPlatform);
         }
 
         session.Flush(now);
@@ -87,7 +91,19 @@ public static class ClientReplication
             }
 
             present.Add(human.Id);
-            world.Show(session.Remote.Sample(moment, human.Id, out ReplicatedHuman sampled) ? sampled : human);
+            ReplicatedHuman shown = session.Remote.Sample(moment, human.Id, out ReplicatedHuman sampled) ? sampled : human;
+
+            // One riding a lift is drawn where it stood on the server's car at that moment, on the car this client draws now:
+            // that car is the server's projected on to this client's present, while the rider is drawn in the past -- where
+            // the snapshots had it, it stood under the floor of a car going up and in the roof of one coming down.
+            if (shown.Platform > 0
+                && world.PlatformOrigin(shown.Platform - 1) is { } car
+                && session.Remote.SampleLift(moment, shown.Platform - 1, out Core.Numerics.Vector3d carThen))
+            {
+                shown = shown with { Position = Int3.From(shown.Position.ToVector() + (car - carThen)) };
+            }
+
+            world.Show(shown);
         }
 
         foreach (int id in world.Shown.Where(id => !present.Contains(id)).ToArray())

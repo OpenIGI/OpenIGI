@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.Game.Igi1.World;
@@ -48,13 +49,26 @@ internal sealed class TerrainShadowCaster : IDisposable
     /// <summary>Indices per mesh; a base layer carries about three indices per vertex.</summary>
     private const int IndexCapacity = VertexCapacity * 4;
 
+    /// <summary>Below this many chunks the fill runs on the calling thread; the hand-off costs more than it saves.</summary>
+    private const int ParallelThreshold = 256;
+
+    /// <summary>How many parts a parallel fill is cut into; the calling thread fills one of them itself.</summary>
+    private const int ParallelParts = 8;
+
     private readonly IGraphicsDevice _device;
+    private readonly IWorkScheduler? _work;
+    private readonly Task[] _parts = new Task[ParallelParts - 1];
     private readonly Slot[] _slots = new Slot[Slots];
 
-    // The frame being assembled: its vertices and indices, and where each mesh's run of both starts.
-    private readonly List<Vertex3D> _vertices = [];
-    private readonly List<ushort> _indices = [];
+    // The frame being assembled: one record per chunk saying where its vertices and indices land, and where
+    // each mesh's run of both starts. The vertices themselves are written only by Commit, and only when the
+    // caster changed.
+    private readonly List<Pending> _pending = [];
     private readonly List<(int VertexStart, int IndexStart)> _runs = [];
+    private Vertex3D[] _vertices = [];
+    private ushort[] _indices = [];
+    private int _vertexCount;
+    private int _indexCount;
 
     private int _current = -1;
     private bool _committed;
@@ -72,10 +86,12 @@ internal sealed class TerrainShadowCaster : IDisposable
 
     /// <summary>Initialises a new instance of the <see cref="TerrainShadowCaster"/> class.</summary>
     /// <param name="device">The device the meshes live on.</param>
-    public TerrainShadowCaster(IGraphicsDevice device)
+    /// <param name="work">Where the fill's parallel parts run, or null to fill on the calling thread.</param>
+    public TerrainShadowCaster(IGraphicsDevice device, IWorkScheduler? work = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
+        _work = work;
         for (int i = 0; i < Slots; i++)
         {
             _slots[i] = new Slot();
@@ -91,10 +107,11 @@ internal sealed class TerrainShadowCaster : IDisposable
     /// <param name="fadeSlope">The fade window's slope.</param>
     public void Begin(in Vector3d cameraMetres, float fadeOffset, float fadeSlope)
     {
-        _vertices.Clear();
-        _indices.Clear();
+        _pending.Clear();
         _runs.Clear();
         _runs.Add((0, 0));
+        _vertexCount = 0;
+        _indexCount = 0;
         _camera = cameraMetres;
         _offset = fadeOffset;
         _slope = fadeSlope;
@@ -108,7 +125,7 @@ internal sealed class TerrainShadowCaster : IDisposable
             Math.Floor(cameraMetres.Z / 1024.0) * 1024.0);
     }
 
-    /// <summary>Adds one drawn chunk's base layer, morphed as the shader morphs it.</summary>
+    /// <summary>Adds one drawn chunk's base layer, to be morphed as the shader morphs it.</summary>
     /// <param name="chunk">The chunk.</param>
     /// <param name="geometry">Its geometry, whose first layer is the base pass.</param>
     /// <param name="coarse">
@@ -119,6 +136,13 @@ internal sealed class TerrainShadowCaster : IDisposable
     /// A chunk in sight casts refined, or the drawn ground would sit under its own caster in every
     /// hollow and shadow itself.
     /// </param>
+    /// <remarks>
+    /// Only placed here, not written. The frame's whole caster is known before any vertex is morphed, so a
+    /// frame whose caster is the last one's writes nothing at all, and one that changed writes every chunk
+    /// at once, in parallel (see <see cref="Commit"/>). Morphing each chunk as it arrived, one vertex at a
+    /// time onto a growing list, cost about four milliseconds a frame at the Ultra terrain detail on every
+    /// frame the camera moved, and was nearly all of what that detail cost over Enhanced.
+    /// </remarks>
     public void Add(in TerrainChunk chunk, TerrainChunkGeometry geometry, bool coarse = false)
     {
         ArgumentNullException.ThrowIfNull(geometry);
@@ -128,19 +152,11 @@ internal sealed class TerrainShadowCaster : IDisposable
         }
 
         TerrainChunkLayer layer = geometry.Layers[0];
-        int vertexCount = geometry.VerticesPerPass;
         ushort[]? coarseIndices = coarse ? geometry.Coarse : null;
         int indexCount = coarseIndices?.Length ?? layer.IndexCount;
-        if (coarseIndices is not null)
-        {
-            // The original triangles reach only the chunk's own vertices, which come first.
-            vertexCount = 0;
-            foreach (ushort index in coarseIndices)
-            {
-                vertexCount = Math.Max(vertexCount, index + 1);
-            }
-        }
 
+        // The original triangles reach only the chunk's own vertices, which come first.
+        int vertexCount = coarseIndices is not null ? geometry.CoarseVertexCount : geometry.VerticesPerPass;
         if (vertexCount == 0 || indexCount < 3)
         {
             return;
@@ -150,11 +166,11 @@ internal sealed class TerrainShadowCaster : IDisposable
         // can it hold more indices than it was made with, which a smoothed chunk -- two triangles to
         // a vertex where the stored ground has about one -- reaches before it reaches the vertices.
         (int vertexStart, int indexStart) = _runs[^1];
-        if (_vertices.Count - vertexStart + vertexCount > VertexCapacity
-            || _indices.Count - indexStart + indexCount > IndexCapacity)
+        if (_vertexCount - vertexStart + vertexCount > VertexCapacity
+            || _indexCount - indexStart + indexCount > IndexCapacity)
         {
-            vertexStart = _vertices.Count;
-            _runs.Add((vertexStart, _indices.Count));
+            vertexStart = _vertexCount;
+            _runs.Add((vertexStart, _indexCount));
         }
 
         _hash = (_hash * 31) + (long)chunk.Position.X;
@@ -167,65 +183,26 @@ internal sealed class TerrainShadowCaster : IDisposable
         _hash = (_hash * 31) + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(geometry);
         _hash = (_hash * 31) + (coarseIndices is null ? 0 : 1);
 
-        double chunkX = chunk.Position.X / WorldScene.UnitsPerMetre;
-        double chunkY = chunk.Position.Y / WorldScene.UnitsPerMetre;
-        double chunkZ = chunk.Position.Z / WorldScene.UnitsPerMetre;
-
-        // The shader's ramp, in the metres it works in.
-        double scale = 0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent));
-
-        int baseVertex = _vertices.Count - vertexStart;
-        for (int i = 0; i < vertexCount; i++)
-        {
-            Vertex3D v = geometry.Vertices[i];
-            double worldX = chunkX + v.Position.X;
-            double worldY = chunkY + v.Position.Y;
-            double worldZ = chunkZ + v.Position.Z;
-
-            // Measured on the target, so that two chunks meeting at a shared vertex agree — exactly as
-            // the vertex stage does it.
-            double targetX = worldX + v.Normal.X - _camera.X;
-            double targetY = worldY + v.Normal.Y - _camera.Y;
-            double targetZ = worldZ + v.Normal.Z - _camera.Z;
-            double reach = Math.Max(Math.Abs(targetX), Math.Max(Math.Abs(targetY), Math.Abs(targetZ)));
-            double morph = Math.Clamp((reach * scale - _offset) * _slope, 0.0, 1.0);
-
-            _vertices.Add(new Vertex3D(
-                new Vector3f(
-                    (float)(worldX + (v.Normal.X * morph) - _origin.X),
-                    (float)(worldY + (v.Normal.Y * morph) - _origin.Y),
-                    (float)(worldZ + (v.Normal.Z * morph) - _origin.Z)),
-                v.Normal,
-                v.DiffuseU,
-                v.DiffuseV,
-                v.LightmapU,
-                v.LightmapV,
-                v.Colour,
-                v.SurfaceNormal));
-        }
-
-        if (coarseIndices is not null)
-        {
-            foreach (ushort index in coarseIndices)
-            {
-                _indices.Add((ushort)(index + baseVertex));
-            }
-
-            return;
-        }
-
-        for (int i = layer.IndexOffset; i < layer.IndexOffset + layer.IndexCount; i++)
-        {
-            _indices.Add((ushort)(geometry.Indices[i] + baseVertex));
-        }
+        _pending.Add(new Pending(
+            chunk.Position,
+            chunk.LodExponent,
+            geometry,
+            coarseIndices,
+            vertexCount,
+            indexCount,
+            _vertexCount,
+            _indexCount,
+            _vertexCount - vertexStart));
+        _vertexCount += vertexCount;
+        _indexCount += indexCount;
     }
 
-    /// <summary>Uploads what was assembled, or keeps the last upload where nothing changed.</summary>
+    /// <summary>Morphs and uploads what was assembled, or keeps the last upload where nothing changed.</summary>
     public void Commit()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_indices.Count < 3)
+        if (_indexCount < 3)
         {
             _committed = false;
             LastTriangleCount = 0;
@@ -240,6 +217,7 @@ internal sealed class TerrainShadowCaster : IDisposable
 
         if (!unchanged)
         {
+            Fill();
             _current = (_current + 1) % Slots;
             Upload(_slots[_current]);
             _lastHash = _hash;
@@ -307,19 +285,73 @@ internal sealed class TerrainShadowCaster : IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        foreach (Slot slot in _slots)
+        {
+            foreach (MeshHandle mesh in slot.Meshes)
+            {
+                _device.DestroyMesh(mesh);
+            }
+
+            slot.Meshes.Clear();
+        }
+    }
+
+    // Every chunk's vertices morphed into place and its indices rebased, each chunk into the range Add gave
+    // it, so the chunks are independent of one another and go in parallel.
+    private void Fill()
+    {
+        if (_vertices.Length < _vertexCount)
+        {
+            _vertices = new Vertex3D[Math.Max(_vertexCount, _vertices.Length * 2)];
+        }
+
+        if (_indices.Length < _indexCount)
+        {
+            _indices = new ushort[Math.Max(_indexCount, _indices.Length * 2)];
+        }
+
+        FillContext context = new(_pending.ToArray(), _vertices, _indices, _camera, _origin, _offset, _slope);
+        int count = _pending.Count;
+        if (count < ParallelThreshold || _work is not { IsConcurrent: true } work)
+        {
+            context.FillRange(0, count);
+            return;
+        }
+
+        // The host's scheduler takes all but the last part; this thread fills that one, then waits for the rest.
+        for (int part = 0; part < ParallelParts - 1; part++)
+        {
+            int from = count * part / ParallelParts;
+            int to = count * (part + 1) / ParallelParts;
+            _parts[part] = work.Run(() => context.FillRange(from, to));
+        }
+
+        context.FillRange(count * (ParallelParts - 1) / ParallelParts, count);
+        Task.WaitAll(_parts);
+    }
+
     private void Upload(Slot slot)
     {
         slot.Origin = _origin;
         slot.IndexCounts.Clear();
 
-        Span<Vertex3D> vertices = CollectionsMarshal.AsSpan(_vertices);
-        Span<ushort> indices = CollectionsMarshal.AsSpan(_indices);
+        Span<Vertex3D> vertices = _vertices.AsSpan(0, _vertexCount);
+        Span<ushort> indices = _indices.AsSpan(0, _indexCount);
 
         for (int run = 0; run < _runs.Count; run++)
         {
             (int vertexStart, int indexStart) = _runs[run];
-            int vertexEnd = run + 1 < _runs.Count ? _runs[run + 1].VertexStart : _vertices.Count;
-            int indexEnd = run + 1 < _runs.Count ? _runs[run + 1].IndexStart : _indices.Count;
+            int vertexEnd = run + 1 < _runs.Count ? _runs[run + 1].VertexStart : _vertexCount;
+            int indexEnd = run + 1 < _runs.Count ? _runs[run + 1].IndexStart : _indexCount;
 
             if (slot.Meshes.Count <= run)
             {
@@ -347,23 +379,86 @@ internal sealed class TerrainShadowCaster : IDisposable
         }
     }
 
-    /// <inheritdoc/>
-    public void Dispose()
+    /// <summary>One chunk's place in the frame's caster: what to write, and where.</summary>
+    private readonly record struct Pending(
+        Vector3d Position,
+        int LodExponent,
+        TerrainChunkGeometry Geometry,
+        ushort[]? CoarseIndices,
+        int VertexCount,
+        int IndexCount,
+        int VertexAt,
+        int IndexAt,
+        int BaseVertex);
+
+    /// <summary>What every chunk's fill shares, so the parallel loop captures one object.</summary>
+    private sealed class FillContext(
+        Pending[] pending,
+        Vertex3D[] vertices,
+        ushort[] indices,
+        Vector3d camera,
+        Vector3d origin,
+        float offset,
+        float slope)
     {
-        if (_disposed)
+        public void FillRange(int from, int to)
         {
-            return;
+            for (int i = from; i < to; i++)
+            {
+                FillOne(pending[i]);
+            }
         }
 
-        _disposed = true;
-        foreach (Slot slot in _slots)
+        private void FillOne(in Pending item)
         {
-            foreach (MeshHandle mesh in slot.Meshes)
+            TerrainChunkGeometry geometry = item.Geometry;
+
+            double chunkX = item.Position.X / WorldScene.UnitsPerMetre;
+            double chunkY = item.Position.Y / WorldScene.UnitsPerMetre;
+            double chunkZ = item.Position.Z / WorldScene.UnitsPerMetre;
+
+            // The shader's ramp, in the metres it works in.
+            double scale = 0.375 * WorldScene.UnitsPerMetre / (1 << (25 - item.LodExponent));
+
+            Span<Vertex3D> into = vertices.AsSpan(item.VertexAt, item.VertexCount);
+            ReadOnlySpan<Vertex3D> source = geometry.Vertices.AsSpan(0, item.VertexCount);
+            for (int i = 0; i < source.Length; i++)
             {
-                _device.DestroyMesh(mesh);
+                ref readonly Vertex3D v = ref source[i];
+                double worldX = chunkX + v.Position.X;
+                double worldY = chunkY + v.Position.Y;
+                double worldZ = chunkZ + v.Position.Z;
+
+                // Measured on the target, so that two chunks meeting at a shared vertex agree — exactly as
+                // the vertex stage does it.
+                double targetX = worldX + v.Normal.X - camera.X;
+                double targetY = worldY + v.Normal.Y - camera.Y;
+                double targetZ = worldZ + v.Normal.Z - camera.Z;
+                double reach = Math.Max(Math.Abs(targetX), Math.Max(Math.Abs(targetY), Math.Abs(targetZ)));
+                double morph = Math.Clamp(((reach * scale) - offset) * slope, 0.0, 1.0);
+
+                into[i] = new Vertex3D(
+                    new Vector3f(
+                        (float)(worldX + (v.Normal.X * morph) - origin.X),
+                        (float)(worldY + (v.Normal.Y * morph) - origin.Y),
+                        (float)(worldZ + (v.Normal.Z * morph) - origin.Z)),
+                    v.Normal,
+                    v.DiffuseU,
+                    v.DiffuseV,
+                    v.LightmapU,
+                    v.LightmapV,
+                    v.Colour,
+                    v.SurfaceNormal);
             }
 
-            slot.Meshes.Clear();
+            Span<ushort> target = indices.AsSpan(item.IndexAt, item.IndexCount);
+            ReadOnlySpan<ushort> triangles = item.CoarseIndices is { } coarse
+                ? coarse
+                : geometry.Indices.AsSpan(geometry.Layers[0].IndexOffset, item.IndexCount);
+            for (int i = 0; i < triangles.Length; i++)
+            {
+                target[i] = (ushort)(triangles[i] + item.BaseVertex);
+            }
         }
     }
 

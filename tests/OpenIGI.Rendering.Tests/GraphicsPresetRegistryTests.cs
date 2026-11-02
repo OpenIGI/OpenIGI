@@ -159,7 +159,7 @@ public sealed class GraphicsPresetRegistryTests
             // be writing something many machines it runs on cannot do; and a player who chose DLSS or a frame
             // cap keeps it whatever tier they pick. Each falls back to the engine's own path, and says why,
             // where it cannot run.
-            "r_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
+            "r_ray_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
             "r_dlssg_ui_recomposition",
         ];
 

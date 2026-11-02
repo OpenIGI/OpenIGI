@@ -18,12 +18,15 @@ public sealed partial class SoldierRenderer
     private string? _previewModel;
     private (Vector3d Feet, float Facing) _previewSpot;
 
+    // The weapon in the look's hand, built and drawn as a partner's is (SoldierRenderer.Partners).
+    private SoldierHeldWeapon? _previewGun;
+
     /// <inheritdoc/>
     /// <remarks>
     /// The same body a partner gets -- its look's model, the player's clips on its own skeleton -- idling where it is put.
     /// A model this level doesn't ship is borrowed as a partner's is (<see cref="BorrowLevel"/>).
     /// </remarks>
-    public void ShowPreviewBody(LoadedMission mission, string? model, Vector3d feet, float facing)
+    public void ShowPreviewBody(LoadedMission mission, string? model, Vector3d feet, float facing, OpenIGI.Game.Weapons.WeaponType? gun = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         if (model is null
@@ -34,6 +37,7 @@ public sealed partial class SoldierRenderer
         }
 
         _previewSpot = (feet, facing);
+        _previewGun = gun?.GunModel is { Length: > 0 } gunModel ? _armoury.HeldWeaponFor(mission, gunModel) : null;
         (LoadedMission lookMission, string look) = ResolveLook(mission, model, OpenIGI.Game.Multiplayer.PlayerSkins.Default.Model);
         if (_preview is null || _previewModel != look)
         {
@@ -44,6 +48,7 @@ public sealed partial class SoldierRenderer
                 return;
             }
 
+            body.PlacedEveryFrame = true;
             _preview = body;
             _previewModel = look;
         }
@@ -64,7 +69,21 @@ public sealed partial class SoldierRenderer
     }
 
     /// <inheritdoc/>
-    public void DrawPreviewBody(in Camera3D camera, in Matrix4f projection) => _preview?.Draw(in camera, in projection);
+    public void DrawPreviewBody(in Camera3D camera, in Matrix4f projection)
+    {
+        if (_preview is not { } body)
+        {
+            return;
+        }
+
+        body.Draw(in camera, in projection);
+
+        // The weapon in its hand, hung off the hand bone as a partner's is: the gun's body only.
+        if (_previewGun is { } held && body.HandAttachment() is { } hand)
+        {
+            _drawer.DrawHeld(held, hand, camera, projection, 0);
+        }
+    }
 
     // On a slow breathing idle of the player's own: posed once a tick, placed every call.
     private void StandPreview()
@@ -78,5 +97,6 @@ public sealed partial class SoldierRenderer
         _preview?.Release();
         _preview = null;
         _previewModel = null;
+        _previewGun = null;
     }
 }

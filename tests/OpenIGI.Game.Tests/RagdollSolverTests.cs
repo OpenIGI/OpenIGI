@@ -70,10 +70,10 @@ public sealed class RagdollSolverTests
 
         double deepest = 0.0;
         double lowest = double.MaxValue;
-        for (int bone = 0; bone < rig.BoneCount; bone++)
+        for (int part = 0; part < rig.BodyCount; part++)
         {
-            RagdollBone shape = rig.BoneAt(bone);
-            double surface = body.PositionOf(bone).Z - shape.Radius;
+            body.CapsuleOf(part, out Vector3d from, out Vector3d to, out double radius);
+            double surface = Math.Min(from.Z, to.Z) - radius;
             deepest = Math.Min(deepest, surface);
             lowest = Math.Min(lowest, surface);
         }
@@ -138,28 +138,32 @@ public sealed class RagdollSolverTests
 
         foreach (RagdollPair pair in rig.SelfCollisionPairs)
         {
-            double apart = Vector3d.Distance(body.PositionOf(pair.First), body.PositionOf(pair.Second));
-            double wanted = rig.BoneAt(pair.First).Radius + rig.BoneAt(pair.Second).Radius;
+            body.CapsuleOf(pair.First, out Vector3d a0, out Vector3d a1, out double ra);
+            body.CapsuleOf(pair.Second, out Vector3d b0, out Vector3d b1, out double rb);
+            Vector3d onFirst = Vector3d.ClosestOnSegment(a0, a1, (b0 + b1) * 0.5);
+            Vector3d onSecond = Vector3d.ClosestOnSegment(b0, b1, onFirst);
+            onFirst = Vector3d.ClosestOnSegment(a0, a1, onSecond);
+            onSecond = Vector3d.ClosestOnSegment(b0, b1, onFirst);
+            double apart = Vector3d.Distance(onFirst, onSecond);
+            double wanted = ra + rb;
 
-            // Measured joint to joint rather than surface to surface, so it is a weaker statement than
-            // the solver makes -- but it catches the failure that matters, which is two bones occupying
-            // the same space.
+            // Axis to axis, against the two radii: a little overlap is the deadband, half of it is two
+            // bodies occupying the same space.
             Assert.True(
-                apart > wanted * 0.4,
-                $"Bones {pair.First} and {pair.Second} are {apart:F0} apart against radii of {wanted:F0}.");
+                apart > wanted * 0.5,
+                $"Bodies {pair.First} and {pair.Second} are {apart:F0} apart against radii of {wanted:F0}.");
         }
     }
 
-    /// <summary>A bone never ends up turned further from its parent than the joint allows.</summary>
+    /// <summary>A body never ends up turned further from its parent than the joint allows, in swing or in roll.</summary>
     /// <remarks>
     /// <b>What keeps the limbs from going thin.</b> Nothing else in the solver constrains a bone's roll
     /// about its own length, and a skinned mesh whose bones roll relative to their neighbours pinches to
-    /// a point — so an unbounded joint reads as a broken model rather than as broken physics. The bound
-    /// is on the TOTAL angle between the two orientations, which is why it can be stated at all: split
-    /// into a swing and a twist, the same joint reads two different numbers.
+    /// a point. The swing is measured against the cone's own centre and the roll about the child's own
+    /// length, the two quantities the solver bounds.
     /// </remarks>
     [Fact]
-    public void ABoneNeverTurnsFurtherFromItsParentThanTheJointAllows()
+    public void ABodyNeverTurnsFurtherFromItsParentThanTheJointAllows()
     {
         RagdollSkeleton rig = RagdollRig.Rig();
         RagdollBody body = RagdollRig.Standing(rig, new Vector3d(0.0, 0.0, 20_000.0));
@@ -176,23 +180,19 @@ public sealed class RagdollSolverTests
 
         foreach (RagdollJoint link in rig.Joints)
         {
-            Quaternion32 relative =
-                (body.OrientationOf(link.Parent).Conjugate() * body.OrientationOf(link.Child)).Normalized();
-            if (relative.W < 0f)
-            {
-                relative = new Quaternion32(-relative.X, -relative.Y, -relative.Z, -relative.W);
-            }
+            Quaternion32 parent = body.OrientationOf(rig.BoneOf(link.Parent));
+            Quaternion32 child = body.OrientationOf(rig.BoneOf(link.Child));
+            Vector3f centre = RagdollSolver.Rotate(BonePose.ToMatrix(parent), link.SwingAxis);
+            Vector3f along = RagdollSolver.Rotate(BonePose.ToMatrix(child), link.TwistAxis);
+            float swing = MathF.Acos(Math.Clamp(Vector3f.Dot(centre, along), -1f, 1f));
+            (float twist, _) = RagdollLimits.Decompose((parent.Conjugate() * child).Normalized(), link.TwistAxis);
 
-            float angle = 2f * MathF.Atan2(relative.Vector.Length, relative.W);
-
-            // Within a few degrees of its allowance. A soft spring has a steady-state offset by
-            // definition -- it pulls in proportion to the excess, so a joint the attachment is still
-            // pushing outwards comes to rest where the two balance rather than exactly on the limit.
-            // What is pinned is that the offset is small: it was seventeen degrees before the spring was
-            // matched to the substep count, and is three now.
+            // A few degrees of give: the contacts and the attachment are still pushing when the body
+            // latches at rest, and the limit is a stiff projection rather than an exact solve.
             Assert.True(
-                angle <= link.SwingLimit + 0.12f,
-                $"Joint {link.Child} came to rest {angle:F2} rad from its parent, against {link.SwingLimit:F2}.");
+                swing <= link.SwingLimit + 0.08f,
+                $"Joint {link.Child} came to rest swung {swing:F2} rad against {link.SwingLimit:F2}.");
+            Assert.InRange(twist, link.TwistLow - 0.08f, link.TwistHigh + 0.08f);
         }
     }
 
@@ -213,9 +213,8 @@ public sealed class RagdollSolverTests
 
     /// <summary>The gravity scale is a look, and it is kept where it can be seen and turned.</summary>
     /// <remarks>
-    /// The constant above is honest physics; this is the deliberate slow-down on top of it, because real
-    /// gravity reads fast on a corpse. Keeping the two apart is the point — one is measured and one is
-    /// chosen, and a number that is chosen should not be hiding inside a constant that claims otherwise.
+    /// The constant above is honest physics; the scale is a choice on top of it, kept apart so a number
+    /// that is chosen is not hiding inside a constant that claims otherwise. Its default is one.
     /// </remarks>
     [Fact]
     public void TheGravityScaleSlowsTheFallWithoutTouchingThePhysics()
@@ -235,8 +234,9 @@ public sealed class RagdollSolverTests
 
         // Distance under constant acceleration goes with the acceleration, so halving one halves the other.
         Assert.Equal(Drop(1.0) * 0.5, Drop(0.5), Drop(1.0) * 0.02);
-        Assert.True(Drop(GameplayCVars.RagdollGravity.Value) < Drop(1.0));
-        Assert.InRange(GameplayCVars.RagdollGravity.Value, 0.1f, 1f);
+
+        // And the default is honest gravity: under seven tenths of a g a falling man hung in the air.
+        Assert.Equal(1f, GameplayCVars.RagdollGravity.Value);
     }
 
     /// <summary>A body stops soon after it lands, not seconds later.</summary>
@@ -395,12 +395,13 @@ public sealed class RagdollSolverTests
     [Fact]
     public void AParallelWallProbeIsQueriedOnceAndItsContactIsShared()
     {
+        // Three bones, so two of them carry a length and are bodies; the end bone rides on its parent.
         RagdollSkeleton rig = RagdollSkeleton.Build(BoneSkeleton.Create(
-            [BoneSkeleton.NoParent, 0],
-            [Vector3f.Zero, new Vector3f(1_000f, 0f, 0f)]));
+            [BoneSkeleton.NoParent, 0, 1],
+            [Vector3f.Zero, new Vector3f(1_000f, 0f, 0f), new Vector3f(1_000f, 0f, 0f)]));
         BonePose pose = BonePose.Evaluate(
             rig.Skeleton,
-            [Quaternion32.Identity, Quaternion32.Identity]);
+            [Quaternion32.Identity, Quaternion32.Identity, Quaternion32.Identity]);
         RagdollBody body = RagdollBody.Seed(rig, pose, Vector3d.Zero, Matrix3f.Identity);
         body.AddVelocity(new Vector3d(100.0, 0.0, 0.0));
 
@@ -487,30 +488,27 @@ public sealed class RagdollSolverTests
     }
 
     /// <summary>
-    /// No bone weighs wildly more than the one it hangs off, and the body still weighs what it should.
+    /// For a rig shared out by volume, no body weighs wildly more than the one it hangs off, and the body
+    /// still weighs what it should.
     /// </summary>
-    /// <remarks>
-    /// The mass conditioning, which is the most effective anti-explosion measure in the whole solver: a
-    /// chain solved one joint at a time diverges when a light link has to move a heavy sub-tree, and a
-    /// rig taken at face value is full of exactly that.
-    /// </remarks>
     [Fact]
-    public void NoBoneWildlyOutweighsItsParentAndTheBodyStillWeighsWhatItShould()
+    public void NoBodyWildlyOutweighsItsParentAndTheBodyStillWeighsWhatItShould()
     {
         RagdollSkeleton rig = RagdollRig.Rig();
+        Assert.False(rig.Profile.IsHuman);
 
         double total = 0.0;
-        for (int bone = 0; bone < rig.BoneCount; bone++)
+        for (int part = 0; part < rig.BodyCount; part++)
         {
-            total += 1.0 / rig.BoneAt(bone).InverseMass;
+            total += 1.0 / rig.BodyAt(part).InverseMass;
 
-            int parent = rig.Skeleton.Parents[bone];
-            if (parent == BoneSkeleton.NoParent)
+            int parent = rig.ParentOf(part);
+            if (parent < 0)
             {
                 continue;
             }
 
-            double ratio = rig.BoneAt(parent).InverseMass / rig.BoneAt(bone).InverseMass;
+            double ratio = rig.BodyAt(parent).InverseMass / rig.BodyAt(part).InverseMass;
             Assert.InRange(
                 ratio, 1.0 / RagdollSkeleton.MaximumMassRatio - 1e-6, RagdollSkeleton.MaximumMassRatio + 1e-6);
         }

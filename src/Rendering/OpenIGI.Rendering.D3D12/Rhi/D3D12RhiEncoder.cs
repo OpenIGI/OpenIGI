@@ -18,7 +18,7 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
 {
     private readonly D3D12RhiDevice _device;
     private readonly List<D3D12RhiBuffer> _written = [];
-    private readonly D3D12BarrierTracker _tracker = new();
+    private D3D12BarrierTracker _tracker = D3D12BarrierTracker.Rent();
     private ID3D12GraphicsCommandList7* _list;
     private ID3D12CommandAllocator* _allocator;
     private readonly bool _counted;
@@ -339,6 +339,8 @@ internal sealed unsafe class D3D12RhiCommandEncoder : IRhiCommandEncoder
 
         D3D12Check.Ok(_list->Close(), "ID3D12GraphicsCommandList::Close");
         D3D12RhiCommandBuffer buffer = new(_list, _allocator, label.Length > 0 ? label : Label, [.. _written], _tracker.HandOffs());
+        D3D12BarrierTracker.Return(_tracker);
+        _tracker = null!;
         _list = null;
         _allocator = null;
         return buffer;

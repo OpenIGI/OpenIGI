@@ -153,6 +153,8 @@ public sealed class ModSet
         public IReadOnlyList<ModReference> Mods => mods;
 
         public IReadOnlyList<TitlePostPass> PostPasses => postPasses;
+
+        public string? CoopPreviewWeapon => inner.CoopPreviewWeapon;
     }
 
     // Publishes the mods' level-system edits to every session, the preview's sharing the played one's.

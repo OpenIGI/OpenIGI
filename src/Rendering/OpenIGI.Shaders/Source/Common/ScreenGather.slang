@@ -225,6 +225,59 @@ float3 ViewPositionAt(float2 uv, float depth)
     return float3((ndc.x * viewZ) / uUnproject.x, ySign * (ndc.y * viewZ) / uUnproject.y, viewZ);
 }
 
+// The facet the eye saw at a screen point, from the depth buffer around it: the nearer neighbour on each
+// axis, so a point at a silhouette takes the surface it is on and not the drop behind it. In view space,
+// turned to face the eye.
+float3 ViewFacetNormal(float2 uv, float3 viewPosition)
+{
+    float2 texel = 1.0 / float2(float(uScreenWidth), float(uScreenHeight));
+    float3 right = ViewPositionAt(uv + float2(texel.x, 0.0), DepthBilinear(uSceneDepth, uSceneDepthSampler, uv + float2(texel.x, 0.0)));
+    float3 left = ViewPositionAt(uv - float2(texel.x, 0.0), DepthBilinear(uSceneDepth, uSceneDepthSampler, uv - float2(texel.x, 0.0)));
+    float3 down = ViewPositionAt(uv + float2(0.0, texel.y), DepthBilinear(uSceneDepth, uSceneDepthSampler, uv + float2(0.0, texel.y)));
+    float3 up = ViewPositionAt(uv - float2(0.0, texel.y), DepthBilinear(uSceneDepth, uSceneDepthSampler, uv - float2(0.0, texel.y)));
+    float3 alongX = abs(right.z - viewPosition.z) < abs(viewPosition.z - left.z) ? right - viewPosition : viewPosition - left;
+    float3 alongY = abs(down.z - viewPosition.z) < abs(viewPosition.z - up.z) ? down - viewPosition : viewPosition - up;
+    float3 facet = cross(alongX, alongY);
+    float length2 = dot(facet, facet);
+    if (length2 <= 1e-20)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    facet *= rsqrt(length2);
+    return dot(facet, viewPosition) > 0.0 ? -facet : facet;
+}
+
+// A probe's surface normal, turned to face the eye that saw it.
+//
+// A surface the camera sees faces it, but its stored normal need not, for two different reasons that want
+// opposite answers. A single-sided roof drawn from both sides carries its underside's normal on top: the
+// hemisphere pointed into the building and the roof took the lit floor below for its bounce, so that normal
+// is NEGATED. A slope seen edge-on has a smooth shading normal that leans a few degrees away from the eye
+// though its facet faces it: negated, the hemisphere of a mountainside pointed into the mountain, and every
+// crease of mission 2's slopes came back as black wedges (the rays struck the hill) or bright slivers (they
+// escaped downward and read as sunlit open ground). That one is REFLECTED across the plane square to the
+// eye, which keeps it a slope's normal tipped just past the eye's line. The facet from the depth buffer
+// tells them apart: the roof's normal opposes its facet, the slope's agrees with it.
+float3 GatherNormal(float3 normal, float3 eyeToSurface, float2 uv, float3 viewPosition)
+{
+    float3 toEye = -normalize(eyeToSurface);
+    float facing = dot(normal, toEye);
+    if (facing >= 0.0)
+    {
+        return normal;
+    }
+
+    float3 viewFacet = ViewFacetNormal(uv, viewPosition);
+    float3 facet = (uViewToWorld0 * viewFacet.x) + (uViewToWorld1 * viewFacet.y) + (uViewToWorld2 * viewFacet.z);
+    if (dot(facet, facet) < 0.5 || dot(normal, facet) <= 0.0)
+    {
+        return -normal;
+    }
+
+    return normalize(normal - (2.0 * facing * toEye));
+}
+
 float2 ProjectToUv(float3 viewPosition)
 {
     float ySign = -1.0;
@@ -509,7 +562,14 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
     // the corner sits a few millimetres from the other wall, nearer than a trace can tell apart at this
     // world's scale, and its rays went through that wall and lit the corner from beyond it. The eye saw the
     // point across open space, so a step towards the eye is a step away from everything at the edge.
-    float3 traceFrom = world + (normalize(uCameraToCache - world) * kTraceViewPull);
+    //
+    // And off the surface by a share of its distance, as the traced sun's rays are (SunShadow.slang). The
+    // point is rebuilt from depth, whose error grows with distance, and the ground it was rebuilt on is
+    // level-of-detail terrain whose facets the smooth normal does not follow. Two centimetres hundreds of
+    // metres out started rays under the slope beside them: on mission 2's mountainside every crease
+    // traced black wedges into the sky light and the cards' light streaked the snow between them.
+    float3 traceFrom = world + (normalize(uCameraToCache - world) * kTraceViewPull)
+        + (normal * (kTraceDistanceOffset * abs(viewOrigin.z)));
 #else
     float3 traceFrom = world;
 #endif

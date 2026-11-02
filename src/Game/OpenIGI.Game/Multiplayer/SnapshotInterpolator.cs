@@ -107,6 +107,46 @@ public sealed class SnapshotInterpolator
         return true;
     }
 
+    /// <summary>Gets where a lift's car stood at a moment, between the snapshots either side of it.</summary>
+    /// <param name="tick">The moment, a fractional tick.</param>
+    /// <param name="index">The lift, in the snapshots' order of lifts.</param>
+    /// <param name="position">Where its car stood then, in world units.</param>
+    /// <returns><see langword="false"/> when no snapshot at or before that moment carried it.</returns>
+    /// <remarks>
+    /// Past the newest snapshot the car is held where it was: a human riding it is carried on along its own velocity, and
+    /// it is the two together, sampled at one moment, that say where on the car the human stood.
+    /// </remarks>
+    public bool SampleLift(double tick, int index, out Vector3d position)
+    {
+        position = default;
+        int after = _snapshots.FindIndex(s => s.Tick > tick);
+        int before = (after < 0 ? _snapshots.Count : after) - 1;
+        while (before >= 0 && !HasLift(_snapshots[before], index))
+        {
+            before--;
+        }
+
+        if (before < 0)
+        {
+            return false;
+        }
+
+        Snapshot from = _snapshots[before];
+        position = from.Lifts![index].Position.ToVector();
+        int next = after < 0 ? -1 : _snapshots.FindIndex(after, s => HasLift(s, index));
+        if (next < 0)
+        {
+            return true;
+        }
+
+        Snapshot to = _snapshots[next];
+        double t = (tick - from.Tick) / (to.Tick - from.Tick);
+        position = Vector3d.Lerp(position, to.Lifts![index].Position.ToVector(), t);
+        return true;
+    }
+
+    private static bool HasLift(Snapshot snapshot, int index) => snapshot.Lifts is { } lifts && (uint)index < (uint)lifts.Length;
+
     /// <summary>Forgets everything, as a map changes.</summary>
     public void Clear() => _snapshots.Clear();
 

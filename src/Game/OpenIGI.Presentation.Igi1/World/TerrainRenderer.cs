@@ -119,6 +119,10 @@ public sealed class TerrainRenderer : ITerrainPresenter
     /// level's worth of them is most of a second; the menu's backdrop loader does the arithmetic on a
     /// worker and passes the results in, leaving this constructor with only the upload.
     /// </param>
+    /// <param name="work">
+    /// The host's work scheduler, which the shadow caster fills its vertices on in parallel; <see langword="null"/>
+    /// fills them on the calling thread.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The terrain is not drawable.</exception>
     public TerrainRenderer(
@@ -126,7 +130,8 @@ public sealed class TerrainRenderer : ITerrainPresenter
         TerrainSurface surface,
         IOpenIgiLogger? logger = null,
         MaterialDetailPack? detailMaps = null,
-        IReadOnlyList<Bgra32[]>? derivedDetail = null)
+        IReadOnlyList<Bgra32[]>? derivedDetail = null,
+        Core.Threading.IWorkScheduler? work = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
@@ -148,7 +153,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
 
         // On the GPU now; the level's terrain data need not hold the pictures as well.
         surface.Terrain.Tiles?.ReleasePixels();
-        _caster = new TerrainShadowCaster(device);
+        _caster = new TerrainShadowCaster(device, work);
     }
 
     /// <summary>Gets how many chunks the last <see cref="Draw"/> selected.</summary>

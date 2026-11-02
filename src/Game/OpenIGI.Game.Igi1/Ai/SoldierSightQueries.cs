@@ -62,6 +62,9 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     // nearer than any hostile player, so Harrison's team at the gate trades fire with the guards.
     private readonly Dictionary<SoldierView, AiCombatTarget> _npcTargets = [];
 
+    // What CandidatesFor hands back, refilled on every call; see there.
+    private readonly List<AiDetectionCandidate> _candidates = [];
+
     /// <summary>Gets or sets the world trace the level's sight lines are tested with, kept for the scenario runs.</summary>
     public WorldTraceCast? SightTraceForTesting { get; set; }
 
@@ -356,7 +359,8 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <remarks>
     /// The global human list's order: the player first, then every soldier whose container is live, the
     /// soldier itself left out. Each is described from this soldier's side, so the scan can register the
-    /// living of the other side as enemies and the dead of its own as fallen friends.
+    /// living of the other side as enemies and the dead of its own as fallen friends. The list is this query's
+    /// own and is refilled by the next call, so it is read before then and not kept.
     /// </remarks>
     public List<AiDetectionCandidate> CandidatesFor(
         SoldierView self,
@@ -366,11 +370,12 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         bool playerAlive,
         bool playerCrouching)
     {
-        List<AiDetectionCandidate> humans =
-        [
-            new(AiDetectionCandidate.PlayerId, brain.PlayerIsEnemy, playerAlive, playerMark, playerFeet,
-                playerCrouching, _context.PlayerTarget),
-        ];
+        // One list, refilled for each soldier: the brain reads it during its tick and keeps none of it, and a new
+        // one per soldier per tick was the largest garbage the simulation made.
+        List<AiDetectionCandidate> humans = _candidates;
+        humans.Clear();
+        humans.Add(new(AiDetectionCandidate.PlayerId, brain.PlayerIsEnemy, playerAlive, playerMark, playerFeet,
+            playerCrouching, _context.PlayerTarget));
         foreach ((SoldierView view, Igi1HumanAi other) in _context.Brains)
         {
             if (ReferenceEquals(view, self) || !ConditionalContainerGate.IsTaskActive(view.Soldier))

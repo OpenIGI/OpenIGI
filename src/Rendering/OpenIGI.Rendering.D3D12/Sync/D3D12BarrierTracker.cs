@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using Silk.NET.Direct3D12;
 
 namespace OpenIGI.Rendering.D3D12.Sync;
@@ -86,7 +88,13 @@ internal readonly record struct D3D12LayoutHandOff(
 /// </remarks>
 internal sealed unsafe class D3D12BarrierTracker
 {
+    // Trackers finished lists gave back. A frame records dozens of lists, each through its own encoder, and a
+    // fresh tracker grew its dictionary from nothing and allocated a state for every resource the list
+    // touched -- most of the garbage a Direct3D 12 frame made. A reused one keeps both.
+    private static readonly ConcurrentBag<D3D12BarrierTracker> Pool = [];
+
     private readonly Dictionary<object, State> _states = new(ReferenceEqualityComparer.Instance);
+    private readonly Stack<State> _free = [];
     private readonly List<TextureBarrier> _textures = [];
     private readonly List<BufferBarrier> _buffers = [];
     private readonly List<D3D12LayoutHandOff> _handOffs = [];
@@ -96,6 +104,19 @@ internal sealed unsafe class D3D12BarrierTracker
     /// <remarks><c>OPENIGI_D3D12_BARRIERS=full</c>: the bluntest synchronisation there is, for telling a missing barrier from anything else.</remarks>
     public static bool Full { get; set; } =
         string.Equals(Environment.GetEnvironmentVariable("OPENIGI_D3D12_BARRIERS"), "full", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Takes a tracker with nothing recorded, reusing one a finished list gave back where there is one.</summary>
+    /// <returns>The tracker.</returns>
+    public static D3D12BarrierTracker Rent() => Pool.TryTake(out D3D12BarrierTracker? tracker) ? tracker : new D3D12BarrierTracker();
+
+    /// <summary>Gives a tracker back once its list is finished and its hand-offs taken.</summary>
+    /// <param name="tracker">The tracker, which the caller must not use again.</param>
+    public static void Return(D3D12BarrierTracker tracker)
+    {
+        ArgumentNullException.ThrowIfNull(tracker);
+        tracker.Clear();
+        Pool.Add(tracker);
+    }
 
     /// <summary>Gets the texture barriers queued for the next flush.</summary>
     internal IReadOnlyList<TextureBarrier> QueuedTextureBarriers => _textures;
@@ -120,8 +141,13 @@ internal sealed unsafe class D3D12BarrierTracker
         if (!_states.TryGetValue(key, out State? state))
         {
             BarrierLayout first = info.Layout;
-            _states[key] = new State(resource, isTexture: true) { Layout = first, First = first, FirstSync = info.Sync, FirstAccess = info.Access };
-            Remember(_states[key], info);
+            state = NewState(resource, isTexture: true);
+            state.Layout = first;
+            state.First = first;
+            state.FirstSync = info.Sync;
+            state.FirstAccess = info.Access;
+            _states[key] = state;
+            Remember(state, info);
             return;
         }
 
@@ -176,7 +202,7 @@ internal sealed unsafe class D3D12BarrierTracker
         Info info = Describe(use);
         if (!_states.TryGetValue(key, out State? state))
         {
-            state = new State(resource, isTexture: false);
+            state = NewState(resource, isTexture: false);
             _states[key] = state;
             Remember(state, info);
             return;
@@ -248,10 +274,9 @@ internal sealed unsafe class D3D12BarrierTracker
             return;
         }
 
-        TextureBarrier[] textures = [.. _textures];
-        BufferBarrier[] buffers = [.. _buffers];
-        _textures.Clear();
-        _buffers.Clear();
+        // Straight from the lists, which nothing touches until the call returns.
+        Span<TextureBarrier> textures = CollectionsMarshal.AsSpan(_textures);
+        Span<BufferBarrier> buffers = CollectionsMarshal.AsSpan(_buffers);
         fixed (TextureBarrier* firstTexture = textures)
         fixed (BufferBarrier* firstBuffer = buffers)
         {
@@ -267,6 +292,9 @@ internal sealed unsafe class D3D12BarrierTracker
 
             list->Barrier((uint)groups, batch);
         }
+
+        _textures.Clear();
+        _buffers.Clear();
     }
 
     /// <summary>The layouts the list's textures need first and are left in, for the submission to hand them over.</summary>
@@ -384,11 +412,40 @@ internal sealed unsafe class D3D12BarrierTracker
     /// <param name="Ordered">Whether writes like it are ordered among themselves with no barrier: colour and depth targets.</param>
     internal readonly record struct Info(BarrierSync Sync, BarrierAccess Access, BarrierLayout Layout, bool Write, bool Ordered);
 
-    private sealed class State(nint resource, bool isTexture)
+    // A state for a resource the list has not used yet, from the ones an earlier list left behind where there are any.
+    private State NewState(nint resource, bool isTexture)
     {
-        public nint Resource { get; } = resource;
+        State state = _free.TryPop(out State? reused) ? reused : new State();
+        state.Resource = resource;
+        state.IsTexture = isTexture;
+        state.First = default;
+        state.FirstSync = default;
+        state.FirstAccess = default;
+        state.Layout = default;
+        state.Reset();
+        return state;
+    }
 
-        public bool IsTexture { get; } = isTexture;
+    // Back to the state of a new tracker, keeping the dictionary's room and every state for the next list.
+    private void Clear()
+    {
+        foreach (State state in _states.Values)
+        {
+            _free.Push(state);
+        }
+
+        _states.Clear();
+        _textures.Clear();
+        _buffers.Clear();
+        _handOffs.Clear();
+        _flushAll = false;
+    }
+
+    private sealed class State
+    {
+        public nint Resource { get; set; }
+
+        public bool IsTexture { get; set; }
 
         public BarrierLayout First { get; set; }
 
