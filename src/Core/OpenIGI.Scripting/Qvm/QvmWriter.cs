@@ -15,11 +15,35 @@ public sealed class QvmWriter
     private readonly List<string> _symbols = [];
     private readonly List<string> _strings = [];
 
-    /// <summary>Gets the code section being assembled.</summary>
-    public QvmCodeWriter Code { get; } = new();
+    /// <summary>Initializes a new instance of the <see cref="QvmWriter"/> class for I.G.I.'s bytecode version.</summary>
+    public QvmWriter()
+        : this(QvmProgram.IgiVersion)
+    {
+    }
 
-    /// <summary>Gets or sets the bytecode version written into the header.</summary>
-    public int Version { get; set; } = QvmProgram.IgiVersion;
+    /// <summary>Initializes a new instance of the <see cref="QvmWriter"/> class.</summary>
+    /// <param name="version">
+    /// The bytecode version: <see cref="QvmProgram.IgiVersion"/> or <see cref="QvmProgram.Igi2Version"/>. It decides
+    /// the opcode numbering and the header size, so it is fixed before any code is written.
+    /// </param>
+    /// <exception cref="QvmFormatException">No opcode encoding is known for <paramref name="version"/>.</exception>
+    public QvmWriter(int version)
+    {
+        Version = version;
+        Code = new QvmCodeWriter(QvmOpcodeEncoding.ForVersion(version));
+    }
+
+    /// <summary>Gets the code section being assembled.</summary>
+    public QvmCodeWriter Code { get; }
+
+    /// <summary>Gets the bytecode version written into the header.</summary>
+    public int Version { get; }
+
+    /// <summary>
+    /// Gets or sets the file-info block a version 7 program carries after its code, or empty for none.
+    /// </summary>
+    /// <remarks>Ignored for version 5, whose header has no field pointing at one.</remarks>
+    public ReadOnlyMemory<byte> FileInfo { get; set; }
 
     /// <summary>Gets or sets the instruction-set identifier written into the header.</summary>
     public int InstructionSetId { get; set; } = QvmProgram.RequiredInstructionSetId;
@@ -58,14 +82,17 @@ public sealed class QvmWriter
         (byte[] SymbolTable, byte[] SymbolPool) symbols = BuildTable(_symbols);
         (byte[] StringTable, byte[] StringPool) strings = BuildTable(_strings);
 
-        int symbolTableOffset = QvmProgram.HeaderSize;
+        int symbolTableOffset = QvmProgram.HeaderSizeFor(Version);
         int symbolPoolOffset = symbolTableOffset + symbols.SymbolTable.Length;
         int stringTableOffset = symbolPoolOffset + symbols.SymbolPool.Length;
         int stringPoolOffset = stringTableOffset + strings.StringTable.Length;
         int codeOffset = stringPoolOffset + strings.StringPool.Length;
+        bool hasFileInfoField = Version >= QvmProgram.FirstVersionWithFileInfo;
+        ReadOnlySpan<byte> fileInfo = hasFileInfoField ? FileInfo.Span : default;
+        int fileInfoOffset = fileInfo.IsEmpty ? 0 : codeOffset + code.Length;
 
-        byte[] image = new byte[codeOffset + code.Length];
-        Span<byte> header = image.AsSpan(0, QvmProgram.HeaderSize);
+        byte[] image = new byte[codeOffset + code.Length + fileInfo.Length];
+        Span<byte> header = image.AsSpan(0, QvmProgram.HeaderSizeFor(Version));
 
         Encoding.ASCII.GetBytes("LOOP").CopyTo(header);
         Write(header, 0x04, InstructionSetId);
@@ -82,12 +109,17 @@ public sealed class QvmWriter
         Write(header, 0x30, code.Length);
         Write(header, 0x34, StackSizeBytes);
         Write(header, 0x38, MaxLocals);
+        if (hasFileInfoField)
+        {
+            Write(header, 0x3C, fileInfoOffset);
+        }
 
         symbols.SymbolTable.CopyTo(image, symbolTableOffset);
         symbols.SymbolPool.CopyTo(image, symbolPoolOffset);
         strings.StringTable.CopyTo(image, stringTableOffset);
         strings.StringPool.CopyTo(image, stringPoolOffset);
         code.CopyTo(image, codeOffset);
+        fileInfo.CopyTo(image.AsSpan(codeOffset + code.Length));
 
         return image;
     }

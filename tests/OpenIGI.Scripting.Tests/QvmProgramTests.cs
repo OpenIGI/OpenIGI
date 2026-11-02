@@ -94,10 +94,14 @@ public sealed class QvmProgramTests
     [Fact]
     public void Read_RejectsAVersionBelowFive()
     {
-        QvmWriter writer = new() { Version = 4 };
+        QvmWriter writer = new();
         writer.Code.Emit(QvmOpcode.Brk);
+        byte[] image = writer.Build();
 
-        QvmFormatException error = Assert.Throws<QvmFormatException>(() => QvmProgram.Read(writer.Build()));
+        // The writer only builds versions it has an opcode encoding for, so the header is patched afterwards.
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x08), 4);
+
+        QvmFormatException error = Assert.Throws<QvmFormatException>(() => QvmProgram.Read(image));
         Assert.Contains("version", error.Message, StringComparison.Ordinal);
     }
 
