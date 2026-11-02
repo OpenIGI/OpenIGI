@@ -110,6 +110,16 @@ internal sealed class ScriptPanel : EditorElement
         EditorDraw.Label(painter, Theme, _message, new UiRect(strip.X + Theme.Padding, strip.Y, strip.Width - width - (Theme.Padding * 3f), strip.Height), _messageIsError ? Theme.Error : Theme.TextMuted);
     }
 
+    /// <summary>Opens any script by its game path, listed for the mission or not.</summary>
+    /// <param name="path">The path (<c>LOCAL:common/ai/anya.qvm</c>).</param>
+    public void OpenFile(string path)
+    {
+        int listed = _paths.FindIndex(p => p.Equals(path, StringComparison.OrdinalIgnoreCase));
+        _scripts.SelectedIndex = listed;
+        _scripts.Placeholder = listed < 0 ? Path.GetFileName(path) : "No mission open";
+        Open(path);
+    }
+
     private List<string> ListScripts(string directory)
     {
         string root = LocalDevice + directory.TrimEnd('/', '\\');

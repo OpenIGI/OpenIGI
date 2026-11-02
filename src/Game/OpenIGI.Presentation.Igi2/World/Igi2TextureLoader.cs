@@ -122,21 +122,7 @@ public sealed class Igi2TextureLoader
 
         try
         {
-            // The same order the game's own sniffing amounts to: the engine's format first, because it
-            // has a magic number, then TGA, whose header is a shape rather than an identity.
-            TextureImage? image = null;
-            if (TexFile.IsLoopAsset(bytes.Span))
-            {
-                image = TexFile.Load(bytes.Span);
-            }
-            else if (JpegImage.IsJpeg(bytes.Span))
-            {
-                image = JpegImage.Read(bytes.Span);
-            }
-            else if (TgaImage.IsTga(bytes.Span))
-            {
-                image = TgaImage.Read(bytes.Span);
-            }
+            ImageSniffer.TryDecode(bytes.Span, out TextureImage? image);
 
             // Built here rather than shipped: the sequel's ground materials are JPEG and TGA, neither of
             // which carries a chain, so every one of them arrived with a single level. Project I.G.I.'s

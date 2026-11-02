@@ -39,6 +39,12 @@ public sealed class TreeSource<T>
     /// <summary>Gets an item's label.</summary>
     public required Func<T, string> Label { get; init; }
 
+    /// <summary>
+    /// Gets a cheap answer to whether an item has children, used for collapsed rows so a source whose children are
+    /// costly to list (a folder, an archive) is only asked for them once the row is opened.
+    /// </summary>
+    public Func<T, bool>? HasChildren { get; init; }
+
     /// <summary>Gets an item's icon.</summary>
     public Func<T, KitIcon>? Icon { get; init; }
 
@@ -500,13 +506,14 @@ public sealed class TreeView<T> : EditorElement
     // Adds an item and its visible descendants; while filtering, returns whether anything in the subtree matched.
     private bool Add(T item, int depth, bool filtering)
     {
-        IReadOnlyList<T> children = _source.Children(item);
         if (!filtering)
         {
-            _rows.Add((item, depth, children.Count > 0));
-            if (IsExpanded(item))
+            bool expanded = IsExpanded(item);
+            IReadOnlyList<T>? listed = expanded || _source.HasChildren is null ? _source.Children(item) : null;
+            _rows.Add((item, depth, listed is null ? _source.HasChildren!(item) : listed.Count > 0));
+            if (expanded)
             {
-                foreach (T child in children)
+                foreach (T child in listed!)
                 {
                     Add(child, depth + 1, filtering: false);
                 }
@@ -514,6 +521,8 @@ public sealed class TreeView<T> : EditorElement
 
             return true;
         }
+
+        IReadOnlyList<T> children = _source.Children(item);
 
         int at = _rows.Count;
         bool matches = _source.Label(item).Contains(_filter, StringComparison.OrdinalIgnoreCase);

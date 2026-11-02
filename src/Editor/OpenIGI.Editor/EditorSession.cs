@@ -37,7 +37,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:T(viewport*|script),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -51,6 +51,7 @@ internal sealed class EditorSession : IEditorSession
     private readonly MenuBar _menu;
     private readonly StatusBar _status;
     private readonly LiveWorldLink _live;
+    private readonly ContentPanel _content;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -86,7 +87,14 @@ internal sealed class EditorSession : IEditorSession
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
         _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace)) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
-        _dock.Register(new DockPanel("script", "Script", new ScriptPanel(_theme, host, _workspace)) { Icon = KitIcon.Script });
+        ScriptPanel script = new(_theme, host, _workspace);
+        _dock.Register(new DockPanel("script", "Script", script) { Icon = KitIcon.Script });
+        _content = new ContentPanel(_theme, host, path =>
+        {
+            script.OpenFile(path);
+            _dock.Show("script");
+        });
+        _dock.Register(new DockPanel("content", "Content", _content) { Icon = KitIcon.Folder });
         if (!_dock.LoadLayout(ReadSavedLayout() ?? DefaultLayout))
         {
             _dock.LoadLayout(DefaultLayout);
@@ -120,6 +128,13 @@ internal sealed class EditorSession : IEditorSession
     /// <inheritdoc/>
     public string? RunCommand(IReadOnlyList<string> arguments)
     {
+        if (arguments is [string find, ..] && find.Equals("find", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)
+        {
+            string query = string.Join(' ', arguments.Skip(1));
+            _dock.Show("content");
+            return _content.Find(query) ? $"Found '{query}'." : $"No file name contains '{query}'.";
+        }
+
         if (arguments is not [string verb, ..] || !verb.Equals("select", StringComparison.OrdinalIgnoreCase) || arguments.Count < 2)
         {
             return null;
@@ -208,6 +223,7 @@ internal sealed class EditorSession : IEditorSession
         _disposed = true;
         SaveLayout();
         _host.UnmountContent(_workspace.Project.LayerId);
+        _content.Release();
         _host.CursorLocked = false;
         _surfaces.Dispose();
         _fonts.Dispose();
@@ -356,7 +372,7 @@ internal sealed class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "script" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "script", "content" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -416,6 +432,7 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["window.inspector"]),
                 MenuItem.For(actions["window.history"]),
                 MenuItem.For(actions["window.script"]),
+                MenuItem.For(actions["window.content"]),
             ]);
     }
 
