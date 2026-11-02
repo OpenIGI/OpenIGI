@@ -42,20 +42,34 @@ public sealed class MissionParameter
         return true;
     }
 
-    /// <summary>Writes new numbers, keeping the spelling of every argument whose value did not change.</summary>
+    /// <summary>Builds the arguments for new numbers, keeping the spelling of every argument whose value did not change.</summary>
     /// <param name="values">One value per argument.</param>
+    /// <returns>The new arguments; the parameter itself is not changed.</returns>
     /// <exception cref="ArgumentException">The count does not match the parameter's width.</exception>
-    public void SetNumbers(ReadOnlySpan<double> values)
+    public QscExpression[] WithNumbers(ReadOnlySpan<double> values)
     {
         if (values.Length != Arguments.Count)
         {
             throw new ArgumentException($"'{Name}' takes {Arguments.Count} values, not {values.Length}.", nameof(values));
         }
 
-        for (int i = 0; i < values.Length; i++)
+        QscExpression[] arguments = new QscExpression[values.Length];
+        for (int i = 0; i < arguments.Length; i++)
         {
-            Arguments[i] = ScriptValues.KeepOrReal(Arguments[i], values[i]);
+            arguments[i] = ScriptValues.KeepOrReal(Arguments[i], values[i]);
         }
+
+        return arguments;
+    }
+
+    /// <summary>Writes new numbers in place, without history: see <see cref="WithNumbers"/>.</summary>
+    /// <param name="values">One value per argument.</param>
+    /// <exception cref="ArgumentException">The count does not match the parameter's width.</exception>
+    public void SetNumbers(ReadOnlySpan<double> values)
+    {
+        QscExpression[] arguments = WithNumbers(values);
+        Arguments.Clear();
+        Arguments.AddRange(arguments);
     }
 }
 

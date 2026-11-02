@@ -47,7 +47,7 @@ public sealed class MissionScriptStatement(QscStatement statement) : MissionStat
 /// back the retail file, which is what lets a vanilla export load in the retail executable.
 /// </para>
 /// </remarks>
-public sealed class MissionDocument
+public sealed partial class MissionDocument
 {
     /// <summary>The native that declares a task type's parameters.</summary>
     public const string DeclareFunction = "Task_DeclareParameters";
