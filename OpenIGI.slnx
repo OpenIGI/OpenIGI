@@ -67,6 +67,7 @@
     <Project Path="src/Platform/OpenIGI.Platform/OpenIGI.Platform.csproj" />
   </Folder>
   <Folder Name="/src/UI/">
+    <Project Path="src/UI/OpenIGI.UI.Editor/OpenIGI.UI.Editor.csproj" />
     <Project Path="src/UI/OpenIGI.UI.Kit/OpenIGI.UI.Kit.csproj" />
     <Project Path="src/UI/OpenIGI.UI.Rhi/OpenIGI.UI.Rhi.csproj" />
     <Project Path="src/UI/OpenIGI.UI.Skia/OpenIGI.UI.Skia.csproj" />
