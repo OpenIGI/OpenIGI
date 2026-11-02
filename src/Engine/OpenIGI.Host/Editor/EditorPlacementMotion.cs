@@ -15,7 +15,7 @@ namespace OpenIGI.Host.Editor;
 /// </remarks>
 internal sealed class EditorPlacementMotion : IPlacementMotion
 {
-    private readonly Dictionary<GameTask, EditorPose> _poses = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<PlacementKey, EditorPose> _poses = [];
 
     /// <summary>Gets or sets the title's own motions, which run first.</summary>
     public IPlacementMotion? Inner { get; set; }
@@ -24,9 +24,9 @@ internal sealed class EditorPlacementMotion : IPlacementMotion
     public bool IsEmpty => _poses.Count == 0;
 
     /// <summary>Sets where everything a task placed is drawn: turned about the task's built position, then moved.</summary>
-    /// <param name="owner">The task.</param>
+    /// <param name="owner">What the task placed, as its placements are keyed.</param>
     /// <param name="pose">The pose; <see cref="EditorPose.IsIdentity"/> removes it.</param>
-    public void SetPose(GameTask owner, EditorPose pose)
+    public void SetPose(PlacementKey owner, EditorPose pose)
     {
         if (pose.IsIdentity)
         {
@@ -44,10 +44,18 @@ internal sealed class EditorPlacementMotion : IPlacementMotion
     /// <inheritdoc/>
     public bool TryGetTransform(WorldPlacement placement, float tickFraction, out Vector3d positionMetres, out Matrix3f orientation)
     {
+        // The title's own motion first, and only when it says it moved the placement: an out parameter is written either way,
+        // and a title that leaves it zeroed when it has nothing to say would otherwise put every edited object at the origin.
         positionMetres = placement.Position;
         orientation = placement.Orientation;
-        bool moved = Inner is { } inner && inner.TryGetTransform(placement, tickFraction, out positionMetres, out orientation);
-        if (!_poses.TryGetValue(placement.Owner, out EditorPose pose))
+        bool moved = false;
+        if (Inner is { } inner && inner.TryGetTransform(placement, tickFraction, out Vector3d titlePosition, out Matrix3f titleOrientation))
+        {
+            positionMetres = titlePosition;
+            orientation = titleOrientation;
+            moved = true;
+        }
+        if (!_poses.TryGetValue(PlacementKey.Of(placement), out EditorPose pose))
         {
             return moved;
         }

@@ -84,7 +84,7 @@ public interface IEditorHost
     /// <summary>Gets the window height in pixels.</summary>
     float Height { get; }
 
-    /// <summary>Gets the interface scale the player chose.</summary>
+    /// <summary>Gets the size the editor draws at: the <c>ed_ui_scale</c> setting, or one picked from the screen.</summary>
     float UiScale { get; }
 
     /// <summary>Gets or sets the system clipboard's text.</summary>
@@ -116,6 +116,9 @@ public interface IEditorHost
     /// <summary>Gets the free camera the world is drawn from, once a level is loaded.</summary>
     FreeCamera? Camera { get; }
 
+    /// <summary>Gets the open mission's ground as height grids, when it is one the editor can change.</summary>
+    Game.World.IEditableTerrain? Terrain { get; }
+
     /// <summary>Gets the last rendered frame's view.</summary>
     EditorView View { get; }
 
@@ -145,9 +148,9 @@ public interface IEditorHost
     IReadOnlyList<WorldPlacement> Placements { get; }
 
     /// <summary>Draws everything a task placed moved and turned, from the next frame, without rebuilding the level.</summary>
-    /// <param name="owner">The task, as the running level holds it.</param>
+    /// <param name="owner">What the task placed, as its placements are keyed (<see cref="PlacementKey.Of"/>).</param>
     /// <param name="pose">How far from where it was built; an identity pose puts it back.</param>
-    void SetPlacementPose(GameTask owner, EditorPose pose);
+    void SetPlacementPose(PlacementKey owner, EditorPose pose);
 
     /// <summary>Loads the open mission again from the files as they now stand, keeping the camera where it is.</summary>
     /// <param name="play">Whether to start it as the player (play in editor) rather than held still for editing.</param>

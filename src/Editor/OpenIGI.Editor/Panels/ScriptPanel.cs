@@ -58,12 +58,10 @@ internal sealed class ScriptPanel : EditorElement
         float compileWidth = _compile.DesiredSize.X;
         UiRect bar = new(contentRect.X + pad, contentRect.Y + pad, contentRect.Width - (pad * 2f), Theme.ControlHeight);
         UiRect list = new(bar.X, bar.Y, MathF.Min(Theme.Px(320f), bar.Width - compileWidth - pad), bar.Height);
-        _scripts.Measure(context, list.Size);
-        _scripts.Arrange(list);
+        _scripts.Place(context, list);
         _compile.Arrange(new UiRect(list.Right + pad, bar.Y, compileWidth, bar.Height));
         UiRect code = UiRect.FromEdges(contentRect.X, bar.Bottom + pad, contentRect.Right, contentRect.Bottom - Theme.StatusBarHeight);
-        _code.Measure(context, code.Size);
-        _code.Arrange(code);
+        _code.Place(context, code);
     }
 
     /// <inheritdoc/>

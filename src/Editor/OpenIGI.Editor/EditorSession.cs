@@ -4,6 +4,7 @@ using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Editor.Panels;
+using OpenIGI.Editor.Terrain;
 using OpenIGI.Editor.Viewport;
 using OpenIGI.Host.Editor;
 using OpenIGI.Input;
@@ -37,7 +38,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -47,6 +48,7 @@ internal sealed class EditorSession : IEditorSession
     private readonly MissionWorkspace _workspace;
     private readonly DockSpace _dock;
     private readonly ViewportPanel _viewport;
+    private readonly TerrainTool _terrainTool;
     private readonly OutlinerPanel _outliner;
     private readonly MenuBar _menu;
     private readonly StatusBar _status;
@@ -72,7 +74,9 @@ internal sealed class EditorSession : IEditorSession
         _workspace = new MissionWorkspace(host, project);
 
         _live = new LiveWorldLink(host, _workspace);
-        _viewport = new ViewportPanel(_theme, host, _workspace, _live);
+        TerrainBrush brush = new();
+        _terrainTool = new TerrainTool(host, _workspace, brush);
+        _viewport = new ViewportPanel(_theme, host, _workspace, _live, _terrainTool);
         _outliner = new OutlinerPanel(_theme, _workspace);
         _outliner.Activated += _viewport.Frame;
         _workspace.Selection.Changed += () =>
@@ -99,6 +103,7 @@ internal sealed class EditorSession : IEditorSession
         _problems = new ProblemsPanel(_theme, _workspace);
         _problems.GoTo += _viewport.Frame;
         _dock.Register(new DockPanel("problems", "Problems", _problems) { Icon = KitIcon.Search });
+        _dock.Register(new DockPanel("terrain", "Terrain", new TerrainPanel(_theme, host, brush)) { Icon = KitIcon.Terrain });
         if (!_dock.LoadLayout(ReadSavedLayout() ?? DefaultLayout))
         {
             _dock.LoadLayout(DefaultLayout);
@@ -145,6 +150,38 @@ internal sealed class EditorSession : IEditorSession
             return _content.Find(query) ? $"Found '{query}'." : $"No file name contains '{query}'.";
         }
 
+        if (arguments is [string move, string dx, string dy, string dz] && move.Equals("move", StringComparison.OrdinalIgnoreCase))
+        {
+            // Moves the selection by metres, as a drag of the move gizmo would: for scripted checks.
+            System.Globalization.CultureInfo invariant = System.Globalization.CultureInfo.InvariantCulture;
+            if (!double.TryParse(dx, System.Globalization.NumberStyles.Float, invariant, out double x)
+                || !double.TryParse(dy, System.Globalization.NumberStyles.Float, invariant, out double y)
+                || !double.TryParse(dz, System.Globalization.NumberStyles.Float, invariant, out double z))
+            {
+                return "editor move <dx> <dy> <dz>, in metres.";
+            }
+
+            _pendingMove = new Vector3d(x, y, z);
+            return "Moving the selection once something is picked.";
+        }
+
+        if (arguments is [string pick] && pick.Equals("pick", StringComparison.OrdinalIgnoreCase))
+        {
+            // Clicks the middle of the viewport, for scripted checks.
+            _pendingPick = true;
+            return "Picking at the middle of the view once it is up.";
+        }
+
+        if (arguments is [string sculpt, ..] && sculpt.Equals("sculpt", StringComparison.OrdinalIgnoreCase))
+        {
+            // Paints the terrain brush at the middle of the viewport for a while, as a held stroke would: for scripted
+            // checks, which cannot move a mouse.
+            _pendingSculpt = arguments is [_, string time] && double.TryParse(time, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds)
+                ? Math.Clamp(seconds, 0.0, 30.0)
+                : 1.0;
+            return FormattableString.Invariant($"Sculpting for {_pendingSculpt:0.##} s once the view is up.");
+        }
+
         if (arguments is not [string verb, ..] || !verb.Equals("select", StringComparison.OrdinalIgnoreCase) || arguments.Count < 2)
         {
             return null;
@@ -156,6 +193,16 @@ internal sealed class EditorSession : IEditorSession
 
     // A selection asked for by name, applied on the first frame the document has it.
     private string? _pendingSelect;
+
+    // A sculpt asked for by command, applied once the view has been drawn.
+    private double? _pendingSculpt;
+
+    // A pick asked for by command, applied once the view has been drawn.
+    private bool _pendingPick;
+
+    // A move asked for by command, applied to the selection once there is one.
+    private Vector3d? _pendingMove;
+    private int _pickReadyFrames;
 
     private void ApplyPendingSelect()
     {
@@ -196,16 +243,43 @@ internal sealed class EditorSession : IEditorSession
     /// <inheritdoc/>
     public void Frame(float elapsedSeconds, bool hasInput)
     {
+        // The screen or the setting can change while the editor is open: a switch to full screen, ed_ui_scale typed in.
+        _theme.Scale = _host.UiScale;
+
         _workspace.Sync();
         _live.Update();
         ApplyPendingSelect();
+        if (_pendingSculpt is { } sculptFor && _host.View.Width > 0f && !_host.IsWarmingUp && _host.Terrain is not null)
+        {
+            _pendingSculpt = null;
+            Notify(_viewport.SculptAtCentre(sculptFor) ? "Sculpted at the middle of the view." : "No ground under the middle of the view.");
+        }
+        // A second after the view is up and linked, so the camera has settled where the level puts it.
+        _pickReadyFrames = _pendingPick && _host.View.Width > 0f && !_host.IsWarmingUp && _live.LinkedCount > 0 ? _pickReadyFrames + 1 : 0;
+        if (_pickReadyFrames > 60)
+        {
+            _pickReadyFrames = 0;
+            _pendingPick = false;
+            _viewport.PickAtCentre();
+            Notify(_workspace.Selection.Primary is { } picked ? $"Picked {TaskPresentation.Name(picked)}." : "Nothing under the middle of the view.");
+        }
+
+        if (_pendingMove is { } by && !_pendingPick && _workspace.Selection.Primary is { } moving && _workspace.Document is { } moved
+            && TaskPresentation.Position(moving) is { } position && TaskPresentation.PositionMetres(moving) is { } at)
+        {
+            _pendingMove = null;
+            Vector3d to = at + by;
+            _workspace.Execute(SetParameterCommand.Numbers(moved, moving, position.Name, [WorldUnits.FromMetres(to.X), WorldUnits.FromMetres(to.Y), WorldUnits.FromMetres(to.Z)]));
+        }
+
         _noticeSeconds -= elapsedSeconds;
         _menu.Caption = _workspace.Mission is not null ? $"{_workspace.MissionName}{(_workspace.History.IsDirty ? "  • modified" : string.Empty)}" : _host.Title.DisplayName;
         UpdateStatus();
         if (hasInput)
         {
             _root.Frame(_host.Input, _host.Width, _host.Height, elapsedSeconds);
-            _viewport.FlyCamera(elapsedSeconds);
+            _viewport.UpdateCamera(elapsedSeconds);
+            _terrainTool.Tick(elapsedSeconds);
         }
         else
         {
@@ -377,6 +451,17 @@ internal sealed class EditorSession : IEditorSession
             Shortcut = KeyChord.Parse("E"),
             IsChecked = () => _viewport.Tool == ViewportTool.Rotate,
         });
+        actions.Add(new EditorAction("tool.terrain", "Terrain Tool", () =>
+        {
+            _viewport.Tool = ViewportTool.Terrain;
+            _dock.Show("terrain");
+        })
+        {
+            Category = "Tools",
+            Shortcut = KeyChord.Parse("T"),
+            IsChecked = () => _viewport.Tool == ViewportTool.Terrain,
+            CanExecute = () => _host.Terrain is not null,
+        });
         actions.Add(new EditorAction("tool.scale", "Resize Tool", () => _viewport.Tool = ViewportTool.Scale)
         {
             Category = "Tools",
@@ -410,7 +495,7 @@ internal sealed class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "script", "content", "problems" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "script", "content", "problems", "terrain" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -460,6 +545,7 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["tool.move"]),
                 MenuItem.For(actions["tool.rotate"]),
                 MenuItem.For(actions["tool.scale"]),
+                MenuItem.For(actions["tool.terrain"]),
             ])
             .Add("View", [
                 MenuItem.For(actions["view.frame"]),
@@ -493,6 +579,7 @@ internal sealed class EditorSession : IEditorSession
         toolbar.Add(actions["tool.move"], KitIcon.Move);
         toolbar.Add(actions["tool.rotate"], KitIcon.Rotate);
         toolbar.Add(actions["tool.scale"], KitIcon.Scale);
+        toolbar.Add(actions["tool.terrain"], KitIcon.Terrain);
         toolbar.AddSeparator();
         toolbar.Add(actions["edit.undo"], KitIcon.Undo);
         toolbar.Add(actions["edit.redo"], KitIcon.Redo);
@@ -630,7 +717,7 @@ internal sealed class EditorSession : IEditorSession
         _status.Segments.Clear();
         if (_workspace.Document is { } document)
         {
-            _status.Segments.Add($"{document.EnumerateTasks().Count()} objects");
+            _status.Segments.Add($"{_workspace.TaskCount} objects");
             _status.Segments.Add($"{_workspace.Selection.Count} selected");
         }
 
@@ -645,7 +732,7 @@ internal sealed class EditorSession : IEditorSession
             ? $"Could not read the mission: {error}"
             : _workspace.Mission is null
                 ? "Choose a mission to open."
-                : "Right mouse: look and fly with W A S D  •  Middle mouse: pan  •  W move, E rotate, R resize  •  F: frame  •  Ctrl+Z: undo";
+                : "Right mouse: look, W A S D Q E to fly, wheel for speed  •  Middle: pan  •  Alt+Left: orbit  •  Wheel: dolly  •  F: frame  •  W/E/R/T tools";
         _status.MessageColor = _workspace.LoadError is null ? null : _theme.Error;
     }
 

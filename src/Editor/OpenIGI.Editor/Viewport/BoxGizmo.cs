@@ -117,7 +117,23 @@ internal sealed class BoxGizmo
     /// <param name="projector">The view.</param>
     /// <param name="box">The box.</param>
     /// <param name="handles">Whether to draw the face handles.</param>
-    public void Draw(UiPainter painter, EditorTheme theme, in ViewportProjector projector, in Box box, bool handles)
+    /// <param name="colour">The edges' colour; the theme's accent when not given.</param>
+    public void Draw(UiPainter painter, EditorTheme theme, in ViewportProjector projector, in Box box, bool handles, Bgra32? colour = null)
+    {
+        DrawEdges(painter, theme, projector, box, colour ?? theme.Accent.WithAlpha(220));
+        if (handles)
+        {
+            DrawHandles(painter, theme, projector, box);
+        }
+    }
+
+    /// <summary>Draws a box's twelve edges.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="projector">The view.</param>
+    /// <param name="box">The box.</param>
+    /// <param name="colour">The edges' colour.</param>
+    public static void DrawEdges(UiPainter painter, EditorTheme theme, in ViewportProjector projector, in Box box, Bgra32 colour)
     {
         Span<UiVec2> corners = stackalloc UiVec2[8];
         Span<bool> shown = stackalloc bool[8];
@@ -127,7 +143,6 @@ internal sealed class BoxGizmo
         }
 
         // Each corner joins the three that differ from it in one bit, counted once from the lower index.
-        Bgra32 edge = theme.Accent.WithAlpha(220);
         for (int i = 0; i < 8; i++)
         {
             for (int bit = 1; bit < 8; bit <<= 1)
@@ -135,16 +150,14 @@ internal sealed class BoxGizmo
                 int j = i | bit;
                 if (j != i && shown[i] && shown[j])
                 {
-                    painter.StrokeLine(corners[i], corners[j], theme.Px(1.5f), edge);
+                    painter.StrokeLine(corners[i], corners[j], theme.Px(1.5f), colour);
                 }
             }
         }
+    }
 
-        if (!handles)
-        {
-            return;
-        }
-
+    private void DrawHandles(UiPainter painter, EditorTheme theme, in ViewportProjector projector, in Box box)
+    {
         for (int face = 0; face < 6; face++)
         {
             if (projector.TryProject(box.FaceCentre(face), out UiVec2 at))

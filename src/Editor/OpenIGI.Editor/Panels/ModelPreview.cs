@@ -57,19 +57,11 @@ internal sealed class ModelPreview : EditorElement
         _zoom = 1f;
 
         HashSet<(int, int)> seen = [];
-        int triangles = 0;
-        foreach (MefDrawRecord record in model.DrawRecords)
+        foreach ((int a, int b, int c) in model.Triangles().Take(TriangleBudget))
         {
-            ReadOnlySpan<ushort> indices = record.Indices.Span;
-            for (int i = 0; i + 2 < indices.Length && triangles < TriangleBudget; i += 3, triangles++)
-            {
-                int a = record.ToVertexIndex(indices[i]);
-                int b = record.ToVertexIndex(indices[i + 1]);
-                int c = record.ToVertexIndex(indices[i + 2]);
-                AddEdge(vertices, seen, a, b);
-                AddEdge(vertices, seen, b, c);
-                AddEdge(vertices, seen, c, a);
-            }
+            AddEdge(model.Vertices, seen, a, b);
+            AddEdge(model.Vertices, seen, b, c);
+            AddEdge(model.Vertices, seen, c, a);
         }
     }
 
@@ -153,7 +145,7 @@ internal sealed class ModelPreview : EditorElement
 
     private void AddEdge(ReadOnlySpan<MefVertex> vertices, HashSet<(int, int)> seen, int a, int b)
     {
-        if ((uint)a >= (uint)vertices.Length || (uint)b >= (uint)vertices.Length || !seen.Add(a < b ? (a, b) : (b, a)))
+        if (!seen.Add(a < b ? (a, b) : (b, a)))
         {
             return;
         }

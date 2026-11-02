@@ -402,8 +402,7 @@ public sealed class DockSpace : EditorElement
             {
                 UiRect body = new(rect.X, rect.Y + Theme.TabHeight, rect.Width, MathF.Max(0f, rect.Height - Theme.TabHeight));
                 panel.Content.Visibility = Visibility.Visible;
-                panel.Content.Measure(context, body.Size);
-                panel.Content.Arrange(body);
+                panel.Content.Place(context, body);
             }
 
             return;

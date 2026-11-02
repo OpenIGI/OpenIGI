@@ -40,7 +40,20 @@ public static class EditorDraw
         float r = radius ?? theme.Radius;
         float line = theme.Hairline;
 
-        // The border is the outer shape and the fill an inset copy of it, which keeps the corners concentric.
+        // An opaque frame is the outer shape in the border colour with an inset copy filled over it, which keeps the corners
+        // concentric. A see-through one cannot be: the border colour would show through its whole inside (a focus outline
+        // tinting the viewport it surrounds), so its border is stroked instead.
+        if (fill.A < 255)
+        {
+            if (fill.A > 0)
+            {
+                Fill(painter, theme, rect.Deflate(new Thickness(line)), fill, MathF.Max(0f, r - line));
+            }
+
+            painter.StrokeRect(rect, line, border);
+            return;
+        }
+
         Fill(painter, theme, rect, border, r);
         Fill(painter, theme, rect.Deflate(new Thickness(line)), fill, MathF.Max(0f, r - line));
     }

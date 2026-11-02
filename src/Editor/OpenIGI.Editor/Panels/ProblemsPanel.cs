@@ -71,8 +71,7 @@ internal sealed class ProblemsPanel : EditorElement
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
         Refresh();
-        _list.Measure(context, contentRect.Size);
-        _list.Arrange(contentRect);
+        _list.Place(context, contentRect);
     }
 
     /// <inheritdoc/>

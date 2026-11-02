@@ -79,6 +79,9 @@ public readonly record struct Igi2TerrainTile(
     /// <summary>Gets the tile's span along Y in metres as the engine holds it, <c>vWorldHeight</c>.</summary>
     public float WorldHeight { get; init; }
 
+    /// <summary>Gets the name of the tile's height map within <c>heightmaps.res</c>, bare, as the archive keys it.</summary>
+    public string? HeightEntry { get; init; }
+
     /// <summary>Gets the position of the <c>Terrain</c> the tile belongs to, which the ground query works relative to.</summary>
     public Vector3d TerrainOrigin { get; init; }
 
@@ -374,6 +377,12 @@ public sealed class Igi2TerrainSurface
     /// </remarks>
     public const string ArchiveResourceName = "MISSION:heightmaps/heightmaps.res";
 
+    // One surface per level, however many parts of the game ask for it: the drawing, the water and the ground the player
+    // stands on all hold the same height maps, so an edit to one is an edit to all.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameTask, Igi2TerrainSurface> PerLevel = new();
+
+    private Igi2EditableTerrain? _editing;
+
     private Igi2TerrainSurface(
         IReadOnlyList<Igi2TerrainTile> tiles,
         IReadOnlyDictionary<int, TerrainMaterialTask> materials,
@@ -387,6 +396,9 @@ public sealed class Igi2TerrainSurface
         DiscardBoxes = discardBoxes;
         Terrain = terrain;
     }
+
+    /// <summary>Gets the ground opened for editing, made on first use.</summary>
+    public Igi2EditableTerrain Editing => _editing ??= new Igi2EditableTerrain(this);
 
     /// <summary>Gets the level's terrain, the task its ground is placed by; <see langword="null"/> when it has none.</summary>
     public TerrainTask? Terrain { get; }
@@ -476,13 +488,15 @@ public sealed class Igi2TerrainSurface
     /// </remarks>
     public static Igi2TerrainSurface Build(GameTask levelRoot, ResourceRegistry resources, IOpenIgiLogger? logger = null)
     {
+        ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(resources);
-
-        IresArchive? heightmaps = resources.TryLoad(ArchiveResourceName, out ReadOnlyMemory<byte> bytes)
-            ? IresArchive.Read(bytes)
-            : null;
-
-        return Build(levelRoot, heightmaps, logger);
+        return PerLevel.GetValue(levelRoot, root =>
+        {
+            IresArchive? heightmaps = resources.TryLoad(ArchiveResourceName, out ReadOnlyMemory<byte> bytes)
+                ? IresArchive.Read(bytes)
+                : null;
+            return Build(root, heightmaps, logger);
+        });
     }
 
     /// <summary>Loads the ground a level declares.</summary>
@@ -613,6 +627,7 @@ public sealed class Igi2TerrainSurface
         {
             WorldWidth = map.WorldWidth,
             WorldHeight = map.WorldHeight,
+            HeightEntry = BareName(map.HeightMapResource),
             TerrainOrigin = TerrainOf(map)?.Position ?? default,
         };
 

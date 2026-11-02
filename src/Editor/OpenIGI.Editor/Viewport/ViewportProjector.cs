@@ -37,6 +37,41 @@ internal readonly struct ViewportProjector(EditorView view)
         return true;
     }
 
+    /// <summary>Gets the ray from the eye through a window pixel.</summary>
+    /// <param name="screen">The pixel.</param>
+    /// <param name="direction">Receives the ray's direction, unit length, in world space.</param>
+    /// <returns><see langword="false"/> before the view has been rendered.</returns>
+    /// <remarks>
+    /// The view-projection is relative to the eye, so every point of the ray satisfies two plane equations through the
+    /// eye: clip X equal to the pixel's X times clip W, and the same for Y. The ray runs along both planes, which is
+    /// their normals' cross product, turned to face forward (positive W).
+    /// </remarks>
+    public bool TryRay(UiVec2 screen, out Vector3d direction)
+    {
+        direction = default;
+        if (!IsValid)
+        {
+            return false;
+        }
+
+        Matrix4f m = view.ViewProjection;
+        double nx = ((screen.X / view.Width) * 2.0) - 1.0;
+        double ny = 1.0 - ((screen.Y / view.Height) * 2.0);
+        Vector3d a = new(m.M11 - (nx * m.M41), m.M12 - (nx * m.M42), m.M13 - (nx * m.M43));
+        Vector3d b = new(m.M21 - (ny * m.M41), m.M22 - (ny * m.M42), m.M23 - (ny * m.M43));
+        Vector3d along = Vector3d.Cross(a, b);
+        double length = along.Length;
+        if (length <= 1e-12)
+        {
+            return false;
+        }
+
+        along /= length;
+        double w = (m.M41 * along.X) + (m.M42 * along.Y) + (m.M43 * along.Z);
+        direction = w < 0 ? -along : along;
+        return true;
+    }
+
     /// <summary>Gets the world length that projects to a number of pixels at a point, for screen-sized gizmos.</summary>
     /// <param name="point">The point, in metres.</param>
     /// <param name="pixels">The on-screen length wanted.</param>

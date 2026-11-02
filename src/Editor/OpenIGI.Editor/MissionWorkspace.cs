@@ -20,6 +20,8 @@ internal sealed class MissionWorkspace
 {
     private readonly IEditorHost _host;
     private MissionDescriptor? _loadedFor;
+    private string _missionName = string.Empty;
+    private int? _taskCount;
 
     public MissionWorkspace(IEditorHost host, EditorProject project)
     {
@@ -45,7 +47,11 @@ internal sealed class MissionWorkspace
     public MissionDescriptor? Mission => Document is null ? null : _loadedFor;
 
     /// <summary>Gets the open mission's name as the menus show it, or empty.</summary>
-    public string MissionName => Mission is { } mission ? _host.MissionName(mission) : string.Empty;
+    /// <remarks>Read once when the mission opens: the host looks it up in the game's text files, too slow for every frame.</remarks>
+    public string MissionName => Mission is not null ? _missionName : string.Empty;
+
+    /// <summary>Gets how many tasks the document holds, counted when it changes rather than whenever asked.</summary>
+    public int TaskCount => Document is null ? 0 : _taskCount ??= Document.EnumerateTasks().Count();
 
     /// <summary>Gets the open mission's AI graphs.</summary>
     public MissionGraphs Graphs { get; }
@@ -69,6 +75,8 @@ internal sealed class MissionWorkspace
         }
 
         _loadedFor = mission;
+        _missionName = mission is null ? string.Empty : _host.MissionName(mission);
+        _taskCount = null;
         Selection.Clear();
         History.Clear();
         Graphs.Clear();
@@ -112,8 +120,26 @@ internal sealed class MissionWorkspace
 
         WriteToProject(ObjectsGamePath(mission), document.ToImage());
         Graphs.Save(this);
+        SaveTerrain(mission);
         History.MarkSaved();
         return true;
+    }
+
+    // The ground's changed files, rebuilt from the copies the game reads now (the project's own, once it has saved one).
+    private void SaveTerrain(MissionDescriptor mission)
+    {
+        if (_host.Terrain is not { } terrain)
+        {
+            return;
+        }
+
+        foreach ((string path, byte[] bytes) in terrain.ChangedFiles(
+            path => _host.TryReadFile("LOCAL:" + GamePath(mission, path), out ReadOnlyMemory<byte> found) ? found : null))
+        {
+            WriteToProject(GamePath(mission, path), bytes);
+        }
+
+        terrain.MarkSaved();
     }
 
     /// <summary>Writes a file into the project and rescans it, so the game reads the new copy from then on.</summary>
@@ -148,8 +174,14 @@ internal sealed class MissionWorkspace
     /// <summary>Gets the game path of a mission's object script, relative to the installation.</summary>
     /// <param name="mission">The mission.</param>
     /// <returns>The path.</returns>
-    public static string ObjectsGamePath(MissionDescriptor mission) =>
-        $"{mission.MissionDirectory.TrimEnd('/', '\\')}/{LevelLoader.ObjectsScriptName}";
+    public static string ObjectsGamePath(MissionDescriptor mission) => GamePath(mission, LevelLoader.ObjectsScriptName);
+
+    /// <summary>Gets the game path of a file in a mission's folder, relative to the installation.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <param name="missionPath">The file's path relative to the mission's folder.</param>
+    /// <returns>The path.</returns>
+    public static string GamePath(MissionDescriptor mission, string missionPath) =>
+        $"{mission.MissionDirectory.TrimEnd('/', '\\')}/{missionPath}";
 
     /// <summary>Applies a command through the history.</summary>
     /// <param name="command">The command.</param>
@@ -157,6 +189,7 @@ internal sealed class MissionWorkspace
 
     private void OnDocumentChanged(MissionChange change)
     {
+        _taskCount = null;
         if (change.Kind == MissionChangeKind.Removed)
         {
             Selection.Prune(task => Document?.Contains(task) == true);

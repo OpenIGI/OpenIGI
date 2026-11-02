@@ -186,6 +186,13 @@ public sealed class Igi2TerrainLod
     public override string ToString() =>
         $"I.G.I. 2 terrain quadtree over tile {_tile.Id}, root {RootSize}x{RootSize}, {PassCount} pass(es)";
 
+    /// <summary>Brings the height bounds the split test culls by up to date after some of the tile's heights changed.</summary>
+    /// <param name="left">The first changed column.</param>
+    /// <param name="top">The first changed row.</param>
+    /// <param name="right">The last changed column.</param>
+    /// <param name="bottom">The last changed row.</param>
+    public void Refresh(int left, int top, int right, int bottom) => _bounds.Update(_tile, left, top, right, bottom);
+
     /// <summary>Gets the height at a sample, extrapolating the row and column past the tile.</summary>
     /// <param name="x">The sample's column, which may be <see cref="Igi2TerrainTile.Width"/>.</param>
     /// <param name="y">The sample's row, which may be <see cref="Igi2TerrainTile.Height"/>.</param>

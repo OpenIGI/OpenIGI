@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
+using OpenIGI.Editor.Terrain;
 using OpenIGI.Editor.Viewport;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.World;
@@ -28,6 +29,9 @@ internal enum ViewportTool
 
     /// <summary>The resize gizmo, on volumes: trigger, spawn and ambient-sound areas.</summary>
     Scale,
+
+    /// <summary>The terrain brush, shaping the ground.</summary>
+    Terrain,
 }
 
 /// <summary>
@@ -37,7 +41,10 @@ internal enum ViewportTool
 /// </summary>
 internal sealed class ViewportPanel : EditorElement
 {
-    private static readonly KeyCode[] FlightKeys = [KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D, KeyCode.Q, KeyCode.E, KeyCode.LeftShift];
+    // How far a click reaches into the world.
+    private const double PickReachMetres = 5000.0;
+
+    private static readonly KeyCode[] FlightKeys = [KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D, KeyCode.Q, KeyCode.E, KeyCode.LeftShift, KeyCode.LeftControl];
 
     private readonly IEditorHost _host;
     private readonly MissionWorkspace _workspace;
@@ -46,21 +53,26 @@ internal sealed class ViewportPanel : EditorElement
     private readonly RotateGizmo _rotate = new();
     private readonly GraphOverlay _graph = new();
     private readonly BoxGizmo _box = new();
+    private readonly TerrainTool _terrain;
     private MissionTask? _graphTask;
     private readonly List<InspectableEntity> _entities = [];
-    private MouseButton? _flying;
+    private readonly EditorCamera _camera = new();
+    private MissionTask? _hovered;
     private int _hoveredMission = -1;
 
-    public ViewportPanel(EditorTheme theme, IEditorHost host, MissionWorkspace workspace, LiveWorldLink live)
+    public ViewportPanel(EditorTheme theme, IEditorHost host, MissionWorkspace workspace, LiveWorldLink live, TerrainTool terrain)
         : base(theme)
     {
         _host = host;
         _workspace = workspace;
         _live = live;
+        _terrain = terrain;
     }
 
+    private bool Sculpting => Tool == ViewportTool.Terrain && _terrain.IsAvailable;
+
     /// <summary>Gets whether the camera is being flown.</summary>
-    public bool IsFlying => _flying is not null;
+    public bool IsFlying => _camera.Drag != CameraDrag.None;
 
     /// <summary>Gets or sets the gizmo's snap step in metres; zero for none. Snapping also turns in 15° steps.</summary>
     public double Snap
@@ -139,28 +151,132 @@ internal sealed class ViewportPanel : EditorElement
             (target, radius) = (bounds.Centre, bounds.Radius);
         }
 
-        // Backed off along the current heading by enough to see all of it, a little above and looking down, so the
-        // object fills the middle of the view whatever its size.
-        double distance = Math.Clamp(radius * 2.4, 3.0, 400.0);
-        Vector3d back = new(-Math.Sin(camera.Yaw) * Math.Cos(0.35), -Math.Cos(camera.Yaw) * Math.Cos(0.35), Math.Sin(0.35));
-        camera.MoveTo(target + (back * distance), camera.Yaw, -0.35f);
+        // A glide to where all of it is in view along the current heading, which then orbits around it.
+        _camera.Focus(camera, target, radius);
     }
 
-    /// <summary>Flies the camera while a fly button is held. Called once per frame by the session.</summary>
-    /// <param name="elapsedSeconds">The frame time.</param>
-    public void FlyCamera(float elapsedSeconds)
-    {
-        if (_flying is { } button && _host.Camera is { } camera)
-        {
-            if (!_host.Input.Mouse.IsDown(button))
-            {
-                _flying = null;
-                _host.CursorLocked = false;
-                return;
-            }
+    /// <summary>Picks what is under the middle of the view, as a click there would.</summary>
+    public void PickAtCentre() => Pick(Bounds.Center, toggle: false);
 
+    /// <summary>Paints the terrain brush at the middle of the view for a while, as one stroke.</summary>
+    /// <param name="seconds">How long to hold it.</param>
+    /// <returns>Whether there was ground there to paint.</returns>
+    public bool SculptAtCentre(double seconds)
+    {
+        if (!_terrain.Begin(Projector, Bounds.Center, inverted: false))
+        {
+            return false;
+        }
+
+        for (double left = seconds; left > 0.0; left -= 0.1)
+        {
+            _terrain.Tick((float)Math.Min(0.1, left));
+        }
+
+        _terrain.End();
+        return true;
+    }
+
+    /// <summary>Moves the camera for a frame: a held look, pan or orbit, and any glide under way. Called once per frame.</summary>
+    /// <param name="elapsedSeconds">The frame time.</param>
+    public void UpdateCamera(float elapsedSeconds)
+    {
+        if (_host.Camera is not { } camera)
+        {
+            return;
+        }
+
+        MouseButton? held = _camera.Drag switch
+        {
+            CameraDrag.Look => MouseButton.Right,
+            CameraDrag.Pan => MouseButton.Middle,
+            CameraDrag.Orbit => MouseButton.Left,
+            _ => null,
+        };
+        if (held is { } button && !_host.Input.Mouse.IsDown(button))
+        {
+            _camera.End();
+            _host.CursorLocked = false;
+        }
+        else if (held is not null)
+        {
             _host.CursorLocked = true;
-            camera.Update(_host.Input, elapsedSeconds);
+        }
+
+        _camera.Update(camera, _host.Input, elapsedSeconds);
+    }
+
+    // Boxes around what is selected, steady, and around what the pointer is over, pulsing, as scene editors show them.
+    private void DrawOutlines(UiPainter painter)
+    {
+        ViewportProjector projector = Projector;
+        Bgra32 selectedColour = Theme.Accent.WithAlpha(200);
+        foreach (MissionTask task in _workspace.Selection.Items)
+        {
+            foreach (BoxGizmo.Box box in _live.Boxes(task))
+            {
+                BoxGizmo.DrawEdges(painter, Theme, projector, box, selectedColour);
+            }
+        }
+
+        if (_hovered is { } hovered && !_workspace.Selection.Contains(hovered) && !Sculpting)
+        {
+            double pulse = 0.5 + (0.5 * Math.Sin(Environment.TickCount64 / 1000.0 * 8.0));
+            Bgra32 hoverColour = Bgra32.FromRgb(255, 222, 90).WithAlpha((byte)(90 + (110 * pulse)));
+            foreach (BoxGizmo.Box box in _live.Boxes(hovered))
+            {
+                BoxGizmo.DrawEdges(painter, Theme, projector, box, hoverColour);
+            }
+        }
+    }
+
+    // The nearest surface under a point of the view, the ground or a model other than the one being moved: where the move
+    // gizmo's centre puts what it carries.
+    private Vector3d? SurfaceUnder(UiVec2 point, MissionTask moving)
+    {
+        ViewportProjector projector = Projector;
+        if (!projector.TryRay(point, out Vector3d ray))
+        {
+            return null;
+        }
+
+        double nearest = double.MaxValue;
+        if (_live.Pick(projector.Eye, ray, PickReachMetres, out double meshDistance, ignore: moving) is not null)
+        {
+            nearest = meshDistance;
+        }
+
+        if (_host.Terrain is { } terrain && terrain.TryRaycast(projector.Eye, ray, PickReachMetres, out Vector3d ground))
+        {
+            nearest = Math.Min(nearest, (ground - projector.Eye).Length);
+        }
+
+        return nearest < double.MaxValue ? projector.Eye + (ray * nearest) : null;
+    }
+
+    // The distance to what is under the middle of the view, which orbiting turns around and the wheel dollies toward.
+    private void AimPivot()
+    {
+        ViewportProjector projector = Projector;
+        if (!projector.TryRay(Bounds.Center, out Vector3d ray))
+        {
+            return;
+        }
+
+        double nearest = double.MaxValue;
+        if (_live.Pick(projector.Eye, ray, PickReachMetres, out double meshDistance) is not null)
+        {
+            nearest = meshDistance;
+        }
+
+        if (_host.Terrain is { } terrain && terrain.TryRaycast(projector.Eye, ray, PickReachMetres, out Vector3d ground))
+        {
+            nearest = Math.Min(nearest, (ground - projector.Eye).Length);
+        }
+
+        if (nearest < double.MaxValue)
+        {
+            _camera.PivotDistance = Math.Max(0.5, nearest);
         }
     }
 
@@ -180,10 +296,15 @@ internal sealed class ViewportPanel : EditorElement
             return false;
         }
 
-        if (e.Button is MouseButton.Right or MouseButton.Middle)
+        if (e.Button is MouseButton.Right or MouseButton.Middle || (e.Button == MouseButton.Left && e.Alt))
         {
             Focus();
-            _flying = e.Button;
+            if (e.Button != MouseButton.Right)
+            {
+                AimPivot();
+            }
+
+            _camera.Begin(e.Button switch { MouseButton.Right => CameraDrag.Look, MouseButton.Middle => CameraDrag.Pan, _ => CameraDrag.Orbit });
             return true;
         }
 
@@ -193,6 +314,11 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         Focus();
+        if (Sculpting)
+        {
+            return _terrain.Begin(Projector, e.Position, e.Shift);
+        }
+
         if (Resizing && SelectedBox is { } box && _box.Begin(Projector, box, e.Position))
         {
             return true;
@@ -201,7 +327,7 @@ internal sealed class ViewportPanel : EditorElement
         if (_workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin && !Resizing
             && (Rotating
                 ? _rotate.Begin(Projector, origin, TaskPresentation.OrientationMatrix(selected), e.Position)
-                : _gizmo.Begin(Projector, origin, e.Position)))
+                : _gizmo.Begin(Projector, origin, e.Position, _graph.PickedNode is null ? point => SurfaceUnder(point, selected) : null)))
         {
             return true;
         }
@@ -224,6 +350,18 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
+        if (Sculpting)
+        {
+            _terrain.Hover(Projector, e.Position);
+            return;
+        }
+
+        // What a click would pick, outlined while the pointer is over it; nothing while a drag or the camera has the mouse.
+        bool busy = IsFlying || _gizmo.IsDragging || _rotate.IsDragging || _box.IsDragging;
+        _hovered = !busy && Projector.TryRay(e.Position, out Vector3d ray)
+            ? _live.Pick(Projector.Eye, ray, PickReachMetres, out _)
+            : null;
+
         MissionTask? selected = _workspace.Selection.Primary;
         if (selected is null || GizmoOrigin is not { } origin)
         {
@@ -232,7 +370,7 @@ internal sealed class ViewportPanel : EditorElement
 
         if (_gizmo.IsDragging && _graph.PickedNode is { } nodeId && ShownGraph is { } shown)
         {
-            Vector3d to = _gizmo.Drag(Projector, e.Position, e.Shift);
+            Vector3d to = _gizmo.Drag(Projector, e.Position, e.Control);
             if (_workspace.Graphs.MoveNode(shown.Task, nodeId, MissionGraphs.ToLocalUnits(shown.Task, to)) is { } move)
             {
                 _workspace.Execute(move);
@@ -261,7 +399,7 @@ internal sealed class ViewportPanel : EditorElement
 
         if (_gizmo.IsDragging && _workspace.Document is { } document && TaskPresentation.Position(selected) is { } position)
         {
-            Vector3d moved = _gizmo.Drag(Projector, e.Position, e.Shift);
+            Vector3d moved = _gizmo.Drag(Projector, e.Position, e.Control);
             if (MissionGraphs.IsGraph(selected))
             {
                 // Through the graph's parent frame, back to the value its parameter holds (in metres, as below).
@@ -288,8 +426,18 @@ internal sealed class ViewportPanel : EditorElement
     }
 
     /// <inheritdoc/>
+    protected override void OnPointerOverChanged(bool over)
+    {
+        if (!over)
+        {
+            _hovered = null;
+        }
+    }
+
+    /// <inheritdoc/>
     protected override void OnPointerUp(in PointerEvent e)
     {
+        _terrain.End();
         if (_gizmo.IsDragging || _rotate.IsDragging || _box.IsDragging)
         {
             _gizmo.End();
@@ -302,6 +450,7 @@ internal sealed class ViewportPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnCaptureLost()
     {
+        _terrain.Cancel();
         if (_gizmo.IsDragging || _rotate.IsDragging || _box.IsDragging)
         {
             // Escape mid-drag puts the object back the way the drag found it.
@@ -315,15 +464,22 @@ internal sealed class ViewportPanel : EditorElement
     /// <inheritdoc/>
     protected override bool OnWheel(UiVec2 position, float notches, KeyModifiers modifiers)
     {
-        if (!ShowsWorld || _host.Camera is not { } camera || IsFlying)
+        if (!ShowsWorld || _host.Camera is not { } camera)
         {
             return false;
         }
 
-        // Dolly along the view, faster the further the camera has to go.
-        Vector3d forward = new(Math.Sin(camera.Yaw) * Math.Cos(camera.Pitch), Math.Cos(camera.Yaw) * Math.Cos(camera.Pitch), Math.Sin(camera.Pitch));
-        double step = Math.Max(0.5, camera.Speed * 0.25) * notches;
-        camera.MoveTo(camera.Position + (forward * step), camera.Yaw, camera.Pitch);
+        // While flying the wheel sets the speed; otherwise it dollies toward what is in the middle of the view.
+        if (_camera.Drag == CameraDrag.Look)
+        {
+            _camera.ChangeSpeed(camera, notches);
+        }
+        else
+        {
+            AimPivot();
+            _camera.Dolly(camera, notches);
+        }
+
         return true;
     }
 
@@ -333,6 +489,12 @@ internal sealed class ViewportPanel : EditorElement
         // While flying, the movement keys belong to the camera, not to the tool shortcuts.
         if (IsFlying && Array.IndexOf(FlightKeys, e.Key) >= 0)
         {
+            return true;
+        }
+
+        if (Sculpting && e.Modifiers == KeyModifiers.None && e.Key is KeyCode.LeftBracket or KeyCode.RightBracket)
+        {
+            _terrain.Resize(larger: e.Key == KeyCode.RightBracket);
             return true;
         }
 
@@ -360,12 +522,17 @@ internal sealed class ViewportPanel : EditorElement
             _graph.Draw(painter, Theme, Projector, shown.Task, shown.Graph);
         }
 
+        if (Sculpting)
+        {
+            _terrain.Draw(painter, Theme, Projector);
+        }
+
         if (SelectedBox is { } box && _graph.PickedNode is null)
         {
             _box.Draw(painter, Theme, Projector, box, handles: Resizing);
         }
 
-        if (_workspace.Selection.Primary is not null && GizmoOrigin is { } origin && !Resizing)
+        if (_workspace.Selection.Primary is not null && GizmoOrigin is { } origin && !Resizing && !Sculpting)
         {
             if (Rotating)
             {
@@ -377,6 +544,7 @@ internal sealed class ViewportPanel : EditorElement
             }
         }
 
+        DrawOutlines(painter);
         DrawChips(painter);
         painter.PopClip();
         if (IsFocused)
@@ -388,19 +556,24 @@ internal sealed class ViewportPanel : EditorElement
 
     private void Pick(UiVec2 point, bool toggle)
     {
-        // Nearest placed task to the click, on screen, within a small radius; tasks without a place are picked in the
-        // outliner instead.
-        MissionTask? best = null;
-        float bestDistance = Theme.Px(14f);
+        // What is drawn under the click: the first model the ray through it meets. A task with nothing drawn (a light, an
+        // area, a graph) is picked by its point instead, within a small radius on screen -- when that point is nearer the
+        // eye than the model the ray met, so a marker in front of a building wins and one behind it does not.
         ViewportProjector projector = Projector;
+        double meshDistance = double.MaxValue;
+        MissionTask? best = projector.TryRay(point, out Vector3d ray)
+            ? _live.Pick(projector.Eye, ray, PickReachMetres, out meshDistance)
+            : null;
+
+        float nearestOnScreen = Theme.Px(14f);
         foreach (MissionTask task in _workspace.Document?.EnumerateTasks() ?? [])
         {
             if (TaskPresentation.PositionMetres(task) is { } at && projector.TryProject(at, out UiVec2 screen))
             {
                 float distance = UiVec2.Distance(screen, point);
-                if (distance < bestDistance)
+                if (distance < nearestOnScreen && (at - projector.Eye).Length < meshDistance)
                 {
-                    bestDistance = distance;
+                    nearestOnScreen = distance;
                     best = task;
                 }
             }
@@ -429,7 +602,8 @@ internal sealed class ViewportPanel : EditorElement
             float width = Theme.SmallFont.MeasureWidth(speed, Theme.SmallTextSize) + Theme.Px(16f);
             UiRect right = new(Bounds.Right - width - Theme.Px(10f), Bounds.Y + Theme.Px(10f), width, Theme.ControlHeight);
             EditorDraw.Fill(painter, Theme, right, Theme.Background.WithAlpha(170));
-            painter.DrawText(Theme.SmallFont, speed, new UiVec2(right.X + Theme.Px(8f), MathF.Round(right.Y + ((right.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f))), Theme.SmallTextSize, Theme.TextMuted);
+            painter.DrawText(Theme.SmallFont, speed, new UiVec2(right.X + Theme.Px(8f), MathF.Round(right.Y + ((right.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f))), Theme.SmallTextSize,
+                _camera.SecondsSinceSpeedChange < 1.5 ? Theme.Accent : Theme.TextMuted);
         }
 
         if (_host.IsWarmingUp)

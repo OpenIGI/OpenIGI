@@ -68,9 +68,9 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             request.Logger,
             request.Services is { } services && services.TryGet(out Igi2MagicObjTypes? magic) ? magic : null);
 
-        // The ground the player stands on, from the same level the placements came from. Built with no
-        // logger because the presenter builds it again to draw it and reports it there; one line about a
-        // level's tiles is enough.
+        // The ground the player stands on, from the same level the placements came from: the one surface the level has,
+        // which the presenter draws too (Igi2TerrainSurface.Build hands each level the same one). No logger, because the
+        // presenter reports the tiles; one line about them is enough.
         Igi2TerrainSurface surface = Igi2TerrainSurface.Build(request.LevelRoot, request.Resources);
         Igi2Ground ground = new(surface);
 

@@ -189,16 +189,16 @@ internal sealed class ContentPanel : EditorElement
         float split = MathF.Round(contentRect.Width * 0.45f);
         UiRect left = new(contentRect.X, contentRect.Y, split, contentRect.Height);
         UiRect search = new(left.X + pad, left.Y + pad, left.Width - (pad * 2f), Theme.ControlHeight);
-        Place(context, _search, search);
-        Place(context, _tree, UiRect.FromEdges(left.X, search.Bottom + pad, left.Right, left.Bottom));
+        _search.Place(context, search);
+        _tree.Place(context, UiRect.FromEdges(left.X, search.Bottom + pad, left.Right, left.Bottom));
 
         UiRect right = UiRect.FromEdges(left.Right + Theme.SplitterSize, contentRect.Y, contentRect.Right, contentRect.Bottom);
         _open.Measure(context, new UiVec2(float.PositiveInfinity, Theme.ControlHeight));
         _open.Arrange(new UiRect(right.X + pad, right.Y + pad, _open.DesiredSize.X, Theme.ControlHeight));
         UiRect body = UiRect.FromEdges(right.X, right.Y + Theme.ControlHeight + (pad * 2f) + Theme.RowHeight, right.Right, right.Bottom);
-        Place(context, _text, body);
-        Place(context, _model, body);
-        Place(context, _sound, body);
+        _text.Place(context, body);
+        _model.Place(context, body);
+        _sound.Place(context, body);
     }
 
     /// <inheritdoc/>
@@ -228,12 +228,6 @@ internal sealed class ContentPanel : EditorElement
     }
 
     private UiRect PreviewArea => UiRect.FromEdges(_tree.Bounds.Right + Theme.SplitterSize, Bounds.Y, Bounds.Right, Bounds.Bottom);
-
-    private static void Place(LayoutContext context, UiElement element, UiRect rect)
-    {
-        element.Measure(context, rect.Size);
-        element.Arrange(rect);
-    }
 
     private static KitIcon Icon(ContentNode node) => node switch
     {

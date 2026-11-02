@@ -173,7 +173,7 @@ internal sealed class MissionGraphs
     /// <param name="graphId">The AIGraph task's id.</param>
     /// <returns>The path.</returns>
     public static string GamePath(MissionDescriptor mission, int graphId) =>
-        string.Create(CultureInfo.InvariantCulture, $"{mission.MissionDirectory.TrimEnd('/', '\\')}/graphs/graph{graphId}.dat");
+        MissionWorkspace.GamePath(mission, string.Create(CultureInfo.InvariantCulture, $"graphs/graph{graphId}.dat"));
 
     // A node stands at parent(offset + stored), in world units, where the two games differ in what offset and parent are.
     // I.G.I.: the offset is the graph's position, and a graph under a placed model is in the model's frame

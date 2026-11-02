@@ -360,7 +360,7 @@ public sealed partial class GameHost
 
         public float Height => host._window.Height;
 
-        public float UiScale => Core.Graphics.UiScale.Resolve(host._options.UiScale, host._window.Width, host._window.Height);
+        public float UiScale => Core.Graphics.UiScale.Desktop(EditorCVars.UiScale.Value, host._window.Height);
 
         public string ClipboardText
         {
@@ -386,6 +386,8 @@ public sealed partial class GameHost
         public VirtualFileSystem Files => host._fileSystem;
 
         public FreeCamera? Camera => host._camera;
+
+        public Game.World.IEditableTerrain? Terrain => host._terrain?.Editable;
 
         public EditorView View => host._editorView;
 
@@ -413,7 +415,7 @@ public sealed partial class GameHost
 
         public IReadOnlyList<WorldPlacement> Placements => host._scene?.Placements ?? [];
 
-        public void SetPlacementPose(GameTask owner, EditorPose pose) => host._editorMotion.SetPose(owner, pose);
+        public void SetPlacementPose(Game.World.PlacementKey owner, EditorPose pose) => host._editorMotion.SetPose(owner, pose);
 
         public void ReloadMission(bool play = false)
         {

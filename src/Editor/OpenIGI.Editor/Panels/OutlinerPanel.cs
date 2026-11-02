@@ -78,11 +78,9 @@ internal sealed class OutlinerPanel : EditorElement
     {
         float pad = Theme.Px(6f);
         UiRect search = new(contentRect.X + pad, contentRect.Y + pad, contentRect.Width - (pad * 2f), Theme.ControlHeight);
-        _search.Measure(context, search.Size);
-        _search.Arrange(search);
+        _search.Place(context, search);
         UiRect tree = UiRect.FromEdges(contentRect.X, search.Bottom + pad, contentRect.Right, contentRect.Bottom);
-        _tree.Measure(context, tree.Size);
-        _tree.Arrange(tree);
+        _tree.Place(context, tree);
     }
 
     /// <inheritdoc/>
