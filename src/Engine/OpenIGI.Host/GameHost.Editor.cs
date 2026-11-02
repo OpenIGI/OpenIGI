@@ -162,7 +162,7 @@ public sealed partial class GameHost
         _editor = factory.Open(new EditorHostServices(this));
         foreach (string[] pending in _editorPendingCommands)
         {
-            _editor.RunCommand(pending);
+            _logger.Information("Editor", $"editor {string.Join(' ', pending)}: {_editor.RunCommand(pending)}");
         }
 
         _editorPendingCommands.Clear();

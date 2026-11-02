@@ -2,7 +2,9 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Collections;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ilff;
+using OpenIGI.Formats;
 using OpenIGI.Formats.Textures;
+using OpenIGI.Formats.World;
 using OpenIGI.Host.Editor;
 using OpenIGI.Scripting.Qsc;
 using OpenIGI.UI;
@@ -71,6 +73,7 @@ internal sealed class ContentPanel : EditorElement
     private readonly TreeView<ContentNode> _tree;
     private readonly Button _open;
     private readonly CodeEditor _text;
+    private readonly ModelPreview _model;
     private readonly Selection<ContentNode> _selection = new();
     private readonly RhiImageFactory _images;
     private readonly List<ContentNode> _roots = [];
@@ -113,10 +116,12 @@ internal sealed class ContentPanel : EditorElement
             }
         };
         _text = new CodeEditor(theme) { IsReadOnly = true, Visibility = Visibility.Collapsed };
+        _model = new ModelPreview(theme) { Visibility = Visibility.Collapsed };
         AddChild(_search);
         AddChild(_tree);
         AddChild(_open);
         AddChild(_text);
+        AddChild(_model);
     }
 
     /// <summary>Searches the files and selects the first match, as typing in the search box and clicking it would.</summary>
@@ -124,6 +129,31 @@ internal sealed class ContentPanel : EditorElement
     /// <returns>Whether anything matched.</returns>
     public bool Find(string query)
     {
+        // "archive.res/entry" reaches inside an archive: the archive is found by name, opened, and the entry selected.
+        int split = query.IndexOf(".res/", StringComparison.OrdinalIgnoreCase);
+        if (split > 0)
+        {
+            string archiveName = query[..(split + 4)];
+            string entryName = query[(split + 5)..];
+            EnsureIndex();
+            // Many archives share a name (a level's textures and models are both levelN.res): the first that holds the
+            // entry wins.
+            ContentNode? entry = _allFiles!
+                .Where(n => n.IsArchive && n.Name.Equals(archiveName, StringComparison.OrdinalIgnoreCase))
+                .Select(archive => archive.Children(List).FirstOrDefault(n => n.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)))
+                .FirstOrDefault(static found => found is not null);
+            if (entry is null)
+            {
+                return false;
+            }
+
+            _search.Text = string.Empty;
+            _tree.Invalidate();
+            _selection.Set(entry);
+            _tree.Reveal(entry);
+            return true;
+        }
+
         _search.Text = query;
         Search(query);
         if (_results.Count == 0)
@@ -161,7 +191,9 @@ internal sealed class ContentPanel : EditorElement
         UiRect right = UiRect.FromEdges(left.Right + Theme.SplitterSize, contentRect.Y, contentRect.Right, contentRect.Bottom);
         _open.Measure(context, new UiVec2(float.PositiveInfinity, Theme.ControlHeight));
         _open.Arrange(new UiRect(right.X + pad, right.Y + pad, _open.DesiredSize.X, Theme.ControlHeight));
-        Place(context, _text, UiRect.FromEdges(right.X, right.Y + Theme.ControlHeight + (pad * 2f) + Theme.RowHeight, right.Right, right.Bottom));
+        UiRect body = UiRect.FromEdges(right.X, right.Y + Theme.ControlHeight + (pad * 2f) + Theme.RowHeight, right.Right, right.Bottom);
+        Place(context, _text, body);
+        Place(context, _model, body);
     }
 
     /// <inheritdoc/>
@@ -229,9 +261,11 @@ internal sealed class ContentPanel : EditorElement
         List<ContentNode> children = [];
         try
         {
-            if (node.IsArchive && _host.TryReadFile(node.Path, out ReadOnlyMemory<byte> bytes))
+            if (node.IsArchive)
             {
-                IresArchive archive = IresArchive.Read(bytes);
+                // The archive itself, from the file system: the resource registry mounts archives rather than handing
+                // their bytes over.
+                IresArchive archive = IresArchive.Read(_host.Files.ReadAllBytes(node.Path));
                 children.AddRange(archive.Entries
                     .Where(static e => e.Kind == IresEntryKind.Body)
                     .Select(e => new ContentNode(System.IO.Path.GetFileName(e.Name.Replace('\\', '/')), node.Path, node, isFolder: false, e)));
@@ -275,34 +309,40 @@ internal sealed class ContentPanel : EditorElement
             return;
         }
 
-        // Every loose file, gathered once on the first search; archive entries are found by opening the archive.
-        if (_allFiles is null)
-        {
-            _allFiles = [];
-            Stack<ContentNode> folders = new(Roots().Where(static n => n.IsFolder));
-            foreach (ContentNode file in Roots().Where(static n => !n.IsFolder))
-            {
-                _allFiles.Add(file);
-            }
+        EnsureIndex();
+        _results = [.. _allFiles!.Where(n => n.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(500)];
+        _tree.Invalidate();
+    }
 
-            while (folders.TryPop(out ContentNode? folder))
+    // Every loose file, gathered once on the first search; archive entries are found by opening the archive.
+    private void EnsureIndex()
+    {
+        if (_allFiles is not null)
+        {
+            return;
+        }
+
+        _allFiles = [];
+        Stack<ContentNode> folders = new(Roots().Where(static n => n.IsFolder));
+        foreach (ContentNode file in Roots().Where(static n => !n.IsFolder))
+        {
+            _allFiles.Add(file);
+        }
+
+        while (folders.TryPop(out ContentNode? folder))
+        {
+            foreach (ContentNode child in folder.Children(List))
             {
-                foreach (ContentNode child in folder.Children(List))
+                if (child.IsFolder)
                 {
-                    if (child.IsFolder)
-                    {
-                        folders.Push(child);
-                    }
-                    else
-                    {
-                        _allFiles.Add(child);
-                    }
+                    folders.Push(child);
+                }
+                else
+                {
+                    _allFiles.Add(child);
                 }
             }
         }
-
-        _results = [.. _allFiles.Where(n => n.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(500)];
-        _tree.Invalidate();
     }
 
     private void Activate(ContentNode node)
@@ -322,6 +362,8 @@ internal sealed class ContentPanel : EditorElement
         _previewed = node;
         Release();
         _text.Visibility = Visibility.Collapsed;
+        _model.Visibility = Visibility.Collapsed;
+        _model.Show(null);
         _open.IsEnabled = node is { Entry: null, IsFolder: false } && node.Extension == ".qvm";
         _facts = string.Empty;
         if (node is null || node.IsFolder)
@@ -352,6 +394,16 @@ internal sealed class ContentPanel : EditorElement
                 return;
             }
 
+            if (node.Extension == ".mef")
+            {
+                MefModel model = MefModel.Read(bytes, AssetFormatProfile.Permissive);
+                _model.Show(model);
+                _model.Visibility = Visibility.Visible;
+                _facts += FormattableString.Invariant(
+                    $"  •  {model.Vertices.Length} vertices, {model.TriangleCount} triangles, {model.DrawRecords.Count} draw groups, {model.BoneNames.Count} bones  •  drag to turn");
+                return;
+            }
+
             if (node.Extension == ".qvm" && Scripting.Qvm.QvmProgram.IsQvm(bytes.Span))
             {
                 ShowText(QscPrinter.Print(QscDecompiler.Decompile(bytes)));
@@ -365,7 +417,7 @@ internal sealed class ContentPanel : EditorElement
                 return;
             }
         }
-        catch (Exception error) when (error is TextureFormatException or Scripting.Qvm.QvmFormatException or QscDecompileException)
+        catch (Exception error) when (error is TextureFormatException or Scripting.Qvm.QvmFormatException or QscDecompileException or PackFormatException or IlffFormatException)
         {
             _facts += $"  •  could not be decoded: {error.Message}";
         }
