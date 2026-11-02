@@ -4,12 +4,14 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Presentation.Igi1.World;
 
-/// <summary>A terrain chunk's cache key: its integer position and its level of detail.</summary>
+/// <summary>A terrain chunk's cache key: its integer position, its level of detail and how it was smoothed.</summary>
 /// <remarks>
 /// The geometry a record holds is only the same geometry when it is drawn in the same place at the same
-/// detail, so the octree record index cannot be the key. See <see cref="TerrainRenderer"/>.
+/// detail, so the octree record index cannot be the key. <paramref name="Smoothing"/> is the generation
+/// of the smoothing settings a refined chunk was built with, and zero for every chunk the smoothing
+/// leaves alone, so changing the setting rebuilds only the finest chunks. See <see cref="TerrainRenderer"/>.
 /// </remarks>
-internal readonly record struct TerrainChunkKey(long X, long Y, long Z, int Lod);
+internal readonly record struct TerrainChunkKey(long X, long Y, long Z, int Lod, int Smoothing = 0);
 
 /// <summary>Everything a batch page's draws must share: the material state and the spatial cell.</summary>
 internal readonly record struct TerrainBatchKey(

@@ -167,7 +167,7 @@
     "pitchBias": 0,
     "points": [
       { "x": 27413.3, "y": -10281.7, "z": 43847.2, "radius": 64.3, "height": 20 },
-      { "x": 27281.6, "y": -9974.9, "z": 43841.4, "radius": 26.8, "height": 10.8 },
+      { "x": 27281.6, "y": -9974.9, "z": 43861.3, "radius": 30, "height": 12 },
       { "x": 27517.5, "y": -10021.9, "z": 43864.8, "radius": 20.4, "height": 9.1 },
       { "x": 27345.3, "y": -10033.3, "z": 43871.9, "radius": 38.9, "height": 13.7 },
       { "x": 27423.8, "y": -10100.9, "z": 43871.2, "radius": 41, "height": 14.6 }
@@ -184,20 +184,43 @@
     "points": [
       { "x": -194.6, "y": 22145.2, "z": 42674.8, "radius": 35.3, "height": 13.1 },
       { "x": -780.8, "y": 21707.8, "z": 42678.5, "radius": 58, "height": 19.2 },
-      { "x": -776.8, "y": 21977.1, "z": 42646.7, "radius": 26.8, "height": 10.8 },
+      { "x": -776.8, "y": 21977.1, "z": 42666.7, "radius": 30, "height": 12 },
       { "x": -540.5, "y": 21991.6, "z": 42669.9, "radius": 20.4, "height": 9.1 }
     ]
   },
   {
     "mission": 14,
-    "comment": "Finding the bomb",
+    "comment": "Finding the bomb. No terrain: the level is a complex of halls and tunnels in fog, so it is shown from inside -- a walk down the tunnel and up its ramp, then an orbit of the container hall that stays inside its walls. The rail follows the level's own AI graph 6, thinned to legs that are clear of walls. The lower hall (graph 25) draws as fog from the camera's place, so it is left out.",
     "radius": 140,
     "height": 55,
     "speed": 0.12,
     "startAngle": 0,
-    "pitchBias": 0,
+    "pitchBias": -0.05,
     "points": [
-      { "x": 6033, "y": -13667.4, "z": 42506.5, "radius": 30, "height": 13 }
+      { "x": 6043.0, "y": -13688.4, "z": 42502.6, "radius": 14, "height": 6, "wallAware": true }
+    ],
+    "rails": [
+      {
+        "order": 0,
+        "speed": 2.2,
+        "points": [
+          { "x": 6130.0, "y": -13726.7, "z": 42503.4 },
+          { "x": 6129.8, "y": -13732.3, "z": 42503.4 },
+          { "x": 6129.1, "y": -13741.5, "z": 42503.5 },
+          { "x": 6128.4, "y": -13749.7, "z": 42503.4 },
+          { "x": 6127.8, "y": -13757.7, "z": 42503.5 },
+          { "x": 6127.8, "y": -13764.8, "z": 42505.5 },
+          { "x": 6127.7, "y": -13772.5, "z": 42508.1 },
+          { "x": 6127.8, "y": -13780.3, "z": 42510.7 },
+          { "x": 6127.8, "y": -13788.2, "z": 42513.4 },
+          { "x": 6127.8, "y": -13794.6, "z": 42515.6 },
+          { "x": 6127.8, "y": -13809.7, "z": 42515.7 },
+          { "x": 6128.5, "y": -13813.1, "z": 42515.7 },
+          { "x": 6162.8, "y": -13813.9, "z": 42515.7 },
+          { "x": 6165.2, "y": -13813.2, "z": 42515.7 },
+          { "x": 6166.2, "y": -13780.8, "z": 42515.6 }
+        ]
+      }
     ]
   }
 ]

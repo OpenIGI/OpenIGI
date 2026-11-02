@@ -177,6 +177,29 @@ public sealed class LocalFileDevice : IFileDevice
         return current;
     }
 
+    /// <summary>Finds the file or directory a device-relative path names, as the disk spells it.</summary>
+    /// <param name="path">The device-relative path, in whatever case the data or the code spells it.</param>
+    /// <returns>The absolute path of what exists, or <see langword="null"/> when nothing does.</returns>
+    /// <remarks>
+    /// For the few readers that need a real host path rather than a stream. A directory walk is one example,
+    /// and so is a file a format reader opens itself. Going through this instead of <c>Path.Combine</c> on
+    /// the root gives them the same case folding as everything read through the device. Without it, an
+    /// install whose folders are <c>MISSIONS</c> and <c>COMMON</c> (as both I.G.I. 2 releases ship them)
+    /// and one a Linux user lower-cased would each break a different half of these readers.
+    /// </remarks>
+    public string? ResolveExisting(string path)
+    {
+        string fullPath = ToFullPath(path);
+        return ResolveFile(fullPath) ?? ResolveDirectory(fullPath);
+    }
+
+    /// <summary>Finds a path below a host directory the way <see cref="ResolveExisting(string)"/> does.</summary>
+    /// <param name="root">The directory the path is under, typically an installation's data root.</param>
+    /// <param name="relativePath">The path below it.</param>
+    /// <returns>The absolute path of what exists, or <see langword="null"/> when nothing does.</returns>
+    public static string? ResolveExisting(string root, string relativePath) =>
+        new LocalFileDevice(root).ResolveExisting(relativePath);
+
     private bool IsInsideRoot(string path)
     {
         if (string.Equals(path, RootDirectory, StringComparison.OrdinalIgnoreCase))

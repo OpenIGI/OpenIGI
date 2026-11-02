@@ -79,6 +79,12 @@ public static class CVarBinding
                 cvar,
                 [.. values.Select(value => (value, choiceCaptions?.GetValueOrDefault(value) ?? value))]);
         }
+        else if (choiceCaptions is { Count: > 0 })
+        {
+            // A number whose few values each mean something, named by the row: a dropdown of those names,
+            // rather than a slider whose stops read 0, 1 and 2.
+            binding = BindChoices(theme, caption, cvar, [.. choiceCaptions.Select(pair => (pair.Key, pair.Value))]);
+        }
         else if (TryParseBounds(cvar.RangeText, out float min, out float max))
         {
             binding = BindNumeric(theme, caption, cvar, min, max);

@@ -18,11 +18,18 @@ namespace OpenIGI.Game.Igi1.World;
 /// <paramref name="Layers"/> because only the original's own picture draws it: the modern presets light
 /// the ground themselves.
 /// </param>
+/// <param name="Coarse">
+/// For a chunk refined onto the smooth ground, its original triangles: indices into one pass's
+/// vertices, whose first ones are the chunk's own (see <c>TerrainChunkMesh.Smooth</c>). Something that
+/// only needs the ground's shape, and is out of sight, can draw these instead of the refined
+/// triangles. <see langword="null"/> for a chunk drawn as stored.
+/// </param>
 public sealed record TerrainChunkGeometry(
     Vertex3D[] Vertices,
     ushort[] Indices,
     TerrainChunkLayer[] Layers,
-    TerrainChunkLightLayer? Light = null)
+    TerrainChunkLightLayer? Light = null,
+    ushort[]? Coarse = null)
 {
     /// <summary>Gets the total triangle count across every pass.</summary>
     public int TriangleCount => Indices.Length / 3;

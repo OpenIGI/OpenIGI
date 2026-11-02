@@ -32,10 +32,14 @@ public sealed partial class GameHost
     /// the first frame — and at start-up the render thread is otherwise waiting on the driver to build a
     /// device, which is exactly the moment a worker is free.
     /// </remarks>
-    private void BeginReadingSharedAnimations() =>
+    private void BeginReadingSharedAnimations()
+    {
+        // Captured here, on the thread that owns the binding, not read from the worker.
+        bool hostRigNeedsThem = _gameplay is null;
         _sharedAnimationsTask ??= _work.Run(() =>
-            (ReadAnimationSet("000.iff", "the player cannot walk"),
-             ReadAnimationSet("005.iff", "no weapon can be held")));
+            (ReadAnimationSet("000.iff", "the player cannot walk", hostRigNeedsThem),
+             ReadAnimationSet("005.iff", "no weapon can be held", hostRigNeedsThem)));
+    }
 
     /// <summary>Makes the two shared animation sets available, waiting for the read if it is still going.</summary>
     /// <remarks>
@@ -69,14 +73,24 @@ public sealed partial class GameHost
         _viewRigAnimations = null;
     }
 
-    private BoneAnimationSet? ReadAnimationSet(string name, string consequence)
+    // These are Project I.G.I.'s whole-skeleton files, and only the host's own rig stands on them. A title
+    // that brings its own player keeps its animations elsewhere -- I.G.I. 2 has no common/anims/ at all and
+    // ships one clip per entry inside common/models/*.res -- so for it the files being absent is the
+    // install being right, not broken, and a warning saying the player cannot walk was untrue.
+    private BoneAnimationSet? ReadAnimationSet(string name, string consequence, bool required)
     {
         string path = Path.Combine(_gamePath, "common", "anims", name);
         try
         {
-            if (File.Exists(path))
+            if (Engine.Vfs.LocalFileDevice.ResolveExisting(_gamePath, $"common/anims/{name}") is { } found && File.Exists(found))
             {
-                return BoneAnimationSet.Read(File.ReadAllBytes(path));
+                return BoneAnimationSet.Read(File.ReadAllBytes(found));
+            }
+
+            if (!required)
+            {
+                _logger.Debug("Player", $"No animation set at {path}; this title's own player does not use it.");
+                return null;
             }
 
             _logger.Warning("Player", $"No animation set at {path}; {consequence}.");

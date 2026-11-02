@@ -78,6 +78,31 @@ public sealed class LocalFileDeviceCaseTests : IDisposable
         Assert.Equal(2, device.EnumerateFiles("pc", "*.res").Count());
     }
 
+    [Fact]
+    public void ResolvesAHostPathAsTheDiskSpellsIt()
+    {
+        // Both I.G.I. 2 releases ship upper-case top-level folders; the code asks for them in lower case.
+        Write("MISSIONS/location1/common/location1.mtp", "pack");
+
+        string? directory = LocalFileDevice.ResolveExisting(_root, "missions");
+        string? file = LocalFileDevice.ResolveExisting(_root, "missions/LOCATION1/common/location1.mtp");
+
+        Assert.NotNull(directory);
+        // Not the spelling: where the host folds case the exact lookup already succeeds in the asked case.
+        Assert.True(Directory.Exists(directory));
+        Assert.NotNull(file);
+        Assert.Equal("pack", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void ResolvesNothingForAPathThatIsGenuinelyAbsent()
+    {
+        Write("MISSIONS/location1/common/location1.mtp", "pack");
+
+        Assert.Null(LocalFileDevice.ResolveExisting(_root, "missions/location9"));
+        Assert.Null(LocalFileDevice.ResolveExisting(_root, "common/anims/000.iff"));
+    }
+
     private void Write(string relative, string content)
     {
         string full = Path.Combine(_root, relative.Replace('/', Path.DirectorySeparatorChar));

@@ -363,7 +363,21 @@ public static class GraphicsMenu
                         ("r_bloom", "0.2"),
                         ("r_bloom_threshold", "0"))),
             ],
-            []),
+            [
+                // A row of its own rather than a quality group: every preset smooths the ground fully,
+                // so its lighter steps are no preset's values, and they are still worth offering.
+                new GraphicsSetting(
+                    "r_terrain_smooth",
+                    "Ground Smoothing",
+                    "Rounds off the flat facets and spikes of the ground near you in I.G.I. Smooth refines "
+                        + "it to a two-metre grid, Smoother to one metre. What you stand on is unchanged.",
+                    new Dictionary<string, string>
+                    {
+                        ["0"] = "Off",
+                        ["1"] = "Smooth",
+                        ["2"] = "Smoother",
+                    }),
+            ]),
 
         new GraphicsSection(
             "NVIDIA",
@@ -695,6 +709,12 @@ public static class GraphicsMenu
         // a radius by looking. See RayTracingCVars.TracedWorldRadius.
         "r_rt_world_radius",
         "r_rt_world_angle",
+
+        // How the ground smoothing behaves rather than whether it is on: the Ground Smoothing row picks
+        // the level, and these two are its tuning. A player cannot judge a limit in centimetres by
+        // looking, and the defaults are what keep feet on the ground.
+        "r_terrain_smooth_relax",
+        "r_terrain_smooth_limit",
 
         "r_gi_bounce",
         "r_gi_boost",

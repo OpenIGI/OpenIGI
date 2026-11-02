@@ -301,7 +301,12 @@ public sealed class MissionPreviewLoader(
 
         // The same gate the played mission runs, so a preview does not show the intro and outro actors the
         // original leaves unregistered.
-        new ConditionalContainerGate(loop.Variables, logger).Prepare(levelRoot);
+        var gate = new ConditionalContainerGate(loop.Variables, logger);
+        gate.Prepare(levelRoot);
+
+        // Every section a level streams in by area is in: a backdrop has no player to stand in one, and the last
+        // mission -- whose halls and tunnels all wait on areas -- was nothing but fog. Undone before Play.
+        Action beforePlay = gate.OpenEveryArea(levelRoot);
 
         // The ground tiles' derived detail maps, started here and collected at the very end. They need only
         // the terrain, which the load has just produced, so they run alongside everything below rather than
@@ -432,7 +437,8 @@ public sealed class MissionPreviewLoader(
             decoded,
             built.Ground,
             built.Spins,
-            built.Visibility);
+            built.Visibility,
+            beforePlay);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

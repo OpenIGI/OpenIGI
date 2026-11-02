@@ -332,6 +332,6 @@ public sealed partial class GameHost
         }
 
         _showcaseCamera = new MenuShowcaseCamera(
-            points, centre, _menuCameras.For(missionId, _titleRuntime.Title.Id));
+            points, centre, _menuCameras.For(missionId, _titleRuntime.Title.Id), _mission.Solids?.Caster());
     }
 }

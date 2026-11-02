@@ -98,6 +98,77 @@ public static class GeometryCVars
         high: "12288",
         ultra: "24576");
 
+    /// <summary>How finely I.G.I.'s nearest ground is refined onto a smooth surface, or 0 to draw it as stored.</summary>
+    /// <remarks>
+    /// <para>
+    /// The near ground is drawn as four-, eight- and sixteen-metre grids of flat triangles, and the
+    /// heightmap lands on their corners only, so it reads as facets and lone spikes. One cuts each edge
+    /// in two, two in four. The new points sit on a smooth surface through the retail ground, laid on
+    /// each level's own grid, and are shaded with that surface's own normal.
+    /// </para>
+    /// <para>
+    /// The three finest levels of detail are refined, which carries it about 125 metres from the camera
+    /// at Enhanced and nearly 300 at Ultra. Each chunk is refined once when it is built and then cached,
+    /// so a frame pays only the extra triangles. Each level eases onto the next one's smoothed ground as
+    /// it recedes, so the levels still meet. Visual only: gameplay stands on the retail triangles, and
+    /// the drawn ground underfoot never strays from them by more than <see cref="TerrainSmoothLimit"/>.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> TerrainSmooth = Presets.Define(
+        CVar.Int(
+            "r_terrain_smooth",
+            2,
+            0,
+            2,
+            CVarOptions.Archive,
+            "Smooth the nearest ground: 0 draws it as stored, 1 a two-metre grid, 2 a one-metre grid. Visual only."),
+
+        // Every preset, Vanilla too: it is the original's ground with its facets rounded, measured at a
+        // frame or two at Ultra, and collision is untouched. Zero is still there for the stored triangles.
+        vanilla: "2",
+        enhanced: "2",
+        high: "2",
+        ultra: "2");
+
+    /// <summary>How far the smoothed ground rounds off what it passes through, from 0 to 1.</summary>
+    /// <remarks>
+    /// Zero passes exactly through every retail ground height on the four-metre grid, so a foot planted
+    /// on a grid point is exactly where it was. One is a B-spline that only passes near them, which
+    /// also takes the point off a lone spike, at the cost of straying further from the ground the
+    /// player stands on. <see cref="TerrainSmoothLimit"/> bounds either way.
+    /// </remarks>
+    public static readonly NumericCVar<float> TerrainSmoothRelax = Presets.Define(
+        CVar.Float(
+            "r_terrain_smooth_relax",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much the smoothed ground rounds off spikes: 0 passes through every ground height, 1 rounds them off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
+    /// <summary>The furthest the smoothed ground may stand from the retail ground, in metres.</summary>
+    /// <remarks>
+    /// This is the finest level's, the ground underfoot. Each coarser level's is twice the one before,
+    /// because its triangles are twice the size and nobody stands on it at that detail. The offset eases
+    /// into the limit rather than stopping at it, and never passes it.
+    /// </remarks>
+    public static readonly NumericCVar<float> TerrainSmoothLimit = Presets.Define(
+        CVar.Float(
+            "r_terrain_smooth_limit",
+            0.3f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "The furthest the smoothed ground may move from the ground the player stands on, in metres."),
+        vanilla: "0.3",
+        enhanced: "0.3",
+        high: "0.3",
+        ultra: "0.3");
+
     /// <summary>Retail's own chunk bound, which is the smallest this cache is allowed to be.</summary>
     private const int TerrainCacheDefault = 4096;
 

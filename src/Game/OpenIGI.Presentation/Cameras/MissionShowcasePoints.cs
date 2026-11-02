@@ -10,7 +10,11 @@ namespace OpenIGI.Presentation.Cameras;
 /// <summary>One place in a level worth showing behind the menu, and the orbit that frames it.</summary>
 /// <param name="Centre">The world point the orbit circles, in metres.</param>
 /// <param name="Orbit">The orbit's radius, height, speed and tilt, sized to what is there.</param>
-public readonly record struct ShowcasePoint(Vector3d Centre, MenuCameraSpec Orbit);
+/// <param name="Rail">
+/// A path to travel along instead of circling <paramref name="Centre"/>, for a place an orbit cannot show;
+/// see <see cref="CameraRail"/>. <see langword="null"/> for an orbit.
+/// </param>
+public readonly record struct ShowcasePoint(Vector3d Centre, MenuCameraSpec Orbit, CameraRail? Rail = null);
 
 /// <summary>
 /// Picks the handful of buildings in a mission worth looking at: three spread into a triangle across the
