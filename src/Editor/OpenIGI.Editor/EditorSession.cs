@@ -37,7 +37,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -52,6 +52,7 @@ internal sealed class EditorSession : IEditorSession
     private readonly StatusBar _status;
     private readonly LiveWorldLink _live;
     private readonly ContentPanel _content;
+    private readonly ProblemsPanel _problems;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -95,6 +96,9 @@ internal sealed class EditorSession : IEditorSession
             _dock.Show("script");
         });
         _dock.Register(new DockPanel("content", "Content", _content) { Icon = KitIcon.Folder });
+        _problems = new ProblemsPanel(_theme, _workspace);
+        _problems.GoTo += _viewport.Frame;
+        _dock.Register(new DockPanel("problems", "Problems", _problems) { Icon = KitIcon.Search });
         if (!_dock.LoadLayout(ReadSavedLayout() ?? DefaultLayout))
         {
             _dock.LoadLayout(DefaultLayout);
@@ -284,6 +288,11 @@ internal sealed class EditorSession : IEditorSession
             Shortcut = KeyChord.Parse("Ctrl+R"),
             CanExecute = () => _workspace.Document is not null,
         });
+        actions.Add(new EditorAction("file.export", "Export for the Retail Game…", Export)
+        {
+            Category = "File",
+            CanExecute = () => _workspace.Document is not null,
+        });
         actions.Add(new EditorAction("play.start", "Play", Play)
         {
             Category = "Play",
@@ -390,7 +399,7 @@ internal sealed class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "script", "content" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "script", "content", "problems" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -424,6 +433,7 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["file.save"]),
                 MenuItem.For(actions["file.reload"]),
                 MenuItem.For(actions["file.revert"]),
+                MenuItem.For(actions["file.export"]),
                 MenuItem.Separator,
                 MenuItem.For(actions["file.close"]),
             ])
@@ -455,6 +465,7 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["window.history"]),
                 MenuItem.For(actions["window.script"]),
                 MenuItem.For(actions["window.content"]),
+                MenuItem.For(actions["window.problems"]),
             ]);
     }
 
@@ -513,6 +524,36 @@ internal sealed class EditorSession : IEditorSession
         Notify(copies.Count == 1
             ? "Duplicated. Save and Reload (Ctrl+R) to see a new object in the world."
             : $"Duplicated {copies.Count} objects. Save and Reload (Ctrl+R) to see them in the world.");
+    }
+
+    private void Export()
+    {
+        // Retail loads exactly what is written, with no editor to catch a mistake, so errors stop the export.
+        if (_problems.ErrorCount is > 0 and int errors)
+        {
+            _dock.Show("problems");
+            Notify($"Not exported: {errors} problem(s) would break the mission in the retail game. See Problems.", isError: true);
+            return;
+        }
+
+        if (_workspace.History.IsDirty && !Save())
+        {
+            return;
+        }
+
+        string target = Path.Combine(SettingsPaths.GetUserDirectory(), "editor", "exports", _host.Title.Id, Path.GetFileName(_workspace.Project.Root));
+        try
+        {
+            IReadOnlyList<string> written = _workspace.Project.ExportTo(target);
+            _host.Logger.Information("Editor", $"Exported {written.Count} file(s) to {target}: {string.Join(", ", written)}.");
+            Notify(written.Count == 0
+                ? "Nothing to export yet: save a change first."
+                : $"Exported {written.Count} file(s) to {target}. Copy its folders over the game's own to play them in the retail game.");
+        }
+        catch (IOException error)
+        {
+            Notify($"Could not export: {error.Message}", isError: true);
+        }
     }
 
     private void Play()

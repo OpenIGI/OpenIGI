@@ -141,6 +141,47 @@ public sealed class EditorProject
         return true;
     }
 
+    /// <summary>
+    /// Copies every file the project carries into a folder laid out like the installation, ready to be copied into a
+    /// retail game.
+    /// </summary>
+    /// <param name="target">The folder; created if missing, and emptied of an earlier export first.</param>
+    /// <returns>The game paths written, relative to the installation.</returns>
+    /// <exception cref="IOException">A file cannot be written.</exception>
+    /// <exception cref="ArgumentException">The target is inside the project.</exception>
+    public IReadOnlyList<string> ExportTo(string target)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        string full = Path.GetFullPath(target);
+        string root = Path.GetFullPath(Root) + Path.DirectorySeparatorChar;
+        if ((full + Path.DirectorySeparatorChar).StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("An export cannot be written inside its own project.", nameof(target));
+        }
+
+        if (Directory.Exists(full))
+        {
+            Directory.Delete(full, recursive: true);
+        }
+
+        List<string> written = [];
+        foreach (string file in Directory.EnumerateFiles(FilesDirectory, "*", SearchOption.AllDirectories))
+        {
+            if (file.EndsWith(".saving", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string relative = Path.GetRelativePath(FilesDirectory, file);
+            string destination = Path.Combine(full, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwrite: true);
+            written.Add(relative.Replace('\\', '/'));
+        }
+
+        return written;
+    }
+
     private void WriteManifest()
     {
         using FileStream stream = new(Path.Combine(Root, ManifestName), FileMode.Create, FileAccess.Write, FileShare.None);
