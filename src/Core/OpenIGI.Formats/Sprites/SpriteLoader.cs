@@ -12,9 +12,10 @@ namespace OpenIGI.Formats.Sprites;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Four container shapes are accepted: an ILFF <c>FONT</c> container and <c>"LOOP"</c> versions 1, 7
-/// and 9. Versions 5 and 10 exist but the original refuses them outright
-/// (<c>"The font '%s' must be packed."</c>), and so does this loader — no retail file uses them.
+/// Accepts ILFF <c>FONT</c> containers and <c>"LOOP"</c> versions 1, 7 and 9. Version 10 fonts
+/// are also accepted as a compatibility extension for installations with unpacked UI assets.
+/// The original refuses versions 5 and 10 (<c>"The font '%s' must be packed."</c>); version 5
+/// remains unsupported. The packed retail paths retain their original behavior.
 /// </para>
 /// <para>
 /// Field offsets are those the original loader reads. Where the three <c>"LOOP"</c> versions disagree
@@ -30,7 +31,7 @@ public static class SpriteLoader
     /// <param name="data">The container bytes.</param>
     /// <param name="name">The resource name, used in diagnostics only.</param>
     /// <returns>The loaded sprite.</returns>
-    /// <exception cref="TextureFormatException">The bytes are not a container the original accepts.</exception>
+    /// <exception cref="TextureFormatException">The bytes are malformed or use an unsupported container.</exception>
     public static SpriteAsset Load(ReadOnlyMemory<byte> data, string name = "")
     {
         ReadOnlySpan<byte> span = data.Span;
@@ -63,9 +64,10 @@ public static class SpriteLoader
             1 => LoadLoop1(span, name),
             7 => LoadLoop7(span, name),
             9 => LoadLoop9(span, name),
-            5 or 10 => throw new TextureFormatException(
+            10 => UnpackedFontLoader.Load(span, name),
+            5 => throw new TextureFormatException(
                 $"Sprite '{name}' is a version {version} container, which the original refuses with "
-                + "\"The font '%s' must be packed.\" — no retail file uses it."),
+                + "\"The font '%s' must be packed.\" — this version is not supported."),
             _ => throw new TextureFormatException($"Invalid sprite file '{name}': unknown 'LOOP' version {version}."),
         };
     }
