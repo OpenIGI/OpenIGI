@@ -102,12 +102,24 @@ internal sealed class MissionWorkspace
             return false;
         }
 
-        Project.Write(ObjectsGamePath(mission), document.ToImage());
+        WriteToProject(ObjectsGamePath(mission), document.ToImage());
         History.MarkSaved();
-        _host.MountContent(Project.LayerId, Project.Name, Project.FilesDirectory);
-        _host.Logger.Information("Editor", $"Saved {mission.Name} to {Project.PathFor(ObjectsGamePath(mission))}.");
         return true;
     }
+
+    /// <summary>Writes a file into the project and rescans it, so the game reads the new copy from then on.</summary>
+    /// <param name="gamePath">The game path, relative to the installation.</param>
+    /// <param name="bytes">The contents.</param>
+    /// <exception cref="IOException">The project cannot be written.</exception>
+    public void WriteToProject(string gamePath, ReadOnlySpan<byte> bytes)
+    {
+        Project.Write(gamePath, bytes);
+        _host.MountContent(Project.LayerId, Project.Name, Project.FilesDirectory);
+        _host.Logger.Information("Editor", $"Saved {Project.PathFor(gamePath)}.");
+    }
+
+    /// <summary>Reads the open mission's object script again on the next frame, dropping the history.</summary>
+    public void Reload() => _loadedFor = null;
 
     /// <summary>Removes the project's copy of the open mission, so the game's own is used again, and reloads it.</summary>
     /// <returns>Whether the project had a copy.</returns>
@@ -119,7 +131,7 @@ internal sealed class MissionWorkspace
         }
 
         _host.MountContent(Project.LayerId, Project.Name, Project.FilesDirectory);
-        _loadedFor = null;
+        Reload();
         _host.ReloadMission();
         return true;
     }

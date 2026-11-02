@@ -205,6 +205,24 @@ public sealed class EditorTheme
     /// <summary>Gets the shadow under popups.</summary>
     public Bgra32 Shadow { get; private set; }
 
+    /// <summary>Gets the colour of keywords in code.</summary>
+    public Bgra32 SyntaxKeyword { get; private set; }
+
+    /// <summary>Gets the colour of function names in code.</summary>
+    public Bgra32 SyntaxFunction { get; private set; }
+
+    /// <summary>Gets the colour of string literals in code.</summary>
+    public Bgra32 SyntaxString { get; private set; }
+
+    /// <summary>Gets the colour of numbers in code.</summary>
+    public Bgra32 SyntaxNumber { get; private set; }
+
+    /// <summary>Gets the colour of comments in code.</summary>
+    public Bgra32 SyntaxComment { get; private set; }
+
+    /// <summary>Gets the colour of named constants in code (<c>TRUE</c>, <c>AIEVENT_IDLE</c>).</summary>
+    public Bgra32 SyntaxConstant { get; private set; }
+
     /// <summary>Gets the interface font at the body size.</summary>
     public UiFont Font => Fonts.Font(EditorFontFace.Interface, TextSize);
 
@@ -292,6 +310,12 @@ public sealed class EditorTheme
         AxisY = Bgra32.FromRgb(118, 196, 72);
         AxisZ = Bgra32.FromRgb(70, 140, 240);
         Shadow = Bgra32.FromRgba(0, 0, 0, IsLight ? (byte)60 : (byte)140);
+        SyntaxKeyword = IsLight ? Bgra32.FromRgb(160, 40, 140) : Bgra32.FromRgb(210, 150, 255);
+        SyntaxFunction = IsLight ? Bgra32.FromRgb(30, 90, 170) : Bgra32.FromRgb(125, 185, 255);
+        SyntaxString = IsLight ? Bgra32.FromRgb(30, 120, 60) : Bgra32.FromRgb(150, 215, 140);
+        SyntaxNumber = IsLight ? Bgra32.FromRgb(170, 90, 10) : Bgra32.FromRgb(245, 190, 110);
+        SyntaxComment = IsLight ? Bgra32.FromRgb(120, 128, 138) : Bgra32.FromRgb(110, 118, 128);
+        SyntaxConstant = IsLight ? Bgra32.FromRgb(20, 130, 140) : Bgra32.FromRgb(110, 210, 200);
 
         // The base library's widgets share these, so a scroll view inside a panel matches the panel.
         Ui.Text = Text;

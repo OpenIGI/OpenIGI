@@ -37,7 +37,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:T(viewport*),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:T(viewport*|script),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -86,6 +86,7 @@ internal sealed class EditorSession : IEditorSession
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
         _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace)) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
+        _dock.Register(new DockPanel("script", "Script", new ScriptPanel(_theme, host, _workspace)) { Icon = KitIcon.Script });
         if (!_dock.LoadLayout(ReadSavedLayout() ?? DefaultLayout))
         {
             _dock.LoadLayout(DefaultLayout);
@@ -319,7 +320,7 @@ internal sealed class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "script" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -378,6 +379,7 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["window.outliner"]),
                 MenuItem.For(actions["window.inspector"]),
                 MenuItem.For(actions["window.history"]),
+                MenuItem.For(actions["window.script"]),
             ]);
     }
 
