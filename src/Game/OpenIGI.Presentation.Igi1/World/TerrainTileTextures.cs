@@ -48,7 +48,7 @@ internal sealed class TerrainTileTextures
     /// <summary>Uploads the level's ground tiles once.</summary>
     /// <remarks>
     /// Eighteen 128×128 tiles is a third of a megabyte, and a chunk can name any of them, so there is
-    /// nothing to gain from doing this on demand. They repeat across the ground, hence the wrapping.
+    /// nothing to gain from doing this on demand. Each chunk draws inside one tile, hence the clamping.
     /// </remarks>
     private TextureHandle[] UploadTiles(TexAtlasFile? tiles, IReadOnlyList<Bgra32[]>? derivedDetail)
     {
@@ -74,11 +74,11 @@ internal sealed class TerrainTileTextures
                         tile.Height,
                         tile.MipLevels,
                         TextureFilter.Linear,
-                        // The original's look clamps a tile, as TerrainMesh_DrawD3D (0x512C30) does: a chunk's coordinates run
-                        // within the tile, and its edges filter against their own texels. Taken as the level loads.
-                        OpenIGI.Core.Configuration.Presets.GraphicsPresetRegistry.Default.Current == OpenIGI.Core.Configuration.Presets.GraphicsPreset.Vanilla
-                            ? TextureAddressMode.Clamp
-                            : TextureAddressMode.Repeat),
+                        // Clamped, as TerrainMesh_DrawD3D (0x512C30) clamps a tile: a chunk's coordinates run within its tile,
+                        // and its edges filter against their own texels. Every preset, not only the original's look: repeating
+                        // filtered each chunk's edge against the opposite edge of its tile, a dark hairline along every chunk
+                        // border that the mip chain and anisotropy widened into a visible grid across the hills.
+                        TextureAddressMode.Clamp),
                     tile.Pixels);
 
                 // A caller that has already done the arithmetic off this thread hands the result in; the
