@@ -298,5 +298,6 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             request.Surface,
             request.Logger,
             request.DetailMaps,
-            request.DerivedDetail);
+            request.DerivedDetail,
+            request.Work);
 }

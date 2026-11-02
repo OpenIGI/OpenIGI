@@ -37,6 +37,24 @@ public sealed record TerrainChunkGeometry(
     /// <summary>Gets how many vertices one pass holds: every pass, the light one included, is a whole copy of the chunk.</summary>
     public int VerticesPerPass => Vertices.Length / (Layers.Length + (Light is null ? 0 : 1));
 
+    /// <summary>Gets how many of one pass's vertices <see cref="Coarse"/> reaches: the chunk's own, which come first.</summary>
+    /// <remarks>Counted once here rather than by every frame's shadow caster, which asks for it of thousands of chunks.</remarks>
+    public int CoarseVertexCount { get; } = CountReached(Coarse);
+
+    private static int CountReached(ushort[]? indices)
+    {
+        int count = 0;
+        if (indices is not null)
+        {
+            foreach (ushort index in indices)
+            {
+                count = Math.Max(count, index + 1);
+            }
+        }
+
+        return count;
+    }
+
     /// <inheritdoc/>
     public override string ToString() =>
         $"{Vertices.Length} vertices, {TriangleCount} triangles, {Layers.Length} pass(es)";

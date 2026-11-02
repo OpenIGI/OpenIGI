@@ -168,7 +168,7 @@ public sealed partial class GameHost
 
             _terrain ??= loaded.Terrain is { IsUsable: true } usable
                 ? _presentation.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(new TerrainPresentationRequest(
-                    _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
+                    _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null, _work))
                 : null;
 
             // The sky is script data on the level's task tree; its fog colour is also what the frame

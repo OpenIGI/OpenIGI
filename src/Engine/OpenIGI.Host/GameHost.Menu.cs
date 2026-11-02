@@ -118,7 +118,7 @@ public sealed partial class GameHost
 
         _terrain ??= preview.TerrainSurface is { } surface
             ? _presentation.Presenters.Create<TerrainPresentationRequest, ITerrainPresenter>(new TerrainPresentationRequest(
-                _device, surface, _logger, _detailMaps, preview.GroundDetail))
+                _device, surface, _logger, _detailMaps, preview.GroundDetail, _work))
             : null;
 
         // Uploaded with the tiles; the preview held a full-size map per tile for as long as it lived.
