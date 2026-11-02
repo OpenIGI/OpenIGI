@@ -3,19 +3,6 @@ using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI.Editor.Input;
 
-/// <summary>Where a popup opens relative to the rectangle it belongs to.</summary>
-public enum PopupPlacement
-{
-    /// <summary>Below the anchor, left edges aligned: a dropdown or a menu-bar menu.</summary>
-    Below,
-
-    /// <summary>To the right of the anchor, top edges aligned: a submenu.</summary>
-    Right,
-
-    /// <summary>At the anchor's top-left corner: a context menu at the pointer.</summary>
-    At,
-}
-
 /// <summary>
 /// An element that floats above everything else: a menu, a dropdown list, a picker.
 /// </summary>
@@ -56,27 +43,7 @@ public abstract class Popup : EditorElement
     /// <returns>The frame.</returns>
     internal UiRect Place(UiVec2 size, UiVec2 viewport)
     {
-        float width = MathF.Min(size.X, viewport.X);
-        float height = MathF.Min(size.Y, viewport.Y);
-        (float x, float y) = Placement switch
-        {
-            PopupPlacement.Right => (Anchor.Right, Anchor.Y),
-            PopupPlacement.At => (Anchor.X, Anchor.Y),
-            _ => (Anchor.X, Anchor.Bottom),
-        };
-
-        // Flip to the other side when the preferred one runs off screen, then clamp what still does not fit.
-        if (x + width > viewport.X)
-        {
-            x = Placement == PopupPlacement.Right ? Anchor.X - width : viewport.X - width;
-        }
-
-        if (y + height > viewport.Y)
-        {
-            y = Placement == PopupPlacement.Below ? Anchor.Y - height : viewport.Y - height;
-        }
-
-        Frame = new UiRect(MathF.Round(MathF.Max(0f, x)), MathF.Round(MathF.Max(0f, y)), width, height);
+        Frame = PopupLayout.Place(Anchor, Placement, size, viewport);
         return Frame;
     }
 
