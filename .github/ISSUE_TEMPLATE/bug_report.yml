@@ -1,0 +1,84 @@
+name: Bug report
+description: Something in OpenIGI is broken or plays differently from the original game.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please search the [existing issues](https://github.com/OpenIGI/OpenIGI/issues) first.
+        Security problems go through [a private report](https://github.com/OpenIGI/OpenIGI/security/advisories/new), not here.
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - "Project I.G.I.: I'm Going In"
+        - "I.G.I. 2: Covert Strike"
+        - Both
+        - Launcher only
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenIGI version
+      description: Shown in the launcher and at the bottom of the main menu.
+      placeholder: v0.6.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Browser (openigi.com)
+        - Android or iOS browser
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Game files
+      options:
+        - Retail CD
+        - GOG
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and renderer
+      description: The graphics card, and the backend if you changed it (Direct3D 12, Vulkan, WebGPU).
+      placeholder: RTX 4070, Direct3D 12
+  - type: input
+    id: where
+    attributes:
+      label: Mission and place
+      placeholder: Mission 4, the radar tower
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected (or what the original game does). Screenshots and videos help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start mission 2
+        2. Climb the ladder by the gate
+        3. ...
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Attach `runtime.log`. On Windows it is in `%APPDATA%\OpenIGI`; on Linux and macOS in the OpenIGI folder under
+        your application data directory.
+      placeholder: Drag the file here.

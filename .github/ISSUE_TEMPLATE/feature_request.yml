@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest something new for the engine, the launcher or modding.
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Gameplay
+        - Graphics
+        - Multiplayer
+        - Launcher
+        - Modding
+        - Browser build
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like, and why?
+      description: Describe the problem it solves or what it adds.
+    validations:
+      required: true
+  - type: textarea
+    id: ideas
+    attributes:
+      label: How it could work
