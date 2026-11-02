@@ -24,6 +24,14 @@ public interface IEditorCommand
     /// <param name="following">The command that was just applied.</param>
     /// <returns><see langword="true"/> when <paramref name="following"/> is now part of this command.</returns>
     bool TryMerge(IEditorCommand following) => false;
+
+    /// <summary>
+    /// Gets whether <see cref="TryMerge"/> would absorb a command, without absorbing it, so a group can merge all of its
+    /// parts or none.
+    /// </summary>
+    /// <param name="following">The command that was just applied.</param>
+    /// <returns><see langword="true"/> when <see cref="TryMerge"/> would succeed.</returns>
+    bool CanMerge(IEditorCommand following) => false;
 }
 
 /// <summary>A command made of others, applied in order and reversed in reverse order.</summary>
@@ -53,6 +61,43 @@ public sealed class CompositeCommand(string name, IReadOnlyList<IEditorCommand> 
         {
             Commands[i].Undo();
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>A group merges with a group of the same name whose parts each merge with its own, part for part.</remarks>
+    public bool CanMerge(IEditorCommand following)
+    {
+        if (following is not CompositeCommand group || group.Name != Name || group.Commands.Count != Commands.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < Commands.Count; i++)
+        {
+            if (!Commands[i].CanMerge(group.Commands[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool TryMerge(IEditorCommand following)
+    {
+        if (!CanMerge(following))
+        {
+            return false;
+        }
+
+        CompositeCommand group = (CompositeCommand)following;
+        for (int i = 0; i < Commands.Count; i++)
+        {
+            Commands[i].TryMerge(group.Commands[i]);
+        }
+
+        return true;
     }
 }
 

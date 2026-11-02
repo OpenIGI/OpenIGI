@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Editor.Viewport;
 using OpenIGI.Formats.Ai;
@@ -16,11 +17,6 @@ using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Editor.Panels;
 
-/// <summary>
-/// The world view. Hold the right mouse button to look and fly (W A S D, Q E, Shift faster), the middle button to
-/// pan, the wheel to dolly; click to select, drag the gizmo to move, F to frame the selection. With no mission
-/// open it is the start page that opens one.
-/// </summary>
 /// <summary>Which gizmo the viewport shows on the selection.</summary>
 internal enum ViewportTool
 {
@@ -29,8 +25,16 @@ internal enum ViewportTool
 
     /// <summary>The rotate gizmo.</summary>
     Rotate,
+
+    /// <summary>The resize gizmo, on volumes: trigger, spawn and ambient-sound areas.</summary>
+    Scale,
 }
 
+/// <summary>
+/// The world view. Hold the right mouse button to look and fly (W A S D, Q E, Shift faster), the middle button to
+/// pan, the wheel to dolly; click to select, drag the gizmo to move, F to frame the selection. With no mission
+/// open it is the start page that opens one.
+/// </summary>
 internal sealed class ViewportPanel : EditorElement
 {
     private static readonly KeyCode[] FlightKeys = [KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D, KeyCode.Q, KeyCode.E, KeyCode.LeftShift];
@@ -41,6 +45,7 @@ internal sealed class ViewportPanel : EditorElement
     private readonly TranslateGizmo _gizmo = new();
     private readonly RotateGizmo _rotate = new();
     private readonly GraphOverlay _graph = new();
+    private readonly BoxGizmo _box = new();
     private MissionTask? _graphTask;
     private readonly List<InspectableEntity> _entities = [];
     private MouseButton? _flying;
@@ -64,12 +69,22 @@ internal sealed class ViewportPanel : EditorElement
         set
         {
             _gizmo.Snap = value;
+            _box.Snap = value;
             _rotate.Snap = value > 0;
         }
     }
 
     /// <summary>Gets or sets the gizmo shown on the selection.</summary>
     public ViewportTool Tool { get; set; } = ViewportTool.Move;
+
+    private bool Resizing => Tool == ViewportTool.Scale && _graph.PickedNode is null && SelectedBox is not null;
+
+    // The selected task's box, when it is a volume with a constant place and size.
+    private BoxGizmo.Box? SelectedBox =>
+        _workspace.Selection.Primary is { } task && TaskVolume.Of(task) is { } volume
+        && volume.HalfMetres() is { } half && TaskPresentation.PositionMetres(task) is { } centre
+            ? new BoxGizmo.Box(centre, TaskPresentation.OrientationMatrix(task), half)
+            : null;
 
     private bool Rotating => Tool == ViewportTool.Rotate && _graph.PickedNode is null
         && _workspace.Selection.Primary is { } task && TaskPresentation.Orientation(task) is not null;
@@ -178,7 +193,12 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         Focus();
-        if (_workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin
+        if (Resizing && SelectedBox is { } box && _box.Begin(Projector, box, e.Position))
+        {
+            return true;
+        }
+
+        if (_workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin && !Resizing
             && (Rotating
                 ? _rotate.Begin(Projector, origin, TaskPresentation.OrientationMatrix(selected), e.Position)
                 : _gizmo.Begin(Projector, origin, e.Position)))
@@ -221,6 +241,17 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
+        if (_box.IsDragging && _workspace.Document is { } resized && TaskVolume.Of(selected) is { } volume
+            && TaskPresentation.Position(selected) is { } centreParameter)
+        {
+            (Vector3d centre, Vector3d half) = _box.Drag(e.Position, e.Shift);
+            _workspace.Execute(new CompositeCommand("Resize", [
+                SetParameterCommand.Numbers(resized, selected, volume.Parameter.Name, volume.Stored(half)),
+                SetParameterCommand.Numbers(resized, selected, centreParameter.Name, [WorldUnits.FromMetres(centre.X), WorldUnits.FromMetres(centre.Y), WorldUnits.FromMetres(centre.Z)]),
+            ]));
+            return;
+        }
+
         if (_rotate.IsDragging && _workspace.Document is { } turning && TaskPresentation.Orientation(selected) is { } orientation)
         {
             Vector3f angles = _rotate.Drag(e.Position).ToEngineEulerAngles();
@@ -242,7 +273,11 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
-        if (Rotating)
+        if (Resizing && SelectedBox is { } hovered)
+        {
+            _box.Hover(Projector, hovered, e.Position);
+        }
+        else if (Rotating)
         {
             _rotate.Hover(Projector, origin, e.Position);
         }
@@ -255,10 +290,11 @@ internal sealed class ViewportPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnPointerUp(in PointerEvent e)
     {
-        if (_gizmo.IsDragging || _rotate.IsDragging)
+        if (_gizmo.IsDragging || _rotate.IsDragging || _box.IsDragging)
         {
             _gizmo.End();
             _rotate.End();
+            _box.End();
             _workspace.History.BreakMerge();
         }
     }
@@ -266,11 +302,12 @@ internal sealed class ViewportPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnCaptureLost()
     {
-        if (_gizmo.IsDragging || _rotate.IsDragging)
+        if (_gizmo.IsDragging || _rotate.IsDragging || _box.IsDragging)
         {
             // Escape mid-drag puts the object back the way the drag found it.
             _gizmo.End();
             _rotate.End();
+            _box.End();
             _workspace.History.Undo();
         }
     }
@@ -323,7 +360,12 @@ internal sealed class ViewportPanel : EditorElement
             _graph.Draw(painter, Theme, Projector, shown.Task, shown.Graph);
         }
 
-        if (_workspace.Selection.Primary is not null && GizmoOrigin is { } origin)
+        if (SelectedBox is { } box && _graph.PickedNode is null)
+        {
+            _box.Draw(painter, Theme, Projector, box, handles: Resizing);
+        }
+
+        if (_workspace.Selection.Primary is not null && GizmoOrigin is { } origin && !Resizing)
         {
             if (Rotating)
             {

@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Editor.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The editor inside the game: the session the host opens, its panels and its viewport. Only the desktop app
          references this project, so the browser and server builds never contain the editor. -->
     <ProjectReference Include="..\OpenIGI.Editor.Core\OpenIGI.Editor.Core.csproj" />

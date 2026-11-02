@@ -57,14 +57,18 @@ public sealed class SetParameterCommand : IEditorCommand
     /// <inheritdoc/>
     public bool TryMerge(IEditorCommand following)
     {
-        if (following is not SetParameterCommand set || !ReferenceEquals(set._task, _task) || set._parameter != _parameter)
+        if (!CanMerge(following))
         {
             return false;
         }
 
-        _after = set._after;
+        _after = ((SetParameterCommand)following)._after;
         return true;
     }
+
+    /// <inheritdoc/>
+    public bool CanMerge(IEditorCommand following) =>
+        following is SetParameterCommand set && ReferenceEquals(set._task, _task) && set._parameter == _parameter;
 }
 
 /// <summary>Changes a task's label and id.</summary>

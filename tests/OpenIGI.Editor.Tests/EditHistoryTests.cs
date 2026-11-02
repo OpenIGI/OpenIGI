@@ -78,6 +78,37 @@ public sealed class EditHistoryTests
         Assert.Equal(0.0, X(a));
     }
 
+    /// <summary>
+    /// Groups of the same edits merge part for part, so a drag that sets two parameters a frame is one step; a group whose
+    /// parts do not all match is a step of its own and leaves the earlier group as it was.
+    /// </summary>
+    [Fact]
+    public void Groups_merge_part_for_part_or_not_at_all()
+    {
+        MissionDocument document = Read();
+        MissionTask a = document.EnumerateTasks().Single(static t => t.Label == "A");
+        MissionTask b = document.EnumerateTasks().Single(static t => t.Label == "B");
+        EditHistory history = new();
+        CompositeCommand Both(double x, MissionTask second) => new("Resize", [
+            SetParameterCommand.Numbers(document, a, "Position", [x, 0, 0]),
+            SetParameterCommand.Numbers(document, second, "Position", [x, 0, 0])]);
+
+        history.Execute(Both(1, b));
+        history.Execute(Both(2, b));
+        Assert.Single(history.Done);
+
+        // The second part's task differs, so nothing merges -- not even the first part, which alone would.
+        history.Execute(Both(3, a));
+        Assert.Equal(2, history.Done.Count);
+
+        history.Undo();
+        Assert.Equal(2.0, X(a));
+        Assert.Equal(2.0, X(b));
+        history.Undo();
+        Assert.Equal(0.0, X(a));
+        Assert.Equal(5.0, X(b));
+    }
+
     /// <summary>Dirty follows the save point through undo and redo, and is lost for good when its branch is dropped.</summary>
     [Fact]
     public void Dirty_tracks_the_save_point()

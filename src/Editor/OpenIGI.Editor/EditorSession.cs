@@ -377,6 +377,12 @@ internal sealed class EditorSession : IEditorSession
             Shortcut = KeyChord.Parse("E"),
             IsChecked = () => _viewport.Tool == ViewportTool.Rotate,
         });
+        actions.Add(new EditorAction("tool.scale", "Resize Tool", () => _viewport.Tool = ViewportTool.Scale)
+        {
+            Category = "Tools",
+            Shortcut = KeyChord.Parse("R"),
+            IsChecked = () => _viewport.Tool == ViewportTool.Scale,
+        });
         actions.Add(new EditorAction("view.snap", "Snap to 0.25 m", () => _viewport.Snap = _viewport.Snap > 0 ? 0 : 0.25)
         {
             Category = "View",
@@ -453,6 +459,7 @@ internal sealed class EditorSession : IEditorSession
             .Add("Tools", [
                 MenuItem.For(actions["tool.move"]),
                 MenuItem.For(actions["tool.rotate"]),
+                MenuItem.For(actions["tool.scale"]),
             ])
             .Add("View", [
                 MenuItem.For(actions["view.frame"]),
@@ -485,6 +492,7 @@ internal sealed class EditorSession : IEditorSession
         toolbar.AddSeparator();
         toolbar.Add(actions["tool.move"], KitIcon.Move);
         toolbar.Add(actions["tool.rotate"], KitIcon.Rotate);
+        toolbar.Add(actions["tool.scale"], KitIcon.Scale);
         toolbar.AddSeparator();
         toolbar.Add(actions["edit.undo"], KitIcon.Undo);
         toolbar.Add(actions["edit.redo"], KitIcon.Redo);
@@ -637,7 +645,7 @@ internal sealed class EditorSession : IEditorSession
             ? $"Could not read the mission: {error}"
             : _workspace.Mission is null
                 ? "Choose a mission to open."
-                : "Right mouse: look and fly with W A S D  •  Middle mouse: pan  •  W move, E rotate  •  F: frame  •  Ctrl+Z: undo";
+                : "Right mouse: look and fly with W A S D  •  Middle mouse: pan  •  W move, E rotate, R resize  •  F: frame  •  Ctrl+Z: undo";
         _status.MessageColor = _workspace.LoadError is null ? null : _theme.Error;
     }
 

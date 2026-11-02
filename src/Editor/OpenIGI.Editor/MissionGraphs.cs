@@ -251,14 +251,17 @@ internal sealed class MissionGraphs
 
         public bool TryMerge(IEditorCommand following)
         {
-            if (following is MoveNodeCommand next && ReferenceEquals(next.Entry, entry) && next.NodeId == nodeId)
+            if (!CanMerge(following))
             {
-                _to = next.To;
-                return true;
+                return false;
             }
 
-            return false;
+            _to = ((MoveNodeCommand)following).To;
+            return true;
         }
+
+        public bool CanMerge(IEditorCommand following) =>
+            following is MoveNodeCommand next && ReferenceEquals(next.Entry, entry) && next.NodeId == nodeId;
 
         private Entry Entry => entry;
 
