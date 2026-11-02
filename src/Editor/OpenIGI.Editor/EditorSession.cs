@@ -165,7 +165,12 @@ internal sealed class EditorSession : IEditorSession
         }
 
         _pendingSelect = null;
-        MissionTask? task = document.EnumerateTasks().FirstOrDefault(t => string.Equals(t.Label, name, StringComparison.OrdinalIgnoreCase))
+        // '#12' is the task with id 12, for tasks with no label such as AI graphs.
+        int id = -1;
+        bool byId = name.StartsWith('#') && int.TryParse(name.AsSpan(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out id);
+        MissionTask? task = byId
+            ? document.EnumerateTasks().FirstOrDefault(t => t.Id == id)
+            : document.EnumerateTasks().FirstOrDefault(t => string.Equals(t.Label, name, StringComparison.OrdinalIgnoreCase))
             ?? document.EnumerateTasks().FirstOrDefault(t => t.Label.Contains(name, StringComparison.OrdinalIgnoreCase));
         if (task is null)
         {

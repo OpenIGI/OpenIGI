@@ -25,6 +25,7 @@ internal sealed class MissionWorkspace
     {
         _host = host;
         Project = project;
+        Graphs = new MissionGraphs(host);
         History.Changed += () => Changed?.Invoke();
     }
 
@@ -45,6 +46,9 @@ internal sealed class MissionWorkspace
 
     /// <summary>Gets the open mission's name as the menus show it, or empty.</summary>
     public string MissionName => Mission is { } mission ? _host.MissionName(mission) : string.Empty;
+
+    /// <summary>Gets the open mission's AI graphs.</summary>
+    public MissionGraphs Graphs { get; }
 
     /// <summary>Gets the edit history.</summary>
     public EditHistory History { get; } = new();
@@ -67,6 +71,7 @@ internal sealed class MissionWorkspace
         _loadedFor = mission;
         Selection.Clear();
         History.Clear();
+        Graphs.Clear();
         Document = null;
         LoadError = null;
         if (mission is null)
@@ -106,6 +111,7 @@ internal sealed class MissionWorkspace
         }
 
         WriteToProject(ObjectsGamePath(mission), document.ToImage());
+        Graphs.Save(this);
         History.MarkSaved();
         return true;
     }

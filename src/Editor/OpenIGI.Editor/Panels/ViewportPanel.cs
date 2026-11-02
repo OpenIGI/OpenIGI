@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Editor.Viewport;
+using OpenIGI.Formats.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Editor;
@@ -39,6 +40,8 @@ internal sealed class ViewportPanel : EditorElement
     private readonly LiveWorldLink _live;
     private readonly TranslateGizmo _gizmo = new();
     private readonly RotateGizmo _rotate = new();
+    private readonly GraphOverlay _graph = new();
+    private MissionTask? _graphTask;
     private readonly List<InspectableEntity> _entities = [];
     private MouseButton? _flying;
     private int _hoveredMission = -1;
@@ -68,7 +71,34 @@ internal sealed class ViewportPanel : EditorElement
     /// <summary>Gets or sets the gizmo shown on the selection.</summary>
     public ViewportTool Tool { get; set; } = ViewportTool.Move;
 
-    private bool Rotating => Tool == ViewportTool.Rotate && _workspace.Selection.Primary is { } task && TaskPresentation.Orientation(task) is not null;
+    private bool Rotating => Tool == ViewportTool.Rotate && _graph.PickedNode is null
+        && _workspace.Selection.Primary is { } task && TaskPresentation.Orientation(task) is not null;
+
+    // The selected AI graph and its document, when the selection is one; picking another task forgets the picked node.
+    private (MissionTask Task, GraphDocument Graph)? ShownGraph
+    {
+        get
+        {
+            MissionTask? selected = _workspace.Selection.Primary;
+            if (!ReferenceEquals(selected, _graphTask))
+            {
+                _graphTask = selected;
+                _graph.Unpick();
+            }
+
+            return selected is not null && _workspace.Mission is { } mission && _workspace.Graphs.Get(mission, selected) is { } graph
+                ? (selected, graph)
+                : null;
+        }
+    }
+
+    // Where the gizmo stands: on the picked graph node, else on the selected task.
+    private Vector3d? GizmoOrigin =>
+        ShownGraph is { } shown && _graph.PickedPosition(shown.Task, shown.Graph) is { } node
+            ? node
+            : _workspace.Selection.Primary is not { } task ? null
+            : MissionGraphs.IsGraph(task) && TaskPresentation.PositionMetres(task) is not null ? MissionGraphs.OriginMetres(task)
+            : TaskPresentation.PositionMetres(task);
 
     /// <inheritdoc/>
     public override bool Focusable => true;
@@ -86,9 +116,16 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
+        // A graph is framed by its nodes, which can stand far from its own position.
+        double radius = _live.RadiusMetres(task) ?? 2.0;
+        if (_workspace.Mission is { } mission && _workspace.Graphs.Get(mission, task) is { } graph
+            && MissionGraphs.BoundsMetres(task, graph) is { } bounds)
+        {
+            (target, radius) = (bounds.Centre, bounds.Radius);
+        }
+
         // Backed off along the current heading by enough to see all of it, a little above and looking down, so the
         // object fills the middle of the view whatever its size.
-        double radius = _live.RadiusMetres(task) ?? 2.0;
         double distance = Math.Clamp(radius * 2.4, 3.0, 400.0);
         Vector3d back = new(-Math.Sin(camera.Yaw) * Math.Cos(0.35), -Math.Cos(camera.Yaw) * Math.Cos(0.35), Math.Sin(0.35));
         camera.MoveTo(target + (back * distance), camera.Yaw, -0.35f);
@@ -141,10 +178,15 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         Focus();
-        if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin
+        if (_workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin
             && (Rotating
                 ? _rotate.Begin(Projector, origin, TaskPresentation.OrientationMatrix(selected), e.Position)
                 : _gizmo.Begin(Projector, origin, e.Position)))
+        {
+            return true;
+        }
+
+        if (ShownGraph is { } shown && !e.Control && _graph.Pick(Projector, shown.Task, shown.Graph, e.Position, Theme.Px(10f)))
         {
             return true;
         }
@@ -163,8 +205,19 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         MissionTask? selected = _workspace.Selection.Primary;
-        if (selected is null || TaskPresentation.PositionMetres(selected) is not { } origin)
+        if (selected is null || GizmoOrigin is not { } origin)
         {
+            return;
+        }
+
+        if (_gizmo.IsDragging && _graph.PickedNode is { } nodeId && ShownGraph is { } shown)
+        {
+            Vector3d to = _gizmo.Drag(Projector, e.Position, e.Shift);
+            if (_workspace.Graphs.MoveNode(shown.Task, nodeId, MissionGraphs.ToLocalUnits(shown.Task, to)) is { } move)
+            {
+                _workspace.Execute(move);
+            }
+
             return;
         }
 
@@ -178,6 +231,12 @@ internal sealed class ViewportPanel : EditorElement
         if (_gizmo.IsDragging && _workspace.Document is { } document && TaskPresentation.Position(selected) is { } position)
         {
             Vector3d moved = _gizmo.Drag(Projector, e.Position, e.Shift);
+            if (MissionGraphs.IsGraph(selected))
+            {
+                // Through the graph's parent frame, back to the value its parameter holds (in metres, as below).
+                moved = MissionGraphs.OffsetForOrigin(selected, moved) / WorldUnits.PerMetre;
+            }
+
             _workspace.Execute(SetParameterCommand.Numbers(
                 document, selected, position.Name, [WorldUnits.FromMetres(moved.X), WorldUnits.FromMetres(moved.Y), WorldUnits.FromMetres(moved.Z)]));
             return;
@@ -259,7 +318,12 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         painter.PushClip(Bounds);
-        if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin)
+        if (ShownGraph is { } shown)
+        {
+            _graph.Draw(painter, Theme, Projector, shown.Task, shown.Graph);
+        }
+
+        if (_workspace.Selection.Primary is not null && GizmoOrigin is { } origin)
         {
             if (Rotating)
             {
