@@ -25,8 +25,8 @@ public readonly record struct GraphDocumentNode(int Id, Vector3d Position, int P
 /// boundaries to edit within and is refused.
 /// </para>
 /// <para>
-/// The route table the file carries is not rebuilt when a node moves: routes still connect the same nodes, though one
-/// may no longer be the shortest.
+/// The route table the file carries is not rebuilt when a node moves -- routes still connect the same nodes, though one
+/// may no longer be the shortest -- until <see cref="RebuildRoutes"/> is called.
 /// </para>
 /// </remarks>
 public sealed class GraphDocument
@@ -36,10 +36,17 @@ public sealed class GraphDocument
     private static readonly uint LinkFromHash = GraphFieldHash.Of("nLinkID1");
     private static readonly uint LinkToHash = GraphFieldHash.Of("nLinkID2");
     private static readonly uint RouteTableHash = GraphFieldHash.Of("RouteTable");
+    private static readonly uint MaxNodesHash = GraphFieldHash.Of("nMaxNodes");
 
     // Every record is the field hash as a tagged UInt32 (5 bytes), the declared type as a tagged byte (2), then the
     // tagged value, whose payload therefore starts 8 bytes in.
     private const int ValueOffset = 5 + 2 + 1;
+
+    // The route table's bytes follow the hash (5), the declared type (2), the element type as a tagged byte (2) and the
+    // length as a tagged Int32 (5).
+    private const int RoutePayloadOffset = 5 + 2 + 2 + 5;
+
+    private int _routeRecord = -1;
 
     private readonly List<byte[]> _records = [];
     private readonly List<uint> _hashes = [];
@@ -53,6 +60,12 @@ public sealed class GraphDocument
 
     /// <summary>Gets the links as node-id pairs, in file order.</summary>
     public IReadOnlyList<(int From, int To)> Links { get; private set; } = [];
+
+    /// <summary>Gets the slot count the file declares, or zero when it declares none.</summary>
+    public int MaxNodes { get; private set; }
+
+    /// <summary>Gets whether the file carries a route table (I.G.I.'s graphs do; I.G.I. 2's do not).</summary>
+    public bool HasRouteTable => _routeRecord >= 0;
 
     /// <summary>Gets the number of records.</summary>
     public int RecordCount => _records.Count;
@@ -147,6 +160,30 @@ public sealed class GraphDocument
         return true;
     }
 
+    /// <summary>Rebuilds the route table from the nodes and links as they stand, in place.</summary>
+    /// <returns><see langword="false"/> when the file carries no route table, or one of a size its slot count does not give.</returns>
+    /// <remarks>See <see cref="GraphRouteBuilder"/> for how the table is built and how closely it matches the original's.</remarks>
+    public bool RebuildRoutes()
+    {
+        if (_routeRecord < 0)
+        {
+            return false;
+        }
+
+        byte[] record = _records[_routeRecord];
+        byte[] table = GraphRouteBuilder.Build(
+            MaxNodes,
+            [.. Nodes.Where(static n => n.PositionRecord >= 0).Select(static n => (n.Id, n.Position))],
+            Links);
+        if (record.Length != RoutePayloadOffset + table.Length)
+        {
+            return false;
+        }
+
+        table.CopyTo(record, RoutePayloadOffset);
+        return true;
+    }
+
     private void Index()
     {
         List<GraphDocumentNode> nodes = [];
@@ -177,6 +214,14 @@ public sealed class GraphDocument
             else if (hash == LinkToHash)
             {
                 links.Add((from, Int32Value(_records[i])));
+            }
+            else if (hash == MaxNodesHash)
+            {
+                MaxNodes = Int32Value(_records[i]);
+            }
+            else if (hash == RouteTableHash)
+            {
+                _routeRecord = i;
             }
         }
 

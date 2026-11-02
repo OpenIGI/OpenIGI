@@ -35,6 +35,97 @@ public sealed class GraphDocumentTests
         Assert.Equal(moved, game.Nodes.Single(n => n.Id == node.Id).Position);
     }
 
+    /// <summary>
+    /// A rebuilt table follows the nodes: on a ring, moving one node far away sends the route the other way round, and
+    /// the game's reader walks the new route.
+    /// </summary>
+    [Fact]
+    public void A_rebuilt_table_follows_moved_nodes()
+    {
+        GraphDocument document = GraphDocument.Read(Ring());
+        Assert.True(document.HasRouteTable);
+        Assert.Equal(4, document.MaxNodes);
+
+        Assert.True(document.RebuildRoutes());
+        Assert.Equal([1, 2], GraphFile.Read(document.Write()).RouteTable!.EnumerateRoute(0, 2));
+
+        document.SetNodePosition(1, new Vector3d(30, 0, 0));
+        Assert.True(document.RebuildRoutes());
+        GraphRouteTable routes = GraphFile.Read(document.Write()).RouteTable!;
+        Assert.Equal([3, 2], routes.EnumerateRoute(0, 2));
+        Assert.True(routes.TryGetStep(0, 2, out _, out float cost));
+        Assert.Equal(12f + MathF.Sqrt(104f), cost, 3);
+        Assert.False(routes.TryGetStep(0, 0, out _, out _));
+    }
+
+    /// <summary>
+    /// Rebuilt from their own nodes and links, the retail I.G.I. graphs reach exactly the pairs their tables reach, and
+    /// take the same first step on all but the few links whose nodes were moved after the original bake.
+    /// </summary>
+    [RequiresTitleDataFact("igi1")]
+    public void Retail_routes_rebuild()
+    {
+        long pairs = 0;
+        long sameStep = 0;
+        foreach (string path in GameDataSource.Igi1.EnumerateFiles("graph*.dat"))
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            if (!GraphDocument.IsNamed(bytes) || GraphFile.Read(bytes).RouteTable is not { } retail)
+            {
+                continue;
+            }
+
+            GraphDocument document = GraphDocument.Read(bytes);
+            Assert.True(document.RebuildRoutes(), path);
+            GraphRouteTable rebuilt = GraphFile.Read(document.Write()).RouteTable!;
+            int[] ids = [.. document.Nodes.Select(static n => n.Id).Where(id => id < document.MaxNodes).Distinct()];
+            foreach (int from in ids)
+            {
+                foreach (int to in ids)
+                {
+                    bool reached = retail.TryGetStep(from, to, out int retailStep, out _);
+                    Assert.Equal(reached, rebuilt.TryGetStep(from, to, out int step, out _));
+                    if (reached)
+                    {
+                        pairs++;
+                        sameStep += retailStep == step ? 1 : 0;
+                    }
+                }
+            }
+        }
+
+        Assert.True(pairs > 100_000, $"Only {pairs} routes were compared.");
+        Assert.True(sameStep >= pairs * 0.99, $"{sameStep} of {pairs} routes take the retail first step.");
+    }
+
+    // Four nodes on a ring, 0 (0,0), 1 (10,0), 2 (10,10), 3 (0,12): from 0 to 2 the way through 1 is shorter.
+    private static byte[] Ring()
+    {
+        GraphStreamWriter w = new();
+        w.RawUInt32(GraphFile.Magic);
+        w.Field("nMaxNodes", GraphValueType.Int32, f => f.Int32(4));
+        w.Field("RouteTable", GraphValueType.Blob, f => f.Blob(GraphValueType.Int8, new byte[GraphRouteTable.EntryStride * 16]));
+        Vector3d[] at = [new(0, 0, 0), new(10, 0, 0), new(10, 10, 0), new(0, 12, 0)];
+        for (int id = 0; id < at.Length; id++)
+        {
+            w.Field("nNodeID", GraphValueType.Int32, f => f.Int32(id));
+            w.Field("tNodePosition", GraphValueType.Real64x3, f => f.Vector3d(at[id]));
+            w.Field("vNodeGamma", GraphValueType.Real32, f => f.Single(0f));
+            w.Field("vNodeRadius", GraphValueType.Real32, f => f.Single(1f));
+            w.Field("nNodeMaterial", GraphValueType.Int32, f => f.Int32(-1));
+            w.Field("nNodeCriteria", GraphValueType.String8, f => f.String(string.Empty));
+        }
+
+        foreach ((int a, int b) in new[] { (0, 1), (1, 2), (2, 3), (3, 0) })
+        {
+            w.Field("nLinkID1", GraphValueType.Int32, f => f.Int32(a));
+            w.Field("nLinkID2", GraphValueType.Int32, f => f.Int32(b));
+            w.Field("eLinkType", GraphValueType.Int32, f => f.Int32(1));
+        }
+
+        return w.ToArray();
+    }
+
     private static void AssertRoundTrips(GameDataSource source)
     {
         int named = 0;

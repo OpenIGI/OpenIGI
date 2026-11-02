@@ -12,7 +12,7 @@ namespace OpenIGI.Editor;
 /// <summary>
 /// The open mission's AI graphs, read when first shown and kept until the mission changes: each AIGraph task's
 /// <c>graphs/graph&lt;id&gt;.dat</c> as an editable document, with where its nodes stand in the world. Moved nodes are
-/// saved into the project with the mission.
+/// saved into the project with the mission, the graph's route table rebuilt to follow them.
 /// </summary>
 internal sealed class MissionGraphs
 {
@@ -157,6 +157,8 @@ internal sealed class MissionGraphs
         {
             if (entry is { Dirty: true })
             {
+                // Moved nodes change which way is shortest; an I.G.I. graph's table is baked again to follow them.
+                entry.Document.RebuildRoutes();
                 workspace.WriteToProject(entry.GamePath, entry.Document.Write());
                 entry.Dirty = false;
                 written++;
