@@ -18,4 +18,8 @@ public sealed class Igi1Runtime : IGameTitleRuntime
 
     /// <inheritdoc/>
     public IReadOnlyList<IContentModule> Modules => Igi1ContentModules.All;
+
+    /// <inheritdoc/>
+    /// <remarks>The MP5 SD3 Jones starts every mission with.</remarks>
+    public string? CoopPreviewWeapon => "WEAPON_ID_MP5SD";
 }

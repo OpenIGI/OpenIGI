@@ -22,9 +22,6 @@ public sealed partial class GameHost
     private const double PreviewAside = 0.0;
     private const double PreviewMiddle = 0.9;
 
-    // The weapon a co-op look holds: the MP5 SD3 Jones starts every mission with.
-    private const string PreviewWeaponScriptId = "WEAPON_ID_MP5SD";
-
     // The game's weapon table, read once for the look's gun; null until read, and when it could not be.
     private WeaponType? _previewGun;
     private bool _previewGunRead;
@@ -130,13 +127,20 @@ public sealed partial class GameHost
         }
 
         _previewGunRead = true;
+
+        // The title names the gun (IGameTitleRuntime.CoopPreviewWeapon); a title that names none leaves the look empty-handed.
+        if (_titleRuntime.CoopPreviewWeapon is not { } previewWeapon)
+        {
+            return null;
+        }
+
         try
         {
             WeaponTypeRegistry weapons = new(_logger);
             NativeRegistry natives = new();
             weapons.Register(natives);
             weapons.Load(backdrop.FileSystem, backdrop.Resources, natives);
-            _previewGun = weapons.TryGetByScriptId(PreviewWeaponScriptId, out WeaponType gun) ? gun : null;
+            _previewGun = weapons.TryGetByScriptId(previewWeapon, out WeaponType gun) ? gun : null;
         }
         catch (Exception ex) when (ex is EngineFatalException or IOException or InvalidDataException or InvalidOperationException)
         {

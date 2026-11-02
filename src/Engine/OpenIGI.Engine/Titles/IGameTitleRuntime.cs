@@ -52,4 +52,8 @@ public interface IGameTitleRuntime
 
     /// <summary>Gets the passes the title's mods run over the lit scene before the tone map, in order.</summary>
     IReadOnlyList<TitlePostPass> PostPasses => [];
+
+    /// <summary>Gets the script id of the weapon a co-op look holds in the menu's picture, or <see langword="null"/> for none.</summary>
+    /// <remarks>The title's own choice -- the gun its player starts a mission with -- since the host cannot name one game's weapons.</remarks>
+    string? CoopPreviewWeapon => null;
 }
