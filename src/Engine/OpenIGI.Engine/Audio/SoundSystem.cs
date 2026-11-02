@@ -26,7 +26,7 @@ namespace OpenIGI.Engine.Audio;
 public sealed class SoundSystem : IDisposable
 {
     /// <summary>Engine units per metre, the factor the whole port scales world data by.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     private const string LogCategory = "Audio";
 

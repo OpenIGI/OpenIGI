@@ -35,7 +35,7 @@ public sealed class WorldScene
     /// Registered as a double at <c>0x539558</c>. Model vertices use the same units as world positions:
     /// the level-1 water tower measures 95005 units tall, which is 23 metres.
     /// </remarks>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Converts a position or an offset from engine units into metres.</summary>
     /// <param name="units">The value in engine units.</param>

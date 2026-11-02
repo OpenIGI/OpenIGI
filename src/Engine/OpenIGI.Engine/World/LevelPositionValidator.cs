@@ -13,7 +13,7 @@ public static class LevelPositionValidator
     public const float OrientationTolerance = 0.05f;
 
     /// <summary>Engine units represented by one runtime metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Compares authored engine units with a runtime position stored in metres.</summary>
     public static bool PosMatch(

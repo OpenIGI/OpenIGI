@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>The <c>GRENADE_EXPLOSIONTYPE_*</c> constants, as <c>0x476730</c> registers them.</summary>
@@ -45,7 +47,7 @@ public static class ExplosionDamage
     public const float BodyRadiusScale = 0.33333334f;
 
     /// <summary>World units in a metre, since the tags are written in metres.</summary>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     /// <summary>The retail <c>Grenade - Explosion damage factor</c>.</summary>
     public const float DefaultGrenadeDamageFactor = 1.3f;

@@ -84,7 +84,7 @@ public static class FootstepSounds
     public const double ProbeDepthInUnits = 2048.0;
 
     /// <summary>Engine units in a metre, the factor a material's hearing radius is authored against.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>
     /// The order the six walk sounds of a material are used in — a fixed twelve-step cycle, not a draw.

@@ -57,7 +57,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// works in metres. This is where the two meet, and keeping the conversion in one place is what
     /// stops a unit mistake reaching the physics.
     /// </remarks>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     private readonly PlayerBody _body = new();
     private readonly PlayerInputState _input = new();

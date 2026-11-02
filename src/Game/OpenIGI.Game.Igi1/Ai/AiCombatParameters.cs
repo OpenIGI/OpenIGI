@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 
 namespace OpenIGI.Game.Igi1.Ai;
@@ -21,7 +22,7 @@ public sealed class AiCombatParameters
     public const double TicksPerSecond = 30.0;
 
     /// <summary>How many world units there are in a metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Initializes a new instance of the <see cref="AiCombatParameters"/> class.</summary>
     /// <param name="item">The settings row to resolve.</param>
