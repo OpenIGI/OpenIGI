@@ -103,6 +103,8 @@ public sealed partial class RagdollBody
                     world.TryGround(_position[bone] + (along * end), out _surface[probe]);
             }
         }
+
+        GatherTriangles(world);
     }
 
     // TrySurface casts from the same origin to the same distance after it normalizes its direction.
@@ -181,6 +183,8 @@ public sealed partial class RagdollBody
                     Math.Min(into, budget),
                     repair: true);
             }
+
+            SolveTriangles(bone, budget, record);
         }
     }
 

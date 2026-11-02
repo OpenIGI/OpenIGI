@@ -108,14 +108,14 @@ public static class GameplayCVars
     /// is deliberate. Zero makes bodies simply fall.
     /// </para>
     /// <para>
-    /// One and a half, measured: a rifle round carries a body about 1.6 m, a shotgun about 3, a pistol
-    /// about half. At 1 the knock is real but easy to miss, because a guard is standing <em>on</em> the
-    /// floor when he is shot and the contact takes most of it back straight away.
+    /// One. A body shot dead mostly drops where it stood — its legs give out — with the round rocking the
+    /// part it struck; a shotgun at close range or a grenade still visibly throws it. Turn it up for the
+    /// cinematic knock-back other games use.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> RagdollForce = CVar.Float(
         "g_ragdoll_force",
-        1.5f,
+        1f,
         0f,
         8f,
         CVarOptions.Archive,
@@ -124,25 +124,78 @@ public static class GameplayCVars
     /// <summary>What fraction of real gravity a corpse falls at.</summary>
     /// <remarks>
     /// <para>
-    /// Seven tenths. <b>The one number in the ragdoll that is a look rather than a measurement</b>, and
-    /// it is a variable rather than a constant for exactly that reason. The solver already falls at the
-    /// original's own 9.8 m/s² — see <c>Gravity</c>, which deliberately picks
-    /// that over the 18.6 the player jumps under — so this is not correcting anything.
+    /// One: real gravity. The solver falls at the original's own 9.8 m/s² — see <c>Gravity</c>, which
+    /// deliberately picks that over the 18.6 the player jumps under.
     /// </para>
     /// <para>
-    /// Real gravity simply reads fast on a corpse: the camera is close, the fall is a metre and a half,
-    /// and there is none of the anticipation that sells the speed of a jump. Dropping a ragdoll under one
-    /// <i>g</i> is what most games do about it. 1 is honest physics; below about 0.5 bodies start to
-    /// float.
+    /// It used to default to seven tenths, on the grounds that real gravity reads fast on a corpse. It
+    /// read as weightless instead: under seven tenths of a <i>g</i> a falling man hangs in the air like
+    /// a man on the moon. What reads as too fast is a body that drops straight down with no collapse,
+    /// and the muscle fade (<c>g_ragdoll_muscle</c>) is what fixes that.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> RagdollGravity = CVar.Float(
         "g_ragdoll_gravity",
-        0.7f,
+        1f,
         0.1f,
         2f,
         CVarOptions.Archive,
         "How fast a corpse falls, as a fraction of real gravity. 1 is physically honest.");
+
+    /// <summary>For how long a corpse keeps any muscle tone, in seconds.</summary>
+    /// <remarks>
+    /// <para>
+    /// For this long after death the joints hold — the pose the body died in, or the death clip with
+    /// <c>g_ragdoll_muscle_clip</c> — with a strength that fades to nothing. Each joint lets go over its own
+    /// share of it: the knees and ankles first, the trunk last. So a body shot standing keeps its trunk
+    /// together while its legs give, goes where the round and gravity take it, and only then goes limp
+    /// over whatever it landed on.
+    /// </para>
+    /// <para>
+    /// Half a second, which is about how long a person shot dead keeps any tone at all. Zero is a body
+    /// that is limp from the instant of death and drops like a puppet with its strings cut.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> RagdollMuscle = CVar.Float(
+        "g_ragdoll_muscle",
+        0.5f,
+        0f,
+        3f,
+        CVarOptions.Archive,
+        "Seconds a corpse keeps any muscle tone before it goes limp. 0 is limp at once.");
+
+    /// <summary>Whether a corpse's muscles follow the death animation rather than hold the pose it died in.</summary>
+    /// <remarks>
+    /// <para>
+    /// Off. Following the authored clip makes every death the animator's: a guard shot from behind at a
+    /// window turns and folds to the floor the way the clip folds, rather than pitching forwards onto the
+    /// sill. Holding the pose he died in and letting it go leaves where he ends up to the round, gravity
+    /// and what is around him.
+    /// </para>
+    /// <para>
+    /// On gives the more choreographed falls, which some prefer: the original's death animation plays out
+    /// on every joint for <c>g_ragdoll_muscle</c> seconds, and only then does the body go limp and the
+    /// physics take it the rest of the way.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar RagdollMuscleClip = CVar.Bool(
+        "g_ragdoll_muscle_clip",
+        false,
+        CVarOptions.Archive,
+        "Corpses play the original death animation first, then go limp: authored falls instead of physical ones.");
+
+    /// <summary>Draws every soldier's bones and corpse shapes over the frame.</summary>
+    /// <remarks>
+    /// 1 names each bone where it sits; 2 also draws the capsules a ragdoll collides with, for a living
+    /// soldier as the rig would build them from his current pose. For checking a rig, not for playing.
+    /// </remarks>
+    public static readonly NumericCVar<int> RagdollDebug = CVar.Int(
+        "g_ragdoll_debug",
+        0,
+        0,
+        2,
+        CVarOptions.Developer | CVarOptions.Hidden,
+        "Draw soldiers' bones: 1 names them, 2 also draws the ragdoll capsules.");
 
     /// <summary>How many solver substeps each ragdoll takes per game tick.</summary>
     /// <remarks>

@@ -265,10 +265,15 @@ internal sealed class PlayerBodyRenderer(
         // of it: that move is what the rest of the game believes, and only the drawing changes here.
         if (_ragdoll is { } playerCorpse)
         {
+            double muscle = SoldierFrameInterpolator.MuscleTicks();
             playerCorpse.Step(
                 _sim.RagdollWorldForCorpses(),
                 GameplayCVars.RagdollSubsteps.Value,
-                GameplayCVars.RagdollGravity.Value);
+                GameplayCVars.RagdollGravity.Value,
+                GameplayCVars.RagdollMuscleClip.Value && playerCorpse.Age < muscle && _state.View is { } dying
+                    ? dying.UnrotatedPose()
+                    : null,
+                muscle);
             if (!playerCorpse.IsValid)
             {
                 _ragdoll = null;

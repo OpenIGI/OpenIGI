@@ -315,6 +315,100 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     }
 
 
+    // A developer's way to watch a death: the first soldier down the line of sight takes a lethal round of
+    // the named kind, through the same damage path a player's shot takes, so the death clip, the fall and the
+    // ragdoll seed are exactly what a real kill gets.
+    private void KillForRagdollTest(ConsoleCommandContext context, IOpenIgiLogger logger)
+    {
+        if (mission.SoldierPresenter?.Simulation is not { } soldiers || mission.WeaponTypes is not { } roster)
+        {
+            context.Warn("No mission with soldiers is loaded.");
+            return;
+        }
+
+        // "list" names where every soldier stands, in metres, so a capture can be aimed at one. A warning,
+        // because the runtime log keeps nothing quieter and a capture run has no console to read.
+        if (context.Count > 0 && context[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var view in soldiers.SoldierViews)
+            {
+                Vector3d at = view.Position / WorldScene.UnitsPerMetre;
+                logger.Warning(
+                    "Impact",
+                    FormattableString.Invariant($"ragdoll_test: soldier {view.Soldier.Id} at {at.X:0.00},{at.Y:0.00},{at.Z:0.00}"));
+            }
+
+            Vector3d eyeAt = _eye().Position;
+            logger.Warning("Impact", FormattableString.Invariant($"ragdoll_test: eye at {eyeAt.X:0.00},{eyeAt.Y:0.00},{eyeAt.Z:0.00}"));
+            return;
+        }
+
+        // "bleed <id>" fires a harmless round of the player's own at where that soldier lies, through the
+        // player's shot path, so what a round through a corpse does can be captured.
+        if (context.Count > 0
+            && context[0].Equals("bleed", StringComparison.OrdinalIgnoreCase)
+            && mission.SoldierPresenter is { } presenter)
+        {
+            Vector3d from = _eye().Position * WorldScene.UnitsPerMetre;
+            Vector3f view = _eye().Orientation.Row3;
+            Vector3d aim = new(view.X, view.Y, view.Z);
+            if (context.Count > 1
+                && int.TryParse(context[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int lying)
+                && soldiers.SoldierViews.FirstOrDefault(soldier => soldier.Soldier.Id == lying) is { } corpse)
+            {
+                aim = (presenter.TryCorpseCentre(corpse, out Vector3d lies)
+                    ? lies
+                    : corpse.Position + new Vector3d(0.0, 0.0, 0.25 * WorldScene.UnitsPerMetre)) - from;
+            }
+
+            Vector3d to = from + (aim * (80.0 * WorldScene.UnitsPerMetre / Math.Max(aim.Length, 1e-9)));
+            presenter.Shooter()(from, to, 0f, WeaponCategory.Gun, double.PositiveInfinity, alreadyHeard: true, out _);
+            logger.Warning("Impact", "ragdoll_test: a harmless round fired.");
+            return;
+        }
+
+        WeaponCategory category = WeaponCategory.Gun;
+        if (context.Count > 0 && Enum.TryParse(context[0], ignoreCase: true, out WeaponCategory named))
+        {
+            category = named;
+        }
+
+        if (roster.Weapons.FirstOrDefault(weapon => weapon.Category == category) is not { } weapon)
+        {
+            context.Warn($"The mission carries no {category}.");
+            return;
+        }
+
+        Camera3D eye = _eye();
+        Vector3f look = eye.Orientation.Row3;
+        Vector3d origin = eye.Position * WorldScene.UnitsPerMetre;
+        const double Reach = 80.0 * WorldScene.UnitsPerMetre;
+        Vector3d end = new(origin.X + (look.X * Reach), origin.Y + (look.Y * Reach), origin.Z + (look.Z * Reach));
+
+        // A soldier named by id is shot at his chest, wherever the eye is looking: a capture can then frame
+        // the fall however it likes without the framing deciding what is hit.
+        if (context.Count > 1
+            && int.TryParse(context[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id)
+            && soldiers.SoldierViews.FirstOrDefault(view => view.Soldier.Id == id) is { } target)
+        {
+            Vector3d chest = target.Position + new Vector3d(0.0, 0.0, 1.3 * WorldScene.UnitsPerMetre);
+            Vector3d line = chest - origin;
+            end = origin + (line * (Reach / Math.Max(line.Length, 1.0)));
+        }
+        if (!soldiers.TryCastRoundAtSoldiers(origin, end, null, soldiers.PlayerTeam, out var struck, out var hit)
+            || struck is null)
+        {
+            context.Warn("No soldier along the line of sight.");
+            logger.Warning("Impact", "ragdoll_test: no soldier along the line of sight.");
+            return;
+        }
+
+        soldiers.StrikeWithRound(struck, in hit, origin, end, weapon, 100f, null);
+        string report = $"ragdoll_test: {category} round into soldier {struck.Soldier.Id}, zone {hit.Zone}, bone {hit.Bone}.";
+        context.Print(report);
+        logger.Warning("Impact", report);
+    }
+
     /// <summary>Registers the commands that fire the original's impact effects by hand.</summary>
     /// <param name="console">The console to register with.</param>
     /// <param name="eye">The camera the frame is drawn from, which the commands aim with.</param>
@@ -329,6 +423,11 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
         ArgumentNullException.ThrowIfNull(eye);
         ArgumentNullException.ThrowIfNull(logger);
         _eye = eye;
+        console.Commands.Add(
+            "ragdoll_test",
+            "Kills a soldier with a round: ragdoll_test [gun|pistol|shotgun|grenade|list] [soldier id]; ragdoll_test bleed [id] fires a harmless round along the view, or at where that soldier lies.",
+            context => KillForRagdollTest(context, logger));
+
         console.Commands.Add(
             "impact_test",
             "Runs the struck material's own GunShotEffect where the crosshair points.",
