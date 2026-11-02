@@ -202,5 +202,18 @@ internal static class TaskPresentation
             ? new Vector3d(WorldUnits.ToMetres(units[0]), WorldUnits.ToMetres(units[1]), WorldUnits.ToMetres(units[2]))
             : null;
 
+    /// <summary>Gets the parameter that orients a task, if it has one: the three engine Euler angles.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The orientation parameter, or <see langword="null"/>.</returns>
+    public static MissionParameter? Orientation(MissionTask task) => task.FindParameter(ScriptParamType.Real32x9);
+
+    /// <summary>Gets a task's orientation as a rotation, identity when it has none.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The rotation, composed as the engine composes it.</returns>
+    public static Matrix3f OrientationMatrix(MissionTask task) =>
+        Orientation(task) is { } orientation && orientation.TryGetNumbers(out double[] angles) && angles.Length == 3
+            ? Matrix3f.FromEngineEulerAngles((float)angles[0], (float)angles[1], (float)angles[2])
+            : Matrix3f.Identity;
+
     private static bool Has(string type, string part) => type.Contains(part, StringComparison.OrdinalIgnoreCase);
 }

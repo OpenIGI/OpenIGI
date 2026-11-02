@@ -198,6 +198,27 @@ public readonly struct Matrix3f : IEquatable<Matrix3f>, IFormattable
     public static Matrix3f FromEngineEulerAngles(float alpha, float beta, float gamma) =>
         RotationZ(gamma) * RotationY(beta) * RotationX(alpha);
 
+    /// <summary>
+    /// Takes a rotation apart into the engine's three Euler angles: the inverse of <see cref="FromEngineEulerAngles"/>.
+    /// </summary>
+    /// <returns>The angles about X, Y and Z, in radians, with Y in [-π/2, π/2].</returns>
+    /// <remarks>
+    /// From <c>Z(γ) · Y(β) · X(α)</c>: <c>M31 = −sin β</c>, <c>M32 / M33 = tan α</c>, <c>M21 / M11 = tan γ</c>. At
+    /// β = ±90° the X and Z rotations turn about the same axis and only their difference is defined, so α is set
+    /// to zero and γ carries the whole turn.
+    /// </remarks>
+    public Vector3f ToEngineEulerAngles()
+    {
+        float sinBeta = Math.Clamp(-M31, -1f, 1f);
+        float beta = MathF.Asin(sinBeta);
+        if (MathF.Abs(sinBeta) > 0.99999f)
+        {
+            return new Vector3f(0f, beta, MathF.Atan2(-M12, M22));
+        }
+
+        return new Vector3f(MathF.Atan2(M32, M33), beta, MathF.Atan2(M21, M11));
+    }
+
     /// <summary>Multiplies two matrices.</summary>
     /// <param name="left">The left operand.</param>
     /// <param name="right">The right operand.</param>

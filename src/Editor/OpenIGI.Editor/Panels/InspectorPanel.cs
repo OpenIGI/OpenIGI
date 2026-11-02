@@ -134,7 +134,24 @@ internal sealed class InspectorPanel : EditorElement
                 break;
             }
 
-            case ScriptParamType.Real32x3 or ScriptParamType.Real64x3 or ScriptParamType.Real32x9 or ScriptParamType.Quat32 when numeric:
+            case ScriptParamType.Real32x9 when numeric:
+            {
+                // Level data stores radians about X, Y and Z; degrees are what a reader thinks in.
+                VectorField field = _grid.Vector(
+                    name,
+                    () => [.. (Numbers(parameter) ?? [0, 0, 0]).Select(static r => r * (180.0 / Math.PI))],
+                    (degrees, final) => SetNumbers([.. degrees.Select(static d => d * (Math.PI / 180.0))], final),
+                    tooltip: tooltip + " (degrees about X, Y and Z)");
+                foreach (NumberField axis in field.Fields)
+                {
+                    axis.Step = 0.5;
+                    axis.Decimals = 2;
+                }
+
+                break;
+            }
+
+            case ScriptParamType.Real32x3 or ScriptParamType.Real64x3 or ScriptParamType.Quat32 when numeric:
             {
                 VectorField field = _grid.Vector(
                     name,

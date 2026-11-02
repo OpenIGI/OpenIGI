@@ -20,6 +20,16 @@ namespace OpenIGI.Editor.Panels;
 /// pan, the wheel to dolly; click to select, drag the gizmo to move, F to frame the selection. With no mission
 /// open it is the start page that opens one.
 /// </summary>
+/// <summary>Which gizmo the viewport shows on the selection.</summary>
+internal enum ViewportTool
+{
+    /// <summary>The move gizmo.</summary>
+    Move,
+
+    /// <summary>The rotate gizmo.</summary>
+    Rotate,
+}
+
 internal sealed class ViewportPanel : EditorElement
 {
     private static readonly KeyCode[] FlightKeys = [KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D, KeyCode.Q, KeyCode.E, KeyCode.LeftShift];
@@ -28,6 +38,7 @@ internal sealed class ViewportPanel : EditorElement
     private readonly MissionWorkspace _workspace;
     private readonly LiveWorldLink _live;
     private readonly TranslateGizmo _gizmo = new();
+    private readonly RotateGizmo _rotate = new();
     private readonly List<InspectableEntity> _entities = [];
     private MouseButton? _flying;
     private int _hoveredMission = -1;
@@ -43,12 +54,21 @@ internal sealed class ViewportPanel : EditorElement
     /// <summary>Gets whether the camera is being flown.</summary>
     public bool IsFlying => _flying is not null;
 
-    /// <summary>Gets or sets the gizmo's snap step in metres; zero for none.</summary>
+    /// <summary>Gets or sets the gizmo's snap step in metres; zero for none. Snapping also turns in 15° steps.</summary>
     public double Snap
     {
         get => _gizmo.Snap;
-        set => _gizmo.Snap = value;
+        set
+        {
+            _gizmo.Snap = value;
+            _rotate.Snap = value > 0;
+        }
     }
+
+    /// <summary>Gets or sets the gizmo shown on the selection.</summary>
+    public ViewportTool Tool { get; set; } = ViewportTool.Move;
+
+    private bool Rotating => Tool == ViewportTool.Rotate && _workspace.Selection.Primary is { } task && TaskPresentation.Orientation(task) is not null;
 
     /// <inheritdoc/>
     public override bool Focusable => true;
@@ -121,7 +141,10 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         Focus();
-        if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin && _gizmo.Begin(Projector, origin, e.Position))
+        if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin
+            && (Rotating
+                ? _rotate.Begin(Projector, origin, TaskPresentation.OrientationMatrix(selected), e.Position)
+                : _gizmo.Begin(Projector, origin, e.Position)))
         {
             return true;
         }
@@ -145,6 +168,13 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
+        if (_rotate.IsDragging && _workspace.Document is { } turning && TaskPresentation.Orientation(selected) is { } orientation)
+        {
+            Vector3f angles = _rotate.Drag(e.Position).ToEngineEulerAngles();
+            _workspace.Execute(SetParameterCommand.Numbers(turning, selected, orientation.Name, [angles.X, angles.Y, angles.Z]));
+            return;
+        }
+
         if (_gizmo.IsDragging && _workspace.Document is { } document && TaskPresentation.Position(selected) is { } position)
         {
             Vector3d moved = _gizmo.Drag(Projector, e.Position, e.Shift);
@@ -153,15 +183,23 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
-        _gizmo.Hover(Projector, origin, e.Position);
+        if (Rotating)
+        {
+            _rotate.Hover(Projector, origin, e.Position);
+        }
+        else
+        {
+            _gizmo.Hover(Projector, origin, e.Position);
+        }
     }
 
     /// <inheritdoc/>
     protected override void OnPointerUp(in PointerEvent e)
     {
-        if (_gizmo.IsDragging)
+        if (_gizmo.IsDragging || _rotate.IsDragging)
         {
             _gizmo.End();
+            _rotate.End();
             _workspace.History.BreakMerge();
         }
     }
@@ -169,10 +207,11 @@ internal sealed class ViewportPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnCaptureLost()
     {
-        if (_gizmo.IsDragging)
+        if (_gizmo.IsDragging || _rotate.IsDragging)
         {
-            // Escape mid-drag puts the object back where the drag began.
+            // Escape mid-drag puts the object back the way the drag found it.
             _gizmo.End();
+            _rotate.End();
             _workspace.History.Undo();
         }
     }
@@ -222,7 +261,14 @@ internal sealed class ViewportPanel : EditorElement
         painter.PushClip(Bounds);
         if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin)
         {
-            _gizmo.Draw(painter, Theme, Projector, origin);
+            if (Rotating)
+            {
+                _rotate.Draw(painter, Theme, Projector, origin);
+            }
+            else
+            {
+                _gizmo.Draw(painter, Theme, Projector, origin);
+            }
         }
 
         DrawChips(painter);

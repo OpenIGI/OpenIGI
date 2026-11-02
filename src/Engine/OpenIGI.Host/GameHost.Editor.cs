@@ -28,7 +28,7 @@ public sealed partial class GameHost
     private bool _editorCloseWanted;
     private int? _editorMissionWanted;
     private bool _editorPlayWanted;
-    private string[]? _editorPendingCommand;
+    private readonly List<string[]> _editorPendingCommands = [];
     private int _editorLastMilliseconds;
     private EditorView _editorView;
     private readonly EditorPlacementMotion _editorMotion = new();
@@ -82,10 +82,10 @@ public sealed partial class GameHost
                     return;
                 }
 
-                if (_editorPendingCommand is null && argument.Length > 0 && !int.TryParse(argument, out _))
+                if (argument.Length > 0 && !int.TryParse(argument, out _))
                 {
-                    // Given before the editor has opened (a launch's +editor select ...): run once it has.
-                    _editorPendingCommand = [.. context.Arguments];
+                    // Given before the editor has opened (a launch's +editor select ...): run, in order, once it has.
+                    _editorPendingCommands.Add([.. context.Arguments]);
                 }
 
                 if (!RequestEditor())
@@ -160,11 +160,12 @@ public sealed partial class GameHost
         _window.CursorLocked = false;
         _editorLastMilliseconds = _loop.TimeSource.Milliseconds;
         _editor = factory.Open(new EditorHostServices(this));
-        if (_editorPendingCommand is { } pending)
+        foreach (string[] pending in _editorPendingCommands)
         {
-            _editorPendingCommand = null;
             _editor.RunCommand(pending);
         }
+
+        _editorPendingCommands.Clear();
     }
 
     private void CloseEditor(FrameLoopState state)
@@ -410,7 +411,7 @@ public sealed partial class GameHost
 
         public IReadOnlyList<WorldPlacement> Placements => host._scene?.Placements ?? [];
 
-        public void SetPlacementOffset(GameTask owner, Vector3d offsetMetres) => host._editorMotion.SetOffset(owner, offsetMetres);
+        public void SetPlacementPose(GameTask owner, EditorPose pose) => host._editorMotion.SetPose(owner, pose);
 
         public void ReloadMission(bool play = false)
         {

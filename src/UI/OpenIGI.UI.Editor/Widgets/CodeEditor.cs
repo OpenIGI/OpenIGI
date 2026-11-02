@@ -85,6 +85,9 @@ public sealed class CodeEditor : EditorElement
     public override bool Focusable => true;
 
     /// <inheritdoc/>
+    public override bool AcceptsText => !IsReadOnly;
+
+    /// <inheritdoc/>
     public override EditorCursor Cursor => EditorCursor.Text;
 
     private bool HasSelection => _line != _anchorLine || _column != _anchorColumn;

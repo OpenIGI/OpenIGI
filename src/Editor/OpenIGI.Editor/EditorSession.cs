@@ -128,6 +128,12 @@ internal sealed class EditorSession : IEditorSession
     /// <inheritdoc/>
     public string? RunCommand(IReadOnlyList<string> arguments)
     {
+        if (arguments is [string run, string id] && run.Equals("do", StringComparison.OrdinalIgnoreCase))
+        {
+            EditorAction? action = _root.Actions.All.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return action is null ? $"No editor action '{id}'." : action.TryExecute() ? $"Ran {action.Id}." : $"{action.Id} cannot run now.";
+        }
+
         if (arguments is [string find, ..] && find.Equals("find", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)
         {
             string query = string.Join(' ', arguments.Skip(1));
@@ -345,6 +351,18 @@ internal sealed class EditorSession : IEditorSession
             Category = "View",
             CanExecute = () => _workspace.Selection.Primary is not null,
         });
+        actions.Add(new EditorAction("tool.move", "Move Tool", () => _viewport.Tool = ViewportTool.Move)
+        {
+            Category = "Tools",
+            Shortcut = KeyChord.Parse("W"),
+            IsChecked = () => _viewport.Tool == ViewportTool.Move,
+        });
+        actions.Add(new EditorAction("tool.rotate", "Rotate Tool", () => _viewport.Tool = ViewportTool.Rotate)
+        {
+            Category = "Tools",
+            Shortcut = KeyChord.Parse("E"),
+            IsChecked = () => _viewport.Tool == ViewportTool.Rotate,
+        });
         actions.Add(new EditorAction("view.snap", "Snap to 0.25 m", () => _viewport.Snap = _viewport.Snap > 0 ? 0 : 0.25)
         {
             Category = "View",
@@ -417,6 +435,10 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["edit.delete"]),
                 MenuItem.For(actions["edit.deselect"]),
             ])
+            .Add("Tools", [
+                MenuItem.For(actions["tool.move"]),
+                MenuItem.For(actions["tool.rotate"]),
+            ])
             .Add("View", [
                 MenuItem.For(actions["view.frame"]),
                 MenuItem.For(actions["view.snap"]),
@@ -441,9 +463,12 @@ internal sealed class EditorSession : IEditorSession
         ActionTable actions = _root.Actions;
         Toolbar toolbar = new(_theme);
         toolbar.Add(actions["file.save"], KitIcon.Save);
-        toolbar.Add(actions["file.reload"], KitIcon.Rotate);
+        toolbar.Add(actions["file.reload"], KitIcon.History);
         toolbar.AddSeparator();
         toolbar.Add(actions["play.start"], KitIcon.Play, showText: true);
+        toolbar.AddSeparator();
+        toolbar.Add(actions["tool.move"], KitIcon.Move);
+        toolbar.Add(actions["tool.rotate"], KitIcon.Rotate);
         toolbar.AddSeparator();
         toolbar.Add(actions["edit.undo"], KitIcon.Undo);
         toolbar.Add(actions["edit.redo"], KitIcon.Redo);
@@ -566,7 +591,7 @@ internal sealed class EditorSession : IEditorSession
             ? $"Could not read the mission: {error}"
             : _workspace.Mission is null
                 ? "Choose a mission to open."
-                : "Right mouse: look and fly with W A S D  •  Middle mouse: pan  •  F: frame  •  Ctrl+Z: undo";
+                : "Right mouse: look and fly with W A S D  •  Middle mouse: pan  •  W move, E rotate  •  F: frame  •  Ctrl+Z: undo";
         _status.MessageColor = _workspace.LoadError is null ? null : _theme.Error;
     }
 

@@ -76,6 +76,9 @@ public class TextField : EditorElement
     public override bool Focusable => true;
 
     /// <inheritdoc/>
+    public override bool AcceptsText => true;
+
+    /// <inheritdoc/>
     public override EditorCursor Cursor => EditorCursor.Text;
 
     /// <summary>Gets the editing state, for derived fields.</summary>

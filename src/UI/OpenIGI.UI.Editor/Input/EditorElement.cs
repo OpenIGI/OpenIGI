@@ -58,6 +58,12 @@ public abstract class EditorElement : UiElement
     /// </summary>
     public virtual bool FocusOnPress => Focusable;
 
+    /// <summary>
+    /// Gets whether the element takes typed text while focused, so plain letter keys belong to it and are never
+    /// offered to single-key shortcuts.
+    /// </summary>
+    public virtual bool AcceptsText => false;
+
     /// <summary>Gets the pointer shape over the element.</summary>
     public virtual EditorCursor Cursor => EditorCursor.Arrow;
 

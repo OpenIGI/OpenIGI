@@ -140,10 +140,10 @@ public interface IEditorHost
     /// <summary>Gets what the loaded level placed in the world, each with the task that owns it.</summary>
     IReadOnlyList<WorldPlacement> Placements { get; }
 
-    /// <summary>Draws everything a task placed moved by an offset, from the next frame, without rebuilding the level.</summary>
+    /// <summary>Draws everything a task placed moved and turned, from the next frame, without rebuilding the level.</summary>
     /// <param name="owner">The task, as the running level holds it.</param>
-    /// <param name="offsetMetres">How far from where it was built; zero puts it back.</param>
-    void SetPlacementOffset(GameTask owner, Vector3d offsetMetres);
+    /// <param name="pose">How far from where it was built; an identity pose puts it back.</param>
+    void SetPlacementPose(GameTask owner, EditorPose pose);
 
     /// <summary>Loads the open mission again from the files as they now stand, keeping the camera where it is.</summary>
     /// <param name="play">Whether to start it as the player (play in editor) rather than held still for editing.</param>

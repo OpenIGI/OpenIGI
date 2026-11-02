@@ -26,7 +26,7 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
 {
     private const double MatchToleranceMetres = 0.05;
 
-    private readonly Dictionary<MissionTask, (Vector3d Loaded, GameTask Owner)> _links = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<MissionTask, (Vector3d Loaded, Matrix3f Turned, GameTask Owner)> _links = new(ReferenceEqualityComparer.Instance);
     private MissionDocument? _bound;
     private IReadOnlyList<WorldPlacement>? _boundPlacements;
 
@@ -38,7 +38,7 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
     /// <returns>The radius, or <see langword="null"/> when the task is not linked to anything placed.</returns>
     public double? RadiusMetres(MissionTask task)
     {
-        if (!_links.TryGetValue(task, out (Vector3d Loaded, GameTask Owner) link) || _boundPlacements is not { } placements)
+        if (!_links.TryGetValue(task, out (Vector3d Loaded, Matrix3f Turned, GameTask Owner) link) || _boundPlacements is not { } placements)
         {
             return null;
         }
@@ -118,7 +118,7 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
             (GameTask Owner, Vector3d At) best = candidates.MinBy(c => (c.At - loaded).LengthSquared);
             if ((best.At - loaded).Length <= MatchToleranceMetres)
             {
-                _links[task] = (loaded, best.Owner);
+                _links[task] = (loaded, TaskPresentation.OrientationMatrix(task), best.Owner);
                 candidates.Remove(best);
             }
         }
@@ -126,14 +126,15 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
 
     private void OnChanged(MissionChange change)
     {
-        if (change.Kind != MissionChangeKind.Parameter || !_links.TryGetValue(change.Task, out (Vector3d Loaded, GameTask Owner) link))
+        if (change.Kind != MissionChangeKind.Parameter
+            || !_links.TryGetValue(change.Task, out (Vector3d Loaded, Matrix3f Turned, GameTask Owner) link)
+            || TaskPresentation.PositionMetres(change.Task) is not { } now)
         {
             return;
         }
 
-        if (TaskPresentation.PositionMetres(change.Task) is { } now)
-        {
-            host.SetPlacementOffset(link.Owner, now - link.Loaded);
-        }
+        // The turn in world space from the orientation the level was built with to the one the document has now.
+        Matrix3f turn = TaskPresentation.OrientationMatrix(change.Task).Transposed() * link.Turned;
+        host.SetPlacementPose(link.Owner, new EditorPose(link.Loaded, now - link.Loaded, turn));
     }
 }

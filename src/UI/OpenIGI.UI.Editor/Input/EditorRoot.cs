@@ -505,7 +505,12 @@ public sealed class EditorRoot : EditorElement
             return;
         }
 
-        if (!e.IsRepeat || e.Key is KeyCode.Z or KeyCode.Y)
+        // While a field has the keyboard, a plain key is typing: only chords with Ctrl or Alt, and the function keys,
+        // are still shortcuts.
+        bool typing = _focused?.AcceptsText == true
+            && (e.Modifiers & (KeyModifiers.Control | KeyModifiers.Alt)) == 0
+            && e.Key is not (>= KeyCode.F1 and <= KeyCode.F10) and not (KeyCode.F11 or KeyCode.F12);
+        if (!typing && (!e.IsRepeat || e.Key is KeyCode.Z or KeyCode.Y))
         {
             Actions.TryShortcut(e);
         }
