@@ -492,6 +492,8 @@ public sealed partial class GameHost
         _resources = preview.Resources;
         // Built before a change of language, it holds the old one's text.
         MountLanguage(_resources);
+        // The backdrop showed every section the level streams in by area; the mission starts as a cold load does.
+        preview.BeforePlay?.Invoke();
         _session.Begin(chosen, preview.LevelRoot);
 
         // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the

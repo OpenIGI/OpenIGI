@@ -84,6 +84,11 @@ namespace OpenIGI.Host.Menu;
 /// The title's view culling over the scene, when its walk produced one. Carried for the same reason as
 /// <paramref name="Spins"/>: a promoted mission keeps the backdrop's renderer.
 /// </param>
+/// <param name="BeforePlay">
+/// Puts the level back as a cold load finds it. The backdrop shows every section the level streams in by area (see
+/// <see cref="ConditionalContainerGate.OpenEveryArea"/>); a promoted mission runs this first, so its areas start as
+/// the level's own.
+/// </param>
 /// <param name="Decoded">
 /// The level's textures, decoded on the thread pool while the rest of this was being built. The render
 /// thread then only uploads them — see <see cref="TextureDecodeCache"/>.
@@ -109,4 +114,5 @@ public sealed record MissionPreview(
     TextureDecodeCache? Decoded,
     IGroundHeightField? Ground = null,
     IPlacementSpin? Spins = null,
-    IPlacementVisibility? Visibility = null);
+    IPlacementVisibility? Visibility = null,
+    Action? BeforePlay = null);

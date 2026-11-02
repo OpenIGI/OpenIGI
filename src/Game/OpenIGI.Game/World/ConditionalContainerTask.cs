@@ -173,6 +173,10 @@ public partial class ConditionalContainerTask : TickedTask
         }
     }
 
+    /// <summary>Sets <see cref="IsRun"/> to a result settled earlier, to put a level back as it was.</summary>
+    /// <param name="run">The result.</param>
+    internal void Latch(bool run) => _isRun = run ? (byte)1 : (byte)0;
+
     /// <summary>Settles the condition again outside the tick and returns whether <see cref="IsRun"/> changed.</summary>
     /// <param name="started"><see langword="true"/> when this change started the container.</param>
     /// <returns>Whether it changed.</returns>

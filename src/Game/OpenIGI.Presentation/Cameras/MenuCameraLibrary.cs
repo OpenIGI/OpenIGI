@@ -11,12 +11,19 @@ namespace OpenIGI.Presentation.Cameras;
 /// <param name="SpeedRadiansPerSecond">How fast the orbit turns; small, for a slow drift.</param>
 /// <param name="StartAngleRadians">Where on the circle the orbit begins.</param>
 /// <param name="PitchBiasRadians">An extra downward (negative) or upward tilt on top of the look-at.</param>
+/// <param name="WallAware">
+/// Whether the orbit stays inside whatever encloses its centre: for a place inside a building, where a
+/// fixed circle would carry the camera through the walls and out into whatever is beyond. See
+/// <see cref="MenuShowcaseCamera"/>. Off for the usual orbit around the outside of a building, whose centre
+/// is inside the building it is looking at.
+/// </param>
 public readonly record struct MenuCameraSpec(
     double Radius,
     double Height,
     double SpeedRadiansPerSecond,
     double StartAngleRadians,
-    float PitchBiasRadians)
+    float PitchBiasRadians,
+    bool WallAware = false)
 {
     /// <summary>Gets a sensible default orbit for a level with no authored entry.</summary>
     /// <remarks>
@@ -103,18 +110,38 @@ public sealed partial class MenuCameraLibrary
                     entry.PitchBias);
                 map[Key(entry.Mission, entry.Title)] = spec;
 
-                if (entry.Points is { Length: > 0 } authored)
+                // The places in the order authored, rails after orbits unless a rail says where it goes.
+                var places = new List<ShowcasePoint>();
+                foreach (PointEntry p in entry.Points ?? [])
                 {
-                    points[Key(entry.Mission, entry.Title)] =
-                    [
-                        .. authored.Select(p => new ShowcasePoint(
-                            new OpenIGI.Core.Numerics.Vector3d(p.X, p.Y, p.Z),
-                            spec with
-                            {
-                                Radius = p.Radius > 0.0 ? p.Radius : spec.Radius,
-                                Height = p.Height > 0.0 ? p.Height : spec.Height,
-                            })),
-                    ];
+                    places.Add(new ShowcasePoint(
+                        new OpenIGI.Core.Numerics.Vector3d(p.X, p.Y, p.Z),
+                        spec with
+                        {
+                            Radius = p.Radius > 0.0 ? p.Radius : spec.Radius,
+                            Height = p.Height > 0.0 ? p.Height : spec.Height,
+                            WallAware = p.WallAware,
+                        }));
+                }
+
+                foreach (RailEntry rail in entry.Rails ?? [])
+                {
+                    if (rail.Points is not { Length: >= 2 } waypoints)
+                    {
+                        logger?.Warning("Menu", $"A rail for mission {entry.Mission} has fewer than two points; skipped.");
+                        continue;
+                    }
+
+                    var travel = new CameraRail(
+                        [.. waypoints.Select(p => new OpenIGI.Core.Numerics.Vector3d(p.X, p.Y, p.Z))],
+                        rail.Speed);
+                    var place = new ShowcasePoint(travel.Waypoints[0], spec, travel);
+                    places.Insert(Math.Clamp(rail.Order < 0 ? places.Count : rail.Order, 0, places.Count), place);
+                }
+
+                if (places.Count > 0)
+                {
+                    points[Key(entry.Mission, entry.Title)] = places;
                 }
             }
 
@@ -172,6 +199,7 @@ public sealed partial class MenuCameraLibrary
     /// every entry authored before the sequel existed is one of its. It is not optional information --
     /// both games have a mission 11 -- so an entry for the sequel MUST carry it.
     /// </param>
+    /// <param name="Rails">Paths the camera travels through the level, for places an orbit cannot show.</param>
     private sealed record Entry(
         int Mission,
         double Radius,
@@ -180,15 +208,25 @@ public sealed partial class MenuCameraLibrary
         double StartAngle,
         float PitchBias,
         PointEntry[]? Points = null,
-        string Title = DefaultTitle);
+        string Title = DefaultTitle,
+        RailEntry[]? Rails = null);
+
+    /// <summary>A path the camera travels, in metres, at an optional pace; see <see cref="CameraRail"/>.</summary>
+    /// <remarks><c>order</c> places it among the mission's places; without one it goes after them.</remarks>
+    private sealed record RailEntry(
+        PointEntry[]? Points = null,
+        double Speed = CameraRail.DefaultSpeed,
+        int Order = -1);
 
     /// <summary>One hand-authored place, in metres, with an optional orbit of its own.</summary>
+    /// <remarks><c>wallAware</c> keeps the orbit inside the room the place stands in; see <see cref="MenuCameraSpec.WallAware"/>.</remarks>
     private sealed record PointEntry(
         double X,
         double Y,
         double Z,
         double Radius = 0.0,
-        double Height = 0.0);
+        double Height = 0.0,
+        bool WallAware = false);
 
     [JsonSourceGenerationOptions(
         PropertyNameCaseInsensitive = true,

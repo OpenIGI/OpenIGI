@@ -191,6 +191,79 @@ public sealed class ConditionalContainerGate
         return LevelExpression.Flag(expression.Evaluate(_context));
     }
 
+    /// <summary>
+    /// Opens every container that waits on an <c>AreaActivate</c>, for a level that is shown rather than played: the
+    /// menu's backdrop.
+    /// </summary>
+    /// <param name="levelRoot">The task the level's subtree hangs off, already through <see cref="Prepare"/> on this gate.</param>
+    /// <returns>
+    /// What puts the level back as <see cref="Prepare"/> left it. A backdrop the player presses Play on becomes the
+    /// mission without being loaded again, and the mission has to start with its areas as a cold load finds them.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// A level can stream itself by area: the last mission keeps every hall and tunnel in containers whose condition
+    /// is <c>AreaActivate_2311.nActive</c>, true while the player stands in that area. A played level counts the
+    /// player into its areas; a backdrop has no player, so every one of them read zero and the backdrop was the level
+    /// with all of its world taken out -- fog. A backdrop's camera goes where it likes, so every area reads as
+    /// occupied, and every section the level could stream in is in.
+    /// </para>
+    /// <para>
+    /// Only the areas. A container waiting on a cut-scene, a hacked terminal or a dead guard stays as the level
+    /// starts, so the backdrop shows neither an outro nor the aftermath of an objective.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
+    public Action OpenEveryArea(GameTask levelRoot)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+
+        List<ConditionalContainerTask> containers = [];
+        Collect(levelRoot, containers);
+        if (containers.Count == 0)
+        {
+            return static () => { };
+        }
+
+        (bool Run, bool Active)[] before = [.. containers.Select(container => (container.IsRun, container.IsActive))];
+        _context.AreasOpen = true;
+        Settle(containers);
+
+        return () =>
+        {
+            _context.AreasOpen = false;
+            for (int i = 0; i < containers.Count; i++)
+            {
+                containers[i].Latch(before[i].Run);
+                containers[i].IsActive = before[i].Active;
+            }
+        };
+    }
+
+    // Re-evaluates every container until none changes -- one condition can name another's isRun -- and registers each
+    // as its result says.
+    private static void Settle(List<ConditionalContainerTask> containers)
+    {
+        for (int pass = 0; pass <= containers.Count; pass++)
+        {
+            bool changed = false;
+            foreach (ConditionalContainerTask container in containers)
+            {
+                changed |= container.Refresh(out _);
+            }
+
+            if (!changed)
+            {
+                break;
+            }
+        }
+
+        foreach (ConditionalContainerTask container in containers)
+        {
+            container.IsActive = container.IsRun;
+        }
+    }
+
     private static void Collect(GameTask task, List<ConditionalContainerTask> into)
     {
         foreach (GameTask child in task.Children)
@@ -209,9 +282,28 @@ public sealed class ConditionalContainerGate
     // start. The compile has already answered this. and .isExists.
     private sealed class VariablesContext(ScriptVarRegistry variables) : IScriptExpressionContext
     {
-        public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(name, out value);
+        private const string AreaPrefix = "AreaActivate_";
+        private const string AreaCount = ".nActive";
 
-        public QvmValueKind GetValueKind(string name) => variables.GetValueKind(name);
+        /// <summary>Gets or sets whether every <c>AreaActivate_N.nActive</c> reads as one; see <see cref="OpenEveryArea"/>.</summary>
+        public bool AreasOpen { get; set; }
+
+        public bool TryGetValue(string name, out QvmValue value)
+        {
+            if (AreasOpen && IsAreaCount(name))
+            {
+                value = QvmValue.FromInt32(1);
+                return true;
+            }
+
+            return variables.TryRead(name, out value);
+        }
+
+        public QvmValueKind GetValueKind(string name) =>
+            AreasOpen && IsAreaCount(name) ? QvmValueKind.Integer : variables.GetValueKind(name);
+
+        private static bool IsAreaCount(string name) =>
+            name.StartsWith(AreaPrefix, StringComparison.Ordinal) && name.EndsWith(AreaCount, StringComparison.Ordinal);
 
         public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(name, value);
 
