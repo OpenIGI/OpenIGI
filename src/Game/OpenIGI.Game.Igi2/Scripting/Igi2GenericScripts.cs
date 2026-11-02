@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using OpenIGI.Engine.Vfs;
 
 namespace OpenIGI.Game.Igi2.Scripting;
 
@@ -29,10 +30,11 @@ public sealed record Igi2GenericScripts(byte[] Soldier, byte[] Squad)
         ArgumentException.ThrowIfNullOrEmpty(dataRoot);
         Dictionary<string, (int Count, string Path)> soldiers = new(StringComparer.Ordinal);
         Dictionary<string, (int Count, string Path)> squads = new(StringComparer.Ordinal);
-        string missions = Path.Combine(dataRoot, "MISSIONS");
-        if (Directory.Exists(missions))
+        // Both retail and GOG spell it MISSIONS and its scripts' folder AI; a copy on a case-sensitive disk may not.
+        if (LocalFileDevice.ResolveExisting(dataRoot, "missions") is { } missions && Directory.Exists(missions))
         {
-            foreach (string file in Directory.EnumerateFiles(missions, "*.qvm", SearchOption.AllDirectories))
+            EnumerationOptions everyScript = new() { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive };
+            foreach (string file in Directory.EnumerateFiles(missions, "*.qvm", everyScript))
             {
                 if (!string.Equals(Path.GetFileName(Path.GetDirectoryName(file)), "AI", StringComparison.OrdinalIgnoreCase))
                 {

@@ -1,6 +1,7 @@
 using System.Text;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Titles;
+using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.Animation;
@@ -99,12 +100,19 @@ public sealed class Igi2GuestContent
     // The locations whose packs name a model the host dresses a soldier in, in their own order.
     private static IEnumerable<string> Locations(string dataRoot, HashSet<string> wanted)
     {
-        string missions = Path.Combine(dataRoot, "MISSIONS");
-        foreach (string directory in Directory.EnumerateDirectories(missions, "location*").Order(StringComparer.OrdinalIgnoreCase))
+        // Case folded throughout: the installs spell it MISSIONS, and a copy on a case-sensitive disk need not.
+        if (LocalFileDevice.ResolveExisting(dataRoot, "missions") is not { } missions || !Directory.Exists(missions))
+        {
+            yield break;
+        }
+
+        EnumerationOptions anyCase = new() { MatchCasing = MatchCasing.CaseInsensitive };
+        foreach (string directory in Directory.EnumerateDirectories(missions, "location*", anyCase).Order(StringComparer.OrdinalIgnoreCase))
         {
             string location = Path.GetFileName(directory).ToLowerInvariant();
-            string pack = Path.Combine(directory, "common", $"{location}.mtp");
-            if (File.Exists(pack) && wanted.Any(Encoding.Latin1.GetString(File.ReadAllBytes(pack)).Contains))
+            if (LocalFileDevice.ResolveExisting(directory, $"common/{location}.mtp") is { } pack
+                && File.Exists(pack)
+                && wanted.Any(Encoding.Latin1.GetString(File.ReadAllBytes(pack)).Contains))
             {
                 yield return location;
             }

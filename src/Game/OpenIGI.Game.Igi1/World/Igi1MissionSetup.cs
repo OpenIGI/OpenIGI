@@ -4,6 +4,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
@@ -599,9 +600,11 @@ public sealed class Igi1MissionSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(gamePath);
 
-        string graphDirectory = ResolveDirectoryCaseInsensitive(
-                gamePath, Path.Combine(loaded.Descriptor.MissionDirectory, "graphs"))
-            ?? Path.Combine(gamePath, loaded.Descriptor.MissionDirectory, "graphs");
+        // The install's casing need not match the script's: retail ships MISSIONS/, a Linux copy may not.
+        string graphPath = Path.Combine(loaded.Descriptor.MissionDirectory, "graphs");
+        string graphDirectory = LocalFileDevice.ResolveExisting(gamePath, graphPath) is { } found && Directory.Exists(found)
+            ? found
+            : Path.Combine(gamePath, graphPath);
 
         Dictionary<int, GraphFile> graphs;
         try
@@ -635,40 +638,5 @@ public sealed class Igi1MissionSetup(
         }
 
         return graphs;
-    }
-
-    /// <summary>Resolves a retail directory without assuming the install's casing matches the script.</summary>
-    /// <param name="root">The directory it is under.</param>
-    /// <param name="relativePath">The path below it, as the script spells it.</param>
-    /// <returns>The directory as the install spells it, or <see langword="null"/> when there is none.</returns>
-    public static string? ResolveDirectoryCaseInsensitive(string root, string relativePath)
-    {
-        string current = Path.GetFullPath(root);
-        foreach (string part in relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            string exact = Path.Combine(current, part);
-            if (Directory.Exists(exact))
-            {
-                current = exact;
-                continue;
-            }
-
-            if (!Directory.Exists(current))
-            {
-                return null;
-            }
-
-            string? match = Directory.EnumerateDirectories(current)
-                .FirstOrDefault(path => string.Equals(
-                    Path.GetFileName(path), part, StringComparison.OrdinalIgnoreCase));
-            if (match is null)
-            {
-                return null;
-            }
-
-            current = match;
-        }
-
-        return current;
     }
 }

@@ -132,7 +132,6 @@ public static class SpriteLoader
     private static SpriteAsset LoadFont(IlffContainer container, string name)
     {
         IlffChunk header = RequireChunk(container, "FNTH", name);
-        IlffChunk map = RequireChunk(container, "TRAN", name);
         IlffChunk glyphs = RequireChunk(container, "ANMF", name);
 
         ReadOnlySpan<byte> fnth = header.Payload.Span;
@@ -152,7 +151,7 @@ public static class SpriteLoader
 
         TextureImage[] textures = LoadTexturesFromChunks(container, name);
         SpriteFrame[] frames = ReadGlyphRecords(glyphs.Payload.Span, glyphCount, name);
-        byte[] characterMap = ReadCharacterMap(map.Payload.Span, name);
+        byte[] characterMap = ReadCharacterMap(container, glyphCount, name);
 
         return new SpriteAsset(
             name,
@@ -265,6 +264,63 @@ public static class SpriteLoader
         }
 
         return new SpriteTileLayout(columns, rows, cells);
+    }
+
+    /// <summary>Reads a font's character map from whichever of its two shapes the font carries.</summary>
+    /// <remarks>
+    /// <para>
+    /// The 2003 releases ship <c>TRAN</c>: indexed by character, giving the glyph. The 2018 rebuild the
+    /// GOG release ships has <c>TRN2</c> in every font instead. It is the same map turned around:
+    /// one word per glyph, giving that glyph's character code. Its loader (<c>0x5A26B0</c> in that
+    /// build) still looks for <c>TRAN</c> first and reads <c>TRN2</c> only when <c>TRAN</c> is absent.
+    /// It pairs entry <c>k</c> with glyph <c>k + 1</c>, because glyph 0 is the blank that every
+    /// unmapped character draws. So does this loader.
+    /// </para>
+    /// <para>
+    /// Inverted that way, all fifteen shipped GOG fonts rebuild the retail <c>TRAN</c> exactly; their
+    /// other chunks are byte-identical to retail. The rebuild's codes are words, so it can name
+    /// characters past 255. A byte map cannot hold those, so they are left out. No shipped font has
+    /// one: the highest code is 252.
+    /// </para>
+    /// </remarks>
+    private static byte[] ReadCharacterMap(IlffContainer container, int glyphCount, string name)
+    {
+        if (container.TryFindChunk(FourCc.FromString("TRAN"), out IlffChunk tran))
+        {
+            return ReadCharacterMap(tran.Payload.Span, name);
+        }
+
+        if (container.TryFindChunk(FourCc.FromString("TRN2"), out IlffChunk glyphCodes))
+        {
+            return ReadGlyphCodes(glyphCodes.Payload.Span, glyphCount, name);
+        }
+
+        throw new TextureFormatException($"ILF file corrupt: font '{name}' has neither a 'TRAN' nor a 'TRN2' chunk.");
+    }
+
+    /// <summary>Reads a <c>TRN2</c> chunk, one character code per glyph, into a character-to-glyph map.</summary>
+    private static byte[] ReadGlyphCodes(ReadOnlySpan<byte> trn2, int glyphCount, string name)
+    {
+        int entries = trn2.Length / sizeof(ushort);
+        if (entries < glyphCount)
+        {
+            throw new TextureFormatException(
+                $"Font '{name}' has a {trn2.Length}-byte TRN2 chunk for {glyphCount} glyphs; {glyphCount * sizeof(ushort)} are required.");
+        }
+
+        byte[] map = new byte[PaletteEntryCount];
+        // A byte map can hold glyphs up to 255 only. The shipped fonts have 154 or 158.
+        int mapped = Math.Min(glyphCount, byte.MaxValue);
+        for (int k = 0; k < mapped; k++)
+        {
+            ushort code = BinaryPrimitives.ReadUInt16LittleEndian(trn2[(k * sizeof(ushort))..]);
+            if (code < PaletteEntryCount)
+            {
+                map[code] = (byte)(k + 1);
+            }
+        }
+
+        return map;
     }
 
     /// <summary>Reads the <c>TRAN</c> character map: 256 words of which only the low byte is used.</summary>
