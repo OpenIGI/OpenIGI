@@ -1,4 +1,4 @@
-namespace OpenIGI.Editor.Core;
+namespace OpenIGI.Core.Collections;
 
 /// <summary>
 /// What the user has selected: an ordered set with a primary item, shared by every panel so that picking in
@@ -26,6 +26,9 @@ public sealed class Selection<T>
     /// <param name="item">The item.</param>
     /// <returns><see langword="true"/> when it is.</returns>
     public bool Contains(T item) => _items.Contains(item);
+
+    /// <summary>Deselects everything.</summary>
+    public void Clear() => Set([]);
 
     /// <summary>Replaces the selection with one item, or clears it.</summary>
     /// <param name="item">The item, or <see langword="null"/> to clear.</param>
