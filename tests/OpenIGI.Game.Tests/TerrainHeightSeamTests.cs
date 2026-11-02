@@ -120,7 +120,7 @@ public sealed class TerrainHeightSeamTests
         Assert.True(cracks.Count == 0, $"{cracks.Count} cracks of {shared} shared columns:\n{string.Join("\n", cracks.Take(10))}");
     }
 
-    private static (TerrainData, TerrainSurface) Load(int id)
+    internal static (TerrainData, TerrainSurface) Load(int id)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));

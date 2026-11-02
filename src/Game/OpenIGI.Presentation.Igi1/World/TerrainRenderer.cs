@@ -64,6 +64,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
     // The ground the traced sun is shadowed by: the same descent with no frustum. See SubmitShadowCaster.
     private readonly List<TerrainChunk> _casterChunks = [];
 
+    // The refined chunks this frame draws, which cast with their refined triangles. See SubmitShadowCaster.
+    private readonly HashSet<Vector3d> _drawnFine = [];
+
     // What the ray-traced world traces instead of the pages: this frame's chunks, morphed as drawn.
     private readonly TerrainShadowCaster _caster;
 
@@ -89,6 +92,13 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private readonly OcclusionSettle _occlusionSettle = new(windowed: true);
     private int _previousOccludedChunks;
     private bool _disposed;
+
+    // The smooth ground the nearer chunks are refined onto, or null while r_terrain_smooth is off, and
+    // the settings it was made with. The generation goes into the cache key of every refined chunk, so a
+    // changed setting is a cache miss for those chunks and the old ones age out like any other.
+    private TerrainSmoothing? _smooth;
+    private (int Level, float Relax, float Limit) _smoothSettings;
+    private int _smoothGeneration;
 
     /// <summary>Initializes a new instance of the <see cref="TerrainRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -213,6 +223,34 @@ public sealed class TerrainRenderer : ITerrainPresenter
         set => _cacheLimit = Math.Max(TerrainTraversal.MaximumChunks, value);
     }
 
+    /// <summary>Gets or sets how the finest ground is smoothed: the level, the relax and the limit in metres.</summary>
+    /// <remarks>
+    /// The level is <c>r_terrain_smooth</c>'s: zero leaves the ground as stored, one cuts each edge in
+    /// two and two in four. Setting a different value starts a fresh smooth surface, and the finest
+    /// chunks rebuild onto it as they are next drawn. See <see cref="TerrainSmoothing"/>.
+    /// </remarks>
+    public (int Level, float Relax, float Limit) Smoothing
+    {
+        get => _smoothSettings;
+        set
+        {
+            if (value == _smoothSettings)
+            {
+                return;
+            }
+
+            _smoothSettings = value;
+            _smoothGeneration++;
+            _smooth = value.Level <= 0
+                ? null
+                : new TerrainSmoothing(
+                    _terrain,
+                    1 << Math.Clamp(value.Level, 1, 3),
+                    value.Relax,
+                    value.Limit * WorldScene.UnitsPerMetre);
+        }
+    }
+
     /// <summary>Gets how many page meshes have been created since the level loaded.</summary>
     /// <remarks>
     /// With <see cref="PageMeshesDestroyed"/>, the streaming churn in one pair of numbers: both should
@@ -284,6 +322,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     void ITerrainPresenter.Draw(in TerrainFrame frame)
     {
         CacheLimit = GeometryCVars.TerrainCache.Value;
+        Smoothing = (GeometryCVars.TerrainSmooth.Value, GeometryCVars.TerrainSmoothRelax.Value, GeometryCVars.TerrainSmoothLimit.Value);
         _castsIntoCascades = frame.CastsIntoCascades;
 
         Draw(
@@ -781,11 +820,13 @@ public sealed class TerrainRenderer : ITerrainPresenter
     {
         // The key is the chunk's integer position and its level of detail — the geometry a record holds
         // is only the same geometry when it is drawn in the same place at the same detail.
+        TerrainSmoothing? smooth = TerrainSmoothing.Refines(chunk.LodExponent) ? _smooth : null;
         TerrainChunkKey key = new(
             (long)chunk.Position.X,
             (long)chunk.Position.Y,
             (long)chunk.Position.Z,
-            chunk.LodExponent);
+            chunk.LodExponent,
+            smooth is null ? 0 : _smoothGeneration);
 
         if (_cache.TryGetValue(key, out entry))
         {
@@ -805,7 +846,8 @@ public sealed class TerrainRenderer : ITerrainPresenter
             (float)(1.0 / WorldScene.UnitsPerMetre),
             _surface.Heights.Resolve(chunk),
             _geometryPool,
-            _surface.Lights.Resolve(chunk));
+            _surface.Lights.Resolve(chunk),
+            smooth);
 
         if (geometry is null)
         {
@@ -840,12 +882,26 @@ public sealed class TerrainRenderer : ITerrainPresenter
             _surface.Discards,
             CacheLimit);
 
+        // A refined chunk out of sight casts with its original triangles; see TerrainShadowCaster.Add.
+        _drawnFine.Clear();
+        if (_smooth is not null)
+        {
+            foreach (TerrainChunk chunk in _chunks)
+            {
+                if (TerrainSmoothing.Refines(chunk.LodExponent))
+                {
+                    _drawnFine.Add(chunk.Position);
+                }
+            }
+        }
+
         _caster.Begin(camera.Position, fadeOffset, fadeSlope);
         foreach (TerrainChunk chunk in _casterChunks)
         {
             if (TryGetEntry(chunk, out TerrainChunkEntry? entry))
             {
-                _caster.Add(chunk, entry.Geometry);
+                bool coarse = entry.Geometry.Coarse is not null && !_drawnFine.Contains(chunk.Position);
+                _caster.Add(chunk, entry.Geometry, coarse);
             }
         }
 

@@ -111,7 +111,15 @@ internal sealed class TerrainShadowCaster : IDisposable
     /// <summary>Adds one drawn chunk's base layer, morphed as the shader morphs it.</summary>
     /// <param name="chunk">The chunk.</param>
     /// <param name="geometry">Its geometry, whose first layer is the base pass.</param>
-    public void Add(in TerrainChunk chunk, TerrainChunkGeometry geometry)
+    /// <param name="coarse">
+    /// Whether a chunk refined onto the smooth ground may cast with its original triangles instead.
+    /// The renderer asks for that for chunks out of sight: what matters there is the shape of the
+    /// shadow they throw, which a few centimetres of smoothing does not change, and the caster is
+    /// rebuilt every frame the camera moves, so the refined triangles would cost on every one of them.
+    /// A chunk in sight casts refined, or the drawn ground would sit under its own caster in every
+    /// hollow and shadow itself.
+    /// </param>
+    public void Add(in TerrainChunk chunk, TerrainChunkGeometry geometry, bool coarse = false)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         if (geometry.Layers.Length == 0)
@@ -121,14 +129,29 @@ internal sealed class TerrainShadowCaster : IDisposable
 
         TerrainChunkLayer layer = geometry.Layers[0];
         int vertexCount = geometry.VerticesPerPass;
-        if (vertexCount == 0 || layer.IndexCount < 3)
+        ushort[]? coarseIndices = coarse ? geometry.Coarse : null;
+        int indexCount = coarseIndices?.Length ?? layer.IndexCount;
+        if (coarseIndices is not null)
+        {
+            // The original triangles reach only the chunk's own vertices, which come first.
+            vertexCount = 0;
+            foreach (ushort index in coarseIndices)
+            {
+                vertexCount = Math.Max(vertexCount, index + 1);
+            }
+        }
+
+        if (vertexCount == 0 || indexCount < 3)
         {
             return;
         }
 
-        // One mesh cannot index past 65536 vertices; a chunk that would overflow starts the next.
-        (int vertexStart, _) = _runs[^1];
-        if (_vertices.Count - vertexStart + vertexCount > VertexCapacity)
+        // One mesh cannot index past 65536 vertices; a chunk that would overflow starts the next. Nor
+        // can it hold more indices than it was made with, which a smoothed chunk -- two triangles to
+        // a vertex where the stored ground has about one -- reaches before it reaches the vertices.
+        (int vertexStart, int indexStart) = _runs[^1];
+        if (_vertices.Count - vertexStart + vertexCount > VertexCapacity
+            || _indices.Count - indexStart + indexCount > IndexCapacity)
         {
             vertexStart = _vertices.Count;
             _runs.Add((vertexStart, _indices.Count));
@@ -138,6 +161,11 @@ internal sealed class TerrainShadowCaster : IDisposable
         _hash = (_hash * 31) + (long)chunk.Position.Y;
         _hash = (_hash * 31) + (long)chunk.Position.Z;
         _hash = (_hash * 31) + chunk.LodExponent;
+
+        // Which geometry, and whether it casts coarse: a changed smoothing setting rebuilds a chunk in
+        // place, and a chunk turning into view swaps its triangles, with no chunk entering or leaving.
+        _hash = (_hash * 31) + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(geometry);
+        _hash = (_hash * 31) + (coarseIndices is null ? 0 : 1);
 
         double chunkX = chunk.Position.X / WorldScene.UnitsPerMetre;
         double chunkY = chunk.Position.Y / WorldScene.UnitsPerMetre;
@@ -174,6 +202,16 @@ internal sealed class TerrainShadowCaster : IDisposable
                 v.LightmapV,
                 v.Colour,
                 v.SurfaceNormal));
+        }
+
+        if (coarseIndices is not null)
+        {
+            foreach (ushort index in coarseIndices)
+            {
+                _indices.Add((ushort)(index + baseVertex));
+            }
+
+            return;
         }
 
         for (int i = layer.IndexOffset; i < layer.IndexOffset + layer.IndexCount; i++)

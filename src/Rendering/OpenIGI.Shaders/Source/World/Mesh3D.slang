@@ -17,6 +17,7 @@
 #include "../Common/PushConstants.slang"
 #include "../Common/ClipSpace.slang"
 #include "../Common/SampledColour.slang"
+#include "../Common/TerrainWeight.slang"
 
 // The guide form (World/RigGuides.slang): the same draw, writing what the surface is made of rather than
 // how it is lit, for the first-person rig that the G-buffer never sees.
@@ -167,8 +168,7 @@ Varyings vertexMain(VertexInput input)
         // pass's, and the pass's texture scale then takes the complement for the dense scale and
         // the fade for the sparse scale. Terrain passes add, and at every vertex these weights
         // sum to one across every pass and both scales.
-        float selector = input.colorBgra.a * 3.0;
-        float material = selector < 0.5 ? 0.0 : (selector < 1.5 ? morph : (selector < 2.5 ? 1.0 - morph : 1.0));
+        float material = TerrainPassWeight(input.colorBgra, morph);
 
         // Three is a pass that covers the chunk once and has no share in the cross-fade -- Project
         // I.G.I.'s terrain lightmap, multiplied over everything the material passes added: the

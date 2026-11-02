@@ -9,6 +9,7 @@
 #include "../Common/SampledColour.slang"
 #include "../Common/PushConstants.slang"
 #include "../Common/ClipSpace.slang"
+#include "../Common/TerrainWeight.slang"
 
 struct GBufferPush
 {
@@ -143,8 +144,7 @@ Varyings vertexMain(VertexInput input)
         // cross-fades into the far scale and a vertex's material into its source's, with nothing
         // popping and nothing over-bright. The weight scales the albedo rather than the alpha: it is a
         // share of the ground, not a coverage, and the colour's own channels are white for terrain.
-        float selector = input.colorBgra.a * 3.0;
-        float material = selector < 0.5 ? 0.0 : (selector < 1.5 ? morph : (selector < 2.5 ? 1.0 - morph : 1.0));
+        float material = TerrainPassWeight(input.colorBgra, morph);
         // Three: a pass with no share in the cross-fade (see World/Mesh3D.slang).
         output.fade = terrain > 2.5 ? 1.0 : material * (terrain > 1.5 ? 1.0 - morph : morph);
     }

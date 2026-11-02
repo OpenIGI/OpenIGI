@@ -39,7 +39,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// does not sample it.
 /// </para>
 /// </remarks>
-public static class TerrainChunkMesh
+public static partial class TerrainChunkMesh
 {
     /// <summary>The largest vertex index a triangle command can hold.</summary>
     /// <remarks>Indices are single bytes, which is why a block never carries more than 256 vertices.</remarks>
@@ -72,6 +72,10 @@ public static class TerrainChunkMesh
     /// The terrain lightmap page enclosing the chunk, if any: the chunk then carries one more pass,
     /// <see cref="TerrainChunkGeometry.Light"/>, textured with it.
     /// </param>
+    /// <param name="smoothing">
+    /// The smooth ground to refine the nearer levels of detail onto, or <see langword="null"/> to draw
+    /// every chunk as the file stores it. See <see cref="TerrainSmoothing.Refines"/>.
+    /// </param>
     /// <returns>The geometry, or <see langword="null"/> when the block draws nothing.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="surface"/> is <see langword="null"/>.</exception>
     public static TerrainChunkGeometry? Build(
@@ -81,7 +85,8 @@ public static class TerrainChunkMesh
         float scale = 1f,
         TerrainHeightBinding heights = default,
         TerrainGeometryPool? pool = null,
-        TerrainLightBinding light = default)
+        TerrainLightBinding light = default,
+        TerrainSmoothing? smoothing = null)
     {
         ArgumentNullException.ThrowIfNull(surface);
 
@@ -151,10 +156,31 @@ public static class TerrainChunkMesh
         // covering the whole length -- so a recycled array needs no clearing first.
         int materialLayers = passes.Length * 2;
         int lightLayers = light.IsBound ? 1 : 0;
-        int vertexTotal = (materialLayers + lightLayers) * vertexCount;
-        int indexTotal = (materialLayers + lightLayers) * triangleCount;
+
+        // The nearer chunks may be refined onto the smooth ground (see TerrainChunkMesh.Smooth). A
+        // refined chunk too big for 16-bit indices across all of its passes is drawn as stored.
+        Refinement? refined = null;
+        if (smoothing?.For(chunk.LodExponent) is { } smooth)
+        {
+            refined = Refine(chunk, smooth, smoothing.For(chunk.LodExponent - 1), offsets, morphs, triangles);
+            if ((long)refined.Offsets.Length * (materialLayers + lightLayers) > ushort.MaxValue + 1)
+            {
+                refined = null;
+            }
+        }
+
+        int drawnVertices = refined?.Offsets.Length ?? vertexCount;
+        ReadOnlySpan<ushort> drawnTriangles = refined is null ? triangles : refined.Triangles;
+        int drawnIndices = drawnTriangles.Length;
+
+        int vertexTotal = (materialLayers + lightLayers) * drawnVertices;
+        int indexTotal = (materialLayers + lightLayers) * drawnIndices;
         Vertex3D[] vertices = pool is null ? new Vertex3D[vertexTotal] : pool.RentVertices(vertexTotal);
         ushort[] indices = pool is null ? new ushort[indexTotal] : pool.RentIndices(indexTotal);
+
+        // A refined chunk's passes are blends of what each of the chunk's own vertices carries, so those
+        // are worked out first, one row per attribute, and blended afterwards.
+        double[]? corners = refined is null ? null : new double[vertexCount * 6];
 
         // Exactly as many layers as the loop below writes, filled in place. The list this used to collect
         // into was copied into an array of the same length on the way out, for two allocations where the
@@ -169,8 +195,8 @@ public static class TerrainChunkMesh
 
             for (int detail = 0; detail < 2; detail++)
             {
-                int vertexBase = layerIndex * vertexCount;
-                int indexBase = layerIndex * triangleCount;
+                int vertexBase = layerIndex * drawnVertices;
+                int indexBase = layerIndex * drawnIndices;
                 bool isDetail = detail == 1;
 
                 ChunkProjection projection = Project(chunk, surface, materialId, isDetail);
@@ -215,6 +241,13 @@ public static class TerrainChunkMesh
                         axis,
                         chunk.Orientation);
 
+                    if (corners is not null)
+                    {
+                        (double c0, double c1) = WeightCoefficients(alpha);
+                        StoreCorner(corners, vertexCount, i, u, v, mu, mv, c0, c1);
+                        continue;
+                    }
+
                     vertices[vertexBase + i] = new Vertex3D(
                         new Vector3f((float)(offset.X * scale), (float)(offset.Y * scale), (float)(offset.Z * scale)),
                         new Vector3f((float)(morph.X * scale), (float)(morph.Y * scale), (float)(morph.Z * scale)),
@@ -225,14 +258,27 @@ public static class TerrainChunkMesh
                         new Bgra32(255, 255, 255, alpha));
                 }
 
-                for (int i = 0; i < triangleCount; i++)
+                if (refined is not null && corners is not null)
                 {
-                    indices[indexBase + i] = (ushort)(triangles[i] + vertexBase);
+                    EmitRefined(vertices, vertexBase, refined, corners, vertexCount, scale, weighted: true);
                 }
 
-                FillSurfaceNormals(vertices, triangles, vertexBase);
+                for (int i = 0; i < drawnIndices; i++)
+                {
+                    indices[indexBase + i] = (ushort)(drawnTriangles[i] + vertexBase);
+                }
 
-                layers[layerIndex] = new TerrainChunkLayer(materialId, projection.Tile, indexBase, triangleCount, isBase && !isDetail, isDetail);
+                // Every pass is the same surface, so its normals are the first pass's.
+                if (layerIndex == 0)
+                {
+                    FillSurfaceNormals(vertices, drawnTriangles, vertexBase, refined);
+                }
+                else
+                {
+                    CopySurfaceNormals(vertices, 0, vertexBase, drawnVertices);
+                }
+
+                layers[layerIndex] = new TerrainChunkLayer(materialId, projection.Tile, indexBase, drawnIndices, isBase && !isDetail, isDetail);
                 layerIndex++;
             }
         }
@@ -245,8 +291,8 @@ public static class TerrainChunkMesh
             // 0x510200) -- planar in X and Y, whatever way the ground faces. The seam morph slides the
             // coordinate with the vertex, as the original's draw does (0x514071). Its weight selector is
             // one: the pass covers the chunk exactly once and no cross-fade applies to it.
-            int vertexBase = materialLayers * vertexCount;
-            int indexBase = materialLayers * triangleCount;
+            int vertexBase = materialLayers * drawnVertices;
+            int indexBase = materialLayers * drawnIndices;
             for (int i = 0; i < vertexCount; i++)
             {
                 Vector3d offset = offsets[i];
@@ -255,6 +301,12 @@ public static class TerrainChunkMesh
                 (double mu, double mv) = light.Project(
                     chunk.Position.X + offset.X + morph.X,
                     chunk.Position.Y + offset.Y + morph.Y);
+
+                if (corners is not null)
+                {
+                    StoreCorner(corners, vertexCount, i, u, v, mu, mv, 1.0, 0.0);
+                    continue;
+                }
 
                 vertices[vertexBase + i] = new Vertex3D(
                     new Vector3f((float)(offset.X * scale), (float)(offset.Y * scale), (float)(offset.Z * scale)),
@@ -266,16 +318,29 @@ public static class TerrainChunkMesh
                     new Bgra32(255, 255, 255, 255));
             }
 
-            for (int i = 0; i < triangleCount; i++)
+            if (refined is not null && corners is not null)
             {
-                indices[indexBase + i] = (ushort)(triangles[i] + vertexBase);
+                EmitRefined(vertices, vertexBase, refined, corners, vertexCount, scale, weighted: false);
             }
 
-            FillSurfaceNormals(vertices, triangles, vertexBase);
-            lightLayer = new TerrainChunkLightLayer(light.Page, indexBase, triangleCount);
+            for (int i = 0; i < drawnIndices; i++)
+            {
+                indices[indexBase + i] = (ushort)(drawnTriangles[i] + vertexBase);
+            }
+
+            if (materialLayers > 0)
+            {
+                CopySurfaceNormals(vertices, 0, vertexBase, drawnVertices);
+            }
+            else
+            {
+                FillSurfaceNormals(vertices, drawnTriangles, vertexBase, refined);
+            }
+
+            lightLayer = new TerrainChunkLightLayer(light.Page, indexBase, drawnIndices);
         }
 
-        return new TerrainChunkGeometry(vertices, indices, layers, lightLayer);
+        return new TerrainChunkGeometry(vertices, indices, layers, lightLayer, refined is null ? null : triangles.ToArray());
         }
         finally
         {
@@ -318,7 +383,12 @@ public static class TerrainChunkMesh
     /// points down, and the winding these triangles arrive with is not dependable.
     /// </para>
     /// </remarks>
-    private static void FillSurfaceNormals(Vertex3D[] vertices, ReadOnlySpan<ushort> triangles, int vertexBase)
+    /// <param name="refined">
+    /// The refinement the layer was built from, if any. Its smooth-ground normals take over from the
+    /// triangles' own wherever the ground was smoothed, and they are the same on both sides of a chunk
+    /// border, where the triangles' own are not.
+    /// </param>
+    private static void FillSurfaceNormals(Vertex3D[] vertices, ReadOnlySpan<ushort> triangles, int vertexBase, Refinement? refined = null)
     {
         int count = 0;
         for (int i = 0; i < triangles.Length; i++)
@@ -367,6 +437,27 @@ public static class TerrainChunkMesh
             normals[c] = new Vector3f(normals[c].X + nx, normals[c].Y + ny, normals[c].Z + nz);
         }
 
+        if (refined is not null)
+        {
+            for (int i = 0; i < count && i < refined.Normals.Length; i++)
+            {
+                float weight = refined.NormalWeights[i];
+                if (weight <= 0f)
+                {
+                    continue;
+                }
+
+                Vector3f own = normals[i];
+                float length = MathF.Sqrt((own.X * own.X) + (own.Y * own.Y) + (own.Z * own.Z));
+                own = length > 1e-12f ? new Vector3f(own.X / length, own.Y / length, own.Z / length) : new Vector3f(0f, 0f, 1f);
+                Vector3f smooth = refined.Normals[i];
+                normals[i] = new Vector3f(
+                    own.X + ((smooth.X - own.X) * weight),
+                    own.Y + ((smooth.Y - own.Y) * weight),
+                    own.Z + ((smooth.Z - own.Z) * weight));
+            }
+        }
+
         for (int i = 0; i < count; i++)
         {
             Vertex3D vertex = vertices[vertexBase + i];
@@ -387,6 +478,24 @@ public static class TerrainChunkMesh
             {
                 ArrayPool<Vector3f>.Shared.Return(rented);
             }
+        }
+    }
+
+    /// <summary>Gives one pass's vertices the shading normals another pass of the same chunk already has.</summary>
+    private static void CopySurfaceNormals(Vertex3D[] vertices, int fromBase, int toBase, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            Vertex3D vertex = vertices[toBase + i];
+            vertices[toBase + i] = new Vertex3D(
+                vertex.Position,
+                vertex.Normal,
+                vertex.DiffuseU,
+                vertex.DiffuseV,
+                vertex.LightmapU,
+                vertex.LightmapV,
+                vertex.Colour,
+                vertices[fromBase + i].SurfaceNormal);
         }
     }
 

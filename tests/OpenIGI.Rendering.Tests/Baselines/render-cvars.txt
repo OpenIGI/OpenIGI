@@ -176,6 +176,9 @@ r_taa_sharpen	0.25	archive
 r_terrain_cache	4096	archive
 r_terrain_detail	0	archive
 r_terrain_occlusion	0	archive
+r_terrain_smooth	2	archive
+r_terrain_smooth_limit	0.3	archive
+r_terrain_smooth_relax	0	archive
 r_thin_geometry	0.75	archive
 r_time_of_day	-1	-
 r_tonemap	neutral	archive
