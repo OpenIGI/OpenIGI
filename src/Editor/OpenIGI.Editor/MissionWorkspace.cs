@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Collections;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Editor.Core.Projects;
@@ -177,6 +178,14 @@ internal static class TaskPresentation
     /// <returns>The position parameter, or <see langword="null"/>.</returns>
     public static MissionParameter? Position(MissionTask task) =>
         task.FindParameter(ScriptParamType.ObjectPos) ?? task.FindParameter("Position");
+
+    /// <summary>Gets where a task stands in the world, in metres, if it has a constant position.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The position, or <see langword="null"/>.</returns>
+    public static Vector3d? PositionMetres(MissionTask task) =>
+        Position(task) is { } position && position.TryGetNumbers(out double[] units) && units.Length == 3
+            ? new Vector3d(WorldUnits.ToMetres(units[0]), WorldUnits.ToMetres(units[1]), WorldUnits.ToMetres(units[2]))
+            : null;
 
     private static bool Has(string type, string part) => type.Contains(part, StringComparison.OrdinalIgnoreCase);
 }

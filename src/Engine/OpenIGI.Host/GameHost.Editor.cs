@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -28,6 +29,7 @@ public sealed partial class GameHost
     private int? _editorMissionWanted;
     private int _editorLastMilliseconds;
     private EditorView _editorView;
+    private readonly EditorPlacementMotion _editorMotion = new();
 
     /// <summary>Gets or sets what opens editor sessions; <see langword="null"/> in builds without the editor.</summary>
     /// <remarks>Set by the desktop composition root before <see cref="Run"/>.</remarks>
@@ -108,6 +110,7 @@ public sealed partial class GameHost
                 ? (kept.Position, kept.Yaw, kept.Pitch)
                 : null;
             CancelMissionWarmUp();
+            _editorMotion.Clear();
             StartMission(id);
             _playerMode = false;
             _window.CursorVisible = true;
@@ -146,6 +149,13 @@ public sealed partial class GameHost
         _logger.Information("Editor", "Closing the editor.");
         _editor = null;
         editor.Dispose();
+        if (_world is { } world && ReferenceEquals(world.Motions, _editorMotion))
+        {
+            world.Motions = _editorMotion.Inner;
+        }
+
+        _editorMotion.Clear();
+        _editorMotion.Inner = null;
 
         // Back to the front end, as abandoning a mission is: the level the editor had open is released.
         CancelMissionWarmUp();
@@ -165,6 +175,14 @@ public sealed partial class GameHost
         if (_editor is not { } editor)
         {
             return false;
+        }
+
+        // The editor's offsets sit over the title's own motions. A level load hands the renderer the title's again,
+        // so the layer is put back on top whenever it is found missing.
+        if (_world is { } world && !ReferenceEquals(world.Motions, _editorMotion))
+        {
+            _editorMotion.Inner = world.Motions;
+            world.Motions = _editorMotion;
         }
 
         int now = _loop.TimeSource.Milliseconds;
@@ -321,6 +339,10 @@ public sealed partial class GameHost
                 host.ApplyOverrideChange(out _);
             }
         }
+
+        public IReadOnlyList<WorldPlacement> Placements => host._scene?.Placements ?? [];
+
+        public void SetPlacementOffset(GameTask owner, Vector3d offsetMetres) => host._editorMotion.SetOffset(owner, offsetMetres);
 
         public void ReloadMission()
         {

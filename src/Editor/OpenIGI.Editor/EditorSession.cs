@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Editor.Panels;
+using OpenIGI.Editor.Viewport;
 using OpenIGI.Host.Editor;
 using OpenIGI.Input;
 using OpenIGI.UI;
@@ -47,6 +48,7 @@ internal sealed class EditorSession : IEditorSession
     private readonly OutlinerPanel _outliner;
     private readonly MenuBar _menu;
     private readonly StatusBar _status;
+    private readonly LiveWorldLink _live;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -65,6 +67,7 @@ internal sealed class EditorSession : IEditorSession
         host.MountContent(project.LayerId, project.Name, project.FilesDirectory);
         _workspace = new MissionWorkspace(host, project);
 
+        _live = new LiveWorldLink(host, _workspace);
         _viewport = new ViewportPanel(_theme, host, _workspace);
         _outliner = new OutlinerPanel(_theme, _workspace);
         _outliner.Activated += _viewport.Frame;
@@ -115,6 +118,7 @@ internal sealed class EditorSession : IEditorSession
     public void Frame(float elapsedSeconds, bool hasInput)
     {
         _workspace.Sync();
+        _live.Update();
         _noticeSeconds -= elapsedSeconds;
         _menu.Caption = _workspace.Mission is { } mission ? $"{mission.Name}{(_workspace.History.IsDirty ? "  • modified" : string.Empty)}" : _host.Title.DisplayName;
         UpdateStatus();

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
@@ -120,6 +121,14 @@ public interface IEditorHost
     /// <summary>Takes a folder mounted by <see cref="MountContent"/> off the content layers.</summary>
     /// <param name="id">The layer's id.</param>
     void UnmountContent(string id);
+
+    /// <summary>Gets what the loaded level placed in the world, each with the task that owns it.</summary>
+    IReadOnlyList<WorldPlacement> Placements { get; }
+
+    /// <summary>Draws everything a task placed moved by an offset, from the next frame, without rebuilding the level.</summary>
+    /// <param name="owner">The task, as the running level holds it.</param>
+    /// <param name="offsetMetres">How far from where it was built; zero puts it back.</param>
+    void SetPlacementOffset(GameTask owner, Vector3d offsetMetres);
 
     /// <summary>Loads the open mission again from the files as they now stand, keeping the camera where it is.</summary>
     void ReloadMission();

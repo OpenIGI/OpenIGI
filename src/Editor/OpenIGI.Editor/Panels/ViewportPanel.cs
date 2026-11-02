@@ -59,7 +59,7 @@ internal sealed class ViewportPanel : EditorElement
     /// <param name="task">The task.</param>
     public void Frame(MissionTask task)
     {
-        if (_host.Camera is not { } camera || PositionOf(task) is not { } target)
+        if (_host.Camera is not { } camera || TaskPresentation.PositionMetres(task) is not { } target)
         {
             return;
         }
@@ -116,7 +116,7 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         Focus();
-        if (_workspace.Selection.Primary is { } selected && PositionOf(selected) is { } origin && _gizmo.Begin(Projector, origin, e.Position))
+        if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin && _gizmo.Begin(Projector, origin, e.Position))
         {
             return true;
         }
@@ -135,7 +135,7 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         MissionTask? selected = _workspace.Selection.Primary;
-        if (selected is null || PositionOf(selected) is not { } origin)
+        if (selected is null || TaskPresentation.PositionMetres(selected) is not { } origin)
         {
             return;
         }
@@ -215,7 +215,7 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         painter.PushClip(Bounds);
-        if (_workspace.Selection.Primary is { } selected && PositionOf(selected) is { } origin)
+        if (_workspace.Selection.Primary is { } selected && TaskPresentation.PositionMetres(selected) is { } origin)
         {
             _gizmo.Draw(painter, Theme, Projector, origin);
         }
@@ -228,10 +228,6 @@ internal sealed class ViewportPanel : EditorElement
         }
     }
 
-    private static Vector3d? PositionOf(MissionTask task) =>
-        TaskPresentation.Position(task) is { } position && position.TryGetNumbers(out double[] units) && units.Length == 3
-            ? new Vector3d(WorldUnits.ToMetres(units[0]), WorldUnits.ToMetres(units[1]), WorldUnits.ToMetres(units[2]))
-            : null;
 
     private void Pick(UiVec2 point, bool toggle)
     {
@@ -242,7 +238,7 @@ internal sealed class ViewportPanel : EditorElement
         ViewportProjector projector = Projector;
         foreach (MissionTask task in _workspace.Document?.EnumerateTasks() ?? [])
         {
-            if (PositionOf(task) is { } at && projector.TryProject(at, out UiVec2 screen))
+            if (TaskPresentation.PositionMetres(task) is { } at && projector.TryProject(at, out UiVec2 screen))
             {
                 float distance = UiVec2.Distance(screen, point);
                 if (distance < bestDistance)
