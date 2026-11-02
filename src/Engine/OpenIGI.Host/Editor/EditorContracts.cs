@@ -122,7 +122,7 @@ public interface IEditorHost
     IOpenIgiLogger Logger { get; }
 
     /// <summary>Reads a game file exactly as the game would: through the content layers, the editor's project first.</summary>
-    /// <param name="path">The path, as the game names it (<c>LOCAL:missions/location0/level1/objects.qvm</c>).</param>
+    /// <param name="path">The path as the game names it: a device or alias, a colon, and the path under it.</param>
     /// <param name="data">Receives the bytes.</param>
     /// <returns><see langword="false"/> when no layer and no archive has the file.</returns>
     bool TryReadFile(string path, out ReadOnlyMemory<byte> data);
