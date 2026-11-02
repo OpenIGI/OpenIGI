@@ -101,10 +101,20 @@ public sealed partial class GameHost
         if (_editorMissionWanted is { } id && _editor is not null)
         {
             _editorMissionWanted = null;
+
+            // A reload of the same mission keeps the view: the editor reloads to show what it saved, and a camera
+            // thrown back to the level's start each time would make every save a hunt for where one was working.
+            (Vector3d Position, float Yaw, float Pitch)? pose = _session.Mission?.Id == id && _camera is { } kept
+                ? (kept.Position, kept.Yaw, kept.Pitch)
+                : null;
             CancelMissionWarmUp();
             StartMission(id);
             _playerMode = false;
             _window.CursorVisible = true;
+            if (pose is { } at)
+            {
+                _camera?.MoveTo(at.Position, at.Yaw, at.Pitch);
+            }
         }
     }
 
@@ -295,6 +305,30 @@ public sealed partial class GameHost
         public IOpenIgiLogger Logger => host._logger;
 
         public void OpenMission(int id) => host._editorMissionWanted = id;
+
+        public bool TryReadFile(string path, out ReadOnlyMemory<byte> data) => host._resources.TryLoad(path, out data);
+
+        public void MountContent(string id, string name, string root)
+        {
+            host._overrides.Mount(new Engine.Resources.OverrideLayer(id, $"{name} (editor)", root));
+            host.ApplyOverrideChange(out _);
+        }
+
+        public void UnmountContent(string id)
+        {
+            if (host._overrides.Unmount(id, out _))
+            {
+                host.ApplyOverrideChange(out _);
+            }
+        }
+
+        public void ReloadMission()
+        {
+            if (host._session.Mission is { } mission)
+            {
+                host._editorMissionWanted = mission.Id;
+            }
+        }
 
         public void Close() => host._editorCloseWanted = true;
     }

@@ -2,9 +2,9 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Collections;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
+using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Editor;
 using OpenIGI.UI.Kit;
@@ -20,11 +20,18 @@ internal sealed class MissionWorkspace
     private readonly IEditorHost _host;
     private MissionDescriptor? _loadedFor;
 
-    public MissionWorkspace(IEditorHost host)
+    public MissionWorkspace(IEditorHost host, EditorProject project)
     {
         _host = host;
+        Project = project;
         History.Changed += () => Changed?.Invoke();
     }
+
+    /// <summary>Gets the project edits are saved into.</summary>
+    public EditorProject Project { get; }
+
+    /// <summary>Gets whether the open mission's objects come from the project rather than the game's files.</summary>
+    public bool MissionIsInProject => Mission is { } mission && Project.Has(ObjectsGamePath(mission));
 
     /// <summary>Raised when the document is replaced or edited, or the history moves.</summary>
     public event Action? Changed;
@@ -66,7 +73,11 @@ internal sealed class MissionWorkspace
 
         try
         {
-            byte[] image = _host.Files.ReadAllBytes(VirtualFileSystem.MissionAlias + LevelLoader.ObjectsScriptName);
+            if (!_host.TryReadFile("LOCAL:" + ObjectsGamePath(mission), out ReadOnlyMemory<byte> image))
+            {
+                throw new IOException($"{ObjectsGamePath(mission)} was not found.");
+            }
+
             Document = MissionDocument.Read(image);
             Document.Changed += OnDocumentChanged;
             _host.Logger.Information("Editor", $"Opened {mission.Name}: {Document.EnumerateTasks().Count()} tasks.");
@@ -79,6 +90,44 @@ internal sealed class MissionWorkspace
 
         Changed?.Invoke();
     }
+
+    /// <summary>Saves the document into the project, where the game will load it from.</summary>
+    /// <returns>Whether there was a document to save.</returns>
+    /// <exception cref="IOException">The project cannot be written.</exception>
+    public bool Save()
+    {
+        if (Document is not { } document || Mission is not { } mission)
+        {
+            return false;
+        }
+
+        Project.Write(ObjectsGamePath(mission), document.ToImage());
+        History.MarkSaved();
+        _host.MountContent(Project.LayerId, Project.Name, Project.FilesDirectory);
+        _host.Logger.Information("Editor", $"Saved {mission.Name} to {Project.PathFor(ObjectsGamePath(mission))}.");
+        return true;
+    }
+
+    /// <summary>Removes the project's copy of the open mission, so the game's own is used again, and reloads it.</summary>
+    /// <returns>Whether the project had a copy.</returns>
+    public bool RevertMission()
+    {
+        if (Mission is not { } mission || !Project.Revert(ObjectsGamePath(mission)))
+        {
+            return false;
+        }
+
+        _host.MountContent(Project.LayerId, Project.Name, Project.FilesDirectory);
+        _loadedFor = null;
+        _host.ReloadMission();
+        return true;
+    }
+
+    /// <summary>Gets the game path of a mission's object script, relative to the installation.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <returns>The path.</returns>
+    public static string ObjectsGamePath(MissionDescriptor mission) =>
+        $"{mission.MissionDirectory.TrimEnd('/', '\\')}/{LevelLoader.ObjectsScriptName}";
 
     /// <summary>Applies a command through the history.</summary>
     /// <param name="command">The command.</param>

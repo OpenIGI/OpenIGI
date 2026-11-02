@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Editor.Panels;
 using OpenIGI.Host.Editor;
 using OpenIGI.Input;
@@ -55,7 +56,14 @@ internal sealed class EditorSession : IEditorSession
         _surfaces = UiSurfaces.Create(host.Device);
         _theme = new EditorTheme(_fonts, _surfaces, host.UiScale);
         _root = new EditorRoot(_theme) { Clipboard = new HostClipboard(host) };
-        _workspace = new MissionWorkspace(host);
+        // One project per game for now, beside the user's settings; it is mounted over the game while the editor is
+        // open, so what is saved is what the level reloads from.
+        EditorProject project = EditorProject.OpenOrCreate(
+            Path.Combine(SettingsPaths.GetUserDirectory(), "editor", "projects", host.Title.Id, "default"),
+            host.Title.Id,
+            $"{host.Title.DisplayName} project");
+        host.MountContent(project.LayerId, project.Name, project.FilesDirectory);
+        _workspace = new MissionWorkspace(host, project);
 
         _viewport = new ViewportPanel(_theme, host, _workspace);
         _outliner = new OutlinerPanel(_theme, _workspace);
@@ -107,6 +115,7 @@ internal sealed class EditorSession : IEditorSession
     public void Frame(float elapsedSeconds, bool hasInput)
     {
         _workspace.Sync();
+        _noticeSeconds -= elapsedSeconds;
         _menu.Caption = _workspace.Mission is { } mission ? $"{mission.Name}{(_workspace.History.IsDirty ? "  • modified" : string.Empty)}" : _host.Title.DisplayName;
         UpdateStatus();
         if (hasInput)
@@ -138,6 +147,7 @@ internal sealed class EditorSession : IEditorSession
 
         _disposed = true;
         SaveLayout();
+        _host.UnmountContent(_workspace.Project.LayerId);
         _host.CursorLocked = false;
         _surfaces.Dispose();
         _fonts.Dispose();
@@ -174,6 +184,35 @@ internal sealed class EditorSession : IEditorSession
     {
         ActionTable actions = _root.Actions;
         actions.Add(new EditorAction("file.close", "Close Editor", _host.Close) { Category = "File" });
+        actions.Add(new EditorAction("file.save", "Save", () => Save())
+        {
+            Category = "File",
+            Shortcut = KeyChord.Parse("Ctrl+S"),
+            CanExecute = () => _workspace.Document is not null && _workspace.History.IsDirty,
+        });
+        actions.Add(new EditorAction("file.reload", "Save and Reload Level", () =>
+        {
+            if (!_workspace.History.IsDirty || Save())
+            {
+                _host.ReloadMission();
+            }
+        })
+        {
+            Category = "File",
+            Shortcut = KeyChord.Parse("Ctrl+R"),
+            CanExecute = () => _workspace.Document is not null,
+        });
+        actions.Add(new EditorAction("file.revert", "Revert Mission to Game Files", () =>
+        {
+            if (_workspace.RevertMission())
+            {
+                Notify($"{_workspace.Project.Name} no longer changes this mission.");
+            }
+        })
+        {
+            Category = "File",
+            CanExecute = () => _workspace.MissionIsInProject,
+        });
         actions.Add(new EditorAction("edit.undo", "Undo", () => _workspace.History.Undo())
         {
             Category = "Edit",
@@ -276,6 +315,10 @@ internal sealed class EditorSession : IEditorSession
             .Add("File", [
                 MenuItem.Submenu("Open Mission", missions),
                 MenuItem.Separator,
+                MenuItem.For(actions["file.save"]),
+                MenuItem.For(actions["file.reload"]),
+                MenuItem.For(actions["file.revert"]),
+                MenuItem.Separator,
                 MenuItem.For(actions["file.close"]),
             ])
             .Add("Edit", [
@@ -303,6 +346,9 @@ internal sealed class EditorSession : IEditorSession
     {
         ActionTable actions = _root.Actions;
         Toolbar toolbar = new(_theme);
+        toolbar.Add(actions["file.save"], KitIcon.Save);
+        toolbar.Add(actions["file.reload"], KitIcon.Play);
+        toolbar.AddSeparator();
         toolbar.Add(actions["edit.undo"], KitIcon.Undo);
         toolbar.Add(actions["edit.redo"], KitIcon.Redo);
         toolbar.AddSeparator();
@@ -314,6 +360,39 @@ internal sealed class EditorSession : IEditorSession
         return toolbar;
     }
 
+    private bool Save()
+    {
+        try
+        {
+            if (_workspace.Save())
+            {
+                Notify($"Saved to {_workspace.Project.Name}. Ctrl+R reloads the level from it.");
+                return true;
+            }
+        }
+        catch (IOException error)
+        {
+            Notify($"Could not save: {error.Message}", isError: true);
+        }
+        catch (UnauthorizedAccessException error)
+        {
+            Notify($"Could not save: {error.Message}", isError: true);
+        }
+
+        return false;
+    }
+
+    private void Notify(string message, bool isError = false)
+    {
+        _notice = message;
+        _noticeIsError = isError;
+        _noticeSeconds = 6f;
+    }
+
+    private string? _notice;
+    private bool _noticeIsError;
+    private float _noticeSeconds;
+
     private void UpdateStatus()
     {
         _status.Segments.Clear();
@@ -321,6 +400,13 @@ internal sealed class EditorSession : IEditorSession
         {
             _status.Segments.Add($"{document.EnumerateTasks().Count()} objects");
             _status.Segments.Add($"{_workspace.Selection.Count} selected");
+        }
+
+        if (_notice is { } notice && _noticeSeconds > 0f)
+        {
+            _status.Message = notice;
+            _status.MessageColor = _noticeIsError ? _theme.Error : _theme.Success;
+            return;
         }
 
         _status.Message = _workspace.LoadError is { } error

@@ -105,6 +105,25 @@ public interface IEditorHost
     /// <summary>Gets the log.</summary>
     IOpenIgiLogger Logger { get; }
 
+    /// <summary>Reads a game file exactly as the game would: through the content layers, the editor's project first.</summary>
+    /// <param name="path">The path, as the game names it (<c>LOCAL:missions/location0/level1/objects.qvm</c>).</param>
+    /// <param name="data">Receives the bytes.</param>
+    /// <returns><see langword="false"/> when no layer and no archive has the file.</returns>
+    bool TryReadFile(string path, out ReadOnlyMemory<byte> data);
+
+    /// <summary>Puts a folder on top of the content layers, so what is saved into it is what the game loads.</summary>
+    /// <param name="id">The layer's id; mounting the same id again rescans it.</param>
+    /// <param name="name">The name the <c>content</c> command lists it under.</param>
+    /// <param name="root">The folder, mirroring the installation.</param>
+    void MountContent(string id, string name, string root);
+
+    /// <summary>Takes a folder mounted by <see cref="MountContent"/> off the content layers.</summary>
+    /// <param name="id">The layer's id.</param>
+    void UnmountContent(string id);
+
+    /// <summary>Loads the open mission again from the files as they now stand, keeping the camera where it is.</summary>
+    void ReloadMission();
+
     /// <summary>Loads a mission to edit, replacing any loaded one. Runs between frames.</summary>
     /// <param name="id">The mission id.</param>
     void OpenMission(int id);
