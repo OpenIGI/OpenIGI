@@ -1,5 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Editor.Core.Missions;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Editor.Panels;
 using OpenIGI.Editor.Viewport;
@@ -267,10 +269,16 @@ internal sealed class EditorSession : IEditorSession
             Shortcut = KeyChord.Parse("Delete"),
             CanExecute = () => _workspace.Selection.Count > 0,
         });
-        actions.Add(new EditorAction("edit.deselect", "Deselect All", _workspace.Selection.Clear)
+        actions.Add(new EditorAction("edit.duplicate", "Duplicate", Duplicate)
         {
             Category = "Edit",
             Shortcut = KeyChord.Parse("Ctrl+D"),
+            CanExecute = () => _workspace.Selection.Count > 0,
+        });
+        actions.Add(new EditorAction("edit.deselect", "Deselect All", _workspace.Selection.Clear)
+        {
+            Category = "Edit",
+            Shortcut = KeyChord.Parse("Ctrl+Shift+A"),
             CanExecute = () => _workspace.Selection.Count > 0,
         });
         actions.Add(new EditorAction("view.frame", "Frame Selection", () =>
@@ -352,6 +360,7 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["edit.undo"]),
                 MenuItem.For(actions["edit.redo"]),
                 MenuItem.Separator,
+                MenuItem.For(actions["edit.duplicate"]),
                 MenuItem.For(actions["edit.delete"]),
                 MenuItem.For(actions["edit.deselect"]),
             ])
@@ -386,10 +395,44 @@ internal sealed class EditorSession : IEditorSession
         toolbar.AddSeparator();
         toolbar.Add(actions["view.frame"], KitIcon.Search);
         toolbar.Add(actions["view.snap"], KitIcon.Grid);
+        toolbar.Add(actions["edit.duplicate"], KitIcon.Copy);
         toolbar.Add(actions["edit.delete"], KitIcon.Trash);
         toolbar.AddSpring();
         toolbar.Add(actions["file.close"], KitIcon.Close, showText: true);
         return toolbar;
+    }
+
+    private void Duplicate()
+    {
+        if (_workspace.Document is not { } document || _workspace.Selection.Count == 0)
+        {
+            return;
+        }
+
+        List<MissionTask> copies = [];
+        IReadOnlyList<MissionTask> originals = [.. _workspace.Selection.Items];
+        using (_workspace.History.BeginTransaction(originals.Count == 1 ? $"Duplicate {TaskPresentation.Name(originals[0])}" : $"Duplicate {originals.Count} objects"))
+        {
+            foreach (MissionTask original in originals)
+            {
+                MissionTask copy = original.Clone();
+
+                // Nudged a metre along X, so the copy is visible beside its original rather than inside it.
+                if (TaskPresentation.Position(copy) is { } position && position.TryGetNumbers(out double[] units) && units.Length == 3)
+                {
+                    position.SetNumbers([units[0] + WorldUnits.PerMetre, units[1], units[2]]);
+                }
+
+                TaskLocation at = document.Locate(original);
+                _workspace.Execute(new InsertTaskCommand(document, copy, at with { Index = at.Index + 1 }));
+                copies.Add(copy);
+            }
+        }
+
+        _workspace.Selection.Set(copies);
+        Notify(copies.Count == 1
+            ? "Duplicated. Save and Reload (Ctrl+R) to see a new object in the world."
+            : $"Duplicated {copies.Count} objects. Save and Reload (Ctrl+R) to see them in the world.");
     }
 
     private void Play()

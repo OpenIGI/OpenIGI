@@ -128,6 +128,26 @@ public sealed class EditHistoryTests
         Assert.Equal(original, document.ToImage());
     }
 
+    /// <summary>A copy carries its parameters and children, starts with no id, and its edits leave the original alone.</summary>
+    [Fact]
+    public void A_clone_is_deep_and_anonymous()
+    {
+        MissionDocument document = Read();
+        MissionTask root = document.RootTasks.Single();
+        MissionTask copy = root.Clone();
+
+        Assert.Equal(-1, copy.Id);
+        Assert.Equal(root.Children.Count, copy.Children.Count);
+        Assert.Equal(1, root.Children[0].Id);
+        Assert.Equal(-1, copy.Children[0].Id);
+
+        copy.Children[0].FindParameter("Position")!.SetNumbers([9, 9, 9]);
+        Assert.Equal(0.0, X(root.Children[0]));
+
+        document.Insert(copy, new TaskLocation(null, document.Statements.Count));
+        Assert.Equal(2, MissionDocument.Read(document.ToImage()).RootTasks.Count());
+    }
+
     /// <summary>A task cannot be moved into its own subtree.</summary>
     [Fact]
     public void A_task_cannot_contain_itself()

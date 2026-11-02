@@ -10,6 +10,10 @@ namespace OpenIGI.Editor.Core.Missions;
 /// </remarks>
 public sealed class MissionParameter
 {
+    /// <summary>Copies the parameter; the expressions are immutable, so they are shared.</summary>
+    /// <returns>The copy.</returns>
+    public MissionParameter Clone() => new(Declaration, Arguments);
+
     internal MissionParameter(TaskParameterDeclaration declaration, IEnumerable<QscExpression> arguments)
     {
         Declaration = declaration;
@@ -184,6 +188,25 @@ public sealed class MissionTask
         }
 
         return index;
+    }
+
+    /// <summary>Copies the task and everything under it, detached, with no script ids so the copies cannot collide.</summary>
+    /// <returns>The copy.</returns>
+    /// <remarks>
+    /// The id table has 4096 slots and a task created with an id already bound loses its id silently, so a copy
+    /// keeping its original's id would break whatever script finds the original by it. Copies start anonymous.
+    /// </remarks>
+    public MissionTask Clone()
+    {
+        MissionTask copy = new(TypeName, Label) { Declaration = Declaration };
+        copy.Parameters.AddRange(Parameters.Select(static p => p.Clone()));
+        copy.UnnamedArguments = UnnamedArguments is null ? null : [.. UnnamedArguments];
+        foreach (MissionTask child in Children)
+        {
+            copy.AddChild(child.Clone());
+        }
+
+        return copy;
     }
 
     /// <summary>Enumerates this task and everything under it, depth first, parents before children.</summary>
