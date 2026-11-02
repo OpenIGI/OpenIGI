@@ -4,10 +4,12 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Host;
 
@@ -19,6 +21,13 @@ public sealed partial class GameHost
     private const double PreviewDistance = 3.4;
     private const double PreviewAside = 0.0;
     private const double PreviewMiddle = 0.9;
+
+    // The weapon a co-op look holds: the MP5 SD3 Jones starts every mission with.
+    private const string PreviewWeaponScriptId = "WEAPON_ID_MP5SD";
+
+    // The game's weapon table, read once for the look's gun; null until read, and when it could not be.
+    private WeaponType? _previewGun;
+    private bool _previewGunRead;
 
     // A tick of the look's idle, as the game's own ticks run.
     private const float PreviewTickSeconds = 1f / 30f;
@@ -96,7 +105,7 @@ public sealed partial class GameHost
         }
 
         (Vector3d feet, float facing) = StandLook(eye);
-        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, feet, facing + _previewTurn);
+        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, feet, facing + _previewTurn, PreviewGun(backdrop));
 
         // Drawn between its last two ticks, as the game's own bodies are.
         bodies.BeginFrame(_previewElapsed / PreviewTickSeconds, smooth: true);
@@ -109,6 +118,32 @@ public sealed partial class GameHost
         _previewFor = null;
         _previewElapsed = 0f;
         _previewTurn = 0f;
+    }
+
+    // The gun the look holds, from the game's weapon table: read once, through a script namespace of its own so the game's
+    // is left as it was. A table that won't read leaves the look empty-handed.
+    private WeaponType? PreviewGun(MissionPreview backdrop)
+    {
+        if (_previewGunRead)
+        {
+            return _previewGun;
+        }
+
+        _previewGunRead = true;
+        try
+        {
+            WeaponTypeRegistry weapons = new(_logger);
+            NativeRegistry natives = new();
+            weapons.Register(natives);
+            weapons.Load(backdrop.FileSystem, backdrop.Resources, natives);
+            _previewGun = weapons.TryGetByScriptId(PreviewWeaponScriptId, out WeaponType gun) ? gun : null;
+        }
+        catch (Exception ex) when (ex is EngineFatalException or IOException or InvalidDataException or InvalidOperationException)
+        {
+            _logger.Warning("Coop", $"The co-op look holds no gun: the weapon table would not read ({ex.Message}).");
+        }
+
+        return _previewGun;
     }
 
     // Where the look stands: held in the picture as a view model is, a few metres straight ahead of the eye, upright and

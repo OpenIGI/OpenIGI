@@ -291,7 +291,9 @@ public interface ISoldierBodies : IDisposable
     /// <param name="model">Its model, or <see langword="null"/>.</param>
     /// <param name="feet">Where it stands, in world units.</param>
     /// <param name="facing">Its heading, a gamma.</param>
-    void ShowPreviewBody(OpenIGI.Game.World.LoadedMission mission, string? model, Vector3d feet, float facing)
+    /// <param name="gun">The weapon in its hand, held as a partner's is, or <see langword="null"/>.</param>
+    void ShowPreviewBody(
+        OpenIGI.Game.World.LoadedMission mission, string? model, Vector3d feet, float facing, OpenIGI.Game.Weapons.WeaponType? gun = null)
     {
     }
 
