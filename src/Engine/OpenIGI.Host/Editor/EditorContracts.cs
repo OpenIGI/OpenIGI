@@ -1,3 +1,4 @@
+using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Titles;
@@ -70,6 +71,9 @@ public interface IEditorHost
 {
     /// <summary>Gets the graphics device, for fonts and textures.</summary>
     IGraphicsDevice Device { get; }
+
+    /// <summary>Gets the audio device, for previewing sounds.</summary>
+    IAudioDevice Audio { get; }
 
     /// <summary>Gets the window's input.</summary>
     InputState Input { get; }

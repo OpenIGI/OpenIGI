@@ -74,6 +74,7 @@ internal sealed class ContentPanel : EditorElement
     private readonly Button _open;
     private readonly CodeEditor _text;
     private readonly ModelPreview _model;
+    private readonly SoundPreview _sound;
     private readonly Selection<ContentNode> _selection = new();
     private readonly RhiImageFactory _images;
     private readonly List<ContentNode> _roots = [];
@@ -117,11 +118,13 @@ internal sealed class ContentPanel : EditorElement
         };
         _text = new CodeEditor(theme) { IsReadOnly = true, Visibility = Visibility.Collapsed };
         _model = new ModelPreview(theme) { Visibility = Visibility.Collapsed };
+        _sound = new SoundPreview(theme, host.Audio) { Visibility = Visibility.Collapsed };
         AddChild(_search);
         AddChild(_tree);
         AddChild(_open);
         AddChild(_text);
         AddChild(_model);
+        AddChild(_sound);
     }
 
     /// <summary>Searches the files and selects the first match, as typing in the search box and clicking it would.</summary>
@@ -168,6 +171,7 @@ internal sealed class ContentPanel : EditorElement
     /// <summary>Frees the preview's texture.</summary>
     public void Release()
     {
+        _sound.Release();
         if (_image is { } image)
         {
             _images.DestroyImage(image);
@@ -194,6 +198,7 @@ internal sealed class ContentPanel : EditorElement
         UiRect body = UiRect.FromEdges(right.X, right.Y + Theme.ControlHeight + (pad * 2f) + Theme.RowHeight, right.Right, right.Bottom);
         Place(context, _text, body);
         Place(context, _model, body);
+        Place(context, _sound, body);
     }
 
     /// <inheritdoc/>
@@ -364,6 +369,8 @@ internal sealed class ContentPanel : EditorElement
         _text.Visibility = Visibility.Collapsed;
         _model.Visibility = Visibility.Collapsed;
         _model.Show(null);
+        _sound.Visibility = Visibility.Collapsed;
+        _sound.Show(ReadOnlyMemory<byte>.Empty);
         _open.IsEnabled = node is { Entry: null, IsFolder: false } && node.Extension == ".qvm";
         _facts = string.Empty;
         if (node is null || node.IsFolder)
@@ -394,6 +401,13 @@ internal sealed class ContentPanel : EditorElement
                 return;
             }
 
+            if (_sound.Show(bytes))
+            {
+                _sound.Visibility = Visibility.Visible;
+                _facts += "  •  " + _sound.Facts;
+                return;
+            }
+
             if (node.Extension == ".mef")
             {
                 MefModel model = MefModel.Read(bytes, AssetFormatProfile.Permissive);
@@ -417,7 +431,7 @@ internal sealed class ContentPanel : EditorElement
                 return;
             }
         }
-        catch (Exception error) when (error is TextureFormatException or Scripting.Qvm.QvmFormatException or QscDecompileException or PackFormatException or IlffFormatException)
+        catch (Exception error) when (error is TextureFormatException or Scripting.Qvm.QvmFormatException or QscDecompileException or PackFormatException or IlffFormatException or Formats.Sound.IlsfFormatException)
         {
             _facts += $"  •  could not be decoded: {error.Message}";
         }

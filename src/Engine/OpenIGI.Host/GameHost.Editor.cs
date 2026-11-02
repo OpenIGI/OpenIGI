@@ -354,6 +354,8 @@ public sealed partial class GameHost
 
         public InputState Input => host._window.Input;
 
+        public OpenIGI.Audio.IAudioDevice Audio => host._audioOut.Device;
+
         public float Width => host._window.Width;
 
         public float Height => host._window.Height;
