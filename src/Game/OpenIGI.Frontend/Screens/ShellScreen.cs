@@ -264,6 +264,21 @@ public abstract class ShellScreen : Screen
             VerticalAlignment = VerticalAlignment.Center,
         };
         quit.Activated += _ => Context.Host.Quit();
+
+        // The editor, from the front end only: opening it releases whatever the menu is drawing over.
+        if (Context.Host.CanOpenEditor && !Context.InGame && !Context.Host.TouchScreen)
+        {
+            var editor = new Button(theme, "Editor")
+            {
+                Accent = ButtonAccent.Text,
+                TextSize = 19f,
+                Padding = new Thickness(0f, 8f),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            editor.Activated += _ => Context.Host.OpenEditor();
+            right.Add(editor);
+        }
+
         right.Add(quit);
         row.Add(right);
 
