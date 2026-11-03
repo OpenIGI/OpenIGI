@@ -27,6 +27,7 @@ public sealed class MissionGraphRetailTests(ITestOutputHelper output)
         ScriptVocabulary vocabulary = title.CreateScriptVocabulary();
         SortedSet<string> problems = new(StringComparer.Ordinal);
         int missions = 0;
+        int latches = 0;
         SortedSet<string> unknownNames = new(StringComparer.Ordinal);
         foreach (string path in source.EnumerateFiles("objects.qvm"))
         {
@@ -48,6 +49,7 @@ public sealed class MissionGraphRetailTests(ITestOutputHelper output)
                 }
             }
 
+            latches += graph.TaskNodes.Count(static n => n.LatchCondition is not null);
             int tasks = graph.TaskNodes.Count();
             int shown = graph.TaskNodes.Count(static n => n.IsShown);
             int expressions = graph.Nodes.Values.OfType<ExpressionGraphNode>().Count();
@@ -62,6 +64,8 @@ public sealed class MissionGraphRetailTests(ITestOutputHelper output)
         output.WriteLine("UNKNOWN " + string.Join(" | ", unknownNames));
 
         Assert.True(missions > 10, $"only {missions} missions");
+        output.WriteLine($"latches: {latches}");
+        Assert.True(latches > 20, $"only {latches} retail latches recognised");
         Assert.True(problems.Count == 0, $"{problems.Count} problems:\n" + string.Join('\n', problems.Take(60)));
     }
 }

@@ -163,11 +163,11 @@ public sealed class ExpressionGraphReader
 
         // A native named without brackets is called all the same (HumanPlayer_isDead).
         return _vocabulary.TryGetNative(name, out _)
-            ? Call(path, name, [])
+            ? Call(path, name, [], bare: true)
             : Add(path, ExpressionNodeKind.UnknownName, name, ScriptType.Any, []);
     }
 
-    private GraphPinRef Call(string path, string name, IReadOnlyList<ScriptExpression> arguments)
+    private GraphPinRef Call(string path, string name, IReadOnlyList<ScriptExpression> arguments, bool bare = false)
     {
         _vocabulary.TryGetNative(name, out NativeSignature? native);
         NativeParameter[] inputs = new NativeParameter[arguments.Count];
@@ -178,7 +178,7 @@ public sealed class ExpressionGraphReader
                 : new NativeParameter(i.ToString(CultureInfo.InvariantCulture), ScriptType.Any);
         }
 
-        GraphPinRef call = Add(path, ExpressionNodeKind.Call, name, native?.Returns ?? ScriptType.Any, inputs, native: native);
+        GraphPinRef call = Add(path, ExpressionNodeKind.Call, name, native?.Returns ?? ScriptType.Any, inputs, native: native, bare: bare);
         for (int i = 0; i < arguments.Count; i++)
         {
             Wire(Walk(arguments[i], $"{path}.{i}"), call.Node, i);
@@ -219,13 +219,15 @@ public sealed class ExpressionGraphReader
         NativeParameter[] inputs,
         ScriptOperator op = ScriptOperator.None,
         NativeSignature? native = null,
-        double number = 0)
+        double number = 0,
+        bool bare = false)
     {
         ExpressionGraphNode node = new(new GraphNodeKey(_prefix + path), kind, text, type, inputs)
         {
             Operator = op,
             Native = native,
             Number = number,
+            IsBare = bare,
             Owner = _owner,
         };
         _nodes.Add(node);

@@ -58,6 +58,9 @@ public sealed class GraphLayout
     /// <summary>Gets the hash of each expression parameter's text when its node positions were saved, by <c>task/parameter</c>.</summary>
     public Dictionary<string, ulong> TextHashes { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Gets the graph's action nodes, which compile into the mission as generated tasks.</summary>
+    public Exec.ExecLayer Actions { get; } = new();
+
     /// <summary>Tells listeners the layout changed; called by the commands that change it.</summary>
     public void NotifyChanged() => Changed?.Invoke();
 
@@ -153,6 +156,7 @@ public sealed class GraphLayout
             }
 
             json.WriteEndArray();
+            Exec.ExecLayerJson.Write(json, Actions);
             json.WriteStartObject("text");
             foreach ((string owner, ulong hash) in TextHashes.OrderBy(static p => p.Key, StringComparer.Ordinal))
             {
@@ -210,6 +214,7 @@ public sealed class GraphLayout
             }
         }
 
+        Exec.ExecLayerJson.Read(root, layout.Actions);
         foreach (JsonProperty text in Property(root, "text"))
         {
             layout.TextHashes[text.Name] = ulong.Parse(

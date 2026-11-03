@@ -40,6 +40,12 @@ public sealed class EditorProject
     /// <summary>The extension a graph layout takes in place of its script's.</summary>
     public const string GraphExtension = ".graph.json";
 
+    /// <summary>The folder under the project root that holds the project's macros, which every mission in it can use.</summary>
+    public const string MacrosFolder = "macros";
+
+    /// <summary>The extension of a macro file.</summary>
+    public const string MacroExtension = ".macro.json";
+
     private const int Schema = 1;
 
     private readonly Dictionary<int, MissionTarget> _targets = [];
@@ -193,6 +199,32 @@ public sealed class EditorProject
     /// <param name="gamePath">The script's game path.</param>
     /// <param name="bytes">The sidecar's bytes.</param>
     public void WriteGraph(string gamePath, ReadOnlySpan<byte> bytes) => WriteAtomically(GraphPathFor(gamePath), bytes);
+
+    /// <summary>Reads every macro the project keeps.</summary>
+    /// <returns>Each macro file's bytes, by the macro's file name without extension.</returns>
+    public IReadOnlyDictionary<string, byte[]> ReadMacros()
+    {
+        string folder = Path.Combine(Root, MacrosFolder);
+        return Directory.Exists(folder)
+            ? Directory.EnumerateFiles(folder, "*" + MacroExtension).ToDictionary(
+                static f => Path.GetFileName(f)[..^MacroExtension.Length], File.ReadAllBytes, StringComparer.Ordinal)
+            : new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    }
+
+    /// <summary>Saves a macro to the project's macro library.</summary>
+    /// <param name="name">The macro's name, which becomes its file name.</param>
+    /// <param name="bytes">The macro file's bytes.</param>
+    /// <exception cref="ArgumentException">The name is not usable as a file name.</exception>
+    public void WriteMacro(string name, ReadOnlySpan<byte> bytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            throw new ArgumentException($"'{name}' cannot be a macro's file name.", nameof(name));
+        }
+
+        WriteAtomically(Path.Combine(Root, MacrosFolder, name + MacroExtension), bytes);
+    }
 
     private static void WriteAtomically(string target, ReadOnlySpan<byte> bytes)
     {

@@ -29,6 +29,7 @@ public sealed class MissionGraph
     private readonly ConditionalWeakTable<MissionTask, TaskGraphNode> _byTask = [];
     private readonly List<GraphLink> _links = [];
     private readonly Dictionary<(GraphNodeKey Task, string Parameter), GraphPinRef> _roots = [];
+    private Dictionary<GraphPinRef, GraphPinRef>? _sources;
 
     private MissionGraph()
     {
@@ -65,7 +66,7 @@ public sealed class MissionGraph
         int index = 0;
         foreach (MissionTask root in document.RootTasks)
         {
-            graph.AddTasks(root, index.ToString(CultureInfo.InvariantCulture), frame: null, catalogue, repeated, byId);
+            graph.AddTasks(root, index.ToString(CultureInfo.InvariantCulture), frame: null, catalogue, repeated, byId, generated: false);
             index++;
         }
 
@@ -77,6 +78,16 @@ public sealed class MissionGraph
 
         graph.MarkShown();
         return graph;
+    }
+
+    /// <summary>What feeds an input pin: the output wired into it.</summary>
+    /// <param name="input">The input pin.</param>
+    /// <returns>The output, or <see langword="null"/> when nothing is wired in.</returns>
+    /// <remarks>An expression operand takes one wire; a reference pin naming several tasks answers its first.</remarks>
+    public GraphPinRef? SourceOf(GraphPinRef input)
+    {
+        _sources ??= _links.GroupBy(static l => l.To).ToDictionary(static g => g.Key, static g => g.First().From);
+        return _sources.TryGetValue(input, out GraphPinRef from) ? from : null;
     }
 
     /// <summary>The node of a task.</summary>
@@ -92,7 +103,8 @@ public sealed class MissionGraph
         GraphNodeKey? frame,
         TaskCatalogue catalogue,
         HashSet<int> repeated,
-        Dictionary<int, TaskGraphNode> byId)
+        Dictionary<int, TaskGraphNode> byId,
+        bool generated)
     {
         GraphNodeKey key = task.Id >= 0 && !repeated.Contains(task.Id)
             ? new GraphNodeKey(string.Create(CultureInfo.InvariantCulture, $"t{task.Id}"))
@@ -100,7 +112,8 @@ public sealed class MissionGraph
         TaskNodeDefinition definition = catalogue.TryGet(task.TypeName, out TaskNodeDefinition? known)
             ? known
             : new TaskNodeDefinition(task.TypeName, [], []) { IsContainer = task.Children.Count > 0 };
-        TaskGraphNode node = new(key, task, definition) { Frame = frame };
+        generated |= task.TypeName == TaskCatalogue.ContainerType && task.Label == Exec.ExecLayerCompiler.ContainerLabel;
+        TaskGraphNode node = new(key, task, definition) { Frame = frame, IsGenerated = generated, LatchCondition = LatchOf(task) };
         _nodes[key] = node;
         _byTask.AddOrUpdate(task, node);
         if (task.Id >= 0)
@@ -110,7 +123,7 @@ public sealed class MissionGraph
 
         for (int i = 0; i < task.Children.Count; i++)
         {
-            AddTasks(task.Children[i], string.Create(CultureInfo.InvariantCulture, $"{path}.{i}"), key, catalogue, repeated, byId);
+            AddTasks(task.Children[i], string.Create(CultureInfo.InvariantCulture, $"{path}.{i}"), key, catalogue, repeated, byId, generated);
         }
     }
 
@@ -153,6 +166,32 @@ public sealed class MissionGraph
         }
     }
 
+    // EditVariable_N.nValue == 0 && (X), no Sub: the condition X, as written after the "&&".
+    private static string? LatchOf(MissionTask task)
+    {
+        if (task.TypeName != "EditVariable"
+            || task.FindParameter("Add") is not { Arguments: [QscStringLiteral { Value: { Length: > 0 } add }] }
+            || task.FindParameter("Sub") is { Arguments: [QscStringLiteral { Value: { Length: > 0 } }] })
+        {
+            return null;
+        }
+
+        string self = string.Create(CultureInfo.InvariantCulture, $"EditVariable_{task.Id}.nValue");
+        try
+        {
+            ScriptExpression tree = ScriptExpressionParser.Parse(LevelExpression.Compile(add, self[..^7], LevelExpressionDialect.Igi1));
+            bool latch = tree is { Kind: ScriptExpressionKind.Operator, Operator: ScriptOperator.LogicalAnd, Left: { } test }
+                && test is { Kind: ScriptExpressionKind.Operator, Operator: ScriptOperator.Equal, Left.Text: { } name, Right: { Kind: ScriptExpressionKind.Number, Number: 0 } }
+                && name == self;
+            int and = add.IndexOf("&&", StringComparison.Ordinal);
+            return latch && and >= 0 ? add[(and + 2)..].Trim() : null;
+        }
+        catch (ScriptExpressionException)
+        {
+            return null;
+        }
+    }
+
     // What this mission wires is shown, with the frames that hold it; a type that could take part (IsLogic) but here does not,
     // such as an I.G.I. 2 prop that exports a field nothing reads, stays out of the way with the rest.
     private void MarkShown()
@@ -160,7 +199,7 @@ public sealed class MissionGraph
         HashSet<GraphNodeKey> wired = [.. _links.SelectMany(static l => new[] { l.From.Node, l.To.Node })];
         foreach (TaskGraphNode node in TaskNodes)
         {
-            node.IsShown = wired.Contains(node.Key);
+            node.IsShown = wired.Contains(node.Key) && !node.IsGenerated;
         }
 
         foreach (TaskGraphNode node in TaskNodes.Where(static n => n.IsShown).ToList())

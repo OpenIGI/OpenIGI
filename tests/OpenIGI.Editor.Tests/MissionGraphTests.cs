@@ -49,6 +49,22 @@ public sealed class MissionGraphTests
         Assert.Equal((ExpressionNodeKind.Raw, "Terminal_10.isHacked > * 3"), (raw.Kind, raw.Text));
     }
 
+    /// <summary>The writer keeps the brackets precedence needs and only those, and writes reads and calls as level data does.</summary>
+    [Theory]
+    [InlineData("!Terminal_10.isHacked && Terminal_10.isOn", "!Terminal_10.isHacked && Terminal_10.isOn")]
+    [InlineData("(Terminal_10.isHacked || Terminal_10.isOn) && 1", "(Terminal_10.isHacked || Terminal_10.isOn) && 1")]
+    [InlineData("Terminal_10.isHacked || (Terminal_10.isOn && 1)", "Terminal_10.isHacked || Terminal_10.isOn && 1")]
+    [InlineData("1 - (2 - 3)", "1 - (2 - 3)")]
+    [InlineData("(1 - 2) - 3", "1 - 2 - 3")]
+    [InlineData("!(Terminal_10.nTick > 9 * GAME_FREQUENCY)", "!(Terminal_10.nTick > 9 * GAME_FREQUENCY)")]
+    [InlineData("Game_DisableMusic() && Terminal_10.isOn", "Game_DisableMusic() && Terminal_10.isOn")]
+    [InlineData("this.isRun", "ConditionalContainer_30.isRun")]
+    public void Writer_brackets_only_what_precedence_needs(string text, string expected)
+    {
+        MissionGraph graph = BuildWith(text);
+        Assert.Equal(expected, ExpressionGraphWriter.Write(graph, new GraphNodeKey("t30"), "Condition"));
+    }
+
     /// <summary>A prop nothing wires stays hidden; its frame and wired tasks show.</summary>
     [Fact]
     public void Only_what_is_wired_is_shown()
@@ -126,9 +142,15 @@ public sealed class MissionGraphTests
         Assert.Empty(layout.Collapsed);
     }
 
-    private static MissionGraph Build()
+    // The sample with one more container (30) whose condition is the text given; "this" in it is the container.
+    private static MissionGraph BuildWith(string condition) => Build(Sample.Replace(
+        "Task_New(21, \"ConditionalContainer\"",
+        $"Task_New(30, \"ConditionalContainer\", \"probe\", \"{condition}\", \"\", \"\"), Task_New(21, \"ConditionalContainer\"",
+        StringComparison.Ordinal));
+
+    private static MissionGraph Build(string source = Sample)
     {
-        MissionDocument document = MissionDocument.Read(QscParser.ParseScript(Sample, QvmProgram.IgiVersion));
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript(source, QvmProgram.IgiVersion));
         ScriptVocabulary vocabulary = new ScriptVocabulary()
             .Add([new NativeSignature("Game_DisableMusic", [], null, NativeEffect.Action, ScriptContexts.Mission)])
             .AddFields("Terminal", [new NativeParameter("isHacked", ScriptType.Bool)])

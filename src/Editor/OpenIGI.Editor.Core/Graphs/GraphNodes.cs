@@ -55,6 +55,16 @@ public sealed class TaskGraphNode(GraphNodeKey key, MissionTask task, TaskNodeDe
     /// <summary>Gets or sets a value indicating whether the graph shows it by default: logic, a frame, or linked to something.</summary>
     public bool IsShown { get; set; }
 
+    /// <summary>
+    /// Gets the condition of the retail latch this task is, when it is an <c>EditVariable</c> whose <c>Add</c> is
+    /// <c>EditVariable_N.nValue == 0 &amp;&amp; (X)</c> with no <c>Sub</c>: counted to one the first tick X holds.
+    /// </summary>
+    /// <remarks>The editor draws such a task as an "On X becomes true" event; it stays the task, so it saves unchanged.</remarks>
+    public string? LatchCondition { get; init; }
+
+    /// <summary>Gets a value indicating whether the task was made by lowering action nodes, and is drawn as those nodes instead.</summary>
+    public bool IsGenerated { get; init; }
+
     /// <inheritdoc/>
     public override string Title => Task.Label.Length > 0 ? $"{Task.TypeName} '{Task.Label}'" : Task.ToString();
 }
@@ -126,6 +136,9 @@ public sealed class ExpressionGraphNode(
 
     /// <summary>Gets the number, for a <see cref="ExpressionNodeKind.Number"/> node.</summary>
     public double Number { get; init; }
+
+    /// <summary>Gets a value indicating whether a call was written without brackets (<c>HumanPlayer_isDead</c>), and is written back so.</summary>
+    public bool IsBare { get; init; }
 
     /// <summary>Gets the task and parameter whose text this node is part of.</summary>
     public (GraphNodeKey Task, string Parameter) Owner { get; init; }
