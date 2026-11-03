@@ -34,6 +34,12 @@ public sealed class EditorProject
     /// <summary>The name of the folder that mirrors the installation.</summary>
     public const string FilesFolder = "files";
 
+    /// <summary>The folder under the project root that holds each script's graph layout.</summary>
+    public const string GraphsFolder = "graphs";
+
+    /// <summary>The extension a graph layout takes in place of its script's.</summary>
+    public const string GraphExtension = ".graph.json";
+
     private const int Schema = 1;
 
     private readonly Dictionary<int, MissionTarget> _targets = [];
@@ -158,9 +164,38 @@ public sealed class EditorProject
     /// <param name="gamePath">The game path it replaces.</param>
     /// <param name="bytes">The contents.</param>
     /// <exception cref="IOException">The file cannot be written.</exception>
-    public void Write(string gamePath, ReadOnlySpan<byte> bytes)
+    public void Write(string gamePath, ReadOnlySpan<byte> bytes) => WriteAtomically(PathFor(gamePath), bytes);
+
+    /// <summary>Where the graph layout for a script is kept: beside the project's files, never among them.</summary>
+    /// <param name="gamePath">The script's game path, such as <c>missions/location0/level1/objects.qvm</c>.</param>
+    /// <returns>The sidecar's full path, <c>graphs/&lt;game path&gt;.graph.json</c> under the project root.</returns>
+    /// <remarks>
+    /// The <see cref="FilesFolder"/> is mounted over the game and exported for retail, so a layout file there would be shipped.
+    /// Graphs are the editor's own: node positions, comments and frame sizes, which the game never reads.
+    /// </remarks>
+    public string GraphPathFor(string gamePath)
     {
-        string target = PathFor(gamePath);
+        string script = PathFor(gamePath);
+        string relative = Path.GetRelativePath(FilesDirectory, script);
+        return Path.Combine(Root, GraphsFolder, Path.ChangeExtension(relative, GraphExtension));
+    }
+
+    /// <summary>Reads a script's graph layout.</summary>
+    /// <param name="gamePath">The script's game path.</param>
+    /// <returns>The sidecar's bytes, or <see langword="null"/> when the script has none yet.</returns>
+    public byte[]? ReadGraph(string gamePath)
+    {
+        string path = GraphPathFor(gamePath);
+        return File.Exists(path) ? File.ReadAllBytes(path) : null;
+    }
+
+    /// <summary>Saves a script's graph layout.</summary>
+    /// <param name="gamePath">The script's game path.</param>
+    /// <param name="bytes">The sidecar's bytes.</param>
+    public void WriteGraph(string gamePath, ReadOnlySpan<byte> bytes) => WriteAtomically(GraphPathFor(gamePath), bytes);
+
+    private static void WriteAtomically(string target, ReadOnlySpan<byte> bytes)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         string temporary = target + ".saving";
         using (FileStream stream = new(temporary, FileMode.Create, FileAccess.Write, FileShare.None))

@@ -145,6 +145,13 @@ public interface IEditorHost
     /// <summary>Gets the named task fields the running level's scripts can read (<c>CutScene_1200.isRun</c>), live.</summary>
     Engine.Tasks.ScriptVarRegistry ScriptVariables { get; }
 
+    /// <summary>
+    /// Gets everything the running title's scripts can name: natives with typed signatures, constant families, and the
+    /// fields every task type exports, which the editor builds its graph nodes and pin types from.
+    /// </summary>
+    /// <remarks>Built once per title; callers must not add to it.</remarks>
+    Scripting.Vocabulary.ScriptVocabulary Vocabulary { get; }
+
     /// <summary>Gets whether the running level has a model by the name level data gives it, or null when there is no level.</summary>
     /// <param name="model">The model's name.</param>
     /// <returns>Whether it exists.</returns>

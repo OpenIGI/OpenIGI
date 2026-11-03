@@ -26,6 +26,14 @@ internal sealed class EditorMissionFacts(IEditorHost host, MissionWorkspace work
     public int MountainAreas => host.Terrain?.Mountains.Count ?? 0;
 
     /// <inheritdoc/>
+    public Scripting.Vocabulary.ScriptVocabulary? Vocabulary => host.Vocabulary;
+
+    /// <inheritdoc/>
+    public Scripting.Expressions.LevelExpressionDialect Dialect => Equals(host.Title, global::OpenIGI.Core.Titles.GameTitle.Igi2)
+        ? Scripting.Expressions.LevelExpressionDialect.Igi2
+        : Scripting.Expressions.LevelExpressionDialect.Igi1;
+
+    /// <inheritdoc/>
     public bool? HasModel(string model) => host.HasModel(model);
 
     /// <inheritdoc/>

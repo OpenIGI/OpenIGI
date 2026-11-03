@@ -69,46 +69,6 @@ public static partial class MissionValidator
         }
     }
 
-    // Conditions testing tasks there are none of, and targets that name none.
-    private static void CheckReferences(MissionDocument document, List<MissionIssue> issues)
-    {
-        Dictionary<int, MissionTask> byId = [];
-        foreach (MissionTask task in document.EnumerateTasks())
-        {
-            if (task.Id >= 0)
-            {
-                byId.TryAdd(task.Id, task);
-            }
-        }
-
-        foreach (MissionTask task in document.EnumerateTasks())
-        {
-            if (task.FindParameter("Condition") is { Arguments: [QscStringLiteral { Value: { Length: > 0 } text }] }
-                && ConditionModel.TryParse(text, out ConditionGroup root, out _))
-            {
-                foreach (string subject in ConditionModel.Symbols(root).Select(static s => s[..Math.Max(0, s.IndexOf('.'))]).Distinct())
-                {
-                    if (Referenced(subject) is { } wanted && !byId.TryGetValue(wanted.Id, out MissionTask? _))
-                    {
-                        issues.Add(new MissionIssue(IssueSeverity.Warning, task, $"Its condition tests {subject}, which the mission does not have: that test never holds.")
-                        {
-                            Check = ReferenceCheck,
-                        });
-                    }
-                }
-            }
-
-            MissionParameter? target = task.FindParameter("TargetID") ?? task.FindParameter("Target ID");
-            if (target is { Arguments: [{ } value] } && ScriptValues.TryGetInteger(value, out int targetId) && targetId >= 0 && !byId.ContainsKey(targetId))
-            {
-                issues.Add(new MissionIssue(IssueSeverity.Warning, task, string.Create(CultureInfo.InvariantCulture, $"Its target is task {targetId}, which the mission does not have: it drives nothing."))
-                {
-                    Check = ReferenceCheck,
-                });
-            }
-        }
-    }
-
     private static void CheckModels(MissionDocument document, IMissionFacts facts, List<MissionIssue> issues)
     {
         foreach (MissionTask task in document.EnumerateTasks())

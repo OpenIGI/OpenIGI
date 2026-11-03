@@ -1,3 +1,5 @@
+using OpenIGI.Scripting.Vocabulary;
+
 namespace OpenIGI.Game.Ai;
 
 /// <summary>
@@ -35,66 +37,102 @@ public static class AiScriptApi
     /// </remarks>
     public const int SilencedGunshotRange = 4096;
 
+    /// <summary>The family every <c>AIEVENT_*</c> constant belongs to.</summary>
+    public const string EventFamily = "AiEvent";
+
+    /// <summary>The family of the two <c>AIACTIONFLAG_*</c> constants, every action's last argument.</summary>
+    public const string ActionFlagFamily = "AiActionFlag";
+
+    /// <summary>The family every <c>AITYPE_*</c> constant belongs to.</summary>
+    public const string TypeFamily = "AiType";
+
+    /// <summary>The family of the two <c>AIALARMACCESS_*</c> constants.</summary>
+    public const string AlarmAccessFamily = "AiAlarmAccess";
+
+    /// <summary>The family of the two gunshot ranges, plain distances in engine units.</summary>
+    public const string RangeFamily = "AiRange";
+
+    // Every action's last argument (HumanAI_PushAction's third): whether a later action may push over this one.
+    private static readonly NativeParameter Flags =
+        new("Flags", ScriptType.EnumOf(ActionFlagFamily), "AIACTIONFLAG_PUSHABLE lets a later action push over this one.");
+
+    // The view setters scale metres to world units (x4096) and degrees to radians as they store.
+    private static readonly NativeParameter Metres = new("Metres", ScriptType.Real);
+
+    private static readonly NativeParameter Degrees = new("Degrees", ScriptType.Real);
+
+    // FireAtNode and FireAtTask share their last four (0x44D580/0x44D630 -> one filler): seconds made ticks at once.
+    private static readonly NativeParameter[] FireArguments =
+    [
+        new("Seconds", ScriptType.Real, "How long to keep firing."),
+        new("Burst delay", ScriptType.Real, "Seconds between bursts."),
+        new("Show reload", ScriptType.Bool),
+        Flags,
+    ];
+
+    private static readonly NativeParameter[] None = [];
+
     private static readonly AiNative[] NativeTable =
     [
-        // The eighteen actions, in registration order (0x44CCA0).
-        new("AIAction_Patrol", 3, AiNativeReturn.Void, 0x44D0E0),
-        new("AIAction_Combat", 1, AiNativeReturn.Void, 0x44D160),
-        new("AIAction_Dead", 1, AiNativeReturn.Void, 0x44D260),
-        new("AIAction_FallFlat", 2, AiNativeReturn.Void, 0x44D2C0),
-        new("AIAction_Activate", 3, AiNativeReturn.Void, 0x44D420),
-        new("AIAction_WalkToNode", 2, AiNativeReturn.Void, 0x44D4A0),
-        new("AIAction_RunToNode", 2, AiNativeReturn.Void, 0x44D510),
-        new("AIAction_FireAtNode", 5, AiNativeReturn.Void, 0x44D580),
-        new("AIAction_FireAtTask", 5, AiNativeReturn.Void, 0x44D630),
-        new("AIAction_PlayAnimation", 2, AiNativeReturn.Void, 0x44D6E0),
-        new("AIAction_PlaySound", 3, AiNativeReturn.Void, 0x44D750),
-        new("AIAction_MoveToEvent", 2, AiNativeReturn.Void, 0x44D7D0),
-        new("AIAction_LookAtEvent", 2, AiNativeReturn.Void, 0x44D870),
-        new("AIAction_Stunned", 2, AiNativeReturn.Void, 0x44D8F0),
-        new("AIAction_KickGrenade", 1, AiNativeReturn.Void, 0x44D960),
-        new("AIAction_RunPanicking", 2, AiNativeReturn.Void, 0x44DA00),
-        new("AIAction_Idle", 1, AiNativeReturn.Void, 0x44DA80),
-        new("AIAction_SetCombat", 1, AiNativeReturn.Void, 0x44DAE0),
+        // The eighteen actions, in registration order (0x44CCA0). Each wrapper reads its arguments with
+        // Script_GetArgInt/Real/String; the types are those reads and what the action then does with the value.
+        new("AIAction_Patrol", [Arg("Path", ScriptType.PathRef, "The PatrolPath task whose commands are walked."), Arg("Start", ScriptType.Int, "The command to start at."), Flags], AiNativeReturn.Void, 0x44D0E0),
+        new("AIAction_Combat", [Flags], AiNativeReturn.Void, 0x44D160),
+        new("AIAction_Dead", [Flags], AiNativeReturn.Void, 0x44D260),
+        new("AIAction_FallFlat", [Arg("Seconds", ScriptType.Real, "How long to stay down."), Flags], AiNativeReturn.Void, 0x44D2C0),
+        new("AIAction_Activate", [Arg("Task", ScriptType.TaskRef, "The switch, terminal or alarm to press."), Arg("Run", ScriptType.Bool, "Run there rather than walk."), Flags], AiNativeReturn.Void, 0x44D420),
+        new("AIAction_WalkToNode", [Arg("Node", ScriptType.NodeRef, "The AI graph node to walk to."), Flags], AiNativeReturn.Void, 0x44D4A0),
+        new("AIAction_RunToNode", [Arg("Node", ScriptType.NodeRef, "The AI graph node to run to."), Flags], AiNativeReturn.Void, 0x44D510),
+        new("AIAction_FireAtNode", [Arg("Node", ScriptType.NodeRef, "The AI graph node to fire at."), .. FireArguments], AiNativeReturn.Void, 0x44D580),
+        new("AIAction_FireAtTask", [Arg("Task", ScriptType.TaskRef, "The task to fire at."), .. FireArguments], AiNativeReturn.Void, 0x44D630),
+        new("AIAction_PlayAnimation", [Arg("Animation", ScriptType.Int, "The animation id."), Flags], AiNativeReturn.Void, 0x44D6E0),
+        new("AIAction_PlaySound", [Arg("Sound", ScriptType.Text, "The sound definition's name."), Arg("Attached", ScriptType.Bool, "Play it on the soldier rather than where he stands."), Flags], AiNativeReturn.Void, 0x44D750),
+        new("AIAction_MoveToEvent", [Arg("Run", ScriptType.Bool, "Stored as a byte beside the event's position; the runner sets the gait from it."), Flags], AiNativeReturn.Void, 0x44D7D0),
+        new("AIAction_LookAtEvent", [Arg("Seconds", ScriptType.Real, "How long to keep looking."), Flags], AiNativeReturn.Void, 0x44D870),
+        new("AIAction_Stunned", [Arg("Seconds", ScriptType.Real, "How long the stun lasts."), Flags], AiNativeReturn.Void, 0x44D8F0),
+        new("AIAction_KickGrenade", [Flags], AiNativeReturn.Void, 0x44D960),
+        new("AIAction_RunPanicking", [Arg("Seconds", ScriptType.Real, "How long to run."), Flags], AiNativeReturn.Void, 0x44DA00),
+        new("AIAction_Idle", [Flags], AiNativeReturn.Void, 0x44DA80),
+        new("AIAction_SetCombat", [Flags], AiNativeReturn.Void, 0x44DAE0),
 
         // The thirty-seven functions.
-        new("AIFunction_DefaultHandler", 0, AiNativeReturn.Void, 0x44E060),
-        new("AIFunction_RemoveAlarmActions", 0, AiNativeReturn.Void, 0x44DBC0),
-        new("AIFunction_SetViewLength", 1, AiNativeReturn.Void, 0x44DC40),
-        new("AIFunction_SetAlarmViewLength", 1, AiNativeReturn.Void, 0x44DCD0),
-        new("AIFunction_SetViewAlpha", 1, AiNativeReturn.Void, 0x44DD30),
-        new("AIFunction_SetViewGamma", 1, AiNativeReturn.Void, 0x44DD90),
-        new("AIFunction_SetSecondaryViewLength", 1, AiNativeReturn.Void, 0x44DDF0),
-        new("AIFunction_SetSecondaryAlarmViewLength", 1, AiNativeReturn.Void, 0x44DE80),
-        new("AIFunction_SetSecondaryViewAlpha", 1, AiNativeReturn.Void, 0x44DEE0),
-        new("AIFunction_SetSecondaryViewGamma", 1, AiNativeReturn.Void, 0x44DF40),
-        new("AIFunction_SetEventPriority", 1, AiNativeReturn.Void, 0x44E0C0),
-        new("AIFunction_SetInvulnerability", 1, AiNativeReturn.Void, 0x44E150),
-        new("AIFunction_SetInstantDeath", 1, AiNativeReturn.Void, 0x44E1B0),
-        new("AIFunction_SetDeathAnimation", 1, AiNativeReturn.Void, 0x44E210),
-        new("AIFunction_SetAlarmTriggerID", 1, AiNativeReturn.Void, 0x44E270),
-        new("AIFunction_SetAlarmControlID", 1, AiNativeReturn.Void, 0x44E2D0),
-        new("AIFunction_SetAlarmAccess", 1, AiNativeReturn.Void, 0x44E330),
-        new("AIFunction_SetGunnerID", 1, AiNativeReturn.Void, 0x44E390),
-        new("AIFunction_SetScriptIntegerValue", 2, AiNativeReturn.Void, 0x44E6D0),
-        new("AIFunction_SetScriptRealValue", 2, AiNativeReturn.Void, 0x44E790),
-        new("AIFunction_GetAlarmTriggerID", 0, AiNativeReturn.Int, 0x44E3F0),
-        new("AIFunction_GetAlarmControlID", 0, AiNativeReturn.Int, 0x44E430),
-        new("AIFunction_GetAlarmAccess", 0, AiNativeReturn.Int, 0x44E470),
-        new("AIFunction_GetGunnerID", 0, AiNativeReturn.Int, 0x44E4B0),
-        new("AIFunction_GetAlarmControlStatus", 0, AiNativeReturn.Int, 0x44E4F0),
-        new("AIFunction_GetGunnerStatus", 0, AiNativeReturn.Int, 0x44E5E0),
-        new("AIFunction_GetScriptIntegerValue", 1, AiNativeReturn.Int, 0x44E740),
-        new("AIFunction_GetCurrentEventType", 0, AiNativeReturn.Int, 0x44DFA0),
-        new("AIFunction_IsEventBehind", 0, AiNativeReturn.Int, 0x44E860),
-        new("AIFunction_GetScriptRealValue", 1, AiNativeReturn.Real, 0x44E800),
-        new("AIFunction_GetRandomValue", 1, AiNativeReturn.Real, 0x44E000),
-        new("AIFunction_GetEventDistance", 0, AiNativeReturn.Real, 0x44E930),
-        new("AIFunction_GetAlarmTriggerDistance", 0, AiNativeReturn.Real, 0x44E9B0),
-        new("AIFunction_SetAnimationInterval", 2, AiNativeReturn.Void, 0x44EAF0),
-        new("AIFunction_AddAnimationEntry", 2, AiNativeReturn.Void, 0x44EBB0),
-        new("AIFunction_GetAnimationToPlay", 0, AiNativeReturn.Int, 0x44ECB0),
-        new("AIFunction_SendResponse", 0, AiNativeReturn.Void, 0x44EE40),
+        new("AIFunction_DefaultHandler", None, AiNativeReturn.Void, 0x44E060),
+        new("AIFunction_RemoveAlarmActions", None, AiNativeReturn.Void, 0x44DBC0),
+        new("AIFunction_SetViewLength", [Metres], AiNativeReturn.Void, 0x44DC40),
+        new("AIFunction_SetAlarmViewLength", [Metres], AiNativeReturn.Void, 0x44DCD0),
+        new("AIFunction_SetViewAlpha", [Degrees], AiNativeReturn.Void, 0x44DD30),
+        new("AIFunction_SetViewGamma", [Degrees], AiNativeReturn.Void, 0x44DD90),
+        new("AIFunction_SetSecondaryViewLength", [Metres], AiNativeReturn.Void, 0x44DDF0),
+        new("AIFunction_SetSecondaryAlarmViewLength", [Metres], AiNativeReturn.Void, 0x44DE80),
+        new("AIFunction_SetSecondaryViewAlpha", [Degrees], AiNativeReturn.Void, 0x44DEE0),
+        new("AIFunction_SetSecondaryViewGamma", [Degrees], AiNativeReturn.Void, 0x44DF40),
+        new("AIFunction_SetEventPriority", [Arg("Event", ScriptType.EnumOf(EventFamily), "The next event in the soldier's priority order.")], AiNativeReturn.Void, 0x44E0C0),
+        new("AIFunction_SetInvulnerability", [Arg("On", ScriptType.Bool)], AiNativeReturn.Void, 0x44E150),
+        new("AIFunction_SetInstantDeath", [Arg("On", ScriptType.Bool, "FALSE turns the head and neck one-shot off.")], AiNativeReturn.Void, 0x44E1B0),
+        new("AIFunction_SetDeathAnimation", [Arg("Animation", ScriptType.Int, "The animation id.")], AiNativeReturn.Void, 0x44E210),
+        new("AIFunction_SetAlarmTriggerID", [Arg("Task", ScriptType.TaskRef, "The switch that raises the alarm.")], AiNativeReturn.Void, 0x44E270),
+        new("AIFunction_SetAlarmControlID", [Arg("Task", ScriptType.TaskRef, "The AlarmControl task.")], AiNativeReturn.Void, 0x44E2D0),
+        new("AIFunction_SetAlarmAccess", [Arg("Access", ScriptType.EnumOf(AlarmAccessFamily))], AiNativeReturn.Void, 0x44E330),
+        new("AIFunction_SetGunnerID", [Arg("Task", ScriptType.TaskRef, "The stationary gun to man.")], AiNativeReturn.Void, 0x44E390),
+        new("AIFunction_SetScriptIntegerValue", [Arg("Slot", ScriptType.Int), Arg("Value", ScriptType.Int)], AiNativeReturn.Void, 0x44E6D0),
+        new("AIFunction_SetScriptRealValue", [Arg("Slot", ScriptType.Int), Arg("Value", ScriptType.Real)], AiNativeReturn.Void, 0x44E790),
+        new("AIFunction_GetAlarmTriggerID", None, AiNativeReturn.Int, 0x44E3F0),
+        new("AIFunction_GetAlarmControlID", None, AiNativeReturn.Int, 0x44E430),
+        new("AIFunction_GetAlarmAccess", None, AiNativeReturn.Int, 0x44E470),
+        new("AIFunction_GetGunnerID", None, AiNativeReturn.Int, 0x44E4B0),
+        new("AIFunction_GetAlarmControlStatus", None, AiNativeReturn.Int, 0x44E4F0),
+        new("AIFunction_GetGunnerStatus", None, AiNativeReturn.Int, 0x44E5E0),
+        new("AIFunction_GetScriptIntegerValue", [Arg("Slot", ScriptType.Int)], AiNativeReturn.Int, 0x44E740),
+        new("AIFunction_GetCurrentEventType", None, AiNativeReturn.Int, 0x44DFA0),
+        new("AIFunction_IsEventBehind", None, AiNativeReturn.Int, 0x44E860),
+        new("AIFunction_GetScriptRealValue", [Arg("Slot", ScriptType.Int)], AiNativeReturn.Real, 0x44E800),
+        new("AIFunction_GetRandomValue", [Arg("Maximum", ScriptType.Real)], AiNativeReturn.Real, 0x44E000),
+        new("AIFunction_GetEventDistance", None, AiNativeReturn.Real, 0x44E930),
+        new("AIFunction_GetAlarmTriggerDistance", None, AiNativeReturn.Real, 0x44E9B0),
+        new("AIFunction_SetAnimationInterval", [Arg("Minimum seconds", ScriptType.Real), Arg("Random seconds", ScriptType.Real)], AiNativeReturn.Void, 0x44EAF0),
+        new("AIFunction_AddAnimationEntry", [Arg("Animation", ScriptType.Int), Arg("Weight", ScriptType.Real)], AiNativeReturn.Void, 0x44EBB0),
+        new("AIFunction_GetAnimationToPlay", None, AiNativeReturn.Int, 0x44ECB0),
+        new("AIFunction_SendResponse", None, AiNativeReturn.Void, 0x44EE40),
     ];
 
     // 0x53C94C - AIType -> AiArchetype. The identity prefix is what proves script 0 is rpg, not guard.
@@ -182,6 +220,8 @@ public static class AiScriptApi
     /// <returns><see langword="true"/> when the AI module registers it.</returns>
     public static bool TryGetConstant(string name, out int value) =>
         ConstantsByName.TryGetValue(name, out value);
+
+    private static NativeParameter Arg(string name, ScriptType type, string? doc = null) => new(name, type, doc);
 
     private static Dictionary<string, AiNative> BuildNatives()
     {

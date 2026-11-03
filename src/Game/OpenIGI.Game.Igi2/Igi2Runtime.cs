@@ -1,6 +1,8 @@
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Formats;
+using OpenIGI.Game.World;
+using OpenIGI.Scripting.Vocabulary;
 
 namespace OpenIGI.Game.Igi2;
 
@@ -23,4 +25,15 @@ public sealed class Igi2Runtime : IGameTitleRuntime
 
     /// <inheritdoc/>
     public IReadOnlyList<IContentModule> Modules => Igi2ContentModules.All;
+
+    /// <inheritdoc/>
+    public ScriptVocabulary CreateScriptVocabulary() => new ScriptVocabulary()
+        .Add(Ai.Igi2AiScriptApi.Signatures)
+        .Add(Flow.Igi2MissionScriptVocabulary.Signatures)
+        .Add(Ai.Igi2AiScriptApi.Families)
+        .Add(MissionScriptVocabulary.Families)
+        .Add(TitleScriptVocabulary.RecordTaskFields(Modules))
+        .Add(Flow.Igi2TaskFields.Fields)
+        .Add(Flow.Igi2MissionScriptVocabulary.Families)
+        .AddGlobals(Flow.Igi2MissionScriptVocabulary.Globals);
 }

@@ -438,6 +438,9 @@ public sealed partial class GameHost
     /// <summary>The editor's view of the host.</summary>
     private sealed class EditorHostServices(GameHost host) : IEditorHost
     {
+        private Scripting.Vocabulary.ScriptVocabulary? _vocabulary;
+        private Core.Titles.GameTitle? _vocabularyTitle;
+
         public IGraphicsDevice Device => host._device;
 
         public InputState Input => host._window.Input;
@@ -498,6 +501,21 @@ public sealed partial class GameHost
         }
 
         public Engine.Tasks.ScriptVarRegistry ScriptVariables => host._loop.Variables;
+
+        public Scripting.Vocabulary.ScriptVocabulary Vocabulary
+        {
+            get
+            {
+                // The title can switch under a live editor (New Mission for the other game), so the cache is per title.
+                if (_vocabulary is null || !Equals(_vocabularyTitle, host._titleRuntime.Title))
+                {
+                    _vocabulary = host._titleRuntime.CreateScriptVocabulary();
+                    _vocabularyTitle = host._titleRuntime.Title;
+                }
+
+                return _vocabulary;
+            }
+        }
 
         public bool TryReadModelTexture(string model, int materialSlot, out ReadOnlyMemory<byte> data)
         {

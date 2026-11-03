@@ -51,6 +51,12 @@ public interface IMissionFacts
     /// <summary>Gets how many mountain areas the mission's ground has, built into its octree (an OpenIGI feature).</summary>
     int MountainAreas { get; }
 
+    /// <summary>Gets the title's script vocabulary, which the graph check reads expressions against, or null without one.</summary>
+    Scripting.Vocabulary.ScriptVocabulary? Vocabulary => null;
+
+    /// <summary>Gets which game's level expression rules the mission's text follows.</summary>
+    Scripting.Expressions.LevelExpressionDialect Dialect => Scripting.Expressions.LevelExpressionDialect.Igi1;
+
     /// <summary>Gets the step that makes the mission OpenIGI only, or null.</summary>
     IEditorCommand? MakeOpenIgiOnly();
 }
@@ -75,7 +81,8 @@ public static partial class MissionValidator
     [
         new(IdsCheck, "An id past the game's 4096-slot table, or used twice: the game makes the task but nothing can find it by id."),
         new(DeclarationCheck, "Values that do not match the task type's declaration: kept as written, but they cannot be edited."),
-        new(ReferenceCheck, "A condition or a target naming a task the mission does not have: it never holds, or drives nothing."),
+        new(ReferenceCheck, "A condition, a field read or a reference naming a task the mission does not have, or the wrong kind: it reads 0, or drives nothing."),
+        new(LogicCheck, "An expression the game cannot read, or a call or name it does not know: the game treats it as empty, or reads 0."),
         new(ModelCheck, "A model the level does not have: the object is not drawn and nothing collides with it."),
         new(GroundCheck, "A soldier or pickup well above or below the ground: it falls when the level starts, or is buried."),
         new(TargetCheck, "Something the mission's target cannot run: OpenIGI features in a mission made for the original game."),
@@ -96,7 +103,7 @@ public static partial class MissionValidator
         List<MissionIssue> issues = [];
         CheckIds(document, issues);
         CheckDeclarations(document, issues);
-        CheckReferences(document, issues);
+        CheckGraph(document, facts, issues);
         if (facts is not null)
         {
             CheckModels(document, facts, issues);
