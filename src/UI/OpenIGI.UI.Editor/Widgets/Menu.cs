@@ -69,10 +69,17 @@ public sealed class MenuItem
     /// <param name="title">The title.</param>
     /// <param name="execute">What it does.</param>
     /// <returns>The item.</returns>
-    public static MenuItem Command(string title, System.Action execute)
+    public static MenuItem Command(string title, System.Action execute) => Command(title, execute, enabled: true);
+
+    /// <summary>Creates a plain item that may be greyed out.</summary>
+    /// <param name="title">The title.</param>
+    /// <param name="execute">What it does.</param>
+    /// <param name="enabled">Whether it can be chosen.</param>
+    /// <returns>The item.</returns>
+    public static MenuItem Command(string title, System.Action execute, bool enabled)
     {
         ArgumentNullException.ThrowIfNull(execute);
-        return new MenuItem(title) { Execute = execute };
+        return new MenuItem(title) { Execute = execute, Enabled = enabled };
     }
 
     /// <summary>Creates a submenu.</summary>

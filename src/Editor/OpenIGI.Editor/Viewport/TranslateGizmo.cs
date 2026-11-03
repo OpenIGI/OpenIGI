@@ -30,11 +30,11 @@ internal sealed class TranslateGizmo
     /// <summary>The handle number for none.</summary>
     public const int None = -2;
 
-    private const float ArmPixels = 90f;
+    private static float ArmPixels => 90f * GizmoSize.Scale;
     private const float GrabPixels = 8f;
     private const double SquareStart = 0.22;
     private const double SquareSize = 0.2;
-    private static readonly Vector3d[] Axes = [new(1, 0, 0), new(0, 1, 0), new(0, 0, 1)];
+    private Vector3d[] _axes = AxesOf(Matrix3f.Identity);
 
     private int _dragging = None;
     private Vector3d _start;
@@ -54,24 +54,27 @@ internal sealed class TranslateGizmo
     /// <summary>Updates the hover highlight.</summary>
     /// <param name="projector">The view.</param>
     /// <param name="origin">The gizmo's position, in metres.</param>
+    /// <param name="frame">The axes: identity for the world's, the object's orientation for its own.</param>
     /// <param name="point">The pointer.</param>
-    public void Hover(in ViewportProjector projector, Vector3d origin, UiVec2 point)
+    public void Hover(in ViewportProjector projector, Vector3d origin, Matrix3f frame, UiVec2 point)
     {
         if (!IsDragging)
         {
-            Hot = HandleAt(projector, origin, point);
+            Hot = HandleAt(projector, origin, AxesOf(frame), point);
         }
     }
 
     /// <summary>Starts a drag if the press is on a handle.</summary>
     /// <param name="projector">The view.</param>
     /// <param name="origin">The gizmo's position.</param>
+    /// <param name="frame">The axes: identity for the world's, the object's orientation for its own.</param>
     /// <param name="point">The press.</param>
     /// <param name="surface">Finds the surface under a point of the view, for the centre handle; ignores what is moved.</param>
     /// <returns>Whether a drag started.</returns>
-    public bool Begin(in ViewportProjector projector, Vector3d origin, UiVec2 point, Func<UiVec2, Vector3d?>? surface = null)
+    public bool Begin(in ViewportProjector projector, Vector3d origin, Matrix3f frame, UiVec2 point, Func<UiVec2, Vector3d?>? surface = null)
     {
-        int handle = HandleAt(projector, origin, point);
+        Vector3d[] axes = AxesOf(frame);
+        int handle = HandleAt(projector, origin, axes, point);
         if (handle == None || !projector.TryRay(point, out Vector3d ray))
         {
             return false;
@@ -80,8 +83,8 @@ internal sealed class TranslateGizmo
         Vector3d toEye = Unit(projector.Eye - origin);
         _planeNormal = handle switch
         {
-            >= 0 and <= 2 => Unit(toEye - (Axes[handle] * Vector3d.Dot(toEye, Axes[handle]))),
-            >= 3 => Axes[handle - 3],
+            >= 0 and <= 2 => Unit(toEye - (axes[handle] * Vector3d.Dot(toEye, axes[handle]))),
+            >= 3 => axes[handle - 3],
             _ => toEye,
         };
 
@@ -92,6 +95,7 @@ internal sealed class TranslateGizmo
 
         _dragging = handle;
         Hot = handle;
+        _axes = axes;
         _start = origin;
         _surface = surface;
         return true;
@@ -120,7 +124,7 @@ internal sealed class TranslateGizmo
         Vector3d delta = hit - _startHit;
         if (_dragging is >= 0 and <= 2)
         {
-            Vector3d axis = Axes[_dragging];
+            Vector3d axis = _axes[_dragging];
             delta = axis * Snapped(Vector3d.Dot(delta, axis), step);
         }
         else
@@ -143,8 +147,10 @@ internal sealed class TranslateGizmo
     /// <param name="theme">The theme, for the axis colours.</param>
     /// <param name="projector">The view.</param>
     /// <param name="origin">The gizmo's position.</param>
-    public void Draw(UiPainter painter, EditorTheme theme, in ViewportProjector projector, Vector3d origin)
+    /// <param name="frame">The axes: identity for the world's, the object's orientation for its own.</param>
+    public void Draw(UiPainter painter, EditorTheme theme, in ViewportProjector projector, Vector3d origin, Matrix3f frame)
     {
+        Vector3d[] axes = AxesOf(frame);
         if (!projector.TryProject(origin, out UiVec2 centre))
         {
             return;
@@ -156,14 +162,15 @@ internal sealed class TranslateGizmo
         // The squares first, so the arrows draw over their corners.
         for (int plane = 0; plane < 3; plane++)
         {
-            if (Square(projector, origin, arm, plane, toEye) is not { } quad)
+            if (Square(projector, origin, arm, axes, plane, toEye) is not { } quad)
             {
                 continue;
             }
 
             bool hot = Hot == plane + 3;
             Bgra32 colour = Shade(theme.AxisColor(plane), hot);
-            painter.FillQuad(quad[0], quad[1], quad[2], quad[3], colour.WithAlpha((byte)(hot ? 150 : 70)));
+            // Through the clipped fill, so a handle never draws past the viewport onto the panels around it.
+            painter.FillPolygon(quad, colour.WithAlpha((byte)(hot ? 150 : 70)), smoothEdges: false);
             for (int i = 0; i < 4; i++)
             {
                 painter.StrokeLine(quad[i], quad[(i + 1) % 4], theme.Px(1.5f), colour);
@@ -173,7 +180,7 @@ internal sealed class TranslateGizmo
         float thickness = theme.Px(3f);
         for (int axis = 0; axis < 3; axis++)
         {
-            if (Culled(Axes[axis], toEye) || !projector.TryProject(origin + (Axes[axis] * arm), out UiVec2 tip))
+            if (Culled(axes[axis], toEye) || !projector.TryProject(origin + (axes[axis] * arm), out UiVec2 tip))
             {
                 continue;
             }
@@ -198,7 +205,7 @@ internal sealed class TranslateGizmo
         painter.FillArc(centre, radius - theme.Px(2f), radius, 0f, MathF.Tau, Bgra32.FromRgba(255, 255, 255, 230));
     }
 
-    private static int HandleAt(in ViewportProjector projector, Vector3d origin, UiVec2 point)
+    private static int HandleAt(in ViewportProjector projector, Vector3d origin, Vector3d[] axes, UiVec2 point)
     {
         if (!projector.TryProject(origin, out UiVec2 centre))
         {
@@ -216,7 +223,7 @@ internal sealed class TranslateGizmo
         float bestDistance = GrabPixels;
         for (int axis = 0; axis < 3; axis++)
         {
-            if (!Culled(Axes[axis], toEye) && projector.TryProject(origin + (Axes[axis] * arm), out UiVec2 tip))
+            if (!Culled(axes[axis], toEye) && projector.TryProject(origin + (axes[axis] * arm), out UiVec2 tip))
             {
                 float distance = UiVec2.DistanceToSegment(point, centre, tip);
                 if (distance <= bestDistance)
@@ -234,7 +241,7 @@ internal sealed class TranslateGizmo
 
         for (int plane = 0; plane < 3; plane++)
         {
-            if (Square(projector, origin, arm, plane, toEye) is { } quad && Inside(quad, point))
+            if (Square(projector, origin, arm, axes, plane, toEye) is { } quad && Inside(quad, point))
             {
                 return plane + 3;
             }
@@ -245,15 +252,15 @@ internal sealed class TranslateGizmo
 
     // The square across the two axes other than one, near the centre, as its four corners on screen; none when it is seen
     // nearly edge on or any corner is behind the eye.
-    private static UiVec2[]? Square(in ViewportProjector projector, Vector3d origin, double arm, int normalAxis, Vector3d toEye)
+    private static UiVec2[]? Square(in ViewportProjector projector, Vector3d origin, double arm, Vector3d[] axes, int normalAxis, Vector3d toEye)
     {
-        if (Math.Abs(Vector3d.Dot(Axes[normalAxis], toEye)) < 0.15)
+        if (Math.Abs(Vector3d.Dot(axes[normalAxis], toEye)) < 0.15)
         {
             return null;
         }
 
-        Vector3d a = Axes[(normalAxis + 1) % 3] * arm;
-        Vector3d b = Axes[(normalAxis + 2) % 3] * arm;
+        Vector3d a = axes[(normalAxis + 1) % 3] * arm;
+        Vector3d b = axes[(normalAxis + 2) % 3] * arm;
         Vector3d corner = origin + (a * SquareStart) + (b * SquareStart);
         UiVec2[] quad = new UiVec2[4];
         Vector3d[] points = [corner, corner + (a * SquareSize), corner + (a * SquareSize) + (b * SquareSize), corner + (b * SquareSize)];
@@ -267,6 +274,15 @@ internal sealed class TranslateGizmo
 
         return quad;
     }
+
+    // The frame's axes in the world: an orientation maps local to world through its transpose, so local axis i lands on the
+    // orientation's row i.
+    private static Vector3d[] AxesOf(Matrix3f frame) =>
+    [
+        Unit(new Vector3d(frame.M11, frame.M12, frame.M13)),
+        Unit(new Vector3d(frame.M21, frame.M22, frame.M23)),
+        Unit(new Vector3d(frame.M31, frame.M32, frame.M33)),
+    ];
 
     // An arrow pointing within about ten degrees of the eye cannot be dragged meaningfully.
     private static bool Culled(Vector3d axis, Vector3d toEye) => Math.Abs(Vector3d.Dot(axis, toEye)) > 0.985;

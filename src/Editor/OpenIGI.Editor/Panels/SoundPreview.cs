@@ -189,7 +189,7 @@ internal sealed class SoundPreview : EditorElement
         }
 
         _buffer = _device.CreateBuffer(_format, _pcm.AsSpan(start));
-        _voice = _device.Play(_buffer.Value, VoiceParameters.Default with { Category = SoundCategory.Effects });
+        _voice = _device.Play(_buffer.Value, VoiceParameters.Default with { Category = SoundCategory.Interface });
         _from = seconds;
         _started = _clock;
     }

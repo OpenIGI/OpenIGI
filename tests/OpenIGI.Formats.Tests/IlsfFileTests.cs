@@ -12,7 +12,7 @@ public sealed class IlsfFileTests
     public void APcmSoundRoundTripsThroughTheReader()
     {
         short[] samples = [0, 1000, -1000, 32767, -32768, 7];
-        byte[] bytes = IlsfWriter.WritePcm(samples, channels: 2, sampleRate: 22050);
+        byte[] bytes = IlsfTestSounds.WritePcm(samples, channels: 2, sampleRate: 22050);
 
         IlsfFile sound = IlsfFile.Read(bytes);
 
@@ -34,12 +34,12 @@ public sealed class IlsfFileTests
     public void TheStorageCodeSplitsResidentFromStreamedAndPcmFromAdpcm()
     {
         // Bit 0 selects resident, bit 1 selects ADPCM — the reading of 0x495F70's four switch arms.
-        Assert.True(IlsfFile.Read(IlsfWriter.WritePcm([1], resident: false)).IsStreamed);
-        Assert.False(IlsfFile.Read(IlsfWriter.WritePcm([1], resident: true)).IsStreamed);
-        Assert.True(IlsfFile.Read(IlsfWriter.WriteAdpcm([1], resident: false)).IsAdpcm);
-        Assert.True(IlsfFile.Read(IlsfWriter.WriteAdpcm([1], resident: false)).IsStreamed);
-        Assert.True(IlsfFile.Read(IlsfWriter.WriteAdpcm([1], resident: true)).IsAdpcm);
-        Assert.False(IlsfFile.Read(IlsfWriter.WriteAdpcm([1], resident: true)).IsStreamed);
+        Assert.True(IlsfFile.Read(IlsfTestSounds.WritePcm([1], resident: false)).IsStreamed);
+        Assert.False(IlsfFile.Read(IlsfTestSounds.WritePcm([1], resident: true)).IsStreamed);
+        Assert.True(IlsfFile.Read(IlsfTestSounds.WriteAdpcm([1], resident: false)).IsAdpcm);
+        Assert.True(IlsfFile.Read(IlsfTestSounds.WriteAdpcm([1], resident: false)).IsStreamed);
+        Assert.True(IlsfFile.Read(IlsfTestSounds.WriteAdpcm([1], resident: true)).IsAdpcm);
+        Assert.False(IlsfFile.Read(IlsfTestSounds.WriteAdpcm([1], resident: true)).IsStreamed);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class IlsfFileTests
     public void DecodingInSlicesMatchesDecodingInOneCall()
     {
         short[] source = MakeTone(frames: 64, channels: 1);
-        byte[] bytes = IlsfWriter.WriteAdpcm(source);
+        byte[] bytes = IlsfTestSounds.WriteAdpcm(source);
         ReadOnlyMemory<byte> payload = IlsfFile.Read(bytes).Payload;
 
         short[] whole = new short[source.Length];
@@ -103,7 +103,7 @@ public sealed class IlsfFileTests
         // Encoder and decoder are written independently from the same table description, so a small
         // round-trip error is evidence that both tables are right — a wrong step table diverges wildly.
         short[] source = MakeTone(frames: 512, channels: 2, period: 256);
-        IlsfFile sound = IlsfFile.Read(IlsfWriter.WriteAdpcm(source, channels: 2));
+        IlsfFile sound = IlsfFile.Read(IlsfTestSounds.WriteAdpcm(source, channels: 2));
 
         ReadOnlyMemory<byte> pcm = sound.DecodePcm();
         Assert.Equal(source.Length * sizeof(short), pcm.Length);
@@ -125,11 +125,11 @@ public sealed class IlsfFileTests
     [Fact]
     public void AMonoAdpcmSoundPacksTwoFramesIntoOneByte()
     {
-        IlsfFile odd = IlsfFile.Read(IlsfWriter.WriteAdpcm(new short[5]));
+        IlsfFile odd = IlsfFile.Read(IlsfTestSounds.WriteAdpcm(new short[5]));
         Assert.Equal(5, odd.FrameCount);
         Assert.Equal(3, odd.Payload.Length);
 
-        IlsfFile even = IlsfFile.Read(IlsfWriter.WriteAdpcm(new short[6]));
+        IlsfFile even = IlsfFile.Read(IlsfTestSounds.WriteAdpcm(new short[6]));
         Assert.Equal(3, even.Payload.Length);
     }
 
@@ -137,7 +137,7 @@ public sealed class IlsfFileTests
     public void TrailingBytesPastTheLastFrameAreIgnored()
     {
         // game_music.wav carries one byte more than its frame count needs.
-        byte[] bytes = [.. IlsfWriter.WritePcm([1, 2, 3]), 0xAB];
+        byte[] bytes = [.. IlsfTestSounds.WritePcm([1, 2, 3]), 0xAB];
         IlsfFile sound = IlsfFile.Read(bytes);
 
         Assert.Equal(3, sound.FrameCount);
@@ -152,7 +152,7 @@ public sealed class IlsfFileTests
     [InlineData(3, 8, 1, 22050, "ADPCM")]
     public void AMalformedHeaderIsRejected(int format, int bits, int channels, int rate, string expected)
     {
-        byte[] bytes = IlsfWriter.WriteRaw(format, bits, channels, rate, frameCount: 0);
+        byte[] bytes = IlsfTestSounds.WriteRaw(format, bits, channels, rate, frameCount: 0);
         IlsfFormatException error = Assert.Throws<IlsfFormatException>(() => IlsfFile.Read(bytes));
         Assert.Contains(expected, error.Message, StringComparison.Ordinal);
     }
@@ -160,7 +160,7 @@ public sealed class IlsfFileTests
     [Fact]
     public void ASoundThatDoesNotStartWithTheMagicIsRejected()
     {
-        byte[] bytes = IlsfWriter.WritePcm([1]);
+        byte[] bytes = IlsfTestSounds.WritePcm([1]);
         bytes[1] = (byte)'X';
 
         Assert.False(IlsfFile.IsIlsf(bytes));
@@ -170,7 +170,7 @@ public sealed class IlsfFileTests
     [Fact]
     public void ATruncatedPayloadIsRejected()
     {
-        byte[] bytes = IlsfWriter.WriteTruncated(frameCount: 100, payloadBytes: 8);
+        byte[] bytes = IlsfTestSounds.WriteTruncated(frameCount: 100, payloadBytes: 8);
         Assert.Contains("payload byte", Assert.Throws<IlsfFormatException>(() => IlsfFile.Read(bytes)).Message, StringComparison.Ordinal);
     }
 
@@ -185,7 +185,7 @@ public sealed class IlsfFileTests
     public void TheStreamReaderProducesTheSameSamplesAsTheResidentPath()
     {
         short[] source = MakeTone(frames: 300, channels: 2);
-        byte[] bytes = IlsfWriter.WriteAdpcm(source, channels: 2, resident: false);
+        byte[] bytes = IlsfTestSounds.WriteAdpcm(source, channels: 2, resident: false);
 
         ReadOnlyMemory<byte> resident = IlsfFile.Read(bytes).DecodePcm();
 
@@ -218,7 +218,7 @@ public sealed class IlsfFileTests
     public void RestartingRewindsAndResetsTheDifferentialState()
     {
         short[] source = MakeTone(frames: 64, channels: 1);
-        using MemoryStream stream = new(IlsfWriter.WriteAdpcm(source));
+        using MemoryStream stream = new(IlsfTestSounds.WriteAdpcm(source));
         using IlsfStreamReader reader = IlsfStreamReader.Open(stream);
 
         short[] first = new short[64];
@@ -237,7 +237,7 @@ public sealed class IlsfFileTests
     public void TheStreamReaderReadsAPcmSoundToo()
     {
         short[] source = [5, -5, 100, -100];
-        using MemoryStream stream = new(IlsfWriter.WritePcm(source, resident: false));
+        using MemoryStream stream = new(IlsfTestSounds.WritePcm(source, resident: false));
         using IlsfStreamReader reader = IlsfStreamReader.Open(stream);
 
         short[] read = new short[4];

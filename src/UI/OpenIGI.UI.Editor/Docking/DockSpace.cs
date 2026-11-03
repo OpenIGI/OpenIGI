@@ -134,7 +134,8 @@ public sealed class DockSpace : EditorElement
 
     /// <summary>Shows a panel: brings its tab forward, or docks it into the largest group when it is closed.</summary>
     /// <param name="id">The panel id.</param>
-    public void Show(string id)
+    /// <param name="beside">A panel whose tab group a closed panel opens in, when that one is open; otherwise the largest group.</param>
+    public void Show(string id, string? beside = null)
     {
         DockPanel panel = _panels[id];
         if (GroupOf(id) is { } group)
@@ -143,7 +144,9 @@ public sealed class DockSpace : EditorElement
             return;
         }
 
-        DockTabs target = Groups(_root).MaxBy(static g => g.Bounds.Width * g.Bounds.Height) ?? new DockTabs();
+        DockTabs target = (beside is not null ? GroupOf(beside) : null)
+            ?? Groups(_root).MaxBy(static g => g.Bounds.Width * g.Bounds.Height)
+            ?? new DockTabs();
         _root ??= target;
         target.Panels.Add(panel);
         target.Active = target.Panels.Count - 1;
@@ -451,7 +454,7 @@ public sealed class DockSpace : EditorElement
 
     private float TabWidth(DockPanel panel) =>
         Theme.Px(14f) + (panel.Icon != KitIcon.None ? Theme.IconSize + Theme.Px(6f) : 0f)
-        + Theme.Font.MeasureWidth(panel.Title, Theme.TextSize) + Theme.Px(panel.CanClose ? 30f : 14f);
+        + Theme.Font.MeasureWidth(panel.Title, Theme.TextSize) + Theme.Px(panel.CanClose ? 32f : 14f);
 
     private IEnumerable<(DockTabs Group, DockPanel Panel, UiRect Rect)> Tabs(DockTabs group)
     {
@@ -482,8 +485,8 @@ public sealed class DockSpace : EditorElement
 
     private UiRect CloseRect(UiRect tab)
     {
-        float size = Theme.Px(16f);
-        return new UiRect(tab.Right - size - Theme.Px(6f), tab.Y + ((tab.Height - size) * 0.5f), size, size);
+        float size = Theme.Px(18f);
+        return new UiRect(tab.Right - size - Theme.Px(4f), tab.Y + ((tab.Height - size) * 0.5f), size, size);
     }
 
     private bool IsTabHot((DockTabs Group, DockPanel Panel, UiRect Rect) tab) =>
@@ -564,36 +567,41 @@ public sealed class DockSpace : EditorElement
             painter.FillRect(area, Theme.Panel);
         }
 
-        painter.FillRect(strip, Theme.Chrome);
+        // The tabs sit on the window's ground; only the shown tab takes the panel's colour, joined to its body.
+        painter.FillRect(strip, Theme.Background);
         bool focused = group.ActivePanel?.Content is { } content && Root?.Focused is { } f && f.IsWithin(content);
+        float radius = Theme.Radius;
         foreach ((DockTabs _, DockPanel panel, UiRect rect) in Tabs(group))
         {
             bool active = ReferenceEquals(panel, group.ActivePanel);
             bool hovered = rect.Contains(Root?.PointerPosition ?? default) && !_draggingTab;
+            UiRect shape = new(rect.X, rect.Y + Theme.Px(3f), rect.Width - Theme.Px(2f), rect.Height - Theme.Px(3f));
             if (active)
             {
-                painter.FillRect(rect, Theme.Panel);
-                painter.FillRect(new UiRect(rect.X, rect.Y, rect.Width, Theme.Px(2f)), focused ? Theme.Accent : Theme.BorderStrong);
+                EditorDraw.Fill(painter, Theme, shape, Theme.Panel, radius);
+                painter.FillRect(new UiRect(shape.X, shape.Bottom - radius, shape.Width, radius), Theme.Panel);
+                if (focused)
+                {
+                    EditorDraw.Fill(painter, Theme, new UiRect(shape.X + radius, shape.Y, shape.Width - (radius * 2f), Theme.Px(2f)), Theme.Accent, Theme.Px(1f));
+                }
             }
             else if (hovered)
             {
-                painter.FillRect(rect, Theme.Hover);
+                EditorDraw.Fill(painter, Theme, shape, Theme.Panel.WithAlpha(110), radius);
             }
 
-            DrawTabLabel(painter, panel, rect, active);
-            if (panel.CanClose && (active || hovered))
+            DrawTabLabel(painter, panel, shape, active || hovered);
+            if (panel.CanClose && hovered)
             {
-                UiRect close = CloseRect(rect);
+                UiRect close = CloseRect(shape);
                 if (close.Contains(Root?.PointerPosition ?? default))
                 {
                     EditorDraw.Fill(painter, Theme, close, Theme.Pressed);
                 }
 
-                KitIcons.Draw(painter, KitIcon.Close, close.Center, Theme.Px(10f), Theme.TextMuted);
+                EditorDraw.Icon(painter, Theme, KitIcon.Close, close, Theme.TextMuted, Theme.Px(13f));
             }
         }
-
-        painter.FillRect(new UiRect(area.X, strip.Bottom - Theme.Hairline, area.Width, Theme.Hairline), Theme.Border);
     }
 
     private void DrawTabLabel(UiPainter painter, DockPanel panel, UiRect rect, bool active)
@@ -601,11 +609,11 @@ public sealed class DockSpace : EditorElement
         float x = rect.X + Theme.Px(10f);
         if (panel.Icon != KitIcon.None)
         {
-            EditorDraw.Icon(painter, Theme, panel.Icon, new UiRect(x, rect.Y, Theme.IconSize, rect.Height), active ? Theme.Accent : Theme.TextMuted);
+            EditorDraw.Icon(painter, Theme, panel.Icon, new UiRect(x, rect.Y, Theme.IconSize, rect.Height), active ? Theme.Icon : Theme.TextDisabled);
             x += Theme.IconSize + Theme.Px(6f);
         }
 
-        float right = rect.Right - Theme.Px(panel.CanClose ? 26f : 10f);
+        float right = rect.Right - Theme.Px(panel.CanClose ? 24f : 10f);
         EditorDraw.Label(painter, Theme, panel.Title, new UiRect(x, rect.Y, right - x, rect.Height), active ? Theme.Text : Theme.TextMuted);
     }
 }

@@ -213,6 +213,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // built ahead and need telling.
         _editable = surface.Editing;
         _editable.Changed += OnHeightsChanged;
+        _editable.Painted += OnPainted;
 
         log.Information(
             LogCategory,
@@ -449,6 +450,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         if (_editable is not null)
         {
             _editable.Changed -= OnHeightsChanged;
+            _editable.Painted -= OnPainted;
         }
 
         foreach (Chunk chunk in _chunks)
@@ -475,6 +477,16 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         if (tile < _tiles.Count)
         {
             _tiles[tile].Lod.Refresh(left, top, right, bottom);
+        }
+    }
+
+    // Paint changed a tile's material ids; the quadtree reads them as it splits, so only the set of materials it draws passes
+    // for needs finding again.
+    private void OnPainted(int tile, int left, int top, int right, int bottom)
+    {
+        if (tile < _tiles.Count)
+        {
+            _tiles[tile].Lod.RefreshMaterials();
         }
     }
 

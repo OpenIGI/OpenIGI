@@ -43,6 +43,9 @@ internal sealed class MissionWorkspace
     /// <summary>Gets the open document, or <see langword="null"/> before a mission is open.</summary>
     public MissionDocument? Document { get; private set; }
 
+    /// <summary>Gets every task's values as last loaded or saved, which the inspector marks changes against.</summary>
+    public MissionBaseline Baseline { get; } = new();
+
     /// <summary>Gets the mission the document belongs to.</summary>
     public MissionDescriptor? Mission => Document is null ? null : _loadedFor;
 
@@ -68,12 +71,24 @@ internal sealed class MissionWorkspace
     /// <summary>Follows the host: reads the mission's object script once the host has a new mission up.</summary>
     public void Sync()
     {
+        // Whatever the selection was handed, nothing that has left the mission stays selected: every action on the selection
+        // assumes its tasks are in the document.
+        if (Document is { } current && Selection.Items.Any(task => !current.Contains(task)))
+        {
+            Selection.Prune(current.Contains);
+        }
+
         MissionDescriptor? mission = _host.Mission;
         if (ReferenceEquals(mission, _loadedFor) || _host.IsWarmingUp)
         {
             return;
         }
 
+        // The same mission loaded again (a reload, or a title that loads its first mission twice) keeps what was selected.
+        string? previous = _loadedFor is { } was && Document is { } old ? ObjectsGamePath(was) : null;
+        List<int[]> kept = previous is not null && mission is not null && previous == ObjectsGamePath(mission)
+            ? [.. Selection.Items.Select(task => PathOf(Document!, task))]
+            : [];
         _loadedFor = mission;
         _missionName = mission is null ? string.Empty : _host.MissionName(mission);
         _taskCount = null;
@@ -81,6 +96,7 @@ internal sealed class MissionWorkspace
         History.Clear();
         Graphs.Clear();
         Document = null;
+        Baseline.Capture(null);
         LoadError = null;
         if (mission is null)
         {
@@ -97,6 +113,8 @@ internal sealed class MissionWorkspace
 
             Document = MissionDocument.Read(image);
             Document.Changed += OnDocumentChanged;
+            Baseline.Capture(Document);
+            Selection.Set([.. kept.Select(path => AtPath(Document, path)).OfType<MissionTask>()]);
             _host.Logger.Information("Editor", $"Opened {_host.MissionName(mission)}: {Document.EnumerateTasks().Count()} tasks.");
         }
         catch (Exception error) when (error is IOException or Scripting.Qvm.QvmFormatException or Scripting.Qsc.QscDecompileException)
@@ -106,6 +124,43 @@ internal sealed class MissionWorkspace
         }
 
         Changed?.Invoke();
+    }
+
+    // A task's place in the tree: its root's statement index, then each child index down to it.
+    private static int[] PathOf(MissionDocument document, MissionTask task)
+    {
+        List<int> path = [];
+        MissionTask at = task;
+        while (at.Parent is { } parent)
+        {
+            path.Add(parent.Children.IndexOf(at));
+            at = parent;
+        }
+
+        path.Add(document.Locate(at).Index);
+        path.Reverse();
+        return [.. path];
+    }
+
+    private static MissionTask? AtPath(MissionDocument document, int[] path)
+    {
+        if (path.Length == 0 || path[0] < 0 || path[0] >= document.Statements.Count
+            || document.Statements[path[0]] is not MissionTaskStatement { Task: var task })
+        {
+            return null;
+        }
+
+        foreach (int index in path.Skip(1))
+        {
+            if (index < 0 || index >= task.Children.Count)
+            {
+                return null;
+            }
+
+            task = task.Children[index];
+        }
+
+        return task;
     }
 
     /// <summary>Saves the document into the project, where the game will load it from.</summary>
@@ -122,6 +177,7 @@ internal sealed class MissionWorkspace
         Graphs.Save(this);
         SaveTerrain(mission);
         History.MarkSaved();
+        Baseline.Capture(document);
         return true;
     }
 
@@ -241,18 +297,37 @@ internal static class TaskPresentation
             ? new Vector3d(WorldUnits.ToMetres(units[0]), WorldUnits.ToMetres(units[1]), WorldUnits.ToMetres(units[2]))
             : null;
 
-    /// <summary>Gets the parameter that orients a task, if it has one: the three engine Euler angles.</summary>
+    /// <summary>
+    /// Gets the parameter that orients a task, if it has one: the three engine Euler angles, or for a type that only turns
+    /// about the up axis (I.G.I. 2's cabinets), its one heading.
+    /// </summary>
     /// <param name="task">The task.</param>
     /// <returns>The orientation parameter, or <see langword="null"/>.</returns>
-    public static MissionParameter? Orientation(MissionTask task) => task.FindParameter(ScriptParamType.Real32x9);
+    public static MissionParameter? Orientation(MissionTask task) =>
+        task.FindParameter(ScriptParamType.Real32x9) ?? (task.FindParameter("Orientation") is { Declaration.Type: ScriptParamType.Angle } heading ? heading : null);
+
+    /// <summary>Gets whether a task's orientation is a heading alone, turning about the up axis and nothing else.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> for a heading.</returns>
+    public static bool TurnsAboutUpOnly(MissionTask task) => Orientation(task) is { Declaration.Type: ScriptParamType.Angle };
 
     /// <summary>Gets a task's orientation as a rotation, identity when it has none.</summary>
     /// <param name="task">The task.</param>
     /// <returns>The rotation, composed as the engine composes it.</returns>
-    public static Matrix3f OrientationMatrix(MissionTask task) =>
-        Orientation(task) is { } orientation && orientation.TryGetNumbers(out double[] angles) && angles.Length == 3
-            ? Matrix3f.FromEngineEulerAngles((float)angles[0], (float)angles[1], (float)angles[2])
-            : Matrix3f.Identity;
+    public static Matrix3f OrientationMatrix(MissionTask task)
+    {
+        if (Orientation(task) is not { } orientation || !orientation.TryGetNumbers(out double[] angles))
+        {
+            return Matrix3f.Identity;
+        }
+
+        return angles.Length switch
+        {
+            3 => Matrix3f.FromEngineEulerAngles((float)angles[0], (float)angles[1], (float)angles[2]),
+            1 => Matrix3f.FromEngineEulerAngles(0f, 0f, (float)angles[0]),
+            _ => Matrix3f.Identity,
+        };
+    }
 
     private static bool Has(string type, string part) => type.Contains(part, StringComparison.OrdinalIgnoreCase);
 }

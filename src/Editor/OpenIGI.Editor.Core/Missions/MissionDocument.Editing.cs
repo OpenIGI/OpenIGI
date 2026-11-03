@@ -160,6 +160,39 @@ public sealed partial class MissionDocument
         return previous;
     }
 
+    /// <summary>Declares a task type's parameters, after the declarations already there, so tasks of it can be written.</summary>
+    /// <param name="declaration">The declaration.</param>
+    /// <returns><see langword="false"/> when the type is declared already, and nothing changed.</returns>
+    public bool Declare(TaskDeclaration declaration)
+    {
+        ArgumentNullException.ThrowIfNull(declaration);
+        if (Declarations.ContainsKey(declaration.TypeName))
+        {
+            return false;
+        }
+
+        int index = Statements.FindLastIndex(static s => s is MissionDeclarationStatement) + 1;
+        Statements.Insert(index, new MissionDeclarationStatement(declaration));
+        Declarations[declaration.TypeName] = declaration;
+        return true;
+    }
+
+    /// <summary>Takes a declaration <see cref="Declare"/> added out again.</summary>
+    /// <param name="typeName">The declared type.</param>
+    /// <returns><see langword="false"/> when the type was not declared.</returns>
+    public bool Undeclare(string typeName)
+    {
+        int index = Statements.FindIndex(s => s is MissionDeclarationStatement d && d.Declaration.TypeName == typeName);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Statements.RemoveAt(index);
+        Declarations.Remove(typeName);
+        return true;
+    }
+
     private void Attach(MissionTask task, TaskLocation location)
     {
         if (location.Parent is { } parent)

@@ -662,6 +662,7 @@ public sealed partial class GameHost : IDisposable
             if (SwitchTitleIfDue())
             {
                 ReopenFrontEndForTitle(state);
+                ReopenEditorAfterSwitch();
             }
 
             // A change of language, at the same boundary: it swaps the archives the menus are drawing from.
@@ -799,6 +800,8 @@ public sealed partial class GameHost : IDisposable
         // it is about not spending every core on it while the rest of the shutdown runs.
         _baked.Cancel();
 
+        // The editor's preset is the editor's, not the player's: theirs goes back before the settings are written.
+        RestorePlayerPreset();
         if (!_options.IsBenchmark)
         {
             HostConfiguration.Save(_configuration, _logger);

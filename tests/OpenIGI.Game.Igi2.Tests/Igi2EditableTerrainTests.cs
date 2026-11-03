@@ -111,4 +111,45 @@ public sealed class Igi2EditableTerrainTests
         Assert.False(grid.IsChanged);
         Assert.Empty(editing.ChangedFiles(Read));
     }
+
+    /// <summary>
+    /// Painting a material writes its id into the tile's material map where the brush reaches; taking it away puts back the
+    /// shipped ids; undoing restores the stroke's starting ids; and saving writes the material map into the archive.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Paint_writes_material_ids_and_saves_them()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level1");
+        byte[] shipped = File.ReadAllBytes(Path.Combine(level.Directory, "heightmaps", "heightmaps.res"));
+        Igi2TerrainSurface surface = level.Terrain();
+        Igi2EditableTerrain editing = surface.Editing;
+        Assert.NotEmpty(editing.PaintLayers);
+
+        int tile = Array.FindIndex([.. surface.Tiles], static t => t.Materials is not null);
+        Igi2TerrainTile painted = surface.Tiles[tile];
+        ITerrainHeightGrid grid = editing.Grids[tile];
+        int x = grid.Width / 2, y = grid.Height / 2;
+        byte original = painted.Materials!.GetMaterial(x, y);
+        TerrainPaintLayer layer = editing.PaintLayers.First(l => l.MaterialId != original);
+        (double sx, double sy) = grid.SampleMetres(x, y);
+        List<TerrainPaintCell> changed = [];
+
+        editing.Paint(layer.Index, sx, sy, layer.CellMetres * 2.5, lay: true, changed);
+        Assert.NotEmpty(changed);
+        Assert.Equal(layer.MaterialId, painted.Materials.GetMaterial(x, y));
+
+        ReadOnlyMemory<byte>? Read(string path) =>
+            path.Equals("heightmaps/heightmaps.res", StringComparison.OrdinalIgnoreCase) ? shipped : null;
+        (_, byte[] bytes) = Assert.Single(editing.ChangedFiles(Read));
+        IresEntry saved = IresArchive.Read(bytes).Entries.Single(e => Path.GetFileName(e.Name).Equals(painted.MaterialEntry, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(layer.MaterialId, Igi2TerrainMap.Read(saved.Data).GetMaterial(x, y));
+
+        editing.SetPaint(changed, after: false);
+        Assert.Equal(original, painted.Materials.GetMaterial(x, y));
+
+        editing.SetPaint(changed, after: true);
+        List<TerrainPaintCell> erased = [];
+        editing.Paint(layer.Index, sx, sy, layer.CellMetres * 2.5, lay: false, erased);
+        Assert.Equal(original, painted.Materials.GetMaterial(x, y));
+    }
 }

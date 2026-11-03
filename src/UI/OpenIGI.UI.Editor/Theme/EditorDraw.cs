@@ -99,13 +99,47 @@ public static class EditorDraw
     /// <param name="icon">The icon.</param>
     /// <param name="box">The box.</param>
     /// <param name="color">The colour; the theme's icon colour when omitted.</param>
-    public static void Icon(UiPainter painter, EditorTheme theme, KitIcon icon, UiRect box, Bgra32? color = null)
+    /// <param name="size">The icon's size in pixels, already scaled; the theme's icon size when omitted.</param>
+    public static void Icon(UiPainter painter, EditorTheme theme, KitIcon icon, UiRect box, Bgra32? color = null, float? size = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
-        if (icon != KitIcon.None)
+        if (icon == KitIcon.None)
         {
-            KitIcons.Draw(painter, icon, box.Center, theme.IconSize, color ?? theme.Icon);
+            return;
         }
+
+        if (!Icon(painter, theme, EditorIcons.NameOf(icon), box, color, size))
+        {
+            KitIcons.Draw(painter, icon, box.Center, size ?? theme.IconSize, color ?? theme.Icon);
+        }
+    }
+
+    /// <summary>Draws an icon from the icon face by name (<c>folder</c>, <c>delete</c>), centred in a box.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="name">The icon's name in the icon face.</param>
+    /// <param name="box">The box.</param>
+    /// <param name="color">The colour; the theme's icon colour when omitted.</param>
+    /// <param name="size">The icon's size in pixels, already scaled; the theme's icon size when omitted.</param>
+    /// <returns><see langword="false"/> when there is no icon face or no icon of that name.</returns>
+    public static bool Icon(UiPainter painter, EditorTheme theme, string name, UiRect box, Bgra32? color = null, float? size = null)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        float px = MathF.Round(size ?? theme.IconSize);
+        int codepoint = theme.Fonts.IconCodepoint(name);
+        if (codepoint < 0 || theme.Fonts.IconFont(px) is not { } font)
+        {
+            return false;
+        }
+
+        // An icon glyph fills its em square, so its line is the square: centred on the box, on whole pixels.
+        ReadOnlySpan<char> glyph = [(char)codepoint];
+        float width = font.MeasureWidth(glyph, px);
+        float height = font.LineHeight(px);
+        UiVec2 at = new(MathF.Round(box.Center.X - (width * 0.5f)), MathF.Round(box.Center.Y - (height * 0.5f)));
+        painter.DrawText(font, glyph, at, px, color ?? theme.Icon);
+        return true;
     }
 
     /// <summary>Shortens text with a trailing ellipsis until it fits a width.</summary>

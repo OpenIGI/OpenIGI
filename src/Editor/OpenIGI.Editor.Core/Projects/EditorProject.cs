@@ -2,6 +2,16 @@ using System.Text.Json;
 
 namespace OpenIGI.Editor.Core.Projects;
 
+/// <summary>What a mission is made to run in, which decides what the editor lets it use.</summary>
+public enum MissionTarget
+{
+    /// <summary>The original game as well as OpenIGI: nothing the retail executable cannot load.</summary>
+    Retail,
+
+    /// <summary>OpenIGI only: free to use what the remaster adds, such as mountain areas.</summary>
+    OpenIgi,
+}
+
 /// <summary>
 /// An editor project: a folder holding a manifest and a <c>files</c> tree that mirrors the game's installation.
 /// </summary>
@@ -25,6 +35,8 @@ public sealed class EditorProject
     public const string FilesFolder = "files";
 
     private const int Schema = 1;
+
+    private readonly Dictionary<int, MissionTarget> _targets = [];
 
     private EditorProject(string root, string name, string titleId)
     {
@@ -85,7 +97,41 @@ public sealed class EditorProject
 
         string storedName = json.TryGetProperty("name", out JsonElement n) && n.GetString() is { Length: > 0 } s ? s : name;
         Directory.CreateDirectory(Path.Combine(root, FilesFolder));
-        return new EditorProject(root, storedName, storedTitle);
+        EditorProject project = new(root, storedName, storedTitle);
+        if (json.TryGetProperty("missions", out JsonElement missions) && missions.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty mission in missions.EnumerateObject())
+            {
+                if (int.TryParse(mission.Name, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id)
+                    && mission.Value.TryGetProperty("target", out JsonElement target)
+                    && Enum.TryParse(target.GetString(), ignoreCase: true, out MissionTarget kept))
+                {
+                    project._targets[id] = kept;
+                }
+            }
+        }
+
+        return project;
+    }
+
+    /// <summary>Gets what a mission is made to run in; a mission the project has not been told about is a retail one.</summary>
+    /// <param name="missionId">The mission's id.</param>
+    /// <returns>Its target.</returns>
+    public MissionTarget TargetOf(int missionId) => _targets.GetValueOrDefault(missionId, MissionTarget.Retail);
+
+    /// <summary>Sets what a mission is made to run in, kept in the manifest.</summary>
+    /// <param name="missionId">The mission's id.</param>
+    /// <param name="target">Its target.</param>
+    /// <exception cref="IOException">The manifest cannot be written.</exception>
+    public void SetTarget(int missionId, MissionTarget target)
+    {
+        if (TargetOf(missionId) == target && _targets.ContainsKey(missionId))
+        {
+            return;
+        }
+
+        _targets[missionId] = target;
+        WriteManifest();
     }
 
     /// <summary>Gets the project path a game path is written to.</summary>
@@ -190,6 +236,19 @@ public sealed class EditorProject
         json.WriteNumber("schema", Schema);
         json.WriteString("name", Name);
         json.WriteString("title", TitleId);
+        if (_targets.Count > 0)
+        {
+            json.WriteStartObject("missions");
+            foreach ((int id, MissionTarget target) in _targets.OrderBy(static t => t.Key))
+            {
+                json.WriteStartObject(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                json.WriteString("target", target == MissionTarget.Retail ? "retail" : "openigi");
+                json.WriteEndObject();
+            }
+
+            json.WriteEndObject();
+        }
+
         json.WriteEndObject();
     }
 }

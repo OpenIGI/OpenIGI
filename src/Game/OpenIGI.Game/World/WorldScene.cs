@@ -357,6 +357,16 @@ public sealed class WorldScene
         return new WorldScene(mission, placements, [], unresolved: 0, unplaced: 0, attached: 0);
     }
 
+    /// <summary>Gets a copy of the scene drawing other placements, everything else as it was: what an editor adds or takes away.</summary>
+    /// <param name="placements">The placements the copy draws.</param>
+    /// <returns>The copy. Its placement objects are the ones given, so a renderer keeps what it has made for those it knew.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="placements"/> is <see langword="null"/>.</exception>
+    public WorldScene WithPlacements(IReadOnlyList<WorldPlacement> placements)
+    {
+        ArgumentNullException.ThrowIfNull(placements);
+        return new WorldScene(Mission, placements, Ladders, UnresolvedCount, UnplacedCount, AttachedCount);
+    }
+
     /// <summary>Gets the mission the scene was built from.</summary>
     public LoadedMission Mission { get; }
 

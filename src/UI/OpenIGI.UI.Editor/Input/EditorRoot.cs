@@ -52,6 +52,8 @@ public sealed class EditorRoot : EditorElement
     private KeyCode? _repeatKey;
     private float _stillSeconds;
     private string? _tooltip;
+    private DragDropData? _drag;
+    private IDropTarget? _dropTarget;
 
     /// <summary>Initializes a new instance of the <see cref="EditorRoot"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -116,6 +118,7 @@ public sealed class EditorRoot : EditorElement
         RoutePointer(input.Mouse, Modifiers(input.Keyboard), elapsedSeconds);
         RouteKeys(input.Keyboard, elapsedSeconds);
         Update(elapsedSeconds);
+        Toasts.Update(elapsedSeconds);
 
         // Handlers may have changed the tree; lay out again so this frame draws what it now is.
         Layout(width, height);
@@ -185,6 +188,24 @@ public sealed class EditorRoot : EditorElement
         popup.RaiseClosed();
     }
 
+    /// <summary>Gets the notifications in the window's corner.</summary>
+    public Toasts Toasts { get; } = new();
+
+    /// <summary>Gets what is being dragged between widgets, or <see langword="null"/>.</summary>
+    public DragDropData? Dragging => _drag;
+
+    /// <summary>
+    /// Turns the press a widget holds into a drag of something to another widget: from now until the button is let go, the
+    /// pointer carries <paramref name="drag"/>, and an <see cref="IDropTarget"/> under it when let go takes it.
+    /// </summary>
+    /// <param name="drag">What is dragged.</param>
+    public void BeginDragDrop(DragDropData drag)
+    {
+        ArgumentNullException.ThrowIfNull(drag);
+        _drag = drag;
+        _tooltip = null;
+    }
+
     /// <summary>Closes every popup.</summary>
     public void CloseAllPopups()
     {
@@ -219,6 +240,13 @@ public sealed class EditorRoot : EditorElement
     /// <inheritdoc/>
     protected override void OnDrawOverlay(UiPainter painter)
     {
+        Toasts.Draw(painter, Theme, Bounds);
+        if (_drag is { } drag)
+        {
+            DrawDragLabel(painter, drag);
+            return;
+        }
+
         if (_tooltip is not { } text)
         {
             return;
@@ -239,6 +267,17 @@ public sealed class EditorRoot : EditorElement
         EditorDraw.Shadow(painter, Theme, box);
         EditorDraw.Frame(painter, Theme, box, Theme.Popup, Theme.BorderStrong);
         painter.DrawText(font, text, new UiVec2(box.X + pad, MathF.Round(box.Y + (pad * 0.7f))), size, Theme.Text);
+    }
+
+    // The dragged thing's name by the pointer: accented where it can be dropped, muted where it cannot.
+    private void DrawDragLabel(UiPainter painter, DragDropData drag)
+    {
+        float pad = Theme.Px(6f);
+        UiVec2 extent = new(Theme.Font.MeasureWidth(drag.Label, Theme.TextSize) + (pad * 2f), Theme.ControlHeight);
+        UiRect box = new(MathF.Round(_pointer.X + Theme.Px(14f)), MathF.Round(_pointer.Y + Theme.Px(14f)), extent.X, extent.Y);
+        EditorDraw.Shadow(painter, Theme, box);
+        EditorDraw.Frame(painter, Theme, box, Theme.Popup, _dropTarget is null ? Theme.BorderStrong : Theme.Accent);
+        EditorDraw.Label(painter, Theme, drag.Label, box.Deflate(new Layout.Thickness(pad, 0f)), _dropTarget is null ? Theme.TextMuted : Theme.Text);
     }
 
     private static KeyModifiers Modifiers(KeyboardState keyboard)
@@ -285,6 +324,28 @@ public sealed class EditorRoot : EditorElement
 
         if (_captured is { } held)
         {
+            if (_drag is { } drag)
+            {
+                // A drag between widgets: whatever under the pointer would take it follows it, and takes it on release.
+                _dropTarget = DropTargetAt(point, drag);
+                if (moved)
+                {
+                    _dropTarget?.DragOver(drag, point);
+                }
+
+                if (!mouse.IsDown(_captureButton))
+                {
+                    IDropTarget? target = _dropTarget;
+                    _drag = null;
+                    _dropTarget = null;
+                    EndCapture();
+                    held.OnPointerUp(new PointerEvent(point, _captureButton, _clickCount, modifiers));
+                    target?.Drop(drag, point);
+                }
+
+                return;
+            }
+
             if (moved)
             {
                 held.OnPointerMove(new PointerEvent(point, _captureButton, _clickCount, modifiers));
@@ -324,6 +385,19 @@ public sealed class EditorRoot : EditorElement
                 }
             }
         }
+    }
+
+    private IDropTarget? DropTargetAt(UiVec2 point, DragDropData drag)
+    {
+        for (UiElement? element = HitTest(point); element is not null; element = element.Parent)
+        {
+            if (element is IDropTarget target && element is EditorElement { IsEnabled: true } && target.CanDrop(drag))
+            {
+                return target;
+            }
+        }
+
+        return null;
     }
 
     private void UpdateHover(UiVec2 point, bool moved, KeyModifiers modifiers)
@@ -383,16 +457,33 @@ public sealed class EditorRoot : EditorElement
         _lastPressPoint = point;
         _lastPressButton = button;
 
-        if (_popups.Count > 0 && !_popups.Any(p => p.Bounds.Contains(point)))
+        if (_popups.Count > 0)
         {
-            bool swallow = _popups[^1].SwallowsDismissingPress;
-            CloseAllPopups();
-            if (swallow)
+            // The popups above the one pressed in close (all of them, pressed outside every one), but never a modal one:
+            // a press beside a dialog is taken and does nothing, and one inside it closes only what was opened over it.
+            int pressed = _popups.FindLastIndex(p => p.Bounds.Contains(point));
+            int modal = _popups.FindLastIndex(static p => p.IsModal);
+            int keep = Math.Max(pressed, modal);
+            if (keep < _popups.Count - 1)
+            {
+                bool swallow = _popups[^1].SwallowsDismissingPress;
+                while (_popups.Count - 1 > keep)
+                {
+                    ClosePopup(_popups[^1]);
+                }
+
+                if (swallow)
+                {
+                    return;
+                }
+
+                UpdateHover(point, moved: false, modifiers);
+            }
+
+            if (pressed < 0 && modal >= 0)
             {
                 return;
             }
-
-            UpdateHover(point, moved: false, modifiers);
         }
 
         if (button == MouseButton.Left)

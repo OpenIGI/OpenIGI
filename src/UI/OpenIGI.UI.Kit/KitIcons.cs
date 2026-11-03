@@ -129,6 +129,12 @@ public enum KitIcon
 
     /// <summary>A path or graph: linked nodes.</summary>
     Graph,
+
+    /// <summary>An arrow pointing left: back.</summary>
+    ArrowLeft,
+
+    /// <summary>A star: a favourite.</summary>
+    Star,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
@@ -214,6 +220,30 @@ public static partial class KitIcons
                 painter.StrokeLine(new UiVec2(cx - h, cy), new UiVec2(cx + h - stroke, cy), stroke, color);
                 painter.DrawChevron(new UiVec2(cx + (h * 0.45f), cy), size * 0.9f, UiDirection.Right, stroke, color);
                 break;
+
+            case KitIcon.ArrowLeft:
+                painter.StrokeLine(new UiVec2(cx + h, cy), new UiVec2(cx - h + stroke, cy), stroke, color);
+                painter.DrawChevron(new UiVec2(cx - (h * 0.45f), cy), size * 0.9f, UiDirection.Left, stroke, color);
+                break;
+
+            case KitIcon.Star:
+            {
+                // Five points, outer radius half the size, inner two fifths of that, the top point up.
+                Span<UiVec2> star = stackalloc UiVec2[10];
+                for (int i = 0; i < 10; i++)
+                {
+                    float r = i % 2 == 0 ? h : h * 0.4f;
+                    (float s, float c) = MathF.SinCos((i * MathF.PI / 5f) - (MathF.PI * 0.5f));
+                    star[i] = new UiVec2(cx + (c * r), cy + (s * r));
+                }
+
+                for (int i = 0; i < 10; i++)
+                {
+                    painter.StrokeLine(star[i], star[(i + 1) % 10], stroke, color);
+                }
+
+                break;
+            }
 
             case KitIcon.ChevronRight:
                 painter.DrawChevron(center, size, UiDirection.Right, stroke, color);

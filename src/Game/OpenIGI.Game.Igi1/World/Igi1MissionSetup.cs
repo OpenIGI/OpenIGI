@@ -540,8 +540,7 @@ public sealed class Igi1MissionSetup(
         if (loaded.Terrain is { } carTerrain)
         {
             RetailTerrainRay carRays = new(
-                carTerrain.Octree,
-                carTerrain.Commands,
+                carTerrain,
                 TerrainDiscardBinding.For(carTerrain).Regions,
                 TerrainHeightBindings.Bind(carTerrain, levelRoot));
             Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;

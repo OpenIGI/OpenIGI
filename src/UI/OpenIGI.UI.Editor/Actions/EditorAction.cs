@@ -125,8 +125,8 @@ public sealed class EditorAction
     /// <summary>Gets what the action does.</summary>
     public Action Execute { get; }
 
-    /// <summary>Gets the shortcut, if any.</summary>
-    public KeyChord? Shortcut { get; init; }
+    /// <summary>Gets or sets the shortcut, if any; set through <see cref="ActionTable.Rebind"/> so the change is remembered.</summary>
+    public KeyChord? Shortcut { get; set; }
 
     /// <summary>Gets the icon's name in the icon set, if any.</summary>
     public string? Icon { get; init; }
@@ -158,18 +158,34 @@ public sealed class EditorAction
             return false;
         }
 
-        Execute();
+        try
+        {
+            Execute();
+        }
+        catch (Exception error) when (Table?.Failed is { } failed && error is not OutOfMemoryException)
+        {
+            // Reported rather than let through: one broken action must not take the whole editor, and the work in it, down.
+            failed(this, error);
+        }
+
         return true;
     }
+
+    /// <summary>Gets or sets the table the action is registered in, whose <see cref="ActionTable.Failed"/> hears of its failures.</summary>
+    internal ActionTable? Table { get; set; }
 }
 
 /// <summary>Every action the editor offers, and the shortcut table built from them.</summary>
 public sealed class ActionTable
 {
     private readonly Dictionary<string, EditorAction> _byId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, KeyChord?> _defaults = new(StringComparer.Ordinal);
 
     /// <summary>Gets every action, in registration order.</summary>
     public IReadOnlyCollection<EditorAction> All => _byId.Values;
+
+    /// <summary>Gets or sets what hears of an action that failed; while it is set, a failure is reported to it instead of thrown.</summary>
+    public Action<EditorAction, Exception>? Failed { get; set; }
 
     /// <summary>Adds an action.</summary>
     /// <param name="action">The action.</param>
@@ -183,7 +199,65 @@ public sealed class ActionTable
             throw new ArgumentException($"An action '{action.Id}' is already registered.", nameof(action));
         }
 
+        _defaults[action.Id] = action.Shortcut;
+        action.Table = this;
         return action;
+    }
+
+    /// <summary>Gets the shortcut an action was registered with.</summary>
+    /// <param name="id">The action's id.</param>
+    /// <returns>The shortcut, or <see langword="null"/> for none.</returns>
+    public KeyChord? DefaultShortcut(string id) => _defaults.GetValueOrDefault(id);
+
+    /// <summary>Binds an action to another shortcut, or to none.</summary>
+    /// <param name="id">The action's id.</param>
+    /// <param name="shortcut">The shortcut, or <see langword="null"/> to unbind it.</param>
+    /// <returns>The other actions already bound to the same shortcut, which then fire first.</returns>
+    public IReadOnlyList<EditorAction> Rebind(string id, KeyChord? shortcut)
+    {
+        EditorAction action = _byId[id];
+        action.Shortcut = shortcut;
+        return shortcut is { } chord ? [.. _byId.Values.Where(other => other != action && other.Shortcut == chord)] : [];
+    }
+
+    /// <summary>Puts every shortcut back to the one it was registered with.</summary>
+    public void ResetBindings()
+    {
+        foreach ((string id, KeyChord? shortcut) in _defaults)
+        {
+            _byId[id].Shortcut = shortcut;
+        }
+    }
+
+    /// <summary>Writes the shortcuts that differ from their defaults, as <c>id=Ctrl+K;other=</c> (empty for unbound).</summary>
+    /// <returns>The text, empty when nothing was rebound.</returns>
+    public string SaveBindings() => string.Join(';', _byId.Values
+        .Where(a => a.Shortcut != _defaults[a.Id])
+        .Select(static a => $"{a.Id}={a.Shortcut?.ToString() ?? string.Empty}"));
+
+    /// <summary>Applies shortcuts written by <see cref="SaveBindings"/>; unknown actions and unreadable keys are skipped.</summary>
+    /// <param name="text">The text.</param>
+    public void LoadBindings(string? text)
+    {
+        ResetBindings();
+        foreach (string pair in (text ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int equals = pair.IndexOf('=');
+            if (equals <= 0 || !_byId.TryGetValue(pair[..equals], out EditorAction? action))
+            {
+                continue;
+            }
+
+            string chord = pair[(equals + 1)..];
+            try
+            {
+                action.Shortcut = chord.Length == 0 ? null : KeyChord.Parse(chord);
+            }
+            catch (FormatException)
+            {
+                // A key this build no longer names leaves the binding as it was rather than failing the whole table.
+            }
+        }
     }
 
     /// <summary>Gets an action by id.</summary>

@@ -32,4 +32,24 @@ public sealed class EulerAngleTests
         Assert.Equal(locked.M23, again.M23, 4);
         Assert.Equal(locked.M32, again.M32, 4);
     }
+
+    /// <summary>A turn about a coordinate axis built from any axis is the same as the dedicated one.</summary>
+    [Theory]
+    [InlineData(0.3f)]
+    [InlineData(-1.2f)]
+    [InlineData(2.9f)]
+    public void A_rotation_about_an_axis_matches_the_coordinate_ones(float radians)
+    {
+        AssertClose(Matrix3f.RotationX(radians), Matrix3f.RotationAxis(new Vector3d(2, 0, 0), radians));
+        AssertClose(Matrix3f.RotationY(radians), Matrix3f.RotationAxis(new Vector3d(0, 3, 0), radians));
+        AssertClose(Matrix3f.RotationZ(radians), Matrix3f.RotationAxis(new Vector3d(0, 0, 1), radians));
+
+        static void AssertClose(Matrix3f expected, Matrix3f actual)
+        {
+            for (int i = 0; i < 9; i++)
+            {
+                Assert.Equal(expected[i / 3, i % 3], actual[i / 3, i % 3], 5);
+            }
+        }
+    }
 }

@@ -1,6 +1,7 @@
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.UI;
+using OpenIGI.UI.Editor.Actions;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
 using OpenIGI.UI.Editor.Widgets;
@@ -16,7 +17,7 @@ internal sealed class OutlinerPanel : EditorElement
     private readonly TextField _search;
     private readonly TreeView<MissionTask> _tree;
 
-    public OutlinerPanel(EditorTheme theme, MissionWorkspace workspace)
+    public OutlinerPanel(EditorTheme theme, MissionWorkspace workspace, Func<MissionTask, bool> isHidden, Action<MissionTask> toggleHidden)
         : base(theme)
     {
         _workspace = workspace;
@@ -31,7 +32,11 @@ internal sealed class OutlinerPanel : EditorElement
                 Parent = static task => task.Parent,
                 Label = TaskPresentation.Name,
                 Icon = TaskPresentation.Icon,
+                IconTint = static task => EditorIcons.KindColour(TaskPresentation.Icon(task)),
                 Detail = static task => task.Label.Length > 0 ? task.TypeName : null,
+                Dimmed = isHidden,
+                RowButton = (task, hovered) => isHidden(task) ? "visibility_off" : hovered ? "visibility" : null,
+                RowButtonClicked = toggleHidden,
             },
             workspace.Selection);
         _tree.DropRequested += Drop;
@@ -46,6 +51,14 @@ internal sealed class OutlinerPanel : EditorElement
     /// <summary>Raised when the user asks to frame a task in the viewport.</summary>
     public event Action<MissionTask>? Activated;
 
+    /// <summary>Gets or sets what the Create menu offers, given the parent a new object would go under (or none).</summary>
+    public Func<MissionTask?, IEnumerable<MenuItem>>? CreateMenu { get; set; }
+
+    /// <summary>Edits a task's label in place, in its row.</summary>
+    /// <param name="task">The task.</param>
+    /// <param name="commit">Given the new label.</param>
+    public void BeginRename(MissionTask task, Action<string> commit) => _tree.BeginRename(task, task.Label, commit);
+
     /// <summary>Scrolls a task into view, expanding its ancestors.</summary>
     /// <param name="task">The task.</param>
     public void Reveal(MissionTask task) => _tree.Reveal(task);
@@ -59,8 +72,15 @@ internal sealed class OutlinerPanel : EditorElement
             return;
         }
 
-        // A task whose ancestor is also going is taken with it; deleting it separately would fail on the undo.
-        MissionTask[] tops = [.. tasks.Where(task => !tasks.Any(other => !ReferenceEquals(other, task) && IsAncestor(other, task)))];
+        // Only what is still in the mission; and a task whose ancestor is also going is taken with it, as deleting it
+        // separately would fail on the undo.
+        MissionTask[] going = [.. tasks.Where(document.Contains)];
+        MissionTask[] tops = [.. going.Where(task => !going.Any(other => !ReferenceEquals(other, task) && IsAncestor(other, task)))];
+        if (tops.Length == 0)
+        {
+            return;
+        }
+
         using (_workspace.History.BeginTransaction(tops.Length == 1 ? $"Delete {TaskPresentation.Name(tops[0])}" : $"Delete {tops.Length} objects"))
         {
             foreach (MissionTask task in tops)
@@ -84,15 +104,13 @@ internal sealed class OutlinerPanel : EditorElement
     }
 
     /// <inheritdoc/>
-    protected override void OnDraw(UiPainter painter)
-    {
-        painter.FillRect(Bounds, Theme.Panel);
-        if (_workspace.Document is null)
-        {
-            string text = _workspace.LoadError is { } error ? $"Could not read the mission: {error}" : "No mission open";
-            EditorDraw.Label(painter, Theme, text, new UiRect(Bounds.X + Theme.Padding, _search.Bounds.Bottom + Theme.Px(16f), Bounds.Width - (Theme.Padding * 2f), Theme.RowHeight), Theme.TextDisabled);
-        }
-    }
+    protected override void OnDraw(UiPainter painter) => painter.FillRect(Bounds, Theme.Panel);
+
+    /// <inheritdoc/>
+    protected override void OnUpdate(float elapsedSeconds) =>
+        _tree.EmptyText = _workspace.Document is null
+            ? _workspace.LoadError is { } error ? $"Could not read the mission: {error}" : "No mission open"
+            : _search.Text.Length > 0 ? "No objects match" : "This mission has no objects";
 
     private static bool IsAncestor(MissionTask ancestor, MissionTask task)
     {
@@ -146,20 +164,42 @@ internal sealed class OutlinerPanel : EditorElement
 
     private void OpenMenu(MissionTask? task, UiVec2 at)
     {
-        if (Root is not { } root || task is null)
+        if (Root is not { } root)
         {
             return;
         }
 
-        IReadOnlyList<MissionTask> selected = _workspace.Selection.Items;
+        ActionTable actions = root.Actions;
+        if (task is null)
+        {
+            MenuPopup.OpenAt(root, at,
+            [
+                MenuItem.Submenu("Create", CreateMenu?.Invoke(null) ?? []),
+                MenuItem.Separator,
+                MenuItem.For(actions["edit.paste"]),
+                MenuItem.For(actions["edit.show-all"]),
+            ]);
+            return;
+        }
+
         MenuPopup.OpenAt(root, at,
         [
-            MenuItem.Command("Frame", () => Activated?.Invoke(task)),
+            MenuItem.For(actions["edit.cut"]),
+            MenuItem.For(actions["edit.copy"]),
+            MenuItem.For(actions["edit.paste"]),
+            MenuItem.For(actions["edit.paste-child"]),
             MenuItem.Separator,
+            MenuItem.For(actions["edit.rename"]),
+            MenuItem.For(actions["edit.duplicate"]),
+            MenuItem.For(actions["edit.delete"]),
+            MenuItem.Separator,
+            MenuItem.For(actions["edit.hide"]),
+            MenuItem.For(actions["edit.isolate"]),
+            MenuItem.For(actions["view.frame"]),
+            MenuItem.Separator,
+            MenuItem.Submenu("Create Child", CreateMenu?.Invoke(task) ?? []),
             MenuItem.Command("Expand All", () => SetSubtreeExpanded(task, expanded: true)),
             MenuItem.Command("Collapse All", () => SetSubtreeExpanded(task, expanded: false)),
-            MenuItem.Separator,
-            MenuItem.Command(selected.Count > 1 ? $"Delete {selected.Count} Objects" : "Delete", () => Delete([.. selected])),
         ]);
     }
 

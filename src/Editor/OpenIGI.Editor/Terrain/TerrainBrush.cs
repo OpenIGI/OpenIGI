@@ -18,6 +18,9 @@ internal enum TerrainBrushMode
 
     /// <summary>Pulls the ground toward the height where the stroke began.</summary>
     Flatten,
+
+    /// <summary>Lays a ground material, <see cref="TerrainBrush.PaintLayer"/>.</summary>
+    Paint,
 }
 
 /// <summary>
@@ -34,6 +37,12 @@ internal sealed class TerrainBrush
 
     /// <summary>Gets or sets how fast it works: metres a second at its middle when raising or lowering.</summary>
     public double Strength { get; set; } = 4.0;
+
+    /// <summary>Gets or sets the material layer <see cref="TerrainBrushMode.Paint"/> lays, a <see cref="TerrainPaintLayer.Index"/>.</summary>
+    public int PaintLayer { get; set; }
+
+    /// <summary>Gets or sets what happens to the objects standing on the ground the brush shapes.</summary>
+    public TerrainObjectMode Objects { get; set; } = TerrainObjectMode.MoveWithGround;
 
     /// <summary>Gets how much of the brush's effect a point gets, by its distance from the middle.</summary>
     /// <param name="distance">The distance, in metres.</param>
@@ -57,7 +66,8 @@ internal sealed class TerrainBrush
     /// <param name="flattenTo">The height <see cref="TerrainBrushMode.Flatten"/> pulls toward, in metres.</param>
     /// <param name="stroke">Records each sample's height before the stroke first touched it.</param>
     /// <param name="mode">What to do this time, when not <see cref="Mode"/>: Shift paints the opposite of raise or lower.</param>
-    public void Apply(IEditableTerrain terrain, Vector3d centre, double seconds, double flattenTo, TerrainStroke stroke, TerrainBrushMode? mode = null)
+    /// <param name="keepOff">Points of the ground the brush leaves alone, in world metres; none when null.</param>
+    public void Apply(IEditableTerrain terrain, Vector3d centre, double seconds, double flattenTo, TerrainStroke stroke, TerrainBrushMode? mode = null, Func<double, double, bool>? keepOff = null)
     {
         TerrainBrushMode doing = mode ?? Mode;
         foreach (ITerrainHeightGrid grid in terrain.Grids)
@@ -76,7 +86,7 @@ internal sealed class TerrainBrush
                 {
                     (double sx, double sy) = grid.SampleMetres(x, y);
                     double weight = Weight(Math.Sqrt(((sx - centre.X) * (sx - centre.X)) + ((sy - centre.Y) * (sy - centre.Y))));
-                    if (weight > 0.0)
+                    if (weight > 0.0 && keepOff?.Invoke(sx, sy) != true)
                     {
                         double now = grid.GetHeight(x, y);
                         double next = Shaped(doing, grid, x, y, now, weight * seconds, flattenTo);
@@ -217,5 +227,7 @@ internal sealed class TerrainStroke(IEditableTerrain terrain) : IEditorCommand
         {
             terrain.Refresh(grid, left, top, right, bottom);
         }
+
+        terrain.Settle();
     }
 }

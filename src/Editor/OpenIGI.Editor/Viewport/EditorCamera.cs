@@ -31,25 +31,37 @@ internal enum CameraDrag
 /// </remarks>
 internal sealed class EditorCamera
 {
-    /// <summary>Radians turned per pixel the mouse moves.</summary>
-    private const float Sensitivity = 0.0035f;
+    /// <summary>Radians turned per pixel the mouse moves, at a sensitivity of one.</summary>
+    private const float BaseSensitivity = 0.0035f;
 
     /// <summary>How far the camera may look up or down, short of straight, in radians.</summary>
     private const float PitchLimit = 1.55f;
 
-    /// <summary>How long the camera takes to catch up with where flying puts it, in seconds.</summary>
-    private const double FlySmoothing = 0.06;
 
     /// <summary>How long a glide to a framed object takes to settle, in seconds.</summary>
     private const double GlideSmoothing = 0.18;
 
+    // How far down a framing look tilts at least, in radians (about twenty degrees).
+    private const float FramePitch = -0.35f;
+
     private Vector3d? _target;
     private Vector3d _velocity;
-    private double _smoothing = FlySmoothing;
+    private double _smoothing = 0.06;
     private bool _settling;
 
     /// <summary>Gets what the held button is doing.</summary>
     public CameraDrag Drag { get; private set; }
+
+    /// <summary>Gets or sets the multiple of the normal turning rate.</summary>
+    public float SensitivityScale { get; set; } = 1f;
+
+    /// <summary>Gets or sets how long the camera takes to catch up with where flying puts it, in seconds; zero for at once.</summary>
+    public double FlySmoothing { get; set; } = 0.06;
+
+    /// <summary>Gets or sets whether panning moves the view the way the mouse goes rather than dragging the world.</summary>
+    public bool InvertPan { get; set; }
+
+    private float Sensitivity => BaseSensitivity * SensitivityScale;
 
     /// <summary>Gets or sets how far in front of the camera orbiting turns around and dollying heads for, in metres.</summary>
     public double PivotDistance { get; set; } = 20.0;
@@ -112,7 +124,8 @@ internal sealed class EditorCamera
             {
                 // A pixel moves the view by about what a pixel covers at the pivot, so what is under the cursor follows it.
                 double perPixel = Math.Max(0.002, PivotDistance * 0.0012);
-                position += (right * (-dx * perPixel)) + (up * (dy * perPixel));
+                double sign = InvertPan ? -1.0 : 1.0;
+                position += (right * (-dx * perPixel * sign)) + (up * (dy * perPixel * sign));
                 _target = null;
                 break;
             }
@@ -174,10 +187,42 @@ internal sealed class EditorCamera
     public void Focus(FreeCamera camera, Vector3d point, double radiusMetres)
     {
         double distance = Math.Clamp(radiusMetres * 2.4, 3.0, 400.0);
+
+        // Backing away along a level or rising view puts the camera beneath what it frames, under the ground for anything
+        // standing on it; looking down a little first keeps it above.
+        if (camera.Pitch > FramePitch)
+        {
+            camera.MoveTo(camera.Position, camera.Yaw, FramePitch);
+        }
+
         (Vector3d forward, _, _) = Axes(camera.Yaw, camera.Pitch);
         PivotDistance = distance;
         _smoothing = GlideSmoothing;
         _target = point - (forward * distance);
+    }
+
+    /// <summary>Turns the camera to look along a direction, keeping in view what it was turning around.</summary>
+    /// <param name="camera">The camera.</param>
+    /// <param name="direction">The direction to look along, in the world.</param>
+    public void LookAlong(FreeCamera camera, Vector3d direction)
+    {
+        double length = direction.Length;
+        if (length <= 0.0)
+        {
+            return;
+        }
+
+        Vector3d look = direction / length;
+        (Vector3d forward, _, _) = Axes(camera.Yaw, camera.Pitch);
+        Vector3d pivot = camera.Position + (forward * PivotDistance);
+
+        // Straight up or down has no heading of its own; keep the one the camera had.
+        float pitch = (float)Math.Clamp(Math.Asin(look.Z), -PitchLimit, PitchLimit);
+        float yaw = Math.Abs(look.Z) > 0.999 ? camera.Yaw : (float)Math.Atan2(look.X, look.Y);
+        (Vector3d turned, _, _) = Axes(yaw, pitch);
+        _target = null;
+        _velocity = Vector3d.Zero;
+        camera.MoveTo(pivot - (turned * PivotDistance), yaw, pitch);
     }
 
     /// <summary>Gets the camera's forward, right and up axes for a yaw and a pitch, as the renderer builds them.</summary>

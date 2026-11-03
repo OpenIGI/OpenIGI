@@ -36,20 +36,23 @@ public sealed class SizedFontSet : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly string _fileName;
+    private readonly IReadOnlyList<int>? _codepoints;
     private readonly Dictionary<int, UiFont> _bySize = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="SizedFontSet"/> class.</summary>
     /// <param name="device">The device atlases are uploaded to.</param>
     /// <param name="fileName">The font file in the shipped fonts directory.</param>
+    /// <param name="codepoints">The characters to rasterise, or <see langword="null"/> for the usual extended Latin set.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public SizedFontSet(IGraphicsDevice device, string fileName)
+    public SizedFontSet(IGraphicsDevice device, string fileName, IReadOnlyList<int>? codepoints = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
 
         _device = device;
         _fileName = fileName;
+        _codepoints = codepoints;
     }
 
     /// <summary>Gets how many distinct sizes have been rasterised.</summary>
@@ -75,7 +78,7 @@ public sealed class SizedFontSet : IDisposable
             return existing;
         }
 
-        UiFont built = UiFontLibrary.Load(_device, _fileName, size);
+        UiFont built = UiFontLibrary.Load(_device, _fileName, size, codepoints: _codepoints);
         _bySize[size] = built;
         return built;
     }

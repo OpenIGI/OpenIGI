@@ -140,6 +140,31 @@ public sealed class GraphicsPresetRegistry
         return Apply(preset);
     }
 
+    /// <summary>Records every managed variable's value and the preset they read as, to put back with <see cref="Restore"/>.</summary>
+    /// <returns>The record.</returns>
+    public GraphicsPresetSnapshot Capture() => new([.. _managed.Keys.Select(static v => (v, v.ValueText))], Current);
+
+    /// <summary>Puts back what <see cref="Capture"/> recorded, whatever has been applied since.</summary>
+    /// <param name="snapshot">The record.</param>
+    public void Restore(GraphicsPresetSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _applying = true;
+        try
+        {
+            foreach ((ICVar variable, string value) in snapshot.Values)
+            {
+                variable.TrySetText(value, out _);
+            }
+        }
+        finally
+        {
+            _applying = false;
+        }
+
+        SetCurrent(snapshot.Preset);
+    }
+
     /// <summary>Whether a preset may be applied under the current lock.</summary>
     /// <param name="preset">The preset in question.</param>
     /// <returns><see langword="true"/> when nothing is locked or <paramref name="preset"/> is the locked one.</returns>
@@ -235,3 +260,8 @@ public sealed class GraphicsPresetRegistry
         PresetChanged?.Invoke(this, preset);
     }
 }
+
+/// <summary>The managed variables' values at one moment, and the preset they read as (<see cref="GraphicsPresetRegistry.Capture"/>).</summary>
+/// <param name="Values">Each variable with its value as text.</param>
+/// <param name="Preset">The preset the values read as.</param>
+public sealed record GraphicsPresetSnapshot(IReadOnlyList<(ICVar Variable, string Value)> Values, GraphicsPreset Preset);

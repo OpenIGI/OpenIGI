@@ -28,6 +28,15 @@ internal sealed class ScriptPanel : EditorElement
     private string? _listedFor;
     private string? _openPath;
     private int _openVersion = QvmProgram.IgiVersion;
+
+    // Whether the open file is plain text (a config, a list, a source script) saved as written, rather than compiled.
+    private bool _openAsText;
+
+    /// <summary>Gets whether a file is text the panel edits as written: configs, lists and script sources.</summary>
+    /// <param name="path">The file's path.</param>
+    /// <returns><see langword="true"/> for those extensions.</returns>
+    public static bool IsTextFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is ".txt" or ".ini" or ".cfg" or ".qsc" or ".csv" or ".lst" or ".def" or ".mtp";
     private string _message = string.Empty;
     private bool _messageIsError;
 
@@ -149,6 +158,17 @@ internal sealed class ScriptPanel : EditorElement
             return;
         }
 
+        _openAsText = IsTextFile(path) && !QvmProgram.IsQvm(image.Span);
+        _compile.Text = _openAsText ? "Save" : "Compile and Save";
+        if (_openAsText)
+        {
+            // The games' text files are single-byte; Latin-1 keeps every byte as it was through an edit.
+            _code.Text = System.Text.Encoding.Latin1.GetString(image.Span);
+            _openPath = path;
+            Say($"{_code.LineCount} lines of text, saved as written into the project.", error: false);
+            return;
+        }
+
         try
         {
             QscScript script = QscDecompiler.Decompile(image);
@@ -182,7 +202,9 @@ internal sealed class ScriptPanel : EditorElement
         byte[] image;
         try
         {
-            image = QscCompiler.Compile(QscParser.ParseScript(_code.Text, _openVersion));
+            image = _openAsText
+                ? System.Text.Encoding.Latin1.GetBytes(_code.Text)
+                : QscCompiler.Compile(QscParser.ParseScript(_code.Text, _openVersion));
         }
         catch (QscParseException error)
         {
@@ -208,7 +230,9 @@ internal sealed class ScriptPanel : EditorElement
             _workspace.Reload();
         }
 
-        Say($"Compiled and saved into {_workspace.Project.Name}. Save and Reload (Ctrl+R) runs it.", error: false);
+        Say(_openAsText
+            ? $"Saved into {_workspace.Project.Name}. The game reads it the next time it loads it."
+            : $"Compiled and saved into {_workspace.Project.Name}. Save and Reload (Ctrl+R) runs it.", error: false);
     }
 
     private static bool IsObjects(string path) => path.EndsWith("/" + LevelLoader.ObjectsScriptName, StringComparison.OrdinalIgnoreCase);

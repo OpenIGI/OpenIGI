@@ -19,13 +19,15 @@ namespace OpenIGI.Game.Igi2.World;
 /// differs from the shipped one only in the samples that were changed, and runs in the original as well.
 /// </para>
 /// </remarks>
-public sealed class Igi2EditableTerrain : IEditableTerrain
+public sealed partial class Igi2EditableTerrain : IEditableTerrain
 {
     private readonly Grid[] _grids;
+    private readonly IReadOnlyDictionary<int, TerrainMaterialTask> _materials;
 
     internal Igi2EditableTerrain(Igi2TerrainSurface surface)
     {
         _grids = [.. surface.Tiles.Select(static (tile, index) => new Grid(tile, index))];
+        _materials = surface.Materials;
     }
 
     /// <summary>Raised when samples of a tile changed: the tile's index in the surface, and the changed columns and rows.</summary>
@@ -63,12 +65,18 @@ public sealed class Igi2EditableTerrain : IEditableTerrain
     public IReadOnlyList<(string MissionPath, byte[] Bytes)> ChangedFiles(Func<string, ReadOnlyMemory<byte>?> read)
     {
         ArgumentNullException.ThrowIfNull(read);
-        Dictionary<string, Grid> changed = new(StringComparer.OrdinalIgnoreCase);
+        // Each changed map by its entry: the heights a sculpt moved, the materials paint changed.
+        Dictionary<string, byte[]> changed = new(StringComparer.OrdinalIgnoreCase);
         foreach (Grid grid in _grids)
         {
-            if (grid.IsChanged && grid.Tile.HeightEntry is { } entry)
+            if (grid.IsChanged && grid.Tile.HeightEntry is { } heights)
             {
-                changed[entry] = grid;
+                changed[heights] = grid.Tile.Heights.Write();
+            }
+
+            if (grid.IsPainted && grid.Tile.MaterialEntry is { } materials && grid.Tile.Materials is { } map)
+            {
+                changed[materials] = map.Write();
             }
         }
 
@@ -81,7 +89,7 @@ public sealed class Igi2EditableTerrain : IEditableTerrain
         // Typed as the nullable memory WithBodies wants: a bare null would become an empty byte array, and so an empty body
         // for every entry left alone.
         IresArchive archive = IresArchive.Read(original).WithBodies(entry =>
-            changed.TryGetValue(Path.GetFileName(entry.Name), out Grid? grid) ? grid.Tile.Heights.Write() : (ReadOnlyMemory<byte>?)null);
+            changed.TryGetValue(Path.GetFileName(entry.Name), out byte[]? body) ? body : (ReadOnlyMemory<byte>?)null);
         byte[] bytes = IresWriter.Write([.. archive.Entries.Select(static e => new IresWriter.Entry(e.Name, e.Kind, e.Data))]);
         return [(path, bytes)];
     }
@@ -102,6 +110,8 @@ public sealed class Igi2EditableTerrain : IEditableTerrain
     private sealed class Grid(Igi2TerrainTile tile, int index) : ITerrainHeightGrid
     {
         private int _savedRevision = tile.Heights.Revision;
+        private int _savedMaterials = tile.Materials?.Revision ?? 0;
+        private readonly byte[] _loadedMaterials = tile.Materials is { } map ? map.Samples.ToArray() : [];
 
         public Igi2TerrainTile Tile { get; } = tile;
 
@@ -115,6 +125,11 @@ public sealed class Igi2EditableTerrain : IEditableTerrain
 
         public bool IsChanged => Tile.Heights.Revision != _savedRevision;
 
+        public bool IsPainted => (Tile.Materials?.Revision ?? 0) != _savedMaterials;
+
+        // The material ids as the level shipped them, row by row.
+        public byte[] LoadedMaterials => _loadedMaterials;
+
         public (double X, double Y) SampleMetres(int x, int y) =>
             (Tile.SampleX(x) / WorldScene.UnitsPerMetre, Tile.SampleY(y) / WorldScene.UnitsPerMetre);
 
@@ -127,6 +142,10 @@ public sealed class Igi2EditableTerrain : IEditableTerrain
         public void SetHeight(int x, int y, double zMetres) =>
             Tile.Heights.SetHeight(x, y, (float)((zMetres * WorldScene.UnitsPerMetre) - Tile.BaseHeight));
 
-        public void MarkSaved() => _savedRevision = Tile.Heights.Revision;
+        public void MarkSaved()
+        {
+            _savedRevision = Tile.Heights.Revision;
+            _savedMaterials = Tile.Materials?.Revision ?? 0;
+        }
     }
 }

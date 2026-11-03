@@ -57,6 +57,12 @@ OTHER INTELLECTUAL PROPERTY RIGHTS IN THE ACADEMY COLOR ENCODING SYSTEM, OR
 APPLICATIONS THEREOF, HELD BY PARTIES OTHER THAN A.M.P.A.S.,WHETHER DISCLOSED OR
 UNDISCLOSED.
 
+## Material Icons
+
+`apps/OpenIGI.Composition/Assets/fonts/MaterialIcons-Regular.ttf` and its code-point list: Google's Material Icons
+(https://github.com/google/material-design-icons), the editor's icon face, used unmodified under the Apache License,
+Version 2.0. The licence ships beside the font as `LICENSE-MaterialIcons.txt`.
+
 ## NVIDIA Streamline
 
 `src/Rendering/OpenIGI.Rendering.Vulkan/Streamline/`: the interop declarations (structure layouts, enumerations,

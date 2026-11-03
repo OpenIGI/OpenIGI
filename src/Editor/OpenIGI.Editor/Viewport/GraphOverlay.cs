@@ -10,7 +10,8 @@ namespace OpenIGI.Editor.Viewport;
 
 /// <summary>
 /// The selected AI graph drawn over the world: its links as lines and its nodes as dots, the picked node ringed. Click
-/// a node to pick it; the move gizmo then moves the node instead of the graph.
+/// a node to pick it; the move gizmo then moves the node instead of the graph, and Ctrl+click on another links or unlinks
+/// the two.
 /// </summary>
 internal sealed class GraphOverlay
 {
@@ -55,6 +56,23 @@ internal sealed class GraphOverlay
     /// <returns>Whether a node was picked.</returns>
     public bool Pick(ViewportProjector projector, MissionTask task, GraphDocument graph, UiVec2 point, float radius)
     {
+        PickedNode = NodeAt(projector, task, graph, point, radius);
+        return PickedNode is not null;
+    }
+
+    /// <summary>Picks a node by its id, as linking moves on to the node just linked.</summary>
+    /// <param name="id">The node id.</param>
+    public void Pick(int id) => PickedNode = id;
+
+    /// <summary>Finds the node nearest a point on screen, within a radius, without picking it.</summary>
+    /// <param name="projector">The view.</param>
+    /// <param name="task">The AIGraph task.</param>
+    /// <param name="graph">Its document.</param>
+    /// <param name="point">The point.</param>
+    /// <param name="radius">The radius in pixels.</param>
+    /// <returns>The node's id, or <see langword="null"/>.</returns>
+    public static int? NodeAt(ViewportProjector projector, MissionTask task, GraphDocument graph, UiVec2 point, float radius)
+    {
         int? best = null;
         float bestDistance = radius;
         foreach (GraphDocumentNode node in graph.Nodes)
@@ -70,8 +88,7 @@ internal sealed class GraphOverlay
             }
         }
 
-        PickedNode = best;
-        return best is not null;
+        return best;
     }
 
     /// <summary>Draws the graph.</summary>
@@ -116,7 +133,13 @@ internal sealed class GraphOverlay
             painter.FillDot(screen, theme.Px(picked ? 6f : 3.5f), picked ? theme.Text : theme.Accent);
             if (picked)
             {
-                painter.DrawText(theme.SmallFont, $"node {id}", new UiVec2(screen.X + theme.Px(9f), screen.Y - theme.Px(7f)), theme.SmallTextSize, theme.Text);
+                int links = graph.Links.Count(l => l.From == id || l.To == id);
+                painter.DrawText(
+                    theme.SmallFont,
+                    $"node {id}  •  {links} link(s)  •  Ctrl+click a node to link or unlink",
+                    new UiVec2(screen.X + theme.Px(9f), screen.Y - theme.Px(7f)),
+                    theme.SmallTextSize,
+                    theme.Text);
             }
         }
     }

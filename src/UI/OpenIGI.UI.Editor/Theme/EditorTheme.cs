@@ -26,6 +26,16 @@ public interface IEditorFonts
     /// <param name="sizePx">The size in pixels, already scaled.</param>
     /// <returns>The font.</returns>
     UiFont Font(EditorFontFace face, float sizePx);
+
+    /// <summary>Gets the icon face at a pixel size, or <see langword="null"/> when there is none and icons are drawn as shapes.</summary>
+    /// <param name="sizePx">The size in pixels, already scaled.</param>
+    /// <returns>The font, whose glyphs are icons.</returns>
+    UiFont? IconFont(float sizePx) => null;
+
+    /// <summary>Gets the character an icon is drawn with in <see cref="IconFont"/>, by its name.</summary>
+    /// <param name="name">The icon's name, such as <c>folder</c>.</param>
+    /// <returns>The character, or -1 for an unknown name.</returns>
+    int IconCodepoint(string name) => -1;
 }
 
 /// <summary>
@@ -96,13 +106,13 @@ public sealed class EditorTheme
     public float TabHeight => Px(30f);
 
     /// <summary>Gets the height of the menu bar.</summary>
-    public float MenuBarHeight => Px(28f);
+    public float MenuBarHeight => Px(26f);
 
     /// <summary>Gets the height of a toolbar.</summary>
-    public float ToolbarHeight => Px(36f);
+    public float ToolbarHeight => Px(32f);
 
     /// <summary>Gets the height of the status bar.</summary>
-    public float StatusBarHeight => Px(24f);
+    public float StatusBarHeight => Px(22f);
 
     /// <summary>Gets the base spacing unit.</summary>
     public float Unit => Px(4f);
@@ -254,24 +264,26 @@ public sealed class EditorTheme
     public void ApplyDark()
     {
         IsLight = false;
-        Background = Rgb(0x111316);
-        Panel = Rgb(0x1A1C20);
-        Chrome = Rgb(0x202328);
-        Popup = Rgb(0x25292F);
-        Input = Rgb(0x131518);
-        Button = Rgb(0x2B3037);
+        // s&box's editor palette (its theme.json: window #181818, widgets #2a2a2a, surfaces #343434, controls #181818,
+        // borders #3e3e3e / #484848, secondary text #9e9e9e), with OpenIGI's own orange as the accent.
+        Background = Rgb(0x181818);
+        Panel = Rgb(0x2A2A2A);
+        Chrome = Rgb(0x202020);
+        Popup = Rgb(0x343434);
+        Input = Rgb(0x1C1C1C);
+        Button = Rgb(0x383838);
         Hover = UiPalette.White(0.06f);
         Pressed = UiPalette.White(0.10f);
         Selection = UiPalette.AccentAt(0.28f);
-        SelectionInactive = UiPalette.White(0.09f);
-        Border = Rgb(0x2C3036);
-        BorderStrong = Rgb(0x3D434B);
+        SelectionInactive = Rgb(0x3E3E3E);
+        Border = Rgb(0x3E3E3E);
+        BorderStrong = Rgb(0x484848);
         Accent = UiPalette.Accent;
         OnAccent = UiPalette.Ink;
-        Text = Rgb(0xD9DCE1);
-        TextMuted = Rgb(0x8E959F);
-        TextDisabled = Rgb(0x5A6069);
-        Icon = Rgb(0xA9AFB8);
+        Text = Rgb(0xFFFFFF);
+        TextMuted = Rgb(0x9E9E9E);
+        TextDisabled = Rgb(0x666666);
+        Icon = Rgb(0xC8C8C8);
         ApplyShared();
     }
 
@@ -279,24 +291,24 @@ public sealed class EditorTheme
     public void ApplyLight()
     {
         IsLight = true;
-        Background = Rgb(0xC9CDD3);
-        Panel = Rgb(0xF2F3F5);
-        Chrome = Rgb(0xE3E6EA);
+        Background = Rgb(0xBDBDBD);
+        Panel = Rgb(0xEDEDED);
+        Chrome = Rgb(0xE0E0E0);
         Popup = Rgb(0xFFFFFF);
         Input = Rgb(0xFFFFFF);
-        Button = Rgb(0xDADEE3);
+        Button = Rgb(0xD6D6D6);
         Hover = Bgra32.FromRgba(0, 0, 0, 14);
         Pressed = Bgra32.FromRgba(0, 0, 0, 26);
         Selection = UiPalette.AccentAt(0.35f);
         SelectionInactive = Bgra32.FromRgba(0, 0, 0, 22);
-        Border = Rgb(0xC4C9D0);
-        BorderStrong = Rgb(0xA4ABB5);
+        Border = Rgb(0xC2C2C2);
+        BorderStrong = Rgb(0xA0A0A0);
         Accent = Bgra32.FromRgb(196, 124, 20);
         OnAccent = Bgra32.White;
-        Text = Rgb(0x1F2328);
-        TextMuted = Rgb(0x5D646E);
-        TextDisabled = Rgb(0x9AA1AB);
-        Icon = Rgb(0x4A5059);
+        Text = Rgb(0x1E1E1E);
+        TextMuted = Rgb(0x5E5E5E);
+        TextDisabled = Rgb(0x9E9E9E);
+        Icon = Rgb(0x4A4A4A);
         ApplyShared();
     }
 

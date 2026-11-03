@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Missions;
 using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Scripting.Qsc;
@@ -29,6 +31,71 @@ public sealed class MissionValidatorTests : IDisposable
         Assert.All(issues, static i => Assert.Equal(IssueSeverity.Error, i.Severity));
     }
 
+    /// <summary>"Fix all" gives every clashing task its own free id, as one undoable step.</summary>
+    [Fact]
+    public void Id_fixes_take_distinct_free_ids()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_New(-1, "Container", "Root",
+                Task_New(1, "A", "first"),
+                Task_New(1, "A", "second"),
+                Task_New(1, "A", "third"),
+                Task_New(2, "A", "two"));
+            """, QvmProgram.IgiVersion));
+
+        IEditorCommand[] steps = [.. MissionValidator.Validate(document).Select(static i => i.Fixes[0].Make()!)];
+        CompositeCommand all = new("Fix", steps);
+        all.Apply();
+        Assert.Empty(MissionValidator.Validate(document));
+        Assert.Equal([1, 2, 3, 4], document.EnumerateTasks().Select(static t => t.Id).Where(static id => id >= 0).Order());
+        all.Undo();
+        Assert.Equal(2, MissionValidator.Validate(document).Count);
+    }
+
+    /// <summary>A condition testing a task the mission does not have, and a target naming none, are found.</summary>
+    [Fact]
+    public void Missing_references_are_found()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_DeclareParameters("ConditionalContainer", "Condition", "VarString");
+            Task_DeclareParameters("Pointer", "TargetID", "Int32");
+            Task_New(-1, "Container", "Root",
+                Task_New(10, "Terminal", "t"),
+                Task_New(11, "ConditionalContainer", "ok", "Terminal_10.isHacked"),
+                Task_New(12, "ConditionalContainer", "bad", "Terminal_10.isHacked && Terminal_99.isHacked"),
+                Task_New(13, "Pointer", "aims", 10),
+                Task_New(14, "Pointer", "lost", 77));
+            """, QvmProgram.IgiVersion));
+
+        IReadOnlyList<MissionIssue> issues = MissionValidator.Validate(document);
+        Assert.True(issues.Count == 2, string.Join(" / ", issues.Select(static i => i.Task!.Label + ": " + i.Message)));
+        Assert.Equal(["bad", "lost"], issues.Select(static i => i.Task!.Label).Order());
+        Assert.Contains("Terminal_99", issues.Single(static i => i.Task!.Label == "bad").Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A soldier well off the ground is found and dropped onto it; one standing on it is not; a retail mission with mountains is an error.</summary>
+    [Fact]
+    public void Live_checks_use_the_levels_facts()
+    {
+        MissionDocument document = MissionDocument.Read(QscParser.ParseScript("""
+            Task_DeclareParameters("HumanSoldier", "Position", "ObjectPos");
+            Task_New(-1, "Container", "Root",
+                Task_New(1, "HumanSoldier", "floating", 0, 0, 81920),
+                Task_New(2, "HumanSoldier", "standing", 4096, 0, 40960));
+            """, QvmProgram.IgiVersion));
+        Facts facts = new(groundMetres: 10.0) { Mountains = 1 };
+
+        IReadOnlyList<MissionIssue> issues = MissionValidator.Validate(document, facts);
+        MissionIssue target = Assert.Single(issues, static i => i.Severity == IssueSeverity.Error);
+        Assert.Null(target.Task);
+        MissionIssue floating = Assert.Single(issues, static i => i.Task?.Label == "floating");
+        Assert.DoesNotContain(issues, static i => i.Task?.Label == "standing");
+
+        floating.Fixes[0].Make()!.Apply();
+        target.Fixes[0].Make()!.Apply();
+        Assert.Empty(MissionValidator.Validate(document, facts));
+    }
+
     /// <summary>No retail mission has an error by these rules.</summary>
     [RequiresTitleDataFact("igi1")]
     public void Retail_missions_are_clean()
@@ -58,4 +125,19 @@ public sealed class MissionValidatorTests : IDisposable
 
     /// <inheritdoc/>
     public void Dispose() => Directory.Delete(_root, recursive: true);
+
+    private sealed class Facts(double groundMetres) : IMissionFacts
+    {
+        public MissionTarget Target { get; private set; } = MissionTarget.Retail;
+
+        public int Mountains { get; init; }
+
+        public int MountainAreas => Mountains;
+
+        public bool? HasModel(string model) => true;
+
+        public double? GroundUnder(Vector3d pointMetres) => groundMetres;
+
+        public IEditorCommand? MakeOpenIgiOnly() => new DelegateCommand("OpenIGI", () => Target = MissionTarget.OpenIgi, () => Target = MissionTarget.Retail);
+    }
 }

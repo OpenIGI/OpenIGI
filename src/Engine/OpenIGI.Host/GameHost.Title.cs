@@ -252,6 +252,14 @@ public sealed partial class GameHost
         // console has started and the player's log verbosity is in force.
         _overrideScan = _overrides.Rescan();
 
+        // The editor's project, played as well as edited: mounted before the missions are looked for, so a mission made in
+        // the editor is in the menus.
+        string project = Editor.EditorProjects.DefaultFiles(_titleRuntime.Title.Id);
+        if (Editor.EditorCVars.PlayProject.Value && Directory.Exists(project))
+        {
+            _overrideScan = _overrides.Mount(new OverrideLayer(Editor.EditorProjects.DefaultLayerId, "Editor project", project));
+        }
+
         // The text, in the language the player chose (GameHost.Language.cs).
         _textResources = _resources;
         _menuStrings = new MenuStringTable(_resources);

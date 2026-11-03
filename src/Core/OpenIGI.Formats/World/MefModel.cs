@@ -166,21 +166,23 @@ public sealed class MefModel
 
     /// <summary>Lists the render mesh's triangles as vertex indices, draw record by draw record.</summary>
     /// <returns>Each triangle's three indices into <see cref="Vertices"/>; a triangle naming a vertex the model lacks is skipped.</returns>
-    public IEnumerable<(int A, int B, int C)> Triangles()
+    public IEnumerable<(int A, int B, int C)> Triangles() => DrawRecords.SelectMany(Triangles);
+
+    /// <summary>Lists one draw record's triangles as vertex indices.</summary>
+    /// <param name="record">One of this model's <see cref="DrawRecords"/>.</param>
+    /// <returns>Each triangle's three indices into <see cref="Vertices"/>; a triangle naming a vertex the model lacks is skipped.</returns>
+    public IEnumerable<(int A, int B, int C)> Triangles(MefDrawRecord record)
     {
         int count = _vertices.Length;
-        foreach (MefDrawRecord record in DrawRecords)
+        ReadOnlyMemory<ushort> indices = record.Indices;
+        for (int i = 0; i + 2 < indices.Length; i += 3)
         {
-            ReadOnlyMemory<ushort> indices = record.Indices;
-            for (int i = 0; i + 2 < indices.Length; i += 3)
+            int a = record.ToVertexIndex(indices.Span[i]);
+            int b = record.ToVertexIndex(indices.Span[i + 1]);
+            int c = record.ToVertexIndex(indices.Span[i + 2]);
+            if ((uint)a < (uint)count && (uint)b < (uint)count && (uint)c < (uint)count)
             {
-                int a = record.ToVertexIndex(indices.Span[i]);
-                int b = record.ToVertexIndex(indices.Span[i + 1]);
-                int c = record.ToVertexIndex(indices.Span[i + 2]);
-                if ((uint)a < (uint)count && (uint)b < (uint)count && (uint)c < (uint)count)
-                {
-                    yield return (a, b, c);
-                }
+                yield return (a, b, c);
             }
         }
     }

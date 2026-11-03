@@ -20,6 +20,9 @@ public sealed class TerrainCommands
 
     private TerrainCommands(ReadOnlyMemory<byte> data) => _data = data;
 
+    /// <summary>Gets the file's bytes.</summary>
+    public ReadOnlyMemory<byte> Data => _data;
+
     /// <summary>Gets the file's size in bytes.</summary>
     public int Length => _data.Length;
 

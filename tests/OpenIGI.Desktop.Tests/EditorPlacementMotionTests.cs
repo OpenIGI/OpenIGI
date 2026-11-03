@@ -36,6 +36,22 @@ public sealed class EditorPlacementMotionTests
         Assert.Equal(new Vector3d(101, 200, 40), at);
     }
 
+    /// <summary>
+    /// A move undone puts the placement back where it was built, and says so: the drawing only updates a placement it is told
+    /// moved, and one dropped from the table once kept being drawn where the undone move had left it.
+    /// </summary>
+    [Fact]
+    public void An_undone_move_is_reported_back_at_the_built_place()
+    {
+        WorldPlacement placement = Placement(new Vector3d(100, 200, 30));
+        EditorPlacementMotion motion = new() { Inner = new SaysNo() };
+        motion.SetPose(PlacementKey.Of(placement), new EditorPose(placement.Position, new Vector3d(8, 0, 0), Matrix3f.Identity));
+        motion.SetPose(PlacementKey.Of(placement), new EditorPose(placement.Position, Vector3d.Zero, Matrix3f.Identity));
+
+        Assert.True(motion.TryGetTransform(placement, 0f, out Vector3d at, out _));
+        Assert.Equal(new Vector3d(100, 200, 30), at);
+    }
+
     /// <summary>A placement with no pose and no title motion is left alone.</summary>
     [Fact]
     public void An_untouched_placement_is_not_moved()

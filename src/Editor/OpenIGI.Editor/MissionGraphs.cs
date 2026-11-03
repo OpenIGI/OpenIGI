@@ -146,6 +146,22 @@ internal sealed class MissionGraphs
         return new MoveNodeCommand(entry, nodeId, node.Position, local);
     }
 
+    /// <summary>Makes the command that links two nodes, or unlinks them when they are linked.</summary>
+    /// <param name="task">The AIGraph task.</param>
+    /// <param name="a">One node id.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>The command, or <see langword="null"/> when the graph is not loaded or the nodes cannot be linked.</returns>
+    public IEditorCommand? ToggleLink(MissionTask task, int a, int b)
+    {
+        if (a == b || !_graphs.TryGetValue(task.Id, out Entry? entry) || entry is null
+            || !entry.Document.Nodes.Any(n => n.Id == a) || !entry.Document.Nodes.Any(n => n.Id == b))
+        {
+            return null;
+        }
+
+        return new LinkCommand(entry, a, b, unlink: entry.Document.AreLinked(a, b));
+    }
+
     /// <summary>Writes every edited graph into the project.</summary>
     /// <param name="workspace">The workspace whose project receives them.</param>
     /// <returns>How many graphs were written.</returns>
@@ -157,7 +173,7 @@ internal sealed class MissionGraphs
         {
             if (entry is { Dirty: true })
             {
-                // Moved nodes change which way is shortest; an I.G.I. graph's table is baked again to follow them.
+                // Moved nodes and changed links change which way is shortest; an I.G.I. graph's table is baked again to follow.
                 entry.Document.RebuildRoutes();
                 workspace.WriteToProject(entry.GamePath, entry.Document.Write());
                 entry.Dirty = false;
@@ -180,6 +196,13 @@ internal sealed class MissionGraphs
     // (GraphFile.ApplyWorldOffset's second form). I.G.I. 2 (its graphs carry "Relative"): a relative graph rides its
     // parent and ignores its own position; any other graph is stored plus its position, in the world even under a parent
     // (Igi2AiGraphPlacement.Place puts the parent's frame on and takes it off again).
+    /// <summary>
+    /// Gets or sets where the running level drew a task, in world metres and its orientation: how a graph under an
+    /// I.G.I. train finds its frame, since a train's "Position" is a distance along its rail and the car stands where its
+    /// consist puts it (NavGraphs.Place reads the same placement).
+    /// </summary>
+    public static Func<MissionTask, (Vector3d PositionMetres, Matrix3f Orientation)?>? PlacedFrame { get; set; }
+
     private static (Vector3d Offset, (Vector3d Position, Matrix3f Orientation)? Parent) Frame(MissionTask task)
     {
         Vector3d offset = TaskPresentation.PositionMetres(task) is { } metres ? metres * WorldUnits.PerMetre : Vector3d.Zero;
@@ -188,7 +211,9 @@ internal sealed class MissionGraphs
             && TaskPresentation.PositionMetres(owner) is { } at
             && TaskPresentation.Orientation(owner) is not null
                 ? (at * WorldUnits.PerMetre, TaskPresentation.OrientationMatrix(owner))
-                : null;
+                : task.Parent is { TypeName: "Train" } train && PlacedFrame?.Invoke(train) is { } car
+                    ? (car.PositionMetres * WorldUnits.PerMetre, car.Orientation)
+                    : null;
         if (task.FindParameter(RelativeParameter) is not { } relative)
         {
             return (offset, parent);
@@ -231,6 +256,32 @@ internal sealed class MissionGraphs
         public GraphDocument Document { get; } = document;
 
         public bool Dirty { get; set; }
+    }
+
+    // Links two nodes, or unlinks them, keeping the removed link's type so undo puts the same link back.
+    private sealed class LinkCommand(Entry entry, int a, int b, bool unlink) : IEditorCommand
+    {
+        private int? _type;
+
+        public string Name => unlink ? "Unlink Graph Nodes" : "Link Graph Nodes";
+
+        public void Apply() => Set(linked: !unlink);
+
+        public void Undo() => Set(linked: unlink);
+
+        private void Set(bool linked)
+        {
+            if (linked)
+            {
+                entry.Document.AddLink(a, b, _type);
+            }
+            else
+            {
+                _type = entry.Document.RemoveLink(a, b) ?? _type;
+            }
+
+            entry.Dirty = true;
+        }
     }
 
     private sealed class MoveNodeCommand(Entry entry, int nodeId, Vector3d from, Vector3d to) : IEditorCommand

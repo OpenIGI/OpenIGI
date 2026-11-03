@@ -19,7 +19,7 @@ namespace OpenIGI.TestSupport;
 /// tools used — it exists so that encode-then-decode round-trips, which is what pins the decoder.
 /// </para>
 /// </remarks>
-public sealed class IlsfWriter
+public sealed class IlsfTestSounds
 {
     /// <summary>The size in bytes of an ILSF header.</summary>
     public const int HeaderSize = 20;
@@ -52,23 +52,8 @@ public sealed class IlsfWriter
     public static byte[] WritePcm(ReadOnlySpan<short> samples, int channels = 1, int sampleRate = 22050, bool resident = true)
     {
         ValidateChannels(channels);
-        if (samples.Length % channels != 0)
-        {
-            throw new ArgumentException(
-                $"{samples.Length} sample(s) do not divide into frames of {channels} channel(s).",
-                nameof(samples));
-        }
-
-        int frames = samples.Length / channels;
-        byte[] result = new byte[HeaderSize + (samples.Length * sizeof(short))];
-        WriteHeader(result, resident ? 1 : 0, 16, channels, sampleRate, frames);
-
-        for (int i = 0; i < samples.Length; i++)
-        {
-            BinaryPrimitives.WriteInt16LittleEndian(result.AsSpan(HeaderSize + (i * sizeof(short))), samples[i]);
-        }
-
-        return result;
+        return OpenIGI.Formats.Sound.IlsfWriter.WritePcm(
+            System.Runtime.InteropServices.MemoryMarshal.AsBytes(samples), sampleRate, channels, 16, streamed: !resident);
     }
 
     /// <summary>Renders an ADPCM sound by quantising <paramref name="samples"/>.</summary>

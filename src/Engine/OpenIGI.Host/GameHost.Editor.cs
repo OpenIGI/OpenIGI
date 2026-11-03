@@ -1,4 +1,5 @@
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -27,11 +28,19 @@ public sealed partial class GameHost
     private bool _editorOpenWanted;
     private bool _editorCloseWanted;
     private int? _editorMissionWanted;
+    private bool _editorMissionCloseWanted;
+
+    // The player's graphics settings while the editor holds the Vanilla preset, to put back.
+    private GraphicsPresetSnapshot? _editorPresetBefore;
+    private string? _editorTitleWanted;
+    private List<string[]>? _editorAfterSwitch;
     private bool _editorPlayWanted;
     private readonly List<string[]> _editorPendingCommands = [];
     private int _editorLastMilliseconds;
     private EditorView _editorView;
     private readonly EditorPlacementMotion _editorMotion = new();
+    private readonly EditorPlacementVisibility _editorVisibility = new();
+    private int _editorSpawned;
 
     /// <summary>Gets or sets what opens editor sessions; <see langword="null"/> in builds without the editor.</summary>
     /// <remarks>Set by the desktop composition root before <see cref="Run"/>.</remarks>
@@ -117,6 +126,31 @@ public sealed partial class GameHost
             OpenEditor(state);
         }
 
+        // Another game: the editor closes with the level, the session switches at the next boundary, and the editor comes
+        // back in the new game (ReopenEditorAfterSwitch).
+        if (_editorTitleWanted is { } title)
+        {
+            _editorTitleWanted = null;
+            CloseEditor(state);
+            if (!RequestTitle(title))
+            {
+                _editorAfterSwitch = null;
+            }
+        }
+
+        if (_editorMissionCloseWanted)
+        {
+            // The level goes, the editor stays, with nothing open until a mission is opened again.
+            _editorMissionCloseWanted = false;
+            _editorMissionWanted = null;
+            CancelMissionWarmUp();
+            _editorMotion.Clear();
+            ReleasePlayedMission();
+            _playerMode = false;
+            _window.CursorVisible = true;
+            _window.CursorLocked = false;
+        }
+
         if (_editorMissionWanted is { } id && _editor is not null)
         {
             _editorMissionWanted = null;
@@ -144,6 +178,44 @@ public sealed partial class GameHost
         }
     }
 
+    // After a switch the editor asked for: opened again, with the commands it left to run.
+    private void ReopenEditorAfterSwitch()
+    {
+        if (_editorAfterSwitch is not { } commands)
+        {
+            return;
+        }
+
+        _editorAfterSwitch = null;
+        _editorPendingCommands.AddRange(commands);
+        RequestEditor();
+    }
+
+    // The editor shows the level as the original game draws it, whatever the player's preset: what is built in it is meant to
+    // run there, and the remastered look would hide what the retail renderer will show. The player's settings are put back
+    // when the editor closes, and before they are saved, so the editor never changes them.
+    private void UseEditorPreset()
+    {
+        GraphicsPresetRegistry presets = GraphicsPresetRegistry.Default;
+        if (_editorPresetBefore is not null || !presets.IsAllowed(GraphicsPreset.Vanilla))
+        {
+            return;
+        }
+
+        _editorPresetBefore = presets.Capture();
+        presets.Apply(GraphicsPreset.Vanilla);
+        _logger.Information("Editor", "The viewport draws with the Vanilla preset while the editor is open.");
+    }
+
+    private void RestorePlayerPreset()
+    {
+        if (_editorPresetBefore is { } before)
+        {
+            _editorPresetBefore = null;
+            GraphicsPresetRegistry.Default.Restore(before);
+        }
+    }
+
     private void OpenEditor(FrameLoopState state)
     {
         if (_editor is not null || EditorFactory is not { } factory)
@@ -159,6 +231,7 @@ public sealed partial class GameHost
         _window.CursorVisible = true;
         _window.CursorLocked = false;
         _editorLastMilliseconds = _loop.TimeSource.Milliseconds;
+        UseEditorPreset();
         _editor = factory.Open(new EditorHostServices(this));
         foreach (string[] pending in _editorPendingCommands)
         {
@@ -178,6 +251,7 @@ public sealed partial class GameHost
         _logger.Information("Editor", "Closing the editor.");
         _editor = null;
         editor.Dispose();
+        RestorePlayerPreset();
         if (_world is { } world && ReferenceEquals(world.Motions, _editorMotion))
         {
             world.Motions = _editorMotion.Inner;
@@ -185,6 +259,13 @@ public sealed partial class GameHost
 
         _editorMotion.Clear();
         _editorMotion.Inner = null;
+        if (_world is { } culled && ReferenceEquals(culled.Visibility, _editorVisibility))
+        {
+            culled.Visibility = _editorVisibility.Inner;
+        }
+
+        _editorVisibility.Clear();
+        _editorVisibility.Inner = null;
 
         // Back to the front end, as abandoning a mission is: the level the editor had open is released.
         CancelMissionWarmUp();
@@ -226,6 +307,13 @@ public sealed partial class GameHost
         {
             _editorMotion.Inner = world.Motions;
             world.Motions = _editorMotion;
+        }
+
+        // And its hidden and isolated objects over the title's culling, the same way.
+        if (_world is { } culled && !ReferenceEquals(culled.Visibility, _editorVisibility))
+        {
+            _editorVisibility.Inner = culled.Visibility;
+            culled.Visibility = _editorVisibility;
         }
 
         int now = _loop.TimeSource.Milliseconds;
@@ -375,6 +463,15 @@ public sealed partial class GameHost
 
         public GameTitle Title => host.ActiveTitle;
 
+        public IReadOnlyList<GameTitle> InstalledTitles =>
+            [.. host._titles.Titles.Where(t => host._titles.TryResolve(t, out Titles.TitleBinding? binding) && binding.IsInstalled)];
+
+        public void SwitchTitle(string titleId, IReadOnlyList<string[]> editorCommands)
+        {
+            host._editorTitleWanted = titleId;
+            host._editorAfterSwitch = [.. editorCommands];
+        }
+
         public IReadOnlyList<MissionDescriptor> Missions => [.. host._missions.InCampaignOrder()];
 
         public MissionDescriptor? Mission => host._session.Mission;
@@ -387,6 +484,55 @@ public sealed partial class GameHost
 
         public FreeCamera? Camera => host._camera;
 
+        public Game.World.IGroundHeightField? Ground => host._mission.Ground;
+
+        public bool? HasModel(string model) => host._mission.Models is { } models ? models(model) is not null : null;
+
+        public double? SurfaceBelow(Vector3d pointMetres, double reachMetres)
+        {
+            Game.World.LevelCollision collision = host._mission.Collision;
+            double units = Game.World.WorldScene.UnitsPerMetre;
+            Vector3d from = pointMetres * units;
+            Vector3d to = new(from.X, from.Y, from.Z - (reachMetres * units));
+            return !collision.IsEmpty && collision.Cast(from, to, out Game.World.WorldRayHit hit) ? hit.Position.Z / units : null;
+        }
+
+        public Engine.Tasks.ScriptVarRegistry ScriptVariables => host._loop.Variables;
+
+        public bool TryReadModelTexture(string model, int materialSlot, out ReadOnlyMemory<byte> data)
+        {
+            data = ReadOnlyMemory<byte>.Empty;
+            return host._mission.Models?.Invoke(model) is { } bound
+                && bound.Pack.TryGetTextureName(bound.Instance, materialSlot, out string texture)
+                && host._resources.TryLoad(Game.World.LoadedPack.TextureResourceName(texture), out data);
+        }
+
+        public Game.World.AnimationFilePreview? PreviewAnimation(ReadOnlyMemory<byte> file)
+        {
+            try
+            {
+                return host._mission.AnimationFiles?.Invoke(file);
+            }
+            catch (Exception error) when (error is ArgumentException or InvalidDataException or Formats.Iff.IffFormatException or Formats.Ilff.IlffFormatException)
+            {
+                // Bytes that claim to be an animation but are not one are shown as bytes.
+                return null;
+            }
+        }
+
+        public Game.World.IModelAnimator? AnimateModel(Formats.World.MefModel model, string? name = null)
+        {
+            try
+            {
+                return host._mission.Animators?.Invoke(model, name);
+            }
+            catch (ArgumentException)
+            {
+                // A rig the level's clips do not fit is shown still.
+                return null;
+            }
+        }
+
         public Game.World.IEditableTerrain? Terrain => host._terrain?.Editable;
 
         public EditorView View => host._editorView;
@@ -397,7 +543,38 @@ public sealed partial class GameHost
 
         public void OpenMission(int id) => host._editorMissionWanted = id;
 
+        public void CloseMission() => host._editorMissionCloseWanted = true;
+
+        public void RescanMissions() => host._missions.Scan(host._fileSystem, host._resources, host._loop.Natives);
+
         public bool TryReadFile(string path, out ReadOnlyMemory<byte> data) => host._resources.TryLoad(path, out data);
+
+        public bool TryReadShippedFile(string path, out ReadOnlyMemory<byte> data)
+        {
+            data = default;
+            int colon = path.IndexOf(':', StringComparison.Ordinal);
+            string device = colon > 0 ? path[..colon] : Engine.Vfs.LocalFileDevice.DeviceName;
+            string relative = path[(colon + 1)..].Replace('\\', '/').TrimStart('/');
+            string project = Path.Combine(EditorProjects.DefaultFiles(host._titleRuntime.Title.Id), relative.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(project))
+            {
+                data = File.ReadAllBytes(project);
+                return true;
+            }
+
+            if (!host._fileSystem.TryGetDevice(device, out Engine.Vfs.IFileDevice? files) || !files.TryOpenRead(relative, out Stream? stream) || stream is null)
+            {
+                return false;
+            }
+
+            using (stream)
+            {
+                using MemoryStream copy = new();
+                stream.CopyTo(copy);
+                data = copy.ToArray();
+                return true;
+            }
+        }
 
         public void MountContent(string id, string name, string root)
         {
@@ -414,6 +591,56 @@ public sealed partial class GameHost
         }
 
         public IReadOnlyList<WorldPlacement> Placements => host._scene?.Placements ?? [];
+
+        public void SetPlacementHidden(Game.World.PlacementKey owner, bool hidden) => host._editorVisibility.SetHidden(owner, hidden);
+
+        public void SetPlacementIsolation(IReadOnlyCollection<Game.World.PlacementKey>? owners) => host._editorVisibility.SetIsolated(owners);
+
+        public Game.World.PlacementKey? SpawnPlacementCopy(Game.World.PlacementKey source)
+        {
+            if (host._scene is not { } scene)
+            {
+                return null;
+            }
+
+            // Copies carry a level id no level authors (below -1000), so their key is their own and no title motion claims
+            // them; their placement objects are new, so the renderer prepares only them.
+            int id = -1000 - (++host._editorSpawned);
+            List<Game.World.WorldPlacement> copies = [];
+            foreach (Game.World.WorldPlacement placement in scene.Placements)
+            {
+                if (Game.World.PlacementKey.Of(placement) == source)
+                {
+                    copies.Add(placement with { LevelId = id });
+                }
+            }
+
+            if (copies.Count == 0)
+            {
+                return null;
+            }
+
+            host._scene = scene.WithPlacements([.. scene.Placements, .. copies]);
+            host._logger.Information("Editor", $"Drew a copy of {copies[0].Owner.Label}: {copies.Count} placement(s), {copies[0].Instance.Name}.");
+            return new Game.World.PlacementKey(copies[0].Owner, id);
+        }
+
+        public Game.World.PlacementKey? SpawnPlacement(string model, Vector3d positionMetres, Matrix3f orientation)
+        {
+            if (host._scene is not { } scene || host._session.LevelRoot is not { } root || host._mission.Models?.Invoke(model) is not { } bound)
+            {
+                return null;
+            }
+
+            int id = -1000 - (++host._editorSpawned);
+            Game.World.WorldPlacement placement = new(positionMetres, orientation, bound.Instance, bound.Pack, bound.Model, $"editor:{model}", root)
+            {
+                LevelId = id,
+            };
+            host._scene = scene.WithPlacements([.. scene.Placements, placement]);
+            host._logger.Information("Editor", $"Drew {model}, which the level did not place.");
+            return new Game.World.PlacementKey(root, id);
+        }
 
         public void SetPlacementPose(Game.World.PlacementKey owner, EditorPose pose) => host._editorMotion.SetPose(owner, pose);
 

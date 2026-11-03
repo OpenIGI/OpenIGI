@@ -31,6 +31,8 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
     private readonly Dictionary<MissionTask, (Vector3d Loaded, Matrix3f Turned, PlacementKey Key)> _links = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<PlacementKey, MissionTask> _tasksByKey = [];
     private readonly Dictionary<PlacementKey, EditorPose> _poses = [];
+    private readonly HashSet<MissionTask> _hidden = new(ReferenceEqualityComparer.Instance);
+    private HashSet<MissionTask>? _isolated;
     private readonly Dictionary<MefModel, (Vector3d Centre, Vector3d Half)> _bounds = new(ReferenceEqualityComparer.Instance);
     private MissionDocument? _bound;
     private IReadOnlyList<WorldPlacement>? _boundPlacements;
@@ -82,6 +84,8 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
         _links.Clear();
         _tasksByKey.Clear();
         _poses.Clear();
+        _hidden.Clear();
+        _isolated = null;
         if (document is null || placements.Count == 0)
         {
             return;
@@ -154,21 +158,175 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
         _tasksByKey[key] = task;
     }
 
+    /// <summary>Gets whether a task is hidden by the editor (Hide), not by being deleted.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> when hidden.</returns>
+    public bool IsHidden(MissionTask task) => _hidden.Contains(task);
+
+    /// <summary>Gets whether a task is drawn in the running world, so edits to it show at once.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns><see langword="true"/> when it is.</returns>
+    public bool IsLive(MissionTask task) => _links.ContainsKey(task);
+
+    /// <summary>Gets where the running level drew a task's first model, found by its id or else its type and label.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The position in metres and the orientation, or <see langword="null"/> when nothing of it is drawn.</returns>
+    public (Vector3d PositionMetres, Matrix3f Orientation)? PlacedFrame(MissionTask task)
+    {
+        foreach (WorldPlacement placement in host.Placements)
+        {
+            GameTask owner = placement.Owner;
+            bool same = task.Id >= 0
+                ? owner.Id == task.Id
+                : owner.Type.Name == task.TypeName && owner.Label == task.Label;
+            if (same)
+            {
+                return (placement.Position, placement.Orientation);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Gets whether only some objects are being drawn.</summary>
+    public bool IsIsolating => _isolated is not null;
+
+    /// <summary>Hides or shows tasks and everything under them.</summary>
+    /// <param name="tasks">The tasks.</param>
+    /// <param name="hidden">Whether to hide them.</param>
+    public void SetHidden(IEnumerable<MissionTask> tasks, bool hidden)
+    {
+        foreach (MissionTask task in tasks.SelectMany(static t => t.SelfAndSubtree()))
+        {
+            if (hidden ? _hidden.Add(task) : _hidden.Remove(task))
+            {
+                if (_links.TryGetValue(task, out (Vector3d, Matrix3f, PlacementKey Key) link))
+                {
+                    host.SetPlacementHidden(link.Key, hidden);
+                }
+            }
+        }
+    }
+
+    /// <summary>Draws only some tasks and what is under them, or everything again.</summary>
+    /// <param name="tasks">The tasks to keep, or <see langword="null"/> to end the isolation.</param>
+    public void Isolate(IEnumerable<MissionTask>? tasks)
+    {
+        _isolated = tasks is null ? null : [.. tasks.SelectMany(static t => t.SelfAndSubtree())];
+        host.SetPlacementIsolation(_isolated is null
+            ? null
+            : [.. _isolated.Where(_links.ContainsKey).Select(t => _links[t].Key)]);
+    }
+
     private void OnChanged(MissionChange change)
     {
-        if (change.Kind != MissionChangeKind.Parameter
-            || !_links.TryGetValue(change.Task, out (Vector3d Loaded, Matrix3f Turned, PlacementKey Key) link)
-            || TaskPresentation.PositionMetres(change.Task) is not { } now)
+        switch (change.Kind)
+        {
+            case MissionChangeKind.Parameter when change.Parameter == WorldScene.ModelParameter:
+                Redraw(change.Task);
+                break;
+
+            case MissionChangeKind.Parameter:
+                ApplyPose(change.Task);
+                break;
+
+            case MissionChangeKind.Removed:
+                // Hidden rather than taken away, so an undo brings back the very same placements.
+                foreach (MissionTask task in change.Task.SelfAndSubtree())
+                {
+                    if (_links.TryGetValue(task, out (Vector3d, Matrix3f, PlacementKey Key) gone))
+                    {
+                        host.SetPlacementHidden(gone.Key, hidden: true);
+                    }
+                }
+
+                break;
+
+            case MissionChangeKind.Added:
+                foreach (MissionTask task in change.Task.SelfAndSubtree())
+                {
+                    if (_links.TryGetValue(task, out (Vector3d, Matrix3f, PlacementKey Key) back))
+                    {
+                        host.SetPlacementHidden(back.Key, hidden: false);
+                        ApplyPose(task);
+                    }
+                    else
+                    {
+                        SpawnLike(task);
+                    }
+                }
+
+                break;
+        }
+    }
+
+    // Moves what a task placed to where the document has it now.
+    private void ApplyPose(MissionTask task)
+    {
+        if (!_links.TryGetValue(task, out (Vector3d Loaded, Matrix3f Turned, PlacementKey Key) link)
+            || TaskPresentation.PositionMetres(task) is not { } now)
         {
             return;
         }
 
         // The turn in world space from the orientation the level was built with to the one the document has now.
-        Matrix3f turn = TaskPresentation.OrientationMatrix(change.Task).Transposed() * link.Turned;
+        Matrix3f turn = TaskPresentation.OrientationMatrix(task).Transposed() * link.Turned;
         EditorPose pose = new(link.Loaded, now - link.Loaded, turn);
         _poses[link.Key] = pose;
         host.SetPlacementPose(link.Key, pose);
     }
+
+    // A task whose model was changed: what it drew goes, and the new model is drawn in its place.
+    private void Redraw(MissionTask task)
+    {
+        if (_links.Remove(task, out (Vector3d, Matrix3f, PlacementKey Key) old))
+        {
+            host.SetPlacementHidden(old.Key, hidden: true);
+            _tasksByKey.Remove(old.Key);
+            _poses.Remove(old.Key);
+        }
+
+        SpawnLike(task);
+    }
+
+    // A task new to the document (duplicated, pasted, made) is drawn as a copy of a placed task of the same type and model,
+    // which keeps everything the title's walk put with it (attachments, the parts it draws). A model nothing in the level
+    // draws is drawn on its own, as the title finds it by name.
+    private void SpawnLike(MissionTask task)
+    {
+        if (TaskPresentation.PositionMetres(task) is not { } at || ModelOf(task) is not { } model)
+        {
+            return;
+        }
+
+        MissionTask? source = _links.Keys.FirstOrDefault(t => t.TypeName == task.TypeName && ModelOf(t) == model)
+            ?? _links.Keys.FirstOrDefault(t => ModelOf(t) == model);
+        if (source is null || !_links.TryGetValue(source, out (Vector3d Loaded, Matrix3f Turned, PlacementKey Key) from)
+            || host.SpawnPlacementCopy(from.Key) is not { } key)
+        {
+            // Drawn where and as the document has it, so its pose starts at nothing.
+            Matrix3f turned = TaskPresentation.OrientationMatrix(task);
+            if (host.SpawnPlacement(model, at, turned) is { } drawn)
+            {
+                _boundPlacements = host.Placements;
+                _links[task] = (at, turned, drawn);
+                _tasksByKey[drawn] = task;
+            }
+
+            return;
+        }
+
+        // The copy's placements stand where the source's were built, so the copy starts from the source's loaded pose.
+        _boundPlacements = host.Placements;
+        _links[task] = (from.Loaded, from.Turned, key);
+        _tasksByKey[key] = task;
+        ApplyPose(task);
+    }
+
+    private static string? ModelOf(MissionTask task) =>
+        task.FindParameter(WorldScene.ModelParameter) is { Arguments: [var value] } && ScriptValues.TryGetString(value, out string model)
+            ? model
+            : null;
 
     /// <summary>Gets the boxes around everything a task placed, where the editor has it now, in world metres.</summary>
     /// <param name="task">The task.</param>
@@ -249,7 +407,10 @@ internal sealed class LiveWorldLink(IEditorHost host, MissionWorkspace workspace
         foreach (WorldPlacement placement in placements)
         {
             PlacementKey key = PlacementKey.Of(placement);
-            if (placement.IsSuppressed || !_tasksByKey.TryGetValue(key, out MissionTask? task) || ReferenceEquals(task, ignore))
+            // Not what the editor has hidden or deleted (a deleted task's placements are only hidden, for its undo): a click on
+            // the empty spot it left once selected the deleted task, and deleting that again took the editor down.
+            if (placement.IsSuppressed || !_tasksByKey.TryGetValue(key, out MissionTask? task) || ReferenceEquals(task, ignore)
+                || _hidden.Contains(task) || workspace.Document?.Contains(task) != true)
             {
                 continue;
             }

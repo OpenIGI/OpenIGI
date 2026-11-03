@@ -369,6 +369,9 @@ public sealed partial class GameHost
         _mission.PlayerInWalk = false;
         _mission.Terrain = null;
         _mission.Ground = null;
+        _mission.Models = null;
+        _mission.Animators = null;
+        _mission.AnimationFiles = null;
 
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).

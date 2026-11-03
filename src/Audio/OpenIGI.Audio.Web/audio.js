@@ -13,7 +13,7 @@
 // panner for the original's flat pan, the 3D panner for a placed sound. A resident sound is one source
 // node; a stream is a run of them, each scheduled to start the instant the one before it ends.
 
-const BUS_COUNT = 4;
+const BUS_COUNT = 5;
 
 // Web Audio approaches a new gain over a time constant rather than stepping to it, which is what keeps
 // a per-frame level change from clicking. Five milliseconds is inaudible as a delay.

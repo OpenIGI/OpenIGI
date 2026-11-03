@@ -15,9 +15,18 @@ namespace OpenIGI.Formats.World;
 /// </remarks>
 public sealed class TerrainVisibility
 {
+    private readonly byte[] _bytes;
     private readonly TerrainGridTable _table;
 
-    private TerrainVisibility(TerrainGridTable table) => _table = table;
+    // The file is held as an owned copy, so a painted bit changes the masks every grid already handed out views on.
+    private TerrainVisibility(byte[] bytes)
+    {
+        _bytes = bytes;
+        _table = TerrainGridTable.Read(bytes, static n => n * n / 8);
+    }
+
+    /// <summary>Gets a count that goes up with every painted cell, for a caller that keeps what it drew from the masks.</summary>
+    public int Revision { get; private set; }
 
     /// <summary>Gets the underlying record table.</summary>
     public TerrainGridTable Table => _table;
@@ -31,8 +40,38 @@ public sealed class TerrainVisibility
     /// <summary>Reads a <c>terrain.bit</c> file.</summary>
     /// <param name="data">The file bytes.</param>
     /// <returns>The masks.</returns>
-    public static TerrainVisibility Read(ReadOnlyMemory<byte> data) =>
-        new(TerrainGridTable.Read(data, n => n * n / 8));
+    public static TerrainVisibility Read(ReadOnlyMemory<byte> data) => new(data.ToArray());
+
+    /// <summary>Sets or clears one cell of a mask.</summary>
+    /// <param name="id">The mask id.</param>
+    /// <param name="x">The column.</param>
+    /// <param name="y">The row.</param>
+    /// <param name="set">Whether the cell is set.</param>
+    /// <returns>Whether the cell changed; a cell outside the mask, or of an id with none, never does.</returns>
+    public bool SetCell(int id, int x, int y, bool set)
+    {
+        if (!TryGetGrid(id, out TerrainVisibilityGrid grid) || (uint)x >= (uint)grid.Size || (uint)y >= (uint)grid.Size)
+        {
+            return false;
+        }
+
+        int index = (y * grid.Size) + x;
+        int at = _table.OffsetOf(id) + (index >> 3);
+        byte bit = (byte)(1 << (index & 7));
+        byte before = _bytes[at];
+        _bytes[at] = set ? (byte)(before | bit) : (byte)(before & ~bit);
+        if (_bytes[at] == before)
+        {
+            return false;
+        }
+
+        Revision++;
+        return true;
+    }
+
+    /// <summary>Writes the file as it stands.</summary>
+    /// <returns>A copy of its bytes.</returns>
+    public byte[] Write() => (byte[])_bytes.Clone();
 
     /// <summary>Gets the mask an id selects.</summary>
     /// <param name="id">The mask id; <c>0</c> means "none".</param>

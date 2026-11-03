@@ -82,6 +82,12 @@ public sealed class Button : Pressable
         {
             IsEnabled = action.IsEnabled;
             IsChecked = action.Checked;
+
+            // A button showing its action's title follows it when the title is live ("0.5 m", "15°").
+            if (Text.Length > 0 && action.DynamicTitle is not null)
+            {
+                Text = action.CurrentTitle;
+            }
         }
     }
 

@@ -25,18 +25,9 @@ internal sealed class EditorPlacementMotion : IPlacementMotion
 
     /// <summary>Sets where everything a task placed is drawn: turned about the task's built position, then moved.</summary>
     /// <param name="owner">What the task placed, as its placements are keyed.</param>
-    /// <param name="pose">The pose; <see cref="EditorPose.IsIdentity"/> removes it.</param>
-    public void SetPose(PlacementKey owner, EditorPose pose)
-    {
-        if (pose.IsIdentity)
-        {
-            _poses.Remove(owner);
-        }
-        else
-        {
-            _poses[owner] = pose;
-        }
-    }
+    /// <param name="pose">The pose. An identity one is kept, not dropped: the drawing only updates a placement it is told
+    /// moved, so a task put back where the level built it (an undone move) has to be reported moved, back to its own place.</param>
+    public void SetPose(PlacementKey owner, EditorPose pose) => _poses[owner] = pose;
 
     /// <summary>Removes every pose, as when the level is rebuilt.</summary>
     public void Clear() => _poses.Clear();

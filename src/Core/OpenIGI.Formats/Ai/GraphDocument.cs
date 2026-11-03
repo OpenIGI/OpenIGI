@@ -25,6 +25,11 @@ public readonly record struct GraphDocumentNode(int Id, Vector3d Position, int P
 /// boundaries to edit within and is refused.
 /// </para>
 /// <para>
+/// A link is three records, <c>nLinkID1</c>, <c>nLinkID2</c> and <c>eLinkType</c>; the game adds it when it reads the type
+/// (<c>GraphFile</c>). Links are added after the last one and removed whole, and the route table keeps its size, which only
+/// the slot count decides.
+/// </para>
+/// <para>
 /// The route table the file carries is not rebuilt when a node moves -- routes still connect the same nodes, though one
 /// may no longer be the shortest -- until <see cref="RebuildRoutes"/> is called.
 /// </para>
@@ -35,6 +40,7 @@ public sealed class GraphDocument
     private static readonly uint PositionHash = GraphFieldHash.Of("tNodePosition");
     private static readonly uint LinkFromHash = GraphFieldHash.Of("nLinkID1");
     private static readonly uint LinkToHash = GraphFieldHash.Of("nLinkID2");
+    private static readonly uint LinkTypeHash = GraphFieldHash.Of("eLinkType");
     private static readonly uint RouteTableHash = GraphFieldHash.Of("RouteTable");
     private static readonly uint MaxNodesHash = GraphFieldHash.Of("nMaxNodes");
 
@@ -48,6 +54,9 @@ public sealed class GraphDocument
 
     private int _routeRecord = -1;
 
+    // Each link's first record and its type record, in file order alongside Links.
+    private readonly List<(int First, int Last)> _linkRecords = [];
+
     private readonly List<byte[]> _records = [];
     private readonly List<uint> _hashes = [];
 
@@ -60,6 +69,9 @@ public sealed class GraphDocument
 
     /// <summary>Gets the links as node-id pairs, in file order.</summary>
     public IReadOnlyList<(int From, int To)> Links { get; private set; } = [];
+
+    /// <summary>Gets each link's type, alongside <see cref="Links"/>.</summary>
+    public IReadOnlyList<int> LinkTypes { get; private set; } = [];
 
     /// <summary>Gets the slot count the file declares, or zero when it declares none.</summary>
     public int MaxNodes { get; private set; }
@@ -160,6 +172,66 @@ public sealed class GraphDocument
         return true;
     }
 
+    /// <summary>Gets whether two nodes are linked, either way round.</summary>
+    /// <param name="a">One node id.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>Whether a link joins them.</returns>
+    public bool AreLinked(int a, int b) => Links.Any(l => (l.From == a && l.To == b) || (l.From == b && l.To == a));
+
+    /// <summary>Links two nodes, after the last link.</summary>
+    /// <param name="from">The first node id.</param>
+    /// <param name="to">The second.</param>
+    /// <param name="type">The link's type; the commonest type the file uses when <see langword="null"/>.</param>
+    /// <returns><see langword="false"/> when either node is missing, they are the same node, or they are linked already.</returns>
+    public bool AddLink(int from, int to, int? type = null)
+    {
+        if (from == to || AreLinked(from, to) || !Nodes.Any(n => n.Id == from) || !Nodes.Any(n => n.Id == to)
+            || _hashes.IndexOf(NodeIdHash) is not (>= 0 and var template))
+        {
+            return false;
+        }
+
+        int kind = type ?? (LinkTypes.Count == 0 ? 0 : LinkTypes.GroupBy(static t => t).OrderByDescending(static g => g.Count()).First().Key);
+
+        // Every link field is an Int32 like the node id, so a node id record is the shape; only its hash and value differ.
+        // After the last link, or after everything when there is none: the game must have read a link's nodes first.
+        int at = _linkRecords.Count > 0 ? _linkRecords[^1].Last + 1 : _records.Count;
+        (uint Hash, int Value)[] fields = [(LinkFromHash, from), (LinkToHash, to), (LinkTypeHash, kind)];
+        for (int i = 0; i < fields.Length; i++)
+        {
+            byte[] record = (byte[])_records[template].Clone();
+            BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(1, 4), fields[i].Hash);
+            BinaryPrimitives.WriteInt32LittleEndian(record.AsSpan(ValueOffset, 4), fields[i].Value);
+            _records.Insert(at + i, record);
+            _hashes.Insert(at + i, fields[i].Hash);
+        }
+
+        Index();
+        return true;
+    }
+
+    /// <summary>Unlinks two nodes, whichever way round the link was written.</summary>
+    /// <param name="a">One node id.</param>
+    /// <param name="b">The other.</param>
+    /// <returns>The removed link's type, or <see langword="null"/> when they were not linked.</returns>
+    public int? RemoveLink(int a, int b)
+    {
+        for (int i = 0; i < Links.Count; i++)
+        {
+            if ((Links[i].From == a && Links[i].To == b) || (Links[i].From == b && Links[i].To == a))
+            {
+                int type = LinkTypes[i];
+                (int first, int last) = _linkRecords[i];
+                _records.RemoveRange(first, last - first + 1);
+                _hashes.RemoveRange(first, last - first + 1);
+                Index();
+                return type;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Rebuilds the route table from the nodes and links as they stand, in place.</summary>
     /// <returns><see langword="false"/> when the file carries no route table, or one of a size its slot count does not give.</returns>
     /// <remarks>See <see cref="GraphRouteBuilder"/> for how the table is built and how closely it matches the original's.</remarks>
@@ -188,8 +260,13 @@ public sealed class GraphDocument
     {
         List<GraphDocumentNode> nodes = [];
         List<(int, int)> links = [];
+        List<int> types = [];
+        _linkRecords.Clear();
+        _routeRecord = -1;
         int node = -1;
         int from = -1;
+        int to = -1;
+        int linkStart = -1;
         for (int i = 0; i < _records.Count; i++)
         {
             uint hash = _hashes[i];
@@ -209,11 +286,21 @@ public sealed class GraphDocument
             }
             else if (hash == LinkFromHash)
             {
+                // As the game reads them (GraphFile): the first id resets the second, and the type adds the link.
                 from = Int32Value(_records[i]);
+                to = -1;
+                linkStart = i;
             }
             else if (hash == LinkToHash)
             {
-                links.Add((from, Int32Value(_records[i])));
+                to = Int32Value(_records[i]);
+            }
+            else if (hash == LinkTypeHash)
+            {
+                links.Add((from, to));
+                types.Add(Int32Value(_records[i]));
+                _linkRecords.Add((linkStart >= 0 ? linkStart : i, i));
+                linkStart = -1;
             }
             else if (hash == MaxNodesHash)
             {
@@ -227,6 +314,7 @@ public sealed class GraphDocument
 
         Nodes = nodes;
         Links = links;
+        LinkTypes = types;
     }
 
     private static int Int32Value(byte[] record) =>

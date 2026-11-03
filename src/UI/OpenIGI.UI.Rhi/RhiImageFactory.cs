@@ -26,6 +26,17 @@ public sealed class RhiImageFactory : IUiImageFactory
     public UiImage CreateImage(int width, int height, ReadOnlySpan<Bgra32> pixels) =>
         _device.CreateTexture(new TextureDescription(width, height), pixels).ToUiImage();
 
+    /// <summary>Replaces an image's pixels in place, for a picture drawn anew each frame.</summary>
+    /// <param name="image">An image this factory made.</param>
+    /// <param name="pixels">The new pixels, at the size it was made.</param>
+    public void UpdateImage(UiImage image, ReadOnlySpan<Bgra32> pixels)
+    {
+        if (image.IsValid)
+        {
+            _device.UpdateTexture(image.ToTextureHandle(), 0, pixels);
+        }
+    }
+
     /// <inheritdoc/>
     public void DestroyImage(UiImage image)
     {

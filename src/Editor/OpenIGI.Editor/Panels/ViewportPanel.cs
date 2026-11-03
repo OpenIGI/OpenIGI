@@ -39,7 +39,7 @@ internal enum ViewportTool
 /// pan, the wheel to dolly; click to select, drag the gizmo to move, F to frame the selection. With no mission
 /// open it is the start page that opens one.
 /// </summary>
-internal sealed class ViewportPanel : EditorElement
+internal sealed partial class ViewportPanel : EditorElement
 {
     // How far a click reaches into the world.
     private const double PickReachMetres = 5000.0;
@@ -57,6 +57,10 @@ internal sealed class ViewportPanel : EditorElement
     private MissionTask? _graphTask;
     private readonly List<InspectableEntity> _entities = [];
     private readonly EditorCamera _camera = new();
+    private readonly Dictionary<MissionTask, Vector3d> _moveStarts = new(ReferenceEqualityComparer.Instance);
+    private double? _gridHeight;
+    private IReadOnlyList<(MissionTask Task, Vector3d? Position, Matrix3f? Orientation)> _turnCarried = [];
+    private readonly OrientationGizmo _orientation = new();
     private MissionTask? _hovered;
     private int _hoveredMission = -1;
 
@@ -71,19 +75,32 @@ internal sealed class ViewportPanel : EditorElement
 
     private bool Sculpting => Tool == ViewportTool.Terrain && _terrain.IsAvailable;
 
+    /// <summary>Raised when Shift-dragging a move handle asks for the selection to be duplicated before it moves.</summary>
+    public event Action? DuplicateRequested;
+
     /// <summary>Gets whether the camera is being flown.</summary>
     public bool IsFlying => _camera.Drag != CameraDrag.None;
 
-    /// <summary>Gets or sets the gizmo's snap step in metres; zero for none. Snapping also turns in 15° steps.</summary>
-    public double Snap
+    // The axes the gizmos use: the world's, or the selected object's own when local space is on (not for graph nodes).
+    private Matrix3f GizmoFrame =>
+        EditorCVars.LocalSpace.Value && _graph.PickedNode is null && _workspace.Selection.Primary is { } task
+            ? TaskPresentation.OrientationMatrix(task)
+            : Matrix3f.Identity;
+
+    private static bool ShowGizmos => EditorCVars.ShowGizmos.Value;
+
+    // The snap steps the gizmos use, from the editor's settings (the viewport toolbar sets them).
+    private void ApplySnapSettings()
     {
-        get => _gizmo.Snap;
-        set
-        {
-            _gizmo.Snap = value;
-            _box.Snap = value;
-            _rotate.Snap = value > 0;
-        }
+        double grid = EditorCVars.GridSnap.Value ? EditorCVars.GridStep.Value : 0.0;
+        _gizmo.Snap = grid;
+        _box.Snap = grid;
+        _rotate.SnapDegrees = EditorCVars.AngleSnap.Value ? EditorCVars.AngleStep.Value : 0.0;
+        _rotate.UpOnly = _workspace.Selection.Primary is { } task && TaskPresentation.TurnsAboutUpOnly(task);
+        _camera.SensitivityScale = EditorCVars.MouseSensitivity.Value;
+        _camera.FlySmoothing = EditorCVars.CameraSmoothing.Value;
+        _camera.InvertPan = EditorCVars.InvertPan.Value;
+        GizmoSize.Scale = EditorCVars.GizmoScale.Value * Theme.Scale;
     }
 
     /// <summary>Gets or sets the gizmo shown on the selection.</summary>
@@ -143,8 +160,23 @@ internal sealed class ViewportPanel : EditorElement
             return;
         }
 
-        // A graph is framed by its nodes, which can stand far from its own position.
+        // What it drew is framed whole, middle and height, not the point it stands on: a tower framed by its foot showed its
+        // legs and lost its tank.
         double radius = _live.RadiusMetres(task) ?? 2.0;
+        BoxGizmo.Box[] drawn = [.. _live.Boxes(task)];
+        if (drawn.Length > 0)
+        {
+            Vector3d sum = Vector3d.Zero;
+            foreach (BoxGizmo.Box box in drawn)
+            {
+                sum += box.Centre;
+            }
+
+            target = sum / drawn.Length;
+            radius = Math.Max(radius, drawn.Max(static b => b.Half.Length));
+        }
+
+        // A graph is framed by its nodes, which can stand far from its own position.
         if (_workspace.Mission is { } mission && _workspace.Graphs.Get(mission, task) is { } graph
             && MissionGraphs.BoundsMetres(task, graph) is { } bounds)
         {
@@ -156,14 +188,15 @@ internal sealed class ViewportPanel : EditorElement
     }
 
     /// <summary>Picks what is under the middle of the view, as a click there would.</summary>
-    public void PickAtCentre() => Pick(Bounds.Center, toggle: false);
+    public void PickAtCentre() => Pick(WorldRect.Center, toggle: false);
 
     /// <summary>Paints the terrain brush at the middle of the view for a while, as one stroke.</summary>
     /// <param name="seconds">How long to hold it.</param>
+    /// <param name="inverted">Whether to do the opposite, as Shift does.</param>
     /// <returns>Whether there was ground there to paint.</returns>
-    public bool SculptAtCentre(double seconds)
+    public bool SculptAtCentre(double seconds, bool inverted = false)
     {
-        if (!_terrain.Begin(Projector, Bounds.Center, inverted: false))
+        if (!_terrain.Begin(Projector, WorldRect.Center, inverted))
         {
             return false;
         }
@@ -206,33 +239,9 @@ internal sealed class ViewportPanel : EditorElement
         _camera.Update(camera, _host.Input, elapsedSeconds);
     }
 
-    // Boxes around what is selected, steady, and around what the pointer is over, pulsing, as scene editors show them.
-    private void DrawOutlines(UiPainter painter)
-    {
-        ViewportProjector projector = Projector;
-        Bgra32 selectedColour = Theme.Accent.WithAlpha(200);
-        foreach (MissionTask task in _workspace.Selection.Items)
-        {
-            foreach (BoxGizmo.Box box in _live.Boxes(task))
-            {
-                BoxGizmo.DrawEdges(painter, Theme, projector, box, selectedColour);
-            }
-        }
-
-        if (_hovered is { } hovered && !_workspace.Selection.Contains(hovered) && !Sculpting)
-        {
-            double pulse = 0.5 + (0.5 * Math.Sin(Environment.TickCount64 / 1000.0 * 8.0));
-            Bgra32 hoverColour = Bgra32.FromRgb(255, 222, 90).WithAlpha((byte)(90 + (110 * pulse)));
-            foreach (BoxGizmo.Box box in _live.Boxes(hovered))
-            {
-                BoxGizmo.DrawEdges(painter, Theme, projector, box, hoverColour);
-            }
-        }
-    }
-
     // The nearest surface under a point of the view, the ground or a model other than the one being moved: where the move
     // gizmo's centre puts what it carries.
-    private Vector3d? SurfaceUnder(UiVec2 point, MissionTask moving)
+    private Vector3d? SurfaceUnder(UiVec2 point, MissionTask? moving)
     {
         ViewportProjector projector = Projector;
         if (!projector.TryRay(point, out Vector3d ray))
@@ -254,11 +263,25 @@ internal sealed class ViewportPanel : EditorElement
         return nearest < double.MaxValue ? projector.Eye + (ray * nearest) : null;
     }
 
+    /// <summary>Gets where a new object goes: what is in the middle of the view, or a little in front of the camera.</summary>
+    /// <returns>The point in world metres, or <see langword="null"/> with no camera.</returns>
+    public Vector3d? PlacementPoint()
+    {
+        if (_host.Camera is not { } camera)
+        {
+            return null;
+        }
+
+        AimPivot();
+        (Vector3d forward, _, _) = EditorCamera.Axes(camera.Yaw, camera.Pitch);
+        return camera.Position + (forward * Math.Min(_camera.PivotDistance, 60.0));
+    }
+
     // The distance to what is under the middle of the view, which orbiting turns around and the wheel dollies toward.
     private void AimPivot()
     {
         ViewportProjector projector = Projector;
-        if (!projector.TryRay(Bounds.Center, out Vector3d ray))
+        if (!projector.TryRay(WorldRect.Center, out Vector3d ray))
         {
             return;
         }
@@ -283,6 +306,41 @@ internal sealed class ViewportPanel : EditorElement
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => available;
 
+    /// <summary>Gets or sets the toolbar along the viewport's top.</summary>
+    public UI.Editor.Widgets.Toolbar? Overlay
+    {
+        get;
+        set
+        {
+            if (field is not null)
+            {
+                RemoveChild(field);
+            }
+
+            field = value;
+            if (value is not null)
+            {
+                AddChild(value);
+            }
+        }
+    }
+
+    /// <summary>Gets the part of the viewport the world is drawn in: all of it below the toolbar.</summary>
+    public UiRect WorldRect =>
+        Overlay is { Visibility: not Visibility.Collapsed } && ShowsWorld
+            ? UiRect.FromEdges(Bounds.X, Bounds.Y + Theme.ToolbarHeight, Bounds.Right, Bounds.Bottom)
+            : Bounds;
+
+    /// <inheritdoc/>
+    protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
+    {
+        if (Overlay is { } overlay)
+        {
+            overlay.Visibility = ShowsWorld ? Visibility.Visible : Visibility.Collapsed;
+            overlay.Place(context, new UiRect(contentRect.X, contentRect.Y, contentRect.Width, Theme.ToolbarHeight));
+        }
+    }
+
     /// <inheritdoc/>
     protected override bool OnPointerDown(in PointerEvent e)
     {
@@ -294,6 +352,22 @@ internal sealed class ViewportPanel : EditorElement
             }
 
             return false;
+        }
+
+        // The orientation widget: a dot looks along its axis, anywhere else on it orbits.
+        if (e.Button == MouseButton.Left && _host.Camera is { } viewCamera && OrientationArea.Contains(e.Position))
+        {
+            Focus();
+            AimPivot();
+            int dot = OrientationGizmo.DotAt(OrientationArea, viewCamera.Yaw, viewCamera.Pitch, e.Position);
+            if (dot >= 0)
+            {
+                _camera.LookAlong(viewCamera, OrientationGizmo.LookFor(dot));
+                return true;
+            }
+
+            _camera.Begin(CameraDrag.Orbit);
+            return true;
         }
 
         if (e.Button is MouseButton.Right or MouseButton.Middle || (e.Button == MouseButton.Left && e.Alt))
@@ -324,17 +398,63 @@ internal sealed class ViewportPanel : EditorElement
             return true;
         }
 
-        if (_workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin && !Resizing
+        ApplySnapSettings();
+        if (ShowGizmos && _workspace.Selection.Primary is { } selected && GizmoOrigin is { } origin && !Resizing
             && (Rotating
-                ? _rotate.Begin(Projector, origin, TaskPresentation.OrientationMatrix(selected), e.Position)
-                : _gizmo.Begin(Projector, origin, e.Position, _graph.PickedNode is null ? point => SurfaceUnder(point, selected) : null)))
+                ? _rotate.Begin(Projector, origin, GizmoFrame, TaskPresentation.OrientationMatrix(selected), e.Position)
+                : _gizmo.Begin(Projector, origin, GizmoFrame, e.Position, _graph.PickedNode is null ? point => SurfaceUnder(point, selected) : null)))
         {
+            // Shift on a move handle duplicates first and drags the copies, which stand where the originals did.
+            if (e.Shift && _gizmo.IsDragging && _graph.PickedNode is null)
+            {
+                DuplicateRequested?.Invoke();
+            }
+
+            _moveStarts.Clear();
+            foreach (MissionTask task in _workspace.Selection.Items)
+            {
+                if (TaskPresentation.PositionMetres(task) is { } at)
+                {
+                    _moveStarts[task] = at;
+                }
+            }
+
+            // What is placed under, inside or on the selection goes with it (ed_move_contents).
+            IReadOnlyList<MissionTask> carried = _workspace.Document is { } carrying && _graph.PickedNode is null
+                ? ObjectCarry.Carried(carrying, _live, [.. _workspace.Selection.Items])
+                : [];
+            foreach (MissionTask task in carried)
+            {
+                if (TaskPresentation.PositionMetres(task) is { } at)
+                {
+                    _moveStarts.TryAdd(task, at);
+                }
+            }
+
+            _turnCarried = Rotating ? ObjectCarry.Snapshot(carried) : [];
             return true;
         }
 
-        if (ShownGraph is { } shown && !e.Control && _graph.Pick(Projector, shown.Task, shown.Graph, e.Position, Theme.Px(10f)))
+        if (ShownGraph is { } shown)
         {
-            return true;
+            // Ctrl+click on another node, with one picked, links the two (or unlinks them) and moves on to it, so a path
+            // is laid node by node.
+            if (e.Control && _graph.PickedNode is { } from
+                && GraphOverlay.NodeAt(Projector, shown.Task, shown.Graph, e.Position, Theme.Px(10f)) is { } to && to != from)
+            {
+                if (_workspace.Graphs.ToggleLink(shown.Task, from, to) is { } link)
+                {
+                    _workspace.Execute(link);
+                }
+
+                _graph.Pick(to);
+                return true;
+            }
+
+            if (!e.Control && _graph.Pick(Projector, shown.Task, shown.Graph, e.Position, Theme.Px(10f)))
+            {
+                return true;
+            }
         }
 
         Pick(e.Position, e.Control);
@@ -354,6 +474,11 @@ internal sealed class ViewportPanel : EditorElement
         {
             _terrain.Hover(Projector, e.Position);
             return;
+        }
+
+        if (_host.Camera is { } hoverCamera)
+        {
+            _orientation.Hover(OrientationArea, hoverCamera.Yaw, hoverCamera.Pitch, e.Position);
         }
 
         // What a click would pick, outlined while the pointer is over it; nothing while a drag or the camera has the mouse.
@@ -393,21 +518,39 @@ internal sealed class ViewportPanel : EditorElement
         if (_rotate.IsDragging && _workspace.Document is { } turning && TaskPresentation.Orientation(selected) is { } orientation)
         {
             Vector3f angles = _rotate.Drag(e.Position).ToEngineEulerAngles();
-            _workspace.Execute(SetParameterCommand.Numbers(turning, selected, orientation.Name, [angles.X, angles.Y, angles.Z]));
+            SetParameterCommand turn = TaskPresentation.TurnsAboutUpOnly(selected)
+                ? SetParameterCommand.Numbers(turning, selected, orientation.Name, [angles.Z])
+                : SetParameterCommand.Numbers(turning, selected, orientation.Name, [angles.X, angles.Y, angles.Z]);
+            _workspace.Execute(_turnCarried.Count == 0
+                ? turn
+                : new CompositeCommand(turn.Name, [turn, .. ObjectCarry.Turn(turning, _turnCarried, origin, _rotate.WorldTurn)]));
             return;
         }
 
-        if (_gizmo.IsDragging && _workspace.Document is { } document && TaskPresentation.Position(selected) is { } position)
+        if (_gizmo.IsDragging && _workspace.Document is { } document && TaskPresentation.Position(selected) is not null)
         {
+            // Every selected object moves by what the primary one moved, as one step.
             Vector3d moved = _gizmo.Drag(Projector, e.Position, e.Control);
-            if (MissionGraphs.IsGraph(selected))
+            Vector3d by = _moveStarts.TryGetValue(selected, out Vector3d primaryStart) ? moved - primaryStart : Vector3d.Zero;
+            List<IEditorCommand> moves = [];
+            foreach ((MissionTask task, Vector3d start) in _moveStarts)
             {
-                // Through the graph's parent frame, back to the value its parameter holds (in metres, as below).
-                moved = MissionGraphs.OffsetForOrigin(selected, moved) / WorldUnits.PerMetre;
+                if (TaskPresentation.Position(task) is not { } position)
+                {
+                    continue;
+                }
+
+                Vector3d to = ReferenceEquals(task, selected) ? moved : start + by;
+                if (MissionGraphs.IsGraph(task))
+                {
+                    // Through the graph's parent frame, back to the value its parameter holds (in metres, as below).
+                    to = MissionGraphs.OffsetForOrigin(task, to) / WorldUnits.PerMetre;
+                }
+
+                moves.Add(SetParameterCommand.Numbers(document, task, position.Name, [WorldUnits.FromMetres(to.X), WorldUnits.FromMetres(to.Y), WorldUnits.FromMetres(to.Z)]));
             }
 
-            _workspace.Execute(SetParameterCommand.Numbers(
-                document, selected, position.Name, [WorldUnits.FromMetres(moved.X), WorldUnits.FromMetres(moved.Y), WorldUnits.FromMetres(moved.Z)]));
+            _workspace.Execute(moves.Count == 1 ? moves[0] : new CompositeCommand("Move", moves));
             return;
         }
 
@@ -417,11 +560,11 @@ internal sealed class ViewportPanel : EditorElement
         }
         else if (Rotating)
         {
-            _rotate.Hover(Projector, origin, e.Position);
+            _rotate.Hover(Projector, origin, GizmoFrame, e.Position);
         }
         else
         {
-            _gizmo.Hover(Projector, origin, e.Position);
+            _gizmo.Hover(Projector, origin, GizmoFrame, e.Position);
         }
     }
 
@@ -517,6 +660,22 @@ internal sealed class ViewportPanel : EditorElement
         }
 
         painter.PushClip(Bounds);
+        ApplySnapSettings();
+        DrawGrid(painter);
+        DrawDropMarker(painter);
+        if (_host.Camera is { } orientationCamera)
+        {
+            bool overWidget = IsPointerOver && OrientationArea.Contains(Root?.PointerPosition ?? default);
+            _orientation.Draw(painter, Theme, OrientationArea, orientationCamera.Yaw, orientationCamera.Pitch, overWidget);
+        }
+
+        if (!ShowGizmos)
+        {
+            DrawChips(painter);
+            painter.PopClip();
+            return;
+        }
+
         if (ShownGraph is { } shown)
         {
             _graph.Draw(painter, Theme, Projector, shown.Task, shown.Graph);
@@ -536,11 +695,20 @@ internal sealed class ViewportPanel : EditorElement
         {
             if (Rotating)
             {
-                _rotate.Draw(painter, Theme, Projector, origin);
+                _rotate.Draw(painter, Theme, Projector, origin, GizmoFrame);
             }
             else
             {
-                _gizmo.Draw(painter, Theme, Projector, origin);
+                _gizmo.Draw(painter, Theme, Projector, origin, GizmoFrame);
+                if (Tool == ViewportTool.Rotate && _graph.PickedNode is null && Projector.TryProject(origin, out UiVec2 at))
+                {
+                    // The rotate tool on something with no orientation: say so rather than quietly showing the move gizmo.
+                    const string hint = "This object has no orientation to turn";
+                    float width = Theme.SmallFont.MeasureWidth(hint, Theme.SmallTextSize) + Theme.Px(12f);
+                    UiRect note = new(MathF.Round(at.X - (width * 0.5f)), MathF.Round(at.Y + Theme.Px(40f)), width, Theme.ControlHeight);
+                    EditorDraw.Fill(painter, Theme, note, Bgra32.FromRgba(0, 0, 0, 170));
+                    painter.DrawText(Theme.SmallFont, hint, new UiVec2(note.X + Theme.Px(6f), MathF.Round(note.Y + ((note.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f))), Theme.SmallTextSize, Theme.Text);
+                }
             }
         }
 
@@ -552,7 +720,6 @@ internal sealed class ViewportPanel : EditorElement
             EditorDraw.Frame(painter, Theme, Bounds, Bgra32.Transparent, Theme.Accent.WithAlpha(120), 0f);
         }
     }
-
 
     private void Pick(UiVec2 point, bool toggle)
     {
@@ -589,70 +756,4 @@ internal sealed class ViewportPanel : EditorElement
         }
     }
 
-    private void DrawChips(UiPainter painter)
-    {
-        string mode = _workspace.Mission is not null ? $"{_host.Title.DisplayName}  •  {_workspace.MissionName}" : string.Empty;
-        UiRect chip = new(Bounds.X + Theme.Px(10f), Bounds.Y + Theme.Px(10f), Theme.Font.MeasureWidth(mode, Theme.TextSize) + Theme.Px(20f), Theme.ControlHeight);
-        EditorDraw.Fill(painter, Theme, chip, Theme.Background.WithAlpha(170));
-        EditorDraw.Label(painter, Theme, mode, chip.Deflate(new Thickness(Theme.Px(10f), 0f)), Theme.Text);
-
-        if (_host.Camera is { } camera)
-        {
-            string speed = FormattableString.Invariant($"Camera {camera.Speed:0.#} m/s");
-            float width = Theme.SmallFont.MeasureWidth(speed, Theme.SmallTextSize) + Theme.Px(16f);
-            UiRect right = new(Bounds.Right - width - Theme.Px(10f), Bounds.Y + Theme.Px(10f), width, Theme.ControlHeight);
-            EditorDraw.Fill(painter, Theme, right, Theme.Background.WithAlpha(170));
-            painter.DrawText(Theme.SmallFont, speed, new UiVec2(right.X + Theme.Px(8f), MathF.Round(right.Y + ((right.Height - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f))), Theme.SmallTextSize,
-                _camera.SecondsSinceSpeedChange < 1.5 ? Theme.Accent : Theme.TextMuted);
-        }
-
-        if (_host.IsWarmingUp)
-        {
-            EditorDraw.Label(painter, Theme, "Loading…", new UiRect(Bounds.Center.X - Theme.Px(30f), Bounds.Center.Y, Theme.Px(80f), Theme.RowHeight), Theme.TextMuted);
-        }
-    }
-
-    private UiRect StartList
-    {
-        get
-        {
-            float width = MathF.Min(Theme.Px(520f), Bounds.Width - Theme.Px(40f));
-            float top = Bounds.Y + MathF.Max(Theme.Px(40f), (Bounds.Height * 0.18f));
-            return new UiRect(MathF.Round(Bounds.Center.X - (width * 0.5f)), top + Theme.Px(70f), width, Bounds.Bottom - top - Theme.Px(100f));
-        }
-    }
-
-    private int? MissionAt(UiVec2 point)
-    {
-        UiRect list = StartList;
-        if (!list.Contains(point))
-        {
-            return null;
-        }
-
-        int index = (int)((point.Y - list.Y) / (Theme.RowHeight + Theme.Px(6f)));
-        return index >= 0 && index < _host.Missions.Count ? index : null;
-    }
-
-    private void DrawStartPage(UiPainter painter)
-    {
-        painter.FillRect(Bounds, Theme.Background);
-        UiRect list = StartList;
-        float y = list.Y - Theme.Px(70f);
-        EditorDraw.Label(painter, Theme, $"Open a {_host.Title.DisplayName} mission", new UiRect(list.X, y, list.Width, Theme.Px(30f)), Theme.Text, strong: true);
-        EditorDraw.Label(painter, Theme, "Edits are saved to a project of their own; the game's files are never changed.", new UiRect(list.X, y + Theme.Px(28f), list.Width, Theme.RowHeight), Theme.TextMuted);
-
-        painter.PushClip(list);
-        float rowHeight = Theme.RowHeight + Theme.Px(6f);
-        for (int i = 0; i < _host.Missions.Count; i++)
-        {
-            MissionDescriptor mission = _host.Missions[i];
-            UiRect row = new(list.X, list.Y + (i * rowHeight), list.Width, rowHeight - Theme.Px(4f));
-            EditorDraw.Fill(painter, Theme, row, i == _hoveredMission ? Theme.Selection : Theme.Panel);
-            EditorDraw.Icon(painter, Theme, KitIcon.Terrain, new UiRect(row.X + Theme.Px(8f), row.Y, Theme.IconSize, row.Height));
-            EditorDraw.Label(painter, Theme, FormattableString.Invariant($"{mission.Id}.  {_host.MissionName(mission)}"), new UiRect(row.X + Theme.Px(32f), row.Y, row.Width - Theme.Px(40f), row.Height), Theme.Text);
-        }
-
-        painter.PopClip();
-    }
 }

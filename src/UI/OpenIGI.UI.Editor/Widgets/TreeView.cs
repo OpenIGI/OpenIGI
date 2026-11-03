@@ -48,11 +48,26 @@ public sealed class TreeSource<T>
     /// <summary>Gets an item's icon.</summary>
     public Func<T, KitIcon>? Icon { get; init; }
 
+    /// <summary>
+    /// Gets the icon (by name in the icon face) of a button at the row's right edge, given whether the row is under the
+    /// pointer, or <see langword="null"/> for none: an eye that hides an object, shown on hover and kept on hidden ones.
+    /// </summary>
+    public Func<T, bool, string?>? RowButton { get; init; }
+
+    /// <summary>Gets what clicking the row's button does.</summary>
+    public Action<T>? RowButtonClicked { get; init; }
+
+    /// <summary>Gets an item's icon colour, such as yellow for folders, or <see langword="null"/> for the theme's.</summary>
+    public Func<T, Bgra32?>? IconTint { get; init; }
+
     /// <summary>Gets faint text drawn at the row's right, such as the item's type.</summary>
     public Func<T, string?>? Detail { get; init; }
 
     /// <summary>Gets an item's text colour, or <see langword="null"/> for the normal one.</summary>
     public Func<T, Bgra32?>? Tint { get; init; }
+
+    /// <summary>Gets whether an item is drawn faded: hidden, inactive, or otherwise not part of what is shown.</summary>
+    public Func<T, bool>? Dimmed { get; init; }
 }
 
 /// <summary>
@@ -73,6 +88,7 @@ public sealed class TreeView<T> : EditorElement
     private readonly HashSet<T> _expanded = new(ReferenceEqualityComparer.Instance);
     private readonly List<(T Item, int Depth, bool HasChildren)> _rows = [];
     private readonly ScrollModel _scroll = new();
+    private (T Item, RenameField Field)? _rename;
     private string _filter = string.Empty;
     private bool _dirty = true;
     private T? _anchor;
@@ -189,6 +205,49 @@ public sealed class TreeView<T> : EditorElement
         return index >= 0 && index < _rows.Count ? index : -1;
     }
 
+    /// <summary>Gets or sets the text shown when there are no rows, or <see langword="null"/> for none.</summary>
+    public string? EmptyText { get; set; }
+
+    /// <summary>Gets whether a row's name is being edited in place.</summary>
+    public bool IsRenaming => _rename is not null;
+
+    /// <summary>Edits an item's name in place, in a field over its row: Enter or clicking away keeps it, Escape does not.</summary>
+    /// <param name="item">The item, which is revealed first.</param>
+    /// <param name="name">The name to start from.</param>
+    /// <param name="commit">Given the new name, when it changed.</param>
+    public void BeginRename(T item, string name, Action<string> commit)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+        EndRename();
+        Reveal(item);
+        RenameField field = new(Theme) { Text = name, SelectAllOnFocus = true };
+        field.Ended += () =>
+        {
+            EndRename();
+            Focus();
+        };
+        field.Committed += text =>
+        {
+            if (text.Trim() is { Length: > 0 } trimmed && trimmed != name)
+            {
+                commit(trimmed);
+            }
+        };
+        _rename = (item, field);
+        AddChild(field);
+        field.Focus();
+    }
+
+    // Takes the rename field away once it has lost the keyboard (Enter, Escape and clicks elsewhere all end there).
+    private void EndRename()
+    {
+        if (_rename is { } rename)
+        {
+            _rename = null;
+            RemoveChild(rename.Field);
+        }
+    }
+
     /// <summary>Gets the rectangle of a row, which may be off screen.</summary>
     /// <param name="index">The row index.</param>
     /// <returns>The rectangle.</returns>
@@ -212,6 +271,35 @@ public sealed class TreeView<T> : EditorElement
     {
         Rebuild();
         _scroll.Measure(_rows.Count * Row, contentRect.Height);
+        if (_rename is { } rename)
+        {
+            int index = _rows.FindIndex(r => ReferenceEquals(r.Item, rename.Item));
+            if (index < 0 || (Root is not null && !rename.Field.IsFocused))
+            {
+                EndRename();
+                return;
+            }
+
+            UiRect row = RowRect(index);
+            float left = LabelLeft(index);
+            rename.Field.Place(context, new UiRect(left - Theme.Px(4f), row.Y + 1f, MathF.Max(Theme.Px(80f), row.Right - left - Theme.Px(8f)), row.Height - 2f));
+        }
+    }
+
+    // The button at a row's right edge.
+    private UiRect RowButtonRect(int index)
+    {
+        UiRect row = RowRect(index);
+        float size = Theme.Px(20f);
+        return new UiRect(row.Right - size - Theme.Px(10f), row.Y + ((row.Height - size) * 0.5f), size, size);
+    }
+
+    // Where a row's name starts: after the indent, the arrow and the icon.
+    private float LabelLeft(int index)
+    {
+        (T item, int depth, _) = _rows[index];
+        float x = ArrowRect(index, depth).Right;
+        return _source.Icon?.Invoke(item) is { } icon && icon != KitIcon.None ? x + Theme.IconSize + Theme.Px(6f) : x;
     }
 
     /// <inheritdoc/>
@@ -253,6 +341,12 @@ public sealed class TreeView<T> : EditorElement
         if (e.Button != MouseButton.Left)
         {
             return false;
+        }
+
+        if (_source.RowButtonClicked is { } clicked && _source.RowButton?.Invoke(item, true) is not null && RowButtonRect(index).Contains(e.Position))
+        {
+            clicked(item);
+            return true;
         }
 
         if (hasChildren && ArrowRect(index, depth).Contains(e.Position))
@@ -405,6 +499,13 @@ public sealed class TreeView<T> : EditorElement
     {
         Rebuild();
         painter.FillRect(Bounds, Theme.Panel);
+        if (_rows.Count == 0 && EmptyText is { Length: > 0 } empty)
+        {
+            float width = MathF.Min(Bounds.Width - Theme.Px(16f), Theme.Font.MeasureWidth(empty, Theme.TextSize));
+            EditorDraw.Label(painter, Theme, empty, new UiRect(Bounds.Center.X - (width * 0.5f), Bounds.Y + Theme.Px(20f), width + 1f, Theme.RowHeight), Theme.TextDisabled);
+            return;
+        }
+
         painter.PushClip(Bounds);
 
         int first = Math.Max(0, (int)(_scroll.Offset / Row));
@@ -466,14 +567,24 @@ public sealed class TreeView<T> : EditorElement
         }
 
         float x = arrow.Right;
+        bool dimmed = _source.Dimmed?.Invoke(item) == true;
         KitIcon icon = _source.Icon?.Invoke(item) ?? KitIcon.None;
         if (icon != KitIcon.None)
         {
-            EditorDraw.Icon(painter, Theme, icon, new UiRect(x, row.Y, Theme.IconSize, row.Height), selected && active ? Theme.Accent : null);
+            Bgra32? tint = _source.IconTint?.Invoke(item);
+            Bgra32? iconInk = selected && active ? Theme.Accent : dimmed ? (tint ?? Theme.Icon).WithAlpha(110) : tint;
+            EditorDraw.Icon(painter, Theme, icon, new UiRect(x, row.Y, Theme.IconSize, row.Height), iconInk);
             x += Theme.IconSize + Theme.Px(6f);
         }
 
         float right = row.Right - Theme.Px(12f);
+        if (_source.RowButton?.Invoke(item, hovered) is { } button)
+        {
+            UiRect box = RowButtonRect(index);
+            bool hot = hovered && box.Contains(Root?.PointerPosition ?? default);
+            EditorDraw.Icon(painter, Theme, button, box, hot ? Theme.Text : Theme.TextMuted, Theme.Px(15f));
+            right = box.X - Theme.Px(4f);
+        }
         if (_source.Detail?.Invoke(item) is { Length: > 0 } detail)
         {
             float width = MathF.Min(Theme.SmallFont.MeasureWidth(detail, Theme.SmallTextSize), (right - x) * 0.45f);
@@ -484,6 +595,11 @@ public sealed class TreeView<T> : EditorElement
         }
 
         Bgra32 ink = _source.Tint?.Invoke(item) ?? Theme.Text;
+        if (dimmed)
+        {
+            ink = ink.WithAlpha((byte)(ink.A / 2));
+        }
+
         EditorDraw.Label(painter, Theme, _source.Label(item), new UiRect(x, row.Y, right - x, row.Height), ink);
     }
 
@@ -622,5 +738,28 @@ public sealed class TreeView<T> : EditorElement
         _pressed = null;
         _dragging = false;
         _drop = null;
+    }
+
+    // The field over a row while it is renamed: Enter keeps the name and Escape drops it, and either ends the rename.
+    private sealed class RenameField(EditorTheme theme) : TextField(theme)
+    {
+        public event Action? Ended;
+
+        protected internal override bool OnKeyDown(in KeyEvent e)
+        {
+            switch (e.Key)
+            {
+                case KeyCode.Return or KeyCode.NumpadEnter:
+                    Commit();
+                    Ended?.Invoke();
+                    return true;
+                case KeyCode.Escape:
+                    Revert();
+                    Ended?.Invoke();
+                    return true;
+                default:
+                    return base.OnKeyDown(e);
+            }
+        }
     }
 }

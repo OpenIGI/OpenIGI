@@ -50,6 +50,22 @@ public sealed class EditorProjectTests : IDisposable
         Assert.Throws<ArgumentException>(() => project.PathFor("../../outside.qvm"));
     }
 
+    /// <summary>A mission's target is kept in the manifest across reopening; a mission never set is retail.</summary>
+    [Fact]
+    public void Mission_targets_are_kept()
+    {
+        EditorProject project = EditorProject.OpenOrCreate(_root, "igi1", "Targets");
+        Assert.Equal(MissionTarget.Retail, project.TargetOf(1));
+        project.SetTarget(15, MissionTarget.OpenIgi);
+        project.SetTarget(16, MissionTarget.Retail);
+
+        EditorProject reopened = EditorProject.OpenOrCreate(_root, "igi1", "Targets");
+        Assert.Equal(MissionTarget.OpenIgi, reopened.TargetOf(15));
+        Assert.Equal(MissionTarget.Retail, reopened.TargetOf(16));
+        Assert.Equal(MissionTarget.Retail, reopened.TargetOf(3));
+        Assert.Equal("Targets", reopened.Name);
+    }
+
     /// <inheritdoc/>
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }

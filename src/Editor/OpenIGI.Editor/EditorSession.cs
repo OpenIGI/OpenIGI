@@ -36,7 +36,7 @@ public sealed class EditorFactory : IEditorFactory
 /// One open editor: the window chrome (menus, toolbar, status bar), the docked panels, the actions and their
 /// shortcuts, and the workspace they all edit.
 /// </summary>
-internal sealed class EditorSession : IEditorSession
+internal sealed partial class EditorSession : IEditorSession
 {
     private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
 
@@ -49,6 +49,7 @@ internal sealed class EditorSession : IEditorSession
     private readonly DockSpace _dock;
     private readonly ViewportPanel _viewport;
     private readonly TerrainTool _terrainTool;
+    private readonly TerrainPanel _terrainPanel;
     private readonly OutlinerPanel _outliner;
     private readonly MenuBar _menu;
     private readonly StatusBar _status;
@@ -64,10 +65,15 @@ internal sealed class EditorSession : IEditorSession
         _surfaces = UiSurfaces.Create(host.Device);
         _theme = new EditorTheme(_fonts, _surfaces, host.UiScale);
         _root = new EditorRoot(_theme) { Clipboard = new HostClipboard(host) };
+        _root.Actions.Failed = (action, error) =>
+        {
+            host.Logger.Error("Editor", $"{action.Title} failed.", error);
+            Notify($"{action.Title} failed: {error.Message}", isError: true);
+        };
         // One project per game for now, beside the user's settings; it is mounted over the game while the editor is
         // open, so what is saved is what the level reloads from.
         EditorProject project = EditorProject.OpenOrCreate(
-            Path.Combine(SettingsPaths.GetUserDirectory(), "editor", "projects", host.Title.Id, "default"),
+            EditorProjects.DefaultRoot(host.Title.Id),
             host.Title.Id,
             $"{host.Title.DisplayName} project");
         host.MountContent(project.LayerId, project.Name, project.FilesDirectory);
@@ -75,9 +81,11 @@ internal sealed class EditorSession : IEditorSession
 
         _live = new LiveWorldLink(host, _workspace);
         TerrainBrush brush = new();
-        _terrainTool = new TerrainTool(host, _workspace, brush);
+        _terrainTool = new TerrainTool(host, _workspace, brush, _live, message => Notify(message));
         _viewport = new ViewportPanel(_theme, host, _workspace, _live, _terrainTool);
-        _outliner = new OutlinerPanel(_theme, _workspace);
+        _outliner = new OutlinerPanel(_theme, _workspace, task => _live.IsHidden(task), task => _live.SetHidden([task], hidden: !_live.IsHidden(task)));
+        _viewport.DuplicateRequested += () => Duplicate(nudge: false);
+        MissionGraphs.PlacedFrame = _live.PlacedFrame;
         _outliner.Activated += _viewport.Frame;
         _workspace.Selection.Changed += () =>
         {
@@ -90,7 +98,7 @@ internal sealed class EditorSession : IEditorSession
         _dock = new DockSpace(_theme);
         _dock.Register(new DockPanel("viewport", "Viewport", _viewport) { Icon = KitIcon.Camera, CanClose = false, IsTransparent = true });
         _dock.Register(new DockPanel("outliner", "Outliner", _outliner) { Icon = KitIcon.Hierarchy });
-        _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace)) { Icon = KitIcon.Gear });
+        _dock.Register(new DockPanel("inspector", "Inspector", new InspectorPanel(_theme, _workspace, host)) { Icon = KitIcon.Gear });
         _dock.Register(new DockPanel("history", "History", new HistoryPanel(_theme, _workspace)) { Icon = KitIcon.History });
         ScriptPanel script = new(_theme, host, _workspace);
         _dock.Register(new DockPanel("script", "Script", script) { Icon = KitIcon.Script });
@@ -98,12 +106,38 @@ internal sealed class EditorSession : IEditorSession
         {
             script.OpenFile(path);
             _dock.Show("script");
-        });
+        })
+        {
+            ExportsDirectory = Path.Combine(_workspace.Project.Root, "exports"),
+            WriteToProject = (gamePath, bytes) => _workspace.WriteToProject(gamePath, bytes),
+        };
+        _content.Reported += Notify;
         _dock.Register(new DockPanel("content", "Content", _content) { Icon = KitIcon.Folder });
-        _problems = new ProblemsPanel(_theme, _workspace);
+
+        // Config scripts (a weapon, an ammunition type) as forms, beside the script they can always be opened as.
+        ConfigPanel config = new(_theme, host, _workspace, path =>
+        {
+            script.OpenFile(path);
+            _dock.Show("script");
+        });
+        _dock.Register(new DockPanel("config", "Config Editor", config) { Icon = KitIcon.Document });
+        _content.OpenConfig = path =>
+        {
+            if (config.Open(path))
+            {
+                _dock.Show("config");
+            }
+            else
+            {
+                Notify($"{Path.GetFileName(path)} is not a config the form can edit.", isError: true);
+            }
+        };
+        _problems = new ProblemsPanel(_theme, _workspace, new EditorMissionFacts(host, _workspace));
         _problems.GoTo += _viewport.Frame;
         _dock.Register(new DockPanel("problems", "Problems", _problems) { Icon = KitIcon.Search });
-        _dock.Register(new DockPanel("terrain", "Terrain", new TerrainPanel(_theme, host, brush)) { Icon = KitIcon.Terrain });
+        _terrainPanel = new TerrainPanel(_theme, host, brush);
+        _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
+        _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
         if (!_dock.LoadLayout(ReadSavedLayout() ?? DefaultLayout))
         {
             _dock.LoadLayout(DefaultLayout);
@@ -112,6 +146,7 @@ internal sealed class EditorSession : IEditorSession
         _dock.LayoutChanged += SaveLayout;
 
         RegisterActions();
+        _root.Actions.LoadBindings(EditorCVars.KeyBindings.Value);
         _menu = BuildMenu();
         _status = new StatusBar(_theme);
         Grid shell = new();
@@ -125,109 +160,15 @@ internal sealed class EditorSession : IEditorSession
         shell.Add(_dock, 2, 0);
         shell.Add(_status, 3, 0);
         _root.Content = shell;
+        _viewport.Overlay = BuildViewportToolbar();
     }
 
     /// <inheritdoc/>
     public UiRect? Viewport =>
-        !IsPlaying && _dock.GroupOf("viewport")?.ActivePanel?.Content == _viewport && _workspace.Mission is not null ? _viewport.Bounds : null;
+        !IsPlaying && _dock.GroupOf("viewport")?.ActivePanel?.Content == _viewport && _workspace.Mission is not null ? _viewport.WorldRect : null;
 
     /// <inheritdoc/>
     public bool IsPlaying { get; private set; }
-
-    /// <inheritdoc/>
-    public string? RunCommand(IReadOnlyList<string> arguments)
-    {
-        if (arguments is [string run, string id] && run.Equals("do", StringComparison.OrdinalIgnoreCase))
-        {
-            EditorAction? action = _root.Actions.All.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
-            return action is null ? $"No editor action '{id}'." : action.TryExecute() ? $"Ran {action.Id}." : $"{action.Id} cannot run now.";
-        }
-
-        if (arguments is [string find, ..] && find.Equals("find", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)
-        {
-            string query = string.Join(' ', arguments.Skip(1));
-            _dock.Show("content");
-            return _content.Find(query) ? $"Found '{query}'." : $"No file name contains '{query}'.";
-        }
-
-        if (arguments is [string move, string dx, string dy, string dz] && move.Equals("move", StringComparison.OrdinalIgnoreCase))
-        {
-            // Moves the selection by metres, as a drag of the move gizmo would: for scripted checks.
-            System.Globalization.CultureInfo invariant = System.Globalization.CultureInfo.InvariantCulture;
-            if (!double.TryParse(dx, System.Globalization.NumberStyles.Float, invariant, out double x)
-                || !double.TryParse(dy, System.Globalization.NumberStyles.Float, invariant, out double y)
-                || !double.TryParse(dz, System.Globalization.NumberStyles.Float, invariant, out double z))
-            {
-                return "editor move <dx> <dy> <dz>, in metres.";
-            }
-
-            _pendingMove = new Vector3d(x, y, z);
-            return "Moving the selection once something is picked.";
-        }
-
-        if (arguments is [string pick] && pick.Equals("pick", StringComparison.OrdinalIgnoreCase))
-        {
-            // Clicks the middle of the viewport, for scripted checks.
-            _pendingPick = true;
-            return "Picking at the middle of the view once it is up.";
-        }
-
-        if (arguments is [string sculpt, ..] && sculpt.Equals("sculpt", StringComparison.OrdinalIgnoreCase))
-        {
-            // Paints the terrain brush at the middle of the viewport for a while, as a held stroke would: for scripted
-            // checks, which cannot move a mouse.
-            _pendingSculpt = arguments is [_, string time] && double.TryParse(time, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds)
-                ? Math.Clamp(seconds, 0.0, 30.0)
-                : 1.0;
-            return FormattableString.Invariant($"Sculpting for {_pendingSculpt:0.##} s once the view is up.");
-        }
-
-        if (arguments is not [string verb, ..] || !verb.Equals("select", StringComparison.OrdinalIgnoreCase) || arguments.Count < 2)
-        {
-            return null;
-        }
-
-        _pendingSelect = string.Join(' ', arguments.Skip(1));
-        return $"Selecting '{_pendingSelect}' once the mission is open.";
-    }
-
-    // A selection asked for by name, applied on the first frame the document has it.
-    private string? _pendingSelect;
-
-    // A sculpt asked for by command, applied once the view has been drawn.
-    private double? _pendingSculpt;
-
-    // A pick asked for by command, applied once the view has been drawn.
-    private bool _pendingPick;
-
-    // A move asked for by command, applied to the selection once there is one.
-    private Vector3d? _pendingMove;
-    private int _pickReadyFrames;
-
-    private void ApplyPendingSelect()
-    {
-        if (_pendingSelect is not { } name || _workspace.Document is not { } document || _host.View.Width <= 0f)
-        {
-            return;
-        }
-
-        _pendingSelect = null;
-        // '#12' is the task with id 12, for tasks with no label such as AI graphs.
-        int id = -1;
-        bool byId = name.StartsWith('#') && int.TryParse(name.AsSpan(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out id);
-        MissionTask? task = byId
-            ? document.EnumerateTasks().FirstOrDefault(t => t.Id == id)
-            : document.EnumerateTasks().FirstOrDefault(t => string.Equals(t.Label, name, StringComparison.OrdinalIgnoreCase))
-            ?? document.EnumerateTasks().FirstOrDefault(t => t.Label.Contains(name, StringComparison.OrdinalIgnoreCase));
-        if (task is null)
-        {
-            Notify($"No object is called '{name}'.", isError: true);
-            return;
-        }
-
-        _workspace.Selection.Set(task);
-        _viewport.Frame(task);
-    }
 
     /// <inheritdoc/>
     public void StopPlaying()
@@ -245,15 +186,26 @@ internal sealed class EditorSession : IEditorSession
     {
         // The screen or the setting can change while the editor is open: a switch to full screen, ed_ui_scale typed in.
         _theme.Scale = _host.UiScale;
+        if (EditorCVars.LightTheme.Value != _theme.IsLight)
+        {
+            if (EditorCVars.LightTheme.Value)
+            {
+                _theme.ApplyLight();
+            }
+            else
+            {
+                _theme.ApplyDark();
+            }
+        }
 
         _workspace.Sync();
         _live.Update();
-        ApplyPendingSelect();
-        if (_pendingSculpt is { } sculptFor && _host.View.Width > 0f && !_host.IsWarmingUp && _host.Terrain is not null)
+        if (!_pendingPick && _workspace.Document is not null && _host.View.Width > 0f
+            && _pendingSteps.TryPeek(out Func<bool>? step) && step())
         {
-            _pendingSculpt = null;
-            Notify(_viewport.SculptAtCentre(sculptFor) ? "Sculpted at the middle of the view." : "No ground under the middle of the view.");
+            _pendingSteps.Dequeue();
         }
+
         // A second after the view is up and linked, so the camera has settled where the level puts it.
         _pickReadyFrames = _pendingPick && _host.View.Width > 0f && !_host.IsWarmingUp && _live.LinkedCount > 0 ? _pickReadyFrames + 1 : 0;
         if (_pickReadyFrames > 60)
@@ -262,14 +214,6 @@ internal sealed class EditorSession : IEditorSession
             _pendingPick = false;
             _viewport.PickAtCentre();
             Notify(_workspace.Selection.Primary is { } picked ? $"Picked {TaskPresentation.Name(picked)}." : "Nothing under the middle of the view.");
-        }
-
-        if (_pendingMove is { } by && !_pendingPick && _workspace.Selection.Primary is { } moving && _workspace.Document is { } moved
-            && TaskPresentation.Position(moving) is { } position && TaskPresentation.PositionMetres(moving) is { } at)
-        {
-            _pendingMove = null;
-            Vector3d to = at + by;
-            _workspace.Execute(SetParameterCommand.Numbers(moved, moving, position.Name, [WorldUnits.FromMetres(to.X), WorldUnits.FromMetres(to.Y), WorldUnits.FromMetres(to.Z)]));
         }
 
         _noticeSeconds -= elapsedSeconds;
@@ -311,7 +255,11 @@ internal sealed class EditorSession : IEditorSession
 
         _disposed = true;
         SaveLayout();
-        _host.UnmountContent(_workspace.Project.LayerId);
+        // Played outside the editor too (ed_play_project), the project stays over the game when the editor closes.
+        if (!EditorCVars.PlayProject.Value)
+        {
+            _host.UnmountContent(_workspace.Project.LayerId);
+        }
         _content.Release();
         _host.CursorLocked = false;
         _surfaces.Dispose();
@@ -334,6 +282,12 @@ internal sealed class EditorSession : IEditorSession
 
     private void SaveLayout()
     {
+        // The viewport-only layout of F3 is a passing state, not the layout to come back to.
+        if (_maximizedLayout is not null)
+        {
+            return;
+        }
+
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(LayoutPath)!);
@@ -348,7 +302,12 @@ internal sealed class EditorSession : IEditorSession
     private void RegisterActions()
     {
         ActionTable actions = _root.Actions;
-        actions.Add(new EditorAction("file.close", "Close Editor", _host.Close) { Category = "File" });
+        actions.Add(new EditorAction("file.close", "Close Editor", () => AfterSaving(_host.Close)) { Category = "File" });
+        actions.Add(new EditorAction("file.closemission", "Close Mission", () => AfterSaving(_host.CloseMission))
+        {
+            Category = "File",
+            CanExecute = () => _workspace.Document is not null,
+        });
         actions.Add(new EditorAction("file.save", "Save", () => Save())
         {
             Category = "File",
@@ -416,7 +375,7 @@ internal sealed class EditorSession : IEditorSession
             Shortcut = KeyChord.Parse("Delete"),
             CanExecute = () => _workspace.Selection.Count > 0,
         });
-        actions.Add(new EditorAction("edit.duplicate", "Duplicate", Duplicate)
+        actions.Add(new EditorAction("edit.duplicate", "Duplicate", () => Duplicate(nudge: true))
         {
             Category = "Edit",
             Shortcut = KeyChord.Parse("Ctrl+D"),
@@ -461,29 +420,50 @@ internal sealed class EditorSession : IEditorSession
             Shortcut = KeyChord.Parse("T"),
             IsChecked = () => _viewport.Tool == ViewportTool.Terrain,
             CanExecute = () => _host.Terrain is not null,
+            DynamicTitle = () => _host.Terrain is null ? "Terrain Tool (this mission's ground cannot be sculpted yet)" : "Terrain Tool",
         });
+        foreach ((TerrainBrushMode mode, string title) in new[]
+        {
+            (TerrainBrushMode.Raise, "Raise"), (TerrainBrushMode.Lower, "Lower"), (TerrainBrushMode.Smooth, "Smooth"), (TerrainBrushMode.Flatten, "Flatten"), (TerrainBrushMode.Paint, "Paint"),
+        })
+        {
+            actions.Add(new EditorAction($"terrain.{title.ToLowerInvariant()}", $"Terrain Brush: {title}", () =>
+            {
+                _terrainTool.Brush.Mode = mode;
+                _viewport.Tool = ViewportTool.Terrain;
+            })
+            {
+                Category = "Tools",
+                IsChecked = () => _terrainTool.Brush.Mode == mode,
+                CanExecute = () => _host.Terrain is not null,
+            });
+        }
+
+        foreach ((TerrainObjectMode mode, string id, string title) in new[]
+        {
+            (TerrainObjectMode.MoveWithGround, "move", "Move Objects With Ground"), (TerrainObjectMode.Protect, "protect", "Protect Objects"), (TerrainObjectMode.Ignore, "ignore", "Ignore Objects"),
+        })
+        {
+            actions.Add(new EditorAction($"terrain.objects.{id}", $"Terrain Brush: {title}", () => _terrainTool.Brush.Objects = mode)
+            {
+                Category = "Tools",
+                IsChecked = () => _terrainTool.Brush.Objects == mode,
+            });
+        }
         actions.Add(new EditorAction("tool.scale", "Resize Tool", () => _viewport.Tool = ViewportTool.Scale)
         {
             Category = "Tools",
             Shortcut = KeyChord.Parse("R"),
             IsChecked = () => _viewport.Tool == ViewportTool.Scale,
         });
-        actions.Add(new EditorAction("view.snap", "Snap to 0.25 m", () => _viewport.Snap = _viewport.Snap > 0 ? 0 : 0.25)
-        {
-            Category = "View",
-            IsChecked = () => _viewport.Snap > 0,
-        });
-        actions.Add(new EditorAction("view.light", "Light Theme", () =>
-        {
-            if (_theme.IsLight)
-            {
-                _theme.ApplyDark();
-            }
-            else
-            {
-                _theme.ApplyLight();
-            }
-        })
+        RegisterViewportActions(actions);
+        RegisterVisibilityActions(actions);
+        RegisterClipboardActions(actions);
+        RegisterObjectActions(actions);
+        RegisterTerrainActions(actions);
+        RegisterMissionActions(actions);
+        RegisterShellActions(actions);
+        actions.Add(new EditorAction("view.light", "Light Theme", () => EditorCVars.LightTheme.Value = !EditorCVars.LightTheme.Value)
         {
             Category = "View",
             IsChecked = () => _theme.IsLight,
@@ -520,26 +500,42 @@ internal sealed class EditorSession : IEditorSession
         ActionTable actions = _root.Actions;
         IReadOnlyList<MenuItem> missions = [.. _host.Missions.Select(m => MenuItem.Command(
             FormattableString.Invariant($"{m.Id}. {_host.MissionName(m)}"),
-            () => _host.OpenMission(m.Id)))];
+            () => AfterSaving(() => _host.OpenMission(m.Id))))];
 
         return new MenuBar(_theme)
             .Add("File", [
                 MenuItem.Submenu("Open Mission", missions),
+                MenuItem.Separator,
+                MenuItem.For(actions["file.newmission"]),
+                MenuItem.For(actions["file.missionsettings"]),
                 MenuItem.Separator,
                 MenuItem.For(actions["file.save"]),
                 MenuItem.For(actions["file.reload"]),
                 MenuItem.For(actions["file.revert"]),
                 MenuItem.For(actions["file.export"]),
                 MenuItem.Separator,
+                MenuItem.For(actions["file.closemission"]),
                 MenuItem.For(actions["file.close"]),
             ])
             .Add("Edit", [
                 MenuItem.For(actions["edit.undo"]),
                 MenuItem.For(actions["edit.redo"]),
                 MenuItem.Separator,
+                MenuItem.For(actions["edit.cut"]),
+                MenuItem.For(actions["edit.copy"]),
+                MenuItem.For(actions["edit.paste"]),
+                MenuItem.For(actions["edit.paste-child"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["edit.rename"]),
                 MenuItem.For(actions["edit.duplicate"]),
                 MenuItem.For(actions["edit.delete"]),
                 MenuItem.For(actions["edit.deselect"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["edit.hide"]),
+                MenuItem.For(actions["edit.show-all"]),
+                MenuItem.For(actions["edit.isolate"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["edit.preferences"]),
             ])
             .Add("Tools", [
                 MenuItem.For(actions["tool.move"]),
@@ -548,8 +544,17 @@ internal sealed class EditorSession : IEditorSession
                 MenuItem.For(actions["tool.terrain"]),
             ])
             .Add("View", [
+                MenuItem.For(actions["view.palette"]),
+                MenuItem.For(actions["view.goto"]),
+                MenuItem.Separator,
                 MenuItem.For(actions["view.frame"]),
-                MenuItem.For(actions["view.snap"]),
+                MenuItem.For(actions["view.fullscreen"]),
+                MenuItem.Separator,
+                MenuItem.For(actions["view.grid-snap"]),
+                MenuItem.For(actions["view.angle-snap"]),
+                MenuItem.For(actions["view.local-space"]),
+                MenuItem.For(actions["view.gizmos"]),
+                MenuItem.For(actions["view.grid"]),
                 MenuItem.Separator,
                 MenuItem.For(actions["view.light"]),
                 MenuItem.For(actions["view.reset-layout"]),
@@ -574,18 +579,10 @@ internal sealed class EditorSession : IEditorSession
         toolbar.Add(actions["file.save"], KitIcon.Save);
         toolbar.Add(actions["file.reload"], KitIcon.History);
         toolbar.AddSeparator();
-        toolbar.Add(actions["play.start"], KitIcon.Play, showText: true);
-        toolbar.AddSeparator();
-        toolbar.Add(actions["tool.move"], KitIcon.Move);
-        toolbar.Add(actions["tool.rotate"], KitIcon.Rotate);
-        toolbar.Add(actions["tool.scale"], KitIcon.Scale);
-        toolbar.Add(actions["tool.terrain"], KitIcon.Terrain);
-        toolbar.AddSeparator();
         toolbar.Add(actions["edit.undo"], KitIcon.Undo);
         toolbar.Add(actions["edit.redo"], KitIcon.Redo);
         toolbar.AddSeparator();
         toolbar.Add(actions["view.frame"], KitIcon.Search);
-        toolbar.Add(actions["view.snap"], KitIcon.Grid);
         toolbar.Add(actions["edit.duplicate"], KitIcon.Copy);
         toolbar.Add(actions["edit.delete"], KitIcon.Trash);
         toolbar.AddSpring();
@@ -593,7 +590,8 @@ internal sealed class EditorSession : IEditorSession
         return toolbar;
     }
 
-    private void Duplicate()
+    // Nudged copies stand a metre along X so they show beside their originals; a Shift-drag's copies stand on them and move.
+    private void Duplicate(bool nudge)
     {
         if (_workspace.Document is not { } document || _workspace.Selection.Count == 0)
         {
@@ -609,7 +607,7 @@ internal sealed class EditorSession : IEditorSession
                 MissionTask copy = original.Clone();
 
                 // Nudged a metre along X, so the copy is visible beside its original rather than inside it.
-                if (TaskPresentation.Position(copy) is { } position && position.TryGetNumbers(out double[] units) && units.Length == 3)
+                if (nudge && TaskPresentation.Position(copy) is { } position && position.TryGetNumbers(out double[] units) && units.Length == 3)
                 {
                     position.SetNumbers([units[0] + WorldUnits.PerMetre, units[1], units[2]]);
                 }
@@ -621,13 +619,16 @@ internal sealed class EditorSession : IEditorSession
         }
 
         _workspace.Selection.Set(copies);
-        Notify(copies.Count == 1
-            ? "Duplicated. Save and Reload (Ctrl+R) to see a new object in the world."
-            : $"Duplicated {copies.Count} objects. Save and Reload (Ctrl+R) to see them in the world.");
     }
 
     private void Export()
     {
+        if (_workspace.Mission is { } open && _workspace.Project.TargetOf(open.Id) == Core.Projects.MissionTarget.OpenIgi)
+        {
+            Notify($"{_workspace.MissionName} is OpenIGI only, so the original game cannot play it. Make it retail compatible in Mission Settings to export it.", isError: true);
+            return;
+        }
+
         // Retail loads exactly what is written, with no editor to catch a mistake, so errors stop the export.
         if (_problems.ErrorCount is > 0 and int errors)
         {
@@ -679,6 +680,30 @@ internal sealed class EditorSession : IEditorSession
         EditorDraw.Label(painter, _theme, text, banner.Deflate(new Thickness(_theme.Px(14f), 0f)), _theme.Text);
     }
 
+    // Does something that leaves the open mission, asking first whether to save it when it has changes.
+    private void AfterSaving(Action leave)
+    {
+        if (_workspace.Document is null || !_workspace.History.IsDirty)
+        {
+            leave();
+            return;
+        }
+
+        Dialog.Ask(
+            _root,
+            "Unsaved Changes",
+            $"Save the changes to {_workspace.MissionName} first?",
+            ("Cancel", static () => { }),
+            ("Don't Save", leave),
+            ("Save", () =>
+            {
+                if (Save())
+                {
+                    leave();
+                }
+            }));
+    }
+
     private bool Save()
     {
         try
@@ -701,11 +726,17 @@ internal sealed class EditorSession : IEditorSession
         return false;
     }
 
+    // A notification in the corner; errors also stay in the status bar a while, where they can be read again.
     private void Notify(string message, bool isError = false)
     {
-        _notice = message;
-        _noticeIsError = isError;
-        _noticeSeconds = 6f;
+        _root.Toasts.BottomInset = _theme.StatusBarHeight;
+        _root.Toasts.Show(message, isError ? ToastKind.Error : ToastKind.Info, isError ? 8f : 5f);
+        if (isError)
+        {
+            _notice = message;
+            _noticeIsError = true;
+            _noticeSeconds = 8f;
+        }
     }
 
     private string? _notice;

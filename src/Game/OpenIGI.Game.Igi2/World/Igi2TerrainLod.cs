@@ -115,17 +115,25 @@ public sealed class Igi2TerrainLod
             RootSize <<= 1;
         }
 
-        // One pass slot per material the tile actually paints and the level actually declared, in id
-        // order so a run is reproducible. A sample naming a material the author later deleted gets no
-        // slot at all, which under an additive blend contributes nothing -- the original's own outcome,
-        // not a repair.
+        RefreshMaterials();
+    }
+
+    /// <summary>Finds again which materials the tile paints, after an editor painted it.</summary>
+    /// <remarks>
+    /// One pass slot per material the tile actually paints and the level actually declared, in id order so a run is
+    /// reproducible. A sample naming a material the author later deleted gets no slot at all, which under an additive blend
+    /// contributes nothing -- the original's own outcome, not a repair.
+    /// </remarks>
+    public void RefreshMaterials()
+    {
         Array.Fill(_slotOf, -1);
+        _slotMaterial.Clear();
         HashSet<byte> painted = [];
-        for (int y = 0; y < tile.Height; y++)
+        for (int y = 0; y < _tile.Height; y++)
         {
-            for (int x = 0; x < tile.Width; x++)
+            for (int x = 0; x < _tile.Width; x++)
             {
-                painted.Add(tile.MaterialAt(x, y));
+                painted.Add(_tile.MaterialAt(x, y));
             }
         }
 

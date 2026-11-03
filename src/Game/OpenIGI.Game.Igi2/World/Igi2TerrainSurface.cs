@@ -82,6 +82,9 @@ public readonly record struct Igi2TerrainTile(
     /// <summary>Gets the name of the tile's height map within <c>heightmaps.res</c>, bare, as the archive keys it.</summary>
     public string? HeightEntry { get; init; }
 
+    /// <summary>Gets the name of the archive entry the material map was read from, or null when the tile ships none.</summary>
+    public string? MaterialEntry { get; init; }
+
     /// <summary>Gets the position of the <c>Terrain</c> the tile belongs to, which the ground query works relative to.</summary>
     public Vector3d TerrainOrigin { get; init; }
 
@@ -628,6 +631,7 @@ public sealed class Igi2TerrainSurface
             WorldWidth = map.WorldWidth,
             WorldHeight = map.WorldHeight,
             HeightEntry = BareName(map.HeightMapResource),
+            MaterialEntry = Matching(materialMap, heights) ? BareName(map.MaterialMapResource) : null,
             TerrainOrigin = TerrainOf(map)?.Position ?? default,
         };
 

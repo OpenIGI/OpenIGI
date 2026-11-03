@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -75,6 +76,10 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
         Igi2Ground ground = new(surface);
 
         LoadedMission mission = request.Mission;
+
+        // The clips only a viewer asks for, loaded the first time one does (the player loads its own).
+        OpenIGI.Engine.Resources.ResourceRegistry resources = request.Resources;
+        Lazy<Igi2AnimationLibrary> clips = new(() => Igi2AnimationLibrary.Load(mission.PacksInLoadOrder, resources));
         return new WorldBuildResult(
             result.Scene,
             result.UnresolvedCount,
@@ -84,7 +89,10 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             ObjectCollisionIndex.Build(
                 result.Scene.Placements,
                 AssetFormatProfile.Igi2.Collision,
-                name => mission.TryGetModel(name, out MefModel? model) ? model : null));
+                name => mission.TryGetModel(name, out MefModel? model) ? model : null),
+            Models: name => Igi2DrawableScene.Bind(table, packs, name),
+            Animators: (model, _) => Igi2ModelAnimator.For(model, clips.Value),
+            AnimationFiles: file => Igi2ModelAnimator.PreviewFile(file, mission.PacksInLoadOrder, clips.Value));
     }
 
     /// <inheritdoc/>

@@ -37,6 +37,10 @@ public abstract class Popup : EditorElement
     /// <summary>Gets whether a press outside the popup is swallowed after closing it, as menus do.</summary>
     public virtual bool SwallowsDismissingPress => true;
 
+    /// <summary>Gets whether the popup stays open when the user presses outside it, taking the press, as a dialog does;
+    /// popups opened over it still close as usual.</summary>
+    public virtual bool IsModal => false;
+
     /// <summary>Places the popup against its anchor, keeping it inside the viewport.</summary>
     /// <param name="size">The popup's measured size.</param>
     /// <param name="viewport">The viewport size.</param>

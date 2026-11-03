@@ -174,6 +174,25 @@ public readonly struct Matrix3f : IEquatable<Matrix3f>, IFormattable
         new Vector3f(MathF.Sin(radians), MathF.Cos(radians), 0f),
         new Vector3f(0f, 0f, 1f));
 
+    /// <summary>Builds a rotation about any axis, turning the same way as <see cref="RotationX"/>, <see cref="RotationY"/> and <see cref="RotationZ"/> do about theirs.</summary>
+    /// <param name="axis">The axis; need not be unit length, but must not be zero.</param>
+    /// <param name="radians">The angle.</param>
+    /// <returns>The rotation.</returns>
+    /// <remarks>Rodrigues' formula: <c>cos θ · I + sin θ · [k]× + (1 − cos θ) · k kᵀ</c> for the unit axis <c>k</c>.</remarks>
+    public static Matrix3f RotationAxis(Vector3d axis, float radians)
+    {
+        double length = axis.Length;
+        double x = axis.X / length;
+        double y = axis.Y / length;
+        double z = axis.Z / length;
+        (double s, double c) = Math.SinCos(radians);
+        double t = 1.0 - c;
+        return FromRows(
+            new Vector3f((float)((t * x * x) + c), (float)((t * x * y) - (s * z)), (float)((t * x * z) + (s * y))),
+            new Vector3f((float)((t * x * y) + (s * z)), (float)((t * y * y) + c), (float)((t * y * z) - (s * x))),
+            new Vector3f((float)((t * x * z) - (s * y)), (float)((t * y * z) + (s * x)), (float)((t * z * z) + c)));
+    }
+
     /// <summary>
     /// Composes the engine's three Euler angles into a rotation, as <c>0x4B38E0</c> does.
     /// </summary>

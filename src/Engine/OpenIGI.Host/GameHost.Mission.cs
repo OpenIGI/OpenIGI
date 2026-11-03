@@ -627,6 +627,9 @@ public sealed partial class GameHost
         _scene = null;
         _mission.Terrain = null;
         _mission.Ground = null;
+        _mission.Models = null;
+        _mission.Animators = null;
+        _mission.AnimationFiles = null;
         _mission.ReleaseWorld();
         _loadedMissionForWeapon = null;
 

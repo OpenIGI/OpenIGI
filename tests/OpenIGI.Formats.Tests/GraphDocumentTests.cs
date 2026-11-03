@@ -98,6 +98,64 @@ public sealed class GraphDocumentTests
         Assert.True(sameStep >= pairs * 0.99, $"{sameStep} of {pairs} routes take the retail first step.");
     }
 
+    /// <summary>
+    /// Links added and removed are what the game reads: a chord across the ring becomes the route, and taking a side away
+    /// sends the route round the other way.
+    /// </summary>
+    [Fact]
+    public void Links_added_and_removed_are_read_by_the_game()
+    {
+        GraphDocument document = GraphDocument.Read(Ring());
+        Assert.False(document.AddLink(0, 1));
+        Assert.False(document.AddLink(2, 2));
+        Assert.False(document.AddLink(0, 9));
+
+        Assert.True(document.AddLink(0, 2));
+        Assert.True(document.AreLinked(2, 0));
+        Assert.Equal(1, document.LinkTypes[^1]);
+        Assert.True(document.RebuildRoutes());
+        GraphFile game = GraphFile.Read(document.Write());
+        Assert.Equal(5, game.Links.Count);
+        Assert.Equal([2], game.RouteTable!.EnumerateRoute(0, 2));
+
+        Assert.Equal(1, document.RemoveLink(2, 0));
+        Assert.Equal(1, document.RemoveLink(2, 1));
+        Assert.Null(document.RemoveLink(2, 1));
+        Assert.True(document.RebuildRoutes());
+        Assert.Equal([3, 2], GraphFile.Read(document.Write()).RouteTable!.EnumerateRoute(0, 2));
+    }
+
+    /// <summary>On every retail graph that has links, adding a link and removing it again gives back the file byte for byte.</summary>
+    [RequiresTitleDataFact("igi1")]
+    public void A_link_added_and_removed_leaves_the_file_as_it_was()
+    {
+        int seen = 0;
+        foreach (string path in GameDataSource.Igi1.EnumerateFiles("graph*.dat"))
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            if (!GraphDocument.IsNamed(bytes) || GraphDocument.Read(bytes) is not { Nodes.Count: > 2, Links.Count: > 0 } document)
+            {
+                continue;
+            }
+
+            // A small graph can link every pair already; it has nothing to add.
+            (int A, int B)[] free = [.. document.Nodes.SelectMany(n => document.Nodes.Select(m => (n.Id, m.Id)))
+                .Where(p => p.Item1 != p.Item2 && !document.AreLinked(p.Item1, p.Item2)).Take(1)];
+            if (free is not [(int a, int b)])
+            {
+                continue;
+            }
+
+            Assert.True(document.AddLink(a, b), path);
+            Assert.Equal(document.Links.Count, GraphFile.Read(document.Write()).Links.Count);
+            Assert.NotNull(document.RemoveLink(b, a));
+            Assert.Equal(bytes, document.Write());
+            seen++;
+        }
+
+        Assert.True(seen > 0);
+    }
+
     // Four nodes on a ring, 0 (0,0), 1 (10,0), 2 (10,10), 3 (0,12): from 0 to 2 the way through 1 is shorter.
     private static byte[] Ring()
     {

@@ -65,6 +65,8 @@ public sealed partial class GameHost
     /// <summary>Places the ear, and advances the device, the score and the weather bed, once a frame.</summary>
     private void AdvanceAudio()
     {
+        // A level open in the editor is being built, not played: its score, beds and voices wait for Play.
+        _audioOut.GameSilenced = _editor is not null && !_playerMode;
         UpdateListener();
         float delta = _audioOut.Advance();
         UpdateRainAmbience(delta);

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
 using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Editor.Input;
@@ -162,16 +163,48 @@ public sealed class PropertyGrid : EditorElement
         return dropdown;
     }
 
+    /// <summary>
+    /// Marks the last row added as changeable back: a bar at its edge while <paramref name="isModified"/> says it differs,
+    /// and Revert on its right-click menu.
+    /// </summary>
+    /// <param name="isModified">Whether the row's value has changed.</param>
+    /// <param name="revert">Puts the value back.</param>
+    public void Revertible(Func<bool> isModified, Action revert)
+    {
+        ArgumentNullException.ThrowIfNull(isModified);
+        ArgumentNullException.ThrowIfNull(revert);
+        if (_entries.Count > 0 && !_entries[^1].IsSection)
+        {
+            _entries[^1].IsModified = isModified;
+            _entries[^1].Revert = revert;
+        }
+    }
+
+    /// <summary>Marks the last row added as editing several things whose values may differ, which is shown while they do.</summary>
+    /// <param name="isMixed">Whether the values differ now.</param>
+    public void Mixed(Func<bool> isMixed)
+    {
+        ArgumentNullException.ThrowIfNull(isMixed);
+        if (_entries.Count > 0 && !_entries[^1].IsSection)
+        {
+            _entries[^1].IsMixed = isMixed;
+        }
+    }
+
+    /// <summary>Gets or sets what reverts every changed row at once, offered on each row's menu; <see langword="null"/> for none.</summary>
+    public Action? RevertAll { get; set; }
+
     /// <summary>Adds a row holding any editor.</summary>
     /// <param name="label">The label.</param>
     /// <param name="editor">The editor.</param>
     /// <param name="refresh">Pulls the current value into it each frame, or <see langword="null"/>.</param>
     /// <param name="tooltip">The label's tooltip.</param>
-    public void Add(string label, EditorElement editor, Action? refresh = null, string? tooltip = null)
+    /// <param name="lines">How many rows' height the editor takes, for one that shows several lines.</param>
+    public void Add(string label, EditorElement editor, Action? refresh = null, string? tooltip = null, int lines = 1)
     {
         ArgumentNullException.ThrowIfNull(editor);
         editor.Tooltip ??= tooltip;
-        _entries.Add(new Entry(label, editor, refresh, IsSection: false) { Tooltip = tooltip });
+        _entries.Add(new Entry(label, editor, refresh, IsSection: false) { Tooltip = tooltip, Lines = Math.Max(1, lines) });
         AddChild(editor);
     }
 
@@ -184,13 +217,13 @@ public sealed class PropertyGrid : EditorElement
             entry.Editor?.Measure(context, new UiVec2(width * (1f - _labelFraction), Theme.ControlHeight));
         }
 
-        return new UiVec2(width, float.IsFinite(available.Y) ? available.Y : VisibleRows() * Row);
+        return new UiVec2(width, float.IsFinite(available.Y) ? available.Y : ContentHeight());
     }
 
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
-        _scroll.Measure((VisibleRows() * Row) + Theme.Padding, contentRect.Height);
+        _scroll.Measure(ContentHeight() + Theme.Padding, contentRect.Height);
         float divider = DividerX(contentRect);
         float right = contentRect.Right - Theme.Px(12f);
         foreach ((Entry entry, float y, bool hidden) in Walk(contentRect.Y))
@@ -207,7 +240,16 @@ public sealed class PropertyGrid : EditorElement
                 continue;
             }
 
-            editor.Visibility = y + Row < contentRect.Y || y > contentRect.Bottom ? Visibility.Hidden : Visibility.Visible;
+            float height = RowHeightOf(entry);
+            editor.Visibility = y + height < contentRect.Y || y > contentRect.Bottom ? Visibility.Hidden : Visibility.Visible;
+            if (entry.Lines > 1)
+            {
+                // A tall editor takes the panel's whole width, under its label, as a narrow value column would crowd it.
+                float left = contentRect.X + Theme.Px(14f);
+                editor.Arrange(new UiRect(left, y + Row, MathF.Max(0f, right - left), MathF.Max(0f, height - Row - Theme.Px(4f))));
+                continue;
+            }
+
             float top = MathF.Round(y + ((Row - Theme.ControlHeight) * 0.5f));
             editor.Arrange(new UiRect(divider + Theme.Px(6f), top, MathF.Max(0f, right - divider - Theme.Px(6f)), Theme.ControlHeight));
         }
@@ -229,6 +271,11 @@ public sealed class PropertyGrid : EditorElement
     /// <inheritdoc/>
     protected internal override bool OnPointerDown(in PointerEvent e)
     {
+        if (e.Button == MouseButton.Right)
+        {
+            return OpenRowMenu(e.Position);
+        }
+
         if (e.Button != MouseButton.Left)
         {
             return false;
@@ -301,7 +348,7 @@ public sealed class PropertyGrid : EditorElement
         float divider = DividerX(Bounds);
         foreach ((Entry entry, float y, bool hidden) in Walk(Bounds.Y))
         {
-            if (hidden || y + Row < Bounds.Y || y > Bounds.Bottom)
+            if (hidden || y + RowHeightOf(entry) < Bounds.Y || y > Bounds.Bottom)
             {
                 continue;
             }
@@ -317,7 +364,26 @@ public sealed class PropertyGrid : EditorElement
             }
 
             UiRect label = new(Bounds.X + Theme.Px(14f), y, divider - Bounds.X - Theme.Px(18f), Row);
-            EditorDraw.Label(painter, Theme, entry.Label, label, entry.Editor!.IsEnabled ? Theme.TextMuted : Theme.TextDisabled);
+            bool modified = entry.IsModified?.Invoke() == true;
+            if (modified)
+            {
+                // A changed value: the accent at the row's edge and a brighter label, as scene editors mark overrides.
+                painter.FillRect(new UiRect(Bounds.X + Theme.Px(4f), y + Theme.Px(5f), Theme.Px(2f), Row - Theme.Px(10f)), Theme.Accent);
+            }
+
+            bool hot = IsPointerOver && label.Contains(Root?.PointerPosition ?? default);
+            Bgra32 ink = !entry.Editor!.IsEnabled ? Theme.TextDisabled : modified || hot ? Theme.Text : Theme.TextMuted;
+            if (entry.IsMixed?.Invoke() == true)
+            {
+                // Several values under one row: said at the label column's end, where the eye reads on to the value.
+                const string mixed = "mixed";
+                float width = Theme.SmallFont.MeasureWidth(mixed, Theme.SmallTextSize);
+                float tagY = MathF.Round(y + ((Row - Theme.SmallFont.LineHeight(Theme.SmallTextSize)) * 0.5f));
+                painter.DrawText(Theme.SmallFont, mixed, new UiVec2(label.Right - width, tagY), Theme.SmallTextSize, Theme.TextDisabled);
+                label = label with { Width = label.Width - width - Theme.Px(6f) };
+            }
+
+            EditorDraw.Label(painter, Theme, entry.Label, label, ink);
         }
 
         painter.PopClip();
@@ -329,6 +395,39 @@ public sealed class PropertyGrid : EditorElement
         _scroll.DrawVertical(painter, Theme, Bounds, IsPointerOver ? Root?.PointerPosition : null);
     }
 
+    // Revert for the row under the pointer, and Revert All, when there is something to put back.
+    private bool OpenRowMenu(UiVec2 point)
+    {
+        if (Root is not { } root)
+        {
+            return false;
+        }
+
+        Entry? row = null;
+        foreach ((Entry entry, float y, bool hidden) in Walk(Bounds.Y))
+        {
+            if (!hidden && !entry.IsSection && point.Y >= y && point.Y < y + RowHeightOf(entry))
+            {
+                row = entry;
+            }
+        }
+
+        if (row?.Revert is not { } revert)
+        {
+            return false;
+        }
+
+        bool any = _entries.Any(static e => e.IsModified?.Invoke() == true);
+        List<MenuItem> items = [MenuItem.Command("Revert to Saved Value", revert, row.IsModified?.Invoke() == true)];
+        if (RevertAll is { } all)
+        {
+            items.Add(MenuItem.Command("Revert All Changes", all, any));
+        }
+
+        MenuPopup.OpenAt(root, point, items);
+        return true;
+    }
+
     private static bool AnyChildCapturing(UiElement element) =>
         element.Children.Any(static c => c is EditorElement { IsCapturing: true } || AnyChildCapturing(c));
 
@@ -337,7 +436,10 @@ public sealed class PropertyGrid : EditorElement
     private bool NearDivider(UiVec2 point) =>
         Bounds.Contains(point) && MathF.Abs(point.X - DividerX(Bounds)) <= Theme.Px(3f);
 
-    private int VisibleRows() => Walk(0f).Count(static row => !row.Hidden);
+    private float ContentHeight() => Walk(0f).Where(static row => !row.Hidden).Sum(row => RowHeightOf(row.Entry));
+
+    // A row's height: one row, or the lines an editor asked for.
+    private float RowHeightOf(Entry entry) => entry.Lines > 1 ? Row * (entry.Lines + 1) : Row;
 
     private string? SectionAt(UiVec2 point)
     {
@@ -373,7 +475,7 @@ public sealed class PropertyGrid : EditorElement
             else
             {
                 yield return (entry, y, false);
-                y += Row;
+                y += RowHeightOf(entry);
             }
         }
     }
@@ -381,5 +483,13 @@ public sealed class PropertyGrid : EditorElement
     private sealed record Entry(string Label, EditorElement? Editor, Action? Refresh, bool IsSection)
     {
         public string? Tooltip { get; init; }
+
+        public Func<bool>? IsModified { get; set; }
+
+        public Action? Revert { get; set; }
+
+        public Func<bool>? IsMixed { get; set; }
+
+        public int Lines { get; init; } = 1;
     }
 }
