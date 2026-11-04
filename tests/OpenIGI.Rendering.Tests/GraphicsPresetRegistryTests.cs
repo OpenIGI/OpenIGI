@@ -251,6 +251,22 @@ public sealed class GraphicsPresetRegistryTests
         Assert.Equal(GraphicsPreset.Custom, presets.Current);
     }
 
+    /// <summary>A value turned by hand and turned back reads as the preset again, not as Custom for good.</summary>
+    [Fact]
+    public void PuttingAHandChangeBackRestoresThePreset()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> storm = Declare(presets, "r_storm", 1, "0", "1", "1", "1");
+        Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+        presets.Apply(GraphicsPreset.Vanilla);
+
+        storm.Value = 1;
+        Assert.Equal(GraphicsPreset.Custom, presets.Current);
+
+        storm.Value = 0;
+        Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
+    }
+
     [Fact]
     public void Detect_RecognisesSettingsLoadedFromAFile()
     {

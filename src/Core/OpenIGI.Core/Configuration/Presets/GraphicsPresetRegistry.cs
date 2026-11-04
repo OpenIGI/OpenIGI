@@ -243,9 +243,13 @@ public sealed class GraphicsPresetRegistry
 
     private void OnManagedVariableChanged(object? sender, CVarChangedEventArgs e)
     {
+        // Recognised again rather than set to Custom outright: a setting turned and then turned back is
+        // the preset again. Setting Custom left it Custom for good, and every look that asks for Vanilla
+        // -- the original's rain, forest, fogless sky -- stayed off after the player put the value back,
+        // so toggling Storm Effects on and off on Vanilla swapped the original's rain for the band.
         if (!_applying)
         {
-            SetCurrent(GraphicsPreset.Custom);
+            SetCurrent(Recognise(static (variable, expected) => variable.MatchesText(expected)));
         }
     }
 
