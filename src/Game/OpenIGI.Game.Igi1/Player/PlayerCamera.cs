@@ -848,6 +848,11 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets whether the rig has two tick states for the presentation to draw between.</summary>
     public bool HasViewTickPair => _firstPerson.Pair.HasPair;
 
+    /// <summary>Gets whether the landing dip or the hit shake is displacing the camera from the body's eye this tick.</summary>
+    /// <remarks>The rig is drawn from the camera's own eye while it is, so the arms and weapon do not shear against the view.</remarks>
+    public bool IsViewDisplaced =>
+        LandingKick.OffsetUnits != 0f || ViewShake.RightUnits != 0f || ViewShake.UpUnits != 0f;
+
     /// <summary>Records the rig's per-tick halves, keeping the tick before's.</summary>
     private void CaptureViewTickState() => _firstPerson.Capture(_weapons);
 

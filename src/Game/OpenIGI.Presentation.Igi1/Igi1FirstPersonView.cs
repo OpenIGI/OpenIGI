@@ -115,7 +115,13 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             BoneAttachment? magazineAttachment = mission.Player.HeldWeaponSecondary;
             BoneAttachment? movingPartAttachment = mission.Player.HeldWeaponTertiary;
             float previousPoseShare = 0f;
-            if (frame.Smooth && mission.Player.HasViewTickPair)
+
+            // The camera takes the landing dip and the hit shake whether or not Smooth Motion is on, so the rig has to
+            // take them too: left at the body's eye it stays put while the view drops into it. With Smooth Motion off the
+            // rig is drawn at the newest tick (blend 1) from the same eye the camera uses, which is the whole of the dip.
+            bool displaced = !frame.Smooth && mission.Player.IsViewDisplaced;
+            float rigBlend = displaced ? 1f : frame.TickBlend;
+            if ((frame.Smooth || displaced) && mission.Player.HasViewTickPair)
             {
                 (
                     Vector3d smoothedOrigin,
@@ -123,13 +129,13 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
                     BoneAttachment? smoothedWeapon,
                     BoneAttachment? smoothedMagazine,
                     BoneAttachment? smoothedMovingPart) =
-                    mission.Player.SmoothedRig(frame.TickBlend);
+                    mission.Player.SmoothedRig(rigBlend);
                 rigOriginUnits = smoothedOrigin;
                 rigOrientation = smoothedOrientation;
                 weaponAttachment = smoothedWeapon ?? weaponAttachment;
                 magazineAttachment = smoothedMagazine ?? magazineAttachment;
                 movingPartAttachment = smoothedMovingPart ?? movingPartAttachment;
-                previousPoseShare = 1f - frame.TickBlend;
+                previousPoseShare = 1f - rigBlend;
             }
 
             // The retail rig is foreground-only: it draws after the world under its own transform
