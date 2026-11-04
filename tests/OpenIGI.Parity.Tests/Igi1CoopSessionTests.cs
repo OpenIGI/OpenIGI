@@ -217,7 +217,7 @@ public sealed class Igi1CoopSessionTests
         VirtualFileSystem files = new(NullLogger.Instance);
         files.RegisterDevice(new LocalFileDevice(root));
         FileSystemConfig.LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(files);
-        HostOptions options = HostOptions.Parse(["-mission", "1", "-skipcutscene", "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        HostOptions options = HostOptions.Parse(["-mission", "1", "-skipcutscene", "-lockstep", "-nosave", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         GameHost host = new(new HeadlessPlatformHost(), new HeadlessGameWindow(), device, NullAudioDeviceFactory.Instance,
             InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, options, root, NullLogger.Instance);
 

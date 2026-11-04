@@ -802,7 +802,7 @@ public sealed partial class GameHost : IDisposable
 
         // The editor's preset is the editor's, not the player's: theirs goes back before the settings are written.
         RestorePlayerPreset();
-        if (!_options.IsBenchmark)
+        if (_options.SavesUserFiles)
         {
             HostConfiguration.Save(_configuration, _logger);
             console.SaveSettings();

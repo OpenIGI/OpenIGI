@@ -24,6 +24,10 @@ public sealed partial class GameHost
     /// <summary>Gets what draws the world, or <see langword="null"/> before one is built.</summary>
     internal IWorldPresenter? WorldForTesting => _world;
 
+    /// <summary>Gets the title's event bus, which reports a mission's end, or <see langword="null"/> before a title has one.</summary>
+    internal OpenIGI.Engine.Events.GameEvents? EventsForTesting =>
+        _title is { } title && title.Services.TryGet(out OpenIGI.Engine.Events.GameEvents? events) ? events : null;
+
     /// <summary>Whether the level lets the player read the map computer's map right now, as the host decides it.</summary>
     /// <returns><see langword="true"/> when the map is there.</returns>
     internal bool MapComputerAvailableForTesting() => MapComputerAvailable();

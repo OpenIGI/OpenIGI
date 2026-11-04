@@ -699,11 +699,20 @@ public sealed partial class GameHost
                         _menuFlow.PendingPreviewMissionId = null;
                     }
                 },
-                saveSettings: () => state.Console.SaveSettings(),
+                saveSettings: () =>
+                {
+                    if (_options.SavesUserFiles)
+                    {
+                        state.Console.SaveSettings();
+                    }
+                },
                 saveProfiles: () =>
                 {
                     RestoreTitleInputBindings();
-                    HostConfiguration.Save(_configuration, _logger);
+                    if (_options.SavesUserFiles)
+                    {
+                        HostConfiguration.Save(_configuration, _logger);
+                    }
                 },
                 captureThumbnail: (out captureWidth, out captureHeight) =>
                 {
