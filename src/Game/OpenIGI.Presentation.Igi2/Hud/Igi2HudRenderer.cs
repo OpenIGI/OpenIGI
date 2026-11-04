@@ -102,8 +102,17 @@ public sealed partial class Igi2HudRenderer : ITitleHudPresenter
         Span<Igi2SightLine> lines = stackalloc Igi2SightLine[Igi2WeaponSight.MaximumLines];
         // humanplayer.c HumanPlayer_GetWeaponPrecisionHandler supplies both settled precision terms.
         float precision = ((Fpu)title.Human.ActualWeaponPrecision + title.Human.ActualModifiedPrecision).F;
+        // The sight is sized from the screen's height, which retail's lens fixes at three quarters of its tangent; Hor+
+        // keeps that on a wide screen, and on a narrow one opens the height up, which this hands the sight as the
+        // 4:3 lens with the same vertical reach.
+        float sightLens = title.Human.View.FieldOfView;
+        if (WidescreenLens.HorPlus)
+        {
+            sightLens = WidescreenLens.VerticalTangent(sightLens, (float)screenWidth / screenHeight) * WidescreenLens.AuthoredAspect;
+        }
+
         int count = Igi2WeaponSight.Write(lines, held.WeaponType.SightDisplayType, precision,
-            title.Human.View.FieldOfView, screenWidth, screenHeight, thick);
+            sightLens, screenWidth, screenHeight, thick);
         for (int i = 0; i < count; i++)
         {
             Igi2SightLine line = lines[i];

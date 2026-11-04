@@ -614,7 +614,8 @@ public sealed partial class GameHost
                 _arms,
                 _heldWeapon,
                 _loadedMissionForWeapon,
-                _world?.Shading.Sun)) ?? default;
+                _world?.Shading.Sun,
+                (float)_window.Width / Math.Max(1, _window.Height))) ?? default;
         if (!drawn.DrewRig)
         {
             DrawTitleFirstPerson(eye);

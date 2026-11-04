@@ -100,7 +100,8 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             // aspect-invariant. Dividing the tangent by the aspect instead (the world's widescreen
             // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
             // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
-            Matrix4f viewModelProjection = ViewModelProjection.Create(frame.ViewModelTanX, frame.FarPlane);
+            // Hor+ (r_widescreen_fov) keeps that vertical framing and widens only the sides, unstretched.
+            Matrix4f viewModelProjection = ViewModelProjection.Create(frame.ViewModelTanX, frame.FarPlane, frame.AspectRatio);
 
             // Between-tick smoothing for everything the rig steps at 30 Hz: its origin (the eye
             // the body carried plus the clip's hold offset), its skin, and the weapon bone. The

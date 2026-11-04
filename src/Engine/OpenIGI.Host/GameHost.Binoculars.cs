@@ -118,7 +118,7 @@ public sealed partial class GameHost
     private void AddTitleContacts(ITitlePlayer player, ITitlePlayerOptics optics)
     {
         Matrix3f rows = player.ViewOrientation;
-        HudProjector projector = new(player.EyePosition, rows.Row1, rows.Row2, rows.Row3, player.FieldOfViewScale, _window.Width, _window.Height);
+        HudProjector projector = new(player.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(player.FieldOfViewScale, _window.Width, _window.Height), _window.Width, _window.Height);
         foreach (TitleBinocularContact contact in optics.BinocularContacts)
         {
             Vector3d top = new(contact.Centre.X, contact.Centre.Y, contact.Centre.Z + contact.HalfHeight);

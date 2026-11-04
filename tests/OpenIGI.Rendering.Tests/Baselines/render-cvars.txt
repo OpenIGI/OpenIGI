@@ -1,3 +1,4 @@
+hud_retail_scale	0	archive
 r_aa	0	archive
 r_aa_threshold	0.05	archive
 r_alpha_hash	0	archive
@@ -194,6 +195,7 @@ r_weather_kind	rain	archive
 r_weather_speed	1	archive
 r_wetness	1	archive
 r_white_point	1.1	archive
+r_widescreen_fov	1	archive
 r_window_mode	borderless	archive
 r_world_cull	0	archive
 r_world_objective	1	archive

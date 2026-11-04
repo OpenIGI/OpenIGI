@@ -139,9 +139,13 @@ public sealed partial class GameHost
         // A pinned lens for side-by-side comparisons: -fov overrides the game's own ninety-degree
         // horizontal, so a capture can be framed exactly as an external render whose camera
         // differs. The sight zoom still governs ordinary play.
+        //
+        // Otherwise the sight's lens is the original's, authored across 4:3, and is fitted to the window Hor+
+        // (r_widescreen_fov): a wider window keeps its vertical angle and sees more at the sides. See WidescreenLens.
+        WidescreenLens.HorPlus = FrameCVars.WidescreenFieldOfView.Value;
         float horizontalTangent = _options.FieldOfView is { } fixedFov
             ? MathF.Tan(fixedFov * (MathF.PI / 360f))
-            : sight.TanX;
+            : WidescreenLens.HorizontalTangent(sight.TanX, aspectRatio);
         float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
 
         // Kept for the developer inspector, which projects a selected entity to the screen and
@@ -156,7 +160,9 @@ public sealed partial class GameHost
             // vertical aperture at modern aspects and let the wider projection reveal the sides;
             // deriving it from a 16:9 window crops the top and bottom by 25 percent, which cut
             // Anya's upper body out of the Mission 1 briefing.
-            verticalFieldOfView = CutsceneVerticalFieldOfView(cutsceneLens.FieldOfView);
+            verticalFieldOfView = WidescreenLens.HorPlus
+                ? VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(cutsceneLens.FieldOfView, aspectRatio))
+                : CutsceneVerticalFieldOfView(cutsceneLens.FieldOfView);
         }
 
         ApplyEditorLens(ref aspectRatio, ref verticalFieldOfView);

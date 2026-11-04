@@ -84,7 +84,8 @@ internal sealed class SoldierWeaponDrawer(
 
         // Each view picks its own level for each body (0x49F700); the frame's eye is the one the tick poses them for.
         ModelLodPolicy? lod = Lod?.Invoke() is { HasBoneSettings: true } settings ? settings : null;
-        float fieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
+        // The lens as authored, not as widened for the screen: a wide screen sees more, not coarser. See WidescreenLens.
+        float fieldOfView = WidescreenLens.AuthoredTangent(projection);
         if (Visibility is null || Visibility.IsEye(camera))
         {
             LastEye = camera;

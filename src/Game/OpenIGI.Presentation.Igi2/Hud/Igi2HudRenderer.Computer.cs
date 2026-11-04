@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Igi2.Computer;
@@ -202,11 +203,14 @@ public sealed partial class Igi2HudRenderer : OpenIGI.Game.Computer.IComputerFon
 
         int ticks = title.Level?.LevelFlow?.Tick ?? 0;
         _markWords.Clear();
+
+        // The map's lens as the picture under the marks was drawn with it: fitted to the screen as every view is.
+        float lens = WidescreenLens.HorizontalTangent(map.FieldOfView, w, h);
         foreach (Igi2ComputerMapMark mark in title.ComputerMapMarks())
         {
             double depth = map.Position.Z - mark.Position.Z;
             double z = depth > 1.0 ? depth : 1.0;
-            double scale = w * 0.5 / (z * map.FieldOfView);
+            double scale = w * 0.5 / (z * lens);
             float x = (float)(((mark.Position.X - map.Position.X) * scale) + (w * 0.5));
             float y = (float)((-(mark.Position.Y - map.Position.Y) * scale) + (h * 0.5));
             switch (mark.Kind)
@@ -229,7 +233,7 @@ public sealed partial class Igi2HudRenderer : OpenIGI.Game.Computer.IComputerFon
                     display.Wrap((int)x + 10, (int)y, mark.Name, Igi2ComputerDisplay.TextFont, 128, Igi2ComputerColour.DarkRed, _markWords);
                     break;
                 default:
-                    DrawMarker(batch, mark, x, y, (float)(w * 0.5 / map.FieldOfView / z), ticks);
+                    DrawMarker(batch, mark, x, y, (float)(w * 0.5 / lens / z), ticks);
                     break;
             }
         }

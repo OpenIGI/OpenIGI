@@ -388,7 +388,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
         }
 
         // The view's horizontal half-angle tangent, which a level of detail is picked against.
-        float lodFieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
+        // The lens as authored, not as widened for the screen: a wide screen sees more, not coarser. See WidescreenLens.
+        float lodFieldOfView = WidescreenLens.AuthoredTangent(projection);
         foreach (int index in order)
         {
             ref WorldFrameEntry entry = ref frame[index];

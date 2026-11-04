@@ -24,6 +24,21 @@ public static class HudCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>How much the original HUD's 640x480 art is magnified; nought fits it to the screen.</summary>
+    /// <remarks>
+    /// Nought (the default) magnifies it by however many whole times the screen holds 640x480, which is 2x at 1080p.
+    /// One draws it 1:1, as the original does at every resolution, small and in the corners of a large screen; above
+    /// that is a fixed magnification. Only the original HUD -- the remastered one has its own sizing -- and a
+    /// <c>-uiscale</c> given on the command line still wins.
+    /// </remarks>
+    public static readonly NumericCVar<int> RetailHudScale = CVar.Int(
+        "hud_retail_scale",
+        0,
+        0,
+        8,
+        CVarOptions.Archive,
+        "Magnify the original HUD: 0 fits it to the screen's height, 1 draws it at its own size as the original does.");
+
     /// <summary>Whether the remastered HUD is laid over the picture as if projected on a visor.</summary>
     /// <remarks>
     /// The display bends a little with the visor, splits its colours at the edges, carries scanlines, flickers in, glows,
