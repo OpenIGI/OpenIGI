@@ -43,7 +43,7 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
     public override bool IsFiring => State == FiringState;
 
     /// <inheritdoc/>
-    public override bool IsMoving => State is WalkState or RunState;
+    public override bool IsMoving => State is RunState or WalkState;
 
 
     /// <inheritdoc/>
@@ -76,26 +76,26 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
 
     private int Act(in Signals s) => State switch
     {
-        // 0x453AE0.
+        // 0x453AE0. The byte at Human+3328 (Running) is the AI's walk gait: set, the body walks (2); clear, it runs (1).
         StandState => s.WeaponDrawn ? RaiseWeaponState
             : s.Reload ? ReloadState
             : s.ScriptedAnimationRequested ? ScriptedAnimationState
-            : s.MovingForward ? (s.Running ? RunState : WalkState)
+            : s.MovingForward ? (s.Running ? WalkState : RunState)
             : StandState,
 
         // 0x453CB0.
-        WalkState => s.WeaponDrawn ? RaiseWeaponState
-            : s.Reload ? ReloadState
-            : s.Running ? RunState
-            : !s.MovingForward ? StandState
-            : WalkState,
-
-        // 0x453E50.
         RunState => s.WeaponDrawn ? RaiseWeaponState
             : s.Reload ? ReloadState
-            : s.Running && !s.MovingForward ? StandState
-            : !s.Running ? WalkState
+            : s.Running ? WalkState
+            : !s.MovingForward ? StandState
             : RunState,
+
+        // 0x453E50.
+        WalkState => s.WeaponDrawn ? RaiseWeaponState
+            : s.Reload ? ReloadState
+            : s.Running && !s.MovingForward ? StandState
+            : !s.Running ? RunState
+            : WalkState,
 
         // 0x453FB0: fires while slot 6 is held; holds until its clip ends with the trigger released.
         FiringState => s.AnimationDone && !s.FireHeld
@@ -143,7 +143,7 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
     /// <inheritdoc/>
     /// <remarks>The walk and the run each keep the other's stride (<c>0x453C40</c>, <c>0x453DE0</c>).</remarks>
     protected override bool KeepsStride(int left, int entered) =>
-        (left, entered) is (WalkState, RunState) or (RunState, WalkState);
+        (left, entered) is (RunState, WalkState) or (WalkState, RunState);
 
     /// <summary>The flag word <c>0x454BA0</c> packs, decoded.</summary>
     private readonly record struct Signals(

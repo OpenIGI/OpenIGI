@@ -136,13 +136,13 @@ internal sealed partial class MissionSolver
             Goal? start = null;
             if (driver.Type.Name == "CarAI" && InactiveContainer(driver) is { } stopped)
             {
-                start = NeedWord($"{stopped.Name}.isRun", area);
+                start = NeedStart(stopped, area);
             }
             else if (driver is DeclaredTask { Type.Name: "AnimTask" } anim
                 && anim.TryGetValue("TargetID", out object? target) && target is int id
                 && _tree.FromId(id) is { Type.Name: "Car" or "Heli" })
             {
-                start = InactiveContainer(anim) is { } closed ? NeedWord($"{closed.Name}.isRun", area) : NeedOn(anim);
+                start = InactiveContainer(anim) is { } closed ? NeedStart(closed, area) : NeedOn(anim);
             }
 
             // Whatever the player has to stand in to set a vehicle going, it stands in before the vehicle's destination.

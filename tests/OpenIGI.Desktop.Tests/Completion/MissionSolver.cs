@@ -113,10 +113,40 @@ internal sealed partial class MissionSolver
 
     /// <summary>Plays until the mission ends or the ticks run out.</summary>
     /// <param name="maxTicks">The most ticks to play.</param>
-    public void Run(int maxTicks)
+    public void Run(int maxTicks) => Pursue(Parse(Text(_levelFlow, "Complete"), _levelFlow), maxTicks);
+
+    /// <summary>Plays until a level expression comes true, the mission ends, or the ticks run out.</summary>
+    /// <param name="expression">The expression, in the level's own words.</param>
+    /// <param name="maxTicks">The most ticks to play.</param>
+    /// <returns>Whether the expression came true.</returns>
+    public bool RunUntil(string expression, int maxTicks)
+    {
+        ScriptExpression? goal = Parse(expression, _levelFlow);
+        Pursue(goal, maxTicks, stopWhenTrue: true);
+        return goal is not null && Truth(goal);
+    }
+
+    /// <summary>Lets the level run with the player doing nothing, until the mission ends or the ticks run out.</summary>
+    /// <param name="maxTicks">The most ticks to wait.</param>
+    /// <param name="watch">Called after every tick.</param>
+    public void Idle(int maxTicks, Action? watch = null)
+    {
+        _input.Keyboard.SetKey(KeyCode.E, down: false);
+        for (int tick = 0; tick < maxTicks && Outcome is null && _host.Step(); tick++)
+        {
+            watch?.Invoke();
+        }
+    }
+
+    private void Pursue(ScriptExpression? target, int maxTicks, bool stopWhenTrue = false)
     {
         for (int tick = 0; tick < maxTicks && Outcome is null; tick++)
         {
+            if (stopWhenTrue && target is not null && Truth(target))
+            {
+                break;
+            }
+
             if (tick % 1000 == 0)
             {
                 if (LogFile is not null)
@@ -125,7 +155,7 @@ internal sealed partial class MissionSolver
                 }
             }
 
-            Goal goal = Need(Parse(Text(_levelFlow, "Complete"), _levelFlow), _levelFlow) ?? Goal.Wait("nothing to work on");
+            Goal goal = Need(target, _levelFlow) ?? Goal.Wait("nothing to work on");
             if (goal != _goal)
             {
                 _log.AppendLine(CultureInfo.InvariantCulture, $"{_loop.Clock.TickCount,7} {goal}");
@@ -277,7 +307,7 @@ internal sealed partial class MissionSolver
             // Nothing in a container that is not running updates or can be worked on: start the container.
             if (InactiveContainer(target) is { } closed)
             {
-                return NeedWord($"{closed.Name}.isRun", owner) ?? Goal.Wait($"{word} behind {closed.Name}");
+                return NeedStart(closed, owner) ?? Goal.Wait($"{word} behind {closed.Name}");
             }
 
             if (target is ConditionalContainerTask container)
@@ -287,7 +317,7 @@ internal sealed partial class MissionSolver
 
             switch (type, field)
             {
-                case ("HumanSoldier", "isDead"):
+                case ("HumanSoldier" or "HumanSoldierFemale", "isDead"):
                     return new Goal(GoalKind.Kill, target, word);
                 // An object whose script sets it off (its Explosion expression) goes when that comes true; else it is blown up.
                 case ("Car" or "ExplodeObject", _):
@@ -321,6 +351,12 @@ internal sealed partial class MissionSolver
             _visiting.Remove(word);
         }
     }
+
+    // What starts a container: its word, or for one the level gave no id, its condition.
+    private Goal? NeedStart(ConditionalContainerTask container, GameTask owner) =>
+        container.Id >= 0
+            ? NeedWord($"{container.Name}.isRun", owner)
+            : Need(Parse(container.Condition, container), container);
 
     // A terminal or TBA is offered only while its On Expression holds (0x443C80 asks that it is on).
     private Goal? NeedUsable(DeclaredTask task, GameTask owner)
