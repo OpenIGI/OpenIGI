@@ -561,8 +561,13 @@ public sealed class RetailInteractionInventoryTests
             foreach (GenericPickup pickup in genericPickups.Items)
             {
                 Assert.Contains(pickup.Task, pickupTasks);
-                Assert.True(variables.TryRead($"{pickup.Task.Name}.isPickedUp", out var pickedUp));
-                Assert.Equal(0, pickedUp.Integer);
+                // The level registers isPickedUp only for a task with an id (0x4F0780 sends the activate event to no other).
+                bool exported = variables.TryRead($"{pickup.Task.Name}.isPickedUp", out var pickedUp);
+                Assert.Equal(pickup.Task.Id >= 0, exported);
+                if (exported)
+                {
+                    Assert.Equal(0, pickedUp.Integer);
+                }
 
                 if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
                 {

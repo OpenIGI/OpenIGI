@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 
 namespace OpenIGI.Game.World;
 
@@ -48,15 +49,16 @@ public sealed class GenericPickup
 /// the task and its exported variable available to mission expressions. This registry preserves that
 /// lifetime split: the task remains in the tree while the renderer and collision index ignore the
 /// consumed item.
+/// <para>An <c>AmmoPickup</c> is touched the same way (<c>0x46D990</c>) but does not stay: its own update
+/// (<c>0x46D740</c>) deletes its task once taken, and that drops its <c>isPickedUp</c> (<see cref="TakenPickupTask"/>).</para>
 /// </remarks>
 public sealed class GenericPickupRegistry
 {
     private readonly List<GenericPickup> _items = [];
     private readonly Dictionary<GameTask, GenericPickup> _byTask = [];
+    private readonly ScriptVarRegistry _variables;
 
-    private GenericPickupRegistry()
-    {
-    }
+    private GenericPickupRegistry(ScriptVarRegistry variables) => _variables = variables;
 
     /// <summary>Gets every authored generic pickup, including consumed items for diagnostics.</summary>
     public IReadOnlyList<GenericPickup> Items => _items;
@@ -73,7 +75,7 @@ public sealed class GenericPickupRegistry
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
-        GenericPickupRegistry registry = new();
+        GenericPickupRegistry registry = new(variables);
         registry.Collect(root, variables);
         foreach (WorldPlacement placement in placements ?? [])
         {
@@ -136,6 +138,24 @@ public sealed class GenericPickupRegistry
         return true;
     }
 
+    /// <summary>Puts each <c>AmmoPickup</c>'s update into the level's walk, where its task deletes itself once taken.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>
+    /// A <c>GenericPickup</c> keeps the walk's plain update. Without a walk, nothing runs an ammo pickup's update, and its task
+    /// stays in the tree, taken.
+    /// </remarks>
+    public void AttachTo(LevelRun walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        foreach (GenericPickup pickup in _items)
+        {
+            if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
+            {
+                TakenPickupTask.BindUpdate(walker, pickup.Task, () => pickup.IsCollected, _variables);
+            }
+        }
+    }
+
     /// <summary>Returns whether a world placement's owner has already been removed by pickup.</summary>
     public bool IsCollected(GameTask owner) =>
         owner is not null && _byTask.TryGetValue(owner, out GenericPickup? pickup) && pickup.IsCollected;
@@ -160,7 +180,7 @@ public sealed class GenericPickupRegistry
             GenericPickup pickup = new(declared, position, orientation, modelName);
             _items.Add(pickup);
             _byTask.Add(declared, pickup);
-            variables.BindBool(declared, "isPickedUp", () => pickup.IsCollected, value => pickup.IsCollected = value);
+            TakenPickupTask.Export(variables, declared, () => pickup.IsCollected, value => pickup.IsCollected = value);
         }
 
         foreach (GameTask child in task.Children)

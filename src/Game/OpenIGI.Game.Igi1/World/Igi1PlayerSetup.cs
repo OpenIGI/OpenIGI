@@ -264,6 +264,13 @@ public sealed class Igi1PlayerSetup(
 
             mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable, host.Game.Variables);
             GunPickupRegistry gunPickups = mission.GunPickups;
+
+            // A taken gun's task is deleted by its own update where the level walk reaches it (0x46CEA0), not by the
+            // touch. The walk was bound before the player came up, so the pickups join it here.
+            if (mission.Cutscenes is { } levelWalk)
+            {
+                gunPickups.AttachTo(levelWalk.Walker);
+            }
             gunPickups.Landed = sounds.PlayWeaponDrop;
             WirePickups(candidate, missionText);
             mission.Soldiers?.UseDroppedWeaponPickups(gunPickups);
