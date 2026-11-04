@@ -48,10 +48,97 @@ public enum KitIcon
 
     /// <summary>A microphone: talk, a voice heard.</summary>
     Microphone,
+
+    /// <summary>Undo: a hooked arrow turning back left.</summary>
+    Undo,
+
+    /// <summary>Redo: a hooked arrow turning on right.</summary>
+    Redo,
+
+    /// <summary>Save: a disk.</summary>
+    Save,
+
+    /// <summary>Play: a right-pointing triangle.</summary>
+    Play,
+
+    /// <summary>Pause: two bars.</summary>
+    Pause,
+
+    /// <summary>Stop: a square.</summary>
+    Stop,
+
+    /// <summary>The select tool: a pointer arrow.</summary>
+    Select,
+
+    /// <summary>The move tool: four arrowheads.</summary>
+    Move,
+
+    /// <summary>The rotate tool: an open circular arrow.</summary>
+    Rotate,
+
+    /// <summary>The scale tool: a box with a corner handle.</summary>
+    Scale,
+
+    /// <summary>An object in the world: a cube.</summary>
+    Cube,
+
+    /// <summary>Delete: a bin.</summary>
+    Trash,
+
+    /// <summary>Duplicate or copy: two overlapping sheets.</summary>
+    Copy,
+
+    /// <summary>Visibility: an eye.</summary>
+    Eye,
+
+    /// <summary>A script or code file: angle brackets.</summary>
+    Script,
+
+    /// <summary>A picture or texture.</summary>
+    Image,
+
+    /// <summary>A sound.</summary>
+    Sound,
+
+    /// <summary>A person: a soldier, the player.</summary>
+    Person,
+
+    /// <summary>A light: a bulb.</summary>
+    Light,
+
+    /// <summary>A camera.</summary>
+    Camera,
+
+    /// <summary>Snapping: a grid.</summary>
+    Grid,
+
+    /// <summary>World space: a globe.</summary>
+    Globe,
+
+    /// <summary>A document or plain file.</summary>
+    Document,
+
+    /// <summary>A hierarchy: nested rows.</summary>
+    Hierarchy,
+
+    /// <summary>A history or log: stacked lines.</summary>
+    History,
+
+    /// <summary>Terrain: a mountain line.</summary>
+    Terrain,
+
+    /// <summary>A path or graph: linked nodes.</summary>
+    Graph,
+
+    /// <summary>An arrow pointing left: back.</summary>
+    ArrowLeft,
+
+    /// <summary>A star: a favourite.</summary>
+    Star,
 }
 
 /// <summary>Draws <see cref="KitIcon"/>s.</summary>
-public static class KitIcons
+public static partial class KitIcons
 {
     /// <summary>Draws an icon centred in a box.</summary>
     /// <param name="painter">The painter.</param>
@@ -134,6 +221,30 @@ public static class KitIcons
                 painter.DrawChevron(new UiVec2(cx + (h * 0.45f), cy), size * 0.9f, UiDirection.Right, stroke, color);
                 break;
 
+            case KitIcon.ArrowLeft:
+                painter.StrokeLine(new UiVec2(cx + h, cy), new UiVec2(cx - h + stroke, cy), stroke, color);
+                painter.DrawChevron(new UiVec2(cx - (h * 0.45f), cy), size * 0.9f, UiDirection.Left, stroke, color);
+                break;
+
+            case KitIcon.Star:
+            {
+                // Five points, outer radius half the size, inner two fifths of that, the top point up.
+                Span<UiVec2> star = stackalloc UiVec2[10];
+                for (int i = 0; i < 10; i++)
+                {
+                    float r = i % 2 == 0 ? h : h * 0.4f;
+                    (float s, float c) = MathF.SinCos((i * MathF.PI / 5f) - (MathF.PI * 0.5f));
+                    star[i] = new UiVec2(cx + (c * r), cy + (s * r));
+                }
+
+                for (int i = 0; i < 10; i++)
+                {
+                    painter.StrokeLine(star[i], star[(i + 1) % 10], stroke, color);
+                }
+
+                break;
+            }
+
             case KitIcon.ChevronRight:
                 painter.DrawChevron(center, size, UiDirection.Right, stroke, color);
                 break;
@@ -158,6 +269,7 @@ public static class KitIcons
             }
 
             default:
+                DrawEditorIcon(painter, icon, center, size, stroke, color);
                 break;
         }
     }

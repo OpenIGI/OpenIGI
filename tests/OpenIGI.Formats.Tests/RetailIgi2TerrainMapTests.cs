@@ -229,6 +229,46 @@ public sealed class RetailIgi2TerrainMapTests
         Assert.Throws<InvalidOperationException>(() => height.GetLight(0, 0));
     }
 
+    /// <summary>
+    /// Every retail map of all three kinds writes back as the file it was read from, and a sample set on one is the only
+    /// change: four bytes of a height, one of a material.
+    /// </summary>
+    [RequiresTitleDataFact("igi2")]
+    public void Maps_write_back_byte_for_byte_and_edits_change_only_their_sample()
+    {
+        int maps = 0;
+        foreach (string path in HeightmapArchives())
+        {
+            foreach (IresEntry entry in IresArchive.Read(File.ReadAllBytes(path)).Entries)
+            {
+                if (KindOf(entry.Name) is not { } kind)
+                {
+                    continue;
+                }
+
+                Igi2TerrainMap map = Igi2TerrainMap.Read(entry.Data, kind);
+                Assert.True(entry.Data.Span.SequenceEqual(map.Write()), $"{path}:{entry.Name} changed on a write with no edit.");
+                maps++;
+            }
+        }
+
+        Assert.True(maps > 100, $"Only {maps} maps were found.");
+
+        Igi2TerrainMap height = ReadAll(Igi2TerrainMapKind.Height).First();
+        byte[] before = height.Write();
+        int revision = height.Revision;
+        height.SetHeight(3, 2, 12345.5f);
+        Assert.Equal(12345.5f, height.GetHeight(3, 2));
+        Assert.NotEqual(revision, height.Revision);
+        Assert.InRange(before.Zip(height.Write()).Count(static p => p.First != p.Second), 1, 4);
+        Assert.Equal(12345.5f, Igi2TerrainMap.Read(height.Write()).GetHeight(3, 2));
+
+        Igi2TerrainMap material = ReadAll(Igi2TerrainMapKind.Material).First();
+        material.SetMaterial(1, 1, 7);
+        Assert.Equal(7, Igi2TerrainMap.Read(material.Write()).GetMaterial(1, 1));
+        Assert.Throws<InvalidOperationException>(() => material.SetHeight(0, 0, 1f));
+    }
+
     private static IEnumerable<Igi2TerrainMap> ReadAll(Igi2TerrainMapKind kind)
     {
         foreach (string path in HeightmapArchives())

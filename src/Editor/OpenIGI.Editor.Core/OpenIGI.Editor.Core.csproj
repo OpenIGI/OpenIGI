@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The editor's headless model: documents, commands, undo, selection, projects. No rendering, host, platform or
+         title project may be referenced from here (RatchetTests.Layering), so every rule it holds is unit-testable. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+    <ProjectReference Include="..\..\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

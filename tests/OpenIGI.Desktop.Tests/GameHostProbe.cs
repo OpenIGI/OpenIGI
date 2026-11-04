@@ -16,6 +16,11 @@ internal static class GameHostProbe
     /// <returns>The mission, as Project I.G.I. keeps it.</returns>
     public static MissionWorld Mission(this GameHost host) => (MissionWorld)host.MissionForTesting;
 
+    /// <summary>The title's gameplay: its blasts, harm and the rest of the mission's systems.</summary>
+    /// <param name="host">The host.</param>
+    /// <returns>The gameplay, as Project I.G.I. keeps it.</returns>
+    public static Igi1Gameplay Gameplay(this GameHost host) => (Igi1Gameplay)host.HostedForTesting;
+
     /// <summary>The player, once the mission has brought one up.</summary>
     /// <param name="host">The host.</param>
     /// <returns>The player, or <see langword="null"/>.</returns>

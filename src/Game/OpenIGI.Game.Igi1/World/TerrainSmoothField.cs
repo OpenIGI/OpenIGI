@@ -108,6 +108,44 @@ public sealed class TerrainSmoothField
     /// <summary>Gets how many lattice samples the field currently remembers.</summary>
     public int SampleCount => _samples.Count;
 
+    /// <summary>Forgets the ground sampled over a rectangle, after the ground there changed shape.</summary>
+    /// <param name="minX">The rectangle's least X, in engine units.</param>
+    /// <param name="minY">The rectangle's least Y.</param>
+    /// <param name="maxX">The rectangle's greatest X.</param>
+    /// <param name="maxY">The rectangle's greatest Y.</param>
+    /// <remarks>
+    /// Reaches past the rectangle by the window the surface is fitted over and by the search that fills missing samples,
+    /// since both read the samples there.
+    /// </remarks>
+    public void Forget(double minX, double minY, double maxX, double maxY)
+    {
+        double spacing = 1L << LatticeShift;
+        long margin = WindowSide + (long)Math.Ceiling(SearchUnits / spacing);
+        long i0 = (long)Math.Floor(minX / spacing) - margin;
+        long i1 = (long)Math.Ceiling(maxX / spacing) + margin;
+        long j0 = (long)Math.Floor(minY / spacing) - margin;
+        long j1 = (long)Math.Ceiling(maxY / spacing) + margin;
+        if ((i1 - i0 + 1) * (j1 - j0 + 1) > _samples.Count + _filled.Count)
+        {
+            _samples.Clear();
+            _filled.Clear();
+        }
+        else
+        {
+            for (long j = j0; j <= j1; j++)
+            {
+                for (long i = i0; i <= i1; i++)
+                {
+                    _samples.Remove((i, j));
+                    _filled.Remove((i, j));
+                }
+            }
+        }
+
+        _windowX = long.MinValue;
+        _windowY = long.MinValue;
+    }
+
     /// <summary>Fetches the lattice around a finest chunk, so that the chunk's points evaluate from it directly.</summary>
     /// <param name="centreX">The chunk's centre X, in engine units.</param>
     /// <param name="centreY">The chunk's centre Y.</param>

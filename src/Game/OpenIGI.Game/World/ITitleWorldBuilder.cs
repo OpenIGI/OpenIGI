@@ -49,6 +49,19 @@ public readonly record struct WorldBuildRequest(
 /// The title's own view culling over this scene, or <see langword="null"/> for a title whose culling is the renderer's alone or is
 /// supplied later by its player. Project I.G.I.'s sector cull is decided by the scene and its collision, so its walk produces it.
 /// </param>
+/// <param name="Models">
+/// Finds a model by the name level data gives it, as the title's own walk resolves one, or <see langword="null"/> for a title that
+/// does not offer it: what an editor draws an object the level did not place with.
+/// </param>
+/// <param name="Animators">
+/// Plays a skinned model in the level's clips, or <see langword="null"/> for a title that does not offer it: what an editor's
+/// model viewer animates with. It returns <see langword="null"/> for a model with no rig or no clips.
+/// </param>
+/// <param name="AnimationFiles">
+/// Reads an animation file (a set or a clip) and finds a body in the level to play it on, or <see langword="null"/> for a title
+/// that does not offer it: what an editor previews an animation file with. It returns <see langword="null"/> for bytes that
+/// are not one, or a level with no body that fits.
+/// </param>
 /// <remarks>
 /// The two counts are diagnostics rather than data: a scene walk that silently placed nothing would
 /// produce an empty world and no complaint, and these are what let the host say how much of the level it
@@ -61,7 +74,10 @@ public readonly record struct WorldBuildResult(
     IGroundHeightField? Ground = null,
     IPlacementSpin? Spins = null,
     ObjectCollisionIndex? Solids = null,
-    IPlacementVisibility? Visibility = null);
+    IPlacementVisibility? Visibility = null,
+    Func<string, WorldModelBinding?>? Models = null,
+    Func<OpenIGI.Formats.World.MefModel, string?, IModelAnimator?>? Animators = null,
+    Func<ReadOnlyMemory<byte>, AnimationFilePreview?>? AnimationFiles = null);
 
 /// <summary>Turns a title's loaded level into the shared scene everything downstream consumes.</summary>
 /// <remarks>

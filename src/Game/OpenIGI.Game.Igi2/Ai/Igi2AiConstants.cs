@@ -31,6 +31,12 @@ public static class Igi2AiConstants
         "HUMANAI_ANIMTYPE_SOLDIER_SUBMACHINEGUN",
     ];
 
+    /// <summary>
+    /// Gets the squad types an <c>AISquad</c> names, each valued by its index: <c>AIType_Defensive</c>, <c>AIType_Offensive</c>,
+    /// <c>AIType_OnVehicle</c>. The script vocabulary module registers them, not <see cref="Register"/>.
+    /// </summary>
+    public static IReadOnlyList<string> SquadTypes { get; } = ["AIType_Defensive", "AIType_Offensive", "AIType_OnVehicle"];
+
     /// <summary>Gets every named constant with its value, events first, in registration order.</summary>
     public static IReadOnlyList<(string Name, int Value)> Values { get; } = Build();
 

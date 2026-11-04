@@ -29,7 +29,7 @@ namespace OpenIGI.Host;
 /// </remarks>
 public sealed partial class GameHost
 {
-    private const double TitleUnitsPerMetre = 4096.0;
+    private const double TitleUnitsPerMetre = WorldUnits.PerMetre;
 
     private ITitleGameplay? _gameplay;
 

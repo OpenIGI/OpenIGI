@@ -50,10 +50,11 @@ public sealed class HumanSoldierClassTests
     [Fact]
     public void TheVariantClipTablesAreTheirOwn()
     {
-        // 0x53E4A0 and 0x53E720: thirteen and fifteen states, walking in 3 and running in 2 or 4.
+        // 0x53E4A0 and 0x53E720: thirteen and fifteen states. The female set walks in clip 2 (1.3 m in 31 frames) and runs
+        // in clip 3 (3.4 m in 21); the RPG soldier walks in 3 and runs in 4.
         Assert.Equal(13, HumanSoldierFemaleStates.Table.StateCount);
         Assert.Equal(15, HumanSoldierRpgStates.Table.StateCount);
-        Assert.Equal((3, 2), (HumanSoldierClass.FemaleSoldier.WalkAnimation, HumanSoldierClass.FemaleSoldier.RunAnimation));
+        Assert.Equal((2, 3), (HumanSoldierClass.FemaleSoldier.WalkAnimation, HumanSoldierClass.FemaleSoldier.RunAnimation));
         Assert.Equal((3, 4), (HumanSoldierClass.RpgSoldier.WalkAnimation, HumanSoldierClass.RpgSoldier.RunAnimation));
         Assert.Equal(9, HumanSoldierFemaleStates.Table.AnimationOf(HumanSoldierFemaleStates.FiringState));
         Assert.True(HumanSoldierFemaleStates.Table.IsSelfDriven(HumanSoldierFemaleStates.DeathState));
@@ -122,8 +123,9 @@ public sealed class HumanSoldierClassTests
     {
         HumanBodyMachine body = HumanSoldierClass.FemaleSoldier.CreateBody();
 
-        Assert.Equal(HumanSoldierFemaleStates.WalkState, body.Tick(Input(movingForward: true)));
-        Assert.Equal(HumanSoldierFemaleStates.RunState, body.Tick(Input(movingForward: true, running: true)));
+        // The byte at Human+3328 is the walk gait (0x4525E0 sets it, 0x452660 clears it): clear runs, set walks.
+        Assert.Equal(HumanSoldierFemaleStates.RunState, body.Tick(Input(movingForward: true)));
+        Assert.Equal(HumanSoldierFemaleStates.WalkState, body.Tick(Input(movingForward: true, running: true)));
         Assert.Equal(HumanSoldierFemaleStates.StandState, body.Tick(Input(running: true)));
 
         // Slot 21 carries the clip id; the state plays it and ends on any action or the clip's end.

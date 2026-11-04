@@ -1,0 +1,180 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.UI.Kit;
+using OpenIGI.UI.Layout;
+
+namespace OpenIGI.UI.Editor.Theme;
+
+/// <summary>The shapes every editor widget is drawn from, so they share one look.</summary>
+public static class EditorDraw
+{
+    /// <summary>Fills a rectangle with rounded corners, or square ones when the theme has no surfaces.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="rect">The rectangle.</param>
+    /// <param name="color">The fill.</param>
+    /// <param name="radius">The corner radius; <see cref="EditorTheme.Radius"/> when omitted.</param>
+    public static void Fill(UiPainter painter, EditorTheme theme, UiRect rect, Bgra32 color, float? radius = null)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        if (theme.Surfaces is { } surfaces)
+        {
+            painter.FillRoundedRect(rect, surfaces.Rounded, color, radius ?? theme.Radius);
+        }
+        else
+        {
+            painter.FillRect(rect, color);
+        }
+    }
+
+    /// <summary>Fills a rounded rectangle with a border: a field, a button, a popup.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="rect">The rectangle.</param>
+    /// <param name="fill">The fill.</param>
+    /// <param name="border">The border colour.</param>
+    /// <param name="radius">The corner radius; <see cref="EditorTheme.Radius"/> when omitted.</param>
+    public static void Frame(UiPainter painter, EditorTheme theme, UiRect rect, Bgra32 fill, Bgra32 border, float? radius = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        float r = radius ?? theme.Radius;
+        float line = theme.Hairline;
+
+        // An opaque frame is the outer shape in the border colour with an inset copy filled over it, which keeps the corners
+        // concentric. A see-through one cannot be: the border colour would show through its whole inside (a focus outline
+        // tinting the viewport it surrounds), so its border is stroked instead.
+        if (fill.A < 255)
+        {
+            if (fill.A > 0)
+            {
+                Fill(painter, theme, rect.Deflate(new Thickness(line)), fill, MathF.Max(0f, r - line));
+            }
+
+            painter.StrokeRect(rect, line, border);
+            return;
+        }
+
+        Fill(painter, theme, rect, border, r);
+        Fill(painter, theme, rect.Deflate(new Thickness(line)), fill, MathF.Max(0f, r - line));
+    }
+
+    /// <summary>Draws the soft shadow that lifts a popup off the panels below.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="rect">The rectangle casting it.</param>
+    public static void Shadow(UiPainter painter, EditorTheme theme, UiRect rect)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        if (theme.Surfaces is { } surfaces)
+        {
+            painter.DrawShadow(rect, surfaces.Shadow, theme.Shadow, theme.Px(10f), new UiVec2(0f, theme.Px(3f)));
+        }
+    }
+
+    /// <summary>Draws a one-line label vertically centred in a box, clipped with an ellipsis when it does not fit.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="box">The box; the text starts at its left edge.</param>
+    /// <param name="color">The colour.</param>
+    /// <param name="strong">Whether to use the strong face.</param>
+    /// <returns>The width drawn.</returns>
+    public static float Label(UiPainter painter, EditorTheme theme, string text, UiRect box, Bgra32 color, bool strong = false)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        ArgumentNullException.ThrowIfNull(text);
+        Text.UiFont font = strong ? theme.StrongFont : theme.Font;
+        float size = theme.TextSize;
+        string shown = Fit(font, text, size, box.Width);
+        float y = MathF.Round(box.Y + ((box.Height - font.LineHeight(size)) * 0.5f));
+        painter.DrawText(font, shown, new UiVec2(MathF.Round(box.X), y), size, color);
+        return font.MeasureWidth(shown, size);
+    }
+
+    /// <summary>Draws an icon from the shared vector set, centred in a box.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="icon">The icon.</param>
+    /// <param name="box">The box.</param>
+    /// <param name="color">The colour; the theme's icon colour when omitted.</param>
+    /// <param name="size">The icon's size in pixels, already scaled; the theme's icon size when omitted.</param>
+    public static void Icon(UiPainter painter, EditorTheme theme, KitIcon icon, UiRect box, Bgra32? color = null, float? size = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        if (icon == KitIcon.None)
+        {
+            return;
+        }
+
+        if (!Icon(painter, theme, EditorIcons.NameOf(icon), box, color, size))
+        {
+            KitIcons.Draw(painter, icon, box.Center, size ?? theme.IconSize, color ?? theme.Icon);
+        }
+    }
+
+    /// <summary>Draws an icon from the icon face by name (<c>folder</c>, <c>delete</c>), centred in a box.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="name">The icon's name in the icon face.</param>
+    /// <param name="box">The box.</param>
+    /// <param name="color">The colour; the theme's icon colour when omitted.</param>
+    /// <param name="size">The icon's size in pixels, already scaled; the theme's icon size when omitted.</param>
+    /// <returns><see langword="false"/> when there is no icon face or no icon of that name.</returns>
+    public static bool Icon(UiPainter painter, EditorTheme theme, string name, UiRect box, Bgra32? color = null, float? size = null)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+        float px = MathF.Round(size ?? theme.IconSize);
+        int codepoint = theme.Fonts.IconCodepoint(name);
+        if (codepoint < 0 || theme.Fonts.IconFont(px) is not { } font)
+        {
+            return false;
+        }
+
+        // An icon glyph fills its em square, so its line is the square: centred on the box, on whole pixels.
+        ReadOnlySpan<char> glyph = [(char)codepoint];
+        float width = font.MeasureWidth(glyph, px);
+        float height = font.LineHeight(px);
+        UiVec2 at = new(MathF.Round(box.Center.X - (width * 0.5f)), MathF.Round(box.Center.Y - (height * 0.5f)));
+        painter.DrawText(font, glyph, at, px, color ?? theme.Icon);
+        return true;
+    }
+
+    /// <summary>Shortens text with a trailing ellipsis until it fits a width.</summary>
+    /// <param name="font">The font.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="size">The size in pixels.</param>
+    /// <param name="width">The width available.</param>
+    /// <returns>The text, or a shortened copy ending in an ellipsis.</returns>
+    public static string Fit(Text.UiFont font, string text, float size, float width)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        ArgumentNullException.ThrowIfNull(text);
+        // Half a pixel of slack: boxes are sized from the same measurement, and rounding must not ellipsise them.
+        width += 0.5f;
+        if (font.MeasureWidth(text, size) <= width)
+        {
+            return text;
+        }
+
+        const string ellipsis = "…";
+        int low = 0;
+        int high = text.Length;
+        while (low < high)
+        {
+            int mid = (low + high + 1) / 2;
+            if (font.MeasureWidth(string.Concat(text.AsSpan(0, mid), ellipsis), size) <= width)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return low == 0 ? string.Empty : string.Concat(text.AsSpan(0, low), ellipsis);
+    }
+}

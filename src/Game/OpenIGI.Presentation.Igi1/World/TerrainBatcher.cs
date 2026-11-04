@@ -271,6 +271,30 @@ internal sealed class TerrainBatcher
             }
         }
 
+        EvictCollected();
+    }
+
+    /// <summary>Drops the chunks a test picks, at once, whatever their age: for ground whose shape has changed.</summary>
+    /// <param name="which">Whether a cached chunk goes.</param>
+    /// <remarks>A dropped chunk the descent still wants is built again, from the changed ground, when it is next drawn.</remarks>
+    public void Evict(Func<TerrainChunkEntry, bool> which)
+    {
+        ArgumentNullException.ThrowIfNull(which);
+        _evictions.Clear();
+        foreach ((TerrainChunkKey key, TerrainChunkEntry entry) in _cache)
+        {
+            if (which(entry))
+            {
+                _evictions.Add(key);
+            }
+        }
+
+        EvictCollected();
+    }
+
+    // Takes the chunks in _evictions out of the cache and their ranges out of the pages.
+    private void EvictCollected()
+    {
         if (_evictions.Count == 0)
         {
             return;

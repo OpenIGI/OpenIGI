@@ -31,7 +31,7 @@ namespace OpenIGI.Game.Igi1.Physics;
 public static class RagdollImpulse
 {
     /// <summary>Engine units in a metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Simulation ticks in a second.</summary>
     public const double TicksPerSecond = 30.0;

@@ -167,6 +167,15 @@ public class MissionState : IInspectableMission
     /// </summary>
     public Action<Vector3d, GameTask?, WorldPlacement?, float>? RoundContact { get; set; }
 
+    /// <summary>Gets or sets what finds a model by the name level data gives it, as the level's walk did; null when the title offers none.</summary>
+    public Func<string, WorldModelBinding?>? Models { get; set; }
+
+    /// <summary>Gets or sets what plays a skinned model in the level's clips, for a viewer; null when the title offers none.</summary>
+    public Func<OpenIGI.Formats.World.MefModel, string?, IModelAnimator?>? Animators { get; set; }
+
+    /// <summary>Gets or sets what plays an animation file on a body of the level, for a viewer; null when the title offers none.</summary>
+    public Func<ReadOnlyMemory<byte>, AnimationFilePreview?>? AnimationFiles { get; set; }
+
     /// <summary>Gets or sets the level's fans and radar heads, which turn a step each tick.</summary>
     public IPlacementSpin? Spins { get; set; }
 

@@ -103,8 +103,25 @@ public sealed class SnapshotInterpolator
                 (float)(a.Velocity.Z + ((b.Velocity.Z - a.Velocity.Z) * t))),
             Yaw = LerpAngle(a.Yaw, b.Yaw, t),
             Pitch = LerpAngle(a.Pitch, b.Pitch, t),
+            ClipTime = LerpClipTime(a, b, to.Tick - from.Tick, t),
         };
         return true;
+    }
+
+    // A whole-body clip's time between two snapshots of the same clip, so it plays between them rather than standing still
+    // until the next one: the more so on a line that carries few. Not across a change of clip, nor across a loop's seam,
+    // where the time jumps further than the clip could have played in the ticks between.
+    private static ushort LerpClipTime(in ReplicatedHuman a, in ReplicatedHuman b, long ticks, double t)
+    {
+        const int SixteenthsPerTick = 16;
+        if ((a.Flags & b.Flags & ReplicatedHumanCondition.Climbing) == 0
+            || a.State != b.State
+            || Math.Abs(b.ClipTime - a.ClipTime) > (ticks + 1) * SixteenthsPerTick)
+        {
+            return a.ClipTime;
+        }
+
+        return (ushort)Math.Round(a.ClipTime + ((b.ClipTime - a.ClipTime) * t));
     }
 
     /// <summary>Gets where a lift's car stood at a moment, between the snapshots either side of it.</summary>

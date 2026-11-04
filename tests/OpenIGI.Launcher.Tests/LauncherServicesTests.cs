@@ -25,6 +25,12 @@ public sealed class LauncherServicesTests
             GameStarter.Arguments(GameTitle.Igi2, "D:/IGI2/pc", "-windowed"));
 
     [Fact]
+    public void The_editor_opens_from_its_switch_ahead_of_the_players_own_arguments() =>
+        Assert.Equal(
+            ["-title", "igi1", "-game", "D:/IGI", "+editor", "-windowed"],
+            GameStarter.Arguments(GameTitle.Igi1, "D:/IGI", "-windowed", ["+editor"]));
+
+    [Fact]
     public void A_folder_is_an_installation_only_with_the_titles_signature_file()
     {
         string dir = Directory.CreateTempSubdirectory("openigi-retail-").FullName;

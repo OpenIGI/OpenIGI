@@ -52,7 +52,7 @@ public static class GunShotBallistics
     /// <c>0x47B190</c> stores <c>EffectiveRange * 4096.0</c> as the round's starting range, so the
     /// parameter really is in metres.
     /// </remarks>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     /// <summary>How far past a penetrated surface the next ray starts.</summary>
     /// <remarks>

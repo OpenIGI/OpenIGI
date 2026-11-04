@@ -46,6 +46,43 @@ public static class ScriptOperatorInfo
             "Operator has no precedence; the original fatals with \"Unknown opcode\" here."),
     };
 
+    /// <summary>The operator as level data writes it.</summary>
+    /// <param name="op">The operator.</param>
+    /// <returns>Its symbol, such as <c>&amp;&amp;</c>; the enum name for punctuation.</returns>
+    public static string GetSymbol(ScriptOperator op) => op switch
+    {
+        ScriptOperator.Add or ScriptOperator.UnaryPlus => "+",
+        ScriptOperator.Subtract or ScriptOperator.UnaryMinus => "-",
+        ScriptOperator.Multiply => "*",
+        ScriptOperator.Divide => "/",
+        ScriptOperator.BitwiseOr => "|",
+        ScriptOperator.BitwiseXor => "^",
+        ScriptOperator.BitwiseAnd => "&",
+        ScriptOperator.ShiftLeft => "<<",
+        ScriptOperator.ShiftRight => ">>",
+        ScriptOperator.BitwiseNot => "~",
+        ScriptOperator.Equal => "==",
+        ScriptOperator.NotEqual => "!=",
+        ScriptOperator.Less => "<",
+        ScriptOperator.Greater => ">",
+        ScriptOperator.LessOrEqual => "<=",
+        ScriptOperator.GreaterOrEqual => ">=",
+        ScriptOperator.Not => "!",
+        ScriptOperator.Assign => "=",
+        ScriptOperator.LogicalOr => "||",
+        ScriptOperator.LogicalAnd => "&&",
+        ScriptOperator.Comma => ",",
+        _ => op.ToString(),
+    };
+
+    /// <summary>Determines whether an operator's value is a truth value: a comparison or a logical operator.</summary>
+    /// <param name="op">The operator.</param>
+    /// <returns><see langword="true"/> for <c>==</c>, <c>!=</c>, the orderings, <c>!</c>, <c>&amp;&amp;</c> and <c>||</c>.</returns>
+    public static bool IsBoolean(ScriptOperator op) =>
+        op is ScriptOperator.Equal or ScriptOperator.NotEqual or ScriptOperator.Less or ScriptOperator.Greater
+            or ScriptOperator.LessOrEqual or ScriptOperator.GreaterOrEqual or ScriptOperator.Not
+            or ScriptOperator.LogicalOr or ScriptOperator.LogicalAnd;
+
     /// <summary>Determines whether an operator takes a single operand.</summary>
     /// <param name="op">The operator.</param>
     /// <returns><see langword="true"/> for <c>+x</c>, <c>-x</c>, <c>~x</c> and <c>!x</c>.</returns>

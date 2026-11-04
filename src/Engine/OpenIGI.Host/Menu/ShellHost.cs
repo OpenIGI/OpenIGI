@@ -33,6 +33,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="playedMods">The mods that change play the running title is played with.</param>
 /// <param name="coop">Co-op through rooms, where the build can make WebRTC connections.</param>
 /// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
+/// <param name="openEditor">Opens the editor, or <see langword="null"/> in a build without one.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
@@ -52,7 +53,8 @@ public sealed class ShellHost(
     Func<IReadOnlyList<(int Width, int Height)>>? displayResolutions = null,
     Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null,
     ICoopRooms? coop = null,
-    Func<bool>? touchScreen = null) : IShellHost
+    Func<bool>? touchScreen = null,
+    Func<bool>? openEditor = null) : IShellHost
 {
     /// <inheritdoc/>
     public ICoopRooms? Coop => coop;
@@ -114,6 +116,12 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public bool TouchScreen => touchScreen?.Invoke() ?? false;
+
+    /// <inheritdoc/>
+    public bool CanOpenEditor => openEditor is not null;
+
+    /// <inheritdoc/>
+    public void OpenEditor() => openEditor?.Invoke();
 }
 
 /// <summary>Captures the current frame for a save-slot thumbnail.</summary>

@@ -32,7 +32,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// uniformly wound within every block, and only a mirrored orientation flips a chunk's facing.
 /// </para>
 /// </remarks>
-public sealed class TerrainRenderer : ITerrainPresenter
+public sealed partial class TerrainRenderer : ITerrainPresenter
 {
     private const string LogCategory = "Terrain";
     private const int SparseVisibleQueryInterval = 16;
@@ -68,6 +68,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private readonly HashSet<Vector3d> _drawnFine = [];
 
     // What the ray-traced world traces instead of the pages: this frame's chunks, morphed as drawn.
+    private readonly Core.Threading.IWorkScheduler? _work;
     private readonly TerrainShadowCaster _caster;
 
     // Whether the last frame asked for the caster to be built for the sun's cascades as well as for the
@@ -99,6 +100,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private TerrainSmoothing? _smooth;
     private (int Level, float Relax, float Limit) _smoothSettings;
     private int _smoothGeneration;
+    private Igi1EditableTerrain? _editable;
 
     /// <summary>Initializes a new instance of the <see cref="TerrainRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -154,6 +156,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
         // On the GPU now; the level's terrain data need not hold the pictures as well.
         surface.Terrain.Tiles?.ReleasePixels();
         _caster = new TerrainShadowCaster(device, work);
+        _work = work;
     }
 
     /// <summary>Gets how many chunks the last <see cref="Draw"/> selected.</summary>
@@ -253,6 +256,28 @@ public sealed class TerrainRenderer : ITerrainPresenter
                     1 << Math.Clamp(value.Level, 1, 3),
                     value.Relax,
                     value.Limit * WorldScene.UnitsPerMetre);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The level's heightmap grids (<see cref="Igi1EditableTerrain"/>), to which the editor can add more. The chunks a
+    /// change reaches are dropped and rebuilt from the changed ground as they are next drawn.
+    /// </remarks>
+    public IEditableTerrain? Editable
+    {
+        get
+        {
+            if (_editable is null && !_disposed)
+            {
+                _editable = Igi1EditableTerrain.For(_surface);
+                _editable.Work ??= _work;
+                _editable.Changed += OnGroundChanged;
+                _editable.Painted += OnPainted;
+                _editable.Rebuilt += OnRebuilt;
+            }
+
+            return _editable;
         }
     }
 
@@ -358,6 +383,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
         bool batching = true,
         bool occlusionCulling = true)
     {
+        // A mountain area rebuilt away from the main thread goes in place before the ground is walked.
+        _editable?.Poll();
+
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         // The traversal works in engine units, which is the octree's own space; the camera arrives in
@@ -762,6 +790,13 @@ public sealed class TerrainRenderer : ITerrainPresenter
         }
 
         _disposed = true;
+        if (_editable is not null)
+        {
+            _editable.Changed -= OnGroundChanged;
+            _editable.Painted -= OnPainted;
+            _editable.Rebuilt -= OnRebuilt;
+        }
+
         _caster.Dispose();
         _batcher.DestroyPages();
         foreach (TerrainChunkEntry entry in _cache.Values)

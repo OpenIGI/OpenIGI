@@ -114,11 +114,30 @@ internal sealed class AudioOutput(
     public void ApplyCategoryGains()
     {
         float master = AudioCVars.MasterVolume.Value;
+        float game = GameSilenced ? 0f : master;
 
-        Device.SetCategoryGain(SoundCategory.Effects, master * AudioCVars.EffectsVolume.Value);
-        Device.SetCategoryGain(SoundCategory.Music, master * AudioCVars.MusicVolume.Value);
-        Device.SetCategoryGain(SoundCategory.Speech, master * AudioCVars.SpeechVolume.Value);
-        Device.SetCategoryGain(SoundCategory.Ambience, master * AudioCVars.AmbienceVolume.Value);
+        Device.SetCategoryGain(SoundCategory.Effects, game * AudioCVars.EffectsVolume.Value);
+        Device.SetCategoryGain(SoundCategory.Music, game * AudioCVars.MusicVolume.Value);
+        Device.SetCategoryGain(SoundCategory.Speech, game * AudioCVars.SpeechVolume.Value);
+        Device.SetCategoryGain(SoundCategory.Ambience, game * AudioCVars.AmbienceVolume.Value);
+        Device.SetCategoryGain(SoundCategory.Interface, master * AudioCVars.EffectsVolume.Value);
+    }
+
+    /// <summary>
+    /// Gets or sets whether the game's own sound is silent: its effects, score, voices and beds, while the tools' sounds
+    /// (<see cref="SoundCategory.Interface"/>) still play. Set while a level is open in the editor rather than being played.
+    /// </summary>
+    public bool GameSilenced
+    {
+        get;
+        set
+        {
+            if (field != value)
+            {
+                field = value;
+                ApplyCategoryGains();
+            }
+        }
     }
 
     /// <summary>Advances the device and the score, once a frame.</summary>

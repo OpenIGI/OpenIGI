@@ -186,7 +186,7 @@ internal sealed class HomePage
             default:
                 _heading.State = "READY";
                 _heading.StateColor = _theme.Success;
-                _main.Title = "PLAY";
+                _main.Title = game.ReadyAction;
                 _main.Icon = PrimaryActionIcon.Arrow;
                 _main.Subtitle = string.Create(CultureInfo.InvariantCulture, $"VERSION {game.Version}");
                 break;

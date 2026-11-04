@@ -186,8 +186,8 @@ public static class SpriteLoader
                 TextureIndex: BinaryPrimitives.ReadInt16LittleEndian(r[20..]),
                 Width: BinaryPrimitives.ReadUInt16LittleEndian(r[22..]),
                 Height: BinaryPrimitives.ReadUInt16LittleEndian(r[24..]),
-                OffsetX: BinaryPrimitives.ReadUInt16LittleEndian(r[34..]),
-                OffsetY: BinaryPrimitives.ReadUInt16LittleEndian(r[36..]),
+                OffsetX: BinaryPrimitives.ReadInt16LittleEndian(r[34..]),
+                OffsetY: BinaryPrimitives.ReadInt16LittleEndian(r[36..]),
                 Advance: BinaryPrimitives.ReadUInt16LittleEndian(r[26..]),
                 Flags: BinaryPrimitives.ReadUInt32LittleEndian(r),
                 U0: BinaryPrimitives.ReadSingleLittleEndian(r[4..]),
@@ -473,8 +473,8 @@ public static class SpriteLoader
                 width = BinaryPrimitives.ReadUInt16LittleEndian(r[10..]);
                 height = BinaryPrimitives.ReadUInt16LittleEndian(r[12..]);
                 advance = BinaryPrimitives.ReadUInt16LittleEndian(r[14..]);
-                offsetX = BinaryPrimitives.ReadUInt16LittleEndian(r[22..]);
-                offsetY = BinaryPrimitives.ReadUInt16LittleEndian(r[24..]);
+                offsetX = BinaryPrimitives.ReadInt16LittleEndian(r[22..]);
+                offsetY = BinaryPrimitives.ReadInt16LittleEndian(r[24..]);
                 formatParameter = BinaryPrimitives.ReadUInt32LittleEndian(r[28..]);
             }
             else

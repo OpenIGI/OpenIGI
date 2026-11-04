@@ -175,6 +175,21 @@ public sealed class ConsoleModel : IConsoleOutput
         }
     }
 
+    /// <summary>Applies an edit to the prompt directly, refreshing the completions when it changed the text.</summary>
+    /// <param name="edit">The edit; returns whether it changed the text.</param>
+    /// <returns>Whether the text changed.</returns>
+    public bool EditWith(Func<TextEditState, bool> edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        bool changed = edit(_edit);
+        if (changed)
+        {
+            RefreshSuggestions();
+        }
+
+        return changed;
+    }
+
     /// <summary>Deletes the selection, or the character before the caret.</summary>
     public void Backspace()
     {

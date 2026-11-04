@@ -33,6 +33,7 @@ public sealed class WorldInteraction
     private Action? _onPress;
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
+    private Vector3d _wireOrigin;
     private Func<Vector3d>? _dynamicOffset;
     private Func<float, Vector3d>? _presentedOffset;
     private Vector3d _offset;
@@ -315,49 +316,79 @@ public sealed class WorldInteraction
             return Anchor;
         }
 
-        Vector3d segment = End - Anchor;
-        double along = Vector3d.Dot(from - Anchor, segment) / segment.LengthSquared;
-        return Vector3d.Lerp(Anchor, End, Math.Clamp(along, 0.0, 1.0));
+        // Wire_Use (0x43F560) offers the point on the model's own axis, clamped to the magic vertices' local Y, with no
+        // end margin: the margin is the ride's, not the offer's.
+        double along = Math.Clamp(WireCoordinate(from), WireStartLocalY, Math.Max(WireStartLocalY, WireEndLocalY));
+        return WireOrigin + (WireAxis * along);
     }
 
-    /// <summary>Projects a mount onto a wire while preserving its retail 3072-unit end margins.</summary>
-    public Vector3d WireMountPoint(Vector3d from)
-    {
-        Vector3d segment = End - Anchor;
-        if (Type != InteractionActivateType.Wire || segment.LengthSquared == 0.0)
-        {
-            return Anchor;
-        }
-        double margin = Math.Min(0.49, 3072.0 / segment.Length);
-        double along = Vector3d.Dot(from - Anchor, segment) / segment.LengthSquared;
-        return Vector3d.Lerp(Anchor, End, Math.Clamp(along, margin, 1.0 - margin));
-    }
-
-    /// <summary>How far below a sloped wire the zip-line hangs its rider — <c>sub_411F20</c>'s 3686.4.</summary>
+    /// <summary>How far below a sloped wire the zip-line hangs its rider — <c>0x411F20</c>'s 3686.4.</summary>
     public const double ZiplineDrop = 3686.4;
 
-    /// <summary>How far below a level wire the hand-over-hand rider hangs — <c>sub_411AE0</c>'s 2150.4.</summary>
+    /// <summary>How far below a level wire the hand-over-hand rider hangs — <c>0x411AE0</c>'s 2150.4.</summary>
     public const double WireDragDrop = 2150.4;
 
-    /// <summary>Gets the human task position whose animation places its hands on the cable.</summary>
-    /// <param name="from">The position projected onto the cable.</param>
-    /// <param name="drop">How far below the cable the task hangs: <see cref="ZiplineDrop"/> or <see cref="WireDragDrop"/>.</param>
-    /// <remarks>
-    /// IGI1 <c>sub_411F20</c> and <c>sub_411AE0</c> subtract the drop along column 2 of the frame built by
-    /// <c>sub_43F820</c>/<c>sub_414A60</c>. That column is cable-relative up, not world Z; on a slope
-    /// it deliberately contains a horizontal component.
-    /// </remarks>
-    public Vector3d WireBodyPoint(Vector3d from, double drop = ZiplineDrop)
+    /// <summary>How far in from either end of the cable a ride is kept: <c>0x411AE0</c>/<c>0x411F20</c>'s 3072.</summary>
+    public const double WireEndMargin = 3072.0;
+
+    /// <summary>Gets the wire model's origin, the middle of its authored span, which the ride is measured from.</summary>
+    public Vector3d WireOrigin => _wireOrigin + _offset;
+
+    /// <summary>Gets the wire model's origin as authored, before any carrier moves it.</summary>
+    internal Vector3d WireOriginAuthored
     {
-        Vector3d segment = End - Anchor;
-        if (Type != InteractionActivateType.Wire || segment.LengthSquared == 0.0)
+        get => _wireOrigin;
+        init => _wireOrigin = value;
+    }
+
+    /// <summary>Gets where the cable starts along its own axis from <see cref="WireOrigin"/>: magic vertex 0's stretched local Y.</summary>
+    public double WireStartLocalY { get; init; }
+
+    /// <summary>Gets where the cable ends along its own axis from <see cref="WireOrigin"/>: magic vertex 1's stretched local Y.</summary>
+    public double WireEndLocalY { get; init; }
+
+    /// <summary>Gets column 1 of the wire's frame (<c>Wire_GetMatrix</c>, <c>0x43F820</c>): magic vertex 0 to 1, normalised.</summary>
+    public Vector3d WireAxis => End == Anchor ? new Vector3d(0.0, 1.0, 0.0) : (End - Anchor).Normalized();
+
+    /// <summary>Gets column 2 of the wire's frame: cable-relative up, which the rider hangs below.</summary>
+    public Vector3d WireUp => WireTransform.CableUp(WireAxis);
+
+    /// <summary>Where a point lies along the cable, measured from <see cref="WireOrigin"/> down <see cref="WireAxis"/>.</summary>
+    /// <param name="origin">The point; for the ride, the human's origin (<c>+32</c>).</param>
+    /// <returns>Its coordinate along the cable, in world units.</returns>
+    public double WireCoordinate(Vector3d origin) => Vector3d.Dot(origin - WireOrigin, WireAxis);
+
+    /// <summary>Whether a coordinate along the cable is past either end of the ride, the test that drops a rider.</summary>
+    /// <param name="coordinate">The rider's <see cref="WireCoordinate"/>.</param>
+    /// <returns><see langword="true"/> within <see cref="WireEndMargin"/> of either end, or past it.</returns>
+    /// <remarks>
+    /// <c>e0.y + 3072 &gt; y || !(e1.y - 3072 &gt;= y)</c>, read each tick by both rides. A wire shorter than twice the
+    /// margin has no coordinate that passes, so retail drops its rider the tick after the mount, and so does this.
+    /// </remarks>
+    public bool IsPastWireEnd(double coordinate) =>
+        WireStartLocalY + WireEndMargin > coordinate || !(WireEndLocalY - WireEndMargin >= coordinate);
+
+    /// <summary>Gets where the human's origin is hung from the cable as a ride mounts.</summary>
+    /// <param name="origin">The human's origin (<c>+32</c>) as the use is taken.</param>
+    /// <param name="drop">How far below the cable the origin hangs: <see cref="ZiplineDrop"/> or <see cref="WireDragDrop"/>.</param>
+    /// <remarks>
+    /// <c>0x411AE0</c> and <c>0x411F20</c> project the origin onto the wire's axis, keep the coordinate
+    /// <see cref="WireEndMargin"/> in from either end, and set the origin to the wire model's origin plus the axis times that
+    /// coordinate, minus the drop along column 2 of the frame. The model origin is the middle of the authored span, so a
+    /// magic vertex's small local X/Z offset is not part of it, and column 2 is cable-relative up: on a slope it leans.
+    /// </remarks>
+    public Vector3d WireBodyPoint(Vector3d origin, double drop = ZiplineDrop)
+    {
+        if (Type != InteractionActivateType.Wire || End == Anchor)
         {
             return Anchor;
         }
 
-        Vector3d up = WireTransform.CableUp(segment.Normalized());
-
-        return WireMountPoint(from) - (up * drop);
+        double side = WireCoordinate(origin);
+        double low = WireStartLocalY + WireEndMargin;
+        double high = WireEndLocalY - WireEndMargin;
+        double along = low > side ? low : !(high >= side) ? high : side;
+        return WireOrigin + (WireAxis * along) - (WireUp * drop);
     }
 
     /// <summary>Gets the exact root placement and gamma of a retail self-driving interaction state.</summary>

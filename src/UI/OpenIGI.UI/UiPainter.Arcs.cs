@@ -11,6 +11,12 @@ public sealed partial class UiPainter
     private const float ArcStepPixels = 5f;
 
     /// <summary>
+    /// Gets or sets the fewest pieces a whole circle is filled in, however small: 1, the default, keeps the game's own look; a
+    /// tool drawing small round marks (a pin, a status dot) raises it so they read as round rather than as polygons.
+    /// </summary>
+    public int MinimumCircleSteps { get; set; } = 1;
+
+    /// <summary>
     /// Fills a band of a ring between two radii and two angles, its every edge -- both arcs and both ends -- feathered by a pixel
     /// so it is smooth however it is turned; a band wider than a half turn fills as truly as a narrow one.
     /// </summary>
@@ -47,6 +53,11 @@ public sealed partial class UiPainter
         inner = MathF.Max(0f, inner);
         Bgra32 inside = Fade(innerColor), outside = Fade(outerColor);
         int steps = Math.Clamp((int)MathF.Ceiling((to - from) * outer / ArcStepPixels), 1, 512);
+        if (to - from >= MathF.Tau - 1e-3f)
+        {
+            steps = Math.Clamp(steps, MinimumCircleSteps, 512);
+        }
+
         Span<UiVertex> quad = stackalloc UiVertex[4];
         float feather = 1f;
         for (int i = 0; i < steps; i++)

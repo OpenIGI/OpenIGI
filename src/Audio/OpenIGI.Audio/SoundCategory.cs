@@ -28,4 +28,10 @@ public enum SoundCategory
 
     /// <summary>Continuous level beds. Folded into <see cref="Effects"/> under the vanilla profile.</summary>
     Ambience,
+
+    /// <summary>
+    /// The tools' own sounds, such as the editor playing a file to hear it: kept apart from the game's, which are silent while
+    /// a level is being edited rather than played.
+    /// </summary>
+    Interface,
 }

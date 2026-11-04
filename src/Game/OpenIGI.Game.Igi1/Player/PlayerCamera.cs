@@ -57,7 +57,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// works in metres. This is where the two meet, and keeping the conversion in one place is what
     /// stops a unit mistake reaching the physics.
     /// </remarks>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     private readonly PlayerBody _body = new();
     private readonly PlayerInputState _input = new();
@@ -126,6 +126,13 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
     /// <summary>Gets the view's pitch the last tick ran with; see <see cref="FrameYaw"/>.</summary>
     public float FramePitch { get; private set; }
+
+    /// <summary>
+    /// Gets the crosshair's ray the last tick's rounds converged on, its origin as an offset from the eye the tick began at,
+    /// or <see langword="null"/> in first person; see <see cref="FrameYaw"/>. A co-op server's copy of the player has no
+    /// camera of its own to set <see cref="AimConvergenceRay"/>: sent this, its rounds go where this player's crosshair was.
+    /// </summary>
+    public (Vector3d EyeOffset, Vector3f Direction)? FrameAim { get; private set; }
 
     /// <summary>Uses the owning runtime's live player-health accumulator.</summary>
     public void UseHealth(HumanHealth health) => _body.UseHealth(health);
@@ -560,19 +567,6 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
     /// <summary>Gets the body's animation set, skeleton 0, once given; a co-op partner's ladder climbs on it.</summary>
     public BoneAnimationSet? BodyAnimations { get; private set; }
-
-    /// <summary>Gets whether the body plays a world interaction's own clip: any interaction but the mounted gun's sight.</summary>
-    public bool PlaysInteractionClip => IsInWorldInteraction && !IsMountedStationaryGun && InteractionAnimation >= 0;
-
-    /// <summary>Gets the ladder clip the climb is in, or -1 off a ladder: what another player's window draws it doing.</summary>
-    public int LadderAnimation => !IsOnLadder
-        ? -1
-        : LadderPhase switch
-        {
-            LadderTraversalPhase.SlidingDown => LadderSlideAnimation,
-            LadderTraversalPhase.GettingOnTop or LadderTraversalPhase.GettingOffTop => LadderTopAnimation,
-            _ => LadderClimbAnimation,
-        };
 
     /// <inheritdoc cref="PlayerShotResolver.MarkProbe"/>
     public WorldRayCast? MarkProbe => _shots.MarkProbe;

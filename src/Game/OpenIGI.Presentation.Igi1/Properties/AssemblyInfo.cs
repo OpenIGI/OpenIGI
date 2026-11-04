@@ -11,3 +11,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("OpenIGI.Desktop.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Presentation.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Game.Tests")]
+[assembly: InternalsVisibleTo("OpenIGI.Parity.Tests")]

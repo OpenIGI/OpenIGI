@@ -1,3 +1,5 @@
+using OpenIGI.Core.Collections;
+
 namespace OpenIGI.Game.World;
 
 /// <summary>The broad phase: a sparse 2D grid over the entries' build-time bounding spheres.</summary>
@@ -23,14 +25,14 @@ internal sealed class CollisionStaticGrid
     /// <summary>A sphere spanning more cells than this per axis is not worth bucketing.</summary>
     private const int OversizedCellSpan = 32;
 
-    private readonly Dictionary<long, int[]> _cells = [];
+    private readonly Dictionary<long, int[]> _cells = new(PackedKeyComparer.Instance);
     private readonly int[] _stamps;
     private int _stamp;
 
     public CollisionStaticGrid(ObjectCollisionEntry[] entries)
     {
         _stamps = new int[entries.Length];
-        Dictionary<long, List<int>> cells = [];
+        Dictionary<long, List<int>> cells = new(PackedKeyComparer.Instance);
         List<int> oversized = [];
 
         for (int i = 0; i < entries.Length; i++)

@@ -54,7 +54,9 @@ public enum ReplicatedHumanCondition : byte
 /// <param name="Flags">Its flags.</param>
 /// <param name="Shots">Its shots so far, counted round in a byte: a change is a shot, whichever snapshot carries it.</param>
 /// <param name="ActionSequence">How often its upper-body action has started, counted round in a byte: a change starts it again.</param>
-/// <param name="ClipTime">Where a whole-body clip the others must pose exactly is, in sixteenths of its time; a climb's.</param>
+/// <param name="ClipTime">
+/// Where a whole-body clip the others must pose exactly is -- a climb's, a computer's -- in sixteenths of a tick of its time.
+/// </param>
 /// <param name="Source">For a soldier a generator made, its generator's task id plus one, for a client to make the same replacement; else 0.</param>
 /// <param name="Platform">
 /// The lift it rides, its index in the snapshot's lifts plus one, or 0: a client draws it on its own copy of that car, which

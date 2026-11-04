@@ -58,4 +58,22 @@ public sealed class UiScaleTests
         Assert.Equal(UiScale.For(1920, 1080), UiScale.Resolve(UiScale.Automatic, 1920, 1080));
         Assert.Equal(UiScale.For(1920, 1080), UiScale.Resolve(-5, 1920, 1080));
     }
+
+    /// <summary>
+    /// A desktop tool draws one-to-one up to 1440 rows -- where the game's menus are tripled -- grows by quarters toward 4K,
+    /// and a chosen scale is used as chosen.
+    /// </summary>
+    [Theory]
+    [InlineData(0f, 900f, 1f)]
+    [InlineData(0f, 1440f, 1f)]
+    [InlineData(0f, 1800f, 1.25f)]
+    [InlineData(0f, 2160f, 1.5f)]
+    [InlineData(0f, 4320f, 2f)]
+    [InlineData(1.25f, 1440f, 1.25f)]
+    [InlineData(9f, 1440f, 4f)]
+    public void A_desktop_tool_is_sized_for_the_screen(float requested, float height, float expected)
+    {
+        Assert.Equal(expected, UiScale.Desktop(requested, height));
+        Assert.Equal(3, UiScale.Resolve(UiScale.Automatic, 2560, 1440));
+    }
 }

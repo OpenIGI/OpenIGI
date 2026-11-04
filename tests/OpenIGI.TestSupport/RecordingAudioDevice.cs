@@ -13,7 +13,8 @@ namespace OpenIGI.TestSupport;
 /// </remarks>
 public sealed class RecordingAudioDevice : IAudioDevice
 {
-    private readonly float[] _categoryGains = [1f, 1f, 1f, 1f];
+    // One gain per category, every one the enum has.
+    private readonly float[] _categoryGains = [.. Enumerable.Repeat(1f, Enum.GetValues<SoundCategory>().Length)];
     private readonly Dictionary<int, VoiceParameters> _active = [];
     private readonly List<PlayedVoice> _played = [];
     private readonly List<AudioFormat> _createdBuffers = [];

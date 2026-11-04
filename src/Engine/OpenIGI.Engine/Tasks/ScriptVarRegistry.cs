@@ -32,6 +32,9 @@ public sealed class ScriptVarRegistry
         _symbols = symbols;
     }
 
+    /// <summary>Gets every bound name (<c>CutScene_1200.isRun</c>), task by task.</summary>
+    public IEnumerable<string> BoundNames => _byTask.Values.SelectMany(static names => names);
+
     /// <summary>Gets the number of live bindings.</summary>
     public int Count
     {

@@ -19,7 +19,7 @@ public static class AiRunPanicking
     public const int SearchBudget = 10;
 
     /// <summary>Engine units in one metre, as used directly by the retail action.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Finds the graph node a panicking human should run to.</summary>
     /// <param name="graph">The human's navigation graph.</param>

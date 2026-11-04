@@ -355,6 +355,14 @@ public readonly record struct HostOptions(
     /// <summary>Gets a value indicating whether deterministic performance capture is active.</summary>
     public bool IsBenchmark => BenchmarkPath is not null;
 
+    /// <summary>Gets a value indicating whether the run writes nothing of the player's own, set by <c>-nosave</c>.</summary>
+    /// <remarks>A headless test that plays a mission to its end would otherwise unlock the next mission in the real
+    /// profile and save it, and save the settings as it stops.</remarks>
+    public bool NoSave { get; init; }
+
+    /// <summary>Gets a value indicating whether the run saves the player's profiles and settings.</summary>
+    public bool SavesUserFiles => !IsBenchmark && !NoSave;
+
     /// <summary>
     /// Gets a value indicating whether every mission's global-illumination probe field is traced and
     /// written to the cache and the game then quits, set by <c>-bakeall</c>.

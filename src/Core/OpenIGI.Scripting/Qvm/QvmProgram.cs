@@ -79,10 +79,15 @@ public sealed class QvmProgram
         int stackSizeBytes,
         int maxLocals,
         int fileInfoOffset,
+        ReadOnlyMemory<byte> fileInfo,
+        (int StackSizeBytes, int MaxLocals) requested,
         ReadOnlyCollection<string?> symbolNames,
         ReadOnlyCollection<string?> strings)
     {
         FileInfoOffset = fileInfoOffset;
+        FileInfo = fileInfo;
+        RequestedStackSizeBytes = requested.StackSizeBytes;
+        RequestedMaxLocals = requested.MaxLocals;
         InstructionSetId = instructionSetId;
         Version = version;
         Code = code;
@@ -104,6 +109,17 @@ public sealed class QvmProgram
     /// offset is where the code section ends, so the loader has to know about it either way.
     /// </remarks>
     public int FileInfoOffset { get; }
+
+    /// <summary>Gets the version 7 file-info block, or empty when the program has none.</summary>
+    public ReadOnlyMemory<byte> FileInfo { get; }
+
+    /// <summary>Gets the stack size the header asks for, as stored: zero means the VM default.</summary>
+    /// <remarks><see cref="StackSizeBytes"/> is the size the VM will actually use.</remarks>
+    public int RequestedStackSizeBytes { get; }
+
+    /// <summary>Gets the local-slot count the header asks for, as stored: zero means the VM default.</summary>
+    /// <remarks><see cref="MaxLocals"/> is the count the VM will actually use.</remarks>
+    public int RequestedMaxLocals { get; }
 
     /// <summary>Gets the code section: the bytes the interpreter executes, offset zero being the entry point.</summary>
     public ReadOnlyMemory<byte> Code { get; }
@@ -225,6 +241,8 @@ public sealed class QvmProgram
             stackSize == 0 ? DefaultStackSizeBytes : stackSize,
             maxLocals == 0 ? DefaultMaxLocals : maxLocals,
             fileInfoOffset,
+            fileInfoOffset != 0 ? data[fileInfoOffset..] : ReadOnlyMemory<byte>.Empty,
+            (stackSize, maxLocals),
             ReadStringTable(span, symbolTableOffset, symbolTableSize, symbolPoolOffset, symbolPoolSize),
             ReadStringTable(span, stringTableOffset, stringTableSize, stringPoolOffset, stringPoolSize));
     }

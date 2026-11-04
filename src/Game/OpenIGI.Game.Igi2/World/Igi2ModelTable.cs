@@ -166,7 +166,8 @@ public sealed class Igi2ModelTable
     {
         ArgumentException.ThrowIfNullOrEmpty(texture);
 
-        return string.Create(CultureInfo.InvariantCulture, $"LOCAL:textures/{texture}.tex");
+        // Both titles register model textures under the same name.
+        return OpenIGI.Game.World.LoadedPack.TextureResourceName(texture);
     }
 
     /// <summary>A named instance together with the pack that named it.</summary>

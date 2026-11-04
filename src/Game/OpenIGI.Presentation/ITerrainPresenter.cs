@@ -87,6 +87,10 @@ public interface ITerrainPresenter : IDisposable
     /// <summary>Appends the presenter's per-frame counters, one line each.</summary>
     /// <param name="into">Receives the lines, already formatted.</param>
     void Describe(ICollection<string> into);
+
+    /// <summary>Gets the ground as height grids an editor can change while it is drawn, or nothing when it cannot be.</summary>
+    /// <remarks>Defaulted to nothing, for a ground whose shape is not a grid of heights.</remarks>
+    Game.World.IEditableTerrain? Editable => null;
 }
 
 /// <summary>What a title needs in order to build an <see cref="ITerrainPresenter"/>.</summary>

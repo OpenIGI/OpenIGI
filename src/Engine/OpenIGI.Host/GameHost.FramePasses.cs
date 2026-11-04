@@ -586,6 +586,9 @@ public sealed partial class GameHost
             _device.EndStageTiming();
         }
 
+        // The editor, over the world it is editing and under the console.
+        DrawEditor(state);
+
         // The level, withheld while it settles. Over the HUD and the menus because it stands in for
         // the whole picture, and under the console because the console has to be usable while a level
         // is warming -- that is exactly when somebody is looking into why it is.

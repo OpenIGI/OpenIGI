@@ -46,8 +46,10 @@ public sealed class TerrainSurface
         TerrainTileLayer[] layers,
         TerrainDiscardRegion[] discards,
         TerrainHeightBindings heights,
-        TerrainLightBindings lights)
+        TerrainLightBindings lights,
+        Vector3f? sun = null)
     {
+        SunDirection = sun;
         Terrain = terrain;
         Layers = layers;
         Discards = discards;
@@ -77,6 +79,10 @@ public sealed class TerrainSurface
 
     /// <summary>Gets the lightmap bindings the level's <c>TerrainLightMap</c> tasks publish: the ground's light.</summary>
     public TerrainLightBindings Lights { get; }
+
+    /// <summary>Gets the unit vector towards the level's sun, or <see langword="null"/> when the surface was built without the level.</summary>
+    /// <remarks>What the terrain lightmaps were lit by; an editor relighting reshaped ground needs it.</remarks>
+    public Vector3f? SunDirection { get; }
 
     /// <summary>
     /// Builds the surface by walking a level's task tree for its <c>TextureModifier</c>s and
@@ -153,7 +159,8 @@ public sealed class TerrainSurface
                 + (lights.Skipped > 0 ? $", {lights.Skipped} lightmap(s) unresolved" : string.Empty)
                 + $", {terrain.Materials.Count} material(s), {terrain.TileMaps.Count} tile map(s).");
 
-        return new TerrainSurface(terrain, [.. layers], discards, heights, lights);
+        Vector3f? sun = DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings light) ? light.Direction : null;
+        return new TerrainSurface(terrain, [.. layers], discards, heights, lights, sun);
     }
 
     /// <summary>Builds a surface with no layers, so every point takes the base material.</summary>

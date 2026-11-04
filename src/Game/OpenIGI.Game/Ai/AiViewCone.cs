@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Ai;
 
 /// <summary>
@@ -41,7 +43,7 @@ namespace OpenIGI.Game.Ai;
 public readonly record struct AiViewCone(double Alpha, double Gamma, double Length, double AlarmLength)
 {
     /// <summary>Engine units per metre, for the length setters.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>The degrees-to-radians factor the angle setters use, in single precision as the original has it.</summary>
     public const float DegreesToRadians = 0.017453292f;

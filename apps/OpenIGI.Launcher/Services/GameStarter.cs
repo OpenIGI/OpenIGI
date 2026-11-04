@@ -65,11 +65,12 @@ internal static class GameStarter
     /// <param name="title">The title to run.</param>
     /// <param name="gameFolder">The original game's folder.</param>
     /// <param name="extra">The player's own launch arguments.</param>
+    /// <param name="switches">What the launcher's entry adds, such as <c>+editor</c>; before the player's own, so theirs win.</param>
     /// <returns>The argument list.</returns>
-    public static IReadOnlyList<string> Arguments(GameTitle title, string gameFolder, string? extra)
+    public static IReadOnlyList<string> Arguments(GameTitle title, string gameFolder, string? extra, IReadOnlyList<string>? switches = null)
     {
         ArgumentNullException.ThrowIfNull(title);
-        return ["-title", title.Id, "-game", gameFolder, .. Split(extra)];
+        return ["-title", title.Id, "-game", gameFolder, .. switches ?? [], .. Split(extra)];
     }
 
     /// <summary>Starts the game.</summary>

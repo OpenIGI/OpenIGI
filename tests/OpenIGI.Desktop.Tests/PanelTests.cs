@@ -27,7 +27,7 @@ public sealed class PanelTests
     }
 
     private static DevConsoleTheme Theme() =>
-        new(new MonoFontSet(new RecordingGraphicsDevice(), UiFontLibrary.Mono));
+        new(new SizedFontSet(new RecordingGraphicsDevice(), UiFontLibrary.Mono));
 
     private static void Render(UiElement element, float width = 900f, float height = 500f)
     {

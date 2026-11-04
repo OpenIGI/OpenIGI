@@ -41,7 +41,7 @@ public static class M203Physics
     public const float KilometresPerHourToUnitsPerTick = NativeMuzzleSpeedMultiplier * NativeVelocityMultiplier;
 
     /// <summary>Converts a metres value from the task binding into engine units.</summary>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     /// <summary>The M16A2/M203 task's shipped muzzle speed, in kilometres per hour.</summary>
     /// <remarks>Retail <c>M203 - Muzzle velocity (km/h)</c> tag in <c>WEAPONS/weaponconfig.qvm</c>.</remarks>

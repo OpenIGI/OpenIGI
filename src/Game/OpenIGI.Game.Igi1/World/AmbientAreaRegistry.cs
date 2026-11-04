@@ -84,7 +84,7 @@ public sealed class AmbientAreaRegistry
     public const double FadeStepPerTick = 0.05;
 
     /// <summary>Engine units in a metre; the box's size is authored in metres and compared in units.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>The task type the level names.</summary>
     public const string TaskTypeName = "AmbientArea";

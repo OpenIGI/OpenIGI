@@ -52,7 +52,7 @@ namespace OpenIGI.Game.Igi1.Player;
 public sealed class ThirdPersonCamera
 {
     /// <summary>World units in a metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>
     /// How far short of blocking geometry the eye is held, in metres.
