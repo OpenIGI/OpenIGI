@@ -323,17 +323,17 @@ public sealed partial class PlayerBody
     /// <remarks>The point AreaActivate's CRITERIA_HUMAN callback (<c>0x460A10</c>) tests against a volume.</remarks>
     public Vector3d Origin => new(Position.X, Position.Y, Position.Z + _rootHeight);
 
-    /// <summary>Hands a finished fence vault to the fall, from the origin animation 171 left the human at.</summary>
+    /// <summary>Hands an exact-motion traversal -- a fence vault, a wire ride -- to the fall, from the origin its clip left the human at.</summary>
     /// <param name="origin">Where the clip's root motion carried the Human's origin (<c>+32</c>).</param>
     /// <param name="lastRootDelta">The clip's last world-space root step.</param>
     /// <remarks>
-    /// State 41 leaves on the clip's end bit for state 29 (<c>0x40DD00</c>), whose entry (<c>0x40BDB0</c>) puts
-    /// the last root step into the horizontal velocity and nothing into the vertical. Animation 171 ends with the
-    /// origin 0.94 m above where it began, on the far side, so retail drops the last of the vault: the probe watched
-    /// mission 1's fence land ten ticks later, 0.25 m further on. The port keeps the feet, so the origin comes down
-    /// by its standing height first.
+    /// State 41 leaves on the clip's end bit for state 29 (<c>0x40DD00</c>), and a wire's release sets it outright
+    /// (<c>0x411AE0</c>, <c>0x411F20</c>). Its entry (<c>0x40BDB0</c>) puts the last root step into the horizontal
+    /// velocity and nothing into the vertical. Animation 171 ends with the origin 0.94 m above where it began, on the far
+    /// side, so retail drops the last of the vault: the probe watched mission 1's fence land ten ticks later, 0.25 m
+    /// further on. The port keeps the feet, so the origin comes down by its standing height first.
     /// </remarks>
-    public void BeginFallFromVault(Vector3d origin, Vector3d lastRootDelta)
+    public void BeginFallFromOrigin(Vector3d origin, Vector3d lastRootDelta)
     {
         BeginLadderTraversal();
         Position = new Vector3d(origin.X, origin.Y, origin.Z - StandingOriginHeight);

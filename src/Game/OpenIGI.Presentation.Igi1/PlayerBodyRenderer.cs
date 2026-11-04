@@ -174,7 +174,6 @@ internal sealed class PlayerBodyRenderer(
 
         _facing = gamma;
         _state.SuppressRootHeight = false;
-        _state.VisualLift = 0.0;
         _state.View.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
         _state.View.Kill(deathAnimation);
         _active = true;
@@ -298,7 +297,6 @@ internal sealed class PlayerBodyRenderer(
         bool appearing = !_state.Shown;
         _facing = facing;
         _state.SuppressRootHeight = false;
-        _state.VisualLift = 0.0;
         view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
 
         // Its own stand clip, advanced so the body breathes rather than being a statue -- and re-skinned
@@ -350,7 +348,6 @@ internal sealed class PlayerBodyRenderer(
         bool appearing = !_state.Following;
         _facing = facing;
         _state.SuppressRootHeight = false;
-        _state.VisualLift = 0.0;
 
         if (animation != HumanLocomotionStates.NoAnimation)
         {
@@ -485,7 +482,7 @@ internal sealed class PlayerBodyRenderer(
         }
 
         _state.StartTraversalAnimation(
-            view, animation, loops, backwards, paused, suppressRootHeight: true, visualLift: 0.0);
+            view, animation, loops, backwards, paused, suppressRootHeight: true);
 
         // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
         // temporal history may bridge from wherever it stood before.
@@ -495,13 +492,15 @@ internal sealed class PlayerBodyRenderer(
     /// <inheritdoc cref="ISoldierPresenter.StartPlayerInteractionAnimation"/>
     /// <remarks>
     /// <para>
-    /// Wire animations 172/173 carry a non-zero root-height track. IGI1 adds that sample when locating
-    /// the body; suppressing it as if the wire were a ladder leaves both hands visibly off the cable.
+    /// The exact-motion clips -- the fence's 171 and the wires' 172 and 173 -- are drawn like a ladder's: their task
+    /// position IS the Human's origin, which the root motion carries step by step (Z included), so the root height is
+    /// already in the position. Drawing it again put the vault 0.96 m in the air, and hung a level wire's rider with
+    /// both wrists a metre over the cable. Without it, the posed wrists of 172 under the 2150.4 hang and of 173 under
+    /// the 3686.4 one both sit within 0.08 m of the cable.
     /// </para>
     /// <para>
-    /// The fence's animation 171 is the other way round, like a ladder's: its task position IS the Human's
-    /// origin, which the root motion lifts over the fence step by step (Z included), so the root height is
-    /// already in the position and drawing it again put the vault 0.96 m in the air.
+    /// The computer, cabinet, door and charge clips are the walk's kind: the task position is the feet, and the root
+    /// height lifts the body onto them.
     /// </para>
     /// </remarks>
     public void StartInteractionAnimation(int animation, bool loops)
@@ -518,12 +517,8 @@ internal sealed class PlayerBodyRenderer(
             loops,
             backwards: false,
             paused: false,
-            suppressRootHeight: animation == HumanLocomotionStates.For(41).AnimationId,
-
-            // With the exact 3686.4-unit task anchor from sub_411F20, the posed wrist centres of both
-            // retail wire clips sit 375..567 units below the cable. Half a retail model grid cell puts
-            // the palms around the cable without moving the gameplay anchor, projection or end margins.
-            visualLift: SoldierSimulation.IsWireAnimation(animation) ? 512.0 : 0.0);
+            suppressRootHeight: animation == HumanLocomotionStates.For(41).AnimationId
+                || SoldierSimulation.IsWireAnimation(animation));
         ResetTraversalHistory();
     }
 
@@ -679,7 +674,7 @@ internal sealed class PlayerBodyRenderer(
             return (default, Matrix3f.Identity);
         }
 
-        double lift = (_state.SuppressRootHeight ? 0.0 : view.RootSample.Z) + _state.VisualLift;
+        double lift = _state.SuppressRootHeight ? 0.0 : view.RootSample.Z;
         return (
             new Vector3d(
                 view.Position.X / WorldScene.UnitsPerMetre,
@@ -927,7 +922,6 @@ internal sealed class PlayerBodyRenderer(
         _state.Shown = false;
         _state.Following = false;
         _state.UpperBodySequence = -1;
-        _state.VisualLift = 0.0;
         _state.RootHeightAtStart = 0.0;
         _hasTickState = false;
         _captureTick = -1;
