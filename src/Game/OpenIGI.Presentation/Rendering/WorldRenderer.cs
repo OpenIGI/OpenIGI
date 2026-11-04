@@ -373,7 +373,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
             {
                 int candidate = drawOrder[i];
                 ref WorldFrameEntry glass = ref frame[candidate];
-                if (!glass.Skip && glass.Model is { HasGlass: true })
+                if (!glass.Skip && !(fromEye && glass.EyeCulled) && glass.Model is { HasGlass: true })
                 {
                     _glassOrder.Add(candidate);
                 }
@@ -462,7 +462,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 + (cullModelView.M23 * cullBounds.Centre.Z) + cullModelView.M24;
             float viewZ = (cullModelView.M31 * cullBounds.Centre.X) + (cullModelView.M32 * cullBounds.Centre.Y)
                 + (cullModelView.M33 * cullBounds.Centre.Z) + cullModelView.M34;
-            if (!frustum.SphereVisible(viewX, viewY, viewZ, cullBounds.Radius))
+            // The title's view culling drops a placement from the eye's picture only (WorldFrameEntry.EyeCulled).
+            if ((fromEye && entry.EyeCulled) || !frustum.SphereVisible(viewX, viewY, viewZ, cullBounds.Radius))
             {
                 // DRAWN BY VISIBILITY, TRACED BY DISTANCE, and the two must not be the same question.
                 // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure

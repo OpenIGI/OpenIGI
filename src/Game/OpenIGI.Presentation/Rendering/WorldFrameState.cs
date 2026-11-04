@@ -146,6 +146,7 @@ internal sealed class WorldFrameState
             }
 
             entry.Skip = false;
+            entry.EyeCulled = false;
             entry.IsRotor = authored.IsRotor;
 
             bool destroyed = _transforms.UsesDestroyedReplacement(authored);
@@ -172,21 +173,19 @@ internal sealed class WorldFrameState
                 out entry.Rotor,
                 out entry.HasRotor);
 
-            // The title's own culling: the eye it was decided from is the frame's, and every pass shares the verdict, so what
-            // the eye cannot see casts nothing into what it can. Asked where the placement is drawn, so a lift's car ridden away
-            // from where the level put it is weighed where it now stands.
+            // The title's own culling decides what the EYE draws, not what stands in the world: a room the portal walk did not
+            // reach is still a wall between the sun and the room the eye is in, so the light passes and the traced world keep it.
+            // Dropping it from every pass let the sun through each wall the walk missed, and the room's lighting flipped with
+            // every turn of the head that changed whether the walk saw out. Asked where the placement is drawn, so a lift's car
+            // ridden away from where the level put it is weighed where it now stands.
             if (Visibility is { } visibility)
             {
-                if (!visibility.IsVisible(authored, entry.Position))
-                {
-                    entry.Skip = true;
-                    continue;
-                }
-
-                entry.Clip = visibility.ClipOf(authored, entry.Position);
+                entry.EyeCulled = !visibility.IsVisible(authored, entry.Position);
+                entry.Clip = entry.EyeCulled ? null : visibility.ClipOf(authored, entry.Position);
             }
             else
             {
+                entry.EyeCulled = false;
                 entry.Clip = null;
             }
 
