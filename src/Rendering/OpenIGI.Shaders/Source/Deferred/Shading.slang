@@ -206,7 +206,7 @@ struct Light
     // rgb ambient, w debug view.
     float4 ambient;
 
-    // x: the title draws its own sky, z: its bakes are whole, yw unused.
+    // x: the title draws its own sky, y: the share of the bakes the dynamic model adds, z: its bakes are whole, w unused.
     float4 sky;
 
     // xyz world direction towards the moon, w how bright its disc is drawn (nought: no moon).
@@ -921,9 +921,13 @@ float4 fragmentMain(Varyings input) : SV_Target
         ambientSpecular *= 1.0 - covered;
     }
 
+    // A share of the level's shipped lightmaps laid under the computed light (light.sky.y; nought for none): the artists'
+    // interior light where the level has no outdoors for the computed light to come from.
+    float3 bakedShare = albedo * baked * (light.sky.y * scale);
+
     if (gathered)
     {
-        float3 litDynamic = (diffuseColour * 0.3183098862 * indirect) + ambientSpecular + sunLight;
+        float3 litDynamic = (diffuseColour * 0.3183098862 * indirect) + ambientSpecular + sunLight + bakedShare;
 
         // Dynamic.
         return float4(
@@ -936,7 +940,7 @@ float4 fragmentMain(Varyings input) : SV_Target
     }
 
     float3 skyLight = SkyDiffuseIrradiance(normal) * diffuseColour;
-    float3 litLegacy = (albedo * indirect * scale) + skyLight + ambientSpecular + sunLight;
+    float3 litLegacy = (albedo * indirect * scale) + skyLight + ambientSpecular + sunLight + bakedShare;
 
     // Dynamic.
     return float4(

@@ -2278,12 +2278,13 @@ fn fragmentMain( _S145 : pixelInput_0, @builtin(position) position_6 : vec4<f32>
     {
         ambientSpecular_1 = ambientSpecular_0;
     }
+    var bakedShare_0 : vec3<f32> = albedo_3 * baked_0 * vec3<f32>((light_0.sky_0.y * scale_1));
     if(gathered_0)
     {
-        var _S198 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(diffuseColour_0 * _S196 * indirect_1 + ambientSpecular_1 + background_0, worldRayToPixel_0, sunDirection_2, sunIlluminance_1, _S178 * 0.00100000004749745f), _S145.uv_15, _S178), 1.0f) );
+        var _S198 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(diffuseColour_0 * _S196 * indirect_1 + ambientSpecular_1 + background_0 + bakedShare_0, worldRayToPixel_0, sunDirection_2, sunIlluminance_1, _S178 * 0.00100000004749745f), _S145.uv_15, _S178), 1.0f) );
         return _S198;
     }
-    var _S199 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(albedo_3 * indirect_1 * _S176 + SkyDiffuseIrradiance_0(normal_11) * diffuseColour_0 + ambientSpecular_1 + background_0, worldRayToPixel_0, sunDirection_2, sunIlluminance_1, _S178 * 0.00100000004749745f), _S145.uv_15, _S178), 1.0f) );
+    var _S199 : pixelOutput_0 = pixelOutput_0( vec4<f32>(ApplyFog_0(AerialPerspective_0(albedo_3 * indirect_1 * _S176 + SkyDiffuseIrradiance_0(normal_11) * diffuseColour_0 + ambientSpecular_1 + background_0 + bakedShare_0, worldRayToPixel_0, sunDirection_2, sunIlluminance_1, _S178 * 0.00100000004749745f), _S145.uv_15, _S178), 1.0f) );
     return _S199;
 }
 

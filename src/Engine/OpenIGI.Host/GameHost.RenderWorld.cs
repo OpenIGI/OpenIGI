@@ -258,7 +258,10 @@ public sealed partial class GameHost
                 _timeOfDay.FrameNightSky(),
                 atmosphereSunDirection,
                 atmosphereMoon,
-                nightSky));
+                nightSky,
+
+                // A level with no outdoors keeps a share of its artists' baked light under the computed one.
+                _timeOfDay.Sunless ? GlobalIlluminationCVars.SunlessLightmapShare.Value : 0f));
             _device.BeginPass(ScenePass.Geometry);
 
             // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

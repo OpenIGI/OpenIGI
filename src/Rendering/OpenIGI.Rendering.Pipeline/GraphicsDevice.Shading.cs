@@ -70,7 +70,8 @@ public sealed partial class GraphicsDevice
             (int)_debugView,
             _frameHasPaintedSky,
             _lighting.CompleteBake,
-            _lighting.Night);
+            _lighting.Night,
+            _lighting.Model == LightingModel.Dynamic ? _lighting.BakedShare : 0f);
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);
         BindGlobalIllumination();

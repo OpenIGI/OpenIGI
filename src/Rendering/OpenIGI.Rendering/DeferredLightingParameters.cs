@@ -271,6 +271,7 @@ public static class DeferredLightingParameters
     /// <param name="paintedSky">Whether the title draws its own sky rather than the marched one.</param>
     /// <param name="bakesWhole">Whether the level's baked light is complete.</param>
     /// <param name="night">The stars, the moon's disc and the cloud cover the sky is drawn with.</param>
+    /// <param name="bakedShare">How much of the baked light the dynamic model adds under its own.</param>
     /// <exception cref="ArgumentException">The block is the wrong length.</exception>
     public static void WriteLight(
         Span<float> block,
@@ -282,7 +283,8 @@ public static class DeferredLightingParameters
         float debugView = 0f,
         bool paintedSky = false,
         bool bakesWhole = true,
-        in NightSky night = default)
+        in NightSky night = default,
+        float bakedShare = 0f)
     {
         if (block.Length != LightFloats)
         {
@@ -307,6 +309,7 @@ public static class DeferredLightingParameters
         block[11] = debugView;
 
         block[12] = paintedSky ? 1f : 0f;
+        block[13] = MathF.Max(bakedShare, 0f);
         block[14] = bakesWhole ? 1f : 0f;
 
         block[16] = night.MoonDirection.X;

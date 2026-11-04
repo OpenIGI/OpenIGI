@@ -78,6 +78,21 @@ public static class GlobalIlluminationCVars
         // hand, where 1 and 2 work exactly as they always did.
         ultra: "0");
 
+    /// <summary>How much of the shipped object lightmaps the dynamic model adds in a level with no outdoors.</summary>
+    /// <remarks>
+    /// A level with no ground -- the last mission is only buildings and tunnels -- has no sun, so the computed light there is the
+    /// lamps and the bounce alone; a small share of the artists' baked interior light laid under it keeps their look. Nothing
+    /// outdoors takes any, and the baked and hybrid models already use the whole bake. The baked attachment is written under
+    /// every model, so the share costs the shading one multiply-add.
+    /// </remarks>
+    public static readonly NumericCVar<float> SunlessLightmapShare = CVar.Float(
+        "r_lightmap_sunless_share",
+        0.1f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "Share of the shipped object lightmaps the dynamic lighting adds in a level with no outdoors. 0 is none.");
+
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = Presets.Define(
         CVar.Float(
