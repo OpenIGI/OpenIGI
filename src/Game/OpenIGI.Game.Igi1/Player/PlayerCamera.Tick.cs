@@ -44,6 +44,7 @@ public sealed partial class PlayerCamera
 
         FrameYaw = _body.Yaw;
         FramePitch = _body.Pitch;
+        FrameAim = _shots.AimConvergenceRay is { } aim ? (aim.OriginUnits - _body.Eye, aim.Direction) : null;
         _input.Accept(frame);
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();

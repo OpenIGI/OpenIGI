@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
@@ -5,28 +6,48 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Multiplayer;
 
-/// <summary>The command an I.G.I. client sends each tick: the 40-slot input frame and where it looks.</summary>
+/// <summary>The command an I.G.I. client sends each tick: the 40-slot input frame, where it looks, and where its crosshair is.</summary>
 /// <remarks>
+/// <para>
 /// I.G.I. turns the view every frame from the mouse rather than from the frame's look slots, so the frame alone does not say
 /// where a player looks. A command therefore carries the body's heading and the view's pitch after the frame's slots, as
 /// Source's user command carries its view angles.
+/// </para>
+/// <para>
+/// Over the shoulder the crosshair is the camera's ray, not the eye's: the player's own game converges its rounds on what
+/// that ray meets (<see cref="PlayerCamera.AimConvergenceRay"/>). The server's copy of the player has no camera, so the ray
+/// comes with the command -- its origin as an offset from the eye, then its direction, all nought in first person. Without
+/// it the server fired a third-person joiner's rounds along the eye, the camera's half-metre beside where its crosshair sat.
+/// </para>
 /// </remarks>
 public static class Igi1Command
 {
-    /// <summary>The channels a command carries: the frame's slots, then the heading and the pitch.</summary>
-    public const int ChannelCount = PlayerInputFrame.SlotCount + 2;
+    // Where the look and the crosshair's ray sit after the frame's slots.
+    private const int Look = PlayerInputFrame.SlotCount;
+    private const int Aim = Look + 2;
 
-    /// <summary>Writes a tick's input and look into a command's channels.</summary>
+    /// <summary>The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray.</summary>
+    public const int ChannelCount = Aim + 6;
+
+    /// <summary>Writes a tick's input, look and crosshair into a command's channels.</summary>
     /// <param name="frame">The input frame.</param>
     /// <param name="yaw">The body's heading, radians.</param>
     /// <param name="pitch">The view's pitch, radians.</param>
     /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
-    public static void Pack(in PlayerInputFrame frame, float yaw, float pitch, Span<float> channels)
+    /// <param name="aim">The crosshair's ray as an offset from the eye and a direction, or <see langword="null"/> in first person.</param>
+    public static void Pack(in PlayerInputFrame frame, float yaw, float pitch, Span<float> channels, (Vector3d EyeOffset, Vector3f Direction)? aim = null)
     {
         PlayerInputFrame copy = frame;
         copy.AsSpan().CopyTo(channels);
-        channels[PlayerInputFrame.SlotCount] = yaw;
-        channels[PlayerInputFrame.SlotCount + 1] = pitch;
+        channels[Look] = yaw;
+        channels[Look + 1] = pitch;
+        (Vector3d offset, Vector3f direction) = aim ?? default;
+        channels[Aim] = (float)offset.X;
+        channels[Aim + 1] = (float)offset.Y;
+        channels[Aim + 2] = (float)offset.Z;
+        channels[Aim + 3] = direction.X;
+        channels[Aim + 4] = direction.Y;
+        channels[Aim + 5] = direction.Z;
     }
 
     /// <summary>Reads a command's channels back into a frame and a look.</summary>
@@ -38,9 +59,20 @@ public static class Igi1Command
     {
         PlayerInputFrame frame = default;
         channels[..PlayerInputFrame.SlotCount].CopyTo(frame.AsSpan());
-        yaw = channels[PlayerInputFrame.SlotCount];
-        pitch = channels[PlayerInputFrame.SlotCount + 1];
+        yaw = channels[Look];
+        pitch = channels[Look + 1];
         return frame;
+    }
+
+    /// <summary>Reads the crosshair's ray a command carries.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <returns>Its origin as an offset from the eye and its direction, or <see langword="null"/> when the player was in first person.</returns>
+    public static (Vector3d EyeOffset, Vector3f Direction)? UnpackAim(ReadOnlySpan<float> channels)
+    {
+        Vector3f direction = new(channels[Aim + 3], channels[Aim + 4], channels[Aim + 5]);
+        return direction.X == 0f && direction.Y == 0f && direction.Z == 0f
+            ? null
+            : (new Vector3d(channels[Aim], channels[Aim + 1], channels[Aim + 2]), direction);
     }
 }
 
@@ -175,6 +207,9 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
         PlayerInputFrame frame = Igi1Command.Unpack(_channels, out float yaw, out float pitch);
         Player.Body.Yaw = yaw;
         Player.Body.Pitch = Math.Clamp(pitch, -PlayerBody.PitchLimit, PlayerBody.PitchLimit);
+
+        // Its rounds converge where its crosshair was, as on its client's own game.
+        Player.AimConvergenceRay = Igi1Command.UnpackAim(_channels) is { } aim ? (Player.Body.Eye + aim.EyeOffset, aim.Direction) : null;
         Player.TickFrame(frame, ground);
         _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
 

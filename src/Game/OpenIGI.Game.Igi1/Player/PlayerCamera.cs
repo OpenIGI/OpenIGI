@@ -127,6 +127,13 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets the view's pitch the last tick ran with; see <see cref="FrameYaw"/>.</summary>
     public float FramePitch { get; private set; }
 
+    /// <summary>
+    /// Gets the crosshair's ray the last tick's rounds converged on, its origin as an offset from the eye the tick began at,
+    /// or <see langword="null"/> in first person; see <see cref="FrameYaw"/>. A co-op server's copy of the player has no
+    /// camera of its own to set <see cref="AimConvergenceRay"/>: sent this, its rounds go where this player's crosshair was.
+    /// </summary>
+    public (Vector3d EyeOffset, Vector3f Direction)? FrameAim { get; private set; }
+
     /// <summary>Uses the owning runtime's live player-health accumulator.</summary>
     public void UseHealth(HumanHealth health) => _body.UseHealth(health);
 
