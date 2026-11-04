@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -404,6 +405,31 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         }
 
         return humans;
+    }
+
+    /// <summary>
+    /// Adds every soldier whose container is live, in the global human list's order, as a detection record that is not a
+    /// soldier's own is offered them (<c>0x45FE30</c>): its mark mid-body, its origin, its side and whether it lives.
+    /// </summary>
+    /// <param name="into">The list the soldiers are added to.</param>
+    public void AddDetectables(List<AiDetectable> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+        foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            into.Add(new AiDetectable(
+                view,
+                SoldierContext.ViewPosition(view, brain),
+                SoldierContext.OccupantOrigin(view),
+                view.Soldier.Team,
+                !view.IsDead && brain.Activity != AiSoldierActivity.Dead && !_context.HealthOf(view).IsDead,
+                view.Soldier));
+        }
     }
 
     /// <summary>Whether an AI sight ray from one point to another is clear, for scenario runs.</summary>

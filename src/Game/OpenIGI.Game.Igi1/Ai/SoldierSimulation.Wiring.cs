@@ -433,6 +433,9 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierBodyQueries.CameraSubjects"/>
     public IReadOnlyList<SecurityCameraSubject> CameraSubjects() => _bodies.CameraSubjects();
 
+    /// <inheritdoc cref="SoldierSightQueries.AddDetectables"/>
+    public void AddDetectables(List<AiDetectable> into) => _sight.AddDetectables(into);
+
     /// <inheritdoc cref="SoldierCutsceneStaging.CutscenePose"/>
     public CutsceneTargetPose? CutscenePose(int taskId) => _staging.CutscenePose(taskId);
 
