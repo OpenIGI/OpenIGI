@@ -105,7 +105,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 gun,
                 h.Shots,
                 fired,
-                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null,
+                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? Igi1ReplicatedWorld.UnpackClipTime(h.ClipTime) : null,
                 _names.GetValueOrDefault(h.Id),
                 !alive,
                 alive ? null : h.Health / 255f,

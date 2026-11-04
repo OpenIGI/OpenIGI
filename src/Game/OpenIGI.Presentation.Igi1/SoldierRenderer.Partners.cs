@@ -133,11 +133,12 @@ public sealed partial class SoldierRenderer
                 body.Revive();
             }
 
-            // A climber is posed where its own ladder body is, on the climbing path the player's is drawn on: the clip
-            // held at its time, its root height the ladder's. Anyone else walks as the player's body follows the player.
-            if (partner.LadderTime is { } time)
+            // A partner on a ladder or at a task is posed where its own body is, on the path the player's own is drawn on:
+            // the clip held at its time, its root height the ladder's or the interaction's. Anyone else walks as the
+            // player's body follows the player.
+            if (partner.ClipTime is { } time)
             {
-                body.PoseClimbing(partner.Animation, time, partner.Feet, partner.Facing);
+                body.PoseClip(partner.Animation, time, partner.Feet, partner.Facing);
             }
             else
             {
@@ -171,6 +172,20 @@ public sealed partial class SoldierRenderer
             _partnerModels.Remove(gone);
         }
     }
+
+    /// <summary>Where the player's own body's head is drawn this frame, in metres, for scenario runs.</summary>
+    internal Vector3d? PlayerBodyHeadForTesting => _playerBody.HeadAnchorMetres();
+
+    /// <summary>Where a partner's body's head is drawn this frame, in metres, for scenario runs.</summary>
+    /// <param name="key">The partner, as its body is followed.</param>
+    /// <returns>The head, or <see langword="null"/> when no body of it is posed.</returns>
+    internal Vector3d? PartnerHeadForTesting(object key) => _partners.TryGetValue(key, out PlayerBodyRenderer? body) ? body.HeadAnchorMetres() : null;
+
+    /// <summary>Whether a partner's body has a hand a gun is drawn in this frame, for scenario runs.</summary>
+    /// <param name="key">The partner, as its body is followed.</param>
+    /// <returns>Whether it holds one.</returns>
+    internal bool PartnerHoldsGunForTesting(object key) =>
+        _partners.TryGetValue(key, out PlayerBodyRenderer? body) && body.HandAttachment() is not null;
 
     /// <inheritdoc/>
     public Func<int, LoadedMission?>? BorrowLevel { get; set; }

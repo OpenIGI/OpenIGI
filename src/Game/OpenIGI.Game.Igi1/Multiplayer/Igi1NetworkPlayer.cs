@@ -106,7 +106,7 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
     private SimulatedLadderBody? _ladderBody;
 
     /// <summary>Gets where the partner is in its ladder or interaction clip, or <see langword="null"/> when it plays neither.</summary>
-    public float? LadderClipTime => Player.IsOnLadder || Player.PlaysInteractionClip ? _ladderBody?.ClipTime : null;
+    public float? ClipTime => Player.BodyClip is null ? null : _ladderBody?.ClipTime;
 
     /// <summary>Runs the partner a tick on its client's command for the tick, its ladder climbed as the mission's own player's is.</summary>
     /// <param name="tick">The tick.</param>

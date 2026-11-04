@@ -517,8 +517,7 @@ internal sealed class PlayerBodyRenderer(
             loops,
             backwards: false,
             paused: false,
-            suppressRootHeight: animation == HumanLocomotionStates.For(41).AnimationId
-                || SoldierSimulation.IsWireAnimation(animation));
+            suppressRootHeight: !PlayerCamera.KeepsRootHeight(animation));
         ResetTraversalHistory();
     }
 
@@ -565,21 +564,38 @@ internal sealed class PlayerBodyRenderer(
         // tick state, so nothing is recorded here off a stale position.
     }
 
-    /// <summary>Poses a climbing co-op partner exactly where the server's ladder body is: its clip, held at a time.</summary>
-    /// <param name="animation">The ladder clip.</param>
+    /// <summary>
+    /// Poses a co-op partner exactly where the server's body is in a whole-body clip -- a ladder's, a computer's, a lock's,
+    /// a vault's -- its clip held at a time.
+    /// </summary>
+    /// <param name="animation">The clip.</param>
     /// <param name="time">Where it is in the clip.</param>
-    /// <param name="feet">The climber's feet, in world units.</param>
-    /// <param name="facing">The ladder's facing.</param>
-    public void PoseClimbing(int animation, float time, Vector3d feet, float facing)
+    /// <param name="feet">The partner's feet, in world units.</param>
+    /// <param name="facing">The clip's facing.</param>
+    /// <remarks>
+    /// Started as the player's own body starts the same clip: a ladder's with its root height in the feet, an interaction's
+    /// with the root height the clip's kind keeps (<see cref="PlayerCamera.KeepsRootHeight"/>). Posed through the ladder's
+    /// path, a computer or lock clip lost its root height and knelt a metre under the floor. And no gun is drawn in the hand,
+    /// as none is in the player's own.
+    /// </remarks>
+    public void PoseClip(int animation, float time, Vector3d feet, float facing)
     {
         if (_state.View is not { } view)
         {
             return;
         }
 
+        _state.HideFollowing();
         if (!_state.Climbing || view.CurrentAnimation != animation)
         {
-            StartLadderAnimation(animation, loops: animation != PlayerCamera.LadderTopAnimation);
+            if (PlayerCamera.IsLadderAnimation(animation))
+            {
+                StartLadderAnimation(animation, loops: animation != PlayerCamera.LadderTopAnimation);
+            }
+            else
+            {
+                StartInteractionAnimation(animation, loops: false);
+            }
         }
 
         view.HoldLadderClip(time);
