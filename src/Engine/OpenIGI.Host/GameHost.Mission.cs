@@ -562,6 +562,7 @@ public sealed partial class GameHost
         // without.
         _timeOfDay.Sun = null;
         _timeOfDay.EffectiveSun = null;
+        _timeOfDay.Sunless = false;
         _earCamera = null;
 
         // And so does what the level said about its own light. Left standing, the next title's mission
