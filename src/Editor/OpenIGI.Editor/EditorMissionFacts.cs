@@ -23,9 +23,6 @@ internal sealed class EditorMissionFacts(IEditorHost host, MissionWorkspace work
     public MissionTarget Target => workspace.Mission is { } mission ? workspace.Project.TargetOf(mission.Id) : MissionTarget.Retail;
 
     /// <inheritdoc/>
-    public int MountainAreas => host.Terrain?.Mountains.Count ?? 0;
-
-    /// <inheritdoc/>
     public Scripting.Vocabulary.ScriptVocabulary? Vocabulary => host.Vocabulary;
 
     /// <inheritdoc/>

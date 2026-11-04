@@ -1,6 +1,7 @@
 using System.Globalization;
 using OpenIGI.Editor.Core.Commands;
 using OpenIGI.Editor.Core.Graphs;
+using OpenIGI.Editor.Core.Projects;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Vocabulary;
 
@@ -50,6 +51,37 @@ public static partial class MissionValidator
             CheckWires(graph, node, vocabulary, issues);
             CheckTaskReferences(document, node, issues);
         }
+
+        if (facts is { Target: MissionTarget.Retail })
+        {
+            CheckRuntime(graph, vocabulary, facts, issues);
+        }
+    }
+
+    // In a mission made for the original game, whatever only OpenIGI has: a mod's task types, natives and constants.
+    private static void CheckRuntime(MissionGraph graph, ScriptVocabulary vocabulary, IMissionFacts facts, List<MissionIssue> issues)
+    {
+        MissionIssue OpenIgiOnly(MissionTask task, string message) =>
+            new(IssueSeverity.Error, task, message) { Check = TargetCheck, Fixes = [new IssueFix("Make It OpenIGI Only", facts.MakeOpenIgiOnly)] };
+
+        foreach (TaskGraphNode node in graph.TaskNodes.Where(n => vocabulary.RuntimeOf(n.Task.TypeName) == ScriptRuntime.OpenIgi))
+        {
+            issues.Add(OpenIgiOnly(node.Task, $"It is a {node.Task.TypeName}, which only OpenIGI has, but the mission is made for the original game."));
+        }
+
+        HashSet<(GraphNodeKey, string)> named = [];
+        foreach (ExpressionGraphNode node in graph.Nodes.Values.OfType<ExpressionGraphNode>()
+            .Where(n => n.Kind is ExpressionNodeKind.Call or ExpressionNodeKind.Constant && vocabulary.RuntimeOf(NameOf(n)) == ScriptRuntime.OpenIgi))
+        {
+            if (named.Add((node.Owner.Task, NameOf(node))))
+            {
+                MissionTask owner = ((TaskGraphNode)graph.Nodes[node.Owner.Task]).Task;
+                issues.Add(OpenIgiOnly(owner, $"Its {node.Owner.Parameter} uses {NameOf(node)}, which only OpenIGI has, but the mission is made for the original game."));
+            }
+        }
+
+        // A call's text is its name; a native's signature names it exactly when the graph resolved one.
+        static string NameOf(ExpressionGraphNode node) => node.Native?.Name ?? node.Text;
     }
 
     // Calls that misfit their natives, and reads of fields the task's type does not export.

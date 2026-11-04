@@ -33,6 +33,13 @@ public static class EditorCVars
         CVarOptions.Archive,
         "Editor shortcuts changed from their defaults, as action=keys separated by semicolons (keys empty for none).");
 
+    /// <summary>The folder the last retail export was written to, which the next one's folder picker opens on.</summary>
+    public static readonly StringCVar ExportFolder = CVar.Text(
+        "ed_export_folder",
+        string.Empty,
+        CVarOptions.Archive,
+        "The folder the last export for the retail game went to; the next export asks starting there.");
+
     /// <summary>The content browser's favourites, as game paths separated by semicolons; folders end in a slash.</summary>
     public static readonly StringCVar ContentFavourites = CVar.Text(
         "ed_content_favourites",

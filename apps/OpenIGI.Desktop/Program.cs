@@ -430,7 +430,9 @@ using (window)
         game.TickObserver = multiplayer as IHostTickObserver;
 
         // The editor ships with the desktop build only: the browser and server builds have no factory and so no editor.
-        game.EditorFactory = new OpenIGI.Editor.EditorFactory();
+        // Its folder picker is the system's, owned by the game's window so it stays in front.
+        nint owner = window.NativeHandles is { System: DesktopWindowSystem.Win32 } owning ? owning.Window : 0;
+        game.EditorFactory = new OpenIGI.Editor.EditorFactory { PickFolder = (title, initial) => FolderPicker.PickAsync(title, initial, owner) };
         game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
         int code = game.Run();
         switched = game.RendererSwitchRequest;

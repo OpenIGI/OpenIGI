@@ -62,8 +62,6 @@ public sealed class MissionGraphCheckRetailTests(ITestOutputHelper output)
     {
         public MissionTarget Target => MissionTarget.Retail;
 
-        public int MountainAreas => 0;
-
         public ScriptVocabulary? Vocabulary => vocabulary;
 
         public LevelExpressionDialect Dialect => dialect;

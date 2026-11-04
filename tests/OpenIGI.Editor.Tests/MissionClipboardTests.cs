@@ -46,6 +46,38 @@ public sealed class MissionClipboardTests
         Assert.Empty(target.Declarations);
     }
 
+    /// <summary>
+    /// Logic pasted as new gets free ids, and what the copies say about each other follows them: a condition naming a copied
+    /// trigger, a reference parameter. What they say about the rest of the mission stays as it was.
+    /// </summary>
+    [Fact]
+    public void Logic_pasted_as_new_reads_its_own_copies()
+    {
+        MissionDocument document = Read("""
+            Task_DeclareParameters("AreaActivate", "Criteria", "VarString");
+            Task_DeclareParameters("StatusMessage", "Send", "VarString", "Text", "VarString");
+            Task_DeclareParameters("DefineComputerObjective", "Objective 1 Link To Position", "Int32");
+            Task_New(-1, "Container", "Root",
+            	Task_New(1, "AreaActivate", "Gate", "CRITERIA_HUMAN0"),
+            	Task_New(2, "StatusMessage", "Hello", "AreaActivate_1.nActive && AreaActivate_10.nActive", "M1_MSG_1"),
+            	Task_New(3, "DefineComputerObjective", "Go", 1),
+            	Task_New(10, "AreaActivate", "Elsewhere", "CRITERIA_HUMAN0"));
+            """);
+        MissionTask[] copied = [.. document.EnumerateTasks().Where(static t => t.Label is "Gate" or "Hello" or "Go")];
+
+        PastedTasks pasted = document.ReadTasksAsNew(document.WriteTasks(copied), out IReadOnlyDictionary<int, int> original);
+
+        Assert.Equal(3, pasted.Tasks.Count);
+        MissionTask gate = pasted.Tasks.Single(static t => t.Label == "Gate");
+        MissionTask hello = pasted.Tasks.Single(static t => t.Label == "Hello");
+        MissionTask go = pasted.Tasks.Single(static t => t.Label == "Go");
+        Assert.DoesNotContain(gate.Id, (int[])[-1, 1, 2, 3, 10]);
+        Assert.Equal(1, original[gate.Id]);
+        Assert.Equal($"\"AreaActivate_{gate.Id}.nActive && AreaActivate_10.nActive\"", QscPrinter.Print(hello.FindParameter("Send")!.Arguments[0]));
+        Assert.True(go.FindParameter("Objective 1 Link To Position")!.TryGetNumbers(out double[] link));
+        Assert.Equal(gate.Id, (int)link[0]);
+    }
+
     /// <summary>Text that is not script is reported as such.</summary>
     [Fact]
     public void Plain_text_is_not_objects() =>

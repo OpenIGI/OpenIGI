@@ -100,17 +100,25 @@ public sealed class MissionGraphTests
         Assert.DoesNotContain(read.Positions.Keys, static k => k.Value.StartsWith("t11/Condition/", StringComparison.Ordinal));
     }
 
-    /// <summary>Values flow left to right: what a node reads stands left of it.</summary>
+    /// <summary>
+    /// Values flow left to right within a graph: what a node reads stands left of it. The task read is drawn as a reference,
+    /// placed under the graph's own key for it, so another graph drawing it keeps its own place.
+    /// </summary>
     [Fact]
     public void Auto_layout_puts_inputs_left()
     {
         MissionGraph graph = Build();
         GraphLayout layout = new();
-        GraphAutoLayout.Place(graph, layout);
+        GraphNodeKey reader = new("t11");
+        GraphScope scope = GraphScopes.Build(graph).Single(s => s.Members.Contains(reader));
+        GraphAutoLayout.Place(graph, layout, scope);
 
-        GraphPinRef root = graph.ExpressionRoots[(new GraphNodeKey("t11"), "Condition")];
-        Assert.True(layout.Positions[new GraphNodeKey("t10")].X < layout.Positions[root.Node].X);
-        Assert.True(layout.Positions[root.Node].X < layout.Positions[new GraphNodeKey("t11")].X);
+        GraphNodeKey read = new("t10");
+        Assert.Contains(read, scope.References);
+        Assert.DoesNotContain(read, layout.Positions.Keys);
+        GraphPinRef root = graph.ExpressionRoots[(reader, "Condition")];
+        Assert.True(layout.Positions[scope.LayoutKey(read)].X < layout.Positions[root.Node].X);
+        Assert.True(layout.Positions[root.Node].X < layout.Positions[reader].X);
     }
 
     /// <summary>A drag merges into one undo step; comments and collapsing undo.</summary>
@@ -140,6 +148,24 @@ public sealed class MissionGraphTests
         Assert.Contains(key, layout.Collapsed);
         fold.Undo();
         Assert.Empty(layout.Collapsed);
+    }
+
+    /// <summary>A wire's reroute points are kept with the layout, come back as saved, and undo; none straightens it again.</summary>
+    [Fact]
+    public void Reroutes_round_trip_and_undo()
+    {
+        GraphLayout layout = new();
+        string wire = GraphLayout.WireKey("t10", "isRun", "t20", "On");
+        SetRerouteCommand route = new(layout, wire, [new GraphPoint(100, 40), new GraphPoint(180, 40)]);
+        route.Apply();
+
+        GraphLayout read = GraphLayout.Read(layout.Write());
+        Assert.Equal([new GraphPoint(100, 40), new GraphPoint(180, 40)], read.Reroutes[wire]);
+
+        new SetRerouteCommand(layout, wire, []).Apply();
+        Assert.False(layout.Reroutes.ContainsKey(wire));
+        route.Undo();
+        Assert.False(layout.Reroutes.ContainsKey(wire));
     }
 
     // The sample with one more container (30) whose condition is the text given; "this" in it is the container.

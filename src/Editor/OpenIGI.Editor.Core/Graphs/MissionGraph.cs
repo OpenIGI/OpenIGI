@@ -90,6 +90,49 @@ public sealed class MissionGraph
         return _sources.TryGetValue(input, out GraphPinRef from) ? from : null;
     }
 
+    /// <summary>Plugs an output into an input in this view, or unplugs it, so the owning text can be written as it would read.</summary>
+    /// <param name="input">The input pin.</param>
+    /// <param name="source">The output to plug in, or <see langword="null"/> to leave the input empty.</param>
+    /// <remarks>
+    /// The graph is a view: this changes what <see cref="ExpressionGraphWriter"/> writes for the input's owner, and the caller
+    /// then writes that text into the document as a command, after which the graph is built again from the document.
+    /// </remarks>
+    public void Relink(GraphPinRef input, GraphPinRef? source)
+    {
+        _links.RemoveAll(l => l.To == input);
+        if (source is { } from)
+        {
+            _links.Add(new GraphLink(from, input));
+        }
+
+        if (_nodes[input.Node] is TaskGraphNode)
+        {
+            if (source is { } root)
+            {
+                _roots[(input.Node, input.Pin)] = root;
+            }
+            else
+            {
+                _roots.Remove((input.Node, input.Pin));
+            }
+        }
+
+        _sources = null;
+    }
+
+    /// <summary>Adds a node of raw text to this view, to plug in somewhere with <see cref="Relink"/> and have written as it is.</summary>
+    /// <param name="text">The text: a name, a call or a whole sub-expression, bracketed so it stands alone.</param>
+    /// <param name="owner">The task and parameter it is for.</param>
+    /// <returns>The node's output.</returns>
+    /// <remarks>This is how the node search puts something new into an expression: the text is written, then read back as nodes.</remarks>
+    public GraphPinRef AddSnippet(string text, (GraphNodeKey Task, string Parameter) owner)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        GraphNodeKey key = new($"{owner.Task.Value}/{owner.Parameter}/snippet");
+        _nodes[key] = new ExpressionGraphNode(key, ExpressionNodeKind.Raw, text, Scripting.Vocabulary.ScriptType.Any, []) { Owner = owner };
+        return new GraphPinRef(key, GraphNode.Output);
+    }
+
     /// <summary>The node of a task.</summary>
     /// <param name="task">The task.</param>
     /// <param name="node">Receives its node.</param>

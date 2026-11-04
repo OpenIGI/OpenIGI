@@ -20,19 +20,13 @@ internal sealed partial class EditorSession
         {
             Category = "Tools",
 
-            // Mountain areas are OpenIGI's: the original game draws a level's octree as it shipped, so a retail mission has none.
-            CanExecute = () => _workspace.Document is not null && _host.Terrain is { IsPartial: true } && !IsRetailMission,
-            DynamicTitle = () => IsRetailMission
-                ? "Add Mountain Area Here (OpenIGI-only missions)"
-                : "Add Mountain Area Here",
+            // The original game loads a mission's own rebuilt octree (MISSION:terrain/terrain.ctr), so a retail mission may
+            // have them too, as long as the whole octree stays within the original's 16-bit child index.
+            CanExecute = () => _workspace.Document is not null && _host.Terrain is { IsPartial: true },
         };
         actions.Add(addMountain);
         _terrainPanel.AddMountainAction = addMountain;
     }
-
-    // Whether the open mission is made to run in the original game, which keeps it to what that game can load.
-    private bool IsRetailMission =>
-        _workspace.Mission is { } mission && _workspace.Project.TargetOf(mission.Id) == Core.Projects.MissionTarget.Retail;
 
     // A 512 m square around the middle of the view whose ground is built again with no height limit, as one step.
     private void AddMountainArea()

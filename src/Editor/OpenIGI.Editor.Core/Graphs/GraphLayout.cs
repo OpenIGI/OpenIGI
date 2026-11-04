@@ -21,7 +21,11 @@ public readonly record struct GraphRect(double X, double Y, double Width, double
 /// <param name="Text">What it says.</param>
 /// <param name="Bounds">Where it is.</param>
 /// <param name="Colour">Its tint, as <c>0xRRGGBB</c>.</param>
-public sealed record GraphComment(string Id, string Text, GraphRect Bounds, uint Colour);
+public sealed record GraphComment(string Id, string Text, GraphRect Bounds, uint Colour)
+{
+    /// <summary>Gets the key of the scope (<see cref="GraphScope.Key"/>) it is drawn in, or <see langword="null"/> for the first scope.</summary>
+    public string? Scope { get; init; }
+}
 
 /// <summary>Everything about a graph the game never reads: where its nodes sit, its comments, which nodes are folded.</summary>
 /// <remarks>
@@ -54,6 +58,10 @@ public sealed class GraphLayout
 
     /// <summary>Gets the comments.</summary>
     public List<GraphComment> Comments { get; } = [];
+
+    /// <summary>Gets the reroute points each wire passes through, by <see cref="WireKey"/>, in canvas units.</summary>
+    /// <remarks>Only drawn: a wire's points change where it runs on the canvas, never what it connects.</remarks>
+    public Dictionary<string, List<GraphPoint>> Reroutes { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Gets the hash of each expression parameter's text when its node positions were saved, by <c>task/parameter</c>.</summary>
     public Dictionary<string, ulong> TextHashes { get; } = new(StringComparer.Ordinal);
@@ -105,6 +113,14 @@ public sealed class GraphLayout
         return forgotten;
     }
 
+    /// <summary>The key a wire's reroute points are kept by: its two ends.</summary>
+    /// <param name="fromNode">The node the wire leaves.</param>
+    /// <param name="fromPin">The output pin.</param>
+    /// <param name="toNode">The node it enters.</param>
+    /// <param name="toPin">The input pin.</param>
+    /// <returns>The key.</returns>
+    public static string WireKey(string fromNode, string fromPin, string toNode, string toPin) => $"{fromNode}|{fromPin}>{toNode}|{toPin}";
+
     /// <summary>Writes the layout as the sidecar's JSON.</summary>
     /// <returns>The bytes.</returns>
     public byte[] Write()
@@ -152,10 +168,34 @@ public sealed class GraphLayout
                 json.WriteNumber("w", comment.Bounds.Width);
                 json.WriteNumber("h", comment.Bounds.Height);
                 json.WriteString("colour", comment.Colour.ToString("X6", System.Globalization.CultureInfo.InvariantCulture));
+                if (comment.Scope is { } scope)
+                {
+                    json.WriteString("scope", scope);
+                }
                 json.WriteEndObject();
             }
 
             json.WriteEndArray();
+            if (Reroutes.Count > 0)
+            {
+                json.WriteStartObject("reroutes");
+                foreach ((string wire, List<GraphPoint> points) in Reroutes.Where(static r => r.Value.Count > 0).OrderBy(static r => r.Key, StringComparer.Ordinal))
+                {
+                    json.WriteStartArray(wire);
+                    foreach (GraphPoint point in points)
+                    {
+                        json.WriteStartArray();
+                        json.WriteNumberValue(Math.Round(point.X, 1));
+                        json.WriteNumberValue(Math.Round(point.Y, 1));
+                        json.WriteEndArray();
+                    }
+
+                    json.WriteEndArray();
+                }
+
+                json.WriteEndObject();
+            }
+
             Exec.ExecLayerJson.Write(json, Actions);
             json.WriteStartObject("text");
             foreach ((string owner, ulong hash) in TextHashes.OrderBy(static p => p.Key, StringComparer.Ordinal))
@@ -210,8 +250,16 @@ public sealed class GraphLayout
                     c.GetProperty("id").GetString() ?? string.Empty,
                     c.GetProperty("text").GetString() ?? string.Empty,
                     new GraphRect(c.GetProperty("x").GetDouble(), c.GetProperty("y").GetDouble(), c.GetProperty("w").GetDouble(), c.GetProperty("h").GetDouble()),
-                    uint.Parse(c.GetProperty("colour").GetString() ?? "0", System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)));
+                    uint.Parse(c.GetProperty("colour").GetString() ?? "0", System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture))
+                {
+                    Scope = c.TryGetProperty("scope", out JsonElement scope) ? scope.GetString() : null,
+                });
             }
+        }
+
+        foreach (JsonProperty wire in Property(root, "reroutes"))
+        {
+            layout.Reroutes[wire.Name] = [.. wire.Value.EnumerateArray().Select(static p => new GraphPoint(p[0].GetDouble(), p[1].GetDouble()))];
         }
 
         Exec.ExecLayerJson.Read(root, layout.Actions);

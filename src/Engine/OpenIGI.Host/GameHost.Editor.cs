@@ -502,6 +502,17 @@ public sealed partial class GameHost
 
         public Engine.Tasks.ScriptVarRegistry ScriptVariables => host._loop.Variables;
 
+        public IReadOnlyCollection<string> ScriptNames => host._loop.Natives.Names;
+
+        private OpenIGI.Game.World.MissionStringResolver? _missionText;
+
+        public string? MissionText(string key)
+        {
+            // Built on first use from the mounted resources, so it reads the open mission's text as the game does.
+            _missionText ??= new OpenIGI.Game.World.MissionStringResolver(host._resources, new OpenIGI.Game.World.MenuStringTable(host._resources));
+            return !string.IsNullOrWhiteSpace(key) && _missionText.TryGet(key, out string text) && text.Length > 0 ? text : null;
+        }
+
         public Scripting.Vocabulary.ScriptVocabulary Vocabulary
         {
             get

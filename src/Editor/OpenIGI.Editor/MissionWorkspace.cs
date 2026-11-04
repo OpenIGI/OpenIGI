@@ -28,6 +28,8 @@ internal sealed class MissionWorkspace
         _host = host;
         Project = project;
         Graphs = new MissionGraphs(host);
+        Values = new ValueCatalog(host);
+        Logic = new MissionLogic(host);
         History.Changed += () => Changed?.Invoke();
     }
 
@@ -39,6 +41,21 @@ internal sealed class MissionWorkspace
 
     /// <summary>Raised when the document is replaced or edited, or the history moves.</summary>
     public event Action? Changed;
+
+    /// <summary>
+    /// Gets what the Inspector shows when no task is selected: the selected graph node's details, given by the graph panel.
+    /// </summary>
+    public NodeDetails? Details { get; private set; }
+
+    /// <summary>Sets what the Inspector shows for a selected graph node, or nothing.</summary>
+    /// <param name="details">The details, or <see langword="null"/>.</param>
+    public void ShowDetails(NodeDetails? details) => Details = details;
+
+    /// <summary>Raised as the mission saves, before its object script is written: what compiles into the mission does it then.</summary>
+    public event Action? BeforeSave;
+
+    /// <summary>Raised while the mission saves, after its own files: what else edits the mission (its AI scripts) saves then.</summary>
+    public event Action? Saving;
 
     /// <summary>Gets the open document, or <see langword="null"/> before a mission is open.</summary>
     public MissionDocument? Document { get; private set; }
@@ -58,6 +75,12 @@ internal sealed class MissionWorkspace
 
     /// <summary>Gets the open mission's AI graphs.</summary>
     public MissionGraphs Graphs { get; }
+
+    /// <summary>Gets the valid values the editor's dropdowns offer: the game's models, sounds, text keys and constants.</summary>
+    public ValueCatalog Values { get; }
+
+    /// <summary>Gets the open mission's logic graph and its layout.</summary>
+    public MissionLogic Logic { get; }
 
     /// <summary>Gets the edit history.</summary>
     public EditHistory History { get; } = new();
@@ -95,6 +118,7 @@ internal sealed class MissionWorkspace
         Selection.Clear();
         History.Clear();
         Graphs.Clear();
+        Logic.Clear();
         Document = null;
         Baseline.Capture(null);
         LoadError = null;
@@ -113,6 +137,7 @@ internal sealed class MissionWorkspace
 
             Document = MissionDocument.Read(image);
             Document.Changed += OnDocumentChanged;
+            Logic.Load(Project, ObjectsGamePath(mission), Document);
             Baseline.Capture(Document);
             Selection.Set([.. kept.Select(path => AtPath(Document, path)).OfType<MissionTask>()]);
             _host.Logger.Information("Editor", $"Opened {_host.MissionName(mission)}: {Document.EnumerateTasks().Count()} tasks.");
@@ -173,9 +198,12 @@ internal sealed class MissionWorkspace
             return false;
         }
 
+        BeforeSave?.Invoke();
         WriteToProject(ObjectsGamePath(mission), document.ToImage());
         Graphs.Save(this);
+        Logic.Save(Project, ObjectsGamePath(mission));
         SaveTerrain(mission);
+        Saving?.Invoke();
         History.MarkSaved();
         Baseline.Capture(document);
         return true;
@@ -246,6 +274,7 @@ internal sealed class MissionWorkspace
     private void OnDocumentChanged(MissionChange change)
     {
         _taskCount = null;
+        Logic.Invalidate();
         if (change.Kind == MissionChangeKind.Removed)
         {
             Selection.Prune(task => Document?.Contains(task) == true);
@@ -331,3 +360,8 @@ internal static class TaskPresentation
 
     private static bool Has(string type, string part) => type.Contains(part, StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>A graph node's details for the Inspector: built into its property grid, again whenever the key changes.</summary>
+/// <param name="Key">What they are of: the node and the graph's state, so an edit rebuilds them.</param>
+/// <param name="Build">Fills the grid.</param>
+internal sealed record NodeDetails(string Key, Action<OpenIGI.UI.Editor.Widgets.PropertyGrid> Build);

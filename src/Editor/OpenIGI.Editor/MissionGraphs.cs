@@ -162,6 +162,63 @@ internal sealed class MissionGraphs
         return new LinkCommand(entry, a, b, unlink: entry.Document.AreLinked(a, b));
     }
 
+    /// <summary>
+    /// The step that adds a node to a graph where a world point is, linked to the nearest nodes a soldier can walk to from
+    /// there, the routes baked again.
+    /// </summary>
+    /// <param name="task">The AIGraph task, whose graph is loaded.</param>
+    /// <param name="worldMetres">The node's place, in world metres.</param>
+    /// <param name="ground">The ground's height at a point, in metres, or null where there is none.</param>
+    /// <param name="id">Receives the new node's id.</param>
+    /// <returns>The step, or null when the graph is not loaded.</returns>
+    public IEditorCommand? AddNode(MissionTask task, Vector3d worldMetres, Func<double, double, double?> ground, out int id)
+    {
+        id = -1;
+        if (!_graphs.TryGetValue(task.Id, out Entry? entry) || entry is null)
+        {
+            return null;
+        }
+
+        // Its nearest few neighbours within a reach, each only if the way there is walkable.
+        NavGraphRequest limits = new(worldMetres);
+        int[] near = [.. entry.Document.Nodes.Where(static n => n.PositionRecord >= 0)
+            .Select(n => (n.Id, At: ToWorldMetres(task, n.Position)))
+            .Where(n => Vector3d.Distance(n.At, worldMetres) <= LinkReachMetres && NavGraphLayout.Walkable(n.At, worldMetres, limits, ground))
+            .OrderBy(n => Vector3d.Distance(n.At, worldMetres))
+            .Take(4)
+            .Select(static n => n.Id)];
+        GraphDocument before = entry.Document;
+        GraphDocument after = before.WithNode(ToLocalUnits(task, worldMetres), near, out id);
+        return new SwapGraphCommand("Add Graph Node", entry, before, after);
+    }
+
+    /// <summary>The step that takes a node and its links out of a graph.</summary>
+    /// <param name="task">The AIGraph task, whose graph is loaded.</param>
+    /// <param name="nodeId">The node.</param>
+    /// <returns>The step, or null when the graph is not loaded or has no such node.</returns>
+    public IEditorCommand? RemoveNode(MissionTask task, int nodeId)
+    {
+        if (!_graphs.TryGetValue(task.Id, out Entry? entry) || entry is null || entry.Document.Nodes.All(n => n.Id != nodeId))
+        {
+            return null;
+        }
+
+        return new SwapGraphCommand("Delete Graph Node", entry, entry.Document, entry.Document.WithoutNode(nodeId));
+    }
+
+    /// <summary>How far a node added by hand reaches for neighbours to link to, in metres.</summary>
+    public const double LinkReachMetres = 25;
+
+    /// <summary>Takes in a graph built for a new AIGraph task, to be written with the mission when it is next saved.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <param name="graphId">The AIGraph task's id, which names the file.</param>
+    /// <param name="file">The graph file's bytes.</param>
+    public void Adopt(MissionDescriptor mission, int graphId, byte[] file)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        _graphs[graphId] = new Entry(GamePath(mission, graphId), GraphDocument.Read(file)) { Dirty = true, Id = graphId };
+    }
+
     /// <summary>Writes every edited graph into the project.</summary>
     /// <param name="workspace">The workspace whose project receives them.</param>
     /// <returns>How many graphs were written.</returns>
@@ -171,6 +228,12 @@ internal sealed class MissionGraphs
         int written = 0;
         foreach (Entry? entry in _graphs.Values)
         {
+            // A graph built for a task that has since been undone away is not written: nothing would read it.
+            if (entry is { Dirty: true, Id: { } id } && workspace.Document?.EnumerateTasks().Any(t => IsGraph(t) && t.Id == id) != true)
+            {
+                continue;
+            }
+
             if (entry is { Dirty: true })
             {
                 // Moved nodes and changed links change which way is shortest; an I.G.I. graph's table is baked again to follow.
@@ -253,9 +316,12 @@ internal sealed class MissionGraphs
     {
         public string GamePath { get; } = gamePath;
 
-        public GraphDocument Document { get; } = document;
+        public GraphDocument Document { get; set; } = document;
 
         public bool Dirty { get; set; }
+
+        // The task id of a graph built in the editor, which is only written while its task stands.
+        public int? Id { get; init; }
     }
 
     // Links two nodes, or unlinks them, keeping the removed link's type so undo puts the same link back.
@@ -280,6 +346,24 @@ internal sealed class MissionGraphs
                 _type = entry.Document.RemoveLink(a, b) ?? _type;
             }
 
+            entry.Dirty = true;
+        }
+    }
+
+    // A graph replaced whole by an edited copy, and put back on undo.
+    private sealed class SwapGraphCommand(string name, Entry entry, GraphDocument before, GraphDocument after) : IEditorCommand
+    {
+        public string Name => name;
+
+        public void Apply()
+        {
+            entry.Document = after;
+            entry.Dirty = true;
+        }
+
+        public void Undo()
+        {
+            entry.Document = before;
             entry.Dirty = true;
         }
     }

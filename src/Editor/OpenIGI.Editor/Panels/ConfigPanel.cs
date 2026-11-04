@@ -193,6 +193,15 @@ internal sealed class ConfigPanel : EditorElement
                 number.Decimals = 3;
                 number.Step = 0.01;
                 break;
+            case ConfigFieldKind.Text or ConfigFieldKind.TextKey when current is QscStringLiteral && ValuesOf(field) is { } kind:
+                // A name of something the game has: its own offered in a dropdown, anything else still taken as typed.
+                _grid.Combo(
+                    field.Name,
+                    () => ((QscStringLiteral)document.Calls[call].Values[index]).Value,
+                    text => document.Set(call, index, new QscStringLiteral(text)),
+                    () => _workspace.Values.For(kind),
+                    tip);
+                break;
             case ConfigFieldKind.Text or ConfigFieldKind.TextKey when current is QscStringLiteral:
                 _grid.Text(field.Name, () => ((QscStringLiteral)document.Calls[call].Values[index]).Value, text => document.Set(call, index, new QscStringLiteral(text)), tip);
                 break;
@@ -205,18 +214,38 @@ internal sealed class ConfigPanel : EditorElement
                     tip);
                 break;
             default:
-                _grid.Text(field.Name, () => document.Text(call, index), text =>
+                void SetText(string text)
                 {
                     if (!document.TrySetText(call, index, text, out string? problem))
                     {
                         Say($"{field.Name}: {problem}", error: true);
                     }
-                }, tip ?? "As the script writes it: a number, a constant, or a sum of them");
+                }
+
+                if (field.ConstantPrefix is { } prefix)
+                {
+                    // Usually one of the game's constants of a family (TASKTYPE_GUNSHOT): offered, and anything the script can write taken.
+                    _grid.Combo(field.Name, () => document.Text(call, index), SetText, () => _workspace.Values.For(ValueKind.Constant, prefix), tip);
+                }
+                else
+                {
+                    _grid.Text(field.Name, () => document.Text(call, index), SetText, tip ?? "As the script writes it: a number, a constant, or a sum of them");
+                }
+
                 break;
         }
 
         _grid.Revertible(() => document.IsModified(call, index), () => document.Revert(call, index));
     }
+
+    // What list a text field offers: a model's, a sound's, or (for a text key) the language's keys.
+    private static ValueKind? ValuesOf(ConfigField field) => field switch
+    {
+        { Values: ConfigValues.Model } => ValueKind.Model,
+        { Values: ConfigValues.Sound } => ValueKind.Sound,
+        { Kind: ConfigFieldKind.TextKey } => ValueKind.BracketedTextKey,
+        _ => null,
+    };
 
     private static double Number(ConfigDocument document, int call, int index) =>
         ScriptValues.TryGetNumber(document.Calls[call].Values[index], out double value) ? value : 0.0;

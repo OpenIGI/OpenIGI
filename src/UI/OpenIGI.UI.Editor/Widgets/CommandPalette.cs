@@ -40,6 +40,7 @@ public sealed class CommandPalette : Popup
     private readonly List<PaletteEntry> _matches = [];
     private int _selected;
     private float _scroll;
+    private Func<string, PaletteEntry?>? _typed;
 
     private CommandPalette(EditorTheme theme, IReadOnlyList<PaletteEntry> entries, string placeholder)
         : base(theme)
@@ -50,6 +51,27 @@ public sealed class CommandPalette : Popup
         AddChild(_query);
         Placement = PopupPlacement.At;
         Refresh();
+    }
+
+    /// <summary>
+    /// Gets or sets what typing itself offers: given the text typed, an entry shown first (<c>Set to 12</c>), so a palette can
+    /// take a value as well as pick one. Null offers nothing.
+    /// </summary>
+    public Func<string, PaletteEntry?>? Typed
+    {
+        get => _typed;
+        set
+        {
+            _typed = value;
+            Refresh();
+        }
+    }
+
+    /// <summary>Gets or sets the text in the search box.</summary>
+    public string Query
+    {
+        get => _query.Text;
+        set => _query.Text = value;
     }
 
     /// <summary>Gets the entries that match what has been typed, best first.</summary>
@@ -205,6 +227,11 @@ public sealed class CommandPalette : Popup
                 .ThenByDescending(static m => m.score)
                 .ThenBy(static m => m.order)
                 .Select(static m => m.entry));
+        }
+
+        if (query.Length > 0 && _typed?.Invoke(query) is { } typed)
+        {
+            _matches.Insert(0, typed);
         }
 
         _selected = 0;

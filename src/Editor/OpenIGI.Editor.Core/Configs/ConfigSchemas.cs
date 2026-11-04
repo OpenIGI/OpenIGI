@@ -31,6 +31,25 @@ public sealed record ConfigField(string Name, string Section, ConfigFieldKind Ki
 {
     /// <summary>Gets the constants a <see cref="ConfigFieldKind.Choice"/> offers.</summary>
     public IReadOnlyList<string> Choices { get; init; } = [];
+
+    /// <summary>Gets what the field names, for the dropdown of valid values it offers; a text key's are implied.</summary>
+    public ConfigValues Values { get; init; }
+
+    /// <summary>Gets the prefix of the constants an expression field is usually one of (<c>TASKTYPE_</c>), or null.</summary>
+    public string? ConstantPrefix { get; init; }
+}
+
+/// <summary>What a config value names, for the dropdown of the game's own that the editor offers beside free typing.</summary>
+public enum ConfigValues
+{
+    /// <summary>Nothing in particular.</summary>
+    None,
+
+    /// <summary>A model, by its bare name.</summary>
+    Model,
+
+    /// <summary>A sound, by its bare name.</summary>
+    Sound,
 }
 
 /// <summary>The values of one config call (<c>DefineWeaponType</c>), in the order the game reads them.</summary>
@@ -99,8 +118,8 @@ public static class ConfigSchemas
             new("Users", Display, ConfigFieldKind.TextKey, "The text key of who uses it"),
             new("Weapon length", Display, ConfigFieldKind.Integer),
             new("Barrel length", Display, ConfigFieldKind.Integer),
-            new("Gun model", Models, ConfigFieldKind.Text),
-            new("Casing model", Models, ConfigFieldKind.Text, "The spent case it ejects"),
+            new("Gun model", Models, ConfigFieldKind.Text) { Values = ConfigValues.Model },
+            new("Casing model", Models, ConfigFieldKind.Text, "The spent case it ejects") { Values = ConfigValues.Model },
             new("Stand", Animations, ConfigFieldKind.Integer),
             new("Move", Animations, ConfigFieldKind.Integer),
             new("Fire 1", Animations, ConfigFieldKind.Integer),
@@ -114,10 +133,10 @@ public static class ConfigSchemas
             new("Upper body, run", Animations, ConfigFieldKind.Integer),
             new("Upper body, fire", Animations, ConfigFieldKind.Integer),
             new("Upper body, reload", Animations, ConfigFieldKind.Integer),
-            new("Fire sound", Sounds, ConfigFieldKind.Text),
-            new("Fire loop end sound", Sounds, ConfigFieldKind.Text),
-            new("Heard by guards within", Ai, ConfigFieldKind.Expression, "How far a guard hears it fire, in world units"),
-            new("Projectile task", Firing, ConfigFieldKind.Expression, "The task each shot is, followed by its own values"),
+            new("Fire sound", Sounds, ConfigFieldKind.Text) { Values = ConfigValues.Sound },
+            new("Fire loop end sound", Sounds, ConfigFieldKind.Text) { Values = ConfigValues.Sound },
+            new("Heard by guards within", Ai, ConfigFieldKind.Expression, "How far a guard hears it fire, in world units") { ConstantPrefix = "HUMANAI_DETECTIONEVENT_" },
+            new("Projectile task", Firing, ConfigFieldKind.Expression, "The task each shot is, followed by its own values") { ConstantPrefix = "TASKTYPE_" },
         ]),
         ["DefineAmmoType"] = new("DefineAmmoType", "Ammo",
         [
@@ -134,8 +153,8 @@ public static class ConfigSchemas
             new("Far colour, green", Tracer, ConfigFieldKind.Integer),
             new("Far colour, blue", Tracer, ConfigFieldKind.Integer),
             new("Draws a tracer", Tracer, ConfigFieldKind.Integer, "1 to draw a tracer, 0 not to"),
-            new("Pickup model", Models, ConfigFieldKind.Text),
-            new("Pickup sound", Sounds, ConfigFieldKind.Text),
+            new("Pickup model", Models, ConfigFieldKind.Text) { Values = ConfigValues.Model },
+            new("Pickup sound", Sounds, ConfigFieldKind.Text) { Values = ConfigValues.Sound },
         ]),
     };
 

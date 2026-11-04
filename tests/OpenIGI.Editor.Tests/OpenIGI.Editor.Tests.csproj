@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Editor\OpenIGI.Editor.Core\OpenIGI.Editor.Core.csproj" />
     <ProjectReference Include="..\..\src\Editor\OpenIGI.Editor\OpenIGI.Editor.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 

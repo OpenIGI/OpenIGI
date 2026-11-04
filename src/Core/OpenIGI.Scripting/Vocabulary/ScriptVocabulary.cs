@@ -21,6 +21,7 @@ public sealed class ScriptVocabulary
     private readonly Dictionary<string, (string Family, int Value)> _constants = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<NativeParameter>> _taskFields = new(StringComparer.Ordinal);
     private readonly Dictionary<string, NativeParameter> _globals = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _openIgiOnly = new(StringComparer.Ordinal);
 
     /// <summary>Gets the natives, by name.</summary>
     public IReadOnlyDictionary<string, NativeSignature> Natives => _natives;
@@ -181,6 +182,28 @@ public sealed class ScriptVocabulary
         value = 0;
         return false;
     }
+
+    /// <summary>Records that only OpenIGI has a task type or a constant: an engine or mod addition the original lacks.</summary>
+    /// <param name="name">The task type's or the constant's name.</param>
+    /// <returns>This vocabulary.</returns>
+    public ScriptVocabulary MarkOpenIgiOnly(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        _openIgiOnly.Add(name);
+        return this;
+    }
+
+    /// <summary>Which runtime has a task type, a constant or a native: the original game, or only OpenIGI.</summary>
+    /// <param name="name">The name scripts and task trees use.</param>
+    /// <returns><see cref="ScriptRuntime.OpenIgi"/> for an addition the original lacks; otherwise the original's.</returns>
+    /// <remarks>
+    /// Everything a title declares itself is the original's: its natives and task types are checked against the retail
+    /// executables. What a mod adds is marked as it is added.
+    /// </remarks>
+    public ScriptRuntime RuntimeOf(string name) =>
+        _openIgiOnly.Contains(name) || (_natives.TryGetValue(name, out NativeSignature? native) && native.Runtime == ScriptRuntime.OpenIgi)
+            ? ScriptRuntime.OpenIgi
+            : ScriptRuntime.Retail;
 
     /// <summary>The natives callable from a kind of script.</summary>
     /// <param name="context">The kind of script.</param>

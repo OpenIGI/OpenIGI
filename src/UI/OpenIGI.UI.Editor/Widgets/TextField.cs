@@ -107,6 +107,15 @@ public class TextField : EditorElement
         }
     }
 
+    /// <summary>Replaces what is being typed with a text and commits it, as a pick from a list does, focused or not.</summary>
+    /// <param name="text">The text.</param>
+    public void Accept(string text)
+    {
+        _edit.SetText(text ?? string.Empty);
+        _scroll = 0f;
+        Commit();
+    }
+
     /// <summary>Throws away the typing and shows the last committed text again.</summary>
     public void Revert()
     {

@@ -79,6 +79,22 @@ public sealed class PropertyGrid : EditorElement
         return field;
     }
 
+    /// <summary>Adds a text row that offers the valid values in a dropdown, while still taking anything typed.</summary>
+    /// <param name="label">The label.</param>
+    /// <param name="get">Reads the value.</param>
+    /// <param name="set">Writes it.</param>
+    /// <param name="suggest">Lists the valid values, asked each time the dropdown opens.</param>
+    /// <param name="tooltip">The label's tooltip.</param>
+    /// <returns>The field.</returns>
+    public ComboField Combo(string label, Func<string> get, Action<string> set, Func<IReadOnlyList<ComboItem>> suggest, string? tooltip = null)
+    {
+        ArgumentNullException.ThrowIfNull(get);
+        ComboField field = new(Theme) { Text = get(), Suggest = suggest };
+        field.Committed += set;
+        Add(label, field, () => field.Text = get(), tooltip);
+        return field;
+    }
+
     /// <summary>Adds a number row.</summary>
     /// <param name="label">The label.</param>
     /// <param name="get">Reads the value.</param>

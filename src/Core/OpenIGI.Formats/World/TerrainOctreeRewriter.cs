@@ -89,6 +89,7 @@ public static class TerrainOctreeRewriter
         private long _cmdLength = cmdLength;
         private long _emptyBlock = -1;
         private readonly Dictionary<TerrainGeneratedNode, int> _written = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<TerrainGeneratedNode, bool> _empty = new(ReferenceEqualityComparer.Instance);
 
         public bool Changed { get; private set; }
 
@@ -122,7 +123,7 @@ public static class TerrainOctreeRewriter
                         {
                             replaced[slot] = WriteGenerated(generated);
                             turned[slot] = Undo(place.Orientation);
-                            mask |= 1 << slot;
+                            mask = IsEmpty(generated) ? mask & ~(1 << slot) : mask | (1 << slot);
                             childChanged = true;
                         }
                         else if (node.HasChild(slot))
@@ -215,7 +216,15 @@ public static class TerrainOctreeRewriter
                 if (generated.Children[octant] is { } child)
                 {
                     index = (ushort)WriteGenerated(child);
-                    mask |= 1 << slot;
+
+                    // As the shipped levels mark them: a child with no geometry keeps its index but not its bit. The
+                    // original meshes every child whose bit is set, and its mesh builder loops a block's vertices with a
+                    // do-while, so an empty block there runs off the end of its records and crashes (its terrain mesh
+                    // builder's lightmap loop; its cube walk meshes on the bit).
+                    if (!IsEmpty(child))
+                    {
+                        mask |= 1 << slot;
+                    }
                 }
 
                 BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(slot * 2), index);
@@ -231,6 +240,24 @@ public static class TerrainOctreeRewriter
             int appended = Append(record);
             _written[generated] = appended;
             return appended;
+        }
+
+        // Whether a generated node's own block has no vertices: the original must never mesh it.
+        private bool IsEmpty(TerrainGeneratedNode node)
+        {
+            if (_empty.TryGetValue(node, out bool known))
+            {
+                return known;
+            }
+
+            // The vertex counts, base and extra (header words 2 and 3, as the original reads them), are what it loops on.
+            bool noVertices = node.Block.Length < TerrainCommandBlock.HeaderSize
+                || BinaryPrimitives.ReadInt16LittleEndian(node.Block.AsSpan(4)) + BinaryPrimitives.ReadInt16LittleEndian(node.Block.AsSpan(6)) == 0;
+            // The original meshes a child's own block whenever its bit is set (near, or as a coarser level far off), so a
+            // child whose own block has no vertices never gets the bit, whatever lies under it.
+            bool empty = noVertices;
+            _empty[node] = empty;
+            return empty;
         }
 
         // Puts a block after everything, sharing one copy of the empty block.

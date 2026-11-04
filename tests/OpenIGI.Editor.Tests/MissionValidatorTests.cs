@@ -83,16 +83,13 @@ public sealed class MissionValidatorTests : IDisposable
                 Task_New(1, "HumanSoldier", "floating", 0, 0, 81920),
                 Task_New(2, "HumanSoldier", "standing", 4096, 0, 40960));
             """, QvmProgram.IgiVersion));
-        Facts facts = new(groundMetres: 10.0) { Mountains = 1 };
+        Facts facts = new(groundMetres: 10.0);
 
         IReadOnlyList<MissionIssue> issues = MissionValidator.Validate(document, facts);
-        MissionIssue target = Assert.Single(issues, static i => i.Severity == IssueSeverity.Error);
-        Assert.Null(target.Task);
         MissionIssue floating = Assert.Single(issues, static i => i.Task?.Label == "floating");
         Assert.DoesNotContain(issues, static i => i.Task?.Label == "standing");
 
         floating.Fixes[0].Make()!.Apply();
-        target.Fixes[0].Make()!.Apply();
         Assert.Empty(MissionValidator.Validate(document, facts));
     }
 
@@ -129,10 +126,6 @@ public sealed class MissionValidatorTests : IDisposable
     private sealed class Facts(double groundMetres) : IMissionFacts
     {
         public MissionTarget Target { get; private set; } = MissionTarget.Retail;
-
-        public int Mountains { get; init; }
-
-        public int MountainAreas => Mountains;
 
         public bool? HasModel(string model) => true;
 

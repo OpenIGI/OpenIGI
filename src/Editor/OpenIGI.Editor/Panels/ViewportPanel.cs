@@ -32,6 +32,9 @@ internal enum ViewportTool
 
     /// <summary>The terrain brush, shaping the ground.</summary>
     Terrain,
+
+    /// <summary>The patrol tool, laying the selected soldier's patrol on the ground.</summary>
+    Patrol,
 }
 
 /// <summary>
@@ -185,6 +188,26 @@ internal sealed partial class ViewportPanel : EditorElement
 
         // A glide to where all of it is in view along the current heading, which then orbits around it.
         _camera.Focus(camera, target, radius);
+    }
+
+    /// <summary>
+    /// Puts the camera over a player's shoulder: behind and above them, looking past them towards where they are headed, as a
+    /// new mission opens.
+    /// </summary>
+    /// <param name="player">Where the player stands, in world metres.</param>
+    /// <param name="ahead">A point they are headed for (an exit), or null to look along the camera's heading.</param>
+    public void LookOver(Vector3d player, Vector3d? ahead)
+    {
+        if (_host.Camera is not { } camera)
+        {
+            return;
+        }
+
+        Vector3d along = ahead is { } to ? to - player : EditorCamera.Axes(camera.Yaw, 0f).Forward;
+        along = new Vector3d(along.X, along.Y, 0.0);
+        along = along.Length > 1e-6 ? along / along.Length : new Vector3d(0.0, 1.0, 0.0);
+        Vector3d target = player + (along * 8.0) + new Vector3d(0.0, 0.0, 1.0);
+        _camera.Place(camera, player - (along * 14.0) + new Vector3d(0.0, 0.0, 7.0), target);
     }
 
     /// <summary>Picks what is under the middle of the view, as a click there would.</summary>
@@ -370,6 +393,11 @@ internal sealed partial class ViewportPanel : EditorElement
             return true;
         }
 
+        if (PatrolMenu(e))
+        {
+            return true;
+        }
+
         if (e.Button is MouseButton.Right or MouseButton.Middle || (e.Button == MouseButton.Left && e.Alt))
         {
             Focus();
@@ -391,6 +419,11 @@ internal sealed partial class ViewportPanel : EditorElement
         if (Sculpting)
         {
             return _terrain.Begin(Projector, e.Position, e.Shift);
+        }
+
+        if (PatrolPress(e))
+        {
+            return true;
         }
 
         if (Resizing && SelectedBox is { } box && _box.Begin(Projector, box, e.Position))
@@ -473,6 +506,11 @@ internal sealed partial class ViewportPanel : EditorElement
         if (Sculpting)
         {
             _terrain.Hover(Projector, e.Position);
+            return;
+        }
+
+        if (PatrolDrag(e))
+        {
             return;
         }
 
@@ -581,6 +619,7 @@ internal sealed partial class ViewportPanel : EditorElement
     protected override void OnPointerUp(in PointerEvent e)
     {
         _terrain.End();
+        Patrol?.Release();
         if (_gizmo.IsDragging || _rotate.IsDragging || _box.IsDragging)
         {
             _gizmo.End();
@@ -635,6 +674,11 @@ internal sealed partial class ViewportPanel : EditorElement
             return true;
         }
 
+        if (PatrolKey(e))
+        {
+            return true;
+        }
+
         if (Sculpting && e.Modifiers == KeyModifiers.None && e.Key is KeyCode.LeftBracket or KeyCode.RightBracket)
         {
             _terrain.Resize(larger: e.Key == KeyCode.RightBracket);
@@ -685,6 +729,8 @@ internal sealed partial class ViewportPanel : EditorElement
         {
             _terrain.Draw(painter, Theme, Projector);
         }
+
+        DrawPatrol(painter);
 
         if (SelectedBox is { } box && _graph.PickedNode is null)
         {

@@ -69,6 +69,28 @@ public sealed class SetCommentCommand(GraphLayout layout, GraphComment? before, 
     /// <inheritdoc/>
     public void Undo() => Replace(after, before);
 
+    /// <inheritdoc/>
+    /// <remarks>Successive edits of one comment (a drag, a typed title) merge into one step.</remarks>
+    public bool CanMerge(IEditorCommand following) =>
+        following is SetCommentCommand next && before is not null && after is not null
+        && next.Before?.Id == after.Id && next.After?.Id == after.Id;
+
+    /// <inheritdoc/>
+    public bool TryMerge(IEditorCommand following)
+    {
+        if (!CanMerge(following))
+        {
+            return false;
+        }
+
+        after = ((SetCommentCommand)following).After;
+        return true;
+    }
+
+    private GraphComment? Before => before;
+
+    private GraphComment? After => after;
+
     private void Replace(GraphComment? remove, GraphComment? add)
     {
         int at = remove is null ? -1 : layout.Comments.FindIndex(c => c.Id == remove.Id);
@@ -173,6 +195,42 @@ public sealed class CollapseNodesCommand(GraphLayout layout, IReadOnlyList<Graph
         foreach (GraphNodeKey key in _changed)
         {
             _ = collapsed ? layout.Collapsed.Remove(key) : layout.Collapsed.Add(key);
+        }
+
+        layout.NotifyChanged();
+    }
+}
+
+/// <summary>Sets the reroute points a wire runs through; an empty list straightens it again.</summary>
+/// <param name="layout">The layout.</param>
+/// <param name="wire">The wire's <see cref="GraphLayout.WireKey"/>.</param>
+/// <param name="points">Its points, in canvas units and in order from the output.</param>
+public sealed class SetRerouteCommand(GraphLayout layout, string wire, IReadOnlyList<GraphPoint> points) : IEditorCommand
+{
+    private List<GraphPoint>? _before;
+
+    /// <inheritdoc/>
+    public string Name => points.Count == 0 ? "Straighten wire" : "Reroute wire";
+
+    /// <inheritdoc/>
+    public void Apply()
+    {
+        _before = layout.Reroutes.TryGetValue(wire, out List<GraphPoint>? was) ? [.. was] : null;
+        Set(points);
+    }
+
+    /// <inheritdoc/>
+    public void Undo() => Set(_before);
+
+    private void Set(IReadOnlyList<GraphPoint>? to)
+    {
+        if (to is null || to.Count == 0)
+        {
+            layout.Reroutes.Remove(wire);
+        }
+        else
+        {
+            layout.Reroutes[wire] = [.. to];
         }
 
         layout.NotifyChanged();

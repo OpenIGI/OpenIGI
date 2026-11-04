@@ -23,6 +23,7 @@ public static class ExecLayerJson
             WriteIfAny(json, "call", node.Call);
             WriteIfAny(json, "pin", node.TargetPin);
             WriteIfAny(json, "macro", node.Macro);
+            WriteIfAny(json, "scope", node.Scope ?? string.Empty);
             if (node.Arguments.Count > 0)
             {
                 json.WriteStartObject("arguments");
@@ -97,6 +98,7 @@ public static class ExecLayerJson
                 Call = Text(node, "call"),
                 TargetPin = Text(node, "pin"),
                 Macro = Text(node, "macro"),
+                Scope = Text(node, "scope") is { Length: > 0 } scope ? scope : null,
                 Arguments = node.TryGetProperty("arguments", out JsonElement arguments)
                     ? arguments.EnumerateObject().ToDictionary(static a => a.Name, static a => a.Value.GetString() ?? string.Empty, StringComparer.Ordinal)
                     : ExecNode.NoArguments,

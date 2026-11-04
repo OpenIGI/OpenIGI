@@ -25,6 +25,7 @@ internal sealed class InspectorPanel : EditorElement
     private readonly PropertyGrid _grid;
     private MissionTask? _shown;
     private int _shownRevision = -1;
+    private string? _shownDetails;
 
     /// <summary>Initializes a new instance of the <see cref="InspectorPanel"/> class.</summary>
     /// <param name="theme">The theme.</param>
@@ -52,6 +53,29 @@ internal sealed class InspectorPanel : EditorElement
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
+        // No task selected but a graph node is: its details, as a node editor's Details panel shows them.
+        if (_workspace.Selection.Primary is null && _workspace.Details is { } details)
+        {
+            if (details.Key != _shownDetails)
+            {
+                _shown = null;
+                _shownDetails = details.Key;
+                _grid.Clear();
+                _grid.RevertAll = null;
+                details.Build(_grid);
+            }
+
+            return;
+        }
+
+        if (_shownDetails is not null)
+        {
+            _shownDetails = null;
+            _shownRevision = -1;
+            _shown = null;
+            Rebuild();
+        }
+
         MissionTask? primary = _workspace.Selection.Primary;
         int revision = ((primary?.Parameters.Count ?? -1) * 4096) + _workspace.Selection.Count;
         if (!ReferenceEquals(primary, _shown) || revision != _shownRevision)
@@ -311,6 +335,18 @@ internal sealed class InspectorPanel : EditorElement
                 break;
             }
 
+            case { } when type is { } comboType && ScriptParamTypeInfo.IsText(comboType) && parameter.Arguments is [QscStringLiteral]
+                && ValuesOf(tasks[0].TypeName, name) is { } values:
+                // A name of something the game has (a model, a sound, a weapon, a text key): its own offered in a dropdown,
+                // anything else still taken as typed.
+                _grid.Combo(
+                    name,
+                    () => parameter.Arguments[0] is QscStringLiteral text ? text.Value : string.Empty,
+                    text => Execute(tasks, each => new SetParameterCommand(document, each, name, [new QscStringLiteral(text)])),
+                    () => _workspace.Values.For(values.Kind, values.Prefix),
+                    tooltip);
+                break;
+
             case { } when type is { } textType && ScriptParamTypeInfo.IsText(textType) && parameter.Arguments is [QscStringLiteral]:
                 _grid.Text(
                     name,
@@ -349,4 +385,22 @@ internal sealed class InspectorPanel : EditorElement
                 break;
         }
     }
+
+    // What a task's name-like parameter names, by how the levels declare it: a model (Model, Destroyed model, Camera Model),
+    // a sound (Sound, SoundDef), a weapon or ammo (a gun's or pickup's ID), an AI type, an area's criteria, a status
+    // message's or objective's text key, a sprite or texture. Null for a parameter that names nothing in particular.
+    private static (ValueKind Kind, string? Prefix)? ValuesOf(string taskType, string parameter) => parameter switch
+    {
+        _ when parameter.Contains("Model", StringComparison.OrdinalIgnoreCase) => (ValueKind.Model, null),
+        _ when parameter.Contains("Sound", StringComparison.OrdinalIgnoreCase) => (ValueKind.Sound, null),
+        "AI Type" => (ValueKind.Constant, "AITYPE_"),
+        "Weapon ID" => (ValueKind.Constant, "WEAPON_ID_"),
+        "ID" when taskType == "AmmoPickup" => (ValueKind.Constant, "AMMO_ID_"),
+        "ID" when taskType.StartsWith("Gun", StringComparison.Ordinal) => (ValueKind.Constant, "WEAPON_ID_"),
+        "Criteria" => (ValueKind.Constant, "CRITERIA_"),
+        "Text" when taskType == "StatusMessage" => (ValueKind.TextKey, null),
+        _ when parameter.EndsWith("Text Resource", StringComparison.Ordinal) => (ValueKind.TextKey, null),
+        "Sprite" or "Texture File Name" => (ValueKind.Texture, null),
+        _ => null,
+    };
 }

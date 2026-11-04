@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Editor.Input;
 using OpenIGI.UI.Editor.Theme;
 using OpenIGI.UI.Layout;
@@ -53,7 +54,17 @@ public sealed class OptionCards : EditorElement
     /// <inheritdoc/>
     public override bool Focusable => true;
 
+    /// <summary>Gets the height every card shows in, without scrolling: one row of cards side by side, or all of them stacked.</summary>
+    public float NaturalHeight => Horizontal || _cards.Count == 0
+        ? CardHeight
+        : (_cards.Count * CardHeight) + ((_cards.Count - 1) * Gap);
+
     private float CardHeight => Theme.ControlHeight + Theme.RowHeight + Theme.Px(18f);
+
+    private float Gap => Theme.Px(6f);
+
+    // How far the stacked cards can scroll.
+    private float MostScroll => Horizontal ? 0f : MathF.Max(0f, NaturalHeight - Bounds.Height);
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => available;
@@ -77,9 +88,8 @@ public sealed class OptionCards : EditorElement
     /// <inheritdoc/>
     protected internal override bool OnWheel(UiVec2 position, float notches, KeyModifiers modifiers)
     {
-        float most = MathF.Max(0f, (_cards.Count * (CardHeight + Theme.Px(6f))) - Bounds.Height);
-        _scroll = Math.Clamp(_scroll - (notches * CardHeight), 0f, most);
-        return !Horizontal;
+        _scroll = Math.Clamp(_scroll - (notches * CardHeight), 0f, MostScroll);
+        return MostScroll > 0f;
     }
 
     /// <inheritdoc/>
@@ -110,6 +120,17 @@ public sealed class OptionCards : EditorElement
         {
             SelectedIndex = next;
             SelectionChanged?.Invoke(next);
+
+            // The picked card scrolled into view.
+            UiRect picked = CardRect(next);
+            if (picked.Y < Bounds.Y)
+            {
+                _scroll = Math.Clamp(_scroll - (Bounds.Y - picked.Y), 0f, MostScroll);
+            }
+            else if (picked.Bottom > Bounds.Bottom)
+            {
+                _scroll = Math.Clamp(_scroll + (picked.Bottom - Bounds.Bottom), 0f, MostScroll);
+            }
         }
 
         return true;
@@ -118,10 +139,13 @@ public sealed class OptionCards : EditorElement
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
+        _scroll = Math.Clamp(_scroll, 0f, MostScroll);
         painter.PushClip(Bounds);
+        bool scrolls = MostScroll > 0f;
+        float barRoom = scrolls ? Theme.Px(10f) : 0f;
         for (int i = 0; i < _cards.Count; i++)
         {
-            UiRect card = CardRect(i);
+            UiRect card = CardRect(i) is var full && scrolls ? full with { Width = full.Width - barRoom } : CardRect(i);
             if (card.Bottom < Bounds.Y || card.Y > Bounds.Bottom)
             {
                 continue;
@@ -129,7 +153,10 @@ public sealed class OptionCards : EditorElement
 
             OptionCard option = _cards[i];
             bool picked = i == SelectedIndex;
-            Bgra32 fill = picked ? Theme.Accent.WithAlpha(40) : i == _hovered && option.IsEnabled ? Theme.Hover : Theme.Input;
+            // Opaque fills, so the radio mark's hole is the card's own colour; the picked card only tinted, its border saying it.
+            Bgra32 fill = picked ? UiGeometry.Lerp(Theme.Input, Theme.Accent.WithAlpha(255), 0.09f)
+                : i == _hovered && option.IsEnabled ? UiGeometry.Lerp(Theme.Input, Theme.Hover.WithAlpha(255), Theme.Hover.A / 255f)
+                : Theme.Input;
             EditorDraw.Frame(painter, Theme, card, fill, picked ? Theme.Accent : Theme.Border);
 
             // A radio mark, then the title, its note, and what it means.
@@ -154,12 +181,21 @@ public sealed class OptionCards : EditorElement
             EditorDraw.Label(painter, Theme, option.Description, description, option.IsEnabled ? Theme.TextMuted : Theme.TextDisabled);
         }
 
+        if (scrolls)
+        {
+            // A thumb saying there is more, and where in it the view is.
+            float track = Bounds.Height;
+            float thumb = MathF.Max(Theme.Px(24f), track * Bounds.Height / NaturalHeight);
+            float at = Bounds.Y + ((track - thumb) * _scroll / MostScroll);
+            EditorDraw.Fill(painter, Theme, new UiRect(Bounds.Right - Theme.Px(5f), at, Theme.Px(4f), thumb), Theme.BorderStrong, Theme.Px(2f));
+        }
+
         painter.PopClip();
     }
 
     private UiRect CardRect(int index)
     {
-        float gap = Theme.Px(6f);
+        float gap = Gap;
         if (Horizontal)
         {
             float width = (Bounds.Width - (gap * Math.Max(0, _cards.Count - 1))) / Math.Max(1, _cards.Count);

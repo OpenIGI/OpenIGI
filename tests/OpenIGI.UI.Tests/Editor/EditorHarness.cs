@@ -95,6 +95,9 @@ internal sealed class EditorHarness
         Frame();
     }
 
+    /// <summary>Holds modifier keys down, or lets them go, for the input that follows.</summary>
+    public void Hold(KeyModifiers modifiers, bool down) => SetModifiers(modifiers, down);
+
     private void SetModifiers(KeyModifiers modifiers, bool down)
     {
         if ((modifiers & KeyModifiers.Control) != 0)

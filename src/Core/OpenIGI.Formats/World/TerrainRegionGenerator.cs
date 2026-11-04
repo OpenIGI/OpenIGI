@@ -79,6 +79,9 @@ public sealed class TerrainRegionGenerator
 
     private const int Unit = TerrainPackedVertex.UnitsPerExtent;
 
+    // How many sample cells a leaf spans.
+    private const int LeafSpan = 1 << (SampleExponent - LeafExponent);
+
     // The fine mesh over a column: four cells of the 3 × 3 grid (ids are grid indices j * 3 + i), each split from its
     // (-,-) corner to its (+,+) one and wound counter-clockwise seen from above, as retail's front faces are.
     private static readonly (int A, int B, int C)[] FineTriangles =
@@ -128,6 +131,18 @@ public sealed class TerrainRegionGenerator
 
     /// <summary>Gets the node a column's other cubes hold: no geometry and no children, one instance shared by them all.</summary>
     public static TerrainGeneratedNode Empty { get; } = new() { Block = new byte[TerrainCommandBlock.HeaderSize] };
+
+    /// <summary>
+    /// Gets the edge the untouched ground draws at a depth, read where the region's edge meets it: given the depth, a point on
+    /// the edge in engine units and the region's own height there, its height in engine units, or null to keep the region's.
+    /// </summary>
+    /// <remarks>
+    /// The region's heights are the ground as it is walked on, heightmap and all, sampled 4 m apart; the neighbour's blocks
+    /// are the octree alone, simplified at every coarser depth, so its edge can stand metres off those heights. Whatever
+    /// heightmap the original adds, it adds by world position, the same on both sides of the edge. Taking every depth's edge
+    /// from the neighbour's own blocks closes the crack the sky would otherwise show through.
+    /// </remarks>
+    public Func<int, long, long, double, double?>? Border { get; init; }
 
     /// <summary>Gets the depth of the region's column.</summary>
     public int Exponent { get; }
@@ -192,15 +207,28 @@ public sealed class TerrainRegionGenerator
                 for (int cellX = 0; cellX < _cells; cellX += span)
                 {
                     double[] grid = new double[9];
+                    double[] slid = new double[9];
                     bool held = false;
                     for (int j = 0; j <= 2; j++)
                     {
                         for (int i = 0; i <= 2; i++)
                         {
-                            double h = Height(cellX + (i * span / 2), cellY + (j * span / 2));
-                            double kept = Math.Clamp(h, floor + 1, ceiling - 1);
-                            held |= kept != h;
+                            int gx = cellX + (i * span / 2), gy = cellY + (j * span / 2);
+                            double h = Height(gx, gy);
+                            bool onEdge = gx == 0 || gy == 0 || gx == _cells || gy == _cells;
+                            (double X, double Y) at = (MinX + (gx * _spacing), MinY + (gy * _spacing));
+
+                            // On the region's edge, the edge the untouched neighbour draws at this depth, so the two meet.
+                            double fine = onEdge && Border?.Invoke(exponent, (long)at.X, (long)at.Y, h) is { } edge ? edge : h;
+                            double kept = Math.Clamp(fine, floor + 1, ceiling - 1);
+                            held |= kept != fine;
                             grid[(j * 3) + i] = kept;
+
+                            // Where the slice slides to as it recedes: the depth above at rest, in that depth's steps, so a
+                            // cube fully slid meets a coarser neighbour exactly, the way the original's do.
+                            double coarse = onEdge && Border?.Invoke(exponent - 1, (long)at.X, (long)at.Y, h) is { } above ? above : h;
+                            double step = (double)ExtentOf(exponent - 1) / Unit;
+                            slid[(j * 3) + i] = Math.Clamp(Math.Round(coarse / step) * step, floor + step, ceiling - step);
                         }
                     }
 
@@ -212,7 +240,7 @@ public sealed class TerrainRegionGenerator
 
                     for (long centreZ = Containing(grid.Min(), extent); centreZ - extent <= grid.Max(); centreZ += 2 * extent)
                     {
-                        if (Block(cellX, cellY, centreZ, extent, span, grid) is { } block)
+                        if (Block(cellX, cellY, centreZ, extent, span, grid, slid) is { } block)
                         {
                             nodes[(exponent, cellX, cellY, centreZ)] = new TerrainGeneratedNode { Block = block };
                         }
@@ -277,28 +305,33 @@ public sealed class TerrainRegionGenerator
     private static long Containing(double z, long extent) => ((long)Math.Floor(z / (2.0 * extent)) * 2 * extent) + extent;
 
     // One cube's slice of a column: the fine mesh and the coarse quad cut to the cube's floor and roof, or null when the
-    // surface leaves nothing to draw in it.
-    private byte[]? Block(int cellX, int cellY, long centreZ, long extent, int span, double[] grid)
+    // surface leaves nothing to draw in it. A drawn-only cube on the region's edge is skirted, unless that costs it more
+    // vertices than the original holds.
+    private byte[]? Block(int cellX, int cellY, long centreZ, long extent, int span, double[] grid, double[] slid, bool skirted = true)
     {
         // The grid in packed units about the cube's centre.
         (double X, double Y, double Z)[] points = new (double, double, double)[9];
+        (double X, double Y, double Z)[] targets = new (double, double, double)[9];
         for (int g = 0; g < 9; g++)
         {
             points[g] = (((g % 3) - 1) * Unit, ((g / 3) - 1) * Unit, (grid[g] - centreZ) * Unit / extent);
+            targets[g] = (points[g].X, points[g].Y, (slid[g] - centreZ) * Unit / extent);
         }
 
         List<(int X, int Y, int Z)> fine = [];
         List<(int A, int B, int C)> triangles = [];
         Dictionary<(int, int, int), int> fineIndex = [];
         Dictionary<(int, int, int), int> fromGrid = [];
-        Cut(FineTriangles, fine, fineIndex, triangles, fromGrid);
+        Cut(FineTriangles, points, fine, fineIndex, triangles, fromGrid);
         if (triangles.Count == 0)
         {
             return null;
         }
 
+        HashSet<(int X, int Y, int Z)> hung = skirted && span > LeafSpan ? Skirt(cellX, cellY, span, fine, fineIndex, triangles) : [];
+
         List<(int X, int Y, int Z)> coarse = [];
-        Cut(CoarseTriangles, coarse, [], [], []);
+        Cut(CoarseTriangles, targets, coarse, [], [], []);
 
         // Base vertices are the coarse slice's; the fine slice's others slide onto them.
         List<(int X, int Y, int Z)> bases = [.. coarse.Distinct()];
@@ -317,7 +350,7 @@ public sealed class TerrainRegionGenerator
                 continue;
             }
 
-            int source = Source(vertex);
+            int source = hung.Contains(vertex) ? -1 : Source(vertex);
             if (source < 0)
             {
                 // Nothing coarse to slide onto in this cube: the vertex stands as it is, a base vertex of its own.
@@ -332,6 +365,11 @@ public sealed class TerrainRegionGenerator
 
         if (bases.Count + extras.Count > MaximumVertices)
         {
+            if (hung.Count > 0)
+            {
+                return Block(cellX, cellY, centreZ, extent, span, grid, slid, skirted: false);
+            }
+
             // More than the original can hold: the slice is dropped, and counted.
             Clamped++;
             return null;
@@ -341,7 +379,7 @@ public sealed class TerrainRegionGenerator
         // on all the same faces of the cube.
         int Source((int X, int Y, int Z) vertex)
         {
-            if (fromGrid.TryGetValue(vertex, out int g) && baseIndex.TryGetValue(Quantised(points[CollapsesTo[g]]), out int corner) && corner < 64)
+            if (fromGrid.TryGetValue(vertex, out int g) && baseIndex.TryGetValue(Quantised(targets[CollapsesTo[g]]), out int corner) && corner < 64)
             {
                 return corner;
             }
@@ -351,7 +389,7 @@ public sealed class TerrainRegionGenerator
             for (int i = 0; i < Math.Min(bases.Count, 64); i++)
             {
                 (int bx, int by, int bz) = bases[i];
-                if (!SameFaces(vertex, bases[i]))
+                if (!SameFaces(vertex, bases[i]) || hung.Contains(bases[i]))
                 {
                     continue;
                 }
@@ -442,7 +480,7 @@ public sealed class TerrainRegionGenerator
 
         // Cuts triangles of the grid to the cube's slab, collecting the slice's vertices and triangles; a vertex that is a
         // grid point is remembered as one, for its collapse.
-        void Cut((int A, int B, int C)[] mesh, List<(int X, int Y, int Z)> into, Dictionary<(int, int, int), int> index, List<(int A, int B, int C)> faces, Dictionary<(int, int, int), int> grids)
+        void Cut((int A, int B, int C)[] mesh, (double X, double Y, double Z)[] points, List<(int X, int Y, int Z)> into, Dictionary<(int, int, int), int> index, List<(int A, int B, int C)> faces, Dictionary<(int, int, int), int> grids)
         {
             foreach ((int a, int b, int c) in mesh)
             {
@@ -481,6 +519,90 @@ public sealed class TerrainRegionGenerator
                     }
                 }
             }
+        }
+    }
+
+    // Skirts the slice on each of the region's edges its cube stands on: a curtain from every segment of the surface along
+    // that face down to the cube's floor, facing out of the region. The neighbour beyond is the original's ground, cut and
+    // morphed by its own rules, so the two edges part by up to a few metres as the levels of detail slide; the curtain
+    // fills that gap, and from outside it is below the neighbour's ground everywhere else. Its top is the surface's own
+    // vertices, so it slides with them; its hung vertices are returned, base vertices that slide nowhere. A leaf has
+    // none: the original's collision (0x4C9020) reads a leaf as a closed surface, and only leaves are collided with.
+    private HashSet<(int X, int Y, int Z)> Skirt(int cellX, int cellY, int span, List<(int X, int Y, int Z)> fine, Dictionary<(int, int, int), int> fineIndex, List<(int A, int B, int C)> triangles)
+    {
+        HashSet<(int X, int Y, int Z)> hung = [];
+        List<(int Axis, int Side)> faces = [];
+        if (cellX == 0)
+        {
+            faces.Add((0, -1));
+        }
+
+        if (cellX + span == _cells)
+        {
+            faces.Add((0, 1));
+        }
+
+        if (cellY == 0)
+        {
+            faces.Add((1, -1));
+        }
+
+        if (cellY + span == _cells)
+        {
+            faces.Add((1, 1));
+        }
+
+        int count = triangles.Count;
+        foreach ((int axis, int side) in faces)
+        {
+            bool OnFace((int X, int Y, int Z) v) => (axis == 0 ? v.X : v.Y) == side * Unit;
+            for (int t = 0; t < count; t++)
+            {
+                (int a, int b, int c) = triangles[t];
+                foreach ((int p, int q) in (ReadOnlySpan<(int, int)>)[(a, b), (b, c), (c, a)])
+                {
+                    (int X, int Y, int Z) top0 = fine[p], top1 = fine[q];
+                    if (!OnFace(top0) || !OnFace(top1) || (top0.Z == -Unit && top1.Z == -Unit))
+                    {
+                        continue;
+                    }
+
+                    int low0 = Hang(top0), low1 = Hang(top1);
+                    Face(p, q, low1);
+                    Face(p, low1, low0);
+                }
+            }
+
+            // Adds a curtain triangle wound to face out of the region, unless quantising flattened it.
+            void Face(int i, int j, int k)
+            {
+                if (i == j || j == k || i == k || !Spans(fine[i], fine[j], fine[k]))
+                {
+                    return;
+                }
+
+                (int X, int Y, int Z) u = (fine[j].X - fine[i].X, fine[j].Y - fine[i].Y, fine[j].Z - fine[i].Z);
+                (int X, int Y, int Z) v = (fine[k].X - fine[i].X, fine[k].Y - fine[i].Y, fine[k].Z - fine[i].Z);
+                long normal = axis == 0 ? ((long)u.Y * v.Z) - ((long)u.Z * v.Y) : ((long)u.Z * v.X) - ((long)u.X * v.Z);
+                triangles.Add(normal * side > 0 ? (i, j, k) : (i, k, j));
+            }
+        }
+
+        return hung;
+
+        // The vertex on the cube's floor below a top vertex: the top itself when it is on the floor already.
+        int Hang((int X, int Y, int Z) top)
+        {
+            (int X, int Y, int Z) low = (top.X, top.Y, -Unit);
+            if (!fineIndex.TryGetValue(low, out int id))
+            {
+                id = fine.Count;
+                fineIndex[low] = id;
+                fine.Add(low);
+                hung.Add(low);
+            }
+
+            return id;
         }
     }
 

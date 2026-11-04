@@ -129,21 +129,6 @@ public static partial class MissionValidator
         }
     }
 
-    private static void CheckTarget(IMissionFacts facts, List<MissionIssue> issues)
-    {
-        if (facts.Target == MissionTarget.Retail && facts.MountainAreas > 0)
-        {
-            issues.Add(new MissionIssue(
-                IssueSeverity.Error,
-                null,
-                string.Create(CultureInfo.InvariantCulture, $"It has {facts.MountainAreas} mountain area(s), which the original game cannot play, but it is made to be retail compatible."))
-            {
-                Check = TargetCheck,
-                Fixes = [new IssueFix("Make It OpenIGI Only", facts.MakeOpenIgiOnly)],
-            });
-        }
-    }
-
     // A task scripts name as Type_Id, or null for one they name otherwise (this, a native's prefix).
     private static (string Type, int Id)? Referenced(string subject)
     {

@@ -152,6 +152,17 @@ public interface IEditorHost
     /// <remarks>Built once per title; callers must not add to it.</remarks>
     Scripting.Vocabulary.ScriptVocabulary Vocabulary { get; }
 
+    /// <summary>
+    /// Gets every name the running game's scripts know now: its natives and the constants registered with them, the ones
+    /// its content defines included (each weapon's and ammo's own id constant).
+    /// </summary>
+    IReadOnlyCollection<string> ScriptNames => [];
+
+    /// <summary>The words a mission text resource stands for (a status message's <c>M1_STATUS_03</c>), as the game shows them.</summary>
+    /// <param name="key">The resource key.</param>
+    /// <returns>The text, or <see langword="null"/> when the key is not a text resource.</returns>
+    string? MissionText(string key);
+
     /// <summary>Gets whether the running level has a model by the name level data gives it, or null when there is no level.</summary>
     /// <param name="model">The model's name.</param>
     /// <returns>Whether it exists.</returns>

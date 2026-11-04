@@ -74,7 +74,15 @@ public static class TerrainRegionBuild
     public static TerrainRegionResult? Build(ReadOnlyMemory<byte> ctr, ReadOnlyMemory<byte> cmd, int exponent, long minX, long minY, Func<long, long, double> height)
     {
         ArgumentNullException.ThrowIfNull(height);
-        TerrainRegionGenerator generator = new(exponent, minX, minY, height);
+
+        // The edge comes from the level as it shipped: what its own blocks draw at each depth where the region meets it.
+        TerrainOctree originalTree = TerrainOctree.Read(ctr);
+        TerrainCommands originalBlocks = TerrainCommands.Read(cmd);
+        long sideUnits = 2L * ((long)TerrainOctree.RootExtent >> exponent);
+        TerrainRegionGenerator generator = new(exponent, minX, minY, height)
+        {
+            Border = (depth, x, y, near) => DrawnAt(originalTree, originalBlocks, depth, Math.Clamp(x, minX + 1, minX + sideUnits - 1), Math.Clamp(y, minY + 1, minY + sideUnits - 1), near),
+        };
         long side = generator.Side;
         long maxX = minX + side, maxY = minY + side;
         bool Touches(TerrainNodePlace place) =>
@@ -125,6 +133,48 @@ public static class TerrainRegionBuild
                 return new TerrainChildReplacement(halves[(octant & 4) != 0 ? 1 : 0]);
             });
         return files is { } written ? new TerrainRegionResult(written.Ctr, written.Cmd, count, clamped) : null;
+    }
+
+    /// <summary>
+    /// What a depth's blocks draw at a point, the octree alone with no heightmap added: the slice of
+    /// the column nearest a height, in engine units, or null when no block there covers the point.
+    /// </summary>
+    /// <param name="tree">The octree.</param>
+    /// <param name="blocks">Its blocks.</param>
+    /// <param name="depth">The depth.</param>
+    /// <param name="x">The point's X, in engine units.</param>
+    /// <param name="y">The point's Y.</param>
+    /// <param name="near">A height near the surface, in engine units, to pick the slice by.</param>
+    /// <returns>The height, in engine units.</returns>
+    public static double? DrawnAt(TerrainOctree tree, TerrainCommands blocks, int depth, long x, long y, double near)
+    {
+        ArgumentNullException.ThrowIfNull(tree);
+        ArgumentNullException.ThrowIfNull(blocks);
+        long extent = (long)TerrainOctree.RootExtent >> depth;
+
+        // The cube at the height first, then those above and below it in turn.
+        for (int k = 0; k < 12; k++)
+        {
+            double z = near + ((k % 2 == 0 ? 1 : -1) * (k / 2) * 2 * extent);
+            if (z is < int.MinValue or > int.MaxValue)
+            {
+                continue;
+            }
+
+            TerrainDescentCursor cursor = TerrainPointDescent.Descend(tree, new Vector3i((int)x, (int)y, (int)z), depth);
+            if (cursor.Depth != depth || !blocks.TryGetBlock(tree[cursor.NodeIndex].CommandOffset, out TerrainCommandBlock block) || block.IsEmpty)
+            {
+                continue;
+            }
+
+            TerrainLeaf slice = new(cursor, block, cursor.Centre, TerrainLeafQuery.UnitScaleFor(cursor.Extent));
+            if (TerrainSurfaceTest.TryFindSurface(slice, x - cursor.Centre.X, y - cursor.Centre.Y, -2.0 * cursor.Extent, downward: true, out TerrainSurfaceHit hit))
+            {
+                return hit.Height + cursor.Centre.Z;
+            }
+        }
+
+        return null;
     }
 
     // Whether an octant of a node is the region's column: its corner is the region's.

@@ -22,7 +22,7 @@ using OpenIGI.UI.Text;
 
 namespace OpenIGI.Editor;
 
-/// <summary>The editor's console verbs (<c>editor select|find|move|turn|pick|sculpt|do</c>), queued and run in order.</summary>
+/// <summary>The editor's console verbs (<c>editor select|find|move|turn|pick|sculpt|graph|do</c>), queued and run in order.</summary>
 internal sealed partial class EditorSession
 {
     /// <inheritdoc/>
@@ -43,6 +43,31 @@ internal sealed partial class EditorSession
                 return true;
             });
             return $"Running {action.Id} once the mission is open.";
+        }
+
+        // editor node <title>: the first node of the open graph whose title holds it, selected, so the Inspector shows it.
+        if (arguments is [string nodeVerb, _, ..] && nodeVerb.Equals("node", StringComparison.OrdinalIgnoreCase))
+        {
+            string title = string.Join(' ', arguments.Skip(1));
+            _pendingSteps.Enqueue(() =>
+            {
+                _host.Logger.Information("Editor", _logic.SelectNamed(title) ? $"Selected the {title} node." : $"No node of the open graph is called {title}.");
+                return true;
+            });
+            return $"Selecting the {title} node once the mission is open.";
+        }
+
+        // editor graph <name>: the Logic panel opened on the mission graph of that name (or the first whose name holds it).
+        if (arguments is [string graphVerb, _, ..] && graphVerb.Equals("graph", StringComparison.OrdinalIgnoreCase))
+        {
+            string graphName = string.Join(' ', arguments.Skip(1));
+            _pendingSteps.Enqueue(() =>
+            {
+                _dock.Show("logic");
+                _host.Logger.Information("Editor", _logic.OpenNamed(graphName) ? $"Opened the {graphName} graph." : $"No graph is named {graphName}.");
+                return true;
+            });
+            return $"Opening the {graphName} graph once the mission is open.";
         }
 
         if (arguments is [string find, ..] && find.Equals("find", StringComparison.OrdinalIgnoreCase) && arguments.Count >= 2)

@@ -26,6 +26,9 @@ public sealed record WizardPage(string Step, string Title, string Subtitle, Edit
 
     /// <summary>Gets what runs each time the step is shown.</summary>
     public Action? Entered { get; init; }
+
+    /// <summary>Gets whether the step does not apply to what was chosen so far: Next and Back pass it, the strip leaves it out.</summary>
+    public Func<bool> Skipped { get; init; } = static () => false;
 }
 
 /// <summary>
@@ -55,7 +58,7 @@ public sealed class Wizard : EditorElement
         _finish = finish;
         _finishText = finishText;
         _back = new Button(theme, "Back", KitIcon.ArrowLeft);
-        _back.Clicked += () => Show(_current - 1);
+        _back.Clicked += () => Show(Step(-1));
         _next = new Button(theme, "Next", KitIcon.ArrowRight) { Style = ButtonStyle.Primary };
         _next.Clicked += Next;
         foreach (WizardPage page in pages)
@@ -76,7 +79,21 @@ public sealed class Wizard : EditorElement
 
     private WizardPage Page => _pages[_current];
 
-    private bool IsLast => _current == _pages.Count - 1;
+    private bool IsLast => Step(1) == _current;
+
+    // The nearest step that applies, before or after the current one; the current one when there is none.
+    private int Step(int direction)
+    {
+        for (int i = _current + direction; i >= 0 && i < _pages.Count; i += direction)
+        {
+            if (!_pages[i].Skipped())
+            {
+                return i;
+            }
+        }
+
+        return _current;
+    }
 
     private float Header => Theme.Px(30f) + (Theme.RowHeight * 2f) + Theme.Px(14f);
 
@@ -110,7 +127,7 @@ public sealed class Wizard : EditorElement
         string? problem = Page.Problem();
         _next.IsEnabled = problem is null;
         _next.Text = Page.NextText() ?? (IsLast ? _finishText : "Next");
-        _back.Visibility = _current > 0 ? Visibility.Visible : Visibility.Hidden;
+        _back.Visibility = Step(-1) != _current ? Visibility.Visible : Visibility.Hidden;
     }
 
     /// <inheritdoc/>
@@ -137,12 +154,19 @@ public sealed class Wizard : EditorElement
         // The steps, done ones and the current one lit.
         float x = Bounds.X + pad;
         float stripY = Bounds.Y + Theme.Px(10f);
+        int shown = 0;
+        int lastShown = Enumerable.Range(0, _pages.Count).LastOrDefault(i => !_pages[i].Skipped());
         for (int i = 0; i < _pages.Count; i++)
         {
-            string label = $"{i + 1}  {_pages[i].Step}";
+            if (_pages[i].Skipped())
+            {
+                continue;
+            }
+
+            string label = $"{++shown}  {_pages[i].Step}";
             float width = EditorDraw.Label(painter, Theme, label, new UiRect(x, stripY, Theme.Px(200f), Theme.RowHeight), i == _current ? Theme.Accent : i < _current ? Theme.Text : Theme.TextDisabled, strong: i == _current);
             x += width + Theme.Px(10f);
-            if (i < _pages.Count - 1)
+            if (i < lastShown)
             {
                 EditorDraw.Label(painter, Theme, "›", new UiRect(x, stripY, Theme.Px(12f), Theme.RowHeight), Theme.TextDisabled);
                 x += Theme.Px(18f);
@@ -179,7 +203,7 @@ public sealed class Wizard : EditorElement
 
         if (!IsLast)
         {
-            Show(_current + 1);
+            Show(Step(1));
             return;
         }
 

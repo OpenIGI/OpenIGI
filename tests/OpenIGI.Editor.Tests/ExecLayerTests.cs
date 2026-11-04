@@ -183,6 +183,34 @@ public sealed class ExecLayerTests
             ExecMacroExpander.Expand(layer, new Dictionary<string, ExecMacro> { ["Loop"] = new ExecMacro("Loop", [], body) }));
     }
 
+    /// <summary>A chain collapsed into a macro (as the graph panel does it) runs in the game on the very tick it did written out.</summary>
+    [Fact]
+    public void A_collapsed_chain_runs_as_it_did()
+    {
+        ExecLayer layer = new();
+        layer.Nodes.AddRange(
+        [
+            new ExecNode("hacked", ExecNodeKind.OnBecomesTrue) { Condition = "Terminal_10.isHacked" },
+            new ExecNode("wait", ExecNodeKind.Delay) { Seconds = 2 },
+            new ExecNode("say", ExecNodeKind.Call) { Call = "Alpha()" },
+        ]);
+        layer.Wires.AddRange([new ExecWire("hacked", ExecNode.Then, "wait"), new ExecWire("wait", ExecNode.Then, "say")]);
+        (ExecMacro macro, ExecLayerState collapsed) = ExecMacroEdits.Collapse(layer, ["wait", "say"], "WaitThenSay", "use")!.Value;
+        ExecLayer used = new();
+        collapsed.Into(used);
+
+        Simulation written = Lower(layer, out _);
+        Simulation macroed = Lower(ExecMacroExpander.Expand(used, new Dictionary<string, ExecMacro> { [macro.Name] = macro }), out _);
+        foreach (Simulation run in (Simulation[])[written, macroed])
+        {
+            run.Set("Terminal_10.isHacked", 1, fromTick: 10);
+            run.Ticks(200);
+        }
+
+        Assert.Equal([70], written.CallsOf("Alpha"));
+        Assert.Equal(written.CallsOf("Alpha"), macroed.CallsOf("Alpha"));
+    }
+
     private static MissionDocument Document() => MissionDocument.Read(QscParser.ParseScript(Level, QvmProgram.IgiVersion));
 
     private static Core.Commands.IEditorCommand Compile(ExecLayer layer, MissionDocument document)

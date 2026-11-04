@@ -162,9 +162,16 @@ internal sealed partial class ContentPanel : EditorElement
         _text = new CodeEditor(theme) { IsReadOnly = true, Visibility = Visibility.Collapsed };
         _model = new ModelPreview(theme, host, _images) { Visibility = Visibility.Collapsed };
         _sound = new SoundPreview(theme, host.Audio) { Visibility = Visibility.Collapsed };
-        foreach (UiElement child in (UiElement[])[_back, _forward, _up, _search, .. _filterButtons, _folders, _tiles, _open, _openForm, _text, _model, _sound])
+        foreach (UiElement child in (UiElement[])[_back, _forward, _up, _search, .. _filterButtons, _folders, _tiles])
         {
             AddChild(child);
+        }
+
+        // The preview is a panel of its own, docked beside History.
+        _previewPane = new PreviewPane(theme, this);
+        foreach (UiElement child in (UiElement[])[_open, _openForm, _text, _model, _sound])
+        {
+            _previewPane.Hold(child);
         }
     }
 
@@ -256,27 +263,8 @@ internal sealed partial class ContentPanel : EditorElement
 
         float top = chipsY + control + pad;
         float left = MathF.Round(contentRect.X + (contentRect.Width * 0.18f));
-        float right = MathF.Round(contentRect.Right - (contentRect.Width * 0.3f));
         _folders.Place(context, UiRect.FromEdges(contentRect.X, top, left, contentRect.Bottom));
-        _tiles.Place(context, UiRect.FromEdges(left + Theme.SplitterSize, top, right, contentRect.Bottom));
-
-        UiRect preview = UiRect.FromEdges(right + Theme.SplitterSize, top, contentRect.Right, contentRect.Bottom);
-        // A config script opens in its form first, the script second.
-        float openX = preview.X + pad;
-        if (_openForm.Visibility == Visibility.Visible)
-        {
-            _openForm.Measure(context, new UiVec2(float.PositiveInfinity, control));
-            _openForm.Arrange(new UiRect(openX, preview.Y, _openForm.DesiredSize.X, control));
-            openX += _openForm.DesiredSize.X + Theme.Px(4f);
-        }
-
-        _open.Measure(context, new UiVec2(float.PositiveInfinity, control));
-        _open.Arrange(new UiRect(openX, preview.Y, _open.DesiredSize.X, control));
-        UiRect body = UiRect.FromEdges(preview.X, preview.Y + control + pad + Theme.RowHeight, preview.Right, preview.Bottom);
-        _text.Place(context, body);
-        _model.Place(context, body);
-        _sound.Place(context, body);
-        PreviewArea = preview;
+        _tiles.Place(context, UiRect.FromEdges(left + Theme.SplitterSize, top, contentRect.Right, contentRect.Bottom));
     }
 
     /// <inheritdoc/>
@@ -316,9 +304,7 @@ internal sealed partial class ContentPanel : EditorElement
         painter.FillRect(Bounds, Theme.Panel);
         float splitter = Theme.SplitterSize;
         painter.FillRect(new UiRect(_tiles.Bounds.X - splitter, _tiles.Bounds.Y, splitter, _tiles.Bounds.Height), Theme.Background);
-        painter.FillRect(new UiRect(PreviewArea.X - splitter, PreviewArea.Y, splitter, PreviewArea.Height), Theme.Background);
         DrawPath(painter);
-        DrawPreview(painter);
     }
 
     // The root of the game's files, made once.
@@ -332,6 +318,8 @@ internal sealed partial class ContentPanel : EditorElement
     private UiRect PathBar { get; set; }
 
     private UiRect PreviewArea { get; set; }
+
+    private readonly PreviewPane _previewPane;
 
     private static KitIcon Icon(ContentNode node) => node switch
     {

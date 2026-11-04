@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using OpenIGI.Scripting.Qsc;
 
 namespace OpenIGI.Editor.Core.Missions;
@@ -82,5 +84,113 @@ public sealed partial class MissionDocument
         }
 
         return new PastedTasks(tasks, skipped);
+    }
+
+    /// <summary>
+    /// Reads tasks from script text as new tasks of this document: each that had an id gets a free one, and what the copies
+    /// say about each other (a condition reading <c>Type_Id.field</c>, a parameter naming a task) follows them.
+    /// </summary>
+    /// <param name="text">Script text, typically from <see cref="WriteTasks"/>.</param>
+    /// <param name="original">Receives each new id's old one, so a caller can carry what it kept by the old ids.</param>
+    /// <returns>The tasks, ready to insert, and the types this document cannot take.</returns>
+    /// <exception cref="QscParseException">The text is not script.</exception>
+    /// <remarks>
+    /// For logic: <see cref="ReadTasks"/> pastes tasks anonymous, which suits objects, but a condition finds a task by its id.
+    /// References to tasks outside what was copied are left alone, so a pasted trigger still reads the mission's own tasks.
+    /// When every id is taken, a task stays anonymous.
+    /// </remarks>
+    public PastedTasks ReadTasksAsNew(string text, out IReadOnlyDictionary<int, int> original)
+    {
+        PastedTasks read = ReadTasks(text);
+        QscScript script = QscParser.ParseScript(text, Version);
+        List<MissionTask> sources = [];
+        foreach (QscStatement statement in script.Statements)
+        {
+            if (statement is QscExpressionStatement { Expression: QscCall { Name: NewFunction } call } && TryReadTask(call, out MissionTask? task))
+            {
+                sources.Add(task);
+            }
+        }
+
+        // The clones are the sources less the skipped, in order: pair them, task for task down each subtree.
+        Dictionary<int, int> renumbered = [];
+        Dictionary<int, int> back = [];
+        HashSet<int> used = [.. EnumerateTasks().Select(static t => t.Id).Where(static id => id >= 0)];
+        int next = 1;
+        List<(MissionTask Copy, MissionTask Source)> pairs = [];
+        int s = 0;
+        foreach (MissionTask copy in read.Tasks)
+        {
+            while (s < sources.Count && sources[s].TypeName != copy.TypeName)
+            {
+                s++;
+            }
+
+            if (s < sources.Count)
+            {
+                pairs.AddRange(copy.SelfAndSubtree().Zip(sources[s].SelfAndSubtree()));
+                s++;
+            }
+        }
+
+        foreach ((MissionTask copy, MissionTask source) in pairs.Where(static p => p.Source.Id >= 0))
+        {
+            while (next < MaximumTaskId && used.Contains(next))
+            {
+                next++;
+            }
+
+            if (next >= MaximumTaskId)
+            {
+                break;
+            }
+
+            used.Add(next);
+            renumbered[source.Id] = next;
+            back[next] = source.Id;
+            copy.Id = next;
+        }
+
+        foreach ((MissionTask copy, _) in pairs)
+        {
+            foreach (MissionParameter parameter in copy.Parameters)
+            {
+                for (int i = 0; i < parameter.Arguments.Count; i++)
+                {
+                    parameter.Arguments[i] = Follow(copy.TypeName, parameter, parameter.Arguments[i], pairs, renumbered);
+                }
+            }
+        }
+
+        original = back;
+        return read;
+    }
+
+    /// <summary>The first id past the 4096-entry table a script finds tasks in.</summary>
+    public const int MaximumTaskId = 4096;
+
+    // An argument with the copies' old ids written as their new ones: a reference parameter's number, a condition's names.
+    private static QscExpression Follow(string type, MissionParameter parameter, QscExpression argument, List<(MissionTask Copy, MissionTask Source)> pairs, Dictionary<int, int> renumbered)
+    {
+        if (TaskPinHints.TryGetReference(type, parameter.Name, out _)
+            && ScriptValues.TryGetInteger(argument, out int id) && renumbered.TryGetValue(id, out int moved))
+        {
+            return ScriptValues.Integer(moved);
+        }
+
+        if (parameter.Declaration.Type != Engine.Tasks.ScriptParamType.VarString || !ScriptValues.TryGetString(argument, out string text) || text.Length == 0)
+        {
+            return argument;
+        }
+
+        string rewritten = text;
+        foreach ((_, MissionTask source) in pairs.Where(p => p.Source.Id >= 0 && renumbered.ContainsKey(p.Source.Id)))
+        {
+            string old = string.Create(CultureInfo.InvariantCulture, $"{source.TypeName}_{source.Id}");
+            string now = string.Create(CultureInfo.InvariantCulture, $"{source.TypeName}_{renumbered[source.Id]}");
+            rewritten = Regex.Replace(rewritten, $@"\b{Regex.Escape(old)}\b", now, RegexOptions.CultureInvariant);
+        }
+
+        return rewritten == text ? argument : new QscStringLiteral(rewritten);
     }
 }

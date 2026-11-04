@@ -48,9 +48,6 @@ public interface IMissionFacts
     /// <returns>The height, in world metres.</returns>
     double? GroundUnder(Vector3d pointMetres);
 
-    /// <summary>Gets how many mountain areas the mission's ground has, built into its octree (an OpenIGI feature).</summary>
-    int MountainAreas { get; }
-
     /// <summary>Gets the title's script vocabulary, which the graph check reads expressions against, or null without one.</summary>
     Scripting.Vocabulary.ScriptVocabulary? Vocabulary => null;
 
@@ -108,7 +105,6 @@ public static partial class MissionValidator
         {
             CheckModels(document, facts, issues);
             CheckGround(document, facts, issues);
-            CheckTarget(facts, issues);
         }
 
         return [.. issues.OrderByDescending(static i => i.Severity).ThenBy(static i => CheckOrder(i.Check))];

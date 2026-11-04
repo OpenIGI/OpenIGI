@@ -201,6 +201,28 @@ internal sealed class EditorCamera
         _target = point - (forward * distance);
     }
 
+    /// <summary>Puts the camera at a point looking at another, at once, and orbiting round what it looks at.</summary>
+    /// <param name="camera">The camera.</param>
+    /// <param name="eye">Where the camera goes, in world metres.</param>
+    /// <param name="target">What it looks at.</param>
+    public void Place(FreeCamera camera, Vector3d eye, Vector3d target)
+    {
+        Vector3d look = target - eye;
+        double length = look.Length;
+        if (length <= 0.0)
+        {
+            return;
+        }
+
+        look /= length;
+        float pitch = (float)Math.Clamp(Math.Asin(look.Z), -PitchLimit, PitchLimit);
+        float yaw = Math.Abs(look.Z) > 0.999 ? camera.Yaw : (float)Math.Atan2(look.X, look.Y);
+        _target = null;
+        _velocity = Vector3d.Zero;
+        PivotDistance = length;
+        camera.MoveTo(eye, yaw, pitch);
+    }
+
     /// <summary>Turns the camera to look along a direction, keeping in view what it was turning around.</summary>
     /// <param name="camera">The camera.</param>
     /// <param name="direction">The direction to look along, in the world.</param>

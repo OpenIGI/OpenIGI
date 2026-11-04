@@ -24,11 +24,17 @@ namespace OpenIGI.Editor;
 /// <summary>Opens the editor inside the game.</summary>
 public sealed class EditorFactory : IEditorFactory
 {
+    /// <summary>
+    /// Gets the system's folder picker, given what it asks and the folder it opens on, answering the folder chosen or null when
+    /// cancelled; null for a build without one, where exports go to the editor's own folder.
+    /// </summary>
+    public Func<string, string?, Task<string?>>? PickFolder { get; init; }
+
     /// <inheritdoc/>
     public IEditorSession Open(IEditorHost host)
     {
         ArgumentNullException.ThrowIfNull(host);
-        return new EditorSession(host);
+        return new EditorSession(host) { PickFolder = PickFolder };
     }
 }
 
@@ -38,7 +44,7 @@ public sealed class EditorFactory : IEditorFactory
 /// </summary>
 internal sealed partial class EditorSession : IEditorSession
 {
-    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*)))";
+    private const string DefaultLayout = "H(0.2:T(outliner*),0.58:V(0.7:T(viewport*|script),0.3:T(content*|problems|terrain)),0.22:V(0.65:T(inspector*),0.35:T(history*|preview)))";
 
     private readonly IEditorHost _host;
     private readonly EditorFonts _fonts;
@@ -56,6 +62,7 @@ internal sealed partial class EditorSession : IEditorSession
     private readonly LiveWorldLink _live;
     private readonly ContentPanel _content;
     private readonly ProblemsPanel _problems;
+    private readonly GraphPanel _logic;
     private bool _disposed;
 
     public EditorSession(IEditorHost host)
@@ -113,6 +120,7 @@ internal sealed partial class EditorSession : IEditorSession
         };
         _content.Reported += Notify;
         _dock.Register(new DockPanel("content", "Content", _content) { Icon = KitIcon.Folder });
+        _dock.Register(new DockPanel("preview", "Preview", _content.PreviewPanel) { Icon = KitIcon.Search });
 
         // Config scripts (a weapon, an ammunition type) as forms, beside the script they can always be opened as.
         ConfigPanel config = new(_theme, host, _workspace, path =>
@@ -135,12 +143,21 @@ internal sealed partial class EditorSession : IEditorSession
         _problems = new ProblemsPanel(_theme, _workspace, new EditorMissionFacts(host, _workspace));
         _problems.GoTo += _viewport.Frame;
         _dock.Register(new DockPanel("problems", "Problems", _problems) { Icon = KitIcon.Search });
+        _logic = new GraphPanel(_theme, host, _workspace, () => _problems.Issues, (message, isError) => Notify(message, isError));
+        _dock.Register(new DockPanel("logic", "Logic", _logic) { Icon = KitIcon.Graph });
         _terrainPanel = new TerrainPanel(_theme, host, brush);
         _dock.Register(new DockPanel("terrain", "Terrain", _terrainPanel) { Icon = KitIcon.Terrain });
         _dock.Register(new DockPanel("preferences", "Preferences", new PreferencesPanel(_theme, _root.Actions, host, Notify)) { Icon = KitIcon.Gear });
-        if (!_dock.LoadLayout(ReadSavedLayout() ?? DefaultLayout))
+        string? saved = ReadSavedLayout();
+        if (!_dock.LoadLayout(saved ?? DefaultLayout))
         {
             _dock.LoadLayout(DefaultLayout);
+        }
+        else if (saved is not null && !saved.Contains("preview", StringComparison.Ordinal))
+        {
+            // A layout saved before the preview had a panel of its own: it joins History's tabs, History still in front.
+            _dock.Show("preview", beside: "history");
+            _dock.Show("history");
         }
 
         _dock.LayoutChanged += SaveLayout;
@@ -184,6 +201,8 @@ internal sealed partial class EditorSession : IEditorSession
     /// <inheritdoc/>
     public void Frame(float elapsedSeconds, bool hasInput)
     {
+        TakePickedExports();
+
         // The screen or the setting can change while the editor is open: a switch to full screen, ed_ui_scale typed in.
         _theme.Scale = _host.UiScale;
         if (EditorCVars.LightTheme.Value != _theme.IsLight)
@@ -241,8 +260,18 @@ internal sealed partial class EditorSession : IEditorSession
             return;
         }
 
-        // The system pointer stays visible over the editor, as in any desktop tool, so no drawn cursor goes on top.
-        _root.Draw(painter);
+        // The system pointer stays visible over the editor, as in any desktop tool, so no drawn cursor goes on top. Its
+        // small round marks (pins, radio dots) are drawn round; the game's own circles keep their look.
+        int circleSteps = painter.MinimumCircleSteps;
+        painter.MinimumCircleSteps = 24;
+        try
+        {
+            _root.Draw(painter);
+        }
+        finally
+        {
+            painter.MinimumCircleSteps = circleSteps;
+        }
     }
 
     /// <inheritdoc/>
@@ -461,6 +490,8 @@ internal sealed partial class EditorSession : IEditorSession
         RegisterClipboardActions(actions);
         RegisterObjectActions(actions);
         RegisterTerrainActions(actions);
+        RegisterNavGraphActions(actions);
+        RegisterPatrolActions(actions);
         RegisterMissionActions(actions);
         RegisterShellActions(actions);
         actions.Add(new EditorAction("view.light", "Light Theme", () => EditorCVars.LightTheme.Value = !EditorCVars.LightTheme.Value)
@@ -475,7 +506,7 @@ internal sealed partial class EditorSession : IEditorSession
         })
         { Category = "View" });
 
-        foreach (string panel in new[] { "outliner", "inspector", "history", "script", "content", "problems", "terrain" })
+        foreach (string panel in new[] { "outliner", "inspector", "history", "preview", "script", "content", "problems", "logic", "terrain" })
         {
             actions.Add(new EditorAction($"window.{panel}", _dock.Panels[panel].Title, () =>
             {
@@ -569,6 +600,7 @@ internal sealed partial class EditorSession : IEditorSession
                 MenuItem.For(actions["window.script"]),
                 MenuItem.For(actions["window.content"]),
                 MenuItem.For(actions["window.problems"]),
+                MenuItem.For(actions["window.logic"]),
             ]);
     }
 
@@ -642,7 +674,64 @@ internal sealed partial class EditorSession : IEditorSession
             return;
         }
 
-        string target = Path.Combine(SettingsPaths.GetUserDirectory(), "editor", "exports", _host.Title.Id, Path.GetFileName(_workspace.Project.Root));
+        string fallback = Path.Combine(SettingsPaths.GetUserDirectory(), "editor", "exports", _host.Title.Id, Path.GetFileName(_workspace.Project.Root));
+        if (PickFolder is not { } pick)
+        {
+            ExportTo(fallback);
+            return;
+        }
+
+        // Asked where, starting at the last export's folder; the answer comes back on the picker's thread, so the export
+        // itself runs on the editor's next frame.
+        string? last = EditorCVars.ExportFolder.Value is { Length: > 0 } remembered && Directory.Exists(remembered) ? remembered : null;
+        pick($"Export {_workspace.MissionName} for the retail game to", last ?? fallback).ContinueWith(
+            answer =>
+            {
+                if (answer.IsCompletedSuccessfully && answer.Result is { Length: > 0 } folder)
+                {
+                    lock (_pickedExports)
+                    {
+                        _pickedExports.Enqueue(folder);
+                    }
+                }
+            },
+            TaskScheduler.Default);
+    }
+
+    // The folder pickers' answers, taken up on the editor's frame.
+    private readonly Queue<string> _pickedExports = new();
+
+    /// <summary>Gets the system's folder picker, or null for none (see <see cref="EditorFactory.PickFolder"/>).</summary>
+    internal Func<string, string?, Task<string?>>? PickFolder { get; init; }
+
+    // Exports picked since the last frame.
+    private void TakePickedExports()
+    {
+        while (true)
+        {
+            string folder;
+            lock (_pickedExports)
+            {
+                if (!_pickedExports.TryDequeue(out folder!))
+                {
+                    return;
+                }
+            }
+
+            // The game's own folder is never written over: an export goes beside it, to be copied in by hand.
+            if (File.Exists(Path.Combine(folder, "igi.exe")) || File.Exists(Path.Combine(folder, "IGI2.exe")) || File.Exists(Path.Combine(folder, "igi2.exe")))
+            {
+                Notify($"{folder} is the game's own folder, whose files the editor never changes. Pick another folder, then copy the export over the game's files yourself.", isError: true);
+                continue;
+            }
+
+            EditorCVars.ExportFolder.Value = folder;
+            ExportTo(folder);
+        }
+    }
+
+    private void ExportTo(string target)
+    {
         try
         {
             IReadOnlyList<string> written = _workspace.Project.ExportTo(target);
@@ -651,7 +740,7 @@ internal sealed partial class EditorSession : IEditorSession
                 ? "Nothing to export yet: save a change first."
                 : $"Exported {written.Count} file(s) to {target}. Copy its folders over the game's own to play them in the retail game.");
         }
-        catch (IOException error)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             Notify($"Could not export: {error.Message}", isError: true);
         }

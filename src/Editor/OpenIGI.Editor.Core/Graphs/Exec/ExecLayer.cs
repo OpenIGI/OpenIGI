@@ -2,7 +2,7 @@ namespace OpenIGI.Editor.Core.Graphs.Exec;
 
 /// <summary>What an action node of a mission graph does.</summary>
 /// <remarks>
-/// The game has no events: every task re-reads its conditions each tick. These nodes give the editor Unreal-style "when this
+/// The game has no events: every task re-reads its conditions each tick. These nodes give the editor event-style "when this
 /// happens, do that" wiring, and <see cref="ExecLayerCompiler"/> lowers each into the tasks retail missions use for the same
 /// thing, so a mission built with them still runs in the original game.
 /// </remarks>
@@ -64,6 +64,9 @@ public sealed record ExecNode(string Id, ExecNodeKind Kind)
 
     /// <summary>Gets the macro a macro node runs, by name.</summary>
     public string Macro { get; init; } = string.Empty;
+
+    /// <summary>Gets the mission graph (scope key) the node is drawn in, or null for the first.</summary>
+    public string? Scope { get; init; }
 
     /// <summary>Gets the values a macro node gives its macro's parameters, by name.</summary>
     public IReadOnlyDictionary<string, string> Arguments { get; init; } = NoArguments;
