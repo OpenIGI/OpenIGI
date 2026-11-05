@@ -1,0 +1,35 @@
+# The OpenIGI introduction, about 2:30. One row per clip, in order:
+#   path | in (s) | duration (s) | transition into the next row | transition seconds
+# Paths are relative to this file or to -Work. Empty cells take defaults: the whole clip and a cut.
+# Transitions are ffmpeg xfade names: cut, fade, fadeblack, fadewhite, pixelize, slideleft, wipeleft,
+# circleopen, radial, hblur, zoomin, dissolve ...
+
+# 1. Cold open: the year 2000 on a CRT, then it switches off.
+clips/retro-crt.mkv                     | 0 | 6   | fadewhite | 0.25
+clips/title-openigi.mkv                 |   |     | fadeblack | 0.5
+
+# 2. The remaster, side by side with the original.
+clips/m1-base-resolve.mkv               |   |     | cut       |
+clips/m1-base-wipe.mkv                  |   |     | cut       |
+clips/m3-bridge-lens.mkv                |   |     | fadeblack | 0.4
+
+# 3. Renderer features, each with a callout.
+clips/gi-lamps-cinematic-caption.mkv    |   |     | cut       |
+clips/rt-reflections-cinematic-caption.mkv |  |   | cut       |
+clips/night-fog-cinematic-caption.mkv   |   |     | cut       |
+clips/rain-cinematic-caption.mkv        |   | 6   | pixelize  | 0.4
+clips/api-switch-glitch-caption.mkv     |   |     | fadeblack | 0.4
+
+# 4. Faithful underneath: gameplay, AI, the original's scripts.
+clips/gameplay-stealth-cinematic-caption.mkv |  | |  cut       |
+clips/gameplay-firefight-cinematic.mkv  |   |     | fadeblack | 0.4
+
+# 5. I.G.I. 2, the browser, the launcher, mods.
+clips/title-igi2.mkv                    |   |     | cut       |
+clips/igi2-flight-cinematic.mkv         |   |     | fadeblack | 0.4
+clips/browser-caption.mkv               |   |     | cut       |
+clips/launcher-caption.mkv              |   |     | cut       |
+clips/mods-f8-glitch-caption.mkv        |   |     | fadeblack | 0.6
+
+# 6. End card.
+clips/title-openigi-com.mkv             |   |     |           |
