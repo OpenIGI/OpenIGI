@@ -77,6 +77,47 @@ public sealed class PlayerCameraMapComputerOpticsTests
         Assert.Equal(HumanView.DefaultViewModelTanX, camera.View.ViewModelTanX);
     }
 
+    [RequiresGameDataFact]
+    public void PuttingZoomedBinocularsAwayClosesThemOnThePressTick()
+    {
+        // Issue #37: 0x40E9C0 deselects the binoculars (0x470840) and resets the view (0x4659E0) on the tick their key is
+        // pressed, so they never come back up at the default zoom while the weapon change lowers them.
+        WeaponTypeRegistry roster = LoadRoster();
+        WeaponType binoculars = roster.Weapons.Single(weapon => weapon.Category == WeaponCategory.Binocular);
+        WeaponType knife = roster.Weapons.Single(weapon => weapon.ScriptId == "WEAPON_ID_KNIFE");
+        PlayerCamera camera = Arm(knife, binoculars);
+        InputState input = new();
+        TickUntilReady(camera, input);
+
+        Press(camera, input, KeyCode.B);
+        for (int tick = 0; tick < 60 && !camera.IsBinocularsOpen; tick++)
+        {
+            Press(camera, input, key: null);
+        }
+
+        for (int tick = 0; tick < 30; tick++)
+        {
+            Press(camera, input, KeyCode.PageUp);
+        }
+
+        Assert.True(camera.IsBinocularsOpen);
+        Assert.True(camera.View!.TanX < HumanView.DefaultTanX);
+
+        Press(camera, input, KeyCode.B);
+
+        Assert.False(camera.IsBinocularsOpen);
+        Assert.Equal(HumanView.DefaultTanX, camera.View.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX, camera.View.ViewModelTanX);
+
+        for (int tick = 0; tick < 60 && camera.Weapons!.InHand?.Weapon.Category == WeaponCategory.Binocular; tick++)
+        {
+            Press(camera, input, key: null);
+            Assert.False(camera.IsBinocularsOpen);
+        }
+
+        Assert.Equal("WEAPON_ID_KNIFE", camera.Weapons!.InHand?.Weapon.ScriptId);
+    }
+
     private static PlayerCamera Arm(params WeaponType[] weapons)
     {
         PlayerCamera camera = new();

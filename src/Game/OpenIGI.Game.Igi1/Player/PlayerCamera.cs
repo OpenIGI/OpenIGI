@@ -941,11 +941,16 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _shots.ClearImpacts();
 
         // 0x4659E0, asked for by the weapon hand-off into a reload, a lean or a weapon change: the scope latch clears and
-        // both tangents go home, so a reload always comes out of the sight. The binoculars' own key is left to the optics
-        // below: its close toggle is still pending, and a reset that cleared the view first would let that toggle open it
-        // again at the default zoom until the weapon change finished.
-        if (_weapons?.ConsumeViewReset() == true && !_weapons.BinocularCloseQueued)
+        // both tangents go home, so a reload always comes out of the sight. When the binoculars' own key started the
+        // change, 0x40E9C0 has already deselected them (0x470840) on this tick, so their queued close is spent here: left
+        // for the optics below, it would read as an open against the reset view and hold them up until the change ended.
+        if (_weapons?.ConsumeViewReset() == true)
         {
+            if (_weapons.BinocularCloseQueued)
+            {
+                _ = _weapons.ConsumeBinocularToggle();
+            }
+
             ResetOptics();
         }
 
