@@ -35,6 +35,11 @@ public sealed partial class GraphicsDevice
     private const int LampMapSize = 256;
 
     private IRhiTexture? _lampMaps;
+
+    // Each slot's static casters, kept apart from the live map so a frame redraws only what moves; see
+    // BeginLampShadowMapLayer. The same size and format as the live maps, one layer a slot.
+    private IRhiTexture? _lampStatic;
+    private IRhiTextureView[] _lampStaticLayers = [];
     private IRhiTextureView? _lampMapArray;
     private IRhiTextureView[] _lampMapLayers = [];
     private IRhiSampler? _lampMapSampler;
@@ -116,6 +121,49 @@ public sealed partial class GraphicsDevice
         return true;
     }
 
+    /// <inheritdoc/>
+    public bool CachesLampShadowMaps => true;
+
+    /// <inheritdoc/>
+    public bool BeginLampShadowMapLayer(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection, bool staticCasters)
+    {
+        ThrowIfDisposed();
+
+        if (slot is < 0 or >= LampMapSlotCount)
+        {
+            return false;
+        }
+
+        EnsureLampMaps();
+        _shadowPipelines ??= new ShadowPipelineCache(_device, _materialLayout, ShadowFormat);
+
+        ClosePass();
+        CloseScenePass();
+        CloseShadowPass();
+
+        if (staticCasters)
+        {
+            // The kept map, cleared and drawn whole by the static casters. Nothing reads it but the copy that
+            // starts the live map, so the live slot keeps whatever it held until that copy is made.
+            OpenShadowLayer(_lampStaticLayers[slot], LampMapSize, $"lampmap{slot}.static", rotation, resume: false);
+            return true;
+        }
+
+        // The live map starts as the kept one; the movers drawn over it test against it and write the nearer.
+        Encoder().CopyTextureToTexture(
+            new RhiTextureRegion(_lampStatic!, 0, new RhiOrigin3D(0, 0, slot)),
+            new RhiTextureRegion(_lampMaps!, 0, new RhiOrigin3D(0, 0, slot)),
+            new RhiExtent3D(LampMapSize, LampMapSize, 1));
+
+        _lampMapPositions[slot] = position;
+        _lampMapRotations[slot] = rotation;
+        _lampMapProjections[slot] = projection;
+        _lampMapDrawn[slot] = true;
+
+        OpenShadowLayer(_lampMapLayers[slot], LampMapSize, $"lampmap{slot}", rotation, resume: true);
+        return true;
+    }
+
     /// <summary>Makes the map array, its layers and the comparison sampler it is read through.</summary>
     private void EnsureLampMaps()
     {
@@ -128,20 +176,32 @@ public sealed partial class GraphicsDevice
             LampMapSize,
             LampMapSize,
             ShadowFormat,
-            RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled,
+            RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination,
             DepthOrArrayLayers: LampMapSlotCount,
             Label: "lamp-maps"));
+        _lampStatic = _device.CreateTexture(new RhiTextureDescriptor(
+            LampMapSize,
+            LampMapSize,
+            ShadowFormat,
+            RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource,
+            DepthOrArrayLayers: LampMapSlotCount,
+            Label: "lamp-maps.static"));
         _lampMapArray = _lampMaps.CreateView(new RhiTextureViewDescriptor(
             ArrayLayerCount: LampMapSlotCount,
             Dimension: RhiTextureViewDimension.Texture2DArray,
             Label: "lamp-maps.array"));
         _lampMapLayers = new IRhiTextureView[LampMapSlotCount];
+        _lampStaticLayers = new IRhiTextureView[LampMapSlotCount];
         for (int layer = 0; layer < LampMapSlotCount; layer++)
         {
             _lampMapLayers[layer] = _lampMaps.CreateView(new RhiTextureViewDescriptor(
                 BaseArrayLayer: layer,
                 ArrayLayerCount: 1,
                 Label: $"lamp-maps.{layer}"));
+            _lampStaticLayers[layer] = _lampStatic.CreateView(new RhiTextureViewDescriptor(
+                BaseArrayLayer: layer,
+                ArrayLayerCount: 1,
+                Label: $"lamp-maps.static.{layer}"));
         }
 
         _lampMapSampler = _device.CreateSampler(new RhiSamplerDescriptor(
@@ -196,11 +256,13 @@ public sealed partial class GraphicsDevice
 
     private void DisposeLampMaps()
     {
-        foreach (IDisposable? owned in (IDisposable?[])[.. _lampMapLayers, _lampMapArray, _lampMaps, _lampMapSampler])
+        foreach (IDisposable? owned in (IDisposable?[])[.. _lampMapLayers, .. _lampStaticLayers, _lampMapArray, _lampMaps, _lampStatic, _lampMapSampler])
         {
             owned?.Dispose();
         }
 
+        _lampStaticLayers = [];
+        _lampStatic = null;
         _lampMapLayers = [];
         _lampMapArray = null;
         _lampMaps = null;
