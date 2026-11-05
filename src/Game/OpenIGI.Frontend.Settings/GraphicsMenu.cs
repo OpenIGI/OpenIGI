@@ -800,6 +800,11 @@ public static class GraphicsMenu
         "r_moon_brightness",
         "r_stars",
         "r_night_shift",
+        "r_night_adaptation", // the eye's night adaptation, which each mission's look sets in fog-presets.json
+
+        // The share of a level's shipped lightmaps kept under the dynamic light where there is no outdoors.
+        // Each mission's look names it in fog-presets.json; a player moving it relights the indoor levels.
+        "r_lightmap_sunless_share",
 
         // Which fog the picture wears, which the Preset row has already answered: vanilla draws the
         // original's own per-vertex haze into the level's fog colour, and every tier above it marches
