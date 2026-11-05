@@ -44,6 +44,7 @@ public sealed partial class GraphicsDevice
         RecordVelocityBeforeShading(scene);
         RecordOcclusion(scene);
         RecordSunShadow(scene);
+        RecordLampGrid(scene);
         RecordLampShadow(scene);
         RecordFlashlightShadow(scene);
         RecordFog(scene);
@@ -78,6 +79,7 @@ public sealed partial class GraphicsDevice
         BindFog();
         BindSunShadow();
         BindLampShadow();
+        shading.BindLampGrid(LampGridBuffer);
         BindFlashlightShadow();
         BindShelterMap();
 

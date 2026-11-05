@@ -16,6 +16,34 @@ public sealed partial class GraphicsDevice
 {
     private readonly DeferredLocalLight[] _localLights = new DeferredLocalLight[DeferredLocalLight.Maximum];
     private readonly float[] _lampBlock = new float[DeferredLampBlock.Floats];
+
+    // Which lamps can reach each cell of the view, for the shading and the lamp trace to walk. Built each frame
+    // the shading runs; a frame with no lamps binds its empty grid.
+    private LampGrid? _lampGrid;
+    private bool _lampGridBuilt;
+
+    /// <summary>Gets the lamp grid this frame's readers walk: the one built, or one of no tiles.</summary>
+    private IRhiBuffer LampGridBuffer => _lampGridBuilt ? _lampGrid!.Buffer : (_lampGrid ??= new LampGrid(_device, FramesInFlight, _retired)).Empty;
+
+    /// <summary>Lists, for each cell of the view, the frame's lamps that can reach it.</summary>
+    /// <remarks>Before the lamp trace and the shading, which both walk it; from the same lamp block they read.</remarks>
+    private void RecordLampGrid(SceneTargetSet scene)
+    {
+        _lampGridBuilt = false;
+        if (_localLightCount <= 0)
+        {
+            return;
+        }
+
+        _lampGrid ??= new LampGrid(_device, FramesInFlight, _retired);
+        DeferredLampBlock.Write(_lampBlock, LampState(), LocalLights);
+
+        using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+            _profiler.Time(RenderStage.Lighting, "lamp.grid"),
+            "lamp.grid"));
+        _lampGrid.Record(pass, scene.Width, scene.Height, LightingState().Unprojection, _lampBlock, FrameSlot);
+        _lampGridBuilt = true;
+    }
     private int _localLightCount;
     private TracedLampShadow? _tracedLamps;
 
@@ -151,7 +179,8 @@ public sealed partial class GraphicsDevice
                     SunDirection: sunDirection,
                     SunLuminance: sunLuminance,
                     LightingChanged: lightingChanged,
-                    Raw: RawLighting)
+                    Raw: RawLighting,
+                    LampGrid: LampGridBuffer)
                 : new TracedLampFrame(
                     null,
                     _cameraPosition,
@@ -171,7 +200,8 @@ public sealed partial class GraphicsDevice
                     lightingChanged,
                     _lampBounceMapArray,
                     WriteLampCoarseBlock(),
-                    RawLighting);
+                    RawLighting,
+                    LampGridBuffer);
         IRhiTextureView? lampVelocity = _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null;
 
         // Step by step while measuring, so the trace and the two filters are told apart in the breakdown.
@@ -255,6 +285,8 @@ public sealed partial class GraphicsDevice
     private void DisposeLampShadow()
     {
         _tracedLamps?.Dispose();
+        _lampGrid?.Dispose();
+        _lampGrid = null;
         _tracedLamps = null;
     }
 }

@@ -195,6 +195,10 @@ struct Lamps
 // pixel, so it needs no sampler. Always bound; gi.flashlight.control.x says whether this frame made one.
 [[vk::binding(36, 0)]] Texture2D<float4> uFlashlightShadow;
 
+// Which lamps can reach each cell of the view (Lamp/Grid.slang), so a pixel walks those rather than every lamp.
+[[vk::binding(37, 0)]] StructuredBuffer<uint> uLampGrid;
+#include "../Common/LampGrid.slang"
+
 struct Light
 {
     // xyz view-space sun direction, w lighting model (0 baked, 1 hybrid, 2 dynamic).
@@ -785,9 +789,19 @@ float4 fragmentMain(Varyings input) : SV_Target
             : float4(lampOcclusion, lampOcclusion, lampOcclusion, 1.0);
     }
 
+    // The lamps that can reach this pixel's cell, in the order the frame lists them; every lamp where the cell
+    // lists them all or there is no grid. A lamp the cell leaves out lights nothing here, so the sum is the
+    // same terms in the same order either way.
+    uint lampCell;
+    uint lampFirst = 0u;
+    uint lampListed = 0u;
+    bool lampGridded = LampGridCell(vUv, viewPos.z, lampCell) && LampGridList(lampCell, lampFirst, lampListed);
+    int lampWalk = lampGridded ? int(lampListed) : lampCount;
+
     float3 lampLight = float3(0.0, 0.0, 0.0);
-    for (int i = 0; i < lampCount; i++)
+    for (int n = 0; n < lampWalk; n++)
     {
+        int i = lampGridded ? LampGridLamp(lampFirst, uint(n)) : n;
         float lampWeight;
         float3 lampTerm = LampShade(
             i, viewPos, normal, worldView, albedo, metallic, specularLevel, roughness, lampWeight) * lampOcclusion;

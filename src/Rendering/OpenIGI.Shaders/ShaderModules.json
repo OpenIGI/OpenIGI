@@ -189,6 +189,18 @@
       "source": "Lamp/DenoiseSpatial.slang"
     },
     {
+      "id": "LampGrid",
+      "source": "Lamp/Grid.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_LAMPS": "160"
+          }
+        }
+      ]
+    },
+    {
       "id": "LampShadow",
       "source": "Lamp/Shadow.slang",
       "variants": [

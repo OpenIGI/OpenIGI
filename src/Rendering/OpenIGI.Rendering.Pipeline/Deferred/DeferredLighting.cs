@@ -236,6 +236,18 @@ public sealed class DeferredLighting : IDisposable
         }
     }
 
+    /// <summary>Points the shading at the lamp grid it walks each pixel's lamps from.</summary>
+    /// <param name="grid">This frame's grid, or a grid of no tiles to walk every lamp.</param>
+    public void BindLampGrid(IRhiBuffer grid)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(grid);
+        if (_bindings.Declares("uLampGrid"))
+        {
+            _bindings.Bind("uLampGrid", grid);
+        }
+    }
+
     /// <summary>Points the shading at this frame's traced sun shadow, or at nothing.</summary>
     /// <param name="mask">How much sun reaches each pixel, or null for a frame whose sun uses the cascades.</param>
     /// <remarks>
