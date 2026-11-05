@@ -9,6 +9,10 @@
 //
 // The traced form is SPIR-V alone, because WGSL has no ray tracing.
 
+#ifndef OPENIGI_SPLIT_BOUNCE
+#define OPENIGI_SPLIT_BOUNCE 0
+#endif
+
 #include "../Common/ComputeBindings.slang"
 #include "../Common/ImageHistory.slang"
 
@@ -460,17 +464,24 @@ float3 BoostAlbedo(float3 albedo, float boost)
 // The four probes around a texel, as offsets from the one covering it.
 static const int2 kProbeCorner[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
 
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
+// The work group's tile: which page and tile it lights, or false when the whole group has nothing to do --
+// past the active list, past the tiles, a page whose placement moves, or a page out of reach. Every test
+// here is the same for every thread of the group, which is what lets the split bounce return on it before
+// its barrier.
+bool GroupTile(uint3 groupId, out int4 entry, out int at, out float4 lightPage, out float4 cardPage)
 {
+    entry = int4(0, 0, 0, 0);
+    at = 0;
+    lightPage = float4(0.0, 0.0, 0.0, 0.0);
+    cardPage = float4(0.0, 0.0, 0.0, 0.0);
+
     int slot = (int(groupId.x) * max(uTileStride, 1)) + uTileOffset;
     int tile = slot;
     if (uUseActiveList != 0)
     {
         if (slot >= uActiveCount)
         {
-            return;
+            return false;
         }
 
         tile = uActiveTiles[slot];
@@ -478,21 +489,19 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
 
     if (tile >= uTileCount)
     {
-        return;
+        return false;
     }
 
-    int4 entry = uTiles[tile];
+    entry = uTiles[tile];
     int page = entry.x;
-    int2 within = (entry.yz * 8) + int2(localId.xy);
-
-    int at = page * kVectorsPerPage;
+    at = page * kVectorsPerPage;
 
     // A page whose placement moves carries the light it had. Its shadows here would be traced against a
     // field built from the level as it loaded, in which it still stands where it started -- lit at its new
     // place, a truck's interior comes out as if the truck were not round it. See MovePlacement.
     if (uPages[at + 5].w > 0.5)
     {
-        return;
+        return false;
     }
 
     // Out of reach, and out before a single texel is read. The page's bounding sphere is the same one the
@@ -507,20 +516,35 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
 
         if (dot(toCentre, toCentre) > limit * limit)
         {
-            return;
+            return false;
         }
     }
 
-    float4 lightPage = uPages[at + 0];
-    float4 cardPage = uPages[at + 1];
+    lightPage = uPages[at + 0];
+    cardPage = uPages[at + 1];
+    return true;
+}
 
-    // Past the page's own edge: the last tile of a page whose size is not a multiple of eight covers
-    // texels that belong to nobody, and writing them would spill into the gutter.
-    if (within.x >= int(lightPage.z) || within.y >= int(lightPage.w))
-    {
-        return;
-    }
+// Where in its card a texel sits, and the captured surface's albedo there.
+float4 TexelAlbedo(float4 lightPage, float4 cardPage, int2 within, out float2 uv, out float2 cardUv)
+{
+    // Where in the card this texel sits, as a fraction, sampled at the texel's centre.
+    uv = (float2(within) + 0.5) / float2(lightPage.z, lightPage.w);
 
+    // The captured surface, read from the OTHER atlas at the same fraction of the same card. Both layouts
+    // allocate the same size for a card, so this needs no rescale.
+    uint albedoWidth;
+    uint albedoHeight;
+    uAlbedo.GetDimensions(albedoWidth, albedoHeight);
+    cardUv =
+        (cardPage.xy + (uv * cardPage.zw)) / float2(float(albedoWidth), float(albedoHeight));
+
+    return uAlbedo.SampleLevel(uAlbedoSampler, cardUv, 0.0);
+}
+
+// A covered texel's surface: its position and normal in the world, rebuilt from the card it was captured on.
+void TexelSurface(int at, float2 uv, float2 cardUv, out float3 world, out float3 worldNormal)
+{
     float4 centreAndHalfWidth = uPages[at + 2];
     float4 rightAndHalfHeight = uPages[at + 3];
     float4 upAndDepth = uPages[at + 4];
@@ -528,30 +552,6 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
     float4 row0 = uPages[at + 6];
     float4 row1 = uPages[at + 7];
     float4 row2 = uPages[at + 8];
-
-    // Where in the card this texel sits, as a fraction, sampled at the texel's centre.
-    float2 uv = (float2(within) + 0.5) / float2(lightPage.z, lightPage.w);
-
-    // The captured surface, read from the OTHER atlas at the same fraction of the same card. Both layouts
-    // allocate the same size for a card, so this needs no rescale.
-    uint albedoWidth;
-    uint albedoHeight;
-    uAlbedo.GetDimensions(albedoWidth, albedoHeight);
-    float2 cardUv =
-        (cardPage.xy + (uv * cardPage.zw)) / float2(float(albedoWidth), float(albedoHeight));
-
-    float4 albedo = uAlbedo.SampleLevel(uAlbedoSampler, cardUv, 0.0);
-
-    int2 pageAt = int2(int(lightPage.x), int(lightPage.y));
-
-    // Alpha is the coverage mask -- see CardAtlasShaders. A texel no geometry reached holds nothing worth
-    // lighting, and depth cannot say so because a surface on the card's own plane has a depth of zero
-    // too.
-    if (albedo.a < 0.5)
-    {
-        OPENIGI_HISTORY_STORE(uDirect, pageAt + within, float4(0.0, 0.0, 0.0, 0.0));
-        return;
-    }
 
     float3 normal = normalize(
         (uNormal.SampleLevel(uNormalSampler, cardUv, 0.0).xyz * 2.0) - 1.0);
@@ -569,15 +569,174 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
     // Into the world, through the placement. The rows carry the model-to-world rotation, so it is applied
     // transposed -- the same way SceneDistanceField reaches world space, and the two must agree or the
     // lighting sits somewhere the geometry is not.
-    float3 world = float3(
+    world = float3(
         dot(float3(row0.x, row1.x, row2.x), local),
         dot(float3(row0.y, row1.y, row2.y), local),
         dot(float3(row0.z, row1.z, row2.z), local)) + float3(row0.w, row1.w, row2.w);
 
-    float3 worldNormal = normalize(float3(
+    worldNormal = normalize(float3(
         dot(float3(row0.x, row1.x, row2.x), normal),
         dot(float3(row0.y, row1.y, row2.y), normal),
         dot(float3(row0.z, row1.z, row2.z), normal)));
+}
+
+#if OPENIGI_SPLIT_BOUNCE
+// The bounce (mode one) with one ray to a thread. A tile is eight texels square and one texel in sixteen
+// carries a probe, so the probe-a-thread form left sixty of every sixty-four threads to write a nought and
+// leave while four threads traced sixteen rays each: a wave with two lanes working. Here every thread still
+// answers for its own texel -- the nought where there is no probe -- and also traces one ray of one of the
+// tile's four probes; the probe's first ray thread then adds the sixteen in ray order, the arithmetic and the
+// order the loop had, and blends the result onto the probe's history as before.
+groupshared float4 sBounceBasis[64];
+groupshared float3 sBounceRadiance[64];
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
+{
+    int4 entry;
+    int at;
+    float4 lightPage;
+    float4 cardPage;
+    if (!GroupTile(groupId, entry, at, lightPage, cardPage))
+    {
+        return;
+    }
+
+    int2 pageAt = int2(int(lightPage.x), int(lightPage.y));
+    int2 pageSize = int2(int(lightPage.z), int(lightPage.w));
+
+    // This thread's own texel: a nought for every covered texel that is not a probe, and for every uncovered
+    // one -- a probe's texel among them -- as the probe-a-thread form wrote.
+    int2 within = (entry.yz * 8) + int2(localId.xy);
+    if (within.x < pageSize.x && within.y < pageSize.y)
+    {
+        int2 texelAt = pageAt + within;
+        float2 uv;
+        float2 cardUv;
+        float4 albedo = TexelAlbedo(lightPage, cardPage, within, uv, cardUv);
+        if (albedo.a < 0.5 || ((texelAt.x | texelAt.y) & kProbeMask) != 0)
+        {
+            OPENIGI_HISTORY_STORE(uDirect, texelAt, float4(0.0, 0.0, 0.0, 0.0));
+        }
+    }
+
+    // And one ray of one probe. The tile's probes sit on the atlas-wide grid of every fourth texel, two each
+    // way within the tile, wherever the page's corner puts that grid.
+    int lane = (int(localId.y) * 8) + int(localId.x);
+    int probeIndex = lane / kTracesPerProbe;
+    int ray = lane % kTracesPerProbe;
+    int2 tileOrigin = pageAt + (entry.yz * 8);
+    int2 first = (int2(kProbeMask + 1, kProbeMask + 1) - (tileOrigin & kProbeMask)) & kProbeMask;
+    int2 probeWithin = (entry.yz * 8) + first + (int2(probeIndex % 2, probeIndex / 2) * (kProbeMask + 1));
+    int2 probeTexel = pageAt + probeWithin;
+
+    bool probeLive = probeWithin.x < pageSize.x && probeWithin.y < pageSize.y;
+    float3 world = float3(0.0, 0.0, 0.0);
+    float3 worldNormal = float3(0.0, 0.0, 1.0);
+    if (probeLive)
+    {
+        float2 uv;
+        float2 cardUv;
+        float4 albedo = TexelAlbedo(lightPage, cardPage, probeWithin, uv, cardUv);
+        probeLive = albedo.a >= 0.5;
+        if (probeLive)
+        {
+            TexelSurface(at, uv, cardUv, world, worldNormal);
+        }
+    }
+
+    int2 probeCoord = probeTexel >> 2;
+    float2 center = ProbeCenter(probeCoord, uTemporalIndex);
+    bool gathers = probeLive && ProbeGathers();
+    if (gathers)
+    {
+        float3 radiance;
+        float4 basisHere;
+        GatherProbeRay(
+            world, worldNormal, center, BasisAround(worldNormal), uClipmapOrigin[0].w, ray, radiance, basisHere);
+        sBounceBasis[lane] = basisHere;
+        sBounceRadiance[lane] = radiance;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (ray != 0 || !probeLive)
+    {
+        return;
+    }
+
+    uProbePos[(probeCoord.y * uProbeWidth) + probeCoord.x] = float4(world, 1.0);
+
+    float3 gathered = float3(0.0, 0.0, 0.0);
+    if (gathers)
+    {
+        float4 red = float4(0.0, 0.0, 0.0, 0.0);
+        float4 green = float4(0.0, 0.0, 0.0, 0.0);
+        float4 blue = float4(0.0, 0.0, 0.0, 0.0);
+        for (int cell = 0; cell < kTracesPerProbe; cell++)
+        {
+            float4 basisHere = sBounceBasis[lane + cell];
+            float3 radiance = sBounceRadiance[lane + cell];
+            red += basisHere * radiance.r;
+            green += basisHere * radiance.g;
+            blue += basisHere * radiance.b;
+        }
+
+        gathered = FinishProbe(red, green, blue, worldNormal);
+    }
+
+    // The probe's running mean, as the probe-a-thread form keeps it.
+    float4 previous = OPENIGI_HISTORY_LOAD_2D(uDirect, probeTexel);
+    float traced = uTemporalIndex > 0 ? previous.a : 0.0;
+    float limit = float(uMaxFrames);
+    float blend = 1.0 / (1.0 + min(traced, limit));
+    OPENIGI_HISTORY_STORE(
+        uDirect,
+        probeTexel,
+        float4(lerp(previous.rgb, gathered, blend), min(traced + 1.0, limit + 1.0)));
+}
+#else
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
+{
+    int4 entry;
+    int at;
+    float4 lightPage;
+    float4 cardPage;
+    if (!GroupTile(groupId, entry, at, lightPage, cardPage))
+    {
+        return;
+    }
+
+    int2 within = (entry.yz * 8) + int2(localId.xy);
+
+    // Past the page's own edge: the last tile of a page whose size is not a multiple of eight covers
+    // texels that belong to nobody, and writing them would spill into the gutter.
+    if (within.x >= int(lightPage.z) || within.y >= int(lightPage.w))
+    {
+        return;
+    }
+
+    float2 uv;
+    float2 cardUv;
+    float4 albedo = TexelAlbedo(lightPage, cardPage, within, uv, cardUv);
+
+    int2 pageAt = int2(int(lightPage.x), int(lightPage.y));
+
+    // Alpha is the coverage mask -- see CardAtlasShaders. A texel no geometry reached holds nothing worth
+    // lighting, and depth cannot say so because a surface on the card's own plane has a depth of zero
+    // too.
+    if (albedo.a < 0.5)
+    {
+        OPENIGI_HISTORY_STORE(uDirect, pageAt + within, float4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    float3 world;
+    float3 worldNormal;
+    TexelSurface(at, uv, cardUv, world, worldNormal);
 
     int2 texelAt = pageAt + within;
 
@@ -768,3 +927,4 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
 
     OPENIGI_HISTORY_STORE(uDirect, texelAt, float4(lit, 1.0));
 }
+#endif

@@ -63,4 +63,7 @@ internal sealed class TerrainChunkEntry(TerrainChunk chunk, TerrainChunkGeometry
     public TerrainBatchPage OcclusionPage { get; set; } = null!;
 
     public long LastUsedFrame { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the record has left the cache, its geometry returned to the pool.</summary>
+    public bool Evicted { get; set; }
 }

@@ -60,6 +60,27 @@ internal sealed class RayTracingScene : IDisposable
     /// <summary>Gets how many meshes the scene holds structures for.</summary>
     public int GeometryCount => _geometries.Count;
 
+    /// <summary>Gets the bytes the scene's acceleration structures and scratch occupy.</summary>
+    /// <remarks>
+    /// Said out loud so that compaction, or anything else that changes what the structures cost, is measured
+    /// rather than assumed.
+    /// </remarks>
+    public (ulong BottomLevel, ulong TopLevel, ulong Scratch) Memory
+    {
+        get
+        {
+            ulong bottom = 0;
+            foreach (BottomLevelStructure structure in _geometries)
+            {
+                bottom += structure.StructureSize;
+            }
+
+            // The whole scratch pool rather than the buffer in use: that alternates between the pool's
+            // buffers frame to frame, and a figure that flips every frame is a status line logged every frame.
+            return (bottom, _topLevel.PooledBytes, _scratch.PooledBytes);
+        }
+    }
+
     /// <summary>Gets how many placements the last build covered.</summary>
     public int InstanceCount => _topLevel.InstanceCount;
 

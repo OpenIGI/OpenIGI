@@ -544,18 +544,55 @@ float3 SurfaceNormalAt(float3 hit)
 }
 #endif
 
-// The light arriving over the hemisphere a surface faces: the screen first, then a ray or a march
-// against the world, then the sky on a miss.
-float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jitter)
+// One ray's share of a probe's estimate: everything the ray adds to the probe's sums, kept apart so that
+// the sums can be made in ray order by whichever thread holds them. The has- flags say which sums the ray
+// adds to at all -- an addition that never happened is not the same as adding nought.
+struct GatherRay
 {
-    if (uShadowLevels <= 0 || uLookupBuckets <= 0)
-    {
-        return float3(0.0, 0.0, 0.0);
-    }
+    float3 radiance;
+    float weight;
+    float3 surface;
+    float surfaceWeight;
+    float3 open;
+    float unplaced;
+    bool hasSurface;
+    bool hasOpen;
+    bool hasUnplaced;
+};
 
-    HemisphereBasis basis = BasisAround(normal);
-    float3 viewNormal = ToView(normal);
+// What a probe's rays share: the frame it gathers in and where its rays leave from.
+struct GatherProbe
+{
+    HemisphereBasis basis;
+    float3 viewNormal;
+    float3 traceFrom;
+};
 
+// A probe's running sums over its rays.
+//
+// counted is how many rays the probe's estimate stands on. A ray that struck something the cache cannot
+// place still struck something: it did not reach the sky, and the light it would have brought is the light
+// of a nearby surface, not nothing and not the open sky. Counted black it printed dark blotches into room
+// corners and under desks, where such misses cluster; left out, the estimate became the mean of the rays
+// that DID escape, and a probe beside a wall took almost the open sky's value -- no darkening where a wall
+// meets the ground, every shadow filled. So each such ray takes the mean light of the surfaces the probe's
+// other rays found (or, if none, a dim estimate from the sky), and counts.
+struct GatherSums
+{
+    float3 irradiance;
+    float counted;
+    float3 surfaceSum;
+    float surfaceCount;
+    float3 openSum;
+    float openCount;
+    float unplaced;
+};
+
+// Whether a probe can gather at all, and what its rays share.
+bool BeginGather(float3 world, float3 normal, float3 viewOrigin, out GatherProbe probe)
+{
+    probe.basis = BasisAround(normal);
+    probe.viewNormal = ToView(normal);
 #if OPENIGI_RAY_QUERY
     // Where the traced rays leave from: the surface point, drawn back towards the eye that saw it. Off the
     // surface along its normal is not enough at an inside edge -- a pixel on one wall a few millimetres from
@@ -568,220 +605,276 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
     // level-of-detail terrain whose facets the smooth normal does not follow. Two centimetres hundreds of
     // metres out started rays under the slope beside them: on mission 2's mountainside every crease
     // traced black wedges into the sky light and the cards' light streaked the snow between them.
-    float3 traceFrom = world + (normalize(uCameraToCache - world) * kTraceViewPull)
+    probe.traceFrom = world + (normalize(uCameraToCache - world) * kTraceViewPull)
         + (normal * (kTraceDistanceOffset * abs(viewOrigin.z)));
 #else
-    float3 traceFrom = world;
+    probe.traceFrom = world;
 #endif
+    return uShadowLevels > 0 && uLookupBuckets > 0;
+}
 
-    float3 irradiance = float3(0.0, 0.0, 0.0);
+// One ray of a probe's hemisphere: the screen first, then a ray or a march against the world, then the sky.
+GatherRay GatherOneRay(GatherProbe probe, float3 world, float3 normal, float3 viewOrigin, float2 jitter, int ray)
+{
+    HemisphereBasis basis = probe.basis;
+    float3 viewNormal = probe.viewNormal;
+    float3 traceFrom = probe.traceFrom;
 
-    // How many rays this probe's estimate stands on.
-    //
-    // A ray that struck something the cache cannot place still struck something: it did not reach the sky,
-    // and the light it would have brought is the light of a nearby surface, not nothing and not the open
-    // sky. Counted black it printed dark blotches into room corners and under desks, where such misses
-    // cluster; left out, the estimate became the mean of the rays that DID escape, and a probe beside a
-    // wall took almost the open sky's value -- no darkening where a wall meets the ground, every shadow
-    // filled. So each such ray takes the mean light of the surfaces the probe's other rays found (or, if
-    // none, a dim estimate from the sky), and counts.
-    float counted = 0.0;
-    float3 surfaceSum = float3(0.0, 0.0, 0.0);
-    float surfaceCount = 0.0;
-    float3 openSum = float3(0.0, 0.0, 0.0);
-    float openCount = 0.0;
-    float unplaced = 0.0;
-    for (int ray = 0; ray < kTracesPerProbe; ray++)
+    GatherRay result;
+    result.radiance = float3(0.0, 0.0, 0.0);
+    result.weight = 0.0;
+    result.surface = float3(0.0, 0.0, 0.0);
+    result.surfaceWeight = 0.0;
+    result.open = float3(0.0, 0.0, 0.0);
+    result.unplaced = 0.0;
+    result.hasSurface = false;
+    result.hasOpen = false;
+    result.hasUnplaced = false;
+
+    // A stratified cosine hemisphere: the sixteen rays cover a four-by-four grid of the square the
+    // mapping comes from, so no two land in the same place however the jitter falls.
+    float2 probeUv =
+        (float2(float(ray % kHemisphereResolution), float(ray / kHemisphereResolution)) + jitter)
+        / float(kHemisphereResolution);
+    float phi = 6.28318530718 * probeUv.x;
+    float cosTheta = sqrt(probeUv.y);
+    float sinTheta = sqrt(max(0.0, 1.0 - (cosTheta * cosTheta)));
+    float3 local = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+    float3 direction = Orient(basis, local);
+
+    float3 radiance = float3(0.0, 0.0, 0.0);
+    bool resolved = false;
+
+    // This ray's share of the estimate: one, less whatever of it the trace could not vouch for.
+    float weight = 1.0;
+
+    // Which source answered this ray, for the r_gi_source diagnostic: 1 screen, 2 surface cache, 3 sky.
+    int source = 0;
+
+    if (uScreenTraceSteps > 0)
     {
-        // A stratified cosine hemisphere: the sixteen rays cover a four-by-four grid of the square the
-        // mapping comes from, so no two land in the same place however the jitter falls.
-        float2 probeUv =
-            (float2(float(ray % kHemisphereResolution), float(ray / kHemisphereResolution)) + jitter)
-            / float(kHemisphereResolution);
-        float phi = 6.28318530718 * probeUv.x;
-        float cosTheta = sqrt(probeUv.y);
-        float sinTheta = sqrt(max(0.0, 1.0 - (cosTheta * cosTheta)));
-        float3 local = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
-        float3 direction = Orient(basis, local);
-
-        float3 radiance = float3(0.0, 0.0, 0.0);
-        bool resolved = false;
-
-        // This ray's share of the estimate: one, less whatever of it the trace could not vouch for.
-        float weight = 1.0;
-
-        // Which source answered this ray, for the r_gi_source diagnostic: 1 screen, 2 surface cache, 3 sky.
-        int source = 0;
-
-        if (uScreenTraceSteps > 0)
+        float3 viewDir = ToView(direction);
+        float3 screenRadiance;
+        if (ScreenTraceRadiance(viewOrigin, viewNormal, viewDir, screenRadiance))
         {
-            float3 viewDir = ToView(direction);
-            float3 screenRadiance;
-            if (ScreenTraceRadiance(viewOrigin, viewNormal, viewDir, screenRadiance))
-            {
-                radiance = screenRadiance;
-                resolved = true;
-                source = 1;
-            }
+            radiance = screenRadiance;
+            resolved = true;
+            source = 1;
         }
+    }
 
-        if (!resolved)
-        {
-            float3 hit;
-            bool fieldHit = VisibilityAt(traceFrom, normal, direction, hit) <= 0.5;
+    if (!resolved)
+    {
+        float3 hit;
+        bool fieldHit = VisibilityAt(traceFrom, normal, direction, hit) <= 0.5;
 
 #if !OPENIGI_RAY_QUERY
-            // The terrain, which the field does not hold: a ray heading down that meets it before anything
-            // the field found reads the cache's light where it landed -- the pool a lamp throws on the
-            // ground, the sunlit apron in front of a wall -- where it was answered with an open-ground guess
-            // that knew nothing of either.
-            float3 terrainFrom = world + (normal * 0.1);
-            float terrainT = TerrainHitDistance(terrainFrom + uTraceOrigin, direction, 32.0);
-            if (terrainT >= 0.0 && (!fieldHit || length(hit - world) > terrainT))
+        // The terrain, which the field does not hold: a ray heading down that meets it before anything
+        // the field found reads the cache's light where it landed -- the pool a lamp throws on the
+        // ground, the sunlit apron in front of a wall -- where it was answered with an open-ground guess
+        // that knew nothing of either.
+        float3 terrainFrom = world + (normal * 0.1);
+        float terrainT = TerrainHitDistance(terrainFrom + uTraceOrigin, direction, 32.0);
+        if (terrainT >= 0.0 && (!fieldHit || length(hit - world) > terrainT))
+        {
+            float3 terrainLight;
+            if (SampleCardsWithin(
+                    terrainFrom + (direction * terrainT),
+                    float3(0.0, 0.0, 1.0),
+                    0.5 * uClipmapOrigin[0].w,
+                    terrainLight))
             {
-                float3 terrainLight;
-                if (SampleCardsWithin(
-                        terrainFrom + (direction * terrainT),
-                        float3(0.0, 0.0, 1.0),
-                        0.5 * uClipmapOrigin[0].w,
-                        terrainLight))
-                {
-                    radiance = terrainLight * uBounceScale;
-                    source = 2;
-                    surfaceSum += CapRayIntensity(radiance);
-                    surfaceCount += 1.0;
-                    fieldHit = false;
-                    resolved = true;
-                }
-                else
-                {
-                    // No card holds the ground there: it is still the ground, nearer than whatever the
-                    // field found beyond it, and the open-ground answer below is the one to give.
-                    fieldHit = false;
-                }
-            }
-#endif
-
-            if (resolved)
-            {
-            }
-            else if (fieldHit)
-            {
-                float2 found;
-                float2 litFound;
-                float agreement;
-                // Whether the hit is most likely this surface's own skin: only for the march, which starts a
-                // voxel and a half out and finds the surface it left within the next two. A traced ray
-                // knows exactly what it struck, and a near hit there is a real occluder -- the foot of the
-                // wall, the underside of the desk -- which is the contact darkening the gather is for.
-#if OPENIGI_RAY_QUERY
-                float near = 1.0;
-
-                // Read through the cards facing the face the ray struck, as a reflection reads them. The lookup
-                // below knows only where the hit is and which way the ray went, and a hit a hand's breadth into a
-                // corner stands inside the card of the wall the ray LEFT as well as the one it struck: the first
-                // to agree within its tolerance won, often the wall's own, and the wall lit itself -- a bright
-                // seam down every corner. The face says which surface it was; the record walk that gives it is
-                // the one the cut-out test already makes.
-                float3 tracedFiltered;
-                if (dot(gTraceHitNormal, gTraceHitNormal) > 0.5
-                    && SampleCardsWithin(hit, gTraceHitNormal, kCardSkin, tracedFiltered))
-                {
-                    radiance = tracedFiltered * uBounceScale;
-                    weight = near;
-                    source = 2;
-                    surfaceSum += CapRayIntensity(radiance) * near;
-                    surfaceCount += near;
-                }
-                else
-#else
-                // And by its height off the surface's own plane, not only its distance: a ray leaving a
-                // wall at a grazing angle runs along it and the march finds the same wall again metres on,
-                // well past two voxels, and reads the wall's own cached light back -- its stains and seams
-                // and all. Every surface took a blurred copy of its own texture as its bounce, which was the
-                // cloud over every wall in the gather. A ray leaving a flat surface cannot strike that
-                // surface; whatever it finds within a voxel of the plane is the plane.
-                float finest = uClipmapOrigin[0].w;
-                float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world))
-                    * smoothstep(0.75 * finest, 1.5 * finest, dot(hit - world, normal));
-
-                float3 hitNormal = SurfaceNormalAt(hit);
-
-                // From out of doors to a surface with a roof over it: the ray went through a wall or a roof,
-                // which the field at that distance cannot hold -- a slab a hand thick in voxels of half a
-                // metre -- and it brought the room's lamps back out onto the wall outside, and the lit roof
-                // of the hall below onto its own roof. Counted as a surface found but not placed, the way a
-                // hit nothing can read is. An open doorway is the exception, and the rarer one.
-                if (!UnderRoof(world + uTraceOrigin) && UnderRoof(hit + uTraceOrigin))
-                {
-                    near = 0.0;
-                    unplaced += 1.0;
-                }
-
-                // And read through every card that faced the surface there, blended by how squarely each
-                // looked and filtered within it, rather than the one texel of the one card nearest a point
-                // the march only placed to a voxel. A traced hit knows its surface exactly and keeps the
-                // single lookup.
-                if (dot(hitNormal, direction) > 0.0)
-                {
-                    hitNormal = -hitNormal;
-                }
-
-                float3 filtered;
-                if (near <= 0.0)
-                {
-                    weight = 0.0;
-                }
-                else if (dot(hitNormal, hitNormal) > 0.5 && SampleCardsWithin(hit, hitNormal, 0.5 * finest, filtered))
-                {
-                    radiance = filtered * uBounceScale;
-                    weight = near;
-                    source = 2;
-                    surfaceSum += CapRayIntensity(radiance) * near;
-                    surfaceCount += near;
-                }
-                else
-#endif
-                if (LookupCardHit(hit, direction, found, litFound, agreement))
-                {
-                    radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * uBounceScale;
-                    weight = near;
-                    source = 2;
-                    surfaceSum += CapRayIntensity(radiance) * near;
-                    surfaceCount += near;
-                }
-                else
-                {
-                    // Placed at the end, once the probe knows what its surfaces look like.
-                    unplaced += near;
-                    weight = 0.0;
-                }
+                radiance = terrainLight * uBounceScale;
+                source = 2;
+                result.surface = CapRayIntensity(radiance);
+                result.surfaceWeight = 1.0;
+                result.hasSurface = true;
+                fieldHit = false;
+                resolved = true;
             }
             else
             {
-                // Escaped. Heading up it met the sky. Heading down it met the ground -- which is not in the
-                // field (the terrain is not one of its placements) and lies past its reach soon enough
-                // anyway -- so it is the ground it reports: open ground lit by the sun and the sky above
-                // it, at a dry earth's albedo. Taken as sky, every ray out of a window and down to a sunlit
-                // yard came back the colour of the sky overhead, and the walls facing the windows went blue.
-                radiance = direction.z >= 0.0
-                    ? SkyRadiance(direction)
-                    : kGroundAlbedo * (SkyRadiance(float3(0.0, 0.0, 1.0)) + uGroundSun);
-                source = 3;
-                openSum += CapRayIntensity(radiance);
-                openCount += 1.0;
+                // No card holds the ground there: it is still the ground, nearer than whatever the
+                // field found beyond it, and the open-ground answer below is the one to give.
+                fieldHit = false;
             }
         }
+#endif
 
-        if (uDebugSource != 0 && source != uDebugSource)
+        if (resolved)
         {
-            radiance = float3(0.0, 0.0, 0.0);
         }
+        else if (fieldHit)
+        {
+            float2 found;
+            float2 litFound;
+            float agreement;
+            // Whether the hit is most likely this surface's own skin: only for the march, which starts a
+            // voxel and a half out and finds the surface it left within the next two. A traced ray
+            // knows exactly what it struck, and a near hit there is a real occluder -- the foot of the
+            // wall, the underside of the desk -- which is the contact darkening the gather is for.
+#if OPENIGI_RAY_QUERY
+            float near = 1.0;
 
-        radiance = CapRayIntensity(radiance);
-        irradiance += radiance * weight;
-        counted += weight;
+            // Read through the cards facing the face the ray struck, as a reflection reads them. The lookup
+            // below knows only where the hit is and which way the ray went, and a hit a hand's breadth into a
+            // corner stands inside the card of the wall the ray LEFT as well as the one it struck: the first
+            // to agree within its tolerance won, often the wall's own, and the wall lit itself -- a bright
+            // seam down every corner. The face says which surface it was; the record walk that gives it is
+            // the one the cut-out test already makes.
+            float3 tracedFiltered;
+            if (dot(gTraceHitNormal, gTraceHitNormal) > 0.5
+                && SampleCardsWithin(hit, gTraceHitNormal, kCardSkin, tracedFiltered))
+            {
+                radiance = tracedFiltered * uBounceScale;
+                weight = near;
+                source = 2;
+                result.surface = CapRayIntensity(radiance);
+                result.surfaceWeight = near;
+                result.hasSurface = true;
+            }
+            else
+#else
+            // And by its height off the surface's own plane, not only its distance: a ray leaving a
+            // wall at a grazing angle runs along it and the march finds the same wall again metres on,
+            // well past two voxels, and reads the wall's own cached light back -- its stains and seams
+            // and all. Every surface took a blurred copy of its own texture as its bounce, which was the
+            // cloud over every wall in the gather. A ray leaving a flat surface cannot strike that
+            // surface; whatever it finds within a voxel of the plane is the plane.
+            float finest = uClipmapOrigin[0].w;
+            float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world))
+                * smoothstep(0.75 * finest, 1.5 * finest, dot(hit - world, normal));
+
+            float3 hitNormal = SurfaceNormalAt(hit);
+
+            // From out of doors to a surface with a roof over it: the ray went through a wall or a roof,
+            // which the field at that distance cannot hold -- a slab a hand thick in voxels of half a
+            // metre -- and it brought the room's lamps back out onto the wall outside, and the lit roof
+            // of the hall below onto its own roof. Counted as a surface found but not placed, the way a
+            // hit nothing can read is. An open doorway is the exception, and the rarer one.
+            if (!UnderRoof(world + uTraceOrigin) && UnderRoof(hit + uTraceOrigin))
+            {
+                near = 0.0;
+                result.unplaced += 1.0;
+                result.hasUnplaced = true;
+            }
+
+            // And read through every card that faced the surface there, blended by how squarely each
+            // looked and filtered within it, rather than the one texel of the one card nearest a point
+            // the march only placed to a voxel. A traced hit knows its surface exactly and keeps the
+            // single lookup.
+            if (dot(hitNormal, direction) > 0.0)
+            {
+                hitNormal = -hitNormal;
+            }
+
+            float3 filtered;
+            if (near <= 0.0)
+            {
+                weight = 0.0;
+            }
+            else if (dot(hitNormal, hitNormal) > 0.5 && SampleCardsWithin(hit, hitNormal, 0.5 * finest, filtered))
+            {
+                radiance = filtered * uBounceScale;
+                weight = near;
+                source = 2;
+                result.surface = CapRayIntensity(radiance);
+                result.surfaceWeight = near;
+                result.hasSurface = true;
+            }
+            else
+#endif
+            if (LookupCardHit(hit, direction, found, litFound, agreement))
+            {
+                radiance = uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * uBounceScale;
+                weight = near;
+                source = 2;
+                result.surface = CapRayIntensity(radiance);
+                result.surfaceWeight = near;
+                result.hasSurface = true;
+            }
+            else
+            {
+                // Placed at the end, once the probe knows what its surfaces look like.
+                result.unplaced += near;
+                result.hasUnplaced = true;
+                weight = 0.0;
+            }
+        }
+        else
+        {
+            // Escaped. Heading up it met the sky. Heading down it met the ground -- which is not in the
+            // field (the terrain is not one of its placements) and lies past its reach soon enough
+            // anyway -- so it is the ground it reports: open ground lit by the sun and the sky above
+            // it, at a dry earth's albedo. Taken as sky, every ray out of a window and down to a sunlit
+            // yard came back the colour of the sky overhead, and the walls facing the windows went blue.
+            radiance = direction.z >= 0.0
+                ? SkyRadiance(direction)
+                : kGroundAlbedo * (SkyRadiance(float3(0.0, 0.0, 1.0)) + uGroundSun);
+            source = 3;
+            result.open = CapRayIntensity(radiance);
+            result.hasOpen = true;
+        }
     }
+
+    if (uDebugSource != 0 && source != uDebugSource)
+    {
+        radiance = float3(0.0, 0.0, 0.0);
+    }
+
+    result.radiance = CapRayIntensity(radiance);
+    result.weight = weight;
+
+    return result;
+}
+
+GatherSums BeginSums()
+{
+    GatherSums sums;
+    sums.irradiance = float3(0.0, 0.0, 0.0);
+    sums.counted = 0.0;
+    sums.surfaceSum = float3(0.0, 0.0, 0.0);
+    sums.surfaceCount = 0.0;
+    sums.openSum = float3(0.0, 0.0, 0.0);
+    sums.openCount = 0.0;
+    sums.unplaced = 0.0;
+    return sums;
+}
+
+// Adds one ray to a probe's sums, as the ray would have added itself.
+void AddRay(inout GatherSums sums, GatherRay r)
+{
+    if (r.hasSurface)
+    {
+        sums.surfaceSum += r.surface * r.surfaceWeight;
+        sums.surfaceCount += r.surfaceWeight;
+    }
+
+    if (r.hasUnplaced)
+    {
+        sums.unplaced += r.unplaced;
+    }
+
+    if (r.hasOpen)
+    {
+        sums.openSum += r.open;
+        sums.openCount += 1.0;
+    }
+
+    sums.irradiance += r.radiance * r.weight;
+    sums.counted += r.weight;
+}
+
+// The probe's estimate from its sums.
+float3 FinishGather(GatherSums sums)
+{
+    float3 irradiance = sums.irradiance;
+    float counted = sums.counted;
+    float3 surfaceSum = sums.surfaceSum;
+    float surfaceCount = sums.surfaceCount;
+    float3 openSum = sums.openSum;
+    float openCount = sums.openCount;
+    float unplaced = sums.unplaced;
 
     // The hits nothing could place: a surface's light, as the probe's own surfaces show it, or -- where
     // every ray that found anything was unplaced -- what open ground under this sky would send back.
@@ -798,6 +891,24 @@ float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jit
     // scaled up to the whole hemisphere.
     float norm = max(counted, 0.25 * float(kTracesPerProbe));
     return max(irradiance * (kPi / norm), float3(0.0, 0.0, 0.0));
+}
+
+// The light arriving over the hemisphere a surface faces: every ray of the probe on this thread, in order.
+float3 GatherIndirect(float3 world, float3 normal, float3 viewOrigin, float2 jitter)
+{
+    GatherProbe probe;
+    if (!BeginGather(world, normal, viewOrigin, probe))
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    GatherSums sums = BeginSums();
+    for (int ray = 0; ray < kTracesPerProbe; ray++)
+    {
+        AddRay(sums, GatherOneRay(probe, world, normal, viewOrigin, jitter, ray));
+    }
+
+    return FinishGather(sums);
 }
 
 #endif

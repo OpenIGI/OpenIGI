@@ -125,9 +125,65 @@ float2 ProbeCenter(int2 probeCoord, int frame)
 // solid angle, each one bringing back the cache's final light where it struck a surface. The samples are
 // projected onto two bands of spherical harmonics and turned into irradiance by the cosine lobe's
 // transfer, so the cosine is applied once, analytically, rather than by the sampling.
+// One of a probe's sixteen rays: the radiance it brings back, and the harmonic basis of its direction that the
+// radiance is projected with. Kept apart from the sum so the sum can be made in ray order by whichever thread
+// holds it -- see the bounce's split entry in Cards/Lighting.slang.
+void GatherProbeRay(
+    float3 world,
+    float3 normal,
+    float2 center,
+    HemisphereBasis basis,
+    float finest,
+    int cell,
+    out float3 radiance,
+    out float4 basisHere)
+{
+    float2 square = (float2(float(cell % kHemisphereResolution), float(cell / kHemisphereResolution))
+        + center) / float(kHemisphereResolution);
+    float phi = 2.0 * kPi * square.x;
+    float cosTheta = square.y;
+    float sinTheta = sqrt(max(0.0, 1.0 - (cosTheta * cosTheta)));
+    float3 direction = Orient(basis, float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta));
+
+    radiance = float3(0.0, 0.0, 0.0);
+    float3 hit;
+    if (VisibilityAt(world, normal, direction, hit) <= 0.5)
+    {
+        float2 found;
+        float2 litFound;
+        float agreement;
+        if (LookupCardHit(hit, direction, found, litFound, agreement))
+        {
+            // A hit this close is most likely the surface's own skin, whose light is what this probe
+            // is computing; fade it out over the first couple of voxels.
+            float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
+            radiance = uPrevious.SampleLevel(uPreviousSampler, litFound, 0.0).rgb * near;
+        }
+    }
+
+    basisHere = ShBasis(direction);
+}
+
+// Whether a probe can gather at all: without a field or a lookup there is nothing to trace or read.
+bool ProbeGathers()
+{
+    return uShadowLevels > 0 && uLookupBuckets > 0;
+}
+
+// A probe's irradiance from its rays' harmonic sums.
+float3 FinishProbe(float4 red, float4 green, float4 blue, float3 normal)
+{
+    // Uniform hemisphere sampling: each sample weighs the inverse of its density, two pi, and the sixteen
+    // are averaged.
+    float scale = (2.0 * kPi) / float(kTracesPerProbe);
+    float4 transfer = ShIrradianceTransfer(normal);
+    float3 irradiance = float3(dot(red, transfer), dot(green, transfer), dot(blue, transfer)) * scale;
+    return max(irradiance, float3(0.0, 0.0, 0.0));
+}
+
 float3 Gather(float3 world, float3 normal, float2 center)
 {
-    if (uShadowLevels <= 0 || uLookupBuckets <= 0)
+    if (!ProbeGathers())
     {
         return float3(0.0, 0.0, 0.0);
     }
@@ -141,41 +197,15 @@ float3 Gather(float3 world, float3 normal, float2 center)
 
     for (int cell = 0; cell < kTracesPerProbe; cell++)
     {
-        float2 square = (float2(float(cell % kHemisphereResolution), float(cell / kHemisphereResolution))
-            + center) / float(kHemisphereResolution);
-        float phi = 2.0 * kPi * square.x;
-        float cosTheta = square.y;
-        float sinTheta = sqrt(max(0.0, 1.0 - (cosTheta * cosTheta)));
-        float3 direction = Orient(basis, float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta));
-
-        float3 radiance = float3(0.0, 0.0, 0.0);
-        float3 hit;
-        if (VisibilityAt(world, normal, direction, hit) <= 0.5)
-        {
-            float2 found;
-            float2 litFound;
-            float agreement;
-            if (LookupCardHit(hit, direction, found, litFound, agreement))
-            {
-                // A hit this close is most likely the surface's own skin, whose light is what this probe
-                // is computing; fade it out over the first couple of voxels.
-                float near = smoothstep(1.5 * finest, 2.0 * finest, length(hit - world));
-                radiance = uPrevious.SampleLevel(uPreviousSampler, litFound, 0.0).rgb * near;
-            }
-        }
-
-        float4 basisHere = ShBasis(direction);
+        float3 radiance;
+        float4 basisHere;
+        GatherProbeRay(world, normal, center, basis, finest, cell, radiance, basisHere);
         red += basisHere * radiance.r;
         green += basisHere * radiance.g;
         blue += basisHere * radiance.b;
     }
 
-    // Uniform hemisphere sampling: each sample weighs the inverse of its density, two pi, and the sixteen
-    // are averaged.
-    float scale = (2.0 * kPi) / float(kTracesPerProbe);
-    float4 transfer = ShIrradianceTransfer(normal);
-    float3 irradiance = float3(dot(red, transfer), dot(green, transfer), dot(blue, transfer)) * scale;
-    return max(irradiance, float3(0.0, 0.0, 0.0));
+    return FinishProbe(red, green, blue, normal);
 }
 
 #endif

@@ -29,6 +29,10 @@ namespace OpenIGI.Rendering.Rhi;
 /// </param>
 /// <param name="IndirectFirstInstance">Whether an indirect draw may start at a non-zero instance.</param>
 /// <param name="TextureCompressionBc">Whether the BC block formats can be uploaded without decoding.</param>
+/// <param name="MultiDrawIndirect">
+/// Whether one indirect call may make several draws: Vulkan's <c>multiDrawIndirect</c>, Direct3D 12's
+/// <c>ExecuteIndirect</c> with a count. WebGPU has no such call.
+/// </param>
 /// <param name="StrictTextureSampleTypes">
 /// Whether a texture slot declared for depth refuses a colour view, and a colour slot a depth view.
 /// WebGPU validates the pairing and refuses the whole bind group; Vulkan and Direct3D 12 read a depth
@@ -42,7 +46,8 @@ public readonly record struct RhiFeatures(
     bool DepthClamp,
     bool IndirectFirstInstance,
     bool TextureCompressionBc,
-    bool StrictTextureSampleTypes = false)
+    bool StrictTextureSampleTypes = false,
+    bool MultiDrawIndirect = false)
 {
     /// <summary>Gets a device that offers none of them, which is the safe assumption before asking.</summary>
     public static RhiFeatures None => default;

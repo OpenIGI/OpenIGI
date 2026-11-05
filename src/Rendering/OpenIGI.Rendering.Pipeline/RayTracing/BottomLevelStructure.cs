@@ -57,6 +57,7 @@ internal sealed class BottomLevelStructure : IDisposable
         RhiAccelerationStructureSizes sizes = structures.BottomLevelSizes(_geometries, Flags);
         BuildScratchSize = sizes.BuildScratchSize;
         UpdateScratchSize = sizes.UpdateScratchSize;
+        StructureSize = sizes.StructureSize;
         Structure = structures.Create(new RhiAccelerationStructureDescriptor(
             RhiAccelerationStructureKind.BottomLevel, sizes.StructureSize, "mesh structure"));
     }
@@ -69,6 +70,9 @@ internal sealed class BottomLevelStructure : IDisposable
 
     /// <summary>Gets how it is built.</summary>
     public RhiAccelerationBuildOptions Flags { get; }
+
+    /// <summary>Gets the bytes the structure itself occupies.</summary>
+    public ulong StructureSize { get; }
 
     /// <summary>Gets the scratch memory a full build needs.</summary>
     public ulong BuildScratchSize { get; }

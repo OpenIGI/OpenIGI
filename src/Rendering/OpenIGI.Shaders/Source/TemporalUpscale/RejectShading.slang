@@ -23,7 +23,14 @@ struct Params
 
 [[vk::binding(12, 0)]] ConstantBuffer<Params> p;
 
+// The group is GROUP wide and GROUP_Y tall. Square unless the build says otherwise: Direct3D 12 allows a
+// group 32 KiB of shared memory, which a sixteen-square tile does not fit, and sixteen by eight does.
 #define GROUP OPENIGI_UPSCALE_GROUP
+#ifdef OPENIGI_UPSCALE_GROUP_Y
+#define GROUP_Y OPENIGI_UPSCALE_GROUP_Y
+#else
+#define GROUP_Y OPENIGI_UPSCALE_GROUP
+#endif
 
 #include "../Common/Unroll.slang"
 
@@ -44,27 +51,33 @@ struct Params
 // each stage is evaluated over the group plus the apron the stages after it still need, and only the
 // two base images are clamped at the frame's edge.
 
+// Each tile's extent across (T_) and down (H_). A row is T_ cells long, so T_ is what indexes it.
 static const int R_LOAD = 6;
 static const int T_LOAD = GROUP + 12;
+static const int H_LOAD = GROUP_Y + 12;
 static const int R_MID = 5;
 static const int T_MID = GROUP + 10;
+static const int H_MID = GROUP_Y + 10;
 static const int R_IN = 4;
 static const int T_IN = GROUP + 8;
+static const int H_IN = GROUP_Y + 8;
 
-// This frame and the reprojected guide, in the compressive space (radius 6). Once the history-side
-// chain no longer needs the guide, its tile holds the removed energy instead.
-groupshared float sInput[T_LOAD * T_LOAD * 3];
-groupshared float sHistory[T_LOAD * T_LOAD * 3];
+// This frame and the reprojected guide, in the compressive space (radius 6). The guide's tile is reused
+// twice: once the first-round clamp has read the last of the raw guide it holds the second-round clamped
+// history, cell for cell (stage 2b), and once the blur has read that it holds the removed energy. The
+// second-round history only ever lived from stage 2b to stage 3, and a tile of its own was the 6.75 KiB that
+// kept the sixteen-wide group out of Direct3D 12's 32 KiB.
+groupshared float sInput[T_LOAD * H_LOAD * 3];
+groupshared float sHistory[T_LOAD * H_LOAD * 3];
 
 // The first-round clamps (radius 5): the history clamped into this frame's range, then this frame
 // clamped into the history's, then the blurred second-round history.
-groupshared float sMid[T_MID * T_MID * 3];
+groupshared float sMid[T_MID * H_MID * 3];
 
-// The second-round clamps (radius 4), and the blurred second-round input -- replaced by the median of
-// the removed energy once that blur has been consumed.
-groupshared float sInClamped[T_IN * T_IN * 3];
-groupshared float sHistClamped[T_IN * T_IN * 3];
-groupshared float sBlur[T_IN * T_IN * 3];
+// The second-round clamped input (radius 4), and the blurred second-round input -- replaced by the median
+// of the removed energy once that blur has been consumed.
+groupshared float sInClamped[T_IN * H_IN * 3];
+groupshared float sBlur[T_IN * H_IN * 3];
 
 // Offsets of a cell, relative to the group's origin, into a tile of a given extent and radius.
 #define TILE_INDEX(T, R, q) (((((q).y + (R)) * (T)) + ((q).x + (R))) * 3)
@@ -87,8 +100,7 @@ int2 RegionCell(uint i, int r)
 
 uint RegionCount(int r)
 {
-    int extent = GROUP + (2 * r);
-    return uint(extent * extent);
+    return uint((GROUP + (2 * r)) * (GROUP_Y + (2 * r)));
 }
 
 static const float kQ = 0.5 / 1024.0;
@@ -144,16 +156,16 @@ float3 Median9(float3 v[9])
     return p4;
 }
 
-[numthreads(GROUP, GROUP, 1)]
+[numthreads(GROUP, GROUP_Y, 1)]
 void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID, uint lid : SV_GroupIndex)
 {
     int2 size = int2(p.size.xy);
     int2 limit = size - 1;
-    int2 origin = int2(groupId.xy) * GROUP;
+    int2 origin = int2(groupId.xy) * int2(GROUP, GROUP_Y);
     int2 local = int2(localId.xy);
     int2 px = origin + local;
     float exposure = p.control.x;
-    const uint stride = uint(GROUP * GROUP);
+    const uint stride = uint(GROUP * GROUP_Y);
 
     // Stage 0: the two base images, edge-replicated, over the full apron.
     for (uint i = lid; i < RegionCount(R_LOAD); i += stride)
@@ -238,7 +250,9 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID, u
 
     GroupMemoryBarrierWithGroupSync();
 
-    // Stage 2b: the history clamped into the range of that clamped input.
+    // Stage 2b: the history clamped into the range of that clamped input, written over the raw guide in
+    // its own cell. Safe without another barrier: in this stage a thread reads the guide only at the cell it
+    // writes, and the stages that read the guide's neighbours are behind the barrier above.
     for (uint i = lid; i < RegionCount(R_IN); i += stride)
     {
         int2 q = RegionCell(i, R_IN);
@@ -254,7 +268,7 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID, u
             }
         }
 
-        TILE_WRITE(sHistClamped, T_IN, R_IN, q, clamp(TILE_READ(sHistory, T_LOAD, R_LOAD, q), lo, hi));
+        TILE_WRITE(sHistory, T_LOAD, R_LOAD, q, clamp(TILE_READ(sHistory, T_LOAD, R_LOAD, q), lo, hi));
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -271,7 +285,7 @@ void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID, u
             {
                 float w = Binomial(x, y);
                 blurIn += TILE_READ(sInClamped, T_IN, R_IN, q + int2(x, y)) * w;
-                blurHist += TILE_READ(sHistClamped, T_IN, R_IN, q + int2(x, y)) * w;
+                blurHist += TILE_READ(sHistory, T_LOAD, R_LOAD, q + int2(x, y)) * w;
             }
         }
 

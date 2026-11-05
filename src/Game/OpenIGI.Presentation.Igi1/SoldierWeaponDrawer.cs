@@ -92,6 +92,13 @@ internal sealed class SoldierWeaponDrawer(
             LastFieldOfView = fieldOfView;
         }
 
+        // Which soldiers can land in this view at all, by each soldier's own bounds, tested per view and the shadow
+        // views among them: every pass draws through here -- the eye, each cascade, and
+        // each face of every lamp's cube -- and a lamp's face sees a quarter of the sky, so most of the level's
+        // soldiers were posed, bound and drawn into faces they could not reach, for the rasteriser to clip away.
+        // The side planes only, as a shadow pancaked onto its near plane has to be culled (see SphereWithinSides).
+        FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
+
         ViewClip? appliedClip = null;
         foreach (SoldierGroup group in _groups)
         {
@@ -123,14 +130,18 @@ internal sealed class SoldierWeaponDrawer(
                     continue;
                 }
 
+                Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
+                if (!frustum.SphereWithinSides(modelView, ViewBounds(group)))
+                {
+                    continue;
+                }
+
                 ViewClip? clip = clipping?.ClipOfObject(WorldScene.ToUnits(member.DrawnWhere));
                 if (clip != appliedClip)
                 {
                     _device.SetDrawClip(clip);
                     appliedClip = clip;
                 }
-
-                Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
 
                 // The pose blend applies to the body's animated mesh in every pass — the shadow pass
                 // blends too, or the body would stand a step from its own shadow.
@@ -192,6 +203,30 @@ internal sealed class SoldierWeaponDrawer(
 
     // The soldier's own position is what the inside sphere is measured to; its exclusion sphere is its mesh's render sphere,
     // moved by the root bone and turned by the body, as a bone object is excluded.
+    /// <summary>How far past its render sphere a soldier's pose and the gun in its hand can reach, as a multiple.</summary>
+    /// <remarks>
+    /// A bounds scale: the sphere is the mesh's rest pose, and the frame's pose -- a
+    /// crouch, a fall, a ragdoll's limbs -- and the weapon held out at arm's length move outside it. Twice the
+    /// radius takes in a body lying at full length from its root and a rifle in either hand.
+    /// </remarks>
+    private const float ViewBoundsScale = 2f;
+
+    /// <summary>A soldier's bounds for the view cull, in its own space: the sector cull's sphere, scaled.</summary>
+    private static BoundingSphere ViewBounds(SoldierGroup group)
+    {
+        if (group.Body.Model is not { } model)
+        {
+            // Nothing to bound it by: a sphere no body escapes, so it is drawn wherever it could reach.
+            return new BoundingSphere(Vector3f.Zero, 8f);
+        }
+
+        Vector3f root = model.BoneHierarchy is { BoneCount: > 0 } rig ? rig.Translations[0] : Vector3f.Zero;
+        float toMetres = (float)(1.0 / WorldScene.UnitsPerMetre);
+        return new BoundingSphere(
+            (model.RenderSphereCentre + root) * toMetres,
+            model.RenderSphereRadius * toMetres * ViewBoundsScale);
+    }
+
     private static bool IsDrawn(Game.Igi1.World.Igi1SectorVisibility cull, SoldierGroup group, SoldierMember member)
     {
         Vector3d origin = WorldScene.ToUnits(member.DrawnWhere);
