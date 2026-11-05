@@ -178,7 +178,7 @@ public sealed partial class Igi2HudRenderer
     {
         Vector3d eye = title.Human.View.Position;
         Matrix3f view = title.Human.View.Orientation;
-        float tanX = title.Human.View.FieldOfView, tanY = tanX * height / width;
+        float tanX = WidescreenLens.HorizontalTangent(title.Human.View.FieldOfView, width, height), tanY = tanX * height / width;
         if (!(tanX > 0f))
         {
             return;

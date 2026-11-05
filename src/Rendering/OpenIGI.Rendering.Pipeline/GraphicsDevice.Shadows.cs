@@ -143,6 +143,13 @@ public sealed partial class GraphicsDevice
         SealEncoder("frame.cascade");
     }
 
+    /// <inheritdoc/>
+    public void EndLampShadowMapLayer()
+    {
+        ThrowIfDisposed();
+        CloseShadowPass();
+    }
+
     /// <summary>Gets whether a cascade is being drawn, which routes every draw into it.</summary>
     private bool DrawingShadow => _shadowPass is not null;
 

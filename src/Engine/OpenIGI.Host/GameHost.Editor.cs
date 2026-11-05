@@ -386,7 +386,7 @@ public sealed partial class GameHost
         }
 
         aspectRatio = port.Width / port.Height;
-        verticalFieldOfView = VerticalFieldOfView(aspectRatio, HumanView.DefaultTanX);
+        verticalFieldOfView = VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, aspectRatio));
     }
 
     /// <summary>

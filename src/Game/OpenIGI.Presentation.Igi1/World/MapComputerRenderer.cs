@@ -123,7 +123,8 @@ internal sealed partial class MapComputerRenderer : IMapComputerPresenter, IComp
     {
         ComputerMap? map = Computer?.Screen as ComputerMap;
         Vector3d at = WorldScene.ToMetres(map?.CameraPosition ?? default);
-        float fov = map?.CameraFieldOfView ?? 1f;
+        // Fitted to the display Hor+ (WidescreenLens), as the marks and the pointer's ray are.
+        float fov = WidescreenLens.HorizontalTangent(map?.CameraFieldOfView ?? 1f, screenWidth, screenHeight);
 
         // The camera's aspect is one: the tangent across is the field of view, the one down the display's share of it.
         float vertical = 2f * MathF.Atan(fov * screenHeight / Math.Max(1, screenWidth));

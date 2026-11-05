@@ -131,7 +131,8 @@ public sealed class AutoExposure : IDisposable
         _adapted = _adaptation.Adapt(
             System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(data.GetData()),
             deltaSeconds,
-            ExposureCVars.Nightfall.Value);
+            ExposureCVars.Nightfall.Value,
+            ExposureCVars.EffectiveNightAdaptation);
 
         data.Dispose();
         _pending[slot] = null;

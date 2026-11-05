@@ -1,3 +1,4 @@
+hud_retail_scale	0	archive
 r_aa	0	archive
 r_aa_threshold	0.05	archive
 r_alpha_hash	0	archive
@@ -97,6 +98,8 @@ r_lamp_emissive	1	archive
 r_light_scale	0.875	archive
 r_lighting	baked	archive
 r_lightmap	0	archive
+r_lightmap_night_share	-1	-
+r_lightmap_sunless_share	0.1	archive
 r_local_light_range	3	archive
 r_local_light_scale	0	archive
 r_local_light_shadows	1	archive
@@ -108,6 +111,12 @@ r_material_detail	0	archive
 r_menu_lite	1	-
 r_messages_tactical	1	archive
 r_mip_point	0	archive
+r_mission_exposure	0	-
+r_mission_moonlight	1	-
+r_mission_night_adaptation	1	-
+r_mission_night_exposure	0	-
+r_mission_night_glow	1	-
+r_mission_night_sky	1	-
 r_mission_warmup	45	archive
 r_model_lod	0	-
 r_moon_brightness	1	archive
@@ -115,11 +124,13 @@ r_moonlight	0.1	archive
 r_motion_blur	0	archive
 r_msaa	4	archive
 r_muzzle_flash	1	archive
+r_night_adaptation	0.4	archive
 r_night_airglow	0.0005	archive
 r_night_shift	0	archive
 r_night_sky	0.02	archive
 r_nightfall	0	-
 r_overrides	1	-
+r_painted_sky	-1	-
 r_pbr	1	-
 r_perflog	0	-
 r_perflog_passes	0	-
@@ -194,6 +205,7 @@ r_weather_kind	rain	archive
 r_weather_speed	1	archive
 r_wetness	1	archive
 r_white_point	1.1	archive
+r_widescreen_fov	1	archive
 r_window_mode	borderless	archive
 r_world_cull	0	archive
 r_world_objective	1	archive

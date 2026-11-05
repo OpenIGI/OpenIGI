@@ -39,6 +39,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     private readonly List<RecordedWorkMarker> _unarmedMarkers = [];
     private readonly Sprite2DPass _sprites;
     private readonly Mesh3DPass _meshes;
+
+    // The frame's indirect draw arguments, where the device can make several draws in one call.
+    private readonly IndirectDrawRing? _multiDraw;
     private readonly Mesh3DPipelineCache _pipelines;
     private readonly MaterialBindGroupCache _materials;
     private readonly IRhiBindGroupLayout _materialLayout;
@@ -162,6 +165,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _textures = new TextureTable(device, _retired);
         _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat, _retired);
         _meshes = new Mesh3DPass(_textures, _materials);
+        if (device.Features.MultiDrawIndirect)
+        {
+            _multiDraw = new IndirectDrawRing(device, FramesInFlight);
+            _meshes.UseMultiDraw(_multiDraw);
+        }
+
         _profiler = new StageProfiler(device, FramesInFlight);
         _occlusion = new OcclusionQueries(
             device,
@@ -418,6 +427,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             RetireDepth();
         }
         _frameCounter++;
+        _multiDraw?.BeginFrame(_frameCounter);
         ArmRecordedWorkMarkers();
 
         _profiler.ReadCompletedFrame(FrameSlot);
@@ -464,6 +474,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _ownedTracedWorld?.Dispose();
         _profiler.Dispose();
         _occlusion.Dispose();
+        _multiDraw?.Dispose();
         _outlines?.Dispose();
         DisposeCubes();
         _cubeGroup.Dispose();

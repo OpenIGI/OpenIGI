@@ -332,6 +332,7 @@ internal sealed class TerrainBatcher
                 _device.DestroyMesh(entry.DirectMesh);
             }
             _cache.Remove(key);
+            entry.Evicted = true;
 
             // Nothing refers to this chunk's geometry once it leaves the cache: its vertices were copied
             // into a batch page and uploaded to the device when it arrived, and the rebuild below only

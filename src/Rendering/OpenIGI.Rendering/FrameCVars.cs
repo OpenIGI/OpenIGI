@@ -37,6 +37,19 @@ public static class FrameCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether a screen wider or narrower than 4:3 sees more of the world rather than a cropped or stretched view.</summary>
+    /// <remarks>
+    /// On (Hor+): the originals' 4:3 lens is kept whole, a wide screen adds to its sides and a narrow one above and
+    /// below, with nothing stretched. Off keeps the horizontal angle at every shape, which crops a wide screen's top
+    /// and bottom and draws the first-person rig stretched, as the originals do. 4:3 is the same either way. A
+    /// preference rather than a quality step, so no preset sets it. See <c>WidescreenLens</c>.
+    /// </remarks>
+    public static readonly BoolCVar WidescreenFieldOfView = CVar.Bool(
+        "r_widescreen_fov",
+        true,
+        CVarOptions.Archive,
+        "Hor+ field of view: a wide screen keeps the original's 4:3 view and sees more at the sides, unstretched.");
+
     /// <summary>Whether models are drawn at the original's levels of detail, coarser with distance, rather than always whole.</summary>
     /// <remarks>
     /// Off under every preset, the original's own look included: every model is drawn at its finest level at any distance.

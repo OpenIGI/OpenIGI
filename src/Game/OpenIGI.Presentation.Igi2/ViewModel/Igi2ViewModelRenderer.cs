@@ -598,7 +598,8 @@ public sealed partial class Igi2ViewModelRenderer : ITitleViewModelPresenter, IT
             return models;
         }
 
-        float fieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
+        // The lens as authored, not as widened for the screen: a wide screen sees more, not coarser. See WidescreenLens.
+        float fieldOfView = WidescreenLens.AuthoredTangent(projection);
         List<TitleWorldModel>? drawn = null;
         for (int i = 0; i < models.Count; i++)
         {

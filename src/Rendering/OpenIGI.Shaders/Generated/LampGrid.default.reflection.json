@@ -1,0 +1,51 @@
+{
+  "module": "LampGrid",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        64,
+        1,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "p",
+      "group": 0,
+      "binding": 0,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ConstantBuffer",
+        "register": 0,
+        "space": 0
+      }
+    },
+    {
+      "name": "uLampGrid",
+      "group": 0,
+      "binding": 1,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite",
+      "hlsl": {
+        "class": "UnorderedAccess",
+        "register": 0,
+        "space": 0,
+        "stride": 4
+      }
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": null
+}

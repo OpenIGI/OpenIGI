@@ -14,7 +14,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <remarks>
 /// <para>
 /// <b>Where the camera stands decides the frame.</b> <c>World_Draw</c> (<c>IGI.exe 0x4D2650</c>) asks every building near the eye
-/// which of its sectors the eye is over, and draws the one that answers first (<c>SectorObject_EnterHandler</c>,
+/// which of its sectors the eye is over, coarsest cube first, and draws the one that answers last (<c>SectorObject_EnterHandler</c>,
 /// <c>0x4DD310</c>): walked from that sector through the whole screen, its shell drawn only if the walk reaches it. Reaching the
 /// shell is seeing out, and <c>SectorObject_DrawSector</c> (<c>0x4DD5D0</c>) then records the rectangle the shell was reached
 /// through as the outside's window.
@@ -59,6 +59,10 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
 
     private readonly ObjectCollisionIndex _solids;
     private readonly List<Building> _buildings = [];
+
+    // The buildings in the order the cube tree asks them where the eye is: coarsest cube first, and within one cube the last
+    // filed first, since DynCubeNode_Link (0x4C6E30) puts each new object at the head of its cube's list.
+    private Building[] _locateOrder = [];
     private readonly List<Sector> _sectors = [];
     private readonly Dictionary<GameTask, Owner> _owners = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<WorldPlacement, Sector> _parts = new(ReferenceEqualityComparer.Instance);
@@ -155,6 +159,12 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
             visibility.AddBuilding(task, root, tree, parts);
         }
 
+        visibility._locateOrder = [.. visibility._buildings
+            .Select(static (b, filed) => (Building: b, Filed: filed))
+            .OrderByDescending(static e => e.Building.CubeSize)
+            .ThenByDescending(static e => e.Filed)
+            .Select(static e => e.Building)];
+
         foreach ((GameTask task, List<WorldPlacement> parts) in byOwner)
         {
             WorldPlacement root = parts.Find(static p => !p.IsAttached) ?? parts[0];
@@ -198,10 +208,12 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
         _inside = null;
         _outsideWindow = null;
 
-        // SectorObject_GetSectorHandler, asked by every building near the eye; each one that answers overwrites the last.
+        // SectorObject_GetSectorHandler, asked by every building whose registered box holds the eye; each one that answers
+        // overwrites the last. Coll_SendEvent (0x4CE090) asks them root first down the cube tree, so the building filed in the
+        // finest cube answers last and keeps the eye: a tunnel beside a chamber whose bound reaches round it.
         Sector? start = null;
         _eyeSector = null;
-        foreach (Building building in _buildings)
+        foreach (Building building in _locateOrder)
         {
             if (building.SectorAt(_solids, eye.Position) is { } sector)
             {
@@ -557,14 +569,39 @@ public sealed class Igi1SectorVisibility : IPlacementVisibility
             }
         }
 
+        // The edge of the cube the building is filed in (DynCube_Add 0x4C7140, Building_WorldAdd): the smallest aligned cube that
+        // holds both corners of its box, its rounded position less and plus its rounded radius (DynCube_CellSize 0x4C67E0). The
+        // world's offset is nought: only an Origo object moves it, and the port places none.
+        public uint CubeSize
+        {
+            get
+            {
+                const uint MinSize = 0x2000, MaxSize = 0x40000000;
+                int x = RoundToInt(Shell.Position.X), y = RoundToInt(Shell.Position.Y), z = RoundToInt(Shell.Position.Z);
+                int r = RoundToInt(Radius);
+                uint d = (uint)(((x - r) ^ (x + r)) | ((y - r) ^ (y + r)) | ((z - r) ^ (z + r)));
+                if (d == 0)
+                {
+                    return MinSize;
+                }
+
+                uint s = 1u << (31 - System.Numerics.BitOperations.LeadingZeroCount(d));
+                return Math.Clamp(s, MinSize, MaxSize);
+            }
+        }
+
+        // Terrain_Round: the FPU's default round-to-nearest-even.
+        private static int RoundToInt(double value) => (int)Math.Round(value, MidpointRounding.ToEven);
+
         // SectorObject_GetSectorHandler (0x4DBCC0): one line straight down from the eye, twice the radius long, against the
-        // shell and its rooms with their portals as surfaces; whichever is struck nearest is the sector the eye is over.
+        // shell and its rooms with their portals as surfaces; whichever is struck nearest is the sector the eye is over. It is
+        // asked only when the eye is within the building's registered box, its radius every way from its position
+        // (Coll_SendEvent, 0x4CE090).
         public Sector? SectorAt(ObjectCollisionIndex solids, Vector3d eye)
         {
             double reach = 2.0 * Radius;
             Vector3d centre = Shell.Position;
-            double dx = eye.X - centre.X, dy = eye.Y - centre.Y, dz = eye.Z - centre.Z;
-            if ((dx * dx) + (dy * dy) + (dz * dz) > reach * reach)
+            if (Math.Abs(eye.X - centre.X) > Radius || Math.Abs(eye.Y - centre.Y) > Radius || Math.Abs(eye.Z - centre.Z) > Radius)
             {
                 return null;
             }

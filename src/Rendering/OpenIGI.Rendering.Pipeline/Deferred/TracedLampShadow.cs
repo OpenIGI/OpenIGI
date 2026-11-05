@@ -28,6 +28,7 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// count (<paramref name="FrameIndex"/> must then be that), and neither filter runs.
 /// </param>
 /// <param name="SunLuminance">The sun's luminance as the lighting pass applies it; nought with no traced sun.</param>
+/// <param name="LampGrid">Which lamps can reach each cell of the view (<see cref="Deferred.LampGrid"/>), for the reservoirs to stream.</param>
 /// <param name="MinimumVisible">
 /// The summed lamp light at a pixel below which its shadow could not show at this exposure; such a pixel is
 /// left lit without a ray. Nought traces every pixel any lamp reaches.
@@ -51,7 +52,8 @@ public readonly record struct TracedLampFrame(
     bool LightingChanged = false,
     IRhiTextureView? CoarseMaps = null,
     ReadOnlyMemory<float> Coarse = default,
-    bool Raw = false);
+    bool Raw = false,
+    IRhiBuffer? LampGrid = null);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -276,6 +278,7 @@ public sealed class TracedLampShadow : IDisposable
             _trace.Bind("uNormal", normal, _sampler);
             _trace.Bind("uScene", world);
             _trace.Bind("uVisibility", raw.View);
+            _trace.Bind("uLampGrid", frame.LampGrid ?? throw new ArgumentException("The lamp trace needs a lamp grid.", nameof(frame)));
 
             // The normals stand in where no sun was traced: the slot is declared either way, and the
             // luminance of nought keeps the shader from reading it.
@@ -294,6 +297,7 @@ public sealed class TracedLampShadow : IDisposable
             _march.Bind("uNormal", normal, _sampler);
             _march.Bind("uClipmaps", clipmaps, _sampler);
             _march.Bind("uVisibility", raw.View);
+            _march.Bind("uLampGrid", frame.LampGrid ?? throw new ArgumentException("The lamp march needs a lamp grid.", nameof(frame)));
             _march.Bind("uSunVisibility", frame.SunVisibility ?? normal);
 
             // The nearest lamps' own maps. Made whenever the march runs, so the slots are always bound; a

@@ -85,6 +85,10 @@ internal sealed class SurfaceCacheRelight
     // other pass that traces.
     private ComputeShaderHandle _shader;
 
+    // The bounce (mode one) with one ray to a thread rather than a probe's sixteen on one of every sixteen
+    // threads; the same estimate to the bit. See the split entry in Cards/Lighting.slang.
+    private ComputeShaderHandle _bounceShader;
+
     private readonly StorageBufferHandle _pages;
     private readonly StorageBufferHandle _tiles;
 
@@ -398,17 +402,23 @@ internal sealed class SurfaceCacheRelight
     /// atlas runs to a quarter of a million tiles, and WebGPU refuses a dispatch past 65535 workgroups. Every
     /// tile is its own work, so the slices light exactly what one dispatch would.
     /// </remarks>
-    private void DispatchTiles(int offset, int count)
+    private void DispatchTiles(int offset, int count) => DispatchTiles(_shader, offset, count);
+
+    /// <summary>Dispatches a run of tiles through a given program.</summary>
+    /// <param name="program">The program: the shared one, or the bounce's own.</param>
+    /// <param name="offset">The first tile.</param>
+    /// <param name="count">How many.</param>
+    private void DispatchTiles(ComputeShaderHandle program, int offset, int count)
     {
         int most = Math.Max(_device.Capabilities.MaxComputeGroupsX, 1);
 
         int stride = Math.Max(1, _tileStride);
-        _device.SetComputeUniform(_shader, "uTileStride", stride);
+        _device.SetComputeUniform(program, "uTileStride", stride);
 
         for (int done = 0; done < count; done += most)
         {
-            _device.SetComputeUniform(_shader, "uTileOffset", offset + (done * stride));
-            _device.Dispatch(_shader, Math.Min(most, count - done));
+            _device.SetComputeUniform(program, "uTileOffset", offset + (done * stride));
+            _device.Dispatch(program, Math.Min(most, count - done));
         }
     }
 
@@ -494,6 +504,9 @@ internal sealed class SurfaceCacheRelight
         // drops it (see EnsureTraceMode) -- so the gather cannot assume the relight already rebuilt it.
         EnsureLightShader();
 
+        // The bounce runs as its own program, one ray to a thread; see _bounceShader.
+        ComputeShaderHandle program = mode == 1 ? _bounceShader : _shader;
+
         _device.BindStorageBuffer(0, _pages);
         _device.BindStorageBuffer(1, _tiles);
         _device.BindStorageBuffer(2, _localLights.Buffer);
@@ -513,40 +526,40 @@ internal sealed class SurfaceCacheRelight
         _device.SetTexture(6, previous);
         _device.SetTexture(7, _indirect);
 
-        _device.SetComputeUniform(_shader, "uProbeWidth", _probeWidth);
-        _device.SetComputeUniform(_shader, "uProbeHeight", _probeHeight);
-        _device.SetComputeUniform(_shader, "uTemporalIndex", temporalIndex);
-        _device.SetComputeUniform(_shader, "uMaxFrames", TemporalFrames);
-        _device.SetComputeUniform(_shader, "uJitterStride", Math.Max(jitterStride, 1));
+        _device.SetComputeUniform(program, "uProbeWidth", _probeWidth);
+        _device.SetComputeUniform(program, "uProbeHeight", _probeHeight);
+        _device.SetComputeUniform(program, "uTemporalIndex", temporalIndex);
+        _device.SetComputeUniform(program, "uMaxFrames", TemporalFrames);
+        _device.SetComputeUniform(program, "uJitterStride", Math.Max(jitterStride, 1));
 
-        _device.SetComputeUniform(_shader, "uTileCount", _tileCount);
-        _device.SetComputeUniform(_shader, "uUseActiveList", useActiveList ? 1 : 0);
-        _device.SetComputeUniform(_shader, "uActiveCount", useActiveList ? _activeCount : 0);
+        _device.SetComputeUniform(program, "uTileCount", _tileCount);
+        _device.SetComputeUniform(program, "uUseActiveList", useActiveList ? 1 : 0);
+        _device.SetComputeUniform(program, "uActiveCount", useActiveList ? _activeCount : 0);
         _device.BindStorageBuffer(6, _activeTiles);
 
         // As the direct relight: only a sliced, steady-state pass culls. A full dispatch is the seed or a
         // dump, and both must cover the level.
-        _device.SetComputeUniform(_shader, "uActiveCentre", ActiveCentre);
+        _device.SetComputeUniform(program, "uActiveCentre", ActiveCentre);
         _device.SetComputeUniform(
-            _shader, "uActiveRadius", dispatchTiles >= 0 ? MathF.Max(ActiveRadius, 0f) : 0f);
+            program, "uActiveRadius", dispatchTiles >= 0 ? MathF.Max(ActiveRadius, 0f) : 0f);
 
-        _device.SetComputeUniform(_shader, "uMode", mode);
-        _device.SetComputeUniform(_shader, "uBoost", boost);
-        _device.SetComputeUniform(_shader, "uProbe", 0);
-        _device.SetComputeUniform(_shader, "uAtlasSize", new Vector3f(_width, _height, 0f));
-        _device.SetComputeUniform(_shader, "uLightCount", 0);
+        _device.SetComputeUniform(program, "uMode", mode);
+        _device.SetComputeUniform(program, "uBoost", boost);
+        _device.SetComputeUniform(program, "uProbe", 0);
+        _device.SetComputeUniform(program, "uAtlasSize", new Vector3f(_width, _height, 0f));
+        _device.SetComputeUniform(program, "uLightCount", 0);
         _device.SetComputeUniform(
-            _shader, "uLookupBuckets", _bindings.Lookup is null ? 0 : SurfaceCacheLookup.Buckets);
+            program, "uLookupBuckets", _bindings.Lookup is null ? 0 : SurfaceCacheLookup.Buckets);
 
         if (_bindings.Lookup is { } index)
         {
-            _device.SetComputeUniform(_shader, "uLookupMin", index.Minimum);
-            _device.SetComputeUniform(_shader, "uLookupCell", SurfaceCacheLookup.CellMetres);
+            _device.SetComputeUniform(program, "uLookupMin", index.Minimum);
+            _device.SetComputeUniform(program, "uLookupCell", SurfaceCacheLookup.CellMetres);
         }
 
-        _bindings.BindShadows(_shader, shadows);
+        _bindings.BindShadows(program, shadows);
 
-        DispatchTiles(tileOffset, dispatchTiles < 0 ? _tileCount : Math.Max(dispatchTiles, 0));
+        DispatchTiles(program, tileOffset, dispatchTiles < 0 ? _tileCount : Math.Max(dispatchTiles, 0));
 
         // The storage buffer scope as well, because the gather writes each probe's position through it
         // and the combine that follows reads its neighbours' -- not just the images the split is usually
@@ -627,6 +640,14 @@ internal sealed class SurfaceCacheRelight
                 new ShaderVariant(_bindings.TracesRays ? "rayquery" : "software"),
                 "cards.light");
         }
+
+        if (!_bounceShader.IsValid)
+        {
+            _bounceShader = _device.CreateComputeShader(
+                ShaderModuleId.CardsLighting,
+                new ShaderVariant(_bindings.TracesRays ? "rayquery-split" : "software-split"),
+                "cards.bounce");
+        }
     }
 
     /// <summary>Drops the program after a trace-mode switch, so the next dispatch rebuilds it.</summary>
@@ -636,6 +657,12 @@ internal sealed class SurfaceCacheRelight
         {
             _device.DestroyComputeShader(_shader);
             _shader = ComputeShaderHandle.None;
+        }
+
+        if (_bounceShader.IsValid)
+        {
+            _device.DestroyComputeShader(_bounceShader);
+            _bounceShader = ComputeShaderHandle.None;
         }
     }
 

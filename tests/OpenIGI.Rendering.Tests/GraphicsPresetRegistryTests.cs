@@ -150,6 +150,10 @@ public sealed class GraphicsPresetRegistryTests
             // the window would be doing something nobody choosing a quality tier asked for.
             "r_renderer", "r_window_mode", "r_resolution",
 
+            // How the lens is fitted to a screen that is not 4:3: what the player's screen shape shows, not how well
+            // the world is drawn. Vanilla clearing it would crop or stretch a widescreen picture nobody asked to change.
+            "r_widescreen_fov",
+
             // How worn the flashlight's switch is -- how often it chatters before it catches. A property of
             // the torch the player carries, kept whatever tier draws it; a preset resetting it would be
             // swapping their torch for a new one.

@@ -60,11 +60,50 @@ static const float kDampRoughnessFloor = 0.55;
 // most recognisable tell of a rendered puddle.
 static const float kWaterRoughness = 0.05;
 
-// Where water can stand at all: a surface whose normal points up by at least this cosine (about thirty
+// How much rougher the water is while rain is striking it, at full strength. A puddle in a downpour is
+// boiling with drops finer than the ripple lattice draws, and throws a light back as a broad soft sheen;
+// as still water it threw the moon back as a blown-out white streak across every storm puddle.
+static const float kRainRoughness = 0.22;
+
+// How much of a direct light's glint the rain takes off standing water, at full strength. Rain falls from
+// an overcast sky: the sun or the moon behind it is a broad glow, not a disc, and water under it throws
+// back the grey of the cloud rather than a highlight. Left whole, a storm puddle under the moon was a
+// sheet of silver however rough its surface was made. All of it: water's highlight peak at a grazing angle is
+// so tall that even a twentieth of it left the sheet standing.
+static const float kOvercastGlintCut = 1.0;
+
+// How much of its mirror image rain-struck water loses, at full strength. A surface broken by drops scatters
+// the sky it reflects rather than holding it, and the sky it reflects is the atmosphere's moonlit cloud deck
+// -- brighter than the painted storm a level like the radar base actually shows -- so a storm puddle stood
+// out as a pale silver sheet against the ground.
+static const float kRainReflectionCut = 0.75;
+
+// Whether it is raining, nought to one: whole from a light shower up. The overcast that hides the moon does
+// not wait for a downpour, so it follows the wetness rather than the ripples, which scale with how hard the
+// drops strike and left a steady storm's puddles nearly as glassy as calm water.
+float RainOvercast(WetParams w)
+{
+    return clamp(w.amount * 5.0, 0.0, 1.0);
+}
+
+// What remains of standing water's mirror image while it rains.
+float RainReflection(WetParams w)
+{
+    return 1.0 - (kRainReflectionCut * RainOvercast(w));
+}
+
+// What remains of a direct light's highlight on this pixel's water while it rains.
+float OvercastGlint(WetParams w, float waterMask)
+{
+    return 1.0 - (waterMask * kOvercastGlintCut * RainOvercast(w));
+}
+
+// Where water can stand at all: a surface whose normal points up by at least this cosine (about twelve
 // degrees off level at most), with the gate closing over a short ramp past it. Water runs off anything
-// steeper, and a gate that closed gradually would leave a glassy film climbing every wall.
-static const float kPuddleLevelCosine = 0.86;
-static const float kPuddleLevelSharpness = 12.0;
+// steeper, and a gate that closed gradually would leave a glassy film climbing every wall. Thirty degrees
+// stood water on the hillsides of the storm mission, so whole slopes were mirrors under the moon.
+static const float kPuddleLevelCosine = 0.978;
+static const float kPuddleLevelSharpness = 60.0;
 
 // How quickly the ground goes from dry to under water, per unit of the height field. Twenty puts the whole
 // waterline inside a twentieth of the field's range: crisp enough to read as an edge, and still a ramp a
@@ -435,7 +474,8 @@ WaterSurface WaterSurfaceAt(WetParams w, float3 relative, float footprint)
     float resolved = length(slope) * (1.0 - blur) * 0.10;
     float averaged = ((0.20 * w.rippleStrength) + (0.10 * w.windStrength)) * blur;
 
-    surface.roughness = clamp(kWaterRoughness + resolved + averaged, kWaterRoughness, 0.32);
+    float struck = kRainRoughness * clamp(w.rippleStrength, 0.0, 1.0);
+    surface.roughness = clamp(kWaterRoughness + struck + resolved + averaged, kWaterRoughness, 0.45);
 
     // A mirror while the ripples are still a shape, giving way to the sky as they become an average.
     // Faster than the blur itself, because a pixel holding two rings is already past the point where the

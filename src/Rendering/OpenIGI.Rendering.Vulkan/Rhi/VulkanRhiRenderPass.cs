@@ -264,6 +264,26 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
     }
 
     /// <inheritdoc/>
+    public void DrawIndexedIndirect(IRhiBuffer arguments, ulong offset, int drawCount)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        ThrowIfEnded();
+        if (drawCount <= 0)
+        {
+            return;
+        }
+
+        // A count above one needs multiDrawIndirect, which the device enables wherever it is offered and
+        // reports as RhiFeatures.MultiDrawIndirect; a caller without it never asks for more than one.
+        _vk.CmdDrawIndexedIndirect(
+            _command,
+            ((VulkanRhiBuffer)arguments).Buffer.Handle,
+            offset,
+            (uint)drawCount,
+            RhiDrawIndexedArguments.Size);
+    }
+
+    /// <inheritdoc/>
     public void BeginOcclusionQuery(int queryIndex)
     {
         ThrowIfEnded();

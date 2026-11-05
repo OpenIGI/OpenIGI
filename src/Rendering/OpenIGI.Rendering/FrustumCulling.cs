@@ -103,6 +103,31 @@ public static class FrustumCulling
                 && (_fx * x) + (_fy * y) + (_fz * z) + _fw >= r;
         }
 
+        /// <summary>Tests a local sphere against the four side planes only, leaving the near and far planes out.</summary>
+        /// <param name="viewFromLocal">The object's model-view; must not scale.</param>
+        /// <param name="sphere">The conservative local-space bound.</param>
+        /// <returns><see langword="true"/> unless the sphere lies wholly beyond a side plane.</returns>
+        /// <remarks>
+        /// For a pass that draws with depth clamp, as the shadow passes may: there a caster in front of the near
+        /// plane or past the far one is clamped onto it and still writes, so only the sides decide whether
+        /// anything of it can land on the map. Beyond a side plane nothing can, clamped or not.
+        /// </remarks>
+        public bool SphereWithinSides(in Matrix4f viewFromLocal, in BoundingSphere sphere)
+        {
+            float lx = sphere.Centre.X;
+            float ly = sphere.Centre.Y;
+            float lz = sphere.Centre.Z;
+            float x = (viewFromLocal.M11 * lx) + (viewFromLocal.M12 * ly) + (viewFromLocal.M13 * lz) + viewFromLocal.M14;
+            float y = (viewFromLocal.M21 * lx) + (viewFromLocal.M22 * ly) + (viewFromLocal.M23 * lz) + viewFromLocal.M24;
+            float z = (viewFromLocal.M31 * lx) + (viewFromLocal.M32 * ly) + (viewFromLocal.M33 * lz) + viewFromLocal.M34;
+            float r = -sphere.Radius;
+
+            return (_ax * x) + (_ay * y) + (_az * z) + _aw >= r
+                && (_bx * x) + (_by * y) + (_bz * z) + _bw >= r
+                && (_cx * x) + (_cy * y) + (_cz * z) + _cw >= r
+                && (_dx * x) + (_dy * y) + (_dz * z) + _dw >= r;
+        }
+
         private static void Write(Span<float> plane, float x, float y, float z, float w)
         {
             float length = MathF.Sqrt((x * x) + (y * y) + (z * z));

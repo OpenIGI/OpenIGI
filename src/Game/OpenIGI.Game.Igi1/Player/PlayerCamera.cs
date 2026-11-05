@@ -848,6 +848,11 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Gets whether the rig has two tick states for the presentation to draw between.</summary>
     public bool HasViewTickPair => _firstPerson.Pair.HasPair;
 
+    /// <summary>Gets whether the landing dip or the hit shake is displacing the camera from the body's eye this tick.</summary>
+    /// <remarks>The rig is drawn from the camera's own eye while it is, so the arms and weapon do not shear against the view.</remarks>
+    public bool IsViewDisplaced =>
+        LandingKick.OffsetUnits != 0f || ViewShake.RightUnits != 0f || ViewShake.UpUnits != 0f;
+
     /// <summary>Records the rig's per-tick halves, keeping the tick before's.</summary>
     private void CaptureViewTickState() => _firstPerson.Capture(_weapons);
 
@@ -941,9 +946,16 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _shots.ClearImpacts();
 
         // 0x4659E0, asked for by the weapon hand-off into a reload, a lean or a weapon change: the scope latch clears and
-        // both tangents go home, so a reload always comes out of the sight.
+        // both tangents go home, so a reload always comes out of the sight. When the binoculars' own key started the
+        // change, 0x40E9C0 has already deselected them (0x470840) on this tick, so their queued close is spent here: left
+        // for the optics below, it would read as an open against the reset view and hold them up until the change ended.
         if (_weapons?.ConsumeViewReset() == true)
         {
+            if (_weapons.BinocularCloseQueued)
+            {
+                _ = _weapons.ConsumeBinocularToggle();
+            }
+
             ResetOptics();
         }
 

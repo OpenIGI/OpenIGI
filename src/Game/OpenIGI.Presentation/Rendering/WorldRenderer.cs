@@ -180,7 +180,26 @@ public sealed partial class WorldRenderer : IWorldPresenter
             options.RotorsOnly,
             options.GlassOnly,
             options.FromEye,
-            options.BlendedOnly);
+            options.BlendedOnly,
+            options.Mobility);
+
+    /// <inheritdoc/>
+    bool IWorldPresenter.TakeStaticCasterChanges(WorldScene scene, List<WorldCasterBounds> changes)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(changes);
+        _frameState.EnsurePrepared(scene);
+        return _frameState.TakeStaticCasterChanges(changes);
+    }
+
+    /// <inheritdoc/>
+    void IWorldPresenter.CollectMovableCasters(WorldScene scene, List<WorldCasterBounds> casters)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(casters);
+        _frameState.EnsurePrepared(scene);
+        _frameState.CollectMovableCasters(casters);
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -283,6 +302,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
     /// (<see cref="IPlacementVisibility.ClipOf(WorldPlacement)"/>). A light's pass is never narrowed.
     /// </param>
     /// <param name="blendedOnly">Draws only the face groups the original sorts and blends, over the opaque world.</param>
+    /// <param name="mobility">Which placements by whether they move; see <see cref="WorldDrawOptions.Mobility"/>.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         WorldScene scene,
@@ -293,7 +313,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
         bool rotorsOnly = false,
         bool glassOnly = false,
         bool fromEye = false,
-        bool blendedOnly = false)
+        bool blendedOnly = false,
+        WorldCasterMobility mobility = WorldCasterMobility.All)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -365,7 +386,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
         // or every placement behind the camera would be submitted three times a frame.
         bool tracedOnly = !glassOnly && !rotorsOnly && !blendedOnly && RayTracingCVars.TracedWorldRadius.Value > 0f;
 
-        ReadOnlySpan<int> order = drawOrder;
+        ReadOnlySpan<int> order = mobility == WorldCasterMobility.MovableOnly ? _frameState.MovingOrder : drawOrder;
         if (glassOnly)
         {
             _glassOrder.Clear();
@@ -373,7 +394,7 @@ public sealed partial class WorldRenderer : IWorldPresenter
             {
                 int candidate = drawOrder[i];
                 ref WorldFrameEntry glass = ref frame[candidate];
-                if (!glass.Skip && glass.Model is { HasGlass: true })
+                if (!glass.Skip && !(fromEye && glass.EyeCulled) && glass.Model is { HasGlass: true })
                 {
                     _glassOrder.Add(candidate);
                 }
@@ -388,11 +409,18 @@ public sealed partial class WorldRenderer : IWorldPresenter
         }
 
         // The view's horizontal half-angle tangent, which a level of detail is picked against.
-        float lodFieldOfView = projection.M11 != 0f ? 1f / projection.M11 : 1f;
+        // The lens as authored, not as widened for the screen: a wide screen sees more, not coarser. See WidescreenLens.
+        float lodFieldOfView = WidescreenLens.AuthoredTangent(projection);
         foreach (int index in order)
         {
             ref WorldFrameEntry entry = ref frame[index];
             if (entry.Skip || entry.Model is not { } model)
+            {
+                continue;
+            }
+
+            // A kept shadow's two halves: the placements that have never moved, and those that have.
+            if (mobility != WorldCasterMobility.All && entry.Moving == (mobility == WorldCasterMobility.StaticOnly))
             {
                 continue;
             }
@@ -461,7 +489,8 @@ public sealed partial class WorldRenderer : IWorldPresenter
                 + (cullModelView.M23 * cullBounds.Centre.Z) + cullModelView.M24;
             float viewZ = (cullModelView.M31 * cullBounds.Centre.X) + (cullModelView.M32 * cullBounds.Centre.Y)
                 + (cullModelView.M33 * cullBounds.Centre.Z) + cullModelView.M34;
-            if (!frustum.SphereVisible(viewX, viewY, viewZ, cullBounds.Radius))
+            // The title's view culling drops a placement from the eye's picture only (WorldFrameEntry.EyeCulled).
+            if ((fromEye && entry.EyeCulled) || !frustum.SphereVisible(viewX, viewY, viewZ, cullBounds.Radius))
             {
                 // DRAWN BY VISIBILITY, TRACED BY DISTANCE, and the two must not be the same question.
                 // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure

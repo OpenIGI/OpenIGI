@@ -55,6 +55,21 @@ internal sealed class ScratchBuffer : IDisposable
     /// <summary>Gets how many bytes the buffer currently holds.</summary>
     public ulong Capacity => _buffer?.SizeInBytes ?? 0;
 
+    /// <summary>Gets how many bytes every buffer in the pool holds together, the current one included.</summary>
+    public ulong PooledBytes
+    {
+        get
+        {
+            ulong total = 0;
+            foreach ((IRhiBuffer buffer, ulong _) in _pool)
+            {
+                total += buffer.SizeInBytes;
+            }
+
+            return total;
+        }
+    }
+
     /// <summary>
     /// Makes sure a buffer can serve a batch of the given total size, allocating one if none can, and
     /// starts handing ranges out from the beginning again.

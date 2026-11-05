@@ -475,6 +475,19 @@ public static class GraphicsMenu
             "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "
                 + "the original's."),
         new GraphicsSetting(
+            "hud_retail_scale",
+            "Original HUD Size",
+            "How big the original HUD is drawn. Automatic enlarges it to suit your screen; Original draws it at "
+                + "its own size, as the original game does, small and in the corners of a large screen.",
+            new Dictionary<string, string>
+            {
+                ["0"] = "Automatic",
+                ["1"] = "Original",
+                ["2"] = "2x",
+                ["3"] = "3x",
+                ["4"] = "4x",
+            }),
+        new GraphicsSetting(
             "r_hud_density",
             "HUD Density",
             "How much of the remastered HUD stays up. Contextual dims the weapon and inventory until something "
@@ -623,6 +636,12 @@ public static class GraphicsMenu
             "Resolution",
             "The window's size, or the monitor's mode in fullscreen. Desktop is your screen's own. To render "
                 + "fewer pixels at the same size, lower Upscaling on the Graphics page instead."),
+        new GraphicsSetting(
+            "r_widescreen_fov",
+            "Widescreen View",
+            "On a screen wider than 4:3, keeps the original's view whole and shows more at the sides, with "
+                + "nothing stretched. Off keeps the original's side-to-side angle, which crops the top and bottom "
+                + "and stretches the hands and weapon. A 4:3 screen looks the same either way."),
         new GraphicsSetting(
             "r_vsync",
             "Vertical Sync",

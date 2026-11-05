@@ -529,10 +529,26 @@ internal sealed class SurfaceCacheResidency(
         _attemptedCardDensity = float.NaN;
         _capturedCards = null;
         _cardInstances = null;
+
+        // And what the far refresh last saw, which belonged to the cache going. Kept, a restart of the same level under the
+        // same sky found the world already "settled" and the sun unchanged, so the sweep idled from the first frame and never
+        // relit the cards the new world was still filling in under.
+        ResetFarRefresh();
         CardLighting?.Dispose();
         CardLighting = null;
         _cardLookup?.Dispose();
         _cardLookup = null;
+    }
+
+    private void ResetFarRefresh()
+    {
+        _giRefreshSlice = 0;
+        _giRefreshQuietRounds = 0;
+        _giRefreshWorldSettled = false;
+        _giRefreshLampRevision = -1;
+        _giRefreshBounceMapVersion = -1;
+        _giRefreshSunDirection = default;
+        _giRefreshSunColour = default;
     }
 
     /// <summary>Lights the captured card atlas from the level's own sun, sky and fixtures.</summary>
@@ -608,6 +624,7 @@ internal sealed class SurfaceCacheResidency(
         CardBounceFrame = 0;
         _capturedCards = null;
         _cardInstances = null;
+        ResetFarRefresh();
     }
 
     /// <inheritdoc/>
