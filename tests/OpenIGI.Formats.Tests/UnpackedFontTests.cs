@@ -136,6 +136,19 @@ public sealed class UnpackedFontTests
     }
 
     [Fact]
+    public void GlyphOffsetsAreSigned()
+    {
+        // A glyph may sit left of or above its pen position, as LOOP 9's signed offsets allow.
+        byte[] data = Font();
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(TableOffset + RecordSize + 14), -2);
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(TableOffset + RecordSize + 16), -3);
+        SpriteFrame glyph = SpriteLoader.Load(data).GetGlyph('A');
+
+        Assert.Equal(-2, glyph.OffsetX);
+        Assert.Equal(-3, glyph.OffsetY);
+    }
+
+    [Fact]
     public void VersionFiveRemainsUnsupported()
     {
         byte[] data = Font();

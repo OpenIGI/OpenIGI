@@ -80,15 +80,16 @@ internal static class UnpackedFontLoader
             Glyph glyph = glyphs[i];
             int x = ((i % columns) * cellWidth) + 1;
             int y = ((i / columns) * cellHeight) + 1;
-            for (int row = 0; row < glyph.Height && glyph.Width > 0; row++)
+            if (glyph.Width > 0 && glyph.Height > 0)
             {
-                int sourceOffset = (int)(pixelBase + glyph.PixelOffset) + (row * glyph.Pitch);
-                ReadOnlySpan<byte> source = data.Slice(sourceOffset, glyph.Width * Bgra32.Size);
-                int targetOffset = ((y + row) * atlasWidth) + x;
-                for (int column = 0; column < glyph.Width; column++)
+                // The shared decoder turns the glyph's own format into pixels, as every other sprite's are.
+                TextureImage decoded = TextureDecoder.Decode(
+                    TextureDescriptor.Create(glyph.Format, glyph.Width, glyph.Height, glyph.Pitch, 0, 0),
+                    data[(int)(pixelBase + glyph.PixelOffset)..]);
+                ReadOnlySpan<Bgra32> source = decoded.Pixels;
+                for (int row = 0; row < glyph.Height; row++)
                 {
-                    pixels[targetOffset + column] = Bgra32.FromPacked(
-                        BinaryPrimitives.ReadUInt32LittleEndian(source[(column * Bgra32.Size)..]));
+                    source.Slice(row * glyph.Width, glyph.Width).CopyTo(pixels.AsSpan(((y + row) * atlasWidth) + x));
                 }
             }
 
@@ -112,8 +113,8 @@ internal static class UnpackedFontLoader
         BinaryPrimitives.ReadUInt16LittleEndian(record[8..]),
         BinaryPrimitives.ReadUInt16LittleEndian(record[10..]),
         BinaryPrimitives.ReadUInt16LittleEndian(record[12..]),
-        BinaryPrimitives.ReadUInt16LittleEndian(record[14..]),
-        BinaryPrimitives.ReadUInt16LittleEndian(record[16..]),
+        BinaryPrimitives.ReadInt16LittleEndian(record[14..]),
+        BinaryPrimitives.ReadInt16LittleEndian(record[16..]),
         BinaryPrimitives.ReadUInt16LittleEndian(record[18..]));
 
     private static void ValidateGlyph(Glyph glyph, uint pixelBase, int length, string name)
