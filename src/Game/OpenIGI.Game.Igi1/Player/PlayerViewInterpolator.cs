@@ -17,6 +17,8 @@ internal sealed class PlayerViewInterpolator
     private readonly HumanViewShake _viewShake;
     private Vector3d _prevTickEye;
     private Vector3d _tickEye;
+    private float _prevTickRigDip;
+    private float _tickRigDip;
     private double _prevTickWallPullback;
     private double _tickWallPullback;
     private Vector3f _prevTickRootMotion;
@@ -72,10 +74,15 @@ internal sealed class PlayerViewInterpolator
     /// <param name="swayPitch">The weapon sway's pitch this tick.</param>
     /// <param name="swayYaw">The weapon sway's yaw this tick.</param>
     /// <param name="recoilPitch">The view kick this tick.</param>
-    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch)
+    /// <param name="rigDipUnits">The landing dip's extra share the rig alone takes, in world units.</param>
+    internal void Capture(HumanView view, Vector3d eye, float swayPitch, float swayYaw, float recoilPitch, float rigDipUnits)
     {
         _prevTickEye = HasPair ? _tickEye : eye;
         _tickEye = eye;
+
+        // 0x464BD0 places the rig at the dipped eye and then lowers it by 7.5% of the dip again, in world Z.
+        _prevTickRigDip = HasPair ? _tickRigDip : rigDipUnits;
+        _tickRigDip = rigDipUnits;
 
         // The shake's angles step on the tick too, and sit in both the camera and the rig.
         _prevTickShake = HasPair ? _tickShake : (_viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw);
@@ -235,7 +242,7 @@ internal sealed class PlayerViewInterpolator
         Vector3d origin = new(
             eye.X + held.X + (eyeLook.M12 * wallPullback),
             eye.Y + held.Y + (eyeLook.M22 * wallPullback),
-            eye.Z + held.Z + (eyeLook.M32 * wallPullback));
+            eye.Z + held.Z + (eyeLook.M32 * wallPullback) + _prevTickRigDip + ((_tickRigDip - _prevTickRigDip) * alpha));
 
         return (
             origin,
