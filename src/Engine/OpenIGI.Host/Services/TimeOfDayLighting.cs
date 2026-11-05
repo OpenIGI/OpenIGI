@@ -249,7 +249,7 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
     public float MoonVeil()
     {
         float cover = WeatherCloudCover() * DayNight.Nightfall;
-        return (1f - (0.75f * cover)) * SkyCVars.Moonlight.Value;
+        return (1f - (0.75f * cover)) * SkyCVars.EffectiveMoonlight;
     }
 
     // How bright the brightest star is drawn, in the lit scene's own units. Relative to the night sky it is
@@ -299,7 +299,9 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
             // Not weighted by the night: the glow is emission, there all day, and only outshone while the
             // sun lights the sky. Faded in with the night, it was missing through the whole of dusk, which
             // left the sky between the sun's last light and full night darker than the night itself.
-            Airglow: SkyCVars.NightAirglow.Value,
+            // A mission's look may raise it at night (MissionLook.NightGlow), faded in with the night so the dusk
+            // keeps the glow it has.
+            Airglow: SkyCVars.EffectiveAirglow(DayNight.Nightfall),
             CloudCover: cover,
             StarRadiance: stars ? StarRadiance * DayNight.StarVisibility : 0f,
             MoonDirection: moon,

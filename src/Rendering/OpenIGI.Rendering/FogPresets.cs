@@ -24,11 +24,25 @@ public sealed class FogPresets
 {
     private const string LogCategory = "Fog";
 
-    private readonly Dictionary<int, FogPresetEntry> _missions = [];
-    private readonly Dictionary<int, LocalFogVolume[]> _volumes = [];
-    private readonly FogPresetEntry _default;
+    /// <summary>The game a mission number belongs to when its key does not name one.</summary>
+    /// <remarks>
+    /// The file was written for Project I.G.I. alone and every bare key in it still means that game. The
+    /// sequel numbers its missions from one too, so a bare key read for it handed its third mission the
+    /// first game's storm; a sequel entry is keyed <c>igi2:3</c> instead.
+    /// </remarks>
+    public const string DefaultTitle = "igi1";
 
-    private FogPresets(FogPresetEntry defaults) => _default = defaults;
+    private readonly Dictionary<string, FogPresetEntry> _missions = [];
+    private readonly Dictionary<string, MissionLook> _looks = [];
+    private readonly Dictionary<string, LocalFogVolume[]> _volumes = [];
+    private readonly FogPresetEntry _default;
+    private readonly MissionLook _defaultLook;
+
+    private FogPresets(FogPresetEntry defaults, MissionLook defaultLook = default)
+    {
+        _default = defaults;
+        _defaultLook = defaultLook;
+    }
 
     /// <summary>Gets presets with nothing authored, so every mission derives from its own sky.</summary>
     public static FogPresets Empty { get; } = new(FogPresetEntry.Empty);
@@ -58,18 +72,19 @@ public sealed class FogPresets
                 new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
 
             JsonElement root = document.RootElement;
+            bool hasDefaults = root.TryGetProperty("default", out JsonElement defaults);
             FogPresets presets = new(
-                root.TryGetProperty("default", out JsonElement defaults)
-                    ? FogPresetEntry.Read(defaults)
-                    : FogPresetEntry.Empty);
+                hasDefaults ? FogPresetEntry.Read(defaults) : FogPresetEntry.Empty,
+                hasDefaults ? MissionLook.Read(defaults) : MissionLook.Empty);
 
             if (root.TryGetProperty("missions", out JsonElement missions))
             {
                 foreach (JsonProperty mission in missions.EnumerateObject())
                 {
-                    if (int.TryParse(mission.Name, CultureInfo.InvariantCulture, out int id))
+                    if (KeyOf(mission.Name) is { } key)
                     {
-                        presets._missions[id] = FogPresetEntry.Read(mission.Value);
+                        presets._missions[key] = FogPresetEntry.Read(mission.Value);
+                        presets._looks[key] = MissionLook.Read(mission.Value);
                     }
                 }
             }
@@ -78,10 +93,10 @@ public sealed class FogPresets
             {
                 foreach (JsonProperty mission in volumes.EnumerateObject())
                 {
-                    if (int.TryParse(mission.Name, CultureInfo.InvariantCulture, out int id)
+                    if (KeyOf(mission.Name) is { } key
                         && mission.Value.ValueKind == JsonValueKind.Array)
                     {
-                        presets._volumes[id] = ReadVolumes(mission.Value);
+                        presets._volumes[key] = ReadVolumes(mission.Value);
                     }
                 }
             }
@@ -104,10 +119,11 @@ public sealed class FogPresets
     /// <param name="derivedDensity">The density derived from the level's own <c>FlatSky</c> task.</param>
     /// <param name="baseHeight">The level's sky-plane height in metres.</param>
     /// <param name="steps">How many samples a ray takes, from the quality setting.</param>
+    /// <param name="title">The game the mission belongs to: <c>igi1</c> or <c>igi2</c>.</param>
     /// <returns>The medium to render with.</returns>
-    public VolumetricFogSettings Resolve(int mission, float derivedDensity, float baseHeight, int steps)
+    public VolumetricFogSettings Resolve(int mission, float derivedDensity, float baseHeight, int steps, string title = DefaultTitle)
     {
-        FogPresetEntry entry = _missions.TryGetValue(mission, out FogPresetEntry authored)
+        FogPresetEntry entry = _missions.TryGetValue(Key(title, mission), out FogPresetEntry authored)
             ? authored.Over(_default)
             : _default;
 
@@ -129,9 +145,30 @@ public sealed class FogPresets
 
     /// <summary>Gets the volumes a mission declares.</summary>
     /// <param name="mission">The mission id.</param>
+    /// <param name="title">The game the mission belongs to.</param>
     /// <returns>The volumes, empty when the mission declares none.</returns>
-    public ReadOnlySpan<LocalFogVolume> VolumesFor(int mission) =>
-        _volumes.TryGetValue(mission, out LocalFogVolume[]? volumes) ? volumes : ReadOnlySpan<LocalFogVolume>.Empty;
+    public ReadOnlySpan<LocalFogVolume> VolumesFor(int mission, string title = DefaultTitle) =>
+        _volumes.TryGetValue(Key(title, mission), out LocalFogVolume[]? volumes) ? volumes : ReadOnlySpan<LocalFogVolume>.Empty;
+
+    /// <summary>Gets a mission's look: its painted sky and its brightness, over the file's default.</summary>
+    /// <param name="mission">The mission id.</param>
+    /// <param name="title">The game the mission belongs to.</param>
+    /// <returns>The look; <see cref="MissionLook.Empty"/> fields where nothing is authored.</returns>
+    public MissionLook LookFor(int mission, string title = DefaultTitle) =>
+        _looks.TryGetValue(Key(title, mission), out MissionLook look) ? look.Over(_defaultLook) : _defaultLook;
+
+    // A bare number is the first game's; "igi2:3" names the game. Anything else is not a mission key.
+    private static string? KeyOf(string name)
+    {
+        int colon = name.IndexOf(':', StringComparison.Ordinal);
+        string title = colon < 0 ? DefaultTitle : name[..colon].Trim().ToLowerInvariant();
+        return int.TryParse(colon < 0 ? name : name[(colon + 1)..], CultureInfo.InvariantCulture, out int id)
+            ? Key(title, id)
+            : null;
+    }
+
+    private static string Key(string title, int mission) =>
+        string.Create(CultureInfo.InvariantCulture, $"{title.ToLowerInvariant()}:{mission}");
 
     private static LocalFogVolume[] ReadVolumes(JsonElement array)
     {

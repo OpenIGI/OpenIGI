@@ -210,13 +210,15 @@ struct Light
     // rgb ambient, w debug view.
     float4 ambient;
 
-    // x: the title draws its own sky, y: the share of the bakes the dynamic model adds, z: its bakes are whole, w unused.
+    // x: the share of the title's painted sky kept, y: the share of the bakes the dynamic model adds, z: its bakes are
+    // whole, w: one over the exposure, which brings the painted sky out of the resolve at the colour it was painted.
     float4 sky;
 
     // xyz world direction towards the moon, w how bright its disc is drawn (nought: no moon).
     float4 moon;
 
-    // x how bright the brightest star is drawn (nought: no stars), y cloud cover, z seconds, w unused.
+    // x how bright the brightest star is drawn (nought: no stars), y cloud cover, z seconds, w one when the painted sky
+    // is drawn clear of the fog, as Project I.G.I. draws its dome.
     float4 stars;
 };
 
@@ -447,13 +449,15 @@ void ApplyWetness(
         return;
     }
 
-    albedo = lerp(albedo, albedo * 0.5, puddle);
+    // The ground under standing water is darker than the damp ground around it: the water takes what light
+    // would have come back off it. At a half the bed of a moonlit puddle read as a milky film.
+    albedo = lerp(albedo, albedo * 0.3, puddle);
 
     WaterSurface water = WaterSurfaceAt(w, relative, footprint);
     normal = normalize(lerp(normal, water.normal, puddle));
     roughness = lerp(roughness, water.roughness, puddle);
 
-    waterReflectance = WaterFresnel(normal, toEye) * puddle;
+    waterReflectance = WaterFresnel(normal, toEye) * puddle * RainReflection(w);
     albedo *= 1.0 - waterReflectance;
 }
 
@@ -553,10 +557,19 @@ float4 fragmentMain(Varyings input) : SV_Target
             return float4(0.0, 0.0, 0.0, 1.0);
         }
 
-        if (light.sky.x > 0.5)
+        // The title's own painted sky: kept whole at a share of one, and below that laid over the marched
+        // atmosphere by its share, so a level's painted mood can give way to the atmosphere as the clock
+        // leaves the hour it was painted at.
+        float painted = saturate(light.sky.x);
+        float3 paintedSky = albedo * (light.sky.w > 0.0 ? light.sky.w : DecodeEmissiveStrength(material));
+        if (light.stars.w < 0.5)
         {
-            return float4(
-                ApplyFog(albedo * DecodeEmissiveStrength(material), vUv, gi.unproject.w), 1.0);
+            paintedSky = ApplyFog(paintedSky, vUv, gi.unproject.w);
+        }
+
+        if (painted >= 0.999)
+        {
+            return float4(paintedSky, 1.0);
         }
 
         float2 ndc = (vUv * 2.0) - 1.0;
@@ -591,7 +604,7 @@ float4 fragmentMain(Varyings input) : SV_Target
                 SunTransmittance(worldRay, viewHeightKm));
         }
 
-        return float4(ApplyFog(background, vUv, gi.unproject.w), 1.0);
+        return float4(lerp(ApplyFog(background, vUv, gi.unproject.w), paintedSky, painted), 1.0);
     }
 
     if (DecodeShadingModel(material) == kShadingModelUnlit)
@@ -743,6 +756,11 @@ float4 fragmentMain(Varyings input) : SV_Target
         sunDirection,
         surfaceDiffuse,
         surfaceSpecular);
+
+    if (waterMask > 0.0)
+    {
+        surfaceSpecular *= OvercastGlint(Weather(), waterMask);
+    }
 
     float3 sunLight = (surfaceDiffuse + surfaceSpecular) * sunIlluminance * visibility;
 
@@ -934,6 +952,12 @@ float4 fragmentMain(Varyings input) : SV_Target
         float covered = clamp((reflectionCeiling - roughness) / max(reflectionCeiling * 0.25, 1e-3), 0.0, 1.0);
         ambientSpecular *= 1.0 - covered;
     }
+
+    // Standing water has its own reflection of the sky, laid in with the sun above at the water's Fresnel and
+    // carried on by the reflection pass. The environment estimate is the same sky a second time: at a grazing
+    // angle its f90 of one lit every puddle with the whole of it again, a pale sheet over the water that no
+    // amount of roughening or of rain could take away.
+    ambientSpecular *= 1.0 - waterMask;
 
     // A share of the level's shipped lightmaps laid under the computed light (light.sky.y; nought for none): the artists'
     // interior light where the level has no outdoors for the computed light to come from.

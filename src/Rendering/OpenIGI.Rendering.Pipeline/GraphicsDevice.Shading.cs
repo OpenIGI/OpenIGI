@@ -69,10 +69,12 @@ public sealed partial class GraphicsDevice
             _lighting.Scale,
             _lighting.AmbientColour,
             (int)_debugView,
-            _frameHasPaintedSky,
+            _frameHasPaintedSky ? _paintedSkyWeight : 0f,
             _lighting.CompleteBake,
             _lighting.Night,
-            _lighting.Model == LightingModel.Dynamic ? _lighting.BakedShare : 0f);
+            _lighting.Model == LightingModel.Dynamic ? _lighting.BakedShare : 0f,
+            1f / MathF.Max(_sceneExposure, 1e-3f),
+            _paintedSkyFogged);
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);
         BindGlobalIllumination();

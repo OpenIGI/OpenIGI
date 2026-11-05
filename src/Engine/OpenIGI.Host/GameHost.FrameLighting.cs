@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using OpenIGI.Core.Configuration.Presets;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
@@ -13,6 +14,10 @@ public sealed partial class GameHost
     // The air the running level is played in, when the title authors one. Null for a game that does
     // not, which is what keeps Project I.G.I. out of this entirely.
     private SceneAtmosphere? _atmosphere;
+
+    // The running mission's look and the game it belongs to, as the fog resolved them this frame.
+    private MissionLook _missionLook;
+    private string _fogTitle = FogPresets.DefaultTitle;
 
     /// <summary>Gets the air the world wears when the retail fog is on, preferring the level's own.</summary>
     /// <param name="fromGlobalLight">The fog this band of Project I.G.I.'s <c>GlobalLight</c> publishes.</param>
@@ -257,6 +262,10 @@ public sealed partial class GameHost
         // which is a 0-to-1 dial and not a length at all. Run through that fit the sequel's first
         // mission came out at 0.0070 per metre, four times its own figure, and the frame was a
         // blue wash with the buildings barely in it.
+        //
+        // Project I.G.I.'s levels keep this fit on purpose. Their own GlobalLight band is the thin haze
+        // vanilla draws -- a thirtieth of this over the second mission -- and that mission's thick valley
+        // mist under this fit is the remaster's look players know it by. Do not swap it for the band.
         float authoredDensity = _atmosphere is { FogDensity: > 0f } own
             ? own.FogDensity
             : _sky is { HasSky: true }
@@ -280,6 +289,19 @@ public sealed partial class GameHost
         // default haze instead of its own tuned fog, and looked different from the same mission
         // started any other way, a renderer switch included.
         int fogMission = _session.Mission?.Id ?? _menuBackdrop.MissionId ?? _options.StartMission;
+        string fogTitle = _titleRuntime.Title.Id;
+
+        // The mission's look beyond its air -- its painted sky and its brightness -- from the same entry.
+        // Vanilla draws the original's picture and takes none of it.
+        _missionLook = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla
+            ? MissionLook.Empty
+            : state.FogPresets.LookFor(fogMission, fogTitle);
+        ExposureCVars.MissionExposureStops.Value = _missionLook.ExposureStops ?? 0f;
+        ExposureCVars.MissionNightExposureStops.Value = _missionLook.NightExposureStops ?? 0f;
+        ExposureCVars.MissionNightAdaptation.Value = _missionLook.NightAdaptation ?? 1f;
+        SkyCVars.MissionMoonlight.Value = _missionLook.Moonlight ?? 1f;
+        SkyCVars.MissionNightSky.Value = _missionLook.NightSky ?? 1f;
+        SkyCVars.MissionNightGlow.Value = _missionLook.NightGlow ?? 1f;
 
         VolumetricFogSettings medium = VolumetricFogSettings.Off;
         if (wantsFog)
@@ -291,7 +313,8 @@ public sealed partial class GameHost
                 fogMission,
                 authoredDensity,
                 (float)(_scene.GroundHeight + (_sky is { HasSky: true } ? _sky.PlaneHeight : 0f)),
-                FogCVars.FogQuality.Value);
+                FogCVars.FogQuality.Value,
+                fogTitle);
 
             // A console override beats the authored preset, so a value can be dialled in live and
             // then written back into the file.
@@ -329,8 +352,32 @@ public sealed partial class GameHost
             {
                 medium = medium with { Distance = FogCVars.FogDistance.Value };
             }
+
+            // The mission's night haze: how much of the moon and the night sky its fog still catches,
+            // faded in with the night so the day's air is the one authored above. A thin haze lit by a
+            // bright moon glows grey-blue across the whole sky, which is most of what made a clear
+            // night read pale; the real sky behind it is already dark.
+            if (_missionLook.NightFog is { } nightFog)
+            {
+                float lit = 1f + ((nightFog - 1f) * Math.Clamp(_timeOfDay.DayNight.Nightfall, 0f, 1f));
+                medium = medium with
+                {
+                    SunIntensity = medium.SunIntensity * lit,
+                    AmbientIntensity = medium.AmbientIntensity * lit,
+                };
+            }
+
+            // And how hard it throws that light forward: the lobe gathers a moon into a halo far wider than a
+            // real moon wears through mist.
+            if (_missionLook.NightHalo is { } nightHalo)
+            {
+                float halo = 1f + ((nightHalo - 1f) * Math.Clamp(_timeOfDay.DayNight.Nightfall, 0f, 1f));
+                medium = medium with { Anisotropy = medium.Anisotropy * halo };
+            }
         }
 
+        _dumpFog = medium;
+        _fogTitle = fogTitle;
         fogWanted = wantsFog;
         fogMissionId = fogMission;
         return medium;
@@ -438,6 +485,6 @@ public sealed partial class GameHost
         _device.SetVolumetricFog(
             medium,
             new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
-            wantsFog ? state.FogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
+            wantsFog ? state.FogPresets.VolumesFor(fogMission, _fogTitle) : ReadOnlySpan<LocalFogVolume>.Empty);
     }
 }

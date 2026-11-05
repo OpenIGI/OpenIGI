@@ -34,6 +34,7 @@ public sealed partial class GameHost
     // view space). Recorded unconditionally: two struct copies a frame cost nothing.
     private SceneLighting _dumpLighting;
     private Vector3f _dumpWorldSun;
+    private VolumetricFogSettings _dumpFog;
 
     /// <summary>Writes the last frame's lighting to <paramref name="path"/> as JSON.</summary>
     /// <param name="path">The file to write.</param>
@@ -63,6 +64,35 @@ public sealed partial class GameHost
         json.WriteNumber("moonRadiance", night.MoonRadiance);
         json.WriteEndObject();
 
+        // What the level itself authors, beside what the frame made of it: the original's air and model
+        // light (GlobalLight), its sky (FlatSky) and the sun as written. The pair is what a per-mission look
+        // is judged against.
+        json.WriteStartObject("authored");
+        WriteVector(json, "terrainFogColour", _globalLight.TerrainFog.Colour);
+        json.WriteNumber("terrainFogDensity", _globalLight.TerrainFog.DensityPerMetre);
+        WriteVector(json, "objectFogColour", _globalLight.ObjectFog.Colour);
+        json.WriteNumber("objectFogDensity", _globalLight.ObjectFog.DensityPerMetre);
+        WriteVector(json, "objectAmbient", _globalLight.ObjectAmbient);
+        WriteVector(json, "terrainAmbient", _globalLight.TerrainAmbient);
+        WriteVector(json, "skyFogColour", _sky?.FogColour ?? default);
+        json.WriteNumber("skyFogAmount", _sky?.FogAmount ?? 0f);
+        WriteVector(json, "sunColour", _timeOfDay.Sun?.Colour ?? default);
+        WriteVector(json, "sunAmbient", _timeOfDay.Sun?.Ambient ?? default);
+        WriteVector(json, "sunDirection", _timeOfDay.Sun?.Direction ?? default);
+        json.WriteBoolean("authoredNight", _deferredLighting?.Night is not null);
+        json.WriteEndObject();
+
+        json.WriteStartObject("fog");
+        json.WriteNumber("density", _dumpFog.Density);
+        json.WriteNumber("heightFalloff", _dumpFog.HeightFalloff);
+        WriteVector(json, "albedo", _dumpFog.Albedo);
+        json.WriteNumber("uniformFraction", _dumpFog.UniformFraction);
+        json.WriteNumber("multipleScattering", _dumpFog.MultipleScattering);
+        json.WriteNumber("ambientIntensity", _dumpFog.AmbientIntensity);
+        json.WriteEndObject();
+
+        json.WriteNumber("nightfall", ExposureCVars.Nightfall.Value);
+        json.WriteNumber("effectiveExposure", ExposureCVars.EffectiveExposure);
         json.WriteNumber("timeOfDay", ExposureCVars.TimeOfDay.Value);
         json.WriteBoolean("autoExposure", ExposureCVars.AutoExposure.Value);
         json.WriteNumber("exposure", ExposureCVars.Exposure.Value);

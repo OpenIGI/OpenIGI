@@ -463,7 +463,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         // The shading took this same Fresnel off the water's albedo, so the reflection is added here at
         // exactly the strength the surface stopped scattering -- and faded by however much of the water
         // one ray can still speak for, with the sky the shading laid in holding whatever is left.
-        float share = WaterFresnel(normalW, -worldRayToPixel) * puddle * surface.mirror;
+        float share = WaterFresnel(normalW, -worldRayToPixel) * puddle * surface.mirror * RainReflection(w);
         reflectance = float3(share, share, share);
     }
     else

@@ -23,6 +23,32 @@ public sealed partial class GameHost
     private IMissionWorldView? _worldView;
     private IMissionViewpoint? _viewpoint;
 
+    // How much of a painted sky's cloud layers the forward pass blends this frame; nought when the sky draws its own.
+    private float _paintedLayers;
+
+    /// <summary>How much of the level's painted sky this frame keeps over the atmosphere, nought to one.</summary>
+    /// <remarks>
+    /// The mission's look (or <c>r_painted_sky</c>), faded out as the clock moves off the hour the level's sun
+    /// is bound at: whole within an hour of it, gone three hours away. A night level is bound at midnight,
+    /// so its painted night gives way to the cycle's dawn rather than hanging over a noon sun.
+    /// </remarks>
+    private float PaintedSkyShare()
+    {
+        float share = SkyCVars.PaintedSky.Value >= 0f
+            ? SkyCVars.PaintedSky.Value
+            : _missionLook.PaintedSky ?? 0f;
+        if (share <= 0f || _timeOfDay.Sunless)
+        {
+            return 0f;
+        }
+
+        float painted = (_timeOfDay.BoundSun ?? _timeOfDay.Sun)?.TimeOfDay is > 0f and <= 24f and var hour ? hour : 12f;
+        float away = MathF.Abs(_timeOfDay.DayNight.TimeHours - painted) % 24f;
+        away = MathF.Min(away, 24f - away);
+        float t = Math.Clamp((away - 1f) / 2f, 0f, 1f);
+        return share * (1f - (t * t * (3f - (2f * t))));
+    }
+
     /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
     /// <summary>Gets the ground, unless the title's culling leaves the world outside its buildings out of this frame.</summary>
     /// <remarks>The cascades take it from here too, so a ground the eye cannot see out to casts nothing into the room.</remarks>
@@ -77,7 +103,20 @@ public sealed partial class GameHost
             // A BRACKET, closed below. The division is the sky's own, and everything drawn after
             // this is the world: leaving it open divided every emissive surface in the level --
             // every lamp -- by the exposure too.
-            bool paintedSky = captured && _sky is { IsGameOwnSky: true };
+            //
+            // A title that keeps its own sky keeps all of it. One whose sky the atmosphere replaces keeps as
+            // much of its painted dome as the mission's look asks for, and only near the hour it was painted
+            // at: the painted sky is one moment's sky, and the cycle's atmosphere is every other.
+            float paintedShare = _sky is { IsGameOwnSky: true } ? 1f : PaintedSkyShare();
+            _device.SetPaintedSkyWeight(paintedShare, fogged: _sky is { IsGameOwnSky: true });
+            bool paintedSky = captured && _sky is { HasSky: true } && paintedShare > 0f;
+            _paintedLayers = paintedSky && _sky is { IsGameOwnSky: false } ? paintedShare : 0f;
+            if (_sky is { } layered)
+            {
+                // The layers of a painted sky kept over the atmosphere are blended in the forward pass; see
+                // ISkyPresenter.LayersApart.
+                layered.LayersApart = _paintedLayers > 0f;
+            }
             if (paintedSky)
             {
                 _device.SetPaintedSky(true);
@@ -373,6 +412,15 @@ public sealed partial class GameHost
                 Math.Max(1, (int)(rotorMap.Viewport.Width * scaleX)),
                 Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
         }
+        // The painted sky's cloud layers, behind everything the world drew and before anything blended over it.
+        if (_paintedLayers > 0f && _sky is { } clouds)
+        {
+            _device.SetMaterialOverride(SurfaceMaterial.Sky);
+            clouds.DrawLayers(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f), _paintedLayers);
+            _device.SetMaterialOverride(SurfaceMaterial.Default);
+            _device.SetDepthState(DepthState.TestAndWrite);
+        }
+
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true, FromEye: true));
         if (_world.FaceGroupBlending)
         {

@@ -188,7 +188,7 @@ public sealed partial class GameHost
             // as a dim day, and left it and the fill projected from it black; with the resolve's
             // night shift doing the job of making it read as night, a third lets the sky light the
             // moon's shadows again. See SkyCVars.NightSkyScale.
-            float nightSky = SkyCVars.NightSkyScale.Value;
+            float nightSky = SkyCVars.EffectiveNightSky;
             float nightFeed = _deferredLighting is { Night: null } nightly
                 ? 1f + ((nightSky - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                 : 1f;
@@ -214,7 +214,7 @@ public sealed partial class GameHost
                 // passes on its own share (see SkyView's deck transmission), while the clear air
                 // scatters only r_night_sky's. Knocked down or veiled here as well, the deck took
                 // the cloud's toll twice and a rainy night came out black.
-                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (SkyCVars.Moonlight.Value * atmosphereScale);
+                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (SkyCVars.EffectiveMoonlight * atmosphereScale);
             }
             else
             {
@@ -261,7 +261,12 @@ public sealed partial class GameHost
                 nightSky,
 
                 // A level with no outdoors keeps a share of its artists' baked light under the computed one.
-                _timeOfDay.Sunless ? GlobalIlluminationCVars.SunlessLightmapShare.Value : 0f));
+                // And a night mission a share of them under its moon, by how far into night the sky is.
+                _timeOfDay.Sunless
+                    ? GlobalIlluminationCVars.SunlessLightmapShare.Value
+                    : (GlobalIlluminationCVars.NightLightmapShare.Value >= 0f
+                        ? GlobalIlluminationCVars.NightLightmapShare.Value
+                        : _missionLook.NightBake ?? 0f) * _timeOfDay.DayNight.Nightfall));
             _device.BeginPass(ScenePass.Geometry);
 
             // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

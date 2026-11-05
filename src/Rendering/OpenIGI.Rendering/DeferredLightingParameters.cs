@@ -268,10 +268,20 @@ public static class DeferredLightingParameters
     /// <param name="lightScale">What the frame's lighting is multiplied by.</param>
     /// <param name="ambient">The flat ambient a surface falls back to.</param>
     /// <param name="debugView">Which debug view is in force, or nought for the picture.</param>
-    /// <param name="paintedSky">Whether the title draws its own sky rather than the marched one.</param>
+    /// <param name="paintedSky">
+    /// How much of the title's own painted sky is kept over the marched one, nought to one: one keeps it
+    /// whole, nought draws only the atmosphere, and between the two the painted dome and its clouds are laid
+    /// over the atmosphere by that share.
+    /// </param>
     /// <param name="bakesWhole">Whether the level's baked light is complete.</param>
     /// <param name="night">The stars, the moon's disc and the cloud cover the sky is drawn with.</param>
     /// <param name="bakedShare">How much of the baked light the dynamic model adds under its own.</param>
+    /// <param name="paintedSkyScale">
+    /// What the painted sky's colour is multiplied by to come out of the resolve as painted: one over the
+    /// exposure the resolve applies. Nought leaves it to the strength the geometry pass encoded, which
+    /// cannot go below a sixteenth and so cannot undo an exposure past sixteen.
+    /// </param>
+    /// <param name="paintedSkyFogged">Whether the frame's fog is laid over the painted sky.</param>
     /// <exception cref="ArgumentException">The block is the wrong length.</exception>
     public static void WriteLight(
         Span<float> block,
@@ -281,10 +291,12 @@ public static class DeferredLightingParameters
         float lightScale,
         in Vector3f ambient,
         float debugView = 0f,
-        bool paintedSky = false,
+        float paintedSky = 0f,
         bool bakesWhole = true,
         in NightSky night = default,
-        float bakedShare = 0f)
+        float bakedShare = 0f,
+        float paintedSkyScale = 0f,
+        bool paintedSkyFogged = true)
     {
         if (block.Length != LightFloats)
         {
@@ -308,9 +320,10 @@ public static class DeferredLightingParameters
         block[10] = ambient.Z;
         block[11] = debugView;
 
-        block[12] = paintedSky ? 1f : 0f;
+        block[12] = Math.Clamp(paintedSky, 0f, 1f);
         block[13] = MathF.Max(bakedShare, 0f);
         block[14] = bakesWhole ? 1f : 0f;
+        block[15] = MathF.Max(paintedSkyScale, 0f);
 
         block[16] = night.MoonDirection.X;
         block[17] = night.MoonDirection.Y;
@@ -323,5 +336,6 @@ public static class DeferredLightingParameters
         // Wrapped at an hour: the twinkle only wants a phase, and a float counting up a whole session
         // loses the fraction a slow sine needs.
         block[22] = night.Seconds % 3600f;
+        block[23] = paintedSkyFogged ? 0f : 1f;
     }
 }

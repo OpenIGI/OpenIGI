@@ -241,7 +241,7 @@ public sealed class SkyRenderer : ISkyPresenter
         _device.DrawMesh(_dome, 0, DomeIndexCount, modelView, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
 
         // One strip for every layer: they share the geometry and differ only in texture, tint and scroll.
-        if (_layers.Count > 0 && TryBuildCloudGrid(camera, projection))
+        if (!LayersApart && _layers.Count > 0 && TryBuildCloudGrid(camera, projection))
         {
             for (int i = 0; i < _layers.Count; i++)
             {
@@ -252,6 +252,53 @@ public sealed class SkyRenderer : ISkyPresenter
         _device.SetFog(fog);
         _device.SetModelAmbient(ambient);
     }
+
+    /// <inheritdoc/>
+    public bool LayersApart { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The same strip, pushed out along its own rays to <see cref="LayerPushMetres"/> -- one scale for the
+    /// whole strip, so where it lands on the screen and how its texture runs across it are unchanged -- and
+    /// depth-tested there, so everything the world drew stays in front of it as the original's world drew
+    /// over its clouds.
+    /// </remarks>
+    public void DrawLayers(in SkyFrame frame, float share)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!HasSky || share <= 0f || _layers.Count == 0 || !TryBuildCloudGrid(frame.Camera, frame.Projection))
+        {
+            return;
+        }
+
+        float farthest = 0f;
+        foreach (Vector3f position in _cloudPositions)
+        {
+            farthest = MathF.Max(farthest, position.Length);
+        }
+
+        _device.SetProjection(frame.Projection);
+        _device.SetCullMode(CullMode.None);
+        _device.SetDepthState(DepthState.TestOnly);
+        SceneFog fog = _device.Fog;
+        Vector3f ambient = _device.ModelAmbient;
+        _device.SetFog(SceneFog.None);
+        _device.SetModelAmbient(Vector3f.One);
+
+        Matrix4f modelView = frame.Camera.CreateModelView(frame.Camera.Position);
+        float push = farthest > 0f ? LayerPushMetres / farthest : 1f;
+        for (int i = 0; i < _layers.Count; i++)
+        {
+            DrawCloudLayer(_layers[i], i, frame.Camera, modelView, frame.Seconds, push, share);
+        }
+
+        _device.SetFog(fog);
+        _device.SetModelAmbient(ambient);
+    }
+
+    // How far out the forward pass draws the strip: beyond anything the fog leaves visible, well inside the far plane.
+    private const float LayerPushMetres = 50000f;
 
     /// <summary>Tints the dome to the sun's warmth, rebuilding it when the tint moves enough to matter.</summary>
     /// <param name="tint">A per-channel multiplier, one for the authored sky, warmer as the sun sinks.</param>
@@ -623,7 +670,9 @@ public sealed class SkyRenderer : ISkyPresenter
         int layerIndex,
         in Camera3D camera,
         in Matrix4f modelView,
-        float seconds)
+        float seconds,
+        float push = 1f,
+        float share = 1f)
     {
         // The fade window, in engine units: opaque out to nearDepth, gone by the task's Distance.
         float distanceUnits = Distance * (float)WorldScene.UnitsPerMetre;
@@ -661,13 +710,13 @@ public sealed class SkyRenderer : ISkyPresenter
             float v = (position.Y * (float)WorldScene.UnitsPerMetre * layer.Scale) + scrollY;
 
             vertices[i] = new Vertex3D(
-                position,
+                position * push,
                 Vector3f.Zero,
                 u,
                 v,
                 0f,
                 0f,
-                ToColour(layer.Colour, fade * layer.Alpha));
+                ToColour(layer.Colour, fade * layer.Alpha * share));
         }
 
         if (_cloudIndices.Length == 0)
