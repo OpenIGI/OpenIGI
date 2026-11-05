@@ -118,7 +118,7 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
 
             // The camera takes the landing dip and the hit shake whether or not Smooth Motion is on, so the rig has to
             // take them too: left at the body's eye it stays put while the view drops into it. With Smooth Motion off the
-            // rig is drawn at the newest tick (blend 1) from the same eye the camera uses, which is the whole of the dip.
+            // rig is drawn at the newest tick (blend 1) from the same eye the camera uses, the original's 7.5% extra drop with it.
             bool displaced = !frame.Smooth && mission.Player.IsViewDisplaced;
             float rigBlend = displaced ? 1f : frame.TickBlend;
             if ((frame.Smooth || displaced) && mission.Player.HasViewTickPair)
