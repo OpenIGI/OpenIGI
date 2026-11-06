@@ -30,6 +30,12 @@ public sealed class Igi1VersusTests
         int[] teams = [.. match.Players.Values.Select(p => p.Team).Order()];
         Assert.Equal([TeamRoster.Good, TeamRoster.Bad], teams);
 
+        // The campaign's objectives and messages are nobody's here: neither game shows them.
+        pair.RunUntil(() => false, 60);
+        Assert.Empty(pair.Host.World.Objectives!.Objectives);
+        Assert.Empty(pair.Host.World.Objectives.DisplayedMessages);
+        Assert.Empty(pair.Joiner.World.Objectives!.Objectives);
+
         // On opposite sides, neither is shown the other's name: not on the host, and not on the joiner once its board has come.
         Assert.Null(Assert.Single(pair.Host.World.PartnerBodies!()).Name);
         Assert.True(pair.RunUntil(() => pair.Joiner.World.PartnerBodies!() is [{ Name: null }] && pair.Client.CurrentScoreboard is not null, 300) >= 0,

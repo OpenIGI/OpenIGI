@@ -179,7 +179,19 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     }
 
     /// <summary>Gets the currently selected six-row definition, with empty rows omitted.</summary>
-    public IReadOnlyList<MissionObjective> Objectives { get; private set; }
+    public IReadOnlyList<MissionObjective> Objectives
+    {
+        get => Silenced ? [] : _objectives;
+        private set => _objectives = value;
+    }
+
+    private IReadOnlyList<MissionObjective> _objectives = [];
+
+    /// <summary>
+    /// Gets or sets whether the mission's objectives and messages are kept off the screen while it still runs them: a level
+    /// played as a multiplayer arena, whose campaign's objectives are nobody's.
+    /// </summary>
+    public bool Silenced { get; set; }
 
     /// <summary>Gets or sets extra seconds every status message is held on screen for.</summary>
     /// <remarks>
@@ -309,7 +321,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// than a list rebuilt thirty times a second for a renderer that usually draws nothing.
     /// </para>
     /// </remarks>
-    public IEnumerable<StatusMessageDisplay> DisplayedMessages => _messages.DisplayedMessages;
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Silenced ? [] : _messages.DisplayedMessages;
 
     /// <summary>Empties every message slot, as the <c>StatusMessageScreen_ClearMessages</c> native does.</summary>
     /// <remarks>

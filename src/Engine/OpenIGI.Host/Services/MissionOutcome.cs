@@ -95,6 +95,7 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         host.Objectives?.TickAfterLevelState();
         if (host.PlaysArena)
         {
+            host.Objectives?.Silenced = true;
             session.ClearFailure();
             return;
         }
