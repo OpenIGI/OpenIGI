@@ -18,8 +18,21 @@ public static class NetConstants
     /// <summary>The largest reliable message, after reassembly.</summary>
     public const int MaxReliableMessageSize = 256 * 1024;
 
-    /// <summary>The largest unreliable message; it must fit one packet.</summary>
-    public const int MaxUnreliableMessageSize = MaxPacketSize - PacketPrefixSize - PayloadHeaderSize - 8;
+    /// <summary>The bytes a sealed payload packet carries beyond its body: the authentication tag.</summary>
+    public const int SealOverhead = 16;
+
+    /// <summary>The largest unreliable message; it must fit one packet, sealed.</summary>
+    public const int MaxUnreliableMessageSize = MaxPacketSize - PacketPrefixSize - PayloadHeaderSize - SealOverhead - 8;
+
+    /// <summary>The most packets one flush writes: no more than one packet's acknowledgement field covers.</summary>
+    /// <remarks>
+    /// A packet acknowledges the newest one received and the 32 before it. A flush that wrote more than that and lost the
+    /// odd one would have the rest go unacknowledged for good, and every reliable message in them sent again.
+    /// </remarks>
+    public const int MaxPacketsPerFlush = 32;
+
+    /// <summary>The bytes a second a connection sends unless told otherwise (Source's <c>rate</c>).</summary>
+    public const int DefaultRate = 256 * 1024;
 
     /// <summary>The largest application payload a connection request carries.</summary>
     public const int MaxConnectPayloadSize = 900;
@@ -83,4 +96,14 @@ internal enum PacketKind : byte
     Disconnect = 7,
     InfoRequest = 8,
     InfoResponse = 9,
+}
+
+/// <summary>What a client's connection request offers, a bit each.</summary>
+[Flags]
+internal enum ConnectFlags : byte
+{
+    None = 0,
+
+    /// <summary>The client can seal its packets and wants the server's key.</summary>
+    Sealed = 1,
 }

@@ -225,7 +225,11 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
     /// <summary>Puts every player but a shooter where the shooter's client drew them when it fired, until the scope ends.</summary>
     /// <param name="shooter">The client's player whose shots are about to be traced.</param>
     /// <returns>The scope, or <see langword="null"/> when there is nothing to rewind to.</returns>
-    /// <remarks>The bodies are moved, not turned or re-posed: where a body stands is what a shot at a moving man misses by.</remarks>
+    /// <remarks>
+    /// The bodies are moved and turned (a shot at a man turning meets his side, not his back), not re-posed: the bones stand
+    /// as this tick has them, which is what a round traced through the mesh reads (<see cref="Collision.IIgi2BonedBody.Orientation"/>).
+    /// The turn is the change of yaw laid onto the body's own frame, so the slope it leans with stays.
+    /// </remarks>
     private RewindScope? RewindFor(Igi2NetworkHuman shooter)
     {
         long commandTick = shooter.Commands.LastTakenTick;
@@ -234,13 +238,15 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             return null;
         }
 
-        List<(Igi2HumanPlayer Human, Vector3d Was)> moved = [];
+        List<(Igi2HumanPlayer Human, Vector3d Was, Matrix3f Turned)> moved = [];
         void MoveBack(int id, Igi2HumanPlayer human)
         {
             if (!ReferenceEquals(human, shooter.Human) && lag.TargetAt(CurrentTick, shooter.Commands.LastViewTick, id, out ReplicatedHuman then))
             {
-                moved.Add((human, human.Position));
+                moved.Add((human, human.Position, human.Orientation));
                 human.Position = then.Position.ToVector();
+                float turn = Quantize.AngleFromBits(then.Yaw) - human.Gamma;
+                human.Orientation *= Matrix3f.RotationZ(turn);
             }
         }
 
@@ -291,13 +297,14 @@ public sealed class Igi2ReplicatedWorld : IReplicatedWorld
             condition);
     }
 
-    private sealed class RewindScope(List<(Igi2HumanPlayer Human, Vector3d Was)> moved) : IDisposable
+    private sealed class RewindScope(List<(Igi2HumanPlayer Human, Vector3d Was, Matrix3f Turned)> moved) : IDisposable
     {
         public void Dispose()
         {
-            foreach ((Igi2HumanPlayer human, Vector3d was) in moved)
+            foreach ((Igi2HumanPlayer human, Vector3d was, Matrix3f turned) in moved)
             {
                 human.Position = was;
+                human.Orientation = turned;
             }
         }
     }

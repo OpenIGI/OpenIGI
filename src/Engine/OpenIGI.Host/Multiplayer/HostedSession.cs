@@ -67,6 +67,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         _net = new NetServer(transport, new NetServerOptions
         {
             ProtocolId = MultiplayerProtocol.IdFor(titleId),
+            ProtocolVersion = MultiplayerProtocol.Version,
             MaxClients = options.MaxPlayers,
             Admit = Admit,
             Info = _ => Info().Encode(),
@@ -155,7 +156,9 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
 
             _world = replicated.CreateReplicatedWorld(_options.IncludesHost);
             _level = replicated.Level;
-            _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin);
+            _session = new ServerSession(
+                _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
+                protocolId: MultiplayerProtocol.IdFor(_titleId));
             _logger.Information(
                 LogCategory,
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
@@ -298,11 +301,6 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         if (_options.Content.Length > 0 && join.Content.Length > 0 && !string.Equals(join.Content, _options.Content, StringComparison.Ordinal))
         {
             return NetAdmission.Reject("your game plays with different mods from the host's");
-        }
-
-        if (_session?.IsBarred(join.PlayerName) == true)
-        {
-            return NetAdmission.Reject("the host removed you from this room");
         }
 
         if (_options.Password.Length > 0 && !string.Equals(join.Password, _options.Password, StringComparison.Ordinal))

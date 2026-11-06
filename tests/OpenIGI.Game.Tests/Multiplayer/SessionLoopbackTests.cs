@@ -196,6 +196,43 @@ public sealed class SessionLoopbackTests
     }
 
     [Fact]
+    public void Each_client_gets_the_snapshots_a_second_it_asked_for_within_the_servers_bounds()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(network.Open(26001), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy") { MinUpdateRate = 10 };
+        ClientSession every = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        ClientSession third = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        ClientSession greedy = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        every.Connect(serverNet.LocalAddress, new JoinRequest("every", "test", string.Empty), now);
+        third.Connect(serverNet.LocalAddress, new JoinRequest("third", "test", string.Empty, UpdateRate: TickRate / 3), now);
+        greedy.Connect(serverNet.LocalAddress, new JoinRequest("greedy", "test", string.Empty, UpdateRate: 1), now);
+        ClientSession[] clients = [every, third, greedy];
+        float[] idle = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 10 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            foreach (ClientSession client in clients)
+            {
+                client.Receive(now);
+                client.SendCommand(idle, now);
+                client.Flush(now);
+            }
+        }
+
+        // A third as many as every tick; and one asking for less than the server allows gets what it allows.
+        double ratio = third.SnapshotsAssembled / (double)every.SnapshotsAssembled;
+        Assert.InRange(ratio, 0.28, 0.4);
+        double floor = greedy.SnapshotsAssembled / (double)every.SnapshotsAssembled;
+        Assert.InRange(floor, 10.0 / TickRate * 0.8, 10.0 / TickRate * 1.3);
+    }
+
+    [Fact]
     public void A_world_too_big_for_one_packet_arrives_in_parts_and_whole()
     {
         double now = 0;
@@ -284,12 +321,39 @@ public sealed class SessionLoopbackTests
     }
 
     /// <summary>A world where each player moves 100 units along X a tick its forward channel is held.</summary>
-    private sealed class ToyWorld : IReplicatedWorld
+    internal sealed class ToyWorld : IReplicatedWorld
     {
         public const int Channels = 8;
 
         private readonly Dictionary<int, Player> _bySlot = [];
         private int _nextId = 1;
+
+        // Whether a player whose line dropped is kept for its return; off, it is gone at once.
+        public bool KeepsTheAway { get; set; }
+
+        public bool ParkPlayer(int slot, int parked)
+        {
+            if (!KeepsTheAway || !_bySlot.Remove(slot, out Player? player))
+            {
+                return false;
+            }
+
+            _bySlot[parked] = player;
+            return true;
+        }
+
+        public int? UnparkPlayer(int parked, int slot)
+        {
+            if (!_bySlot.Remove(parked, out Player? player))
+            {
+                return null;
+            }
+
+            _bySlot[slot] = player;
+            return player.Id;
+        }
+
+        public void ForgetPlayer(int parked) => _bySlot.Remove(parked);
 
         public int ChannelCount => Channels;
 

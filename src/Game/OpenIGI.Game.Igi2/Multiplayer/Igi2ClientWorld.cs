@@ -35,6 +35,7 @@ public sealed class Igi2ClientWorld : IReplicatedClientWorld
     {
         _level.Human.Position += offset;
         _level.Human.UpdateViewBody(updateAnimation: false);
+        _level.ViewError.Note(offset);
     }
 
     /// <summary>Gets the puppet of another player, or <see langword="null"/>.</summary>

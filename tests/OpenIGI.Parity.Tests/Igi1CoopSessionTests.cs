@@ -226,7 +226,7 @@ public sealed class Igi1CoopSessionTests
             new HostedSessionOptions("coop", 4, string.Empty, "coop", "1", "test", IncludesHost: true), "igi1", 30, NullLogger.Instance);
         Capture capture = new(session);
         host.TickObserver = capture;
-        ClientSession client = new(new NetClient(network.Open(), MultiplayerProtocol.IdFor("igi1")), Igi1Command.ChannelCount);
+        ClientSession client = new(new NetClient(network.Open(), MultiplayerProtocol.IdFor("igi1"), MultiplayerProtocol.Version), Igi1Command.ChannelCount, protocolId: MultiplayerProtocol.IdFor("igi1"));
 
         float[] forwards = new float[Igi1Command.ChannelCount];
         PlayerInputFrame walk = default;

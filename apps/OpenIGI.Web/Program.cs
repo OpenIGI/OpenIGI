@@ -12,6 +12,7 @@ using OpenIGI.Host;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Net.Browser;
+using OpenIGI.Net.Identity;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Web;
 using OpenIGI.Rendering;
@@ -119,6 +120,8 @@ public static partial class Program
             GameRoot,
             logger);
 
+        // Who this player is to every host: identity.js's key, kept in the page's storage.
+        PlayerIdentities.Default = new BrowserPlayerIdentity();
         _session = RoomSessions.Start(session, runtime.Title.Id, options.StartMission, Version(), new BrowserRtcPeerFactory(), logger);
         _game.TickObserver = _session as IHostTickObserver;
         _game.RoomPeers = new BrowserRtcPeerFactory();

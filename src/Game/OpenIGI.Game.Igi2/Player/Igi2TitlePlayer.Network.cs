@@ -64,6 +64,9 @@ public sealed partial class Igi2TitlePlayer : IReplicatedTitle
     /// <summary>Gets or sets what puts the other players where a client's player saw them as its shots are traced: lag compensation.</summary>
     internal Func<Igi2NetworkHuman, IDisposable?>? NetworkRewind { get; set; }
 
+    /// <summary>Gets a client's eye eased over the server's corrections of its own player, as I.G.I.'s is: the body moves at once, the eye follows.</summary>
+    public PredictionErrorSmoothing ViewError { get; } = new();
+
     /// <summary>Gets the areas' rosters, which count every player in the level.</summary>
     internal List<PlayerRoster<Flow.IIgi2AreaOccupant>> AreaRosters { get; } = [];
 

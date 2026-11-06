@@ -6,8 +6,14 @@ namespace OpenIGI.Net;
 /// <summary>How a <see cref="NetServer"/> runs.</summary>
 public sealed class NetServerOptions
 {
-    /// <summary>Gets or sets the id of the protocol: the game and its wire version. A client with another id is never heard.</summary>
+    /// <summary>Gets or sets the id of the protocol: the game. A client with another id is never heard.</summary>
     public ulong ProtocolId { get; set; }
+
+    /// <summary>Gets or sets the version of the protocol: a client of another is turned down, told which this server speaks.</summary>
+    public ushort ProtocolVersion { get; set; }
+
+    /// <summary>Gets or sets the bytes a second each connection sends at most (Source's <c>rate</c>).</summary>
+    public int Rate { get; set; } = NetConstants.DefaultRate;
 
     /// <summary>Gets or sets the most clients connected at once.</summary>
     public int MaxClients { get; set; } = 32;
@@ -50,6 +56,10 @@ public sealed class NetServer : IDisposable
     private readonly ulong _key0;
     private readonly ulong _key1;
 
+    // The server's half of each sealed connection's key exchange, one pair for the run; null where the platform can't seal.
+    private readonly System.Security.Cryptography.ECDiffieHellman? _sealKey;
+    private readonly byte[] _sealPublic = new byte[PacketCipher.PublicKeySize];
+
     /// <summary>Initializes a new instance of the <see cref="NetServer"/> class.</summary>
     /// <param name="transport">What it listens on; the server disposes it.</param>
     /// <param name="options">How it runs.</param>
@@ -64,6 +74,11 @@ public sealed class NetServer : IDisposable
         RandomNumberGenerator.Fill(key);
         _key0 = BinaryPrimitives.ReadUInt64LittleEndian(key);
         _key1 = BinaryPrimitives.ReadUInt64LittleEndian(key[8..]);
+        if (PacketCipher.IsSupported)
+        {
+            _sealKey = PacketCipher.CreateKey();
+            PacketCipher.WritePublicKey(_sealKey, _sealPublic);
+        }
     }
 
     /// <summary>Gets the address the server listens on.</summary>
@@ -167,6 +182,7 @@ public sealed class NetServer : IDisposable
             }
         }
 
+        _sealKey?.Dispose();
         _transport.Dispose();
     }
 
@@ -184,11 +200,28 @@ public sealed class NetServer : IDisposable
                     return;
                 }
 
+                // Another version is told so at once, in words, rather than left to wait out its timeout.
+                ushort version = BinaryPrimitives.ReadUInt16LittleEndian(packet[(prefix + 8)..]);
+                if (version != _options.ProtocolVersion)
+                {
+                    SendRejected(source, nonce, string.Create(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        $"version mismatch: the server plays protocol {_options.ProtocolVersion}, this game {version}"));
+                    return;
+                }
+
+                // A client that can seal is sent the server's key, and its answer comes sealed.
+                bool sealing = _sealKey is not null && ((ConnectFlags)packet[prefix + 10] & ConnectFlags.Sealed) != 0;
                 ulong bucket = (ulong)Math.Floor(now / ChallengeBucket);
-                Span<byte> challenge = _sendBuffer.AsSpan(0, prefix + 24);
+                Span<byte> challenge = _sendBuffer.AsSpan(0, prefix + 24 + (sealing ? PacketCipher.PublicKeySize : 0));
                 BinaryPrimitives.WriteUInt64LittleEndian(challenge[prefix..], nonce);
                 BinaryPrimitives.WriteUInt64LittleEndian(challenge[(prefix + 8)..], bucket);
                 BinaryPrimitives.WriteUInt64LittleEndian(challenge[(prefix + 16)..], Token(source, nonce, bucket));
+                if (sealing)
+                {
+                    _sealPublic.CopyTo(challenge[(prefix + 24)..]);
+                }
+
                 SendOutOfBand(source, PacketKind.Challenge, challenge);
                 return;
             }
@@ -267,28 +300,65 @@ public sealed class NetServer : IDisposable
             if (existing.Nonce == nonce)
             {
                 SendAccepted(existing);
+                return;
             }
 
+            // The same address with a new attempt, its challenge answered: the game there started again (a crash, a restart)
+            // and its old connection is dead. It is let in now rather than after the old one times out.
+            Drop(existing.Slot, "reconnected", notify: false);
+        }
+
+        if (packet.Length < prefix + 25)
+        {
             return;
+        }
+
+        ConnectFlags flags = (ConnectFlags)packet[prefix + 24];
+        ReadOnlySpan<byte> body = packet[(prefix + 25)..];
+        PacketCipher? cipher = null;
+        byte[] payload;
+        if ((flags & ConnectFlags.Sealed) != 0)
+        {
+            // The answer is sealed under the keys the two halves agree: one the server can't open is no answer at all.
+            if (_sealKey is null || body.Length < PacketCipher.PublicKeySize + PacketCipher.Overhead
+                || PacketCipher.Agree(_sealKey, body[..PacketCipher.PublicKeySize], nonce, isServer: true) is not { } agreed)
+            {
+                return;
+            }
+
+            ReadOnlySpan<byte> sealedPayload = body[PacketCipher.PublicKeySize..];
+            payload = new byte[sealedPayload.Length - PacketCipher.Overhead];
+            if (!agreed.TryOpen(0, packet.Slice(prefix, 24), sealedPayload, payload))
+            {
+                agreed.Dispose();
+                return;
+            }
+
+            cipher = agreed;
+        }
+        else
+        {
+            payload = body.ToArray();
         }
 
         int slot = Array.IndexOf(_peers, null);
         if (slot < 0)
         {
+            cipher?.Dispose();
             SendRejected(source, nonce, "server is full");
             return;
         }
 
-        byte[] payload = packet[(prefix + 24)..].ToArray();
         NetAdmission admission = _options.Admit?.Invoke(new NetConnectRequest(source, payload, slot)) ?? NetAdmission.Accept();
         if (!admission.IsAccepted)
         {
+            cipher?.Dispose();
             SendRejected(source, nonce, admission.Reason);
             return;
         }
 
         uint salt = (uint)RandomNumberGenerator.GetInt32(int.MaxValue) | 1u;
-        Peer peer = new(slot, nonce, admission.Payload, new NetConnection(_transport, source, _options.ProtocolId, salt, now));
+        Peer peer = new(slot, nonce, admission.Payload, new NetConnection(_transport, source, _options.ProtocolId, salt, now, cipher) { Rate = _options.Rate });
         _peers[slot] = peer;
         _byAddress[source] = slot;
         SendAccepted(peer);
@@ -336,6 +406,7 @@ public sealed class NetServer : IDisposable
 
         _peers[slot] = null;
         _byAddress.Remove(peer.Connection.RemoteAddress);
+        peer.Connection.Dispose();
         _events.Enqueue(new NetEvent(NetEventKind.Disconnected, slot, default, reason, null));
     }
 

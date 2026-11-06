@@ -20,15 +20,20 @@ public readonly record struct NetMessage(NetChannel Channel, byte[] Data);
 /// packets as the queued messages need, or a bare one to carry acknowledgements and keep the line alive.
 /// </para>
 /// </remarks>
-public sealed class NetConnection
+public sealed class NetConnection : IDisposable
 {
     private const double KeepAliveInterval = 0.1;
     private const double MinimumResendDelay = 0.1;
-    private const int MaxPacketsPerFlush = 64;
+
+    // The most a connection that has sent nothing a while may send at once, in seconds of its rate: a tick's snapshot in
+    // several parts goes out whole, a minute of silence buys no flood.
+    private const double BurstSeconds = 0.25;
 
     private readonly INetTransport _transport;
     private readonly ulong _protocolId;
+    private readonly PacketCipher? _cipher;
     private readonly byte[] _packet = new byte[NetConstants.MaxPacketSize];
+    private readonly byte[] _sealed = new byte[NetConstants.MaxPacketSize];
 
     private readonly SequenceBuffer<SentPacket> _sent = new(NetConstants.WindowSize);
     private readonly Queue<(ushort Sequence, double Time)> _lossWindow = new();
@@ -52,14 +57,48 @@ public sealed class NetConnection
     private bool _anySequenced;
     private double _lastSendTime = double.NegativeInfinity;
 
-    internal NetConnection(INetTransport transport, NetAddress remote, ulong protocolId, uint salt, double now)
+    // The bytes the connection may still send, by its rate, and when that was last worked out.
+    private double _budget;
+    private double _budgetAt;
+    private int _rate = NetConstants.DefaultRate;
+
+    // The full sequences of the newest packet sent and opened, for the nonces of sealed packets.
+    private ulong _sendCounter;
+    private ulong _newestOpened;
+
+    internal NetConnection(INetTransport transport, NetAddress remote, ulong protocolId, uint salt, double now, PacketCipher? cipher = null)
     {
         _transport = transport;
         _protocolId = protocolId;
+        _cipher = cipher;
         RemoteAddress = remote;
         Salt = salt;
         LastReceiveTime = now;
+        _budgetAt = now;
+        _budget = _rate * BurstSeconds;
     }
+
+    /// <summary>Gets whether the connection's packets are sealed: encrypted and authenticated end to end.</summary>
+    public bool IsSealed => _cipher is not null;
+
+    /// <summary>Lets go of the connection's keys. Its owner calls this as it drops the connection.</summary>
+    public void Dispose() => _cipher?.Dispose();
+
+    /// <summary>Gets or sets the most bytes a second the connection sends (Source's <c>rate</c>).</summary>
+    /// <remarks>
+    /// Past it a flush stops: reliable messages wait for the next, unreliable ones -- a snapshot, stale by the next tick
+    /// anyway -- are dropped and counted as choked. Acknowledgements always go.
+    /// </remarks>
+    public int Rate
+    {
+        get => _rate;
+        set => _rate = Math.Clamp(value, 4 * NetConstants.MaxPacketSize, 64 * 1024 * 1024);
+    }
+
+    /// <summary>Gets whether the line is full or the connection has used up its <see cref="Rate"/> for now.</summary>
+    /// <param name="now">The current time in seconds.</param>
+    /// <returns><see langword="true"/> when a packet sent now would wait or be dropped.</returns>
+    public bool IsChokedAt(double now) => IsChoked || BudgetAt(now) < NetConstants.MaxPacketSize;
 
     /// <summary>Gets the other end's address.</summary>
     public NetAddress RemoteAddress { get; }
@@ -125,13 +164,27 @@ public sealed class NetConnection
     {
         PromoteBacklog();
         CountLosses(now);
+        _budget = BudgetAt(now);
+        _budgetAt = now;
 
         bool keepAliveDue = now - _lastSendTime >= KeepAliveInterval;
         double resendDelay = Math.Max(MinimumResendDelay, (Statistics.RoundTripTime * 1.25) + (Statistics.RoundTripJitter * 2));
         int unreliableCursor = 0;
+        int limit = _packet.Length - (_cipher is null ? 0 : PacketCipher.Overhead);
 
-        for (int packets = 0; packets < MaxPacketsPerFlush; packets++)
+        for (int packets = 0; packets < NetConstants.MaxPacketsPerFlush; packets++)
         {
+            // Out of rate: what is left waits (reliable) or is dropped (the rest), but an acknowledgement owed still goes.
+            if (_budget < NetConstants.MaxPacketSize)
+            {
+                if (packets == 0 && (_ackOwed || keepAliveDue))
+                {
+                    SendPacket(WritePayloadHeader(), now);
+                }
+
+                break;
+            }
+
             int offset = WritePayloadHeader();
             int headerEnd = offset;
             _packetReliableIds.Clear();
@@ -144,7 +197,7 @@ public sealed class NetConnection
                 }
 
                 int size = 1 + 2 + VarIntSize(message.Data.Length) + message.Data.Length;
-                if (offset + size > _packet.Length)
+                if (offset + size > limit)
                 {
                     continue;
                 }
@@ -165,7 +218,7 @@ public sealed class NetConnection
             {
                 (NetChannel channel, byte[] data) = _unreliableOut[unreliableCursor];
                 int size = 1 + VarIntSize(data.Length) + data.Length;
-                if (offset + size > _packet.Length)
+                if (offset + size > limit)
                 {
                     break;
                 }
@@ -189,8 +242,11 @@ public sealed class NetConnection
             }
         }
 
+        Statistics.CountChoked(_unreliableOut.Count - unreliableCursor);
         _unreliableOut.Clear();
     }
+
+    private double BudgetAt(double now) => Math.Min(_budget + ((now - _budgetAt) * _rate), _rate * BurstSeconds);
 
     /// <summary>Reads a payload packet whose prefix and salt the owner has already checked.</summary>
     /// <param name="packet">The whole packet.</param>
@@ -212,6 +268,23 @@ public sealed class NetConnection
             || (_anyReceived && SequenceMath.Distance(sequence, _latestReceived) <= -NetConstants.WindowSize / 2))
         {
             return;
+        }
+
+        // A sealed packet is opened before anything of it is believed: one changed on the way, or never sealed by the other
+        // end, is dropped as if lost, and acknowledges nothing.
+        if (_cipher is not null)
+        {
+            int headerEnd = NetConstants.PacketPrefixSize + NetConstants.PayloadHeaderSize;
+            ulong counter = PacketCipher.Extend(_newestOpened, sequence);
+            if (!_cipher.TryOpen(counter, packet[NetConstants.PacketPrefixSize..headerEnd], packet[headerEnd..], _sealed.AsSpan(headerEnd)))
+            {
+                Statistics.CountUnopened();
+                return;
+            }
+
+            packet[..headerEnd].CopyTo(_sealed);
+            packet = _sealed.AsSpan(0, packet.Length - PacketCipher.Overhead);
+            _newestOpened = Math.Max(_newestOpened, counter);
         }
 
         _received.Insert(sequence, true);
@@ -402,8 +475,25 @@ public sealed class NetConnection
 
     private void SendPacket(int length, double now)
     {
+        _sendCounter++;
+        if (_cipher is not null)
+        {
+            // The body is sealed behind the header, which goes readable but authenticated: the receiver needs its salt and
+            // sequence to find the connection and open the packet.
+            int headerEnd = NetConstants.PacketPrefixSize + NetConstants.PayloadHeaderSize;
+            int body = length - headerEnd;
+            _packet.AsSpan(headerEnd, body).CopyTo(_sealed);
+            _cipher.Seal(
+                _sendCounter,
+                _packet.AsSpan(NetConstants.PacketPrefixSize, NetConstants.PayloadHeaderSize),
+                _sealed.AsSpan(0, body),
+                _packet.AsSpan(headerEnd, body + PacketCipher.Overhead));
+            length += PacketCipher.Overhead;
+        }
+
         PacketCodec.Seal(_packet.AsSpan(0, length), PacketKind.Payload, _protocolId);
         _transport.Send(RemoteAddress, _packet.AsSpan(0, length));
+        _budget -= length;
         _sent.Insert(_sequence, new SentPacket(now, [.. _packetReliableIds]));
         _lossWindow.Enqueue((_sequence, now));
         Statistics.CountSent(length, now);

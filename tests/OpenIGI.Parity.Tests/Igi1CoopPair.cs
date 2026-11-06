@@ -202,13 +202,18 @@ internal sealed class Igi1CoopPair : IDisposable
         _session.Dispose();
         _hostDevice.Dispose();
         _joinerDevice.Dispose();
+        _joinerIdentity.Dispose();
     }
 
     private SessionClient NewClient()
     {
         JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0);
-        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
+        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance, _joinerIdentity,
+            reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0));
     }
+
+    // The joiner's identity, kept across its reconnections as its game keeps its key file.
+    private readonly OpenIGI.Net.Identity.EcdsaPlayerIdentity _joinerIdentity = OpenIGI.Net.Identity.EcdsaPlayerIdentity.CreateEphemeral();
 
     // Frames run, the clock the joiner's line keeps.
     private long _steps;

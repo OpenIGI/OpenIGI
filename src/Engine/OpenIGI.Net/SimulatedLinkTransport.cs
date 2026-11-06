@@ -68,6 +68,9 @@ public sealed class SimulatedLinkTransport : INetTransport
     public int MaxDatagramSize => _inner.MaxDatagramSize;
 
     /// <inheritdoc/>
+    public bool IsEncrypted => _inner.IsEncrypted;
+
+    /// <inheritdoc/>
     public int Backlog(NetAddress destination)
     {
         int waiting = 0;

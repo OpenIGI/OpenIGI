@@ -129,6 +129,10 @@ public sealed class UserCommandTests
     public void Queue_CatchesUpTwoATickWhenTheClientRunsAhead()
     {
         UserCommandBuffer queue = new(Channels) { TargetDepth = 1, MaxDepth = 3 };
+
+        // Two ticks with nothing to run: the client's line was held up, and it saved the runs it missed.
+        queue.Due();
+        queue.Due();
         for (long tick = 1; tick <= 5; tick++)
         {
             queue.Push(Command(tick));

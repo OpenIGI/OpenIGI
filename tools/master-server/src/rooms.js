@@ -17,6 +17,11 @@ const CODE_LENGTH = 6;
 // How long a created room waits for its host's socket, and how long a relay login lasts.
 const HOST_CONNECT_MS = 60_000;
 
+// How long a room outlives its host's socket dropping without a goodbye -- the host's line blinking, or this Worker being
+// deployed, which drops every socket at once -- for the host to come back to it. The game runs on between the players the
+// whole time; only new joiners wait.
+const HOST_RETURN_MS = 60_000;
+
 // How often an open room refreshes its entry in the list, which drops entries 90 s after they were last refreshed.
 const PUBLISH_MS = 30_000;
 
@@ -134,13 +139,15 @@ export class Room {
 
     if (role === "host") {
       const token = url.searchParams.get("token") ?? "";
-      if (room.hostConnected || (await sha256(token)) !== room.hostTokenHash) {
+      // The host's own token, and no host already here: its first socket, or its return after one dropped.
+      if (this.ctx.getWebSockets("host").length > 0 || (await sha256(token)) !== room.hostTokenHash) {
         return json({ error: "not this room's host" }, 403);
       }
 
       this.ctx.acceptWebSocket(server, ["host"]);
       server.serializeAttachment({ role: "host" });
       room.hostConnected = true;
+      room.hostAwaySince = null;
       await this.ctx.storage.put("room", room);
       await this.ctx.storage.setAlarm(Date.now() + PUBLISH_MS);
       await this.publish(room);
@@ -149,7 +156,7 @@ export class Room {
     }
 
     if (role === "join") {
-      if (!room.hostConnected) {
+      if (!room.hostConnected || this.ctx.getWebSockets("host").length === 0) {
         return json({ error: "the host isn't here yet" }, 409);
       }
 
@@ -220,23 +227,41 @@ export class Room {
     }
   }
 
-  async webSocketClose(ws) {
-    await this.closed(ws);
+  async webSocketClose(ws, code) {
+    await this.closed(ws, code === 1000);
   }
 
   async webSocketError(ws) {
-    await this.closed(ws);
+    await this.closed(ws, false);
   }
 
-  async closed(ws) {
+  async closed(ws, goodbye) {
     const from = ws.deserializeAttachment();
     if (from?.role === "join") {
       this.toHost({ type: "leave", peer: from.peer });
       return;
     }
 
-    // The host gone is the room gone: joiners still signaling are told, and the code is free again.
-    await this.close("the host left");
+    // The host saying goodbye is the room gone: joiners still signaling are told, and the code is free again. A host whose
+    // socket only dropped has a while to come back to it.
+    if (goodbye) {
+      await this.close("the host left");
+      return;
+    }
+
+    await this.hostAway();
+  }
+
+  // The host's socket gone without a goodbye: the room kept for its return, and closed by the alarm if it doesn't.
+  async hostAway() {
+    const room = await this.ctx.storage.get("room");
+    if (!room || room.hostAwaySince) {
+      return;
+    }
+
+    room.hostAwaySince = Date.now();
+    await this.ctx.storage.put("room", room);
+    await this.ctx.storage.setAlarm(room.hostAwaySince + HOST_RETURN_MS);
   }
 
   // Before the host connects: it never came for the room it made. After: the room's entry in the list kept fresh, for
@@ -247,8 +272,25 @@ export class Room {
       return;
     }
 
-    if (!room.hostConnected || this.ctx.getWebSockets("host").length === 0) {
-      await this.close(room.hostConnected ? "the host left" : "the host never connected");
+    if (!room.hostConnected) {
+      await this.close("the host never connected");
+      return;
+    }
+
+    // No host socket: away a while yet (a deploy drops sockets without telling the room, so its absence may be news to this
+    // alarm), or away too long and the room closed.
+    if (this.ctx.getWebSockets("host").length === 0) {
+      if (!room.hostAwaySince) {
+        await this.hostAway();
+        return;
+      }
+
+      if (Date.now() - room.hostAwaySince < HOST_RETURN_MS) {
+        await this.ctx.storage.setAlarm(room.hostAwaySince + HOST_RETURN_MS);
+        return;
+      }
+
+      await this.close("the host left");
       return;
     }
 

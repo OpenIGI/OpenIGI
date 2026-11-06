@@ -10,6 +10,7 @@ import { dotnet } from './_framework/dotnet.js';
 import './wgpu-bridge.js';
 import * as platform from './platform.js';
 import * as rtc from './rtc.js';
+import * as identity from './identity.js';
 import * as audio from './audio.js';
 import * as files from './game-files.js';
 import * as userFiles from './user-files.js';
@@ -301,6 +302,7 @@ async function start() {
   platform.install(canvas);
   runtime.setModuleImports('openigi-platform', platform.imports);
   runtime.setModuleImports('openigi-rtc', rtc.imports);
+  runtime.setModuleImports('openigi-identity', identity.imports);
   runtime.setModuleImports('openigi-audio', audio.imports);
   runtime.setModuleImports('openigi-files', files.imports);
 

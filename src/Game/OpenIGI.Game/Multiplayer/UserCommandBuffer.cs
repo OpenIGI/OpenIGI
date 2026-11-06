@@ -15,12 +15,20 @@ namespace OpenIGI.Game.Multiplayer;
 /// tick until it is back down. Starved, it gives none: the player waits for its client rather than move on controls nobody
 /// pressed, and the ticks it waited are counted in <see cref="Missed"/>.
 /// </para>
+/// <para>
+/// Catching up is paid for. Each tick of the server's earns the client one command's run, kept up to <see cref="MaxCredit"/>,
+/// and each command run spends one: a client that fell behind (its packets held up, then arriving together) catches up
+/// on what it saved, but one sending commands faster than time passes -- a speed hack -- runs no faster than the server's
+/// clock, and what it sends beyond that waits until the queue is full and is then refused. This is Source's
+/// <c>sv_maxusrcmdprocessticks</c>.
+/// </para>
 /// </remarks>
 public sealed class UserCommandBuffer
 {
     private readonly SortedDictionary<long, (float[] Channels, long ViewTick)> _pending = [];
     private readonly float[] _last;
     private bool _primed;
+    private double _credit;
 
     /// <summary>Initializes a new instance of the <see cref="UserCommandBuffer"/> class.</summary>
     /// <param name="channelCount">The title's channel frame length.</param>
@@ -42,8 +50,17 @@ public sealed class UserCommandBuffer
     /// <summary>Gets or sets past how many waiting commands the queue gives two a tick.</summary>
     public int MaxDepth { get; set; } = 6;
 
+    /// <summary>Gets or sets the most commands' runs a client may save up to catch up with: a third of a second at the original's tick.</summary>
+    public int MaxCredit { get; set; } = 10;
+
+    /// <summary>Gets the ticks the queue would have given two but the client had not earned them: a client sending faster than time.</summary>
+    public long Throttled { get; private set; }
+
     /// <summary>Gets the ticks the queue had nothing to give.</summary>
     public long Missed { get; private set; }
+
+    /// <summary>Gets the commands that came with values that are no numbers, which were cleared.</summary>
+    public long Unfit { get; private set; }
 
     /// <summary>Gets the commands that arrived after one made later had already run.</summary>
     public long Late { get; private set; }
@@ -52,7 +69,28 @@ public sealed class UserCommandBuffer
     public long LastTakenTick { get; private set; } = long.MinValue;
 
     /// <summary>Gets the tick the client was drawing at when it made the command last run, or <see cref="long.MinValue"/>.</summary>
+    /// <remarks>
+    /// As far back from the server's present (<see cref="ServerTick"/>) as the client's line explains and no further
+    /// (<see cref="MaxRewindTicks"/>, and the commands that waited here before it): a client claiming to have drawn the
+    /// others further in the past than that is shooting at where they were, not where it saw them -- a backtrack -- and is held
+    /// to what its line allows. Never ahead of the server's present. The command's own stamp is no measure: after the first,
+    /// a client numbers its commands on one a tick, and its clock and the server's drift apart over a session.
+    /// </remarks>
     public long LastViewTick { get; private set; } = long.MinValue;
+
+    /// <summary>Gets or sets how far behind the server's present a client may have been drawing the others, in ticks; the session sets it from the client's line.</summary>
+    public int MaxRewindTicks { get; set; } = int.MaxValue;
+
+    /// <summary>Gets or sets the tick the server is running, which the session sets before each; <see cref="long.MinValue"/> while unknown.</summary>
+    public long ServerTick { get; set; } = long.MinValue;
+
+    // How far behind the server the client's views usually are, in ticks (an average of the believed ones; negative until
+    // the first), and how much further one may reach and still be believed: about Source's 200 ms.
+    private double _typicalViewAge = -1;
+    private const int ViewAgeToleranceTicks = 6;
+
+    /// <summary>Gets the commands whose view tick reached back further than the client's line explains, and were held to it.</summary>
+    public long Backtracked { get; private set; }
 
     /// <summary>Gets the stamp of the command that arrived last (a packet carries its newest last).</summary>
     public long NewestTick { get; private set; } = long.MinValue;
@@ -67,6 +105,14 @@ public sealed class UserCommandBuffer
         if (command.Channels is null || command.Channels.Length != _last.Length)
         {
             return;
+        }
+
+        // A value that is no number would poison whatever the player's code does with it, on the server's level.
+        float[] channels = command.Channels;
+        if (Array.Exists(channels, static c => !float.IsFinite(c)))
+        {
+            channels = Array.ConvertAll(channels, static c => float.IsFinite(c) ? c : 0f);
+            Unfit++;
         }
 
         // A repeat of one already run is what the packets' redundancy sends; one older than the newest run came too late.
@@ -85,14 +131,16 @@ public sealed class UserCommandBuffer
             return;
         }
 
-        _pending.TryAdd(command.Tick, (command.Channels, command.ViewTick));
+        _pending.TryAdd(command.Tick, (channels, command.ViewTick));
         NewestTick = command.Tick;
     }
 
     /// <summary>Gets how many commands to run this tick, and counts a tick the queue is dry.</summary>
     /// <returns>Nought, one, or two while catching up.</returns>
+    /// <remarks>Called once a server tick: that is what earns the client its runs.</remarks>
     public int Due()
     {
+        _credit = Math.Min(_credit + 1, MaxCredit);
         if (!_primed)
         {
             if (_pending.Count < TargetDepth)
@@ -111,7 +159,15 @@ public sealed class UserCommandBuffer
             return 0;
         }
 
-        return _pending.Count > MaxDepth ? 2 : 1;
+        int wanted = _pending.Count > MaxDepth ? 2 : 1;
+        int due = Math.Min(wanted, (int)Math.Floor(_credit));
+        if (due < wanted)
+        {
+            Throttled++;
+        }
+
+        _credit -= due;
+        return due;
     }
 
     /// <summary>Takes the next command in the client's order.</summary>
@@ -129,6 +185,35 @@ public sealed class UserCommandBuffer
         channels.CopyTo(_last, 0);
         _last.CopyTo(frame);
         LastTakenTick = tick;
+        if (viewTick != long.MinValue && ServerTick != long.MinValue)
+        {
+            viewTick = Math.Min(viewTick, ServerTick);
+            if (MaxRewindTicks != int.MaxValue)
+            {
+                // As far back as the line explains, or as the client's own views usually are and a hitch beyond (Source's
+                // 200 ms): a backtrack is one shot reaching further than the rest, which is what is held. The commands still
+                // waiting here add to its age, a tick each.
+                // The usual age starts at what the line explains and learns from every view, a held one only as far as it
+                // was held: it follows a client that honestly draws later (a slow machine, a deep buffer) within a couple of
+                // seconds, but a reach is never learned in one go.
+                long age = ServerTick - viewTick;
+                if (_typicalViewAge < 0)
+                {
+                    _typicalViewAge = MaxRewindTicks;
+                }
+
+                double allowed = Math.Max(MaxRewindTicks, _typicalViewAge + ViewAgeToleranceTicks) + _pending.Count;
+                if (age > allowed)
+                {
+                    Backtracked++;
+                    age = (long)Math.Ceiling(allowed);
+                    viewTick = ServerTick - age;
+                }
+
+                _typicalViewAge += (age - _typicalViewAge) / 16;
+            }
+        }
+
         LastViewTick = viewTick;
         return true;
     }

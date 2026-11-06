@@ -1,4 +1,6 @@
-﻿using OpenIGI.Net;
+﻿using System.Security.Cryptography;
+using OpenIGI.Net;
+using OpenIGI.Net.Identity;
 
 namespace OpenIGI.Game.Multiplayer;
 
@@ -24,12 +26,20 @@ public sealed class ServerSession
     // before is dropped, its ticks being another level's.
     private byte _epoch;
 
-    // The players who dropped, by name, kept under a parked key of their own until they come back or their time is up.
+    // The players who dropped, by identity, kept under a parked key of their own until they come back or their time is up.
     private readonly Dictionary<string, (int Parked, double Since)> _away = new(StringComparer.Ordinal);
     private int _nextParked = -1;
 
-    // The names the host has put out of the room: they are not let back in while it stands.
-    private readonly HashSet<string> _barred = new(StringComparer.Ordinal);
+    // The identities the host has put out of the room, with the name each played under: not let back in while it stands.
+    private readonly Dictionary<string, string> _barred = new(StringComparer.Ordinal);
+
+    // Clients connected but not yet let in: each has been sent a challenge, and is let in once its identity has signed it.
+    private readonly Dictionary<int, PendingJoin> _pending = [];
+    private readonly IPlayerVerifier? _verifier;
+    private readonly ulong _protocolId;
+
+    /// <summary>The longest a connected client may take to prove who it is before it is dropped, in seconds.</summary>
+    public const double ProofTimeout = 15;
 
     // What was said and marked since the host last took it, its own included.
     private readonly List<ChatLine> _heard = [];
@@ -58,9 +68,17 @@ public sealed class ServerSession
     /// <param name="rules">The server's rules, or the original's defaults.</param>
     /// <param name="hostName">The listen server's own player's name, or <see langword="null"/> on a dedicated server.</param>
     /// <param name="hostSkin">The listen server's own player's look, a <see cref="PlayerSkins"/> id.</param>
+    /// <param name="verifier">
+    /// Checks the clients' signatures; <see langword="null"/> takes the platform's own ECDSA where it has one and lets in
+    /// every client as someone new where it has none.
+    /// </param>
+    /// <param name="protocolId">The protocol the session plays, which every identity proof names.</param>
     public ServerSession(
-        NetServer net, IReplicatedWorld world, int tickRate, string map, MultiplayerRules? rules = null, string? hostName = null, string hostSkin = "")
+        NetServer net, IReplicatedWorld world, int tickRate, string map, MultiplayerRules? rules = null, string? hostName = null, string hostSkin = "",
+        IPlayerVerifier? verifier = null, ulong protocolId = 0)
     {
+        _verifier = verifier ?? (PlayerIdentities.Default as IPlayerVerifier) ?? (EcdsaPlayerIdentity.IsSupported ? EcdsaPlayerVerifier.Instance : null);
+        _protocolId = protocolId;
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _world = world ?? throw new ArgumentNullException(nameof(world));
         ArgumentOutOfRangeException.ThrowIfLessThan(tickRate, 1);
@@ -118,13 +136,24 @@ public sealed class ServerSession
     {
         _now = now;
         _net.Update(now);
+        foreach (int slot in _clients.Keys)
+        {
+            if (_world.CommandsFor(slot) is { } commands)
+            {
+                commands.ServerTick = serverTick;
+            }
+        }
+
         while (_net.TryReceive(out NetEvent e))
         {
             switch (e.Kind)
             {
                 case NetEventKind.Connected:
                     JoinRequest? request = JoinRequest.Decode(e.Payload ?? []);
-                    Join(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
+                    BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
+                    ApplyRates(e.Peer, request);
+                    break;
+                case NetEventKind.Disconnected when _pending.Remove(e.Peer):
                     break;
                 case NetEventKind.Disconnected:
                     if (_clients.Remove(e.Peer, out ClientState? gone))
@@ -134,7 +163,7 @@ public sealed class ServerSession
                         if (_world.ParkPlayer(e.Peer, parked))
                         {
                             Match.Move(e.Peer, parked);
-                            _away[gone.Name] = (parked, now);
+                            _away[gone.PlayerId] = (parked, now);
                         }
                         else
                         {
@@ -143,11 +172,125 @@ public sealed class ServerSession
                     }
 
                     break;
+                case NetEventKind.Message when e.Message.Data.Length > 0 && _pending.TryGetValue(e.Peer, out PendingJoin? pending):
+                    ReadProof(pending, e.Message.Data);
+                    break;
                 case NetEventKind.Message when e.Message.Data.Length > 0 && _clients.TryGetValue(e.Peer, out ClientState? client):
                     ReadMessage(e.Peer, client, e.Message.Data, serverTick);
                     break;
             }
         }
+
+        ResolvePending(now);
+    }
+
+    // A client connected: challenged to prove who it is, and let in once it has.
+    /// <summary>Gets or sets the fewest snapshots a second a client may ask for (<c>sv_minupdaterate</c>).</summary>
+    public int MinUpdateRate { get; set; } = 10;
+
+    /// <summary>Gets or sets the least and most bytes a second a client's line may be given (<c>sv_minrate</c>, <c>sv_maxrate</c>).</summary>
+    public (int Min, int Max) RateLimits { get; set; } = (16 * 1024, 1024 * 1024);
+
+    // Each client's ticks between snapshots, from what it asked.
+    private readonly Dictionary<int, int> _intervals = [];
+
+    // What a client asked of its line, within what this server allows: snapshots every so many ticks, so many bytes a second.
+    private void ApplyRates(int slot, JoinRequest? request)
+    {
+        int wanted = Math.Clamp(request?.UpdateRate is > 0 and int asked ? asked : TickRate, Math.Min(MinUpdateRate, TickRate), TickRate);
+        _intervals[slot] = (int)Math.Ceiling(TickRate / (double)wanted);
+        if (request?.Rate is > 0 and int bytes && _net.GetConnection(slot) is { } line)
+        {
+            line.Rate = Math.Clamp(bytes, RateLimits.Min, RateLimits.Max);
+        }
+    }
+
+    private void BeginJoin(int slot, string name, string skin)
+    {
+        byte[] challenge = RandomNumberGenerator.GetBytes(PlayerIdentities.ChallengeSize);
+        _pending[slot] = new PendingJoin(name, skin, challenge, _now);
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Prove, 8);
+        foreach (byte b in challenge)
+        {
+            _writer.WriteBits(b, 8);
+        }
+
+        _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    // A client's answer to its challenge: its key, and its signature, checked as the verifier can (a browser's asynchronously).
+    // A client with no identity to give (an empty key) is let in as someone new, who can't rejoin as itself.
+    private void ReadProof(PendingJoin pending, byte[] data)
+    {
+        BitReader reader = new(data);
+        if ((SessionMessage)reader.ReadBits(8) != SessionMessage.Proof || pending.Check is not null || pending.Anonymous)
+        {
+            return;
+        }
+
+        byte[] key = ReadBytes(ref reader, PlayerIdentities.PublicKeySize);
+        byte[] signature = ReadBytes(ref reader, PlayerIdentities.SignatureSize);
+        if (reader.IsOverflowed)
+        {
+            return;
+        }
+
+        if (key.Length == 0 || _verifier is null)
+        {
+            pending.Anonymous = true;
+            return;
+        }
+
+        pending.Key = key;
+        pending.Check = _verifier.VerifyAsync(key, PlayerIdentities.ProofOf(_protocolId, pending.Challenge), signature);
+    }
+
+    // The clients whose proofs are in let in, those that failed or took too long dropped.
+    private void ResolvePending(double now)
+    {
+        foreach ((int slot, PendingJoin pending) in _pending.ToArray())
+        {
+            if (pending.Anonymous)
+            {
+                _pending.Remove(slot);
+                Join(slot, pending.Name, pending.Skin, "anon-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)));
+            }
+            else if (pending.Check is { IsCompleted: true } check)
+            {
+                _pending.Remove(slot);
+                if (check.IsCompletedSuccessfully && check.Result)
+                {
+                    Join(slot, pending.Name, pending.Skin, PlayerIdentities.IdOf(pending.Key));
+                }
+                else
+                {
+                    _net.Disconnect(slot, "your identity could not be checked");
+                }
+            }
+            else if (now - pending.Since > ProofTimeout)
+            {
+                _pending.Remove(slot);
+                _net.Disconnect(slot, "your game never said who it is");
+            }
+        }
+    }
+
+    private static byte[] ReadBytes(ref BitReader reader, int most)
+    {
+        uint length = reader.ReadVarUInt();
+        if (length > most)
+        {
+            return [];
+        }
+
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = (byte)reader.ReadBits(8);
+        }
+
+        return bytes;
     }
 
     /// <summary>Captures the world after its tick and sends each client what is due.</summary>
@@ -232,21 +375,23 @@ public sealed class ServerSession
         Snapshot snapshot = _world.Capture(tick);
         LastSnapshot = snapshot;
         LagCompensationHistory.Add(snapshot);
-        if (tick % Math.Max(1, SnapshotInterval) == 0)
+        foreach ((int slot, ClientState client) in _clients)
         {
-            foreach ((int slot, ClientState client) in _clients)
+            if (tick % Math.Max(Math.Max(1, SnapshotInterval), _intervals.GetValueOrDefault(slot, 1)) != 0)
             {
-                // A line still carrying the last ones gets none this tick: a snapshot queued behind them would only
-                // arrive late, and push the round trip out with it.
-                if (_net.GetConnection(slot) is { IsChoked: true })
-                {
-                    client.SnapshotsChoked++;
-                    continue;
-                }
-
-                client.History.Add(snapshot);
-                SendSnapshot(slot, snapshot, client.History.Baseline, tick);
+                continue;
             }
+
+            // A line still carrying the last ones gets none this tick: a snapshot queued behind them would only
+            // arrive late, and push the round trip out with it.
+            if (_net.GetConnection(slot) is { } line && line.IsChokedAt(now))
+            {
+                client.SnapshotsChoked++;
+                continue;
+            }
+
+            client.History.Add(snapshot);
+            SendSnapshot(slot, snapshot, client.History.Baseline, tick);
         }
 
         _net.Flush(now);
@@ -264,13 +409,18 @@ public sealed class ServerSession
         // How many of the client's commands wait to be run: the delay its queue adds, for its net graph (0x8000: none yet).
         int lead = commands is not { LastTakenTick: not long.MinValue } ? short.MinValue : Math.Min(commands.Buffered, short.MaxValue);
 
-        for (int parts = 1; parts <= MaxSnapshotParts; parts++)
+        // Started at as many parts as this client's last snapshot took -- the level changes little from one tick to the next
+        // -- and once a second at one fewer, so a level that quietened is sent in fewer again: most ticks write it once.
+        _clients.TryGetValue(slot, out ClientState? state);
+        int first = state is null ? 1 : Math.Max(1, state.Parts - (tick % TickRate == 0 ? 1 : 0));
+        for (int parts = first; parts <= MaxSnapshotParts; parts++)
         {
             int per = (snapshot.Humans.Length + parts - 1) / Math.Max(1, parts);
             List<byte[]> written = [];
             for (int part = 0; part < parts; part++)
             {
-                ReplicatedHuman[] slice = snapshot.Humans.Skip(part * per).Take(per).ToArray();
+                int from = Math.Min(part * per, snapshot.Humans.Length);
+                ReplicatedHuman[] slice = snapshot.Humans.AsSpan(from, Math.Min(per, snapshot.Humans.Length - from)).ToArray();
                 Snapshot piece = part == 0
                     ? snapshot with { Humans = slice }
                     : snapshot with { Humans = slice, Doors = baseline?.Doors, Lifts = baseline?.Lifts, Cameras = baseline?.Cameras, Wrecks = baseline?.Wrecks, Projectiles = baseline?.Projectiles, Tasks = baseline?.Tasks, Impacts = null, Senses = null };
@@ -308,6 +458,7 @@ public sealed class ServerSession
                 {
                     counted.SnapshotsSent++;
                     counted.SnapshotParts += parts;
+                    counted.Parts = parts;
                 }
 
                 return;
@@ -358,17 +509,56 @@ public sealed class ServerSession
     private int EntityOfSlot(int slot) =>
         slot == HostSlot ? HostEntity : _clients.TryGetValue(slot, out ClientState? client) ? client.Entity : -1;
 
-    private void Join(int slot, string name, string skin)
+    // How long a line must have been silent for a new line under its key to be taken for its player coming back.
+    private const double QuietLineSeconds = 1.0;
+
+    // Ends the quiet line of a player that just joined again on a new one, parking its player as a drop does.
+    private void ReplaceQuietLine(string playerId)
     {
-        if (_barred.Contains(name))
+        foreach ((int old, ClientState client) in _clients)
+        {
+            if (client.PlayerId != playerId
+                || _net.GetConnection(old) is not { } line
+                || _now - line.LastReceiveTime < QuietLineSeconds)
+            {
+                continue;
+            }
+
+            _clients.Remove(old);
+            int parked = _nextParked--;
+            if (_world.ParkPlayer(old, parked))
+            {
+                Match.Move(old, parked);
+                _away[playerId] = (parked, _now);
+            }
+            else
+            {
+                Match.Leave(old);
+            }
+
+            _net.Disconnect(old, "you joined again on another line");
+            return;
+        }
+    }
+
+    private void Join(int slot, string name, string skin, string playerId)
+    {
+        if (_barred.ContainsKey(playerId))
         {
             _net.Disconnect(slot, "the host removed you from this room");
             return;
         }
 
-        // One who dropped and comes back under its name has its player back, where and as it was, and its standing.
+        // Back on a new line before this one's old line timed out: the old one gone quiet is that same player's, and goes,
+        // its player kept for this one. Two lines both alive under one key are two copies of the game on one machine.
+        ReplaceQuietLine(playerId);
+
+        // Two players may share a name; the room tells them apart.
+        name = UniqueName(name, playerId);
+
+        // One who dropped and comes back as itself has its player back, where and as it was, and its standing.
         int? entity = null;
-        if (_away.Remove(name, out (int Parked, double Since) away) && _world.UnparkPlayer(away.Parked, slot) is { } back)
+        if (_away.Remove(playerId, out (int Parked, double Since) away) && _world.UnparkPlayer(away.Parked, slot) is { } back)
         {
             entity = back;
             Match.Move(away.Parked, slot);
@@ -381,7 +571,7 @@ public sealed class ServerSession
             return;
         }
 
-        _clients[slot] = new ClientState(name, entity.Value);
+        _clients[slot] = new ClientState(name, entity.Value, playerId);
         if (!Match.Players.ContainsKey(slot))
         {
             Match.Join(slot, name, _world.TeamOf(slot));
@@ -398,10 +588,40 @@ public sealed class ServerSession
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
     }
 
-    /// <summary>Gets whether a name has been put out of the room, and is to be refused at the door.</summary>
-    /// <param name="name">The name.</param>
-    /// <returns><see langword="true"/> when it was.</returns>
-    public bool IsBarred(string name) => _barred.Contains(name);
+    /// <summary>Gets whether a player of this name has been put out of the room.</summary>
+    /// <param name="name">The name it played under.</param>
+    /// <returns><see langword="true"/> when one was.</returns>
+    /// <remarks>What is refused at the door is the player's identity, not its name: another of the same name still comes in.</remarks>
+    public bool IsBarred(string name) => _barred.ContainsValue(name);
+
+    /// <summary>Gets a client's identity, or <see langword="null"/>.</summary>
+    /// <param name="slot">The client's slot.</param>
+    /// <returns>Its <see cref="PlayerIdentities.IdOf">id</see>, or <c>anon-</c> and a number for one that gave none.</returns>
+    public string? IdOf(int slot) => _clients.TryGetValue(slot, out ClientState? client) ? client.PlayerId : null;
+
+    // A name no other player in the room has: the one asked for, or it with a number after.
+    private string UniqueName(string name, string playerId)
+    {
+        // Two games of one install (the same key) may play side by side, a host testing its own room: told apart by name too.
+        _ = playerId;
+        bool Taken(string candidate) =>
+            _clients.Values.Any(c => c.Name == candidate)
+            || (Match.Players.TryGetValue(HostSlot, out MatchPlayer? host) && host.Name == candidate);
+
+        if (!Taken(name))
+        {
+            return name;
+        }
+
+        for (int n = 2; ; n++)
+        {
+            string numbered = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{name} ({n})");
+            if (!Taken(numbered))
+            {
+                return numbered;
+            }
+        }
+    }
 
     /// <summary>Puts a client's player out of the room, and keeps its name out while the room stands.</summary>
     /// <param name="slot">The client's slot.</param>
@@ -412,7 +632,7 @@ public sealed class ServerSession
             return;
         }
 
-        _barred.Add(client.Name);
+        _barred[client.PlayerId] = client.Name;
         _world.RemovePlayer(slot);
         Match.Leave(slot);
         _net.Disconnect(slot, "the host removed you from this room");
@@ -560,7 +780,7 @@ public sealed class ServerSession
             }
 
             world.SetSkin(slot, Match.Players.GetValueOrDefault(slot)?.Skin ?? string.Empty);
-            _clients[slot] = new ClientState(client.Name, entity);
+            _clients[slot] = new ClientState(client.Name, entity, client.PlayerId);
             _writer.Reset();
             _writer.WriteBits((uint)SessionMessage.Travel, 8);
             _writer.WriteBits(_epoch, 8);
@@ -608,6 +828,22 @@ public sealed class ServerSession
         }
     }
 
+    // How far behind the server's present a client can honestly have been drawing the others when its command arrives: the
+    // snapshot it drew was half a round trip old, its command took the other half to come, it draws its interpolation behind
+    // that, and the line jitters -- Source's latency plus lerp, within sv_maxunlag. Some ticks' slack for its command buffer and
+    // a hitch.
+    private int MaxRewindTicks(int slot)
+    {
+        NetStatistics? stats = _net.GetConnection(slot)?.Statistics;
+        double interpolation = _world.LagCompensation?.InterpolationDelay ?? 0.1;
+        double unlag = _world.LagCompensation?.MaxUnlag ?? 1.0;
+        double seconds = Math.Min(unlag, (stats?.RoundTripTime ?? 0) + ((stats?.RoundTripJitter ?? 0) * 3) + interpolation);
+        return (int)Math.Ceiling(seconds * TickRate) + RewindSlackTicks;
+    }
+
+    // The ticks beyond what a client's line explains that its view may lag the server: its command buffer and a hitch.
+    private const int RewindSlackTicks = 8;
+
     // A client's player's entity is the session's own record; the listen server's player is entity 0.
     private int SlotOf(int entity)
     {
@@ -627,15 +863,28 @@ public sealed class ServerSession
         BitReader reader = new(data);
         switch ((SessionMessage)reader.ReadBits(8))
         {
-            // Said or marked by a client: told to everyone, under its own entity whatever it claimed.
+            // Said or marked by a client: told to everyone, under its own entity whatever it claimed, and only as fast as its
+            // budget allows -- what one client sends, every other is sent.
             case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
-                Say(line with { Entity = client.Entity });
+                if (client.Chat.TrySpend(_now))
+                {
+                    Say(line with { Entity = client.Entity });
+                }
+
                 return;
             case SessionMessage.Mark when SessionTalk.ReadMark(ref reader) is { } mark:
-                Mark(mark with { Entity = client.Entity });
+                if (client.Marks.TrySpend(_now))
+                {
+                    Mark(mark with { Entity = client.Entity });
+                }
+
                 return;
             case SessionMessage.Voice when SessionTalk.ReadVoice(ref reader) is { } voice:
-                Speak(voice with { Entity = client.Entity }, except: slot);
+                if (client.Voice.TrySpend(_now, voice.Packet.Length))
+                {
+                    Speak(voice with { Entity = client.Entity }, except: slot);
+                }
+
                 return;
             case SessionMessage.Ready:
                 byte ready = (byte)reader.ReadBits(8);
@@ -661,6 +910,7 @@ public sealed class ServerSession
         client.History.Acknowledge(acknowledged);
         if (_world.CommandsFor(slot) is { } buffer)
         {
+            buffer.MaxRewindTicks = MaxRewindTicks(slot);
             foreach (UserCommand command in _commands)
             {
                 buffer.Push(command);
@@ -668,13 +918,40 @@ public sealed class ServerSession
         }
     }
 
-    private sealed class ClientState(string name, int entity)
+    // A client connected but not let in: its join, its challenge, and the check of its answer once it came.
+    private sealed class PendingJoin(string name, string skin, byte[] challenge, double since)
     {
         public string Name { get; } = name;
+
+        public string Skin { get; } = skin;
+
+        public byte[] Challenge { get; } = challenge;
+
+        public double Since { get; } = since;
+
+        public byte[] Key { get; set; } = [];
+
+        public Task<bool>? Check { get; set; }
+
+        public bool Anonymous { get; set; }
+    }
+
+    private sealed class ClientState(string name, int entity, string playerId)
+    {
+        public string Name { get; } = name;
+
+        public string PlayerId { get; } = playerId;
 
         public int Entity { get; } = entity;
 
         public SnapshotHistory History { get; } = new();
+
+        // What it may send everyone: a line a second (five at once), two marks a second, and voice at twice what speech takes.
+        public TokenBucket Chat { get; } = new(1, 5);
+
+        public TokenBucket Marks { get; } = new(2, 6);
+
+        public TokenBucket Voice { get; } = new(8 * 1024, 16 * 1024);
 
         // The level state this client was last sent.
         public byte[]? Level { get; set; }
@@ -688,6 +965,9 @@ public sealed class ServerSession
         public int SnapshotsChoked { get; set; }
 
         public int SnapshotParts { get; set; }
+
+        // The parts its last snapshot took, where the next starts trying.
+        public int Parts { get; set; } = 1;
 
         public long SnapshotBytes { get; set; }
 

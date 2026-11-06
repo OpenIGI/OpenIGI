@@ -19,6 +19,10 @@ public sealed class TickClockSync
 {
     private bool _hasSample;
     private double _offsetTicks;
+    private long _lastSampleTick = long.MinValue;
+    private double _spacingTicks = 1;
+    private double _jitterTicks;
+    private double _appliedDelay = -1;
 
     /// <summary>Initializes a new instance of the <see cref="TickClockSync"/> class.</summary>
     /// <param name="tickRate">The server's ticks per second.</param>
@@ -37,8 +41,30 @@ public sealed class TickClockSync
     /// <summary>Gets or sets how many ticks off a sample must be to be taken at once.</summary>
     public double SnapThreshold { get; set; } = 8;
 
-    /// <summary>Gets or sets how far behind the server remote things are drawn, in seconds (<c>cl_interp</c>).</summary>
+    /// <summary>Gets or sets how far behind the server remote things are drawn at least, in seconds (<c>cl_interp</c>).</summary>
+    /// <remarks>The delay applied (<see cref="AppliedInterpolationDelay"/>) is never less, and grows with what the line does.</remarks>
     public double InterpolationDelay { get; set; } = 0.1;
+
+    /// <summary>Gets or sets how many snapshot spacings the delay covers at least (<c>cl_interp_ratio</c>), so one lost is bridged.</summary>
+    public double InterpolationRatio { get; set; } = 2;
+
+    /// <summary>Gets or sets the longest the delay grows to, in seconds (Source's 0.5 s bound on <c>cl_interp</c>).</summary>
+    public double MaxInterpolationDelay { get; set; } = 0.5;
+
+    /// <summary>Gets the ticks between the snapshots arriving, on average.</summary>
+    public double SnapshotSpacingTicks => _spacingTicks;
+
+    /// <summary>Gets how far each snapshot's arrival strays from the clock's estimate, on average, in ticks.</summary>
+    public double ArrivalJitterTicks => _jitterTicks;
+
+    /// <summary>Gets how far behind the server remote things are drawn now, in seconds.</summary>
+    /// <remarks>
+    /// The larger of <see cref="InterpolationDelay"/> and <see cref="InterpolationRatio"/> snapshot spacings, and twice the
+    /// arrival jitter beyond half a tick on top -- so a slow or jittery line still has a snapshot either side to blend
+    /// between instead of extrapolating -- within <see cref="MaxInterpolationDelay"/>. It eases towards that, faster growing
+    /// than shrinking (running dry is worse than drawing a little later), so the others never jump.
+    /// </remarks>
+    public double AppliedInterpolationDelay => _appliedDelay < 0 ? InterpolationDelay : _appliedDelay;
 
     /// <summary>Gets or sets the ticks of slack commands arrive with ahead of their tick.</summary>
     public double CommandBufferTicks { get; set; } = 2;
@@ -57,10 +83,34 @@ public sealed class TickClockSync
         {
             _offsetTicks = sample;
             _hasSample = true;
+            _lastSampleTick = serverTick;
+            Adapt();
             return;
         }
 
+        _jitterTicks += (Math.Abs(sample - _offsetTicks) - _jitterTicks) * Smoothing;
         _offsetTicks += (sample - _offsetTicks) * Smoothing;
+        if (serverTick > _lastSampleTick)
+        {
+            _spacingTicks += (Math.Min(serverTick - _lastSampleTick, SnapThreshold) - _spacingTicks) * Smoothing;
+            _lastSampleTick = serverTick;
+        }
+
+        Adapt();
+    }
+
+    // Eases the delay applied towards what the line now needs.
+    private void Adapt()
+    {
+        double floor = Math.Max(InterpolationDelay, InterpolationRatio * _spacingTicks / TickRate);
+        double target = Math.Clamp(floor + (2 * Math.Max(0, _jitterTicks - 0.5) / TickRate), InterpolationDelay, Math.Max(InterpolationDelay, MaxInterpolationDelay));
+        if (_appliedDelay < 0)
+        {
+            _appliedDelay = target;
+            return;
+        }
+
+        _appliedDelay += (target - _appliedDelay) * (target > _appliedDelay ? 0.1 : 0.02);
     }
 
     /// <summary>Gets the tick the server is on now, fractional.</summary>
@@ -71,7 +121,7 @@ public sealed class TickClockSync
     /// <summary>Gets the tick remote things are drawn at now, fractional.</summary>
     /// <param name="now">The local time, in seconds.</param>
     /// <returns>The tick to interpolate the snapshots to.</returns>
-    public double InterpolationTick(double now) => ServerTick(now) - (InterpolationDelay * TickRate);
+    public double InterpolationTick(double now) => ServerTick(now) - (AppliedInterpolationDelay * TickRate);
 
     /// <summary>Gets the tick a command sampled now should be stamped for.</summary>
     /// <param name="now">The local time, in seconds.</param>

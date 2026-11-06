@@ -256,4 +256,10 @@ public enum SessionMessage : byte
 
     /// <summary>Client to server, reliable: the level the server went to is loaded here, held until the word to begin.</summary>
     Ready = 11,
+
+    /// <summary>Server to client, reliable: a fresh challenge for the client's identity to sign before it is let in.</summary>
+    Prove = 12,
+
+    /// <summary>Client to server, reliable: the client's public key and its signature over the challenge.</summary>
+    Proof = 13,
 }

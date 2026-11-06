@@ -29,7 +29,13 @@ public static class RoomSessions
         if (session.Join is { } code)
         {
             RoomTransport room = RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger);
-            return new SessionClient(room, RoomTransport.HostAddress, new JoinRequest(session.PlayerName, version, session.Password, content, Skin(session)), titleId, logger);
+            return new SessionClient(
+                room,
+                RoomTransport.HostAddress,
+                new JoinRequest(session.PlayerName, version, session.Password, content, Skin(session)),
+                titleId,
+                logger,
+                reopen: () => RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger));
         }
 
         if (!session.Host)

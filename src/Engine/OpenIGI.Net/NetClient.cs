@@ -38,16 +38,30 @@ public sealed class NetClient : IDisposable
     private byte[] _challenge = [];
     private double _attemptStarted;
     private double _lastHandshakeSend;
+    private readonly ushort _protocolVersion;
+
+    // This attempt's half of the key exchange, and the keys agreed once the server's half came with its challenge.
+    private System.Security.Cryptography.ECDiffieHellman? _sealKey;
+    private PacketCipher? _cipher;
 
     /// <summary>Initializes a new instance of the <see cref="NetClient"/> class.</summary>
     /// <param name="transport">What it sends on; the client disposes it.</param>
     /// <param name="protocolId">The id of the protocol, which must match the server's.</param>
-    public NetClient(INetTransport transport, ulong protocolId)
+    /// <param name="protocolVersion">The version of the protocol; a server of another turns the client down and says which it plays.</param>
+    public NetClient(INetTransport transport, ulong protocolId, ushort protocolVersion = 0)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _protocolId = protocolId;
+        _protocolVersion = protocolVersion;
         _receiveBuffer = new byte[Math.Max(transport.MaxDatagramSize, NetConstants.MaxPacketSize)];
     }
+
+    /// <summary>Gets or sets whether the client seals its packets when it can: on by default, off only for tests and diagnosis.</summary>
+    /// <remarks>A transport that is encrypted already (<see cref="INetTransport.IsEncrypted"/>) is never sealed again.</remarks>
+    public bool Seal { get; set; } = true;
+
+    /// <summary>Gets or sets the bytes a second the connection sends at most (Source's <c>rate</c>).</summary>
+    public int Rate { get; set; } = NetConstants.DefaultRate;
 
     /// <summary>Gets where the client is in joining.</summary>
     public NetClientState State { get; private set; }
@@ -83,6 +97,12 @@ public sealed class NetClient : IDisposable
         Span<byte> nonce = stackalloc byte[8];
         RandomNumberGenerator.Fill(nonce);
         _nonce = BinaryPrimitives.ReadUInt64LittleEndian(nonce);
+        ForgetKeys();
+        if (Seal && !_transport.IsEncrypted && PacketCipher.IsSupported)
+        {
+            _sealKey = PacketCipher.CreateKey();
+        }
+
         _attemptStarted = now;
         _lastHandshakeSend = double.NegativeInfinity;
         State = NetClientState.Requesting;
@@ -111,7 +131,7 @@ public sealed class NetClient : IDisposable
                 SendHandshake(now);
                 break;
             case NetClientState.Connected when now - Connection!.LastReceiveTime > Timeout:
-                EndConnection("timed out");
+                EndConnection(TimedOutReason);
                 break;
         }
     }
@@ -157,6 +177,7 @@ public sealed class NetClient : IDisposable
     public void Dispose()
     {
         Disconnect("client closed", 0);
+        ForgetKeys();
         _transport.Dispose();
     }
 
@@ -168,6 +189,20 @@ public sealed class NetClient : IDisposable
             case PacketKind.Challenge when State == NetClientState.Requesting && packet.Length >= prefix + 24
                                            && BinaryPrimitives.ReadUInt64LittleEndian(packet[prefix..]) == _nonce:
                 _challenge = packet.Slice(prefix, 24).ToArray();
+
+                // A server that can seal sent its key: the keys are agreed now, and the answer goes sealed. One that can't
+                // sent none, and the connection runs in the clear.
+                _cipher?.Dispose();
+                _cipher = null;
+                if (_sealKey is not null && packet.Length >= prefix + 24 + PacketCipher.PublicKeySize)
+                {
+                    _cipher = PacketCipher.Agree(_sealKey, packet.Slice(prefix + 24, PacketCipher.PublicKeySize), _nonce, isServer: false);
+                    if (_cipher is null)
+                    {
+                        return;
+                    }
+                }
+
                 State = NetClientState.Responding;
                 SendHandshake(now);
                 return;
@@ -178,7 +213,10 @@ public sealed class NetClient : IDisposable
             {
                 uint salt = BinaryPrimitives.ReadUInt32LittleEndian(packet[(prefix + 8)..]);
                 Slot = BinaryPrimitives.ReadUInt16LittleEndian(packet[(prefix + 12)..]);
-                Connection = new NetConnection(_transport, _server, _protocolId, salt, now);
+                Connection = new NetConnection(_transport, _server, _protocolId, salt, now, _cipher) { Rate = Rate };
+                _cipher = null;
+                _sealKey?.Dispose();
+                _sealKey = null;
                 State = NetClientState.Connected;
                 _events.Enqueue(new NetEvent(NetEventKind.Connected, Slot, default, string.Empty, packet[(prefix + 14)..].ToArray()));
                 return;
@@ -225,19 +263,46 @@ public sealed class NetClient : IDisposable
             Span<byte> request = _sendBuffer.AsSpan(0, NetConstants.ConnectionRequestSize);
             request.Clear();
             BinaryPrimitives.WriteUInt64LittleEndian(request[prefix..], _nonce);
+            BinaryPrimitives.WriteUInt16LittleEndian(request[(prefix + 8)..], _protocolVersion);
+            request[prefix + 10] = (byte)(_sealKey is null ? ConnectFlags.None : ConnectFlags.Sealed);
             SendOutOfBand(PacketKind.ConnectionRequest, request);
             return;
         }
 
-        Span<byte> response = _sendBuffer.AsSpan(0, prefix + 24 + _connectPayload.Length);
+        // The answer: the challenge echoed, then -- sealed -- this side's key and the join payload under the agreed keys.
+        int keySize = _cipher is null ? 0 : PacketCipher.PublicKeySize;
+        int sealSize = _cipher is null ? 0 : PacketCipher.Overhead;
+        Span<byte> response = _sendBuffer.AsSpan(0, prefix + 25 + keySize + _connectPayload.Length + sealSize);
         _challenge.CopyTo(response[prefix..]);
-        _connectPayload.CopyTo(response[(prefix + 24)..]);
+        response[prefix + 24] = (byte)(_cipher is null ? ConnectFlags.None : ConnectFlags.Sealed);
+        if (_cipher is null)
+        {
+            _connectPayload.CopyTo(response[(prefix + 25)..]);
+        }
+        else
+        {
+            PacketCipher.WritePublicKey(_sealKey!, response[(prefix + 25)..]);
+            _cipher.Seal(0, _challenge, _connectPayload, response[(prefix + 25 + keySize)..]);
+        }
+
         SendOutOfBand(PacketKind.ChallengeResponse, response);
     }
+
+    private void ForgetKeys()
+    {
+        _cipher?.Dispose();
+        _cipher = null;
+        _sealKey?.Dispose();
+        _sealKey = null;
+    }
+
+    /// <summary>The reason a connection ends with when the server fell silent: the line, not anyone's choice.</summary>
+    public const string TimedOutReason = "timed out";
 
     private void EndConnection(string reason)
     {
         State = NetClientState.Disconnected;
+        Connection?.Dispose();
         Connection = null;
         Slot = -1;
         _events.Enqueue(new NetEvent(NetEventKind.Disconnected, -1, default, reason, null));

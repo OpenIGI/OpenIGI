@@ -69,6 +69,28 @@ public struct PlayerInputFrame : IEquatable<PlayerInputFrame>
     [UnscopedRef]
     public Span<float> AsSpan() => _slots;
 
+    /// <summary>Clears the slots a player on another machine must never drive: the developer chords and the scratch slot.</summary>
+    /// <param name="slots">A frame's slots, as a client sent them.</param>
+    /// <remarks>
+    /// The developer chords fly the player (<see cref="PlayerInputSlot.DebugFlyPressed"/>) and work the numpad cheats; a server
+    /// runs its clients' frames on the same player code, so a client that set them would fly through the level on the server.
+    /// </remarks>
+    public static void ClearDeveloperSlots(Span<float> slots)
+    {
+        ReadOnlySpan<PlayerInputSlot> developer =
+        [
+            PlayerInputSlot.DebugNumpadPlusHeld, PlayerInputSlot.DebugNumpadMinusHeld, PlayerInputSlot.DebugNumpadEnterPressed,
+            PlayerInputSlot.DebugNumpadStarPressed, PlayerInputSlot.DebugFlyPressed, PlayerInputSlot.SelectedWeaponScratch,
+        ];
+        foreach (PlayerInputSlot slot in developer)
+        {
+            if ((int)slot < slots.Length)
+            {
+                slots[(int)slot] = 0f;
+            }
+        }
+    }
+
     /// <summary>Reports whether an action slot is engaged.</summary>
     /// <param name="slot">The slot to test.</param>
     /// <returns><see langword="true"/> when the slot is non-zero.</returns>

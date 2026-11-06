@@ -13,6 +13,7 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Net.Identity;
 using OpenIGI.Net.Udp;
 using OpenIGI.Net.WebRtc;
 using OpenIGI.Host;
@@ -68,7 +69,7 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
             return null;
         }
 
-        return new SessionClient(UdpTransport.Open(0), server, join, title.Id, logger);
+        return new SessionClient(UdpTransport.Open(0), server, join, title.Id, logger, reopen: () => UdpTransport.Open(0));
     }
 
     if (session.Listen)
@@ -320,6 +321,10 @@ using (window)
     }
 
     HostOptions runOptions = options;
+
+    // Who this player is to every server: a key kept beside the settings, made on first play.
+    using EcdsaPlayerIdentity identity = EcdsaPlayerIdentity.LoadOrCreate(SettingsPaths.GetFilePath("identity.key"));
+    PlayerIdentities.Default = identity;
 
     // A session joined (-connect) or hosted (-listen) runs either side of the title's ticks, and outlives a renderer switch.
     using IDisposable? multiplayer = StartSession(session, title, options, logger);

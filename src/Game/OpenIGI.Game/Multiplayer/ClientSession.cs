@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Net;
+using OpenIGI.Net.Identity;
 
 namespace OpenIGI.Game.Multiplayer;
 
@@ -29,11 +30,25 @@ public sealed class ClientSession
     /// <summary>Initializes a new instance of the <see cref="ClientSession"/> class.</summary>
     /// <param name="net">The client's network end; the session reads its events, so nothing else should.</param>
     /// <param name="channelCount">The title's channel frame length.</param>
-    public ClientSession(NetClient net, int channelCount)
+    /// <param name="identity">
+    /// Who the player is, which signs the server's challenge; <see langword="null"/> takes <see cref="PlayerIdentities.Default"/>,
+    /// or one made for this session where the game set none.
+    /// </param>
+    /// <param name="protocolId">The protocol the session plays, which the proof names.</param>
+    public ClientSession(NetClient net, int channelCount, IPlayerIdentity? identity = null, ulong protocolId = 0)
     {
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _codec = new UserCommandCodec(channelCount);
+        _identity = identity ?? PlayerIdentities.Default ?? (EcdsaPlayerIdentity.IsSupported ? EcdsaPlayerIdentity.CreateEphemeral() : null);
+        _protocolId = protocolId;
     }
+
+    private readonly IPlayerIdentity? _identity;
+    private readonly ulong _protocolId;
+
+    // The server's challenge, until its proof has gone, and the signing of it while that runs.
+    private byte[]? _challenge;
+    private Task<byte[]>? _signing;
 
     /// <summary>Gets the entity id of this client's own human, once welcomed.</summary>
     public int? EntityId { get; private set; }
@@ -243,6 +258,55 @@ public sealed class ClientSession
                     break;
             }
         }
+
+        Prove();
+    }
+
+    // The server's challenge answered once the identity can sign it: its key and its signature, or an empty key from a game
+    // with no identity, which the server lets in as someone new.
+    private void Prove()
+    {
+        if (_challenge is not { } challenge)
+        {
+            return;
+        }
+
+        if (_identity is null || (_signing is { IsCompleted: true } && !_signing.IsCompletedSuccessfully))
+        {
+            SendProof([], []);
+            return;
+        }
+
+        if (_signing is null && _identity.IsReady)
+        {
+            _signing = _identity.SignAsync(PlayerIdentities.ProofOf(_protocolId, challenge));
+        }
+
+        if (_signing is { IsCompletedSuccessfully: true } signed)
+        {
+            SendProof(_identity.PublicKey, signed.Result);
+        }
+    }
+
+    private void SendProof(byte[] key, byte[] signature)
+    {
+        _challenge = null;
+        _signing = null;
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Proof, 8);
+        _writer.WriteVarUInt((uint)key.Length);
+        foreach (byte b in key)
+        {
+            _writer.WriteBits(b, 8);
+        }
+
+        _writer.WriteVarUInt((uint)signature.Length);
+        foreach (byte b in signature)
+        {
+            _writer.WriteBits(b, 8);
+        }
+
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
     /// <summary>Gets how many command packets were held because the line to the server was full, for the connection readout.</summary>
@@ -371,6 +435,20 @@ public sealed class ClientSession
         BitReader reader = new(data);
         switch ((SessionMessage)reader.ReadBits(8))
         {
+            case SessionMessage.Prove:
+                byte[] challenge = new byte[PlayerIdentities.ChallengeSize];
+                for (int i = 0; i < challenge.Length; i++)
+                {
+                    challenge[i] = (byte)reader.ReadBits(8);
+                }
+
+                if (!reader.IsOverflowed)
+                {
+                    _challenge = challenge;
+                    _signing = null;
+                }
+
+                break;
             case SessionMessage.Welcome:
                 EntityId = (int)reader.ReadVarUInt();
                 TickRate = (int)reader.ReadVarUInt();

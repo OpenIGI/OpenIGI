@@ -287,6 +287,26 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void A_joiner_whose_line_goes_quiet_joins_again_by_itself_as_its_own_player()
+    {
+        using Igi1CoopPair pair = Joined();
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+
+        // The line goes dead both ways, past the client's timeout: it opens a new one and joins again by itself.
+        pair.JoinerLink.Send.Loss = 1;
+        pair.JoinerLink.Receive.Loss = 1;
+        Assert.True(pair.RunUntil(() => pair.Client.IsRejoining, 200_000) >= 0, "the joiner never noticed its line went quiet");
+        Assert.True(
+            pair.RunUntil(() => !pair.Client.IsRejoining && pair.Client.LocalEntity is not null, 200_000) >= 0,
+            $"the joiner never came back: {pair.Client.Ended}");
+
+        // As its own player, the only one, and its session never ended.
+        Assert.Null(pair.Client.Ended);
+        Assert.True(pair.RunUntil(() => pair.Host.World.NetworkPlayers.Count == 1, 600) >= 0);
+        Assert.Same(partner, Assert.Single(pair.Host.World.NetworkPlayers));
+    }
+
+    [RequiresGameDataFact]
     public void The_host_closing_the_room_ends_the_joiners_session_with_a_reason()
     {
         using Igi1CoopPair pair = Joined();

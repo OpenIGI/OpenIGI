@@ -70,7 +70,17 @@ public sealed class NetStatistics
         RollWindow(now);
     }
 
+    /// <summary>Gets the unreliable messages dropped because the connection had used up its rate.</summary>
+    public long Choked { get; private set; }
+
+    /// <summary>Gets the packets that failed to open: changed on the way, or never sealed by the other end.</summary>
+    public long Unopened { get; private set; }
+
     internal void CountResend() => ReliableResends++;
+
+    internal void CountChoked(int messages) => Choked += Math.Max(0, messages);
+
+    internal void CountUnopened() => Unopened++;
 
     private void RollWindow(double now)
     {

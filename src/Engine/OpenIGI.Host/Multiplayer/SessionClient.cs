@@ -16,11 +16,19 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 {
     private const string LogCategory = "Session";
 
-    private readonly INetTransport _transport;
+    private INetTransport _transport;
+
+    // Opens a new line to the same server, for joining again after this one went quiet; null when it can't be.
+    private readonly Func<INetTransport>? _reopen;
+
+    // When the line went quiet under a joined session, and when the next try at joining again is due.
+    private double? _lostAt;
+    private double _retryAt;
     private readonly NetAddress _server;
     private readonly JoinRequest _request;
     private readonly string _titleId;
     private readonly IOpenIgiLogger _logger;
+    private readonly OpenIGI.Net.Identity.IPlayerIdentity? _identity;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private IReplicatedClientWorld? _world;
     private NetClient? _netClient;
@@ -48,8 +56,22 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <param name="request">The join request.</param>
     /// <param name="titleId">The game's id, which keys the protocol.</param>
     /// <param name="logger">Where the session's progress is told.</param>
-    public SessionClient(INetTransport transport, NetAddress server, JoinRequest request, string titleId, IOpenIgiLogger logger)
+    /// <param name="identity">Who the player is; <see langword="null"/> takes the game's own (<see cref="OpenIGI.Net.Identity.PlayerIdentities.Default"/>).</param>
+    /// <param name="reopen">
+    /// Opens a new line to the same server -- the room again by its code, or a new socket -- so a session whose line went
+    /// quiet joins again by itself and gets its own player back; <see langword="null"/> ends such a session instead.
+    /// </param>
+    public SessionClient(
+        INetTransport transport,
+        NetAddress server,
+        JoinRequest request,
+        string titleId,
+        IOpenIgiLogger logger,
+        OpenIGI.Net.Identity.IPlayerIdentity? identity = null,
+        Func<INetTransport>? reopen = null)
     {
+        _identity = identity;
+        _reopen = reopen;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _server = server;
         _request = request ?? throw new ArgumentNullException(nameof(request));
@@ -116,10 +138,11 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         if (!_welcomed && _session!.EntityId is { } id)
         {
             _welcomed = true;
+            _lostAt = null;
             _logger.Information(LogCategory, $"Joined {Where}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
         }
 
-        if (_session!.EndReason is { } reason && reason != _ended)
+        if (_session!.EndReason is { } reason && reason != _ended && !Rejoin(reason, now))
         {
             _ended = reason;
             _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
@@ -178,12 +201,17 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         if (_session is null && _transport is RoomTransport { Status: not RoomStatus.Open } room)
         {
             room.Poll();
-            if (room.Status == RoomStatus.Closed && _ended is null)
+            if (room.Status == RoomStatus.Closed && _ended is null && !Rejoin(NetClient.TimedOutReason, now))
             {
                 _ended = room.Error ?? "the room closed";
                 _logger.Warning(LogCategory, $"Could not join {room}: {_ended}.");
             }
 
+            return false;
+        }
+
+        if (_session is null && now < _retryAt)
+        {
             return false;
         }
 
@@ -196,8 +224,8 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
             _world = replicated.CreateClientWorld();
             _level = replicated.Level;
-            _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId));
-            _session = new ClientSession(_netClient, _world.LocalFrame.Length);
+            _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId), MultiplayerProtocol.Version);
+            _session = new ClientSession(_netClient, _world.LocalFrame.Length, _identity, MultiplayerProtocol.IdFor(_titleId));
             _session.Connect(_server, _request, now);
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
@@ -265,13 +293,14 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _heldSince = null;
         }
 
-        if (session.EndReason is { } reason && reason != _ended)
+        if (session.EndReason is { } reason && reason != _ended && !Rejoin(reason, now))
         {
             _ended = reason;
             _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
+            return;
         }
 
-        session.Flush(now);
+        _session?.Flush(now);
     }
 
     // A new level up -- gone to, or loaded on the server's announcement and held: this one's players and state are shown on
@@ -296,6 +325,48 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
     /// <inheritdoc/>
     public string? Ended => _ended;
+
+    /// <summary>Gets a value indicating whether the line went quiet and the session is joining again.</summary>
+    public bool IsRejoining => _lostAt is not null && _ended is null;
+
+    // How long a session whose line went quiet keeps trying to join again: the server keeps its player about that long.
+    private const double RejoinSeconds = 60.0;
+
+    // A session that was joined and whose line went quiet -- the host's room still there, a socket that died with the Wi-Fi
+    // -- joins again on a new line, backing off, until RejoinSeconds have passed: the server knows it by its key and gives it
+    // its own player back where it was. Anything said on purpose (kicked, full, the room closed, a version) is the end.
+    private bool Rejoin(string reason, double now)
+    {
+        if (_reopen is null || reason != NetClient.TimedOutReason || (!_welcomed && _lostAt is null))
+        {
+            return false;
+        }
+
+        _lostAt ??= now;
+        if (now - _lostAt.Value > RejoinSeconds)
+        {
+            return false;
+        }
+
+        double tried = now - _lostAt.Value;
+        _logger.Warning(LogCategory, $"Lost {Where}; joining again ({tried:F0} s since the line went quiet).");
+        if (_netClient is { } old)
+        {
+            old.Dispose();
+        }
+        else
+        {
+            _transport.Dispose();
+        }
+
+        _netClient = null;
+        _session = null;
+        _welcomed = false;
+        _level = null;
+        _transport = _reopen();
+        _retryAt = now + Math.Min(8, 1 + tried / 4);
+        return true;
+    }
 
     /// <inheritdoc/>
     public void Say(string text) => _session?.Say(text);

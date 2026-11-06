@@ -70,6 +70,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         HostedSession hosted when hosted.RoomCode is { } code => new CoopStatus(CoopPhase.Playing, code, Hosting: true),
         HostedSession => new CoopStatus(CoopPhase.Connecting, Hosting: true),
         SessionClient { Ended: { } ended } client => new CoopStatus(CoopPhase.Failed, client.RoomCode, Error: ended),
+        SessionClient { IsRejoining: true } client => new CoopStatus(CoopPhase.Connecting, client.RoomCode),
         SessionClient client when client.Room is { } room => room.Status switch
         {
             RoomStatus.Open => new CoopStatus(CoopPhase.Playing, room.Code),

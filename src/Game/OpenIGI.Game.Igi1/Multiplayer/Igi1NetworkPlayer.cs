@@ -29,6 +29,13 @@ public static class Igi1Command
     /// <summary>The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray.</summary>
     public const int ChannelCount = Aim + 6;
 
+    /// <summary>The farthest a crosshair's ray may start from the eye, in world units: the over-the-shoulder camera's reach and some.</summary>
+    /// <remarks>
+    /// The camera sits at most 2.6 m back, 0.55 m aside and 0.25 m up (<see cref="ThirdPersonCamera"/>). A ray from further off
+    /// is a client aiming from somewhere its player is not, and is drawn back to this.
+    /// </remarks>
+    public const double MaxAimReach = 3.5 * WorldUnits.PerMetre;
+
     /// <summary>Writes a tick's input, look and crosshair into a command's channels.</summary>
     /// <param name="frame">The input frame.</param>
     /// <param name="yaw">The body's heading, radians.</param>
@@ -55,24 +62,46 @@ public static class Igi1Command
     /// <param name="yaw">The body's heading, radians.</param>
     /// <param name="pitch">The view's pitch, radians.</param>
     /// <returns>The input frame.</returns>
+    /// <remarks>The developer chords are cleared: a client's frame never flies its player on the server.</remarks>
     public static PlayerInputFrame Unpack(ReadOnlySpan<float> channels, out float yaw, out float pitch)
     {
         PlayerInputFrame frame = default;
         channels[..PlayerInputFrame.SlotCount].CopyTo(frame.AsSpan());
-        yaw = channels[Look];
-        pitch = channels[Look + 1];
+        PlayerInputFrame.ClearDeveloperSlots(frame.AsSpan());
+        yaw = float.IsFinite(channels[Look]) ? MathF.IEEERemainder(channels[Look], MathF.Tau) : 0f;
+        pitch = float.IsFinite(channels[Look + 1]) ? channels[Look + 1] : 0f;
         return frame;
     }
 
     /// <summary>Reads the crosshair's ray a command carries.</summary>
     /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
     /// <returns>Its origin as an offset from the eye and its direction, or <see langword="null"/> when the player was in first person.</returns>
+    /// <remarks>
+    /// What a client sends is not taken on trust: a direction that is no direction leaves the player in first person, it is
+    /// made unit length, and an origin past <see cref="MaxAimReach"/> is drawn back to it.
+    /// </remarks>
     public static (Vector3d EyeOffset, Vector3f Direction)? UnpackAim(ReadOnlySpan<float> channels)
     {
         Vector3f direction = new(channels[Aim + 3], channels[Aim + 4], channels[Aim + 5]);
-        return direction.X == 0f && direction.Y == 0f && direction.Z == 0f
-            ? null
-            : (new Vector3d(channels[Aim], channels[Aim + 1], channels[Aim + 2]), direction);
+        float length = MathF.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (!float.IsFinite(length) || length < 0.5f || length > 2f)
+        {
+            return null;
+        }
+
+        Vector3d offset = new(channels[Aim], channels[Aim + 1], channels[Aim + 2]);
+        double reach = offset.Length;
+        if (!double.IsFinite(reach))
+        {
+            return null;
+        }
+
+        if (reach > MaxAimReach)
+        {
+            offset *= MaxAimReach / reach;
+        }
+
+        return (offset, new Vector3f(direction.X / length, direction.Y / length, direction.Z / length));
     }
 }
 
