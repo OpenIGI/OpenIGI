@@ -31,8 +31,9 @@ public sealed class RetailTerrainRay
 
     private const int MaxStack = 8 * (LeafDepth + 2);
 
-    private readonly TerrainOctree _tree;
-    private readonly TerrainCommands _commands;
+    private readonly TerrainOctree? _tree;
+    private readonly TerrainCommands? _commands;
+    private readonly TerrainData? _live;
     private readonly IReadOnlyList<TerrainDiscardRegion> _discards;
     private readonly TerrainHeightBindings? _heights;
     private readonly Entry[] _stack = new Entry[MaxStack];
@@ -58,6 +59,22 @@ public sealed class RetailTerrainRay
         _discards = discards ?? throw new ArgumentNullException(nameof(discards));
         _heights = heights is { IsEmpty: false } ? heights : null;
     }
+
+    /// <summary>Initializes a new instance of the <see cref="RetailTerrainRay"/> class over a level's terrain as it stands.</summary>
+    /// <param name="terrain">The level's terrain, whose octree and blocks are read at every cast, so ground an editor
+    /// rebuilds is the ground the wheels meet.</param>
+    /// <param name="discards">The level's <c>DiscardTerrain</c> boxes.</param>
+    /// <param name="heights">The level's heightmap patches, or <see langword="null"/> for none.</param>
+    public RetailTerrainRay(TerrainData terrain, IReadOnlyList<TerrainDiscardRegion> discards, TerrainHeightBindings? heights = null)
+    {
+        _live = terrain ?? throw new ArgumentNullException(nameof(terrain));
+        _discards = discards ?? throw new ArgumentNullException(nameof(discards));
+        _heights = heights is { IsEmpty: false } ? heights : null;
+    }
+
+    private TerrainOctree Tree => _live?.Octree ?? _tree!;
+
+    private TerrainCommands Commands => _live?.Commands ?? _commands!;
 
     /// <summary>Casts a batch of segments against the terrain, as <c>0x4CC2A0</c> with terrain lists.</summary>
     /// <param name="starts">The segment starts.</param>
@@ -98,7 +115,7 @@ public sealed class RetailTerrainRay
 
         // Only the first ray's start is descended, floor-converted.
         TerrainDescentCursor cursor = TerrainPointDescent.Descend(
-            _tree,
+            Tree,
             new Vector3i(Floor(starts[0].X), Floor(starts[0].Y), Floor(starts[0].Z)),
             depth);
 
@@ -281,7 +298,7 @@ public sealed class RetailTerrainRay
             }
 
             _firstVisit[sp] = false;
-            TerrainNode node = _tree[entry.Node];
+            TerrainNode node = Tree[entry.Node];
             int h = (int)((uint)entry.Extent >> 1);
             for (int i = 0; i < 8; i++)
             {
@@ -375,8 +392,8 @@ public sealed class RetailTerrainRay
         hit = default;
         nx = ny = nz = 0f;
         front = false;
-        TerrainNode node = _tree[entry.Node];
-        if (!_commands.TryGetBlock(node.CommandOffset, out TerrainCommandBlock block) || block.TriangleCount <= 0)
+        TerrainNode node = Tree[entry.Node];
+        if (!Commands.TryGetBlock(node.CommandOffset, out TerrainCommandBlock block) || block.TriangleCount <= 0)
         {
             return false;
         }

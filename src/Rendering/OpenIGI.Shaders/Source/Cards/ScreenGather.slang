@@ -128,10 +128,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     float3 worldNormal = normalize(storedNormal);
 
     // Turned to face the eye, as the live gather's probes are: see ScreenGatherTemporal's ProbeSurface.
-    if (dot(worldNormal, world - uCameraToCache) > 0.0)
-    {
-        worldNormal = -worldNormal;
-    }
+    worldNormal = GatherNormal(worldNormal, world - uCameraToCache, uv, viewPosition);
 
 #if OPENIGI_GATHER_PIXEL
     float2 jitter = WhiteNoise3(pixel, uint(uFrame), 0x61u).xy;

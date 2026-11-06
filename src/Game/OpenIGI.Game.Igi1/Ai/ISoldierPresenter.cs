@@ -210,6 +210,16 @@ public interface ISoldierPresenter : ISoldierBodies, IShootableBodies
     /// <returns>The delegate the player takes.</returns>
     HumanShot Shooter();
 
+    /// <summary>Finds where a soldier's simulated corpse lies, for the developer's corpse tests.</summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="centre">Receives the corpse's centre of mass, in world units.</param>
+    /// <returns><see langword="false"/> when the soldier has no simulated corpse.</returns>
+    bool TryCorpseCentre(SoldierView view, out Vector3d centre)
+    {
+        centre = default;
+        return false;
+    }
+
     /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
     /// <remarks>
     /// <para>

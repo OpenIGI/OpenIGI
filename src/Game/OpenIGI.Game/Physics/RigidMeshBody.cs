@@ -40,7 +40,7 @@ public sealed class RigidMeshBody
     public const double GravityPerTick = DroppedGunPhysics.GravityPerTick;
 
     /// <summary>The engine units in one metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>The simulation ticks in one second.</summary>
     public const double TicksPerSecond = 30.0;

@@ -78,6 +78,43 @@ public static class GlobalIlluminationCVars
         // hand, where 1 and 2 work exactly as they always did.
         ultra: "0");
 
+    /// <summary>How much of the shipped object lightmaps the dynamic model adds in a level with no outdoors.</summary>
+    /// <remarks>
+    /// A level with no ground -- the last mission is only buildings and tunnels -- has no sun, so the computed light there is the
+    /// lamps and the bounce alone; a small share of the artists' baked interior light laid under it keeps their look. Nothing
+    /// outdoors takes any, and the baked and hybrid models already use the whole bake. The baked attachment is written under
+    /// every model, so the share costs the shading one multiply-add.
+    /// </remarks>
+    public static readonly NumericCVar<float> SunlessLightmapShare = Presets.Define(
+        CVar.Float(
+            "r_lightmap_sunless_share",
+            0.1f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Share of the shipped object lightmaps the dynamic lighting adds in a level with no outdoors. 0 is none."),
+
+        // The same tenth on every preset: it is the level's own look, not a quality step, and a preset that left it
+        // out let one scrub of it outlive every preset chosen after.
+        vanilla: "0.1",
+        enhanced: "0.1",
+        high: "0.1",
+        ultra: "0.1");
+
+    /// <summary>The share of the shipped lightmaps laid under the dynamic light at full night, or -1 for the mission's own look.</summary>
+    /// <remarks>
+    /// The night counterpart of <see cref="SunlessLightmapShare"/>: a night mission's look says how much of its artists' bake
+    /// to keep under the moon (see <c>MissionLook.NightBake</c>), faded in with the night. This overrides that for every
+    /// mission, which is how a share is judged.
+    /// </remarks>
+    public static readonly NumericCVar<float> NightLightmapShare = CVar.Float(
+        "r_lightmap_night_share",
+        -1f,
+        -1f,
+        1f,
+        CVarOptions.None,
+        "Share of the shipped lightmaps the dynamic lighting adds at full night, 0 to 1; -1 (the default) is the mission's own look.");
+
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = Presets.Define(
         CVar.Float(

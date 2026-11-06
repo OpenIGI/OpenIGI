@@ -161,6 +161,9 @@ internal sealed class WorldScene : IDisposable
     /// <summary>Gets a value indicating whether the scene holds anything worth tracing against.</summary>
     public bool IsReady => _scene.IsReady;
 
+    /// <summary>Gets the bytes the world's acceleration structures and their scratch occupy.</summary>
+    public (ulong BottomLevel, ulong TopLevel, ulong Scratch) Memory => _scene.Memory;
+
     /// <summary>Gets or sets whether new meshes are admitted without the per-frame budget.</summary>
     /// <remarks>
     /// The budget exists to keep a structure build from landing in a frame the player sees. Behind the

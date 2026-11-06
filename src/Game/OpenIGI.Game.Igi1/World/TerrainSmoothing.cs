@@ -66,4 +66,17 @@ public sealed class TerrainSmoothing
     /// <returns>The field, or <see langword="null"/>.</returns>
     public TerrainSmoothField? For(int exponent) =>
         Refines(exponent) ? _fields[exponent - CoarsestExponent] : null;
+
+    /// <summary>Forgets every level's ground over a rectangle, after the ground there changed shape.</summary>
+    /// <param name="minX">The rectangle's least X, in engine units.</param>
+    /// <param name="minY">The rectangle's least Y.</param>
+    /// <param name="maxX">The rectangle's greatest X.</param>
+    /// <param name="maxY">The rectangle's greatest Y.</param>
+    public void Forget(double minX, double minY, double maxX, double maxY)
+    {
+        foreach (TerrainSmoothField field in _fields)
+        {
+            field.Forget(minX, minY, maxX, maxY);
+        }
+    }
 }

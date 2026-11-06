@@ -438,7 +438,8 @@ public sealed class MissionPreviewLoader(
             built.Ground,
             built.Spins,
             built.Visibility,
-            beforePlay);
+            beforePlay,
+            built.Models);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

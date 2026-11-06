@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Igi2.Animation;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -68,13 +69,17 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             request.Logger,
             request.Services is { } services && services.TryGet(out Igi2MagicObjTypes? magic) ? magic : null);
 
-        // The ground the player stands on, from the same level the placements came from. Built with no
-        // logger because the presenter builds it again to draw it and reports it there; one line about a
-        // level's tiles is enough.
+        // The ground the player stands on, from the same level the placements came from: the one surface the level has,
+        // which the presenter draws too (Igi2TerrainSurface.Build hands each level the same one). No logger, because the
+        // presenter reports the tiles; one line about them is enough.
         Igi2TerrainSurface surface = Igi2TerrainSurface.Build(request.LevelRoot, request.Resources);
         Igi2Ground ground = new(surface);
 
         LoadedMission mission = request.Mission;
+
+        // The clips only a viewer asks for, loaded the first time one does (the player loads its own).
+        OpenIGI.Engine.Resources.ResourceRegistry resources = request.Resources;
+        Lazy<Igi2AnimationLibrary> clips = new(() => Igi2AnimationLibrary.Load(mission.PacksInLoadOrder, resources));
         return new WorldBuildResult(
             result.Scene,
             result.UnresolvedCount,
@@ -84,7 +89,10 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             ObjectCollisionIndex.Build(
                 result.Scene.Placements,
                 AssetFormatProfile.Igi2.Collision,
-                name => mission.TryGetModel(name, out MefModel? model) ? model : null));
+                name => mission.TryGetModel(name, out MefModel? model) ? model : null),
+            Models: name => Igi2DrawableScene.Bind(table, packs, name),
+            Animators: (model, _) => Igi2ModelAnimator.For(model, clips.Value),
+            AnimationFiles: file => Igi2ModelAnimator.PreviewFile(file, mission.PacksInLoadOrder, clips.Value));
     }
 
     /// <inheritdoc/>

@@ -100,7 +100,8 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             // aspect-invariant. Dividing the tangent by the aspect instead (the world's widescreen
             // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
             // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
-            Matrix4f viewModelProjection = ViewModelProjection.Create(frame.ViewModelTanX, frame.FarPlane);
+            // Hor+ (r_widescreen_fov) keeps that vertical framing and widens only the sides, unstretched.
+            Matrix4f viewModelProjection = ViewModelProjection.Create(frame.ViewModelTanX, frame.FarPlane, frame.AspectRatio);
 
             // Between-tick smoothing for everything the rig steps at 30 Hz: its origin (the eye
             // the body carried plus the clip's hold offset), its skin, and the weapon bone. The
@@ -114,7 +115,13 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             BoneAttachment? magazineAttachment = mission.Player.HeldWeaponSecondary;
             BoneAttachment? movingPartAttachment = mission.Player.HeldWeaponTertiary;
             float previousPoseShare = 0f;
-            if (frame.Smooth && mission.Player.HasViewTickPair)
+
+            // The camera takes the landing dip and the hit shake whether or not Smooth Motion is on, so the rig has to
+            // take them too: left at the body's eye it stays put while the view drops into it. With Smooth Motion off the
+            // rig is drawn at the newest tick (blend 1) from the same eye the camera uses, the original's 7.5% extra drop with it.
+            bool displaced = !frame.Smooth && mission.Player.IsViewDisplaced;
+            float rigBlend = displaced ? 1f : frame.TickBlend;
+            if ((frame.Smooth || displaced) && mission.Player.HasViewTickPair)
             {
                 (
                     Vector3d smoothedOrigin,
@@ -122,13 +129,13 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
                     BoneAttachment? smoothedWeapon,
                     BoneAttachment? smoothedMagazine,
                     BoneAttachment? smoothedMovingPart) =
-                    mission.Player.SmoothedRig(frame.TickBlend);
+                    mission.Player.SmoothedRig(rigBlend);
                 rigOriginUnits = smoothedOrigin;
                 rigOrientation = smoothedOrientation;
                 weaponAttachment = smoothedWeapon ?? weaponAttachment;
                 magazineAttachment = smoothedMagazine ?? magazineAttachment;
                 movingPartAttachment = smoothedMovingPart ?? movingPartAttachment;
-                previousPoseShare = 1f - frame.TickBlend;
+                previousPoseShare = 1f - rigBlend;
             }
 
             // The retail rig is foreground-only: it draws after the world under its own transform

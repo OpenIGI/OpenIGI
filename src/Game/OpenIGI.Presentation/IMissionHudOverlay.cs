@@ -21,6 +21,7 @@ namespace OpenIGI.Presentation;
 /// <param name="BinocularRangeMetres">The binoculars' range readout, or <see langword="null"/> when the glasses are down.</param>
 /// <param name="Hud">The original's HUD, or <see langword="null"/>.</param>
 /// <param name="RemasteredHud">The remaster's HUD, or <see langword="null"/>.</param>
+/// <param name="RetailUiScale">The original HUD's scale, which is its own (<c>hud_retail_scale</c>).</param>
 public readonly record struct MissionHudFrame(
     int Width,
     int Height,
@@ -38,7 +39,8 @@ public readonly record struct MissionHudFrame(
     IReadOnlyList<EnemyOverlayBox> BinocularTargets,
     float? BinocularRangeMetres,
     IHudPresenter? Hud,
-    IRemasteredHudPresenter? RemasteredHud);
+    IRemasteredHudPresenter? RemasteredHud,
+    int RetailUiScale = 1);
 
 /// <summary>A title's mission HUD over the finished frame, drawn at four places in the host's overlay order.</summary>
 public interface IMissionHudOverlay

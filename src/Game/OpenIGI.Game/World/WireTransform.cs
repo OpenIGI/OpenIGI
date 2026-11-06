@@ -29,6 +29,17 @@ public readonly record struct WireTransform(
         PositionMetres.Y * WorldScene.UnitsPerMetre,
         PositionMetres.Z * WorldScene.UnitsPerMetre);
 
+    /// <summary>Gets magic vertex 0's local Y, stretched with the model: where the cable starts along its own axis.</summary>
+    /// <remarks>
+    /// <c>Model_GetLocalPoint</c> (<c>0x414ED0</c>) answers the vertex scaled but not rotated, and the wire reads only its
+    /// Y: it bounds the offer (<c>0x43F560</c>) and, 3072 units in, the ride (<c>0x411AE0</c>, <c>0x411F20</c>).
+    /// Without a model the endpoints are the authored ones, half the span either side of the middle.
+    /// </remarks>
+    public double CableStartLocalY { get; init; }
+
+    /// <summary>Gets magic vertex 1's local Y, stretched with the model: where the cable ends along its own axis.</summary>
+    public double CableEndLocalY { get; init; }
+
     /// <summary>Builds the runtime transform from a wire task alone.</summary>
     /// <remarks>
     /// The model is needed only for <see cref="CableStart"/> and <see cref="CableEnd"/>, which is the
@@ -94,12 +105,16 @@ public readonly record struct WireTransform(
 
         Vector3d cableStart = start;
         Vector3d cableEnd = stop;
+        double startLocalY = -length * 0.5;
+        double endLocalY = length * 0.5;
         if (model is not null
             && model.TryGetMagicVertex(0, out Vector3f localStart)
             && model.TryGetMagicVertex(1, out Vector3f localEnd))
         {
             cableStart = TransformMagic(midpoint, orientation, scaleY, localStart);
             cableEnd = TransformMagic(midpoint, orientation, scaleY, localEnd);
+            startLocalY = localStart.Y * scaleY;
+            endLocalY = localEnd.Y * scaleY;
         }
 
         transform = new WireTransform(
@@ -110,7 +125,11 @@ public readonly record struct WireTransform(
             orientation,
             scaleY,
             cableStart,
-            cableEnd);
+            cableEnd)
+        {
+            CableStartLocalY = startLocalY,
+            CableEndLocalY = endLocalY,
+        };
         return true;
     }
 

@@ -149,6 +149,9 @@ public sealed partial class GameHost
             _scene = scene;
             _mission.Ground = built.Ground;
             _mission.Spins = built.Spins;
+            _mission.Models = built.Models;
+            _mission.Animators = built.Animators;
+            _mission.AnimationFiles = built.AnimationFiles;
 
             if (built.UnresolvedCount > 0 || built.LightmappedCount > 0)
             {

@@ -73,7 +73,8 @@ internal sealed unsafe partial class D3D12RhiDevice : IRhiDevice
             DepthClamp: true,
             IndirectFirstInstance: true,
             TextureCompressionBc: true,
-            StrictTextureSampleTypes: false);
+            StrictTextureSampleTypes: false,
+            MultiDrawIndirect: true);
 
         Limits = new RhiLimits(
             MaxTextureDimension2D: 16384,

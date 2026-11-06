@@ -182,27 +182,77 @@ public static class ReconstructionCVars
         high: "0.7",
         ultra: "0.7");
 
-    /// <summary>What reconstructs the frame: the engine's own temporal resolve, DLSS, or DLSS ray reconstruction.</summary>
+    /// <summary>Whether DLSS runs, and how far below the output it renders: off leaves the engine's own upscaler.</summary>
     /// <remarks>
-    /// Not preset-managed: the NVIDIA kinds need the optional runtime and an adapter that runs them, and a
-    /// preset that wrote one would be writing something half the machines it runs on cannot do. Where the
-    /// chosen one cannot run the engine's resolve runs instead, and the log and the settings page say why.
-    /// Only meaningful with temporal anti-aliasing on (<c>r_taa</c> below one) on the deferred path.
+    /// <para>
+    /// The one switch for DLSS. Any mode but off turns it on at that mode; off runs the engine's temporal resolve
+    /// at the render scale instead. Not preset-managed: DLSS needs the optional runtime and an adapter that runs it,
+    /// and a preset that wrote it would be writing something half the machines it runs on cannot do. Where it
+    /// cannot run, the engine's resolve runs instead and the log and the settings page say why. Only meaningful
+    /// with temporal anti-aliasing on (<c>r_taa</c> below one) on the deferred path.
+    /// </para>
+    /// <para>
+    /// It used to take a second switch, <see cref="Reconstruction"/>, to turn DLSS on at all: a player who chose
+    /// a mode here with that one on engine got no DLSS and no change in frame rate, and nothing on the page said
+    /// why. Ray reconstruction stays a switch of its own, <see cref="RayReconstruction"/>.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<DlssQuality> DlssQualityMode = CVar.Choice(
+        "r_dlss_quality",
+        DlssQuality.Off,
+        CVarOptions.Archive,
+        "DLSS: off runs the engine's own upscaler at r_scale; dlaa renders at native resolution, "
+            + "quality/balanced/performance/ultraperformance below it. Replaces r_scale while DLSS runs.");
+
+    /// <summary>Whether DLSS ray reconstruction denoises the traced lighting, while DLSS runs.</summary>
+    /// <remarks>
+    /// NVIDIA's ray reconstruction is a mode of the DLSS network rather than a filter of its own: it upscales and
+    /// denoises in one pass, so it runs only while <see cref="DlssQualityMode"/> is on, at the mode chosen there.
+    /// It needs hardware ray tracing besides.
+    /// </remarks>
+    public static readonly BoolCVar RayReconstruction = CVar.Bool(
+        "r_ray_reconstruction",
+        false,
+        CVarOptions.Archive,
+        "DLSS ray reconstruction: denoise the traced lighting inside DLSS (needs r_dlss_quality on and hardware ray tracing).");
+
+    /// <summary>The old way of choosing the reconstruction, kept so an old settings file or command line still means what it did.</summary>
+    /// <remarks>
+    /// No longer saved and no longer read by the renderer: setting it sets <see cref="DlssQualityMode"/> and
+    /// <see cref="RayReconstruction"/> to what it meant (see the type's constructor). Engine turns DLSS off; DLSS
+    /// turns it on, at Quality unless a mode is already chosen; ray reconstruction does that and turns ray
+    /// reconstruction on too.
     /// </remarks>
     public static readonly EnumCVar<ReconstructionKind> Reconstruction = CVar.Choice(
         "r_reconstruction",
         ReconstructionKind.Engine,
-        CVarOptions.Archive,
-        "Reconstruction: engine is the built-in temporal resolve, dlss is NVIDIA DLSS / DLAA, "
-            + "rayreconstruction is DLSS ray reconstruction (needs hardware ray tracing).");
+        CVarOptions.Developer,
+        "Legacy: engine, dlss or rayreconstruction, mapped onto r_dlss_quality and r_ray_reconstruction.");
 
-    /// <summary>How far below the output DLSS renders, when DLSS or ray reconstruction is the reconstruction.</summary>
-    public static readonly EnumCVar<DlssQuality> DlssQualityMode = CVar.Choice(
-        "r_dlss_quality",
-        DlssQuality.Quality,
-        CVarOptions.Archive,
-        "DLSS quality: dlaa renders at native resolution, quality/balanced/performance/ultraperformance below it. "
-            + "Replaces r_scale while DLSS runs.");
+    /// <summary>Gets what reconstructs the frame, from the DLSS mode and the ray reconstruction switch together.</summary>
+    public static ReconstructionKind Effective => DlssQualityMode.Value == DlssQuality.Off
+        ? ReconstructionKind.Engine
+        : RayReconstruction.Value ? ReconstructionKind.RayReconstruction : ReconstructionKind.Dlss;
+
+    static ReconstructionCVars() =>
+        Reconstruction.Changed += (_, _) =>
+        {
+            switch (Reconstruction.StoredValue)
+            {
+                case ReconstructionKind.Engine:
+                    DlssQualityMode.Value = DlssQuality.Off;
+                    break;
+                case ReconstructionKind.Dlss:
+                case ReconstructionKind.RayReconstruction:
+                    if (DlssQualityMode.Value == DlssQuality.Off)
+                    {
+                        DlssQualityMode.Value = DlssQuality.Quality;
+                    }
+
+                    RayReconstruction.Value = Reconstruction.StoredValue == ReconstructionKind.RayReconstruction;
+                    break;
+            }
+        };
 
     /// <summary>How many frames reach the screen per rendered one, with DLSS frame generation.</summary>
     /// <remarks>

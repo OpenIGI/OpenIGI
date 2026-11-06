@@ -30,7 +30,7 @@ public sealed class HumanPlayerParameters
     public const int TableRowCount = 17;
 
     /// <summary>Engine units per metre — the original's <c>WORLD_METER</c> (<c>dbl_533498</c>).</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Ticks per second (<c>dbl_533488</c>).</summary>
     public const double TicksPerSecond = 30.0;

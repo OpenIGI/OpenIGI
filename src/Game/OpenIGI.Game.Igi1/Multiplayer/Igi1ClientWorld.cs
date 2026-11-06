@@ -40,28 +40,12 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     // for this client's own use of a door to reach the server and come back, so the door doesn't flick shut and open again.
     private const int DoorPatience = 30;
 
-    // The newest snapshot whose lifts were compared, and since which of this client's ticks each lift has stood otherwise
-    // than the server's.
+    // The newest snapshot whose lifts were compared.
     private long _liftsChecked = long.MinValue;
-    private long[] _liftDisagreeingSince = [];
 
-    // How far, in world units, this client's car may stand from the server's before the server's is taken: two or three
-    // ticks of travel, the most a press reaching the server a tick off moves it.
+    // How far, in world units, this client's car may stand from the server's projected before the server's is taken: a
+    // few ticks of travel, the most the server's queue of this client's commands shifting moves the projection.
     private const double LiftTolerance = 512;
-
-    // Ticks past the commands in flight that a car may stand otherwise than a server's standing one: this client's own
-    // press reaching the server and coming back.
-    private const int LiftPatience = 15;
-
-    // This client's ticks, for the lifts' patience and the riding slack.
-    private long _ticks;
-
-    // While riding a moving lift: how far its player may stand from the server's word, and until which tick.
-    private double _ridingSlack;
-    private long _ridingUntil = long.MinValue;
-
-    // Ticks of a lift's travel a rider may be off by: the server's queue of this client's commands moving a tick or two.
-    private const int RidingSlackTicks = 4;
 
     // How many snapshots running this player has been on a ladder here and off it on the server, and how many it may be:
     // a second and a half, past a mount's round trip.
@@ -84,6 +68,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
 
         // The switches, terminals, TBAs, cabinets, locks, fences, generators and radios are what the server's are.
         game.World.Interactions?.Mirrored = true;
+
+        // The lifts go where the server's go: a car started here on this game's late copy of its doors and switches.
+        game.World.Elevators?.Mirrored = true;
 
         // The cameras look as the server's do, whom they see there: here they would see this client's player alone.
         if (game.World.SecurityCameras is { } cameras)
@@ -118,7 +105,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 gun,
                 h.Shots,
                 fired,
-                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? h.ClipTime / Igi1ReplicatedWorld.ClipTimeScale : null,
+                (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? Igi1ReplicatedWorld.UnpackClipTime(h.ClipTime) : null,
                 _names.GetValueOrDefault(h.Id),
                 !alive,
                 alive ? null : h.Health / 255f,
@@ -200,7 +187,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         {
             if (_game.World.Player is { } player)
             {
-                Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels);
+                Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels, player.FrameAim);
             }
 
             return _channels;
@@ -438,9 +425,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     {
         ArgumentNullException.ThrowIfNull(predictions);
         ArgumentNullException.ThrowIfNull(snapshot);
-        _ticks++;
-        ApplyLifts(snapshot, ticksAhead, predictions);
-        NoteRiding(ticksAhead);
+        ApplyLifts(snapshot, ticksAhead);
 
         // Where the others' rounds landed, once each; this client's own it showed as it fired them.
         if (snapshot.Tick > _impactsShown)
@@ -566,24 +551,17 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     }
 
     // Each lift as the server has it, where it will be by the tick this client's world has run to: the snapshot is that
-    // many ticks old, and this client's player rides its own copy in the present. A car the server moves that this one
-    // doesn't -- a partner called it -- is taken at once. A car the server holds still that this one moves is given the
-    // time its own press takes to reach the server and come back before it is put back.
-    private void ApplyLifts(Snapshot snapshot, int lead, PredictionReconciler predictions)
+    // many ticks old, and this client's player rides its own copy in the present. The copy only coasts on as it was last
+    // told (ElevatorRegistry.Mirrored), so it stands where the server's will, and is put there again only when the server's
+    // was told something new -- called, sent elsewhere, held -- whoever pressed the button.
+    private void ApplyLifts(Snapshot snapshot, int lead)
     {
-        long predictedTick = _ticks;
         if (snapshot.Tick <= _liftsChecked || snapshot.Lifts is not { } lifts || _game.World.Elevators is not { Elevators.Count: > 0 } registry)
         {
             return;
         }
 
         _liftsChecked = snapshot.Tick;
-        if (_liftDisagreeingSince.Length != registry.Elevators.Count)
-        {
-            _liftDisagreeingSince = new long[registry.Elevators.Count];
-            Array.Fill(_liftDisagreeingSince, long.MaxValue);
-        }
-
         for (int i = 0; i < registry.Elevators.Count && i < lifts.Length; i++)
         {
             OpenIGI.Game.World.PlacedElevator elevator = registry.Elevators[i];
@@ -591,75 +569,59 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             OpenIGI.Game.World.ElevatorMotion server = new(lift.Position.ToVector(), lift.Floor, lift.Target < 0 ? null : lift.Target, lift.Speed);
             OpenIGI.Game.World.ElevatorMotion due = elevator.State.Project(server, lead);
             OpenIGI.Game.World.ElevatorMotion own = elevator.State.Motion;
-            if (Vector3d.Distance(due.Position, own.Position) <= LiftTolerance && due.Target == own.Target)
+
+            // A car arriving a tick sooner or later here than the projection says, as the server's queue of this client's
+            // commands shifts, is the same trip: only a new destination, or a car out of place, is taken.
+            bool told = due.Target is int target && target != own.Target;
+            if (!told && Vector3d.Distance(due.Position, own.Position) <= LiftTolerance)
             {
-                _liftDisagreeingSince[i] = long.MaxValue;
                 continue;
             }
 
-            _liftDisagreeingSince[i] = Math.Min(_liftDisagreeingSince[i], predictedTick);
-            if (server.Target is not null || predictedTick - _liftDisagreeingSince[i] > lead + LiftPatience)
+            // A car this client's player stands in takes the player with it. Put where the server's is, the car jumps by
+            // the ticks of travel this client learned of late -- the higher the ping, the further -- and, left where it
+            // stood, the player was under the floor of a car going up and fell out of it. Where it stands on the car is
+            // what its predictions are weighed by, so they need not move.
+            if (_game.World.Player is { } rider
+                && OpenIGI.Game.World.ElevatorRegistry.IsPassenger(elevator, rider.Body.Position, _game.World.Solids))
             {
-                // A car this client's player stands in takes the player with it. Put where the server's is, the car jumps by
-                // the ticks of travel this client learned of late -- the higher the ping, the further -- and, left where it
-                // stood, the player was under the floor of a car going up and fell out of it.
-                if (_game.World.Player is { } rider
-                    && OpenIGI.Game.World.ElevatorRegistry.IsPassenger(elevator, rider.Body.Position, _game.World.Solids))
-                {
-                    rider.Shift(due.Position - own.Position);
-                    predictions.ShiftNewest(RideInFlight(elevator, server, own.Position, lead));
-                }
-
-                registry.Restore(elevator, due, _game.World.Solids);
-                _liftDisagreeingSince[i] = long.MaxValue;
-                LiftsTaken++;
+                rider.Shift(due.Position - own.Position);
             }
-        }
-    }
 
-    // How far the server's car carried this client's player, for each command still in flight, past where this client's car
-    // stood for it: the server ran them in a car moving on from the snapshot's, while this client's stood still, so what it
-    // predicted for them is moved by the difference -- or the server's word on each would put the player back.
-    private static Vector3d[] RideInFlight(
-        OpenIGI.Game.World.PlacedElevator elevator, OpenIGI.Game.World.ElevatorMotion server, Vector3d stood, int lead)
-    {
-        Vector3d[] offsets = new Vector3d[Math.Max(lead, 0)];
-        for (int k = 0; k < offsets.Length; k++)
-        {
-            offsets[k] = elevator.State.Project(server, k + 1).Position - stood;
+            registry.Restore(elevator, due, _game.World.Solids);
+            LiftsTaken++;
         }
-
-        return offsets;
     }
 
     /// <inheritdoc/>
-    public double PredictionSlack => _ticks <= _ridingUntil ? _ridingSlack : 0;
-
-    // While this client's player rides a moving lift, and for as long after as the server's word on it is behind: the slack
-    // is a few ticks of the car's travel.
-    private void NoteRiding(int lead)
+    /// <remarks>By the rule the server's car carries a player by, the one it marks its riders by too.</remarks>
+    public PlatformFrame? LocalPlatform
     {
-        if (_game.World.Elevators is not { } lifts || _game.World.Player is not { } player)
+        get
         {
-            return;
-        }
-
-        foreach (OpenIGI.Game.World.PlacedElevator lift in lifts.Elevators)
-        {
-            if (lift.State.IsMoving
-                && OpenIGI.Game.World.ElevatorRegistry.TryGetPassengerDisplacement(lift, player.Body.Position, _game.World.Solids, out Vector3d step))
+            if (_game.World.Elevators is not { Elevators.Count: > 0 } lifts
+                || _game.World.Player is not { IsOnLadder: false } player
+                || _game.World.IsPlayerDead)
             {
-                _ridingSlack = Math.Max(_ridingSlack, step.Length * RidingSlackTicks);
-                _ridingUntil = _ticks + lead + RidingSlackTicks;
-                return;
+                return null;
             }
-        }
 
-        if (_ticks > _ridingUntil)
-        {
-            _ridingSlack = 0;
+            for (int i = 0; i < lifts.Elevators.Count && i < ReplicatedLift.MaxPerSnapshot; i++)
+            {
+                OpenIGI.Game.World.PlacedElevator lift = lifts.Elevators[i];
+                if (OpenIGI.Game.World.ElevatorRegistry.IsPassenger(lift, player.Body.Position, _game.World.Solids))
+                {
+                    return new PlatformFrame(i, lift.State.Position);
+                }
+            }
+
+            return null;
         }
     }
+
+    /// <inheritdoc/>
+    public Vector3d? PlatformOrigin(int index) =>
+        _game.World.Elevators is { } lifts && (uint)index < (uint)lifts.Elevators.Count ? lifts.Elevators[index].State.Position : null;
 
     /// <inheritdoc/>
     public void Hide(int id)

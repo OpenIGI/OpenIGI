@@ -178,7 +178,7 @@ public sealed class TerrainHeightBindingTests
 
     private static (long, long) Key(double x, double y) => ((long)Math.Round(x / 64.0), (long)Math.Round(y / 64.0));
 
-    private static (TerrainData Terrain, LevelTask Root) Load(int id)
+    internal static (TerrainData Terrain, LevelTask Root) Load(int id)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));

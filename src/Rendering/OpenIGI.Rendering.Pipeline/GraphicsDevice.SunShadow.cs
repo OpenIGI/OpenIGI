@@ -39,10 +39,16 @@ public sealed partial class GraphicsDevice
     private ITracedWorld? TracedWorld => _tracedWorld;
 
     /// <inheritdoc/>
-    public bool WorldTraceReady => TracedWorld is not { IsWorldReady: false };
+    /// <remarks>
+    /// Not while a release waits for the next frame: until then the structure is still the level being left, whole and
+    /// settled. A restart loads the same level in one call and asked here before any frame ran, so the surface cache
+    /// converged on the old world's word, then traced the new one as it filled in from nothing, with no walls to shade
+    /// it -- and a night mission opened lit.
+    /// </remarks>
+    public bool WorldTraceReady => !_worldReleasePending && TracedWorld is not { IsWorldReady: false };
 
     /// <inheritdoc/>
-    public bool WorldTraceSettled => TracedWorld is not { IsWorldSettled: false };
+    public bool WorldTraceSettled => !_worldReleasePending && TracedWorld is not { IsWorldSettled: false };
 
     /// <inheritdoc/>
     public void SetTraceAdmission(bool unlimited) => TracedWorld?.SetUnlimitedAdmission(unlimited);

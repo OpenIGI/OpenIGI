@@ -83,6 +83,44 @@ public interface IShadowDevice
         return false;
     }
 
+    /// <summary>Gets a value indicating whether a lamp's map can be kept as its static casters and its movable ones.</summary>
+    /// <remarks>
+    /// Where it can, <see cref="BeginLampShadowMapLayer"/> draws the two apart: the static world once into a map
+    /// of its own, kept until something in the lamp's reach changes, and each frame a copy of it with only what
+    /// moves drawn over it -- so a frame redraws a lamp's movers, not its room. Where it cannot, every map is
+    /// drawn whole through <see cref="BeginLampShadowMap"/>.
+    /// </remarks>
+    bool CachesLampShadowMaps => false;
+
+    /// <summary>Begins one of a lamp map's two layers: its static casters, or its live map over them.</summary>
+    /// <param name="slot">The map, below <see cref="LampShadowMapSlots"/>.</param>
+    /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>
+    /// <param name="rotation">The light's rotation: its rows the right, up and forward axes.</param>
+    /// <param name="projection">The perspective it looks through.</param>
+    /// <param name="staticCasters">
+    /// <see langword="true"/> to draw the static casters into the slot's kept map, cleared;
+    /// <see langword="false"/> to start the live map from a copy of the kept one, for the movable casters to
+    /// be drawn over it. Depth keeps the nearer of the two, so the live map is the map a whole draw makes.
+    /// </param>
+    /// <returns><see langword="true"/> when the pass is open; end it with <see cref="EndShadowCascade"/>.</returns>
+    /// <remarks>Only where <see cref="CachesLampShadowMaps"/> says so.</remarks>
+    bool BeginLampShadowMapLayer(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection, bool staticCasters)
+    {
+        _ = slot;
+        _ = position;
+        _ = rotation;
+        _ = projection;
+        _ = staticCasters;
+        return false;
+    }
+
+    /// <summary>Ends a layer begun with <see cref="BeginLampShadowMapLayer"/>.</summary>
+    /// <remarks>
+    /// Without closing the frame's commands off as a cascade's end does: a cascade is thousands of draws worth
+    /// starting on while the next records, a lamp's movers are a handful, and a frame draws many of them.
+    /// </remarks>
+    void EndLampShadowMapLayer() => EndShadowCascade();
+
     /// <summary>Says that some lamp's output has just changed: switched, flickered, faded.</summary>
     /// <remarks>
     /// The lamp shadows are a ratio averaged over frames, and a switch changes which lamps that ratio stands

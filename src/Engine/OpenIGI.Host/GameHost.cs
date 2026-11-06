@@ -662,23 +662,38 @@ public sealed partial class GameHost : IDisposable
             if (SwitchTitleIfDue())
             {
                 ReopenFrontEndForTitle(state);
+                ReopenEditorAfterSwitch();
             }
 
             // A change of language, at the same boundary: it swaps the archives the menus are drawing from.
             ApplyLanguageIfDue(state);
 
-            // The frame's input and its world, in the order each one has to see the keys and the clock.
+            // The editor opening or closing, or loading a mission, at the same boundary: each swaps what is drawn.
+            ApplyEditorRequests(state);
+
+            // The frame's input and its world, in the order each one has to see the keys and the clock. While the
+            // editor is open it owns the input -- the shell, the player and the game's own keys stand down -- and
+            // flies the free camera itself.
             BeginFramePass(state);
-            UpdateShell(state);
-            UpdateEntryShot(state);
-            RunSessionCycles(state);
-            HandleEscape(state);
-            RunDeferredCommands(state);
-            UpdatePlayerDevices(state);
-            UpdateMenuBackdrop(state);
-            HandleDeveloperKeys(state);
-            AdvanceWorldClocks(state);
-            UpdateFlyingView(state);
+            if (UpdateEditor(state))
+            {
+                RunSessionCycles(state);
+                RunDeferredCommands(state);
+                AdvanceWorldClocks(state);
+            }
+            else
+            {
+                UpdateShell(state);
+                UpdateEntryShot(state);
+                RunSessionCycles(state);
+                HandleEscape(state);
+                RunDeferredCommands(state);
+                UpdatePlayerDevices(state);
+                UpdateMenuBackdrop(state);
+                HandleDeveloperKeys(state);
+                AdvanceWorldClocks(state);
+                UpdateFlyingView(state);
+            }
 
             // The original's schedule admits ONE render per tick, which caps the whole presentation at
             // 30 Hz however fast the machine is. Smooth mode lifts exactly that latch and nothing else:
@@ -707,7 +722,7 @@ public sealed partial class GameHost : IDisposable
             // is one the player never gets to watch.
             if (_session.LevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = _menuFlow.PauseMenu || PresentationHoldsLevel;
+                pausableLevel.IsPaused = _menuFlow.PauseMenu || PresentationHoldsLevel || EditorHoldsLevel;
             }
 
             BeginStage();
@@ -737,7 +752,7 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || _menuFlow.PauseMenu || PresentationHoldsLevel || EditorHoldsLevel))
             {
                 // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
                 if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
@@ -785,7 +800,9 @@ public sealed partial class GameHost : IDisposable
         // it is about not spending every core on it while the rest of the shutdown runs.
         _baked.Cancel();
 
-        if (!_options.IsBenchmark)
+        // The editor's preset is the editor's, not the player's: theirs goes back before the settings are written.
+        RestorePlayerPreset();
+        if (_options.SavesUserFiles)
         {
             HostConfiguration.Save(_configuration, _logger);
             console.SaveSettings();

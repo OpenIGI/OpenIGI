@@ -179,7 +179,7 @@ public sealed class DeferredLightingParametersTests
             lightScale: 1.5f,
             new Vector3f(0.1f, 0.2f, 0.3f),
             debugView: 7f,
-            paintedSky: true,
+            paintedSky: 1f,
             bakesWhole: false);
 
         Assert.Equal(1f, block[2]);

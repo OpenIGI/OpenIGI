@@ -264,6 +264,7 @@ public abstract class ShellScreen : Screen
             VerticalAlignment = VerticalAlignment.Center,
         };
         quit.Activated += _ => Context.Host.Quit();
+
         right.Add(quit);
         row.Add(right);
 
@@ -286,9 +287,18 @@ public abstract class ShellScreen : Screen
 
     private GameSwitcher BuildTitle(UiTheme theme)
     {
-        string[] games = new string[Context.Games.Count];
+        // The editor is the list's last entry, after the games: from the front end only, where opening it releases whatever
+        // the menu is drawing over.
+        bool editor = Context.Host.CanOpenEditor && !Context.InGame && !Context.Host.TouchScreen;
+        int count = Context.Games.Count;
+        string[] games = new string[count + (editor ? 1 : 0)];
         int current = 0;
-        for (int i = 0; i < games.Length; i++)
+        if (editor)
+        {
+            games[count] = "Editor";
+        }
+
+        for (int i = 0; i < count; i++)
         {
             games[i] = ShortName(Context.Games[i].DisplayName);
             if (Context.Games[i].Id == Context.ActiveTitleId)
@@ -297,24 +307,32 @@ public abstract class ShellScreen : Screen
             }
         }
 
-        var title = new GameSwitcher(theme, games.Length > 0 ? games[current] : string.Empty, games)
+        var title = new GameSwitcher(theme, count > 0 ? games[current] : string.Empty, games)
         {
-            Subtitle = games.Length > 0 ? Tagline(Context.Games[current].Id, Context.Games[current].DisplayName) : string.Empty,
+            Subtitle = count > 0 ? Tagline(Context.Games[current].Id, Context.Games[current].DisplayName) : string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
 
             // The one running, not the first listed: opening the list after a switch must show the switch.
             CurrentIndex = current,
             ItemDetail = index => index >= 0 && index < Context.Games.Count
                 ? Tagline(Context.Games[index].Id, Context.Games[index].DisplayName)
-                : null,
+                : index == count && editor ? "MISSIONS AND MODS" : null,
 
             // A title is takeable when this build supports it AND the player has it installed. An entry
             // greyed out for the second reason is worth showing rather than hiding.
-            ItemEnabled = index => index >= 0 && index < Context.Games.Count && Context.Games[index].IsPlayable,
+            ItemEnabled = index => (index >= 0 && index < Context.Games.Count && Context.Games[index].IsPlayable) || (editor && index == count),
         };
 
         title.ItemSelected += index =>
         {
+            if (editor && index == count)
+            {
+                // Not a game: the selector stays on the one running.
+                title.CurrentIndex = current;
+                Context.Host.OpenEditor();
+                return;
+            }
+
             if (index < 0 || index >= Context.Games.Count)
             {
                 return;

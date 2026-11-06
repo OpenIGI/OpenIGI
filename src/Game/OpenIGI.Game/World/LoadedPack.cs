@@ -365,6 +365,17 @@ public sealed class LoadedPack
             && TryGetTextureName(instance, materialSlot, out textureName);
     }
 
+    /// <summary>Finds the instance a placed model's name means, by its own name or the mesh it uses.</summary>
+    /// <param name="model">The model's name, as level data spells it.</param>
+    /// <param name="instance">Receives the instance.</param>
+    /// <returns><see langword="false"/> when the pack has no such model.</returns>
+    public bool TryGetInstance(string model, out MtpInstance instance)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(model);
+        _byModelName ??= BuildInstanceIndex();
+        return _byModelName.TryGetValue(model, out instance);
+    }
+
     private Dictionary<string, MtpInstance> BuildInstanceIndex()
     {
         Dictionary<string, MtpInstance> index = new(StringComparer.OrdinalIgnoreCase);

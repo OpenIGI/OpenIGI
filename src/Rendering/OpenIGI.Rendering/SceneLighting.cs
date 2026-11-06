@@ -71,6 +71,10 @@ namespace OpenIGI.Rendering;
 /// cycle hangs no moon.
 /// </param>
 /// <param name="AtmosphereMoonScattering">How much of that moon the clear air scatters; one is all of it.</param>
+/// <param name="BakedShare">
+/// How much of the level's baked light the dynamic model adds under its own; nought for none. The geometry pass writes the
+/// baked attachment under every model, so this costs the shading one multiply-add and nothing more.
+/// </param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
@@ -84,7 +88,8 @@ public readonly record struct SceneLighting(
     NightSky Night = default,
     Vector3f? AtmosphereSunDirection = null,
     Vector3f AtmosphereMoonColour = default,
-    float AtmosphereMoonScattering = 1f)
+    float AtmosphereMoonScattering = 1f,
+    float BakedShare = 0f)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.

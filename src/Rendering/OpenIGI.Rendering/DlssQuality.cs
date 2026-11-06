@@ -7,6 +7,9 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public enum DlssQuality
 {
+    /// <summary>DLSS off: the engine's own temporal upscaler runs, at the render scale (<c>r_scale</c>).</summary>
+    Off,
+
     /// <summary>Native resolution, anti-aliasing only (DLAA).</summary>
     Dlaa,
 

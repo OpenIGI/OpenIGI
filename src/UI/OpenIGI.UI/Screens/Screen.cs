@@ -140,6 +140,15 @@ public abstract class Screen
             if (InitialFocus is { CanFocus: true } initial)
             {
                 Focus!.Focus(initial);
+
+                // A screen that opens on a row far down a list -- the campaign on the mission the profile is up to --
+                // shows that row, already scrolled to, rather than the top of the list with the chosen row out of sight.
+                if (initial.FindAncestor<ScrollView>() is { } viewport)
+                {
+                    viewport.EnsureVisible(initial.Bounds);
+                    viewport.SnapToTarget();
+                    Root.Arrange(context.SafeRect);
+                }
             }
             else
             {

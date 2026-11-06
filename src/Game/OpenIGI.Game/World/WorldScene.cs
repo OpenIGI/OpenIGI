@@ -35,7 +35,7 @@ public sealed class WorldScene
     /// Registered as a double at <c>0x539558</c>. Model vertices use the same units as world positions:
     /// the level-1 water tower measures 95005 units tall, which is 23 metres.
     /// </remarks>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>Converts a position or an offset from engine units into metres.</summary>
     /// <param name="units">The value in engine units.</param>
@@ -355,6 +355,16 @@ public sealed class WorldScene
         ArgumentNullException.ThrowIfNull(placements);
 
         return new WorldScene(mission, placements, [], unresolved: 0, unplaced: 0, attached: 0);
+    }
+
+    /// <summary>Gets a copy of the scene drawing other placements, everything else as it was: what an editor adds or takes away.</summary>
+    /// <param name="placements">The placements the copy draws.</param>
+    /// <returns>The copy. Its placement objects are the ones given, so a renderer keeps what it has made for those it knew.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="placements"/> is <see langword="null"/>.</exception>
+    public WorldScene WithPlacements(IReadOnlyList<WorldPlacement> placements)
+    {
+        ArgumentNullException.ThrowIfNull(placements);
+        return new WorldScene(Mission, placements, Ladders, UnresolvedCount, UnplacedCount, AttachedCount);
     }
 
     /// <summary>Gets the mission the scene was built from.</summary>

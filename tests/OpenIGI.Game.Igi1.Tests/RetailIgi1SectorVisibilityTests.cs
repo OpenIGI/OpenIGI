@@ -39,10 +39,36 @@ public sealed class RetailIgi1SectorVisibilityTests
 
     private static readonly Lazy<Setup> Mission3 = new(() => Load(3));
 
+    private static readonly Lazy<Setup> Mission12 = new(() => Load(12));
+
     private static readonly Lazy<Setup> Mission14 = new(() => Load(14));
 
     // A standing player's eye above the feet, world units.
     private static readonly double Eye = new PlayerBody().EyeHeight;
+
+    /// <summary>
+    /// In mission 12's underground, standing in the tunnel segment <c>430_02_1</c> where it meets the chamber <c>463</c>, the eye is
+    /// the tunnel's: the chamber's bound reaches round the tunnel and its shell is struck below the eye too, but the cube tree asks
+    /// the chamber first (filed in a coarser cube, <c>Coll_SendEvent</c> <c>0x4CE090</c>) and the tunnel last, and the last answer
+    /// stands. Asked in level order the chamber's shell kept the eye, the tunnel's room was never walked, and its walls fell away
+    /// to the terrain's underside.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_tunnel_inside_a_chambers_bound_keeps_the_eye()
+    {
+        Setup m = Mission12.Value;
+        Vector3d eye = new(112319102, -42080194, 179543919 + Eye);
+        foreach (float yaw in new[] { -372.9f, -192.9f })
+        {
+            m.Visibility.Decide(new Camera3D(eye, Camera3D.LookRotation(yaw * MathF.PI / 180f, 4.6f * MathF.PI / 180f)), Projection());
+            Assert.StartsWith("sector: Building_-1 room 0,", m.Visibility.DescribeView(), StringComparison.Ordinal);
+            Assert.Contains(m.Scene.Placements, p => p.Instance.Name == "430_02_1" && p.IsAttached
+                && (WorldScene.ToUnits(p.Position) - eye).Length < 10 * WorldScene.UnitsPerMetre && m.Visibility.IsVisible(p));
+        }
+
+        // Turned back toward the chamber, its rooms are reached through the tunnel's opening.
+        Assert.Contains(m.Scene.Placements, p => p.Instance.Name == "463_04_1" && m.Visibility.IsVisible(p));
+    }
 
     /// <summary>
     /// From mission 1's compound, standing on <c>Building_1118</c>'s shell and looking along the fence, the rail beyond it stays

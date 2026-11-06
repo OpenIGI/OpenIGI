@@ -38,7 +38,7 @@ namespace OpenIGI.Game.Igi1.World;
 public static class GunShotImpactEffects
 {
     /// <summary>World units in a metre.</summary>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     // ---- the puff (0x4385AD onwards) -------------------------------------------------------
 

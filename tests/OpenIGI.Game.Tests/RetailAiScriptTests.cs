@@ -1,5 +1,7 @@
 using OpenIGI.Game.Ai;
+using OpenIGI.Scripting.Qsc;
 using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Vocabulary;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -126,6 +128,32 @@ public sealed class RetailAiScriptTests
         // Enough call sites resolved that the arity check means something.
         Assert.True(callCounts.Count >= 20, $"only resolved {callCounts.Count} distinct AI natives at call sites");
         Assert.True(callCounts.Values.Sum() > 1000, $"only {callCounts.Values.Sum()} AI call sites");
+    }
+
+    /// <summary>
+    /// Every argument every shipped AI script passes fits the typed signature the editor builds pins from: no text where a
+    /// number is read, no number where text is read, no constant of the wrong family.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void EveryCallSiteFitsTheTypedSignature()
+    {
+        ScriptVocabulary vocabulary = new ScriptVocabulary().Add(AiScriptVocabulary.Signatures);
+        foreach (ConstantFamily family in AiScriptVocabulary.Families)
+        {
+            vocabulary.Add(family);
+        }
+
+        List<string> problems = [];
+        int scripts = 0;
+        foreach (string path in AiScripts())
+        {
+            QscScript script = QscDecompiler.Decompile(File.ReadAllBytes(path));
+            scripts++;
+            problems.AddRange(ScriptCallChecker.Check(script, vocabulary).Select(p => $"{Name(path)}: {p.Message}"));
+        }
+
+        Assert.True(scripts > 800, $"only found {scripts} AI scripts");
+        Assert.Empty(problems.Distinct(StringComparer.Ordinal));
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Scripting;
@@ -541,7 +542,7 @@ public sealed record Igi2AiTweaks(
     float DetectionToAttackTime)
 {
     private const float Percent = 0.0099999998f;
-    private const float Metre = 4096f;
+    private const float Metre = (float)WorldUnits.PerMetre;
     private const float Ticks = 30f;
     private const float Degree = 0.017453292f;
 

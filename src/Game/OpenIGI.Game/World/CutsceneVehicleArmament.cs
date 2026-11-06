@@ -278,6 +278,47 @@ internal sealed class CutsceneVehicleArmament(
         }
     }
 
+    /// <summary>Runs an <c>AIStationaryGunHolder</c>'s guns once, as its update does (<c>0x46E5B0</c>).</summary>
+    /// <param name="holder">The holder task.</param>
+    /// <param name="aim">The first enemy its record sees, at its object origin, or <see langword="null"/>.</param>
+    /// <remarks>
+    /// The holder runs its attachments once (<c>0x46F390</c> each), then moves them onto itself (<c>0x46FBA0</c>), which
+    /// poses each weapon by the aim the run left. A holder never moves, so the seat after one run is the seat before the
+    /// next; the first is the creation's (<c>0x46EC90</c>).
+    /// </remarks>
+    public void TickGunHolderGuns(GameTask holder, Vector3d? aim)
+    {
+        if (!_armaments.TryGetValue(holder, out VehicleArmament? armament)
+            || !_context.TaskTransforms.TryGetValue(holder, out CutsceneTransformState? transform))
+        {
+            return;
+        }
+
+        if (!armament.Seated)
+        {
+            SeatVehicleGuns(armament, transform);
+        }
+
+        foreach (VehicleGunState gun in armament.Guns)
+        {
+            gun.RoundsFiredThisTick = 0;
+            Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - gun.MountPosition) : null;
+            if (FireVehicleGun(holder, gun, local, aim) is { } shot)
+            {
+                gun.RoundsFiredThisTick++;
+                gun.ShotSequence++;
+                VehicleCombatShotFired?.Invoke(shot);
+            }
+
+            if (gun.Cooldown > 0)
+            {
+                gun.Cooldown--;
+            }
+        }
+
+        SeatVehicleGuns(armament, transform);
+    }
+
     /// <summary>Where each enemy a vehicle's detector sees now is: the human's model origin, which its guns aim at too.</summary>
     /// <param name="vehicle">The Car or Heli task.</param>
     /// <returns>The player, while the vehicle is live and sees them; nothing otherwise.</returns>
@@ -497,7 +538,8 @@ internal sealed class CutsceneVehicleArmament(
         return new Matrix3f(1f, 0f, 0f, 0f, cosine, -sine, 0f, sine, cosine);
     }
 
-    private int NextVisionPhase()
+    /// <summary>Takes the global round-robin counter's next value, as a record's initialisation does (<c>0x4896C0</c>).</summary>
+    internal int NextVisionPhase()
     {
         int phase = _visionCounter & 3;
         _visionCounter = (_visionCounter + 1) & 3;

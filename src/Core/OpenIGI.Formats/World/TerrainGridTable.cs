@@ -36,11 +36,13 @@ public sealed class TerrainGridTable
 
     private readonly int[] _sizes;
     private readonly ReadOnlyMemory<byte>[] _blocks;
+    private readonly int[] _offsets;
 
-    private TerrainGridTable(int[] sizes, ReadOnlyMemory<byte>[] blocks, uint[] flags, int consumed, int length)
+    private TerrainGridTable(int[] sizes, ReadOnlyMemory<byte>[] blocks, int[] offsets, uint[] flags, int consumed, int length)
     {
         _sizes = sizes;
         _blocks = blocks;
+        _offsets = offsets;
         Flags = flags;
         BytesConsumed = consumed;
         Length = length;
@@ -81,6 +83,17 @@ public sealed class TerrainGridTable
         return _blocks[id];
     }
 
+    /// <summary>Gets where a record's block starts in the file.</summary>
+    /// <param name="id">The record index, <c>0</c> to <c>255</c>.</param>
+    /// <returns>The byte offset, or <c>-1</c> when the record has no block.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="id"/> is not a record index.</exception>
+    public int OffsetOf(int id)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(id);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(id, RecordCount);
+        return _offsets[id];
+    }
+
     /// <summary>Gets how many records declare a block.</summary>
     public int OccupiedCount
     {
@@ -114,10 +127,12 @@ public sealed class TerrainGridTable
         int[] sizes = new int[RecordCount];
         uint[] flags = new uint[RecordCount];
         ReadOnlyMemory<byte>[] blocks = new ReadOnlyMemory<byte>[RecordCount];
+        int[] offsets = new int[RecordCount];
+        Array.Fill(offsets, -1);
 
         if (data.Length < TableSize)
         {
-            return new TerrainGridTable(sizes, blocks, flags, 0, data.Length);
+            return new TerrainGridTable(sizes, blocks, offsets, flags, 0, data.Length);
         }
 
         ReadOnlySpan<byte> table = data.Span[..TableSize];
@@ -146,10 +161,11 @@ public sealed class TerrainGridTable
             }
 
             blocks[i] = data.Slice(cursor, size);
+            offsets[i] = cursor;
             cursor += size;
         }
 
-        return new TerrainGridTable(sizes, blocks, flags, cursor, data.Length);
+        return new TerrainGridTable(sizes, blocks, offsets, flags, cursor, data.Length);
     }
 
     /// <inheritdoc/>

@@ -27,7 +27,7 @@ public sealed class GraphNode
     public const int IdLimit = 1000;
 
     /// <summary>Engine units per metre, which is what <see cref="Radius"/> has to be scaled by.</summary>
-    public const double MetreInUnits = 4096.0;
+    public const double MetreInUnits = WorldUnits.PerMetre;
 
     /// <summary>Initializes a new instance of the <see cref="GraphNode"/> class.</summary>
     /// <param name="id">The node id, which is also its slot.</param>

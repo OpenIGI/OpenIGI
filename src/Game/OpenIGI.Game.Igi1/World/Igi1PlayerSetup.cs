@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Hosting;
 using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
@@ -264,6 +265,13 @@ public sealed class Igi1PlayerSetup(
 
             mission.GunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable, host.Game.Variables);
             GunPickupRegistry gunPickups = mission.GunPickups;
+
+            // A taken gun's task is deleted by its own update where the level walk reaches it (0x46CEA0), not by the
+            // touch. The walk was bound before the player came up, so the pickups join it here.
+            if (mission.Cutscenes is { } levelWalk)
+            {
+                gunPickups.AttachTo(levelWalk.Walker);
+            }
             gunPickups.Landed = sounds.PlayWeaponDrop;
             WirePickups(candidate, missionText);
             mission.Soldiers?.UseDroppedWeaponPickups(gunPickups);
@@ -624,6 +632,15 @@ public sealed class Igi1PlayerSetup(
                     VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
             }
 
+            // A gun holder carries its guns as attachments of its holder model, as a car does of its own.
+            if (vehicle.Type.Name == "AIStationaryGunHolder"
+                && vehicle.TryGetValue("Holder model", out object? rawHolderModel)
+                && rawHolderModel is string holderModel)
+            {
+                armed += ArmGuns(vehicle, holderModel) ? 1 : 0;
+                continue;
+            }
+
             // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
             if (vehicle.Type.Name is not ("Car" or "Heli")
                 || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
@@ -635,26 +652,7 @@ public sealed class Igi1PlayerSetup(
                 continue;
             }
 
-            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
-                modelName,
-                ModelOf,
-                magic,
-                roster,
-                (attachment, weaponModel) => host.Logger.Warning(
-                    "Ai",
-                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
-            if (guns.Count == 0)
-            {
-                continue;
-            }
-
-            runtime.ConfigureVehicleGuns(vehicle, guns);
-            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
-            armed++;
-            host.Logger.Information(
-                "Ai",
-                $"{vehicle.Type.Name} {vehicle.Id} ({modelName}) carries "
-                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
+            armed += ArmGuns(vehicle, modelName) ? 1 : 0;
         }
 
         if (armed == 0)
@@ -688,6 +686,27 @@ public sealed class Igi1PlayerSetup(
         runtime.VehicleSightTarget = () => Target() is { } seen
             ? seen.Feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(seen.Low))
             : null;
+        // A holder's record is offered every human in the global list's order (0x489750), each described by itself
+        // (0x45FE30): the player, the partners, then the soldiers.
+        List<AiDetectable> detectables = [];
+        runtime.GunHolderSubjects = () =>
+        {
+            detectables.Clear();
+            int playerTeam = mission.Soldiers?.PlayerTeam ?? 0;
+            object playerKey = (object?)mission.PlayerStandIn ?? player;
+            (Vector3d feet, bool low) = mission.PlayerStandIn is { } standIn
+                ? (standIn.Feet, standIn.IsKeepingLow)
+                : (player.Body.Position, player.Body.IsCrouched);
+            detectables.Add(HumanDetectable(playerKey, feet, low, playerTeam, alive: Target() is not null));
+            foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+            {
+                detectables.Add(HumanDetectable(
+                    partner, partner.Player.Body.Position, partner.Player.IsCrouched, playerTeam, alive: !partner.IsDead));
+            }
+
+            mission.Soldiers?.AddDetectables(detectables);
+            return detectables;
+        };
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             mission.Trace is null
             || SoldierSimulation.HasLineOfSight(mission.Trace, from, to, Igi1HumanAi.SightObstructionTolerance, owner);
@@ -723,7 +742,39 @@ public sealed class Igi1PlayerSetup(
                 collisionOwner: shot.Owner,
                 sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
         };
-        host.Logger.Information("Ai", $"{armed} armed vehicle(s).");
+        host.Logger.Information("Ai", $"{armed} armed vehicle(s) and gun holder(s).");
+
+        bool ArmGuns(DeclaredTask carrier, string modelName)
+        {
+            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
+                modelName,
+                ModelOf,
+                magic,
+                roster,
+                (attachment, weaponModel) => host.Logger.Warning(
+                    "Ai",
+                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
+            if (guns.Count == 0)
+            {
+                return false;
+            }
+
+            runtime.ConfigureVehicleGuns(carrier, guns);
+            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
+            host.Logger.Information(
+                "Ai",
+                $"{carrier.Type.Name} {carrier.Id} ({modelName}) carries "
+                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
+            return true;
+        }
+
+        // A human as it describes itself to a record: its mark over the feet, its origin, its side, whether it lives.
+        static AiDetectable HumanDetectable(object key, Vector3d feet, bool low, int team, bool alive) => new(
+            key,
+            feet + new Vector3d(0d, 0d, Igi1HumanAi.DetectionMarkAboveFeet(low)),
+            feet + new Vector3d(0d, 0d, low ? Igi1HumanAi.HumanOriginCrouchedInUnits : Igi1HumanAi.HumanOriginStandingInUnits),
+            team,
+            alive);
 
         MefModel? ModelOf(string name) =>
             loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)

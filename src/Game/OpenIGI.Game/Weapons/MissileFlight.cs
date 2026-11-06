@@ -14,7 +14,7 @@ namespace OpenIGI.Game.Weapons;
 public static class MissileFlight
 {
     /// <summary>World units in a metre.</summary>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     /// <summary>How far along the launcher's own axis a <see cref="MissileType.HindHelicopter"/> aims.</summary>
     /// <remarks><c>12288</c> units — three metres.</remarks>

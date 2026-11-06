@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -81,14 +82,86 @@ internal sealed class DebugOverlays(
     private long _perfAllocTicks;
     private double _perfAllocRate;
 
+    // g_ragdoll_debug's marks, reused frame to frame.
+    private readonly List<BoneDebugMark> _boneMarks = [];
+    private readonly List<ScreenMark> _screenMarks = [];
+
+    // How far out the bone view looks: a room or two, not the whole level.
+    private const double BoneMarkRangeMetres = 30.0;
+
     /// <inheritdoc/>
     public string Name => "Debug overlays";
+
+    // Every nearby soldier's bones, named where they sit, and with g_ragdoll_debug 2 the capsules a
+    // ragdoll of him collides with -- projected through the eye that is drawing.
+    private void DrawBoneMarks(
+        FrameLoopState state, Camera3D eye, float tanX, ISoldierBodies soldiers, DebugOverlayRenderer overlay)
+    {
+        _boneMarks.Clear();
+        soldiers.CollectBoneMarks(eye.Position, BoneMarkRangeMetres, GameplayCVars.RagdollDebug.Value > 1, _boneMarks);
+        if (_boneMarks.Count == 0 || tanX <= 0f)
+        {
+            return;
+        }
+
+        Matrix3f rows = eye.Orientation;
+        Vector3f right = rows.Row1;
+        Vector3f up = rows.Row2;
+        Vector3f forward = rows.Row3;
+        float width = window.Width;
+        float height = window.Height;
+        float tanY = tanX * height / Math.Max(1f, width);
+        float cx = width * 0.5f;
+        float cy = height * 0.5f;
+
+        bool Project(Vector3d at, out UI.Layout.UiVec2 screen, out double depth)
+        {
+            double dx = at.X - eye.Position.X, dy = at.Y - eye.Position.Y, dz = at.Z - eye.Position.Z;
+            double x = (dx * right.X) + (dy * right.Y) + (dz * right.Z);
+            double y = (dx * up.X) + (dy * up.Y) + (dz * up.Z);
+            depth = (dx * forward.X) + (dy * forward.Y) + (dz * forward.Z);
+            screen = new UI.Layout.UiVec2(
+                cx + (float)(x / Math.Max(depth, 1e-3) / tanX * cx),
+                cy - (float)(y / Math.Max(depth, 1e-3) / tanY * cy));
+            return depth > 0.05;
+        }
+
+        _screenMarks.Clear();
+        Bgra32 capsule = Bgra32.FromRgba(255, 170, 40, 80);
+        Bgra32 bone = Bgra32.FromRgba(60, 230, 255, 230);
+
+        // Capsules first, so the bones and their names are drawn over them.
+        for (int pass = 0; pass < 2; pass++)
+        {
+            foreach (BoneDebugMark mark in _boneMarks)
+            {
+                bool isCapsule = mark.Label is null;
+                if (isCapsule != (pass == 0)
+                    || !Project(mark.From, out UI.Layout.UiVec2 from, out double nearDepth)
+                    || !Project(mark.To, out UI.Layout.UiVec2 to, out double farDepth))
+                {
+                    continue;
+                }
+
+                float Radius(double depth) => (float)(mark.Radius / depth / tanX * cx);
+                _screenMarks.Add(isCapsule
+                    ? new ScreenMark(from, to, Radius(nearDepth), Radius(farDepth), capsule, null)
+                    : new ScreenMark(from, to, 0f, 0f, bone, mark.Label));
+            }
+        }
+
+        device.Set2DProjection(host.SafeWindowWidth, host.SafeWindowHeight);
+        state.Batch.Begin();
+        overlay.DrawScreenMarks(state.Batch, _screenMarks, window.Width, window.Height);
+        state.Batch.End();
+    }
 
     /// <summary>Draws the tools over the frame: the sun gizmo, the F12 overlay and its crosshair, and the r_perflog panel.</summary>
     /// <param name="state">What the frame loop keeps from one frame to the next.</param>
     /// <param name="eye">The eye the frame was drawn from, which the crosshair readout is cast from.</param>
     /// <param name="cameraIndoors">Whether the eye is under cover, as the weather was told.</param>
-    public void Draw(FrameLoopState state, Camera3D eye, bool cameraIndoors)
+    /// <param name="horizontalTangent">The tangent of half the eye's horizontal field of view, for placing marks in the world.</param>
+    public void Draw(FrameLoopState state, Camera3D eye, bool cameraIndoors, float horizontalTangent)
     {
         if (host.World is not { } worldPresenter || host.Camera is not { } camera)
         {
@@ -99,6 +172,13 @@ internal sealed class DebugOverlays(
         ISoldierBodies? soldiers = host.Soldiers;
 
         float debugPanelHeight = 0f;
+
+        if (GameplayCVars.RagdollDebug.Value > 0 && soldiers is not null && host.Overlay is { IsReady: true } boneOverlay)
+        {
+            device.BeginStageTiming(RenderStage.DebugRendering);
+            DrawBoneMarks(state, eye, horizontalTangent, soldiers, boneOverlay);
+            device.EndStageTiming();
+        }
 
         // The sun gizmo, over everything, whenever it is up -- not gated on the F12 overlay, since it
         // is a tool being used rather than an inspection panel.

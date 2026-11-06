@@ -12,11 +12,16 @@ namespace OpenIGI.Game.Igi1.Physics;
 /// <param name="SwingLimit">The cone's half-angle, in radians.</param>
 /// <param name="TwistLow">The furthest the joint twists one way about its own axis, in radians.</param>
 /// <param name="TwistHigh">And the other way.</param>
+/// <param name="BendAxis">
+/// The axis the joint mostly turns about, in its parent's frame, signed so that turning positively about
+/// it is the way the clips bend it — a knee's or an elbow's hinge. Zero when nothing turned the bone.
+/// </param>
 public readonly record struct RagdollJointRange(
     Vector3f SwingAxis,
     float SwingLimit,
     float TwistLow,
-    float TwistHigh);
+    float TwistHigh,
+    Vector3f BendAxis = default);
 
 /// <summary>
 /// The range each joint of a rig actually moves through, measured from the animations the game ships
@@ -121,22 +126,11 @@ public sealed class RagdollLimits
         int[] samples = new int[count];
         float[] twistLow = new float[count];
         float[] twistHigh = new float[count];
+        Vector3f[] turnSum = new Vector3f[count];
 
         for (int bone = 0; bone < count; bone++)
         {
-            // The bone's own axis is where its children sit, the same direction the rig gives its capsule.
-            Vector3f reach = Vector3f.Zero;
-            int kids = 0;
-            for (int child = 0; child < count; child++)
-            {
-                if (set.Skeleton.Parents[child] == bone)
-                {
-                    reach += set.Skeleton.RestTranslations[child];
-                    kids++;
-                }
-            }
-
-            axis[bone] = kids > 0 && reach.LengthSquared > 0f ? reach.Normalized() : Vector3f.UnitZ;
+            axis[bone] = AxisOf(set.Skeleton, bone);
         }
 
         float[] widest = new float[count];
@@ -160,6 +154,17 @@ public sealed class RagdollLimits
                     // that swings 60 and twists 60 deviate by 60 in a direction that is both, which is
                     // how a spine ended up bent double.
                     Quaternion32 q = key.Rotation.Normalized();
+
+                    // The rotation as a vector -- its axis scaled by its angle. Summed over a corpus that
+                    // only ever bends a joint one way, it points along that joint's hinge, and its sign is
+                    // the way it bends.
+                    Quaternion32 near = q.W < 0f ? new Quaternion32(-q.X, -q.Y, -q.Z, -q.W) : q;
+                    float sine = near.Vector.Length;
+                    if (sine > RagdollSolver.ParallelEpsilon)
+                    {
+                        turnSum[bone] += near.Vector * (2f * MathF.Atan2(sine, near.W) / sine);
+                    }
+
                     float half = MathF.Abs(q.W);
                     widest[bone] = MathF.Max(widest[bone], 2f * MathF.Acos(Math.Clamp(half, -1f, 1f)));
                 }
@@ -204,10 +209,45 @@ public sealed class RagdollLimits
                 centre[bone],
                 Math.Clamp(widest[bone] * Margin, MinimumSwing, MaximumSwing),
                 Math.Clamp(twistLow[bone] * Margin, -MaximumTwist, 0f),
-                Math.Clamp(twistHigh[bone] * Margin, 0f, MaximumTwist));
+                Math.Clamp(twistHigh[bone] * Margin, 0f, MaximumTwist),
+                BendOf(turnSum[bone], axis[bone]));
         }
 
         return new RagdollLimits(ranges, measured);
+    }
+
+    /// <summary>A bone's own axis: the direction its children sit in, in its own frame.</summary>
+    /// <param name="skeleton">The hierarchy.</param>
+    /// <param name="bone">The bone.</param>
+    /// <returns>A unit vector; straight up for a bone nothing hangs off.</returns>
+    /// <remarks>
+    /// The one definition both the measurement and the solver use, which is what lets the solver hold a
+    /// twist the measurement read: a twist is an angle ABOUT an axis, and two different axes give two
+    /// different answers for the same turn.
+    /// </remarks>
+    public static Vector3f AxisOf(BoneSkeleton skeleton, int bone)
+    {
+        ArgumentNullException.ThrowIfNull(skeleton);
+        Vector3f reach = Vector3f.Zero;
+        int kids = 0;
+        for (int child = 0; child < skeleton.BoneCount; child++)
+        {
+            if (skeleton.Parents[child] == bone)
+            {
+                reach += skeleton.RestTranslations[child];
+                kids++;
+            }
+        }
+
+        return kids > 0 && reach.LengthSquared > 0f ? reach.Normalized() : Vector3f.UnitZ;
+    }
+
+    // The hinge is the summed turn with its twist taken out: a forearm that bends and also rolls a little
+    // still has its bend square to its own length.
+    private static Vector3f BendOf(Vector3f turn, Vector3f axis)
+    {
+        Vector3f square = turn - (axis * Vector3f.Dot(turn, axis));
+        return square.LengthSquared > RagdollSolver.ParallelEpsilon ? square.Normalized() : Vector3f.Zero;
     }
 
     /// <summary>Splits a local rotation into how far it twists about an axis and where it puts that axis.</summary>

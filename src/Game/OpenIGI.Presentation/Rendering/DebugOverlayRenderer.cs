@@ -110,6 +110,46 @@ public sealed class DebugOverlayRenderer : IDisposable
         return DrawPanel(batch, "FRAME TIMING", lines, screenWidth, screenHeight, topOffsetPixels);
     }
 
+    /// <summary>Draws marks placed in the world — lines, filled capsules and labels — already projected to the screen.</summary>
+    /// <param name="batch">The batch, begun under a 2D projection of the window.</param>
+    /// <param name="marks">The marks.</param>
+    /// <param name="screenWidth">The window width, in pixels.</param>
+    /// <param name="screenHeight">The window height, in pixels.</param>
+    /// <remarks>
+    /// A capsule is drawn as its silhouette from where the eye is: a band as wide as it looks between two
+    /// discs at its ends, translucent so the body under it still shows.
+    /// </remarks>
+    public void DrawScreenMarks(SpriteBatch batch, IReadOnlyList<ScreenMark> marks, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(marks);
+        if (_body is not { } font)
+        {
+            return;
+        }
+
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+        var painter = UiPainter.Create(batch, context);
+        float size = MathF.Max(10f, context.Px(13f));
+        foreach (ScreenMark mark in marks)
+        {
+            if (mark.Label is null)
+            {
+                painter.StrokeLine(mark.From, mark.To, mark.FromRadius + mark.ToRadius, mark.Color);
+                painter.FillArc(mark.From, 0f, mark.FromRadius, 0f, MathF.Tau, mark.Color);
+                painter.FillArc(mark.To, 0f, mark.ToRadius, 0f, MathF.Tau, mark.Color);
+                continue;
+            }
+
+            painter.StrokeLine(mark.From, mark.To, MathF.Max(1f, context.Px(1.5f)), mark.Color);
+            painter.FillDiamond(mark.From, MathF.Max(3f, context.Px(4f)), mark.Color);
+            painter.DrawLabel(
+                font, mark.Label, new UiVec2(mark.From.X + 4f, mark.From.Y - (size * 0.5f)), size, Bgra32.FromRgba(0, 0, 0, 200), 0f);
+            painter.DrawLabel(
+                font, mark.Label, new UiVec2(mark.From.X + 3f, mark.From.Y - (size * 0.5f) - 1f), size, Bgra32.FromRgba(255, 255, 255, 240), 0f);
+        }
+    }
+
     /// <summary>Gets the gap used when a second top-right diagnostics panel is stacked below the first.</summary>
     public static float PanelGapPixels(int screenWidth, int screenHeight) =>
         new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight)).Px(PanelGapDesign);

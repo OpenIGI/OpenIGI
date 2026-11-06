@@ -4,6 +4,7 @@ using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Formats;
 using OpenIGI.Game.Level;
+using OpenIGI.Scripting.Vocabulary;
 
 namespace OpenIGI.Modding;
 
@@ -153,6 +154,11 @@ public sealed class ModSet
         public IReadOnlyList<ModReference> Mods => mods;
 
         public IReadOnlyList<TitlePostPass> PostPasses => postPasses;
+
+        public string? CoopPreviewWeapon => inner.CoopPreviewWeapon;
+
+        // The game's own vocabulary, with what the mods add marked as OpenIGI's alone.
+        public ScriptVocabulary CreateScriptVocabulary() => inner.CreateScriptVocabulary().AddAdditions(inner.Modules, modules);
     }
 
     // Publishes the mods' level-system edits to every session, the preview's sharing the played one's.

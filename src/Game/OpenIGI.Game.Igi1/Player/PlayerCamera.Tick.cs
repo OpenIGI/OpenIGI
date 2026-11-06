@@ -44,6 +44,7 @@ public sealed partial class PlayerCamera
 
         FrameYaw = _body.Yaw;
         FramePitch = _body.Pitch;
+        FrameAim = _shots.AimConvergenceRay is { } aim ? (aim.OriginUnits - _body.Eye, aim.Direction) : null;
         _input.Accept(frame);
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
@@ -56,21 +57,27 @@ public sealed partial class PlayerCamera
             return;
         }
 
+        bool fellFromTraversal = false;
         if (_interaction.Active is { } active)
         {
             InteractionActivateType type = active.Type;
             _interaction.Tick(terrain);
 
-            // A finished fence vault enters state 29 inside HumanPlayer_Update's state machine (0x4109A0), and
-            // the same update's mover then makes the fall's first move. Every other interaction stays put
-            // for the tick it ends on, as before.
-            if (_interaction.Active is not null || type != InteractionActivateType.Fence)
+            // A finished fence vault or a released wire enters state 29 inside HumanPlayer_Update (0x4109A0): the
+            // vault in its state machine, the wire in the ride's update after it. The same update's mover then makes
+            // the fall's first move. Every other interaction stays put for the tick it ends on, as before.
+            if (_interaction.Active is not null
+                || type is not (InteractionActivateType.Fence or InteractionActivateType.Wire))
             {
                 return;
             }
+
+            // Human_UpdateUse (0x460EE0) ran before the state machine, while the traversal still held the human off
+            // the ground and in use, and offered nothing: the press that let go of a wire does not take hold of it again.
+            fellFromTraversal = true;
         }
 
-        if (_interaction.OfferAndActivate(_ladder, _interactions, terrain))
+        if (!fellFromTraversal && _interaction.OfferAndActivate(_ladder, _interactions, terrain))
         {
             return;
         }

@@ -481,6 +481,36 @@ public sealed class ElevatorStateTests
         Assert.False(client.IsMoving);
     }
 
+    [Fact]
+    public void A_coasting_car_stands_each_tick_where_the_projection_says_and_takes_no_requests()
+    {
+        ElevatorState server = TallLift();
+        server.RequestFloor(2);
+        for (int i = 0; i < 20; i++)
+        {
+            server.Tick(canStart: true, floorUp: false, floorDown: false);
+        }
+
+        // A co-op client's copy, put where the server's was and left to coast.
+        ElevatorState client = TallLift();
+        client.Restore(server.Motion);
+        ElevatorMotion told = server.Motion;
+        for (int k = 1; k <= 2000; k++)
+        {
+            client.Coast();
+            Assert.Equal(client.Project(told, k).Position, client.Position);
+        }
+
+        Assert.Equal(2, client.CurrentFloorIndex);
+        Assert.False(client.HasMovementRequest);
+
+        // Standing, a request waiting here goes nowhere: a press is the server's to make.
+        client.RequestFloor(0);
+        client.Coast();
+        Assert.False(client.HasMovementRequest);
+        Assert.Equal(new Vector3d(0, 0, 80000), client.Position);
+    }
+
     private static ElevatorState TallLift() => new(
         startPosition: new Vector3d(0, 0, 0),
         floors:

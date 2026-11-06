@@ -21,8 +21,20 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     /// <summary>The entity id of the mission's own player.</summary>
     public const int HostEntity = 0;
 
-    /// <summary>How finely a clip's time is carried: sixteenths.</summary>
+    /// <summary>How finely a clip's time is carried: sixteenths of a tick, so a clip of up to 136 seconds fits the 16 bits.</summary>
     public const float ClipTimeScale = 16f;
+
+    /// <summary>Gets a clip's time as a snapshot carries it, in sixteenths of a tick.</summary>
+    /// <param name="time">The clip's own time, <see cref="Formats.Animation.BoneAnimation.FrameStep"/> a tick.</param>
+    /// <returns>The time carried.</returns>
+    /// <remarks>The clip's own units ran 160 a tick: carried as sixteenths of those, any clip past 0.85 s stood still.</remarks>
+    public static ushort PackClipTime(float time) =>
+        (ushort)Math.Clamp(Math.Round(time / Formats.Animation.BoneAnimation.FrameStep * ClipTimeScale), 0, ushort.MaxValue);
+
+    /// <summary>Gets a clip's own time back from what a snapshot carries.</summary>
+    /// <param name="carried">The time carried, in sixteenths of a tick.</param>
+    /// <returns>The clip's own time.</returns>
+    public static float UnpackClipTime(ushort carried) => carried / ClipTimeScale * Formats.Animation.BoneAnimation.FrameStep;
 
     /// <summary>The entity id a soldier's task id is carried past in snapshots.</summary>
     public const int SoldierEntityBase = 100000;
@@ -96,7 +108,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>
-            [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.LadderClipTime) with
+            [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.ClipTime) with
             {
                 Fired = p.FiredThisTick,
                 Name = p.Name,
@@ -208,13 +220,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerHealth, host.IsOnLadder || host.PlaysInteractionClip ? _game.World.Soldiers?.PlayerLadderClipTime : null)));
+            humans.Add(OnLift(WithRevive(Replicate(
+                HostEntity, host, _game.World.PlayerHealth, host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime)), host));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.LadderClipTime)));
+            humans.Add(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime)), other.Player));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -362,10 +374,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         // A ladder's clip, or a world interaction's -- a computer, a wire -- played on the same climbing body: its clip held
         // at its time, where the clip has the body, facing as the clip faces it.
-        (int Animation, Vector3d Feet, float Facing)? clip = ladderTime is null ? null
-            : player.LadderAnimation >= 0 ? (player.LadderAnimation, player.LadderFeet, player.LadderFacing)
-            : player.PlaysInteractionClip ? (player.InteractionAnimation, player.InteractionFeet, player.InteractionFacing)
-            : null;
+        PlayerBodyClip? clip = ladderTime is null ? null : player.BodyClip;
         if (clip is not null)
         {
             condition |= ReplicatedHumanCondition.Climbing;
@@ -398,7 +407,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             condition,
             unchecked((byte)(player.Weapons?.ShotSequence ?? 0)),
             unchecked((byte)player.UpperBodySequence),
-            (ushort)Math.Clamp(Math.Round((ladderTime ?? 0f) * ClipTimeScale), 0, ushort.MaxValue));
+            clip is null ? (ushort)0 : PackClipTime(ladderTime ?? 0f));
     }
 
     /// <summary>The level's doors as a snapshot carries them: one bit each, set where the door is commanded open.</summary>
@@ -631,6 +640,26 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         _checkpointTick = CurrentTick;
+    }
+
+    // The lift a player rides, by the rule its car carries it by: a client draws it on that car, wherever its own copy of
+    // the car stands.
+    private ReplicatedHuman OnLift(ReplicatedHuman human, PlayerCamera player)
+    {
+        if (_game.World.Elevators is not { Elevators.Count: > 0 } lifts || player.IsOnLadder)
+        {
+            return human;
+        }
+
+        for (int i = 0; i < lifts.Elevators.Count && i < ReplicatedLift.MaxPerSnapshot; i++)
+        {
+            if (OpenIGI.Game.World.ElevatorRegistry.IsPassenger(lifts.Elevators[i], player.Body.Position, _game.World.Solids))
+            {
+                return human with { Platform = (byte)(i + 1) };
+            }
+        }
+
+        return human;
     }
 
     // A fallen player's health byte carries its revival instead, for every client's prompt and panel to show.

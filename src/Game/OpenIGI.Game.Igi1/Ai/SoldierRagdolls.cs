@@ -21,10 +21,21 @@ internal sealed class SoldierRagdolls(SoldierContext context)
 
     private WorldRayCast? _dropTrace;
 
-    /// <summary>Gets one prepared rig per skeleton, shared by every corpse wearing it.</summary>
-    // One prepared rig per skeleton, shared by every corpse wearing it. Building it walks the whole bone
-    // graph twice, so it must not happen per death -- and it holds no live state, so it need not.
-    public Dictionary<BoneAnimationSet, RagdollSkeleton> RagdollRigs { get; } = [];
+    /// <summary>Gets one prepared rig per animation set and model, shared by every corpse wearing both.</summary>
+    // Keyed by the MODEL as well as the set, because the capsules are measured from the mesh: two soldier
+    // models on one animation set are two different bodies, and keying on the set alone sized every one
+    // of them after whichever happened to die first.
+    public Dictionary<(BoneAnimationSet Set, MefModel? Model), RagdollSkeleton> RagdollRigs { get; } = [];
+
+    // The measured joint ranges depend on the set alone, and sweeping its clips is the expensive part.
+    private readonly Dictionary<BoneAnimationSet, RagdollLimits> _limits = [];
+
+    /// <summary>Drops every prepared rig and measurement, when the mission they belong to ends.</summary>
+    public void ForgetRigs()
+    {
+        RagdollRigs.Clear();
+        _limits.Clear();
+    }
 
     /// <summary>Gets or sets what corpses collide against, built on first use.</summary>
     public RagdollWorld? RagdollWorld { get; set; }
@@ -48,14 +59,20 @@ internal sealed class SoldierRagdolls(SoldierContext context)
     /// </remarks>
     public RagdollSkeleton? RagdollRigFor(BoneAnimationSet set, MefModel? model)
     {
-        if (RagdollRigs.TryGetValue(set, out RagdollSkeleton? rig))
+        if (RagdollRigs.TryGetValue((set, model), out RagdollSkeleton? rig))
         {
             return rig;
         }
 
         try
         {
-            rig = RagdollSkeleton.Build(set.Skeleton, RagdollLimits.Measure(set), model);
+            if (!_limits.TryGetValue(set, out RagdollLimits? limits))
+            {
+                limits = RagdollLimits.Measure(set);
+                _limits[set] = limits;
+            }
+
+            rig = RagdollSkeleton.Build(set.Skeleton, limits, model);
         }
         catch (ArgumentException ex)
         {
@@ -65,7 +82,7 @@ internal sealed class SoldierRagdolls(SoldierContext context)
             return null;
         }
 
-        RagdollRigs[set] = rig;
+        RagdollRigs[(set, model)] = rig;
         return rig;
     }
 

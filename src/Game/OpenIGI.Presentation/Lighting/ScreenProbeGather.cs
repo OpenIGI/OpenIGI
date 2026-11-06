@@ -29,6 +29,10 @@ internal sealed class ScreenProbeGather
     private ComputeShaderHandle _screenGather;
     private ComputeShaderHandle _screenGatherTemporal;
 
+    // The temporal gather's trace pass with one ray to a thread rather than a probe's sixteen in a row; the same
+    // estimate to the bit, with the waves to hide the march's waits. See ScreenGatherTemporal.slang.
+    private ComputeShaderHandle _screenTraceSplit;
+
     // The one-ray-a-pixel form DLSS ray reconstruction denoises; traced only, so it is never built for the march.
     private ComputeShaderHandle _pixelGather;
     private ComputeShaderHandle _screenGatherFilter;
@@ -375,6 +379,10 @@ internal sealed class ScreenProbeGather
                 ShaderModuleId.CardsScreenGatherTemporal,
                 new ShaderVariant(_bindings.TracesRays ? "rayquery" : "software"),
                 "cards.screen.temporal");
+            _screenTraceSplit = _device.CreateComputeShader(
+                ShaderModuleId.CardsScreenGatherTemporal,
+                new ShaderVariant(_bindings.TracesRays ? "rayquery-split" : "software-split"),
+                "cards.screen.trace");
         }
 
         _device.BindStorageBuffer(0, _pages);
@@ -395,55 +403,59 @@ internal sealed class ScreenProbeGather
         // Where a moving object's surface came from (IGraphicsDevice.SceneVelocity). Without a field the flag is
         // off and the normals, never read, fill the unit the program declares either way.
         _device.SetTexture(13, sceneVelocity.IsValid ? sceneVelocity : sceneNormal);
-        _device.SetComputeUniform(_screenGatherTemporal, "uHasVelocity", sceneVelocity.IsValid ? 1 : 0);
+        // The same parameters for both programs: the trace pass runs as its own program, one ray to a thread.
+        foreach (ComputeShaderHandle shader in (ReadOnlySpan<ComputeShaderHandle>)[_screenGatherTemporal, _screenTraceSplit])
+        {
+            _device.SetComputeUniform(shader, "uHasVelocity", sceneVelocity.IsValid ? 1 : 0);
 
-        _device.SetComputeUniform(_screenGatherTemporal, "uMaxRayIntensity", _bindings.ExposedRayCap());
-        _device.SetComputeUniform(_screenGatherTemporal, "uScreenTraceSteps", Math.Max(screenTraceSteps, 0));
-        _device.SetComputeUniform(_screenGatherTemporal, "uScreenTraceDistance", MathF.Max(screenTraceDistance, 0f));
-        _device.SetComputeUniform(_screenGatherTemporal, "uScreenThickness", MathF.Max(screenThickness, 0f));
-        _device.SetComputeUniform(_screenGatherTemporal, "uSkyColour", skyColour);
-        _device.SetComputeUniform(_screenGatherTemporal, "uGroundSun", _bindings.GroundSun());
-        _device.SetComputeUniform(_screenGatherTemporal, "uBounceScale", SurfaceCacheCVars.GiBounce.Value);
-        _device.SetComputeUniform(_screenGatherTemporal, "uDebugSource", ScreenGatherCVars.GiSource.Value);
-        _bindings.BindTerrainHeights(_screenGatherTemporal);
-        _bindings.WriteSkyHarmonics(_screenGatherTemporal);
+            _device.SetComputeUniform(shader, "uMaxRayIntensity", _bindings.ExposedRayCap());
+            _device.SetComputeUniform(shader, "uScreenTraceSteps", Math.Max(screenTraceSteps, 0));
+            _device.SetComputeUniform(shader, "uScreenTraceDistance", MathF.Max(screenTraceDistance, 0f));
+            _device.SetComputeUniform(shader, "uScreenThickness", MathF.Max(screenThickness, 0f));
+            _device.SetComputeUniform(shader, "uSkyColour", skyColour);
+            _device.SetComputeUniform(shader, "uGroundSun", _bindings.GroundSun());
+            _device.SetComputeUniform(shader, "uBounceScale", SurfaceCacheCVars.GiBounce.Value);
+            _device.SetComputeUniform(shader, "uDebugSource", ScreenGatherCVars.GiSource.Value);
+            _bindings.BindTerrainHeights(shader);
+            _bindings.WriteSkyHarmonics(shader);
 
-        _device.SetComputeUniform(_screenGatherTemporal, "uAtlasSize", new Vector3f(_width, _height, 0f));
-        _device.SetComputeUniform(_screenGatherTemporal, "uLookupBuckets", SurfaceCacheLookup.Buckets);
-        _device.SetComputeUniform(_screenGatherTemporal, "uLookupMin", _bindings.Lookup.Minimum);
-        _device.SetComputeUniform(_screenGatherTemporal, "uLookupCell", SurfaceCacheLookup.CellMetres);
+            _device.SetComputeUniform(shader, "uAtlasSize", new Vector3f(_width, _height, 0f));
+            _device.SetComputeUniform(shader, "uLookupBuckets", SurfaceCacheLookup.Buckets);
+            _device.SetComputeUniform(shader, "uLookupMin", _bindings.Lookup.Minimum);
+            _device.SetComputeUniform(shader, "uLookupCell", SurfaceCacheLookup.CellMetres);
 
-        _device.SetComputeUniform(
-            _screenGatherTemporal, "uUnproject", unproject.XScale, unproject.YScale, unproject.Near, unproject.Far);
-        DepthUnprojection gatherPrevious = previousUnproject ?? unproject;
-        _device.SetComputeUniform(
-            _screenGatherTemporal,
-            "uPrevUnproject",
-            gatherPrevious.XScale,
-            gatherPrevious.YScale,
-            gatherPrevious.Near,
-            gatherPrevious.Far);
-        _device.SetComputeUniform(_screenGatherTemporal, "uViewToWorld0", viewToWorld.Column1);
-        _device.SetComputeUniform(_screenGatherTemporal, "uViewToWorld1", viewToWorld.Column2);
-        _device.SetComputeUniform(_screenGatherTemporal, "uViewToWorld2", viewToWorld.Column3);
-        _device.SetComputeUniform(_screenGatherTemporal, "uCameraToCache", cameraToCache);
-        _device.SetComputeUniform(_screenGatherTemporal, "uScreenWidth", screenWidth);
-        _device.SetComputeUniform(_screenGatherTemporal, "uScreenHeight", screenHeight);
-        _device.SetComputeUniform(_screenGatherTemporal, "uProbeStep", step);
+            _device.SetComputeUniform(
+                shader, "uUnproject", unproject.XScale, unproject.YScale, unproject.Near, unproject.Far);
+            DepthUnprojection gatherPrevious = previousUnproject ?? unproject;
+            _device.SetComputeUniform(
+                shader,
+                "uPrevUnproject",
+                gatherPrevious.XScale,
+                gatherPrevious.YScale,
+                gatherPrevious.Near,
+                gatherPrevious.Far);
+            _device.SetComputeUniform(shader, "uViewToWorld0", viewToWorld.Column1);
+            _device.SetComputeUniform(shader, "uViewToWorld1", viewToWorld.Column2);
+            _device.SetComputeUniform(shader, "uViewToWorld2", viewToWorld.Column3);
+            _device.SetComputeUniform(shader, "uCameraToCache", cameraToCache);
+            _device.SetComputeUniform(shader, "uScreenWidth", screenWidth);
+            _device.SetComputeUniform(shader, "uScreenHeight", screenHeight);
+            _device.SetComputeUniform(shader, "uProbeStep", step);
 
-        _device.SetComputeUniform(_screenGatherTemporal, "uHasHistory", hasHistory ? 1 : 0);
-        _device.SetComputeUniform(_screenGatherTemporal, "uPrevWorldToView0", prevWorldToView.Column1);
-        _device.SetComputeUniform(_screenGatherTemporal, "uPrevWorldToView1", prevWorldToView.Column2);
-        _device.SetComputeUniform(_screenGatherTemporal, "uPrevWorldToView2", prevWorldToView.Column3);
-        _device.SetComputeUniform(_screenGatherTemporal, "uPrevCameraToCache", prevCameraToCache);
-        _device.SetComputeUniform(_screenGatherTemporal, "uColourWorldToView0", colourWorldToView.Column1);
-        _device.SetComputeUniform(_screenGatherTemporal, "uColourWorldToView1", colourWorldToView.Column2);
-        _device.SetComputeUniform(_screenGatherTemporal, "uColourWorldToView2", colourWorldToView.Column3);
-        _device.SetComputeUniform(_screenGatherTemporal, "uColourCameraToCache", colourCameraToCache);
-        _device.SetComputeUniform(_screenGatherTemporal, "uFrameIndex", frameIndex);
-        _device.SetComputeUniform(_screenGatherTemporal, "uMaxAccumulated", Math.Max(maxAccumulated, 1));
+            _device.SetComputeUniform(shader, "uHasHistory", hasHistory ? 1 : 0);
+            _device.SetComputeUniform(shader, "uPrevWorldToView0", prevWorldToView.Column1);
+            _device.SetComputeUniform(shader, "uPrevWorldToView1", prevWorldToView.Column2);
+            _device.SetComputeUniform(shader, "uPrevWorldToView2", prevWorldToView.Column3);
+            _device.SetComputeUniform(shader, "uPrevCameraToCache", prevCameraToCache);
+            _device.SetComputeUniform(shader, "uColourWorldToView0", colourWorldToView.Column1);
+            _device.SetComputeUniform(shader, "uColourWorldToView1", colourWorldToView.Column2);
+            _device.SetComputeUniform(shader, "uColourWorldToView2", colourWorldToView.Column3);
+            _device.SetComputeUniform(shader, "uColourCameraToCache", colourCameraToCache);
+            _device.SetComputeUniform(shader, "uFrameIndex", frameIndex);
+            _device.SetComputeUniform(shader, "uMaxAccumulated", Math.Max(maxAccumulated, 1));
 
-        _bindings.BindShadows(_screenGatherTemporal, shadows);
+            _bindings.BindShadows(shader, shadows);
+        }
 
         int gridX = (screenWidth + step - 1) / step;
         int gridY = (screenHeight + step - 1) / step;
@@ -452,9 +464,10 @@ internal sealed class ScreenProbeGather
         // pools each probe's whole neighbourhood from it and folds the result into the history. See
         // uGatherPass for why the pool cannot share the trace's dispatch.
         _device.BindImage(0, raw, ImageAccess.Write);
-        _device.SetComputeUniform(_screenGatherTemporal, "uGatherPass", 0);
         _device.SetComputeTimingLabel("cards.screen.trace");
-        _device.Dispatch(_screenGatherTemporal, (gridX + 7) / 8, (gridY + 7) / 8);
+
+        // Four by four probes a group, each probe's rays across the group's third axis.
+        _device.Dispatch(_screenTraceSplit, (gridX + 3) / 4, (gridY + 3) / 4);
         _device.SetComputeTimingLabel(null);
         _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
 

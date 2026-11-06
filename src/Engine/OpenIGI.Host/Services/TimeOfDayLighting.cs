@@ -46,6 +46,13 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
     /// <summary>Gets or sets the level's sun as the cycle has to see it, which is not always as the level wrote it (see <c>BindToCycle</c>).</summary>
     public DirectionalLightSettings? BoundSun { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the level has no outdoors -- no ground at all, only buildings and tunnels, as the
+    /// last mission is. Its Dirlight still lights the original's objects, but no sun or moon shines into it: the modern path
+    /// would otherwise cast it through every gap in walls that were never built to be lit from outside.
+    /// </summary>
+    public bool Sunless { get; set; }
+
     /// <summary>Gets or sets the sun this frame is lit by: <see cref="CycleSun"/> as the frame took it.</summary>
     public DirectionalLightSettings? EffectiveSun { get; set; }
 
@@ -229,6 +236,12 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
             };
         }
 
+        // A level with no outdoors has neither: its fill stays, its directional light does not.
+        if (Sunless)
+        {
+            light = light with { Colour = Vector3f.Zero };
+        }
+
         return light;
     }
 
@@ -236,7 +249,7 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
     public float MoonVeil()
     {
         float cover = WeatherCloudCover() * DayNight.Nightfall;
-        return (1f - (0.75f * cover)) * SkyCVars.Moonlight.Value;
+        return (1f - (0.75f * cover)) * SkyCVars.EffectiveMoonlight;
     }
 
     // How bright the brightest star is drawn, in the lit scene's own units. Relative to the night sky it is
@@ -286,7 +299,9 @@ internal sealed class TimeOfDayLighting(IGraphicsDevice device, HostOptions opti
             // Not weighted by the night: the glow is emission, there all day, and only outshone while the
             // sun lights the sky. Faded in with the night, it was missing through the whole of dusk, which
             // left the sky between the sun's last light and full night darker than the night itself.
-            Airglow: SkyCVars.NightAirglow.Value,
+            // A mission's look may raise it at night (MissionLook.NightGlow), faded in with the night so the dusk
+            // keeps the glow it has.
+            Airglow: SkyCVars.EffectiveAirglow(DayNight.Nightfall),
             CloudCover: cover,
             StarRadiance: stars ? StarRadiance * DayNight.StarVisibility : 0f,
             MoonDirection: moon,

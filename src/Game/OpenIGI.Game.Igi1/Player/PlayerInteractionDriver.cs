@@ -37,6 +37,9 @@ internal sealed class PlayerInteractionDriver
     private Vector3d _wireDirection;
     private double _wireSpeed;
 
+    // The wire clip's last root step, which the fall that follows a ride starts from (0x40BDB0).
+    private Vector3d _wireLastDelta;
+
     // The level wire's hand-over-hand state (0x40DDA0): which way the drag clip plays (HumanPlayer+0xD80), the step
     // event last taken (+wireStep), a new step event the last advance crossed, which drag sound comes next, and a
     // sound waiting to be played.
@@ -79,11 +82,20 @@ internal sealed class PlayerInteractionDriver
     internal AiStationaryGun? MountedStationaryGun => _mountedGun is null ? null : _activeInteraction?.StationaryGun;
 
     /// <summary>Gets the active interaction's retail locomotion state, or -1.</summary>
-    internal int LocomotionState => _activeInteraction is null
-        ? -1
-        : HumanInteractionDispatch.Dispatch(
-            _activeInteraction.Type,
-            DoorNeedsPicking(_activeInteraction)).LocomotionState;
+    /// <remarks>
+    /// The dispatcher's case 9 enters no state itself: it raises the wire's enter flag, and the ride's update
+    /// (<c>0x411AE0</c> or <c>0x411F20</c>) sets state 42, hand over hand, or 43, the zip-line, as it mounts.
+    /// </remarks>
+    internal int LocomotionState => _activeInteraction switch
+    {
+        null => -1,
+        { Type: InteractionActivateType.Wire } wire => IsSloped(wire.End - wire.Anchor) ? ZiplineState : WireDragState,
+        { } active => HumanInteractionDispatch.Dispatch(active.Type, DoorNeedsPicking(active)).LocomotionState,
+    };
+
+    // HSTATE_WIRE and HSTATE_ZIPLINE: animations 172 and 173, both played looped (mode 1 in the table at 0x538870).
+    private const int WireDragState = 42;
+    private const int ZiplineState = 43;
 
     /// <summary>Gets the interaction body's facing in the engine/model gamma convention.</summary>
     /// <remarks>
@@ -117,12 +129,14 @@ internal sealed class PlayerInteractionDriver
     /// <param name="stepEventTime">The time of the step event (8) the clip crossed, if it crossed one.</param>
     internal void ApplyRootMotion(Vector3d rootDelta, bool clipEnded = false, float? stepEventTime = null)
     {
-        if (IsOnLevelWire)
+        if (_activeInteraction?.Type == InteractionActivateType.Wire)
         {
-            // State 42 rides the drag clip's own root motion (Human_SetExactMotion): the body moves as far as the clip
-            // steps, and a step event it has not taken stops it next tick.
+            // Both rides set exact motion (Human_SetExactMotion): the clip's root step moves the origin unscaled, the
+            // drag clip's stride along the cable and the zip-line's sway alike. A step event the drag has not taken
+            // stops it next tick.
             _body.Position += rootDelta;
-            if (stepEventTime is { } step && step != _wireStep)
+            _wireLastDelta = rootDelta;
+            if (IsOnLevelWire && stepEventTime is { } step && step != _wireStep)
             {
                 _wireStepCrossed = step;
             }
@@ -391,6 +405,12 @@ internal sealed class PlayerInteractionDriver
         }
     }
 
+    /// <summary>Mounts a wire: <c>0x411AE0</c> into state 42 for a level one, <c>0x411F20</c> into state 43 for a slope.</summary>
+    /// <remarks>
+    /// Both hang the human's origin below the cable at its projection (<see cref="WorldInteraction.WireBodyPoint"/>) and
+    /// face it down the cable's axis: the level ride turns half round when it mounts past the model's origin, the
+    /// zip-line when the cable climbs, so it always faces downhill. Both start still.
+    /// </remarks>
     private void BeginWire(WorldInteraction wire)
     {
         Vector3d segment = wire.End - wire.Anchor;
@@ -399,25 +419,20 @@ internal sealed class PlayerInteractionDriver
             return;
         }
 
-        if (!IsSloped(segment))
-        {
-            BeginWireDrag(wire, segment);
-            return;
-        }
-
-        // sub_411F20 projects onto the wire but never mounts on a raw endpoint: both ends reserve
-        // exactly 3072 units. Mounting on the endpoint made the next state-42/43 tick read "at end"
-        // and immediately hand the body back to the ground mover.
-        Vector3d bodyPoint = wire.WireBodyPoint(_body.Eye);
-        _wireDirection = segment.Normalized();
-        if (_wireDirection.Z > 0.0)
-        {
-            _wireDirection = -_wireDirection;
-        }
-
+        bool sloped = IsSloped(segment);
+        double drop = sloped ? WorldInteraction.ZiplineDrop : WorldInteraction.WireDragDrop;
+        Vector3d hung = wire.WireBodyPoint(_body.Origin, drop);
+        Vector3d axis = wire.WireAxis;
+        bool turn = sloped ? axis.Z > 0.0 : wire.WireCoordinate(hung) > 0.0;
+        _wireDirection = turn ? -axis : axis;
         _wireSpeed = 0.0;
+        _wireLastDelta = default;
+        _wireDragDirection = 0;
+        _wireStep = -1f;
+        _wireStepCrossed = null;
+        _pendingWireSound = null;
         _body.BeginLadderTraversal();
-        _body.Position = bodyPoint;
+        _body.Position = hung;
         _body.Yaw = (float)Math.Atan2(_wireDirection.X, _wireDirection.Y);
         _interactionFacing = -_body.Yaw;
         _activeInteraction = wire;
@@ -455,7 +470,7 @@ internal sealed class PlayerInteractionDriver
 
         if (interaction.Type == InteractionActivateType.Wire)
         {
-            TickWire(terrain, use);
+            TickWire(terrain);
             return;
         }
 
@@ -480,55 +495,35 @@ internal sealed class PlayerInteractionDriver
         }
     }
 
-    private void TickWire(IGroundHeightField? terrain, bool use)
+    /// <summary>One tick of a ride: the state's own update, then the leave test, then the move.</summary>
+    /// <remarks>
+    /// The order is the original's. The state update runs first (<c>0x40DDA0</c> takes a step or a key; <c>0x40DEF0</c>
+    /// eases the zip-line's speed), the ride's update (<c>0x411AE0</c>, <c>0x411F20</c>) then tests the origin where the
+    /// last move left it -- a fresh press of Use, or within 3072 of either end -- and the move comes last.
+    /// </remarks>
+    private void TickWire(IGroundHeightField? terrain)
     {
         WorldInteraction wire = _activeInteraction!;
-        if (IsSloped(wire.End - wire.Anchor))
+        bool sloped = IsSloped(wire.End - wire.Anchor);
+        if (sloped)
         {
             _wireSpeed = (-_wireDirection.Z * 88.309761) + (_wireSpeed * 0.99000001);
-            _body.Position += _wireDirection * _wireSpeed;
         }
         else
         {
             TickWireDrag();
         }
 
-        Vector3d segment = wire.End - wire.Anchor;
-        // The body-to-cable offset is perpendicular to the cable, so projecting the body itself gives
-        // the same along-wire coordinate. Adding world Z here is wrong for a sloped wire frame.
-        double coordinate = Vector3d.Dot(_body.Position - wire.Anchor, segment) / segment.LengthSquared;
-        double margin = Math.Min(0.49, 3072.0 / segment.Length);
-        if ((use && _interactionUseArmed) || coordinate < margin || coordinate > 1.0 - margin)
+        if (_input.IsRisingEdge(PlayerInputSlot.Activate) || wire.IsPastWireEnd(wire.WireCoordinate(_body.Position)))
         {
             End(completed: false, terrain);
+            return;
         }
-    }
 
-    /// <summary>Mounts a level wire hand over hand — <c>sub_411AE0</c> into state 42 (<c>0x40DD60</c>).</summary>
-    /// <remarks>
-    /// The task hangs 2150.4 below the cable at the mount's projection, kept 3072 from either end, and faces down the
-    /// cable's axis toward its far half: <c>yaw + pi</c> when it mounts past the middle. The drag clip starts still.
-    /// </remarks>
-    private void BeginWireDrag(WorldInteraction wire, Vector3d segment)
-    {
-        Vector3d axis = segment.Normalized();
-        Vector3d mount = wire.WireMountPoint(_body.Eye);
-        Vector3d middle = (wire.Anchor + wire.End) * 0.5;
-        _wireDirection = Vector3d.Dot(mount - middle, axis) > 0.0 ? -axis : axis;
-        _wireSpeed = 0.0;
-        _wireDragDirection = 0;
-        _wireStep = -1f;
-        _wireStepCrossed = null;
-        _pendingWireSound = null;
-        _body.BeginLadderTraversal();
-        _body.Position = wire.WireBodyPoint(_body.Eye, WorldInteraction.WireDragDrop);
-        _body.Yaw = (float)Math.Atan2(_wireDirection.X, _wireDirection.Y);
-        _interactionFacing = -_body.Yaw;
-        _activeInteraction = wire;
-        _interactionTick = 0;
-        _interactionUseArmed = false;
-        wire.BeginUse();
-        Near = null;
+        if (sloped)
+        {
+            _body.Position += _wireDirection * _wireSpeed;
+        }
     }
 
     /// <summary>One tick of state 42 — <c>0x40DDA0</c>.</summary>
@@ -602,7 +597,7 @@ internal sealed class PlayerInteractionDriver
         }
         else
         {
-            _body.BeginFallFromVault(_body.Position, _fenceAppliedDelta);
+            _body.BeginFallFromOrigin(_body.Position, _fenceAppliedDelta);
             End(completed: false, terrain);
         }
     }
@@ -697,25 +692,26 @@ internal sealed class PlayerInteractionDriver
         _activeInteraction = null;
         _interactionTick = 0;
         _interactionFacing = -_body.Yaw;
+        if (interaction.Type == InteractionActivateType.Wire)
+        {
+            // Wire_Done sets state 29, whose entry (0x40BDB0) takes the clip's last root step as the fall's velocity and
+            // nothing else, so the zip-line's speed is dropped. The fall starts from the origin the ride hung.
+            _body.BeginFallFromOrigin(_body.Position, _wireLastDelta);
+        }
+
         RestoreBodyAfterInteraction(_body, interaction.Type, terrain);
         _host.MarkPoseChanged();
         _host.SyncView();
     }
 
-    /// <summary>Leaves the body where an ended state put it, or drops it from a wire.</summary>
+    /// <summary>Leaves the body where an ended state put it.</summary>
     internal static void RestoreBodyAfterInteraction(
         PlayerBody body,
         InteractionActivateType type,
         IGroundHeightField? terrain)
     {
-        if (type == InteractionActivateType.Wire)
-        {
-            // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
-            // release/end look like an instant teleport to ground instead of a drop from the cable.
-            body.EndLadderTraversal();
-        }
-        // A fence ends in the fall it has already been handed (PlayerBody.BeginFallFromVault), so it, too, is left
-        // where it is.
+        // A fence and a wire end in the fall they have already been handed (PlayerBody.BeginFallFromOrigin), so they,
+        // too, are left where they are.
         // Retail self-driving interaction states leave the root exactly where their initializer put it.
         // Re-running spawn placement here searches up to half a kilometre downward and can move the
         // player onto an unrelated surface beneath the building when Use is released.

@@ -29,7 +29,7 @@ namespace OpenIGI.Host;
 /// </remarks>
 public sealed partial class GameHost
 {
-    private const double TitleUnitsPerMetre = 4096.0;
+    private const double TitleUnitsPerMetre = WorldUnits.PerMetre;
 
     private ITitleGameplay? _gameplay;
 
@@ -429,7 +429,7 @@ public sealed partial class GameHost
 
         ViewModelDepth.Begin(_device);
         _device.SetFirstPersonGeometry(true);
-        arms.Draw(held, eye, ViewModelProjection.Create(held.ObjectFieldOfView, FarPlane));
+        arms.Draw(held, eye, ViewModelProjection.Create(held.ObjectFieldOfView, FarPlane, (float)_window.Width / Math.Max(1, _window.Height)));
         _device.SetFirstPersonGeometry(false);
     }
 

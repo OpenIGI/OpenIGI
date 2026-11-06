@@ -189,6 +189,9 @@ public sealed class PlayerWeapons
     /// </summary>
     public bool ConsumeBinocularToggle() => _selector.ConsumeBinocularToggle();
 
+    /// <summary>Gets whether the binoculars in hand are about to be put away by their key, the toggle not yet consumed.</summary>
+    public bool BinocularCloseQueued => _selector.BinocularCloseQueued;
+
     /// <summary>Gets the weapon in hand, or <see langword="null"/> before one has been selected.</summary>
     /// <remarks>Slot 0 of the original's three-pointer array at <c>Human+1220</c>.</remarks>
     public CarriedWeapon? InHand => _selector.InHand;

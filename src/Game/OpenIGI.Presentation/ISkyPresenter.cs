@@ -106,4 +106,24 @@ public interface ISkyPresenter : IDisposable
     void SetSunTint(Vector3f tint)
     {
     }
+
+    /// <summary>Gets or sets whether <see cref="Draw"/> leaves the cloud layers for <see cref="DrawLayers"/>.</summary>
+    /// <remarks>
+    /// A deferred frame cannot blend a layer into the G-buffer -- it alpha-tests, so a cloud at a fifth of
+    /// its texture's opacity is either cut away or written solid -- and a painted sky kept over the
+    /// atmosphere needs its clouds blended. Set, the dome goes into the G-buffer as before and the layers
+    /// wait for the forward pass. Defaulted to a sky with no layers to separate.
+    /// </remarks>
+    bool LayersApart
+    {
+        get => false;
+        set => _ = value;
+    }
+
+    /// <summary>Blends the cloud layers over the lit picture, behind everything the world drew.</summary>
+    /// <param name="frame">The frame to draw for.</param>
+    /// <param name="share">How much of the painted sky is kept, which fades the layers with the dome.</param>
+    void DrawLayers(in SkyFrame frame, float share)
+    {
+    }
 }

@@ -98,6 +98,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     /// <summary>The display's scale, 1 at 100%; the interface is always drawn at exactly this scale.</summary>
     private float _contentScale = 1f;
+    private bool _logicalWindowSize;
 
     [Flags]
     private enum Edges
@@ -489,12 +490,23 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         dpi = dpi > 0f ? dpi : 1f;
         _contentScale = dpi;
 
+        // On Windows and X11 a window's size is in pixels, like the work area, so the design is scaled up by the
+        // display's scale. On Wayland a window's size is in logical units while GLFW's work area is the output's
+        // pixels and its monitor scale is the output's whole-number scale, which a fractional desktop rounds up
+        // (2 on a 1.3 desktop). There the design is sized in logical units, against the work area divided by
+        // that scale: an estimate of the logical desktop that can come out small but never too large.
+        _logicalWindowSize = _window.Native?.Wayland is not null;
+        float windowScale = _logicalWindowSize ? 1f : dpi;
+        float areaScale = _logicalWindowSize ? dpi : 1f;
+
         // A margin round the window, so it never opens covering the whole screen.
-        float fit = MathF.Min(1f, MathF.Min(areaWidth * 0.92f / (DesignSize.X * dpi), areaHeight * 0.92f / (DesignSize.Y * dpi)));
-        var size = new Vector2D<int>((int)(DesignSize.X * dpi * fit), (int)(DesignSize.Y * dpi * fit));
+        float fit = MathF.Min(1f, MathF.Min(
+            areaWidth * 0.92f / areaScale / (DesignSize.X * windowScale),
+            areaHeight * 0.92f / areaScale / (DesignSize.Y * windowScale)));
+        var size = new Vector2D<int>((int)(DesignSize.X * windowScale * fit), (int)(DesignSize.Y * windowScale * fit));
         _minimumSize = new Vector2D<int>(
-            Math.Min(size.X, (int)(MinimumDesignSize.X * dpi)),
-            Math.Min(size.Y, (int)(MinimumDesignSize.Y * dpi)));
+            Math.Min(size.X, (int)(MinimumDesignSize.X * windowScale)),
+            Math.Min(size.Y, (int)(MinimumDesignSize.Y * windowScale)));
 
         glfw.SetWindowSizeLimits((WindowHandle*)handle, _minimumSize.X, _minimumSize.Y, Glfw.DontCare, Glfw.DontCare);
         _window.Size = size;
@@ -572,8 +584,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         // A desktop window, not a game screen: the interface stays at the display's scale whatever the
         // window's size, and a larger window gives the layout more room rather than larger type. The context
         // fits the design to the window, so the user scale undoes that fit and applies the display's instead.
+        // On Wayland the scale is the framebuffer's pixels per logical unit, which is the compositor's own
+        // scale (1.3 on a 1.3 desktop) rather than the rounded-up monitor scale, and follows the window to
+        // another output.
         Vector2D<int> size = _window.FramebufferSize;
-        return Layout(MathF.Max(1, size.X), MathF.Max(1, size.Y), _contentScale);
+        float scale = _logicalWindowSize && _window.Size.X > 0 ? (float)size.X / _window.Size.X : _contentScale;
+        return Layout(MathF.Max(1, size.X), MathF.Max(1, size.Y), scale > 0f ? scale : 1f);
     }
 
     private void EnsureSurface(Vector2D<int> size)

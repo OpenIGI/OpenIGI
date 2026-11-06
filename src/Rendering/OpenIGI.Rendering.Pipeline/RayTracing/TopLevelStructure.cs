@@ -64,6 +64,10 @@ internal sealed class TopLevelStructure : IDisposable
     /// <summary>Gets the structure the last build wrote, or <see langword="null"/> before the first build.</summary>
     public IRhiAccelerationStructure? Structure => _current;
 
+    /// <summary>Gets the bytes every pooled scene structure occupies together.</summary>
+    /// <remarks>The pool holds one per frame still in flight, so this is a few times one structure.</remarks>
+    public ulong PooledBytes => (ulong)_structurePool.Count * _structureSize;
+
     /// <summary>Gets the scratch memory a build needs.</summary>
     public ulong BuildScratchSize { get; }
 

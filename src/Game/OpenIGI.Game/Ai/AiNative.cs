@@ -1,3 +1,5 @@
+using OpenIGI.Scripting.Vocabulary;
+
 namespace OpenIGI.Game.Ai;
 
 /// <summary>What kind of value an AI native hands back to the script.</summary>
@@ -23,16 +25,20 @@ public enum AiNativeReturn
 
 /// <summary>One entry of the AI script API.</summary>
 /// <param name="Name">The name a script calls it by.</param>
-/// <param name="ArgumentCount">How many arguments the registrar declares.</param>
+/// <param name="Parameters">The arguments in call order, typed by how the handler reads each one.</param>
 /// <param name="Return">What it hands back.</param>
 /// <param name="Address">The handler's address in the original, for the RE trail.</param>
 /// <remarks>
-/// An argument count is a <b>declaration</b>, and the VM's arity check is not a
-/// hard gate — a script that disagrees is a wire-arity error, not a value-count one. It is recorded here
-/// because it is how the eighteen actions are told apart from one another at a call site.
+/// The argument count the registrar declares is the parameter count. It is a <b>declaration</b>, and the VM's arity check
+/// is not a hard gate: a script that disagrees is a wire-arity error, not a value-count one. Each parameter's type is what
+/// the handler does with the value (<c>Script_GetArgInt</c>, <c>Script_GetArgReal</c> or <c>Script_GetArgString</c>, and
+/// what it then means), which is what the editor's pins are built from.
 /// </remarks>
-public readonly record struct AiNative(string Name, int ArgumentCount, AiNativeReturn Return, uint Address)
+public readonly record struct AiNative(string Name, IReadOnlyList<NativeParameter> Parameters, AiNativeReturn Return, uint Address)
 {
+    /// <summary>Gets how many arguments the registrar declares.</summary>
+    public int ArgumentCount => Parameters.Count;
+
     /// <summary>Gets a value indicating whether this is one of the eighteen <c>AIAction_*</c> entries.</summary>
     public bool IsAction => Name.StartsWith("AIAction_", StringComparison.Ordinal);
 

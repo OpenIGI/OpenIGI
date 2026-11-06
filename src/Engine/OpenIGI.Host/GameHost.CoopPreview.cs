@@ -4,23 +4,27 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Host;
 
 /// <summary>The look a co-op player picks, shown standing in the level behind the menu, and looks borrowed from other levels.</summary>
 public sealed partial class GameHost
 {
-    // How far ahead of the menu's eye the look stands, how far back the camera then stands from it, how high, and how far
-    // the camera aims to its side so it stands in the right of the picture, clear of the co-op page's panels. Metres.
-    private const double PreviewAhead = 4.0;
-    private const double PreviewBack = 3.4;
-    private const double PreviewEyeHeight = 1.5;
-    private const double PreviewAim = 0.65;
+    // Where the look stands in the picture, as a view model is held: how far ahead of the menu's eye, how far to its right,
+    // and how far above its feet the point it is centred on is. Metres.
+    private const double PreviewDistance = 3.4;
     private const double PreviewAside = 0.0;
+    private const double PreviewMiddle = 0.9;
+
+    // The game's weapon table, read once for the look's gun; null until read, and when it could not be.
+    private WeaponType? _previewGun;
+    private bool _previewGunRead;
 
     // A tick of the look's idle, as the game's own ticks run.
     private const float PreviewTickSeconds = 1f / 30f;
@@ -31,7 +35,6 @@ public sealed partial class GameHost
     private string? _previewLook;
     private ISoldierBodies? _previewBodies;
     private MissionPreview? _previewFor;
-    private (Camera3D Eye, Vector3d Feet, float Facing)? _previewShot;
     private float _previewElapsed;
     private float _previewTurn;
     private int _previewClock;
@@ -62,7 +65,6 @@ public sealed partial class GameHost
         {
             EndLookPreview();
             _previewFor = backdrop;
-            _previewShot = FrameLook(backdrop, _earCamera ?? Camera3D.Default);
 
             // A renderer of the backdrop level's humans of its own: a lite backdrop builds none, and a full one's are kept
             // for Play to take over, never drawn.
@@ -79,16 +81,28 @@ public sealed partial class GameHost
             }
         }
 
-        if (_previewShot is not { } shot || _previewBodies is not { } bodies)
+        if (_previewBodies is not { } bodies)
         {
             return;
         }
 
-        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, shot.Feet, shot.Facing + _previewTurn);
         for (_previewElapsed += elapsed; _previewElapsed >= PreviewTickSeconds; _previewElapsed -= PreviewTickSeconds)
         {
             bodies.TickPreviewBody();
         }
+    }
+
+    // Once the frame's eye is settled: the look held in front of it. The backdrop keeps the menu's own camera -- its
+    // orbits, rails and cuts, as behind every other page -- and the look stays where it is in the picture.
+    private void PlaceLook(in Camera3D eye)
+    {
+        if (_previewLook is null || _previewFor is not { } backdrop || _previewBodies is not { } bodies)
+        {
+            return;
+        }
+
+        (Vector3d feet, float facing) = StandLook(eye);
+        bodies.ShowPreviewBody(backdrop.Mission, PlayerSkins.Of(_previewLook).Model, feet, facing + _previewTurn, PreviewGun(backdrop));
 
         // Drawn between its last two ticks, as the game's own bodies are.
         bodies.BeginFrame(_previewElapsed / PreviewTickSeconds, smooth: true);
@@ -99,50 +113,62 @@ public sealed partial class GameHost
         _previewBodies?.Dispose();
         _previewBodies = null;
         _previewFor = null;
-        _previewShot = null;
         _previewElapsed = 0f;
         _previewTurn = 0f;
     }
 
-    // Where the look stands and how it is seen: on the ground a few metres ahead of the menu's eye, facing a camera stood
-    // back from it at head height, which aims a little to the look's left so it stands in the right of the picture.
-    private static (Camera3D Eye, Vector3d Feet, float Facing) FrameLook(MissionPreview backdrop, Camera3D menuEye)
+    // The gun the look holds, from the game's weapon table: read once, through a script namespace of its own so the game's
+    // is left as it was. A table that won't read leaves the look empty-handed.
+    private WeaponType? PreviewGun(MissionPreview backdrop)
+    {
+        if (_previewGunRead)
+        {
+            return _previewGun;
+        }
+
+        _previewGunRead = true;
+
+        // The title names the gun (IGameTitleRuntime.CoopPreviewWeapon); a title that names none leaves the look empty-handed.
+        if (_titleRuntime.CoopPreviewWeapon is not { } previewWeapon)
+        {
+            return null;
+        }
+
+        try
+        {
+            WeaponTypeRegistry weapons = new(_logger);
+            NativeRegistry natives = new();
+            weapons.Register(natives);
+            weapons.Load(backdrop.FileSystem, backdrop.Resources, natives);
+            _previewGun = weapons.TryGetByScriptId(previewWeapon, out WeaponType gun) ? gun : null;
+        }
+        catch (Exception ex) when (ex is EngineFatalException or IOException or InvalidDataException or InvalidOperationException)
+        {
+            _logger.Warning("Coop", $"The co-op look holds no gun: the weapon table would not read ({ex.Message}).");
+        }
+
+        return _previewGun;
+    }
+
+    // Where the look stands: held in the picture as a view model is, a few metres straight ahead of the eye, upright and
+    // facing it, wherever the menu's camera goes. Stood on the level's floors it slid over them as the camera moved on, and
+    // stood out of the picture where there was none near.
+    private static (Vector3d Feet, float Facing) StandLook(in Camera3D eye)
     {
         double metre = WorldScene.UnitsPerMetre;
-        Vector3f look = menuEye.Orientation.Row3;
+        Vector3f look = eye.Orientation.Row3;
+        Vector3d from = eye.Position * metre;
+        Vector3d middle = from + (new Vector3d(look.X, look.Y, look.Z) * (PreviewDistance * metre));
         double flat = Math.Sqrt((look.X * look.X) + (look.Y * look.Y));
         (double ax, double ay) = flat > 1e-4 ? (look.X / flat, look.Y / flat) : (0.0, 1.0);
 
-        Vector3d eye = menuEye.Position * metre;
-        double x = eye.X + (ax * PreviewAhead * metre);
-        double y = eye.Y + (ay * PreviewAhead * metre);
-        double ground = eye.Z - (1.7 * metre);
-        if (backdrop.Ground?.TryGetGround(x, y, eye.Z, aboveUnits: 0.0, out TerrainGround terrain) == true)
-        {
-            ground = terrain.Height;
-        }
-
-        if (backdrop.Solids.Caster()(new Vector3d(x, y, eye.Z), new Vector3d(x, y, eye.Z - (60 * metre)), out WorldRayHit floor)
-            && floor.Position.Z > ground)
-        {
-            ground = floor.Position.Z;
-        }
-
-        Vector3d feet = new(x, y, ground);
-
-        // Back towards where the menu looked from, on the level, at head height.
-        Vector3d camera = new(x - (ax * PreviewBack * metre), y - (ay * PreviewBack * metre), ground + (PreviewEyeHeight * metre));
-
         // The camera's right, as Camera3D.LookRotation builds it for a look along (ax, ay).
-        (double rx, double ry) = (ay, -ax);
-        Vector3d aim = new(x - (rx * PreviewAside * metre), y - (ry * PreviewAside * metre), ground + (PreviewAim * metre));
-        Vector3d along = aim - camera;
-        float yaw = (float)Math.Atan2(along.X, along.Y);
-        float pitch = (float)Math.Atan2(along.Z, Math.Sqrt((along.X * along.X) + (along.Y * along.Y)));
+        double x = middle.X + (ay * PreviewAside * metre);
+        double y = middle.Y - (ax * PreviewAside * metre);
 
         // The body's heading is a gamma, the negated yaw of the way it looks: here, back at the camera.
-        float facing = -(float)Math.Atan2(camera.X - x, camera.Y - y);
-        return (new Camera3D(camera / metre, Camera3D.LookRotation(yaw, pitch)), feet, facing);
+        float facing = -(float)Math.Atan2(from.X - x, from.Y - y);
+        return (new Vector3d(x, y, middle.Z - (PreviewMiddle * metre)), facing);
     }
 
     // A view of a mission with another level's own pack as its level pack, for a model only that level ships: opened once

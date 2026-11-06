@@ -32,12 +32,37 @@
     "sunIntensity": 1.0,
     "ambientIntensity": 1.0,
     "dust": 0.002,
-    "dustIndoor": 0.004
+    "dustIndoor": 0.004,
+    "nightHalo": 0.3
   },
 
   "missions": {
+    "$comment": [
+      "A bare key is Project I.G.I.'s mission; the sequel's are keyed igi2:<n> and none is authored yet.",
+      "",
+      "Density stays the remaster's own, derived from the FlatSky fade where a mission sets none. It is far",
+      "thicker than the original's GlobalLight air on purpose: the second mission's valley mist is the look",
+      "players know the remaster by, and the original's own band is a thirtieth of it.",
+      "",
+      "paintedSky keeps that share of the level's own painted dome and cloud layers over the atmosphere at",
+      "the hour the level was painted for (fading out over the three hours either side). exposureStops",
+      "moves a mission's brightness. nightBake lays that share of the shipped lightmaps under the moon at",
+      "full night -- a hundredth lands a night mission's ground on vanilla's own brightness; a tenth turns",
+      "the night back into day.",
+      "",
+      "A night that reads too bright or too dark is tuned with the night-only fields, which leave the day",
+      "alone. moonlight, nightSky and nightAdaptation are multiples of the player's r_moonlight, r_night_sky",
+      "and r_night_adaptation (0.5 halves the setting), so every preset keeps its say. nightExposureStops",
+      "moves the brightness in stops at full night, faded in with the night. nightFog is how much of the",
+      "moon and the night sky the mission's fog catches at full night against its day (0.5 halves it): a",
+      "thin haze under a bright moon glows across the whole sky, and this dims that glow alone. nightHalo",
+      "scales the fog's forward scatter (its anisotropy) at full night: the lobe that gives a low sun its",
+      "glow gathers the moon into a halo far wider than a real moon wears; 0.5 keeps a soft one. nightGlow",
+      "multiplies the night sky's own glow (r_night_airglow): the light a night has without its moon, which",
+      "is what a valley keeps when the moon drops behind a ridge."
+    ],
     "1": {
-      "$comment": "Cold clear morning over snow. THIN -- earlier passes read as overcast, nothing like the retail's crisp clear morning. The wash that hung even on near buildings was the flat terms, not distance: a 0.12 uniform fraction laid fog at every height and a 0.35 multiple-scattering glow lit it like a light-box. Cut both right down and drop the density to 0.0008, so what is left is a thin aerial depth on the far mountains and clear air over the yard. Forward scatter eased too, since a low sun through the denser lobe washed the distance orange.",
+      "$comment": "Cold clear morning over snow. THIN -- earlier passes read as overcast, nothing like the retail's crisp clear morning. The wash that hung even on near buildings was the flat terms, not distance: a 0.12 uniform fraction laid fog at every height and a 0.35 multiple-scattering glow lit it like a light-box. Cut both right down and drop the density to 0.0008, so what is left is a thin aerial depth on the far mountains and clear air over the yard. Forward scatter eased too, since a low sun through the denser lobe washed the distance orange. Under the day cycle or a late r_time_of_day the open yard and the snow took the full moon like a pale blue day. A third of the moon and of the sky's fill, and an eye half as eager to open, leave a moonlit night that still reads.",
       "density": 0.0008,
       "heightFalloff": 30.0,
       "albedo": [0.94, 0.96, 1.0],
@@ -45,30 +70,71 @@
       "multipleScattering": 0.12,
       "uniformFraction": 0.03,
       "dust": 0.003,
-      "dustIndoor": 0.005
+      "dustIndoor": 0.005,
+      "moonlight": 0.35,
+      "nightSky": 0.35,
+      "nightAdaptation": 0.5,
+      "nightExposureStops": -1.0,
+      "nightFog": 0.4
+    },
+    "2": {
+      "$comment": "Overcast valley. The original's grey cloud deck is its mood; the atmosphere alone drew a clear blue sky over it. At night the moon lit the valley mist into a pale blue glow over the whole sky. The mist is most of what a night here shows, so it takes far less than the first mission: the first's settings left the frame black. A dimmer moon and mist keep the silhouettes against a dark sky.",
+      "paintedSky": 1.0,
+      "moonlight": 0.6,
+      "nightFog": 0.6
     },
     "3": {
-      "$comment": "Overcast. Thicker and flatter -- less forward scatter, more ambient.",
-      "density": 0.018,
+      "$comment": "Night storm over the radar base. Thicker and flatter -- less forward scatter, more ambient -- under the original's slate storm sky. Its thick flat storm air lit by the moon stood over the base as a grey wall and turned the hills white; under a dimmer moon the hills go dark against the sky. The haze keeps three quarters of its light, so the storm mist still hangs over the base as a volume; at 0.4 it went dark and the fog was gone.",
+      "density": 0.026,
+      "albedo": [0.9,  0.92,  0.95],
       "heightFalloff": 20.0,
-      "albedo": [0.90, 0.92, 0.95],
       "anisotropy": 0.55,
       "ambientIntensity": 1.25,
-      "uniformFraction": 0.4
+      "uniformFraction": 0.4,
+      "paintedSky": 1.0,
+      "nightBake": 0.01,
+      "moonlight": 0.5,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.0
+    },
+    "4": {
+      "$comment": "Hazy valley by day, which stays as it is. At night the valley sits under ridges the moon passes behind, and the moonlit sky, not the moon, was all that lit it then: the eye set itself by that bright sky and the ground went black, then the moon came out and lit the valley like a dim day. A quarter of the moon and eight times the night sky's own glow -- the light that owes nothing to the moon -- bring the two close, and a stop and a quarter of night keeps the moonlit frame a night. The fog keeps most of its glow, so the mist still hangs over the base.",
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
     },
     "5": {
-      "$comment": "The level's own FlatSky asks for very little; a blue high-altitude haze suits it.",
+      "$comment": "The level's own FlatSky asks for very little; a blue high-altitude haze suits it. Its night takes the fourth mission's: a dimmer moon over a brighter night sky, so the moon passing behind a ridge is not the jump from a dim day to black.",
       "density": 0.006,
+      "albedo": [0.86,  0.93,  1.0],
       "heightFalloff": 60.0,
-      "albedo": [0.86, 0.93, 1.0],
-      "anisotropy": 0.65
+      "anisotropy": 0.65,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
+    },
+    "6": {
+      "$comment": "Overcast airfield under the original's grey deck. Its night takes the fourth mission's: a dimmer moon over a brighter night sky, so the moon passing behind a ridge is not the jump from a dim day to black.",
+      "paintedSky": 1.0,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
     },
     "7": {
-      "$comment": "Sun almost overhead, so a forward lobe buys nothing; keep it soft and even.",
+      "$comment": "Snow at night under a navy sky. Sun almost overhead by day, so a forward lobe buys nothing; keep it soft and even. Its night takes the fourth mission's: a dimmer moon over a brighter night sky, so the moon passing behind a ridge is not the jump from a dim day to black.",
       "density": 0.012,
       "heightFalloff": 26.0,
       "anisotropy": 0.45,
-      "multipleScattering": 0.5
+      "multipleScattering": 0.5,
+      "paintedSky": 1.0,
+      "nightBake": 0.01,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
     },
     "8": {
       "$comment": [
@@ -78,14 +144,63 @@
       "density": 0.016,
       "heightFalloff": 22.0,
       "sunIntensity": 0.0,
-      "ambientIntensity": 1.6
+      "ambientIntensity": 1.6,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
     },
     "9": {
-      "$comment": "Rail yard in a bowl. Dense and low, so it collects between the cuttings.",
+      "$comment": "Rail yard in a bowl at night, in rain. Dense and low, so it collects between the cuttings.",
       "density": 0.022,
+      "albedo": [0.88,  0.9,  0.93],
       "heightFalloff": 14.0,
-      "albedo": [0.88, 0.90, 0.93],
-      "anisotropy": 0.6
+      "anisotropy": 0.6,
+      "paintedSky": 1.0,
+      "nightBake": 0.01,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
+    },
+    "10": {
+      "$comment": "Overcast train yard in rain under the original's grey deck.",
+      "paintedSky": 1.0,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
+    },
+    "11": {
+      "$comment": "Alpine prison at night, played from high on the mountains over the base in the valley. The level's own fog is a dark navy, and at night the medium caught so little light that it only dimmed the valley: thicker air alone changed nothing anyone could see, and the base sat crisp at the foot of the slope. Dense air pooled low (a 30 m falloff, a tenth kept at every height) and lit two and a half times as strongly at night shows as a mist over the valley that veils the base and fades the far ridges.",
+      "density": 0.02,
+      "heightFalloff": 30.0,
+      "uniformFraction": 0.1,
+      "paintedSky": 1.0,
+      "nightBake": 0.01,
+      "moonlight": 0.25,
+      "nightFog": 2.5,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
+    },
+    "12": {
+      "$comment": "Snow compound at night.",
+      "paintedSky": 1.0,
+      "nightBake": 0.01,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
+    },
+    "13": {
+      "$comment": "The power station under the original's red dusk sky, which is the mission. The haze takes the level's own red (its GlobalLight fog, 0.19 0.12 0.13), or the far hills fog white against a red sky.",
+      "albedo": [1.0, 0.63, 0.68],
+      "paintedSky": 1.0,
+      "nightBake": 0.01,
+      "moonlight": 0.25,
+      "nightFog": 0.9,
+      "nightExposureStops": -1.25,
+      "nightGlow": 8
     }
   },
 

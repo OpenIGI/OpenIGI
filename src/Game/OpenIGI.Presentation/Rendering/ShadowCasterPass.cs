@@ -111,6 +111,60 @@ public sealed class ShadowCasterPass
         }
     }
 
+    /// <summary>Draws one layer of a kept lamp map: its static casters, or its movable ones over a copy of them.</summary>
+    /// <param name="slot">The map.</param>
+    /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>
+    /// <param name="rotation">The face's rotation.</param>
+    /// <param name="projection">The face's perspective.</param>
+    /// <param name="scene">The world's placed objects.</param>
+    /// <param name="world">The presenter that draws them.</param>
+    /// <param name="characters">The characters, all of which move.</param>
+    /// <param name="staticCasters">Which layer: the static casters, or the movable ones.</param>
+    /// <returns><see langword="true"/> when the layer was drawn.</returns>
+    /// <remarks>See <see cref="IShadowDevice.BeginLampShadowMapLayer"/>.</remarks>
+    public bool RenderLampMapLayer(
+        int slot,
+        Vector3d position,
+        Matrix3f rotation,
+        in Matrix4f projection,
+        WorldScene? scene,
+        IWorldPresenter? world,
+        ICharacterPresenter? characters,
+        bool staticCasters)
+    {
+        if (!_device.BeginLampShadowMapLayer(slot, position, rotation, projection, staticCasters))
+        {
+            return false;
+        }
+
+        try
+        {
+            Camera3D lampCamera = new(position, rotation);
+            if (scene is not null && world is not null)
+            {
+                world.Draw(
+                    scene,
+                    lampCamera,
+                    projection,
+                    new WorldDrawOptions(
+                        MinimumRadius: 0f,
+                        Mobility: staticCasters ? WorldCasterMobility.StaticOnly : WorldCasterMobility.MovableOnly));
+            }
+
+            if (!staticCasters)
+            {
+                characters?.Draw(lampCamera, projection);
+                characters?.DrawPlayerBody(lampCamera, projection);
+            }
+        }
+        finally
+        {
+            _device.EndLampShadowMapLayer();
+        }
+
+        return true;
+    }
+
     /// <summary>Draws the world into one lamp's shadow map, from the lamp.</summary>
     /// <param name="slot">The map.</param>
     /// <param name="position">Where the lamp's camera stands, just in front of its glass.</param>

@@ -313,9 +313,9 @@ public sealed class WebAudioDevice : IAudioDevice
         _open = true;
         _pool = new VoicePool<VoiceSlot>(count, index => new VoiceSlot(index), Silence);
 
-        for (int i = 0; i < 4; i++)
+        foreach (SoundCategory category in Enum.GetValues<SoundCategory>())
         {
-            _page.SetBusGain(i, _buses.Get((SoundCategory)i));
+            _page.SetBusGain((int)category, _buses.Get(category));
         }
 
         ApplyListener(_listener);

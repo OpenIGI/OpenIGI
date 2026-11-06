@@ -46,7 +46,7 @@ public sealed class GroundBakeLightingTests
         string source = ShaderRepository.ReadSource(Shading);
 
         Assert.Contains(
-            "// x: the title draws its own sky, z: its bakes are whole, yw unused",
+            "// x: the share of the title's painted sky kept, y: the share of the bakes the dynamic model adds, z: its bakes are",
             source,
             StringComparison.Ordinal);
 

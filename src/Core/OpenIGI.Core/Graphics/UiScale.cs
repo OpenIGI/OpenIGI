@@ -100,4 +100,26 @@ public static class UiScale
 
         return requested > Maximum ? Maximum : requested;
     }
+
+    /// <summary>Gets the scale a desktop tool -- the editor -- draws at on a screen.</summary>
+    /// <param name="requested">A chosen scale, or zero (or less) to pick one from the screen.</param>
+    /// <param name="screenHeight">The screen's height in pixels.</param>
+    /// <returns>
+    /// The chosen scale; or, picked, one-to-one up to 1440 rows and half again larger at 2160, in quarter steps, the way
+    /// desktop tools are sized for the screens they are shown on.
+    /// </returns>
+    /// <remarks>
+    /// Not <see cref="Resolve(int, int, int)"/>: that magnifies the original's 640 by 480 screens by whole numbers, which is
+    /// three times over on a 1440p display -- right for the game's menus, enormous for a tool laid out in its own pixels.
+    /// </remarks>
+    public static float Desktop(float requested, float screenHeight)
+    {
+        if (requested > 0f)
+        {
+            return Math.Clamp(requested, 0.5f, 4f);
+        }
+
+        float grown = 1f + (MathF.Max(0f, screenHeight - 1440f) / 1440f);
+        return Math.Clamp(MathF.Round(grown * 4f) / 4f, 1f, 2f);
+    }
 }

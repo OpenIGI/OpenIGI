@@ -37,6 +37,10 @@ static const float kTraceSkinParallel = 0.7;
 // How far a gather's traced rays start back towards the eye from the point it saw. See GatherIndirect.
 static const float kTraceViewPull = 0.02;
 
+// How far a gather's traced rays start off the surface per metre of the eye's distance to it, the slope the
+// traced sun found its knee at. See GatherIndirect.
+static const float kTraceDistanceOffset = 0.002;
+
 // How far off its surface a traced ray starts. TMin skips the second skin some surfaces carry in front of
 // the drawn one; this only has to clear the rounding.
 static const float kTraceSurfaceOffset = 0.03;

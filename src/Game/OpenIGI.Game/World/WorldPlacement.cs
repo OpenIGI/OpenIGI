@@ -208,3 +208,28 @@ public sealed record WorldPlacement(
 /// <param name="Pack">The pack that owns the instance.</param>
 /// <param name="Model">The instance's geometry.</param>
 public sealed record WorldModelBinding(MtpInstance Instance, LoadedPack Pack, MefModel Model);
+
+/// <summary>
+/// What a placement belongs to, the same for everything one task placed: its owner, and its level id where the title gives
+/// one (I.G.I. 2 hangs every placement off the level and tells them apart by id).
+/// </summary>
+/// <param name="Owner">The placement's owner.</param>
+/// <param name="LevelId">The placing task's level id, or <c>-1</c> for a title whose placements carry none.</param>
+public readonly record struct PlacementKey(GameTask Owner, int LevelId)
+{
+    /// <summary>Gets the key of a placement.</summary>
+    /// <param name="placement">The placement.</param>
+    /// <returns>Its owner and level id.</returns>
+    public static PlacementKey Of(WorldPlacement placement)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        return new PlacementKey(placement.Owner, placement.LevelId);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Owners compare by reference: two tasks are never the same owner because they look alike.</remarks>
+    public bool Equals(PlacementKey other) => ReferenceEquals(Owner, other.Owner) && LevelId == other.LevelId;
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Owner), LevelId);
+}

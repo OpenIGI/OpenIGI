@@ -139,16 +139,20 @@ public sealed partial class GameHost
         // A pinned lens for side-by-side comparisons: -fov overrides the game's own ninety-degree
         // horizontal, so a capture can be framed exactly as an external render whose camera
         // differs. The sight zoom still governs ordinary play.
+        //
+        // Otherwise the sight's lens is the original's, authored across 4:3, and is fitted to the window Hor+
+        // (r_widescreen_fov): a wider window keeps its vertical angle and sees more at the sides. See WidescreenLens.
+        WidescreenLens.HorPlus = FrameCVars.WidescreenFieldOfView.Value;
         float horizontalTangent = _options.FieldOfView is { } fixedFov
             ? MathF.Tan(fixedFov * (MathF.PI / 360f))
-            : sight.TanX;
+            : WidescreenLens.HorizontalTangent(sight.TanX, aspectRatio);
         float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
 
         // Kept for the developer inspector, which projects a selected entity to the screen and
         // has no other way to know the lens the frame was actually drawn with.
         _inspectorTangent = horizontalTangent;
         _inspectorAspect = aspectRatio;
-        if (_mission.CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
+        if (CutsceneFrameShown is { FieldOfView: > 0f } cutsceneLens)
         {
             // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
             // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
@@ -156,8 +160,12 @@ public sealed partial class GameHost
             // vertical aperture at modern aspects and let the wider projection reveal the sides;
             // deriving it from a 16:9 window crops the top and bottom by 25 percent, which cut
             // Anya's upper body out of the Mission 1 briefing.
-            verticalFieldOfView = CutsceneVerticalFieldOfView(cutsceneLens.FieldOfView);
+            verticalFieldOfView = WidescreenLens.HorPlus
+                ? VerticalFieldOfView(aspectRatio, WidescreenLens.HorizontalTangent(cutsceneLens.FieldOfView, aspectRatio))
+                : CutsceneVerticalFieldOfView(cutsceneLens.FieldOfView);
         }
+
+        ApplyEditorLens(ref aspectRatio, ref verticalFieldOfView);
 
         view.SmoothPresentation = smoothPresentation;
         view.TickBlend = tickBlend;
@@ -318,6 +326,9 @@ public sealed partial class GameHost
             near: NearPlane,
             far: FarPlane);
 
+        // Inside the editor the projection is built for the viewport panel's shape and then placed over it.
+        unjitteredProjection = ApplyEditorViewport(unjitteredProjection);
+
         // Temporal accumulation works by sampling a different point inside each pixel every frame
         // and averaging what comes back, so the jitter is not a refinement of the technique -- it
         // is the technique. Without it every frame samples the same pixel centre and the history
@@ -339,7 +350,7 @@ public sealed partial class GameHost
         // working any of them out separately is how a jitter ends up sized for one buffer and applied
         // to another. See RenderResolutionPolicy.
         ReconstructionPlan reconstruction = _device.PlanReconstruction(new ReconstructionRequest(
-            ReconstructionCVars.Reconstruction.Value,
+            ReconstructionCVars.Effective,
             ReconstructionCVars.DlssQualityMode.Value,
             _window.Width,
             _window.Height,
@@ -493,11 +504,8 @@ public sealed partial class GameHost
             state.LastMenuCameraMilliseconds = menuCameraNow;
             eye = _showcaseCamera.Update(menuCameraElapsed);
 
-            // A look being chosen holds the menu's eye on it, the orbit carrying on unseen behind.
-            if (_previewShot is { } lookShot)
-            {
-                eye = lookShot.Eye;
-            }
+            // A look being chosen stands in front of the menu's eye, wherever its orbit has it.
+            PlaceLook(eye);
         }
         else if (mapScene is { } liveMap)
         {
@@ -510,7 +518,7 @@ public sealed partial class GameHost
         {
             eye = _entry.Camera;
         }
-        else if (_mission.CutsceneFrameShown is { } cutsceneView)
+        else if (CutsceneFrameShown is { } cutsceneView)
         {
             eye = cutsceneView.Camera;
         }

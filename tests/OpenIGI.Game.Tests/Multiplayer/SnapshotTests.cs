@@ -175,6 +175,31 @@ public sealed class SnapshotTests
         Assert.True(RoundTrip(after, before, out Snapshot? read));
         Assert.Equal(climbing, Assert.Single(read!.Humans));
     }
+
+    [Fact]
+    public void The_lift_a_human_rides_rides_a_delta()
+    {
+        Snapshot before = new(10, [Human(1, 0, 0)]);
+        ReplicatedHuman riding = Human(1, 0, 0) with { Platform = 5 };
+        Assert.True(RoundTrip(new Snapshot(11, [riding]), before, out Snapshot? read));
+        Assert.Equal(riding, Assert.Single(read!.Humans));
+        Assert.True(RoundTrip(new Snapshot(12, [Human(1, 0, 0)]), new Snapshot(11, [riding]), out Snapshot? off));
+        Assert.Equal(0, Assert.Single(off!.Humans).Platform);
+    }
+
+    [Fact]
+    public void A_lifts_car_is_sampled_between_snapshots()
+    {
+        SnapshotInterpolator remote = new();
+        remote.Add(new Snapshot(10, [], Lifts: [new ReplicatedLift(new Int3(0, 0, 1000), 0, 1, 0f)]));
+        remote.Add(new Snapshot(12, [], Lifts: [new ReplicatedLift(new Int3(0, 0, 2000), 0, 1, 0f)]));
+        Assert.True(remote.SampleLift(11, 0, out Vector3d middle));
+        Assert.Equal(1500, middle.Z, 3);
+        Assert.True(remote.SampleLift(20, 0, out Vector3d held));
+        Assert.Equal(2000, held.Z, 3);
+        Assert.False(remote.SampleLift(9, 0, out _));
+        Assert.False(remote.SampleLift(11, 1, out _));
+    }
     [Fact]
     public void ADeltaCarriesChangesArrivalsAndDepartures()
     {

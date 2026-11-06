@@ -1,6 +1,7 @@
 using OpenIGI.Core.Content;
 using OpenIGI.Core.Titles;
 using OpenIGI.Formats;
+using OpenIGI.Scripting.Vocabulary;
 
 namespace OpenIGI.Engine.Titles;
 
@@ -52,4 +53,16 @@ public interface IGameTitleRuntime
 
     /// <summary>Gets the passes the title's mods run over the lit scene before the tone map, in order.</summary>
     IReadOnlyList<TitlePostPass> PostPasses => [];
+
+    /// <summary>Gets the script id of the weapon a co-op look holds in the menu's picture, or <see langword="null"/> for none.</summary>
+    /// <remarks>The title's own choice -- the gun its player starts a mission with -- since the host cannot name one game's weapons.</remarks>
+    string? CoopPreviewWeapon => null;
+
+    /// <summary>Builds what the title's scripts can name: every native with its typed signature, and the constant families.</summary>
+    /// <returns>A fresh vocabulary, which the editor builds its graph nodes and pin types from; empty for a title declaring none.</returns>
+    /// <remarks>
+    /// The host cannot name a title's natives, so the title hands them over here, the same way it hands over its content
+    /// modules. Each call builds a new instance, so a caller may add a mod's natives to its own copy.
+    /// </remarks>
+    ScriptVocabulary CreateScriptVocabulary() => new();
 }

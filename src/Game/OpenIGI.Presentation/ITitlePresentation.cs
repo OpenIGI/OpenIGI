@@ -34,13 +34,36 @@ namespace OpenIGI.Presentation;
 /// Draws only the face groups the original sorts and blends (<see cref="IWorldPresenter.FaceGroupBlending"/>), over the opaque world,
 /// testing depth without writing it.
 /// </param>
+/// <param name="Mobility">
+/// Which placements the pass takes by whether they move: all of them, only those that never have, or only those that do. A lamp's
+/// shadow keeps the first two apart, so a frame redraws its movers over a copy of its static room.
+/// </param>
 public readonly record struct WorldDrawOptions(
     float MinimumRadius = 0f,
     bool OcclusionCulling = false,
     bool RotorsOnly = false,
     bool GlassOnly = false,
     bool FromEye = false,
-    bool BlendedOnly = false);
+    bool BlendedOnly = false,
+    WorldCasterMobility Mobility = WorldCasterMobility.All);
+
+/// <summary>Which placements a world pass draws by whether they move.</summary>
+public enum WorldCasterMobility
+{
+    /// <summary>Every placement.</summary>
+    All,
+
+    /// <summary>Only placements that have never moved: what a kept shadow map may hold.</summary>
+    StaticOnly,
+
+    /// <summary>Only placements that move, or have: what is drawn over a kept shadow map each frame.</summary>
+    MovableOnly,
+}
+
+/// <summary>A sphere in absolute world metres that a placement occupies, or occupied.</summary>
+/// <param name="Centre">The centre.</param>
+/// <param name="Radius">The radius, wide enough to hold the whole of the placement's model.</param>
+public readonly record struct WorldCasterBounds(Vector3d Centre, double Radius);
 
 /// <summary>Draws a title's static world geometry.</summary>
 /// <remarks>
@@ -97,6 +120,27 @@ public interface IWorldPresenter : IDisposable
     /// compositing the port always had, and what a title that answers nothing gets.
     /// </remarks>
     ObjectShading Shading { get; set; }
+
+    /// <summary>Hands over where the static casters changed since this was last asked, so kept shadows there can be redrawn.</summary>
+    /// <param name="scene">The world's placed objects, resolved for this frame first.</param>
+    /// <param name="changes">Receives a sphere for every change: a placement that began to move, appeared, went, or swapped model.</param>
+    /// <returns><see langword="true"/> when everything is to be taken as changed -- a new scene, or more changes than are worth listing.</returns>
+    /// <remarks>A presenter that does not keep track says everything, every time, which only costs a kept map its keeping.</remarks>
+    bool TakeStaticCasterChanges(WorldScene scene, List<WorldCasterBounds> changes)
+    {
+        _ = scene;
+        _ = changes;
+        return true;
+    }
+
+    /// <summary>Adds where every placement that moves stands this frame.</summary>
+    /// <param name="scene">The world's placed objects, resolved for this frame first.</param>
+    /// <param name="casters">Receives a sphere for each.</param>
+    void CollectMovableCasters(WorldScene scene, List<WorldCasterBounds> casters)
+    {
+        _ = scene;
+        _ = casters;
+    }
 
     /// <summary>
     /// Gets or sets which level of detail each model is drawn at from each view, or <see langword="null"/> to draw every model

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
@@ -32,6 +33,16 @@ internal sealed class WorldFrameState
 
     // Placements that have ever been drawn away from their authored transform: see PrepareFrame.
     private readonly HashSet<WorldPlacement> _movers = new(ReferenceEqualityComparer.Instance);
+
+    // Where the static casters changed since a kept shadow last asked (TakeStaticCasterChanges): a placement that
+    // began to move and so left the static set, appeared, went, or swapped its model. Past the cap the list is
+    // dropped for a reset, which a kept shadow takes as everything having changed.
+    private const int MaxStaticChanges = 4096;
+    private readonly List<WorldCasterBounds> _staticChanges = [];
+
+    // This frame's movers in draw order: all a movable-only pass has to walk, where the whole order is thousands.
+    private readonly List<int> _movingOrder = [];
+    private bool _staticReset = true;
 
     /// <summary>Initializes the frame state over the transforms and the resolver it consults.</summary>
     /// <param name="transforms">What each placement is displayed as, and where.</param>
@@ -104,6 +115,65 @@ internal sealed class WorldFrameState
         }
     }
 
+    /// <summary>Hands over where the static casters changed since the last call, and forgets them.</summary>
+    /// <param name="changes">Receives the changes.</param>
+    /// <returns><see langword="true"/> when everything is to be taken as changed.</returns>
+    internal bool TakeStaticCasterChanges(List<WorldCasterBounds> changes)
+    {
+        bool reset = _staticReset;
+        changes.AddRange(_staticChanges);
+        _staticChanges.Clear();
+        _staticReset = false;
+        return reset;
+    }
+
+    /// <summary>Adds where every placement that moves stands this frame.</summary>
+    /// <param name="casters">Receives a sphere for each.</param>
+    internal void CollectMovableCasters(List<WorldCasterBounds> casters)
+    {
+        for (int i = 0; i < _frame.Length; i++)
+        {
+            ref WorldFrameEntry entry = ref _frame[i];
+            if (!entry.Skip && entry.Moving && entry.Model is { } model)
+            {
+                casters.Add(BoundsOf(entry.Position, model));
+            }
+        }
+    }
+
+    // A placement that was drawn last frame and is not now.
+    private void NoteGone(bool wasSkipped, ResolvedWorldModel? wasModel, Vector3d wasPosition)
+    {
+        if (!wasSkipped && wasModel is not null)
+        {
+            NoteStaticChange(wasPosition, wasModel);
+        }
+    }
+
+    private void NoteStaticChange(Vector3d position, ResolvedWorldModel? model)
+    {
+        if (_staticReset || model is null)
+        {
+            return;
+        }
+
+        if (_staticChanges.Count >= MaxStaticChanges)
+        {
+            _staticChanges.Clear();
+            _staticReset = true;
+            return;
+        }
+
+        _staticChanges.Add(BoundsOf(position, model));
+    }
+
+    // Round the placement's origin, wide enough for its model however it is turned.
+    private static WorldCasterBounds BoundsOf(Vector3d position, ResolvedWorldModel model)
+    {
+        BoundingSphere bounds = model.Geometry.Bounds;
+        return new WorldCasterBounds(position, bounds.Centre.Length + bounds.Radius);
+    }
+
     /// <summary>Resolves everything camera-independent about the frame, once, for every pass to share.</summary>
     private void PrepareFrame(WorldScene scene)
     {
@@ -114,6 +184,8 @@ internal sealed class WorldFrameState
             _frameScene = scene;
             _frame = new WorldFrameEntry[scene.Placements.Count];
             _movers.Clear();
+            _staticChanges.Clear();
+            _staticReset = true;
             _drawOrder = WorldRenderer.BuildDrawOrder(scene);
 
             // A new scene means new placement objects; entries keyed by the old ones would never be
@@ -128,9 +200,17 @@ internal sealed class WorldFrameState
             ref WorldFrameEntry entry = ref _frame[i];
             WorldPlacement authored = scene.Placements[i];
 
+            // What the placement was last frame, for the kept shadows: see _staticChanges.
+            bool wasSkipped = entry.Skip;
+            bool wasDestroyed = entry.WasDestroyed;
+            int wasVariant = entry.Variant;
+            ResolvedWorldModel? wasModel = entry.Model;
+            Vector3d wasPosition = entry.Position;
+
             if (GenericPickups?.IsCollected(authored.Owner) == true
                 || !ConditionalContainerGate.IsTaskActive(authored.Owner))
             {
+                NoteGone(wasSkipped, wasModel, wasPosition);
                 entry.Skip = true;
                 continue;
             }
@@ -141,11 +221,13 @@ internal sealed class WorldFrameState
                     || _transforms.AlarmSpeakers?.IsLightGone(authored.Owner) == true)
                 && authored.DestroyedReplacement is null)
             {
+                NoteGone(wasSkipped, wasModel, wasPosition);
                 entry.Skip = true;
                 continue;
             }
 
             entry.Skip = false;
+            entry.EyeCulled = false;
             entry.IsRotor = authored.IsRotor;
 
             bool destroyed = _transforms.UsesDestroyedReplacement(authored);
@@ -157,6 +239,7 @@ internal sealed class WorldFrameState
             entry.Model = model;
             if (model is null)
             {
+                NoteGone(wasSkipped, wasModel, wasPosition);
                 entry.Skip = true;
                 continue;
             }
@@ -172,34 +255,56 @@ internal sealed class WorldFrameState
                 out entry.Rotor,
                 out entry.HasRotor);
 
-            // The title's own culling: the eye it was decided from is the frame's, and every pass shares the verdict, so what
-            // the eye cannot see casts nothing into what it can. Asked where the placement is drawn, so a lift's car ridden away
-            // from where the level put it is weighed where it now stands.
+            // The title's own culling decides what the EYE draws, not what stands in the world: a room the portal walk did not
+            // reach is still a wall between the sun and the room the eye is in, so the light passes and the traced world keep it.
+            // Dropping it from every pass let the sun through each wall the walk missed, and the room's lighting flipped with
+            // every turn of the head that changed whether the walk saw out. Asked where the placement is drawn, so a lift's car
+            // ridden away from where the level put it is weighed where it now stands.
             if (Visibility is { } visibility)
             {
-                if (!visibility.IsVisible(authored, entry.Position))
-                {
-                    entry.Skip = true;
-                    continue;
-                }
-
-                entry.Clip = visibility.ClipOf(authored, entry.Position);
+                entry.EyeCulled = !visibility.IsVisible(authored, entry.Position);
+                entry.Clip = entry.EyeCulled ? null : visibility.ClipOf(authored, entry.Position);
             }
             else
             {
+                entry.EyeCulled = false;
                 entry.Clip = null;
             }
 
             // Anything drawn away from where it was placed is a mover -- a vehicle, a door, a fan, a camera
             // head -- and stays one, so the frame it comes to rest on is paired against the one before.
-            if (entry.HasRotor || entry.Position != authored.Position || entry.Orientation != authored.Orientation)
+            if ((entry.HasRotor || entry.Position != authored.Position || entry.Orientation != authored.Orientation)
+                && _movers.Add(authored))
             {
-                _movers.Add(authored);
+                // It leaves the static set where the level placed it.
+                NoteStaticChange(authored.Position, model);
             }
 
             entry.Moving = _movers.Contains(authored);
+
+            if (wasSkipped)
+            {
+                NoteStaticChange(entry.Position, model);
+            }
+            else if (wasDestroyed != destroyed || wasVariant != variant)
+            {
+                NoteStaticChange(wasPosition, wasModel);
+                NoteStaticChange(entry.Position, model);
+            }
+        }
+
+        _movingOrder.Clear();
+        foreach (int index in _drawOrder)
+        {
+            if (!_frame[index].Skip && _frame[index].Moving)
+            {
+                _movingOrder.Add(index);
+            }
         }
 
         _framePrepared = true;
     }
+
+    /// <summary>Gets this frame's movers, in draw order.</summary>
+    internal ReadOnlySpan<int> MovingOrder => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_movingOrder);
 }

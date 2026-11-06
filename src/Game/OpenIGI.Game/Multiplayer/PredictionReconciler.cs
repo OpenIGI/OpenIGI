@@ -2,6 +2,11 @@ using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.Multiplayer;
 
+/// <summary>What a player stood on as a prediction was made: one of the level's moving platforms, and where it stood then.</summary>
+/// <param name="Index">The platform, in the level's own order: a lift's index among the snapshot's lifts.</param>
+/// <param name="Origin">Where the platform stood, in world units, on the game that made the prediction.</param>
+public readonly record struct PlatformFrame(int Index, Vector3d Origin);
+
 /// <summary>Keeps a client's own player where the server has it, without waiting for the server to move it.</summary>
 /// <remarks>
 /// <para>
@@ -23,6 +28,9 @@ public sealed class PredictionReconciler
     private const int History = 128;
 
     private readonly Dictionary<long, Vector3d> _predicted = [];
+
+    // For each prediction made standing on a platform, that platform and where it stood.
+    private readonly Dictionary<long, PlatformFrame> _platforms = [];
     private long _lastChecked = long.MinValue;
     private long _newest = long.MinValue;
 
@@ -68,10 +76,24 @@ public sealed class PredictionReconciler
     /// <summary>Notes where the client's own player stood after the command for a tick.</summary>
     /// <param name="tick">The tick the command was sent for.</param>
     /// <param name="position">Where the player stood after running it.</param>
-    public void Record(long tick, Vector3d position)
+    /// <param name="platform">
+    /// The platform it stood on then, or <see langword="null"/>. A prediction made on a lift is weighed on the lift: the
+    /// server ran the command a tick or two earlier or later in its car's travel than this client did, as its queue of the
+    /// client's commands runs dry or catches up, and in the world that was an error of as many ticks of the car's travel.
+    /// </param>
+    public void Record(long tick, Vector3d position, PlatformFrame? platform = null)
     {
         _newest = Math.Max(_newest, tick);
         _predicted[tick] = position;
+        if (platform is { } frame)
+        {
+            _platforms[tick] = frame;
+        }
+        else
+        {
+            _platforms.Remove(tick);
+        }
+
         if (_correctedSinceRecord)
         {
             _correctedSinceRecord = false;
@@ -83,6 +105,7 @@ public sealed class PredictionReconciler
             foreach (long old in _predicted.Keys.Where(t => t < tick - History).ToArray())
             {
                 _predicted.Remove(old);
+                _platforms.Remove(old);
             }
         }
     }
@@ -90,8 +113,12 @@ public sealed class PredictionReconciler
     /// <summary>Compares where the server put the player after a tick's command with where the client predicted it.</summary>
     /// <param name="commandTick">The newest tick whose command the server has run for this client.</param>
     /// <param name="server">Where the server put the player then.</param>
+    /// <param name="serverPlatform">
+    /// Where the server's copy of a platform stood in the same snapshot, by its index, or <see langword="null"/> when it has
+    /// none: a prediction made on a platform is compared with the server's word as places on it.
+    /// </param>
     /// <returns>How far to move the player now, or <see langword="null"/> when the prediction agreed or was already checked.</returns>
-    public Vector3d? Check(long commandTick, Vector3d server)
+    public Vector3d? Check(long commandTick, Vector3d server, Func<int, Vector3d?>? serverPlatform = null)
     {
         if (commandTick <= _lastChecked || !_predicted.TryGetValue(commandTick, out Vector3d predicted))
         {
@@ -111,6 +138,11 @@ public sealed class PredictionReconciler
         }
 
         Vector3d error = server - predicted;
+        if (_platforms.TryGetValue(commandTick, out PlatformFrame frame) && serverPlatform?.Invoke(frame.Index) is { } origin)
+        {
+            error = (server - origin) - (predicted - frame.Origin);
+        }
+
         LastError = error.Length;
         if (LastError <= Tolerance)
         {

@@ -118,6 +118,30 @@ public static class ExposureCVars
     /// </remarks>
     public const float NightBrightnessDrop = 0.3f;
 
+    /// <summary>How many stops further the eye may open at full night than on the dimmest day.</summary>
+    /// <remarks>
+    /// The night's real brightness control under auto-exposure. A night scene meters below the daytime
+    /// floor, so the adaptation stops there and every night comes out as dark as its light is; opening the
+    /// floor lets the eye lift a night towards a readable picture, and the night's own drops above then say
+    /// how far under day it is shown.
+    /// </remarks>
+    public static readonly NumericCVar<float> NightAdaptation = Presets.Define(
+        CVar.Float(
+            "r_night_adaptation",
+            ExposureAdaptation.NightFloorStops,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "How many stops further auto-exposure may open at night than by day. Higher reads a night more easily."),
+        vanilla: "0.4",
+
+        // A stop. Three read every night as well as the original's, but did it by opening the eye on the
+        // lamps as much as on the ground, so every floodlight flared; the moon and the sky's fill now carry
+        // most of the way and the eye the rest.
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>How far into night the day/night cycle has taken the scene: 0 in daylight, 1 at full night.</summary>
     /// <remarks>
     /// <para>
@@ -212,7 +236,7 @@ public static class ExposureCVars
         CVarOptions.Archive,
         "Which lamps go off by day and come on at dusk: off, outdoors or everywhere. Not in the original.");
 
-    /// <summary>The brightness the frame is actually exposed at: the player's, less the night's.</summary>
+    /// <summary>The brightness the frame is actually exposed at: the player's, less the night's, moved by the mission's look.</summary>
     /// <remarks>
     /// Every consumer of the exposure reads THIS, including the two that only want to divide a
     /// display-referred colour by whatever the resolve is about to multiply it by -- the first-person
@@ -221,10 +245,51 @@ public static class ExposureCVars
     /// drift brighter as the night came in.
     /// </remarks>
     public static float EffectiveExposure => MathF.Max(
-        Exposure.Value
+        (Exposure.Value
             - (NightBrightnessDrop * Nightfall.Value)
-            - (AuthoredNightDropFor.Value * AuthoredNightfall.Value),
+            - (AuthoredNightDropFor.Value * AuthoredNightfall.Value))
+            * MathF.Pow(2f, MissionExposureStops.Value + (MissionNightExposureStops.Value * Nightfall.Value)),
         MinimumExposure);
+
+    /// <summary>Gets how many stops further the eye may open at night this mission: the player's setting by the mission's multiple.</summary>
+    public static float EffectiveNightAdaptation => NightAdaptation.Value * MissionNightAdaptation.Value;
+
+    /// <summary>How much brighter or darker the running mission is shown at full night, in stops.</summary>
+    /// <remarks>
+    /// The mission's own look (see <c>MissionLook.NightExposureStops</c>), faded in with <see cref="Nightfall"/> inside
+    /// <see cref="EffectiveExposure"/>, so a mission's night is darkened without touching its day.
+    /// </remarks>
+    public static readonly NumericCVar<float> MissionNightExposureStops = CVar.Float(
+        "r_mission_night_exposure",
+        0f,
+        -4f,
+        4f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How many stops the running mission's own look moves the exposure at full night; not a setting.");
+
+    /// <summary>How far the running mission's eye may open at night against <see cref="NightAdaptation"/>, as a multiple.</summary>
+    /// <remarks>Set by the host from <c>MissionLook.NightAdaptation</c>; read only through <see cref="EffectiveNightAdaptation"/>.</remarks>
+    public static readonly NumericCVar<float> MissionNightAdaptation = CVar.Float(
+        "r_mission_night_adaptation",
+        1f,
+        0f,
+        8f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "The running mission's own multiple of r_night_adaptation; not a setting.");
+
+    /// <summary>How much brighter or darker the running mission is shown than the rest, in stops.</summary>
+    /// <remarks>
+    /// The mission's own look (see <c>MissionLook</c>), set by the host as the level comes up and read only
+    /// through <see cref="EffectiveExposure"/>. A separate term, like the night's, so the player's
+    /// <see cref="Exposure"/> is never rewritten by a mission.
+    /// </remarks>
+    public static readonly NumericCVar<float> MissionExposureStops = CVar.Float(
+        "r_mission_exposure",
+        0f,
+        -4f,
+        4f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How many stops the running mission's own look moves the exposure; not a setting.");
 
     /// <summary>How much darker a title's OWN night makes the picture, in stops, at full night.</summary>
     /// <remarks>

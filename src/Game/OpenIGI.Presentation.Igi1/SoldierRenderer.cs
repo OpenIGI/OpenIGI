@@ -227,13 +227,14 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             member.Ragdoll = SeedRagdoll(
                 fall.View,
                 fall.Origin,
-                fall.View.Orientation,
+                fall.Heading ?? fall.View.Orientation,
                 fall.Bone,
                 fall.Travel,
                 fall.Category,
                 fall.Velocity,
                 _sim.FindModel(fall.View),
-                weapon: null);
+                weapon: null,
+                fall.Struck);
             if (fall.DroppedWeapon)
             {
                 member.Weapon = null;
@@ -574,8 +575,9 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         WeaponCategory category,
         Vector3d carriedVelocity,
         MefModel? model,
-        SoldierHeldWeapon? weapon) =>
-        _frames.SeedRagdoll(view, originInUnits, orientation, bone, travel, category, carriedVelocity, model, weapon);
+        SoldierHeldWeapon? weapon,
+        Vector3d? struck = null) =>
+        _frames.SeedRagdoll(view, originInUnits, orientation, bone, travel, category, carriedVelocity, model, weapon, struck);
 
     /// <summary>
     /// The soldier model's bounding radius the draw callback's frustum test scales by 1.41, in metres.
@@ -740,8 +742,9 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         WeaponCategory category,
         double stopDistance,
         bool alreadyHeard,
-        out HumanHit hit) =>
-        LevelBodies.Shoot(
+        out HumanHit hit)
+    {
+        bool met = LevelBodies.Shoot(
             [this],
             origin,
             rayEnd,
@@ -750,6 +753,11 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             alreadyHeard,
             struck => new Igi1WeaponHit(struck, origin, rayEnd, damageFactor, category, Shooter: null, FromPlayer: true).ToShared(),
             out hit);
+
+        // Whatever the round did to the living, any corpse it passed through on the way bleeds.
+        BleedCorpses(origin, rayEnd, met ? hit.Distance : stopDistance);
+        return met;
+    }
 
     /// <inheritdoc/>
     public HumanShot Shooter() => TryShoot;
@@ -820,7 +828,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _sim.BinocularVisibilityTick = int.MinValue;
         _sim.Cast = null;
         _sim.Sight = null;
-        _sim.RagdollRigs.Clear();
+        _sim.ForgetRagdollRigs();
         _sim.RagdollWorld = null;
         _playerBody.Release();
         ReleasePartners();

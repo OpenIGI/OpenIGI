@@ -18,7 +18,7 @@ namespace OpenIGI.Game.World;
 /// transition-latched link/target tracking. The host only supplies presentation and the few game natives
 /// referenced by level expressions.
 /// </remarks>
-public sealed class CutsceneRuntime
+public sealed partial class CutsceneRuntime
 {
     /// <summary>The fixed update frequency used by retail cutscenes and animation programmes.</summary>
     public const int Frequency = 30;
@@ -181,6 +181,7 @@ public sealed class CutsceneRuntime
         _bodies = new CutsceneVehicleBodies(_context, _ground, vehicleObstacleHit, vehicleObstacleReleased);
         _capture = new CutsceneTransformCapture(_context, _attachments, modelLength, modelPivot);
         _armament = new CutsceneVehicleArmament(_context, _carAis, _animations);
+        _gunHolders = new CutsceneGunHolders(_context, _armament);
         _parts = new CutsceneVehicleParts(_context, _armament);
         _packets = new CutsceneAnimationPackets(_context, _bodies, _ground, _parts);
         _carAi = new CutsceneCarAi(_context, _walker, _bodies, _armament, _carAis);
@@ -300,17 +301,7 @@ public sealed class CutsceneRuntime
             _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
         }
 
-        foreach (GameTask task in levelRoot.Descendants())
-        {
-            if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
-            {
-                _walker.Bind(task, TickCar);
-            }
-            else if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
-            {
-                _walker.Bind(task, TickHeli);
-            }
-        }
+        BindVehicleUpdates(levelRoot, visionPhases);
 
         _walker.ContainerScript = (container, script) => _context.Expressions.Execute(script, container);
         _walker.HoldContainer = RetainsLevelFourOutro;

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Collections;
 using System.Numerics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -40,8 +41,8 @@ internal sealed class Igi2TerrainTessellationBuilder
     private readonly List<Bgra32> _lights = [];
     private readonly List<bool> _discarded = [];
     private readonly List<float> _weights = [];
-    private readonly Dictionary<long, int> _vertices = [];
-    private readonly Dictionary<long, EdgeDecision> _edges = [];
+    private readonly Dictionary<long, int> _vertices = new(PackedKeyComparer.Instance);
+    private readonly Dictionary<long, EdgeDecision> _edges = new(PackedKeyComparer.Instance);
     private readonly List<List<int>> _indices = [];
     private readonly List<List<int>> _baseIndices = [];
 

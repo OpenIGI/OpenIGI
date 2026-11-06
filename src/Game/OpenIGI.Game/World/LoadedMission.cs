@@ -74,6 +74,23 @@ public sealed record LoadedMission(
     public bool TryGetModel(string name, out MefModel? model) =>
         LevelPack.TryGetModel(name, out model) || CommonPack.TryGetModel(name, out model);
 
+    /// <summary>Binds a model by the name level data gives it, as Project I.G.I.'s walk does: the level pack first.</summary>
+    /// <param name="name">The model's name.</param>
+    /// <returns>The model, its instance and its pack, or <see langword="null"/> when neither pack has it.</returns>
+    public WorldModelBinding? BindModel(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        foreach (LoadedPack pack in (LoadedPack[])[LevelPack, CommonPack])
+        {
+            if (pack.TryGetInstance(name, out MtpInstance instance) && pack.TryGetModel(instance, out MefModel? model) && model is not null)
+            {
+                return new WorldModelBinding(instance, pack, model);
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Resolves the diffuse texture a model's material slot samples, across both packs.</summary>
     /// <param name="model">The model's name, as level data spells it.</param>
     /// <param name="materialSlot">The draw record's material slot.</param>

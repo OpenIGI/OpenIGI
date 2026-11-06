@@ -115,6 +115,9 @@ public enum ShaderModuleId
     /// <summary>Lamp shadows: a variance-guided filter over the accumulated visibility.</summary>
     LampDenoiseSpatial,
 
+    /// <summary>Lamp/Grid.slang: which of the frame's lamps can reach each cell of the view.</summary>
+    LampGrid,
+
     /// <summary>Lamp shadows: one traced ray per pixel, at the lamp a reservoir kept.</summary>
     LampShadow,
 

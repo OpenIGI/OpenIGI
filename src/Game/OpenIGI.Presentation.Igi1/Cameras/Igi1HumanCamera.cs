@@ -34,7 +34,7 @@ namespace OpenIGI.Presentation.Igi1.Cameras;
 public sealed class Igi1HumanCamera
 {
     /// <summary>World units in a metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>The distance both modes enter at — <c>+272 = 1024</c>.</summary>
     public const double InitialDistanceInUnits = 1024.0;

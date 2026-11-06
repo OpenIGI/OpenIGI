@@ -31,6 +31,7 @@ public sealed partial class GameHost
         ResolvePostProcess(ref view);
         ResolveProjection(state, ref view);
         ComposeFrameEye(state, console, ref view);
+        NoteEditorView(view.Eye, view.UnjitteredProjection);
 
         // The title's own culling, decided once from the eye before the first pass draws: every pass of the frame -- the
         // cascades and the lamps' maps among them -- then leaves out what the eye's place in the level leaves out.
@@ -77,7 +78,7 @@ public sealed partial class GameHost
 
         ResolveFrameHud(ref view);
 
-        DrawCharacters(view.Eye, view.Projection, view.TickBlend, view.ThirdPersonBody);
+        DrawCharacters(view.Eye, view.Projection, view.TickBlend, view.ThirdPersonBody, captured);
 
         _gi.LightScene(state, view.Eye, captured, view.SceneTarget, view.UnjitteredProjection);
 
@@ -91,6 +92,13 @@ public sealed partial class GameHost
 
         float? binocularRangeMetres = DrawFirstPersonView(
             view.Eye, view.ShowViewModel, view.Sight, view.SmoothPresentation, view.TickBlend);
+
+        // Drawn straight to the back buffer there is no foreground layer: the co-op look goes over the finished picture
+        // instead, its depth cleared first as the view model's is.
+        if (!captured)
+        {
+            DrawLookPreview(view.Eye, view.Projection, foregroundLayer: false);
+        }
 
         DumpScreenGatherOnce(state, captured, view.Eye, view.UnjitteredProjection);
 
@@ -180,7 +188,7 @@ public sealed partial class GameHost
             // as a dim day, and left it and the fill projected from it black; with the resolve's
             // night shift doing the job of making it read as night, a third lets the sky light the
             // moon's shadows again. See SkyCVars.NightSkyScale.
-            float nightSky = SkyCVars.NightSkyScale.Value;
+            float nightSky = SkyCVars.EffectiveNightSky;
             float nightFeed = _deferredLighting is { Night: null } nightly
                 ? 1f + ((nightSky - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                 : 1f;
@@ -206,7 +214,7 @@ public sealed partial class GameHost
                 // passes on its own share (see SkyView's deck transmission), while the clear air
                 // scatters only r_night_sky's. Knocked down or veiled here as well, the deck took
                 // the cloud's toll twice and a rainy night came out black.
-                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (SkyCVars.Moonlight.Value * atmosphereScale);
+                atmosphereMoon = _timeOfDay.DayNight.MoonColour * (SkyCVars.EffectiveMoonlight * atmosphereScale);
             }
             else
             {
@@ -250,7 +258,15 @@ public sealed partial class GameHost
                 _timeOfDay.FrameNightSky(),
                 atmosphereSunDirection,
                 atmosphereMoon,
-                nightSky));
+                nightSky,
+
+                // A level with no outdoors keeps a share of its artists' baked light under the computed one.
+                // And a night mission a share of them under its moon, by how far into night the sky is.
+                _timeOfDay.Sunless
+                    ? GlobalIlluminationCVars.SunlessLightmapShare.Value
+                    : (GlobalIlluminationCVars.NightLightmapShare.Value >= 0f
+                        ? GlobalIlluminationCVars.NightLightmapShare.Value
+                        : _missionLook.NightBake ?? 0f) * _timeOfDay.DayNight.Nightfall));
             _device.BeginPass(ScenePass.Geometry);
 
             // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

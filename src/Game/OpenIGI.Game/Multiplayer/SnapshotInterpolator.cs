@@ -103,9 +103,66 @@ public sealed class SnapshotInterpolator
                 (float)(a.Velocity.Z + ((b.Velocity.Z - a.Velocity.Z) * t))),
             Yaw = LerpAngle(a.Yaw, b.Yaw, t),
             Pitch = LerpAngle(a.Pitch, b.Pitch, t),
+            ClipTime = LerpClipTime(a, b, to.Tick - from.Tick, t),
         };
         return true;
     }
+
+    // A whole-body clip's time between two snapshots of the same clip, so it plays between them rather than standing still
+    // until the next one: the more so on a line that carries few. Not across a change of clip, nor across a loop's seam,
+    // where the time jumps further than the clip could have played in the ticks between.
+    private static ushort LerpClipTime(in ReplicatedHuman a, in ReplicatedHuman b, long ticks, double t)
+    {
+        const int SixteenthsPerTick = 16;
+        if ((a.Flags & b.Flags & ReplicatedHumanCondition.Climbing) == 0
+            || a.State != b.State
+            || Math.Abs(b.ClipTime - a.ClipTime) > (ticks + 1) * SixteenthsPerTick)
+        {
+            return a.ClipTime;
+        }
+
+        return (ushort)Math.Round(a.ClipTime + ((b.ClipTime - a.ClipTime) * t));
+    }
+
+    /// <summary>Gets where a lift's car stood at a moment, between the snapshots either side of it.</summary>
+    /// <param name="tick">The moment, a fractional tick.</param>
+    /// <param name="index">The lift, in the snapshots' order of lifts.</param>
+    /// <param name="position">Where its car stood then, in world units.</param>
+    /// <returns><see langword="false"/> when no snapshot at or before that moment carried it.</returns>
+    /// <remarks>
+    /// Past the newest snapshot the car is held where it was: a human riding it is carried on along its own velocity, and
+    /// it is the two together, sampled at one moment, that say where on the car the human stood.
+    /// </remarks>
+    public bool SampleLift(double tick, int index, out Vector3d position)
+    {
+        position = default;
+        int after = _snapshots.FindIndex(s => s.Tick > tick);
+        int before = (after < 0 ? _snapshots.Count : after) - 1;
+        while (before >= 0 && !HasLift(_snapshots[before], index))
+        {
+            before--;
+        }
+
+        if (before < 0)
+        {
+            return false;
+        }
+
+        Snapshot from = _snapshots[before];
+        position = from.Lifts![index].Position.ToVector();
+        int next = after < 0 ? -1 : _snapshots.FindIndex(after, s => HasLift(s, index));
+        if (next < 0)
+        {
+            return true;
+        }
+
+        Snapshot to = _snapshots[next];
+        double t = (tick - from.Tick) / (to.Tick - from.Tick);
+        position = Vector3d.Lerp(position, to.Lifts![index].Position.ToVector(), t);
+        return true;
+    }
+
+    private static bool HasLift(Snapshot snapshot, int index) => snapshot.Lifts is { } lifts && (uint)index < (uint)lifts.Length;
 
     /// <summary>Forgets everything, as a map changes.</summary>
     public void Clear() => _snapshots.Clear();

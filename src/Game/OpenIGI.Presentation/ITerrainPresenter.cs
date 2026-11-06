@@ -87,6 +87,10 @@ public interface ITerrainPresenter : IDisposable
     /// <summary>Appends the presenter's per-frame counters, one line each.</summary>
     /// <param name="into">Receives the lines, already formatted.</param>
     void Describe(ICollection<string> into);
+
+    /// <summary>Gets the ground as height grids an editor can change while it is drawn, or nothing when it cannot be.</summary>
+    /// <remarks>Defaulted to nothing, for a ground whose shape is not a grid of heights.</remarks>
+    Game.World.IEditableTerrain? Editable => null;
 }
 
 /// <summary>What a title needs in order to build an <see cref="ITerrainPresenter"/>.</summary>
@@ -99,6 +103,9 @@ public interface ITerrainPresenter : IDisposable
 /// passes it in because deriving one measures in tens of milliseconds and a level's worth is most of a
 /// second, which is not something to spend on the render thread.
 /// </param>
+/// <param name="Work">
+/// The host's work scheduler, which the ground hands the frame's parallel work to; none runs it in line.
+/// </param>
 /// <remarks>
 /// <see cref="Surface"/> is the shared <see cref="TerrainSurface"/> rather than anything title-shaped,
 /// which is what lets this request be common. When I.G.I. 2's ground arrives it will need its own
@@ -110,7 +117,8 @@ public readonly record struct TerrainPresentationRequest(
     TerrainSurface Surface,
     IOpenIgiLogger Logger,
     MaterialDetailPack? DetailMaps,
-    IReadOnlyList<Core.Graphics.Bgra32[]>? DerivedDetail);
+    IReadOnlyList<Core.Graphics.Bgra32[]>? DerivedDetail,
+    Core.Threading.IWorkScheduler? Work = null);
 
 /// <summary>Builds the renderers one title draws with.</summary>
 /// <remarks>

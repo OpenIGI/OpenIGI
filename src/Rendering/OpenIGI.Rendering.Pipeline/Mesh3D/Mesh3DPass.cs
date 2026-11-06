@@ -38,6 +38,15 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
     /// </remarks>
     public int DroppedRanges { get; private set; }
 
+    // Where a run of ranges is written to be drawn by one indirect call, on a device that can; see
+    // IndirectDrawRing. Null draws each range directly, which every device can.
+    private IndirectDrawRing? _multiDraw;
+    private RhiDrawIndexedArguments[] _arguments = new RhiDrawIndexedArguments[64];
+
+    /// <summary>Draws a mesh's ranges with one indirect call from here on, where the device offers it.</summary>
+    /// <param name="ring">The frame's argument buffers, or <see langword="null"/> to draw each range directly.</param>
+    internal void UseMultiDraw(IndirectDrawRing? ring) => _multiDraw = ring;
+
     /// <summary>Records one draw.</summary>
     /// <param name="pass">The pass to record into.</param>
     /// <param name="pipeline">The pipeline the draw goes through.</param>
@@ -125,8 +134,35 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
                 continue;
             }
 
-            pass.DrawIndexed(range.IndexCount, 1, range.IndexOffset);
+            if (_multiDraw is null)
+            {
+                pass.DrawIndexed(range.IndexCount, 1, range.IndexOffset);
+            }
+            else
+            {
+                if (drawn == _arguments.Length)
+                {
+                    Array.Resize(ref _arguments, _arguments.Length * 2);
+                }
+
+                _arguments[drawn] = new RhiDrawIndexedArguments((uint)range.IndexCount, 1, (uint)range.IndexOffset, 0, 0);
+            }
+
             drawn++;
+        }
+
+        if (_multiDraw is not null && drawn > 0)
+        {
+            if (drawn == 1)
+            {
+                RhiDrawIndexedArguments only = _arguments[0];
+                pass.DrawIndexed((int)only.IndexCount, 1, (int)only.FirstIndex);
+            }
+            else
+            {
+                (IRhiBuffer buffer, ulong offset) = _multiDraw.Write(_arguments.AsSpan(0, drawn));
+                pass.DrawIndexedIndirect(buffer, offset, drawn);
+            }
         }
 
         return drawn;

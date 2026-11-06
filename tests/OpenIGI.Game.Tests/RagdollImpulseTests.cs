@@ -108,21 +108,49 @@ public sealed class RagdollImpulseTests
         Assert.True(head > foot, $"the head moved {head:F0} and a foot {foot:F0}");
     }
 
-    /// <summary>A body shot while standing is carried off its feet, not dropped where it stood.</summary>
+    /// <summary>A rifle kill drops a standing body near where it stood, falling the way the round went.</summary>
     /// <remarks>
-    /// <b>The case the other tests here all miss</b>, because they throw a body that is already in the
-    /// air. A guard is standing <em>on</em> the floor when he is killed, so he is in contact at the very
-    /// instant the round arrives — and anything that damps a body on contact will take the knock straight
-    /// back off him. That is exactly what the settling ramp did until it was taught to leave a body alone
-    /// while it is still travelling.
+    /// <para>
+    /// <b>A man shot dead crumples; he does not fly.</b> A 7.62 round carries about 6.8 N·s, a tenth of a
+    /// metre a second on an eighty-kilogram body. The old model multiplied that forty-five-fold and threw
+    /// every guard a metre and a half backwards, which is the cartoon this replaces.
+    /// </para>
+    /// <para>
+    /// It still has to <em>read</em> as a hit: the body goes down on the side away from the shooter, and
+    /// a standing guard is in contact with the floor at the instant the round arrives, so nothing that
+    /// damps a body on contact may take the knock straight back off him.
+    /// </para>
     /// </remarks>
     [Fact]
-    public void ABodyShotWhileStandingIsCarriedOffItsFeet()
+    public void ARifleKillDropsTheBodyNearWhereItStood()
+    {
+        (double carried, double along) = Shot(WeaponCategory.Gun);
+
+        Assert.True(carried < 1.2 * 4096.0, $"The body was thrown {carried / 4096.0:F2} m.");
+        Assert.True(along > 0.0, "The body did not go the way the round did.");
+    }
+
+    /// <summary>A shotgun at close range throws a body harder than a rifle round does.</summary>
+    /// <remarks>
+    /// The relative momenta are the weapons' real ones, so the ordering is physical even though the
+    /// scale on top of them is a choice.
+    /// </remarks>
+    [Fact]
+    public void AShotgunThrowsABodyFurtherThanARifle()
+    {
+        (double rifle, _) = Shot(WeaponCategory.Gun);
+        (double shotgun, double along) = Shot(WeaponCategory.Shotgun);
+
+        Assert.True(shotgun > rifle, $"The shotgun carried it {shotgun:F0}, the rifle {rifle:F0}.");
+        Assert.True(along > 0.0);
+    }
+
+    // A standing body, feet on the floor, shot in the chest from behind along +Y at the default force,
+    // and how far its centre of mass ended up across the floor and along the round.
+    private static (double Carried, double Along) Shot(WeaponCategory category)
     {
         RagdollSkeleton rig = RagdollRig.Rig();
         RagdollWorld plane = RagdollWorld.Plane(0.0);
-
-        // Feet on the floor, as a standing guard's are.
         RagdollBody body = RagdollRig.Standing(rig, new Vector3d(0.0, 0.0, 2_400.0));
         Vector3d start = body.Centre;
 
@@ -130,19 +158,15 @@ public sealed class RagdollImpulseTests
             body,
             RagdollRig.Chest,
             new Vector3d(0.0, 1.0, 0.0),
-            RagdollImpulse.MomentumOf(rig, WeaponCategory.Gun, 1.5));
+            RagdollImpulse.MomentumOf(rig, category, 1.0));
 
-        for (int tick = 0; tick < 200 && !body.IsAtRest; tick++)
+        for (int tick = 0; tick < 300 && !body.IsAtRest; tick++)
         {
-            body.Step(plane, substeps: 8, 0.7);
+            body.Step(plane, substeps: 8);
         }
 
         Vector3d moved = body.Centre - start;
-        double carried = Math.Sqrt((moved.X * moved.X) + (moved.Y * moved.Y));
-
-        // A metre at least, and along the round. Measured at about 1.6.
-        Assert.True(carried > 4096.0, $"The body only travelled {carried / 4096.0:F2} m.");
-        Assert.True(moved.Y > 0.0, "The body did not go the way the round did.");
+        return (Math.Sqrt((moved.X * moved.X) + (moved.Y * moved.Y)), moved.Y);
     }
 
     /// <summary>A round with no direction at all does nothing rather than throwing the body somewhere.</summary>

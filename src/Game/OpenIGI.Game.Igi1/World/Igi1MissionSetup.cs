@@ -291,6 +291,12 @@ public sealed class Igi1MissionSetup(
 
         solids.GenericPickups = mission.GenericPickups;
 
+        // A taken AmmoPickup's task is deleted by its own update where the walk reaches it (0x46D740).
+        if (mission.Cutscenes is { } pickupWalk)
+        {
+            mission.GenericPickups.AttachTo(pickupWalk.Walker);
+        }
+
         // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
         // Each area draws its first gap at load (0x44C740) and updates where the tree places it, against the camera
         // as the player's update last left it -- nowhere on the first tick, so every area starts silent and draws.
@@ -540,8 +546,7 @@ public sealed class Igi1MissionSetup(
         if (loaded.Terrain is { } carTerrain)
         {
             RetailTerrainRay carRays = new(
-                carTerrain.Octree,
-                carTerrain.Commands,
+                carTerrain,
                 TerrainDiscardBinding.For(carTerrain).Regions,
                 TerrainHeightBindings.Bind(carTerrain, levelRoot));
             Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;

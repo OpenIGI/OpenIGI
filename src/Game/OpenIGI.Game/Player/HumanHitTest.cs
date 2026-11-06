@@ -221,7 +221,7 @@ public static class HumanHitTest
         // Skin the collision vertices into the pose, placed at the pelvis — feet lifted by the root height,
         // the same origin the renderer draws the body from. The pose is already turned to the facing.
         Vector3d boneOrigin = new(feet.X, feet.Y, feet.Z + rootHeight);
-        Vector3d[] world = new Vector3d[count];
+        Span<Vector3d> world = Scratch(count);
         for (int i = 0; i < count; i++)
         {
             int bone = mesh.VertexBones[i];
@@ -284,6 +284,24 @@ public static class HumanHitTest
         bool IsExit,
         Vector3f Normal);
 
+    // The skinned vertices of the body being tested, one buffer a thread, grown to the largest body met. A
+    // cast skins a whole collision mesh, and allocating that each time put a fresh array on the heap for every
+    // soldier every frame the remastered crosshair asked what was under it.
+    [ThreadStatic]
+    private static Vector3d[]? t_scratch;
+
+    private static Span<Vector3d> Scratch(int count)
+    {
+        Vector3d[]? buffer = t_scratch;
+        if (buffer is null || buffer.Length < count)
+        {
+            buffer = new Vector3d[Math.Max(count, 256)];
+            t_scratch = buffer;
+        }
+
+        return buffer.AsSpan(0, count);
+    }
+
     /// <summary>The nearest face of a skinned body the segment crosses, and which way it crosses it.</summary>
     /// <remarks>
     /// <para>
@@ -302,7 +320,7 @@ public static class HumanHitTest
     private static bool NearestCrossing(
         Vector3d origin,
         Vector3d end,
-        Vector3d[] world,
+        ReadOnlySpan<Vector3d> world,
         MefCollisionMesh mesh,
         out MeshCrossing crossing)
     {
@@ -420,7 +438,7 @@ public static class HumanHitTest
         }
 
         Vector3d boneOrigin = new(feet.X, feet.Y, feet.Z + rootHeight);
-        Vector3d[] world = new Vector3d[count];
+        Span<Vector3d> world = Scratch(count);
         for (int i = 0; i < count; i++)
         {
             int bone = mesh.VertexBones[i];
@@ -549,7 +567,7 @@ public static class HumanHitTest
         }
 
         float share = Math.Clamp(previousShare, 0f, 1f);
-        Vector3d[] world = new Vector3d[count];
+        Span<Vector3d> world = Scratch(count);
         for (int i = 0; i < count; i++)
         {
             Vector3f current = SkinCollisionVertex(mesh, i, currentPose);

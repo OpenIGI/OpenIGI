@@ -115,17 +115,25 @@ public sealed class Igi2TerrainLod
             RootSize <<= 1;
         }
 
-        // One pass slot per material the tile actually paints and the level actually declared, in id
-        // order so a run is reproducible. A sample naming a material the author later deleted gets no
-        // slot at all, which under an additive blend contributes nothing -- the original's own outcome,
-        // not a repair.
+        RefreshMaterials();
+    }
+
+    /// <summary>Finds again which materials the tile paints, after an editor painted it.</summary>
+    /// <remarks>
+    /// One pass slot per material the tile actually paints and the level actually declared, in id order so a run is
+    /// reproducible. A sample naming a material the author later deleted gets no slot at all, which under an additive blend
+    /// contributes nothing -- the original's own outcome, not a repair.
+    /// </remarks>
+    public void RefreshMaterials()
+    {
         Array.Fill(_slotOf, -1);
+        _slotMaterial.Clear();
         HashSet<byte> painted = [];
-        for (int y = 0; y < tile.Height; y++)
+        for (int y = 0; y < _tile.Height; y++)
         {
-            for (int x = 0; x < tile.Width; x++)
+            for (int x = 0; x < _tile.Width; x++)
             {
-                painted.Add(tile.MaterialAt(x, y));
+                painted.Add(_tile.MaterialAt(x, y));
             }
         }
 
@@ -185,6 +193,13 @@ public sealed class Igi2TerrainLod
     /// <inheritdoc/>
     public override string ToString() =>
         $"I.G.I. 2 terrain quadtree over tile {_tile.Id}, root {RootSize}x{RootSize}, {PassCount} pass(es)";
+
+    /// <summary>Brings the height bounds the split test culls by up to date after some of the tile's heights changed.</summary>
+    /// <param name="left">The first changed column.</param>
+    /// <param name="top">The first changed row.</param>
+    /// <param name="right">The last changed column.</param>
+    /// <param name="bottom">The last changed row.</param>
+    public void Refresh(int left, int top, int right, int bottom) => _bounds.Update(_tile, left, top, right, bottom);
 
     /// <summary>Gets the height at a sample, extrapolating the row and column past the tile.</summary>
     /// <param name="x">The sample's column, which may be <see cref="Igi2TerrainTile.Width"/>.</param>

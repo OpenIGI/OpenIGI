@@ -1,6 +1,6 @@
 namespace OpenIGI.Audio;
 
-/// <summary>The four mixing buses a device levels its voices through, and the original's loudness curve.</summary>
+/// <summary>The mixing buses a device levels its voices through, one a <see cref="SoundCategory"/>, and the original's loudness curve.</summary>
 /// <remarks>
 /// <para>
 /// One linear gain per <see cref="SoundCategory"/>, which is the player profile's own volume settings
@@ -16,7 +16,7 @@ namespace OpenIGI.Audio;
 /// </remarks>
 public sealed class MixBuses
 {
-    private readonly float[] _gains = [1f, 1f, 1f, 1f];
+    private readonly float[] _gains = [.. Enumerable.Repeat(1f, Enum.GetValues<SoundCategory>().Length)];
 
     /// <summary>Sets the gain of one bus.</summary>
     /// <param name="category">The bus.</param>

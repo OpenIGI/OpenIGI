@@ -29,16 +29,20 @@ internal static class WebGpuWindow
                 "This window system gives no native handles WebGPU can make a surface from; "
                 + "run with the Vulkan renderer instead.");
 
-        WebGpuWindowSystem system = handles.System switch
+        WebGpuWindowHandles surface = handles.System switch
         {
-            DesktopWindowSystem.Win32 => WebGpuWindowSystem.Win32,
-            DesktopWindowSystem.Xlib => WebGpuWindowSystem.Xlib,
-            DesktopWindowSystem.Wayland => WebGpuWindowSystem.Wayland,
+            DesktopWindowSystem.Win32 => new(WebGpuWindowSystem.Win32, handles.Display, handles.Window),
+            DesktopWindowSystem.Xlib => new(WebGpuWindowSystem.Xlib, handles.Display, handles.Window),
+            DesktopWindowSystem.Wayland => new(WebGpuWindowSystem.Wayland, handles.Display, handles.Window),
+
+            // A Cocoa window's surface is made from a Metal layer on its view, which nothing has attached yet.
+            DesktopWindowSystem.Cocoa when OperatingSystem.IsMacOS() =>
+                new(WebGpuWindowSystem.Metal, 0, CocoaMetalLayer.Attach(handles.Window)),
             _ => throw new PlatformException($"WebGPU has no surface for a {handles.System} window."),
         };
 
         return WebGpuRhiDevice.CreateForWindow(
-            new WebGpuWindowHandles(system, handles.Display, handles.Window),
+            surface,
             width,
             height,
             vsync,

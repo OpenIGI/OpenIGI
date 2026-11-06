@@ -342,13 +342,7 @@ public static class Igi2DrawableScene
             }
         }
 
-        WorldModelBinding? Replacement(string modelName) =>
-            modelName.Length > 0
-            && table.TryResolveMesh(modelName, out string? mesh)
-            && TryFind(packs, mesh, out LoadedPack? pack, out MefModel? model)
-            && table.TryGetInstance(modelName, out MtpInstance instance)
-                ? new WorldModelBinding(instance, pack, model)
-                : null;
+        WorldModelBinding? Replacement(string modelName) => Bind(table, packs, modelName);
 
         log.Information(
             LogCategory,
@@ -415,6 +409,19 @@ public static class Igi2DrawableScene
             ? model
             : null;
     }
+
+    /// <summary>Binds a model by the name level data gives it, as the walk binds a placed or swapped-in one.</summary>
+    /// <param name="table">The level's model table.</param>
+    /// <param name="packs">The packs, in load order.</param>
+    /// <param name="modelName">The model's name.</param>
+    /// <returns>The model, or <see langword="null"/> when nothing resolves it.</returns>
+    internal static WorldModelBinding? Bind(Igi2ModelTable table, IReadOnlyList<LoadedPack> packs, string modelName) =>
+        modelName.Length > 0
+        && table.TryResolveMesh(modelName, out string? mesh)
+        && TryFind(packs, mesh, out LoadedPack? pack, out MefModel? model)
+        && table.TryGetInstance(modelName, out MtpInstance instance)
+            ? new WorldModelBinding(instance, pack, model)
+            : null;
 
     private static bool TryFind(
         IReadOnlyList<LoadedPack> packs,

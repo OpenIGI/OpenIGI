@@ -1,3 +1,4 @@
+using OpenIGI.Presentation.Text;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Text;
@@ -18,7 +19,7 @@ namespace OpenIGI.Host.DevTools;
 /// <b>The spacing scale is the reason the panels look like one tool.</b> Every inset, gap and row
 /// height below comes from <see cref="Unit"/>, so nothing is nudged by eye and no two panels drift
 /// apart. Type sizes are derived the same way from one body size, and every one of them is rounded to
-/// a whole pixel before a face is asked for — see <see cref="MonoFontSet"/> for why that matters more
+/// a whole pixel before a face is asked for — see <see cref="SizedFontSet"/> for why that matters more
 /// than it sounds like it should.
 /// </para>
 /// </remarks>
@@ -28,7 +29,7 @@ public sealed class DevConsoleTheme
     /// <param name="fonts">The faces, rasterised per size on demand.</param>
     /// <param name="palette">Which colour variant to build.</param>
     /// <exception cref="ArgumentNullException"><paramref name="fonts"/> is <see langword="null"/>.</exception>
-    public DevConsoleTheme(MonoFontSet fonts, ConsolePalette palette = ConsolePalette.Dark)
+    public DevConsoleTheme(SizedFontSet fonts, ConsolePalette palette = ConsolePalette.Dark)
     {
         ArgumentNullException.ThrowIfNull(fonts);
 
@@ -39,7 +40,7 @@ public sealed class DevConsoleTheme
     }
 
     /// <summary>Gets the faces, rasterised per size.</summary>
-    public MonoFontSet Fonts { get; }
+    public SizedFontSet Fonts { get; }
 
     /// <summary>Gets the shared widget theme the window chrome draws from.</summary>
     public UiTheme Ui { get; }

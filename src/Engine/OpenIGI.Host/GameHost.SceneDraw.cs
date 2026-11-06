@@ -9,6 +9,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Rendering;
 
@@ -21,6 +22,32 @@ public sealed partial class GameHost
     private IMissionFirstPersonView? _firstPerson;
     private IMissionWorldView? _worldView;
     private IMissionViewpoint? _viewpoint;
+
+    // How much of a painted sky's cloud layers the forward pass blends this frame; nought when the sky draws its own.
+    private float _paintedLayers;
+
+    /// <summary>How much of the level's painted sky this frame keeps over the atmosphere, nought to one.</summary>
+    /// <remarks>
+    /// The mission's look (or <c>r_painted_sky</c>), faded out as the clock moves off the hour the level's sun
+    /// is bound at: whole within an hour of it, gone three hours away. A night level is bound at midnight,
+    /// so its painted night gives way to the cycle's dawn rather than hanging over a noon sun.
+    /// </remarks>
+    private float PaintedSkyShare()
+    {
+        float share = SkyCVars.PaintedSky.Value >= 0f
+            ? SkyCVars.PaintedSky.Value
+            : _missionLook.PaintedSky ?? 0f;
+        if (share <= 0f || _timeOfDay.Sunless)
+        {
+            return 0f;
+        }
+
+        float painted = (_timeOfDay.BoundSun ?? _timeOfDay.Sun)?.TimeOfDay is > 0f and <= 24f and var hour ? hour : 12f;
+        float away = MathF.Abs(_timeOfDay.DayNight.TimeHours - painted) % 24f;
+        away = MathF.Min(away, 24f - away);
+        float t = Math.Clamp((away - 1f) / 2f, 0f, 1f);
+        return share * (1f - (t * t * (3f - (2f * t))));
+    }
 
     /// <summary>Draws the level's opaque geometry: the sky, the world's objects, the ground, the foliage and the props in flight.</summary>
     /// <summary>Gets the ground, unless the title's culling leaves the world outside its buildings out of this frame.</summary>
@@ -76,7 +103,20 @@ public sealed partial class GameHost
             // A BRACKET, closed below. The division is the sky's own, and everything drawn after
             // this is the world: leaving it open divided every emissive surface in the level --
             // every lamp -- by the exposure too.
-            bool paintedSky = captured && _sky is { IsGameOwnSky: true };
+            //
+            // A title that keeps its own sky keeps all of it. One whose sky the atmosphere replaces keeps as
+            // much of its painted dome as the mission's look asks for, and only near the hour it was painted
+            // at: the painted sky is one moment's sky, and the cycle's atmosphere is every other.
+            float paintedShare = _sky is { IsGameOwnSky: true } ? 1f : PaintedSkyShare();
+            _device.SetPaintedSkyWeight(paintedShare, fogged: _sky is { IsGameOwnSky: true });
+            bool paintedSky = captured && _sky is { HasSky: true } && paintedShare > 0f;
+            _paintedLayers = paintedSky && _sky is { IsGameOwnSky: false } ? paintedShare : 0f;
+            if (_sky is { } layered)
+            {
+                // The layers of a painted sky kept over the atmosphere are blended in the forward pass; see
+                // ISkyPresenter.LayersApart.
+                layered.LayersApart = _paintedLayers > 0f;
+            }
             if (paintedSky)
             {
                 _device.SetPaintedSky(true);
@@ -230,7 +270,7 @@ public sealed partial class GameHost
     }
 
     /// <summary>Draws the soldiers, the tasks' own presenters, the player's fallen body and what the characters hold, then the marks rounds left.</summary>
-    private void DrawCharacters(Camera3D eye, Matrix4f projection, float tickBlend, bool thirdPersonBody)
+    private void DrawCharacters(Camera3D eye, Matrix4f projection, float tickBlend, bool thirdPersonBody, bool captured)
     {
         Debug.Assert(_scene is not null && _world is not null, "Drawn only while a level is up; see RenderWorld.");
 
@@ -240,9 +280,10 @@ public sealed partial class GameHost
         _soldiers?.ObserveView(eye, projection);
         _soldiers?.Draw(eye, projection);
 
-        // A co-op look being chosen, standing in the level behind the menu.
-        _previewBodies?.ObserveView(eye, projection);
-        _previewBodies?.DrawPreviewBody(eye, projection);
+        if (captured)
+        {
+            DrawLookPreview(eye, projection, foregroundLayer: true);
+        }
 
         // Whatever the title, or a mod, draws for particular tasks of the level (PresenterRegistry.ForTask).
         foreach (ITaskPresenter taskPresenter in _taskPresenters)
@@ -294,6 +335,35 @@ public sealed partial class GameHost
         }
     }
 
+    /// <summary>Draws the co-op look being chosen, held in front of the menu's camera and over everything else in the picture.</summary>
+    /// <param name="eye">The camera.</param>
+    /// <param name="projection">The lens.</param>
+    /// <param name="foregroundLayer">
+    /// Whether the scene's foreground layer takes it -- the view model's, in front of whatever the level drew and lit with
+    /// it -- or, drawn straight to the back buffer, it goes over the finished picture with its depth cleared.
+    /// </param>
+    /// <remarks>
+    /// Stood among the level's geometry, a wall the menu's camera passed close to came in front of it. It is also left out
+    /// of the metering and the bounced light, so it neither lights nor darkens the backdrop.
+    /// </remarks>
+    private void DrawLookPreview(Camera3D eye, Matrix4f projection, bool foregroundLayer)
+    {
+        if (_previewBodies is not { } look)
+        {
+            return;
+        }
+
+        if (!foregroundLayer)
+        {
+            ViewModelDepth.Begin(_device);
+        }
+
+        look.ObserveView(eye, projection);
+        _device.SetFirstPersonGeometry(true);
+        look.DrawPreviewBody(eye, projection);
+        _device.SetFirstPersonGeometry(false);
+    }
+
     /// <summary>Draws what the forward pass owns over the lit picture: the translucent world, the water, the light streaks, the effects and the weather.</summary>
     private void DrawForwardPass(
         HostConsole console, bool captured, Camera3D eye, Matrix4f projection, MapSceneView? mapScene, RenderResolution resolution,
@@ -342,6 +412,15 @@ public sealed partial class GameHost
                 Math.Max(1, (int)(rotorMap.Viewport.Width * scaleX)),
                 Math.Max(1, (int)(rotorMap.Viewport.Height * scaleY))));
         }
+        // The painted sky's cloud layers, behind everything the world drew and before anything blended over it.
+        if (_paintedLayers > 0f && _sky is { } clouds)
+        {
+            _device.SetMaterialOverride(SurfaceMaterial.Sky);
+            clouds.DrawLayers(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f), _paintedLayers);
+            _device.SetMaterialOverride(SurfaceMaterial.Default);
+            _device.SetDepthState(DepthState.TestAndWrite);
+        }
+
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true, FromEye: true));
         if (_world.FaceGroupBlending)
         {
@@ -583,7 +662,8 @@ public sealed partial class GameHost
                 _arms,
                 _heldWeapon,
                 _loadedMissionForWeapon,
-                _world?.Shading.Sun)) ?? default;
+                _world?.Shading.Sun,
+                (float)_window.Width / Math.Max(1, _window.Height))) ?? default;
         if (!drawn.DrewRig)
         {
             DrawTitleFirstPerson(eye);

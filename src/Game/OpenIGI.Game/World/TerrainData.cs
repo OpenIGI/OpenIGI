@@ -61,17 +61,39 @@ public sealed class TerrainData : IGroundHeightField
     }
 
     /// <summary>Gets the octree the traversal descends.</summary>
-    public TerrainOctree Octree { get; }
+    public TerrainOctree Octree { get; private set; }
 
     /// <summary>Gets the geometry every chunk is cut from.</summary>
-    public TerrainCommands Commands { get; }
+    public TerrainCommands Commands { get; private set; }
+
+    /// <summary>Gets a count that goes up every time <see cref="ReplaceGeometry"/> runs.</summary>
+    public int GeometryRevision { get; private set; }
+
+    /// <summary>Puts new geometry in place of the octree and its blocks, as an editor rebuilding ground does.</summary>
+    /// <param name="octree">The new <c>terrain.ctr</c>.</param>
+    /// <param name="commands">The new <c>terrain.cmd</c>.</param>
+    /// <remarks>Everything that walks the terrain reads these each time, so the next draw, ray or step meets the new
+    /// ground; whatever a caller built from the old geometry it must drop itself (the renderer evicts its chunks).</remarks>
+    public void ReplaceGeometry(TerrainOctree octree, TerrainCommands commands)
+    {
+        ArgumentNullException.ThrowIfNull(octree);
+        ArgumentNullException.ThrowIfNull(commands);
+        Octree = octree;
+        Commands = commands;
+        GeometryRevision++;
+    }
 
     /// <summary>Gets the per-cell material bitmaps.</summary>
     public TerrainVisibility Visibility { get; }
 
     /// <summary>Gets the heightmaps, or <see langword="null"/>.</summary>
     /// <remarks>Seven of the fourteen retail levels ship no <c>terrain.hmp</c>; that is not a fault.</remarks>
-    public TerrainHeightmap? Heightmap { get; }
+    public TerrainHeightmap? Heightmap { get; private set; }
+
+    /// <summary>Gets the heightmap, making an empty one first on a level that ships none.</summary>
+    /// <returns>The heightmap.</returns>
+    /// <remarks>For an editor laying the first grid over a level; saved, it becomes the level's <c>terrain.hmp</c>.</remarks>
+    public TerrainHeightmap EnsureHeightmap() => Heightmap ??= TerrainHeightmap.Create();
 
     /// <summary>Gets the baked terrain lightmap pages, or <see langword="null"/>.</summary>
     public TerrainLightmaps? Lightmaps { get; }

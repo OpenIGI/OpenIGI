@@ -103,5 +103,16 @@ public sealed class Igi2AnimationLibrary
                 : null;
     }
 
+    /// <summary>Lists every clip a rig can play, by name.</summary>
+    /// <param name="rig">The rig.</param>
+    /// <returns>Its clips, ordered by name; empty for a rig with none.</returns>
+    public IReadOnlyList<Igi2AnimationClip> ClipsOf(Igi2BoneHierarchy rig)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        return _rigs.TryGetValue(Key(rig), out Dictionary<string, Igi2AnimationClip>? clips)
+            ? [.. clips.OrderBy(static c => c.Key, StringComparer.OrdinalIgnoreCase).Select(static c => c.Value)]
+            : [];
+    }
+
     private static string Key(Igi2BoneHierarchy rig) => Convert.ToHexString([.. rig.ChildCounts]);
 }

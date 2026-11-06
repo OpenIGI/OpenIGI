@@ -177,7 +177,7 @@
       "sampleType": "Depth",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 4,
+        "register": 5,
         "space": 0
       }
     },
@@ -210,7 +210,7 @@
       "sampleType": "Depth",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 5,
+        "register": 6,
         "space": 0
       }
     },
@@ -227,6 +227,22 @@
         "class": "ConstantBuffer",
         "register": 2,
         "space": 0
+      }
+    },
+    {
+      "name": "uLampGrid",
+      "group": 0,
+      "binding": 15,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 4,
+        "space": 0,
+        "stride": 4
       }
     }
   ],

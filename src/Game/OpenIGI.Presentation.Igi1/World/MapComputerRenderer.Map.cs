@@ -30,7 +30,7 @@ internal sealed partial class MapComputerRenderer
     // 0x467970 and the handlers it calls, projected through the camera the picture was drawn from.
     private void DrawMarks(SpriteBatch batch, Igi1Computer computer, ComputerMap map)
     {
-        Projection p = new(map.CameraPosition, map.CameraFieldOfView, computer.Width, computer.Height, computer.PixelAspect);
+        Projection p = new(map.CameraPosition, MapLens(map, computer), computer.Width, computer.Height, computer.PixelAspect);
         foreach (ComputerMark mark in map.Marks)
         {
             Vector3f v = p.ToView(mark.Position);
@@ -79,7 +79,7 @@ internal sealed partial class MapComputerRenderer
             return;
         }
 
-        Projection p = new(map.CameraPosition, map.CameraFieldOfView, computer.Width, computer.Height, computer.PixelAspect);
+        Projection p = new(map.CameraPosition, MapLens(map, computer), computer.Width, computer.Height, computer.PixelAspect);
         Bgra32 door = Bgra32.FromRgba(255, 255, 255, 255), other = Bgra32.FromRgba(127, 127, 127, 255);
         foreach (WorldPlacement placement in scene.Placements)
         {
@@ -130,7 +130,7 @@ internal sealed partial class MapComputerRenderer
             return;
         }
 
-        float eyeScale = computer.Width * 0.5f / HumanView.DefaultTanX;
+        float eyeScale = computer.Width * 0.5f / WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, computer.Width, computer.Height);
         float scaleX = mark.Size * eyeScale / depth, scaleY = computer.PixelAspect * scaleX;
         float angle = -mark.Yaw, c = MathF.Cos(angle), s = MathF.Sin(angle);
         (float X, float Y)[] points = ComputerMarkShapes.Shapes[mark.Shape];
@@ -152,7 +152,8 @@ internal sealed partial class MapComputerRenderer
     // 0x4D03D0 under the player's view, which is the one current as the menu draws: a soldier off its edges is not marked.
     private static bool OutsideEye(Vector3f v, float radius, Igi1Computer computer)
     {
-        float tanX = HumanView.DefaultTanX, tanY = tanX * computer.Height / computer.Width;
+        float tanX = WidescreenLens.HorizontalTangent(HumanView.DefaultTanX, computer.Width, computer.Height);
+        float tanY = tanX * computer.Height / computer.Width;
         return v.Z + radius <= 0f
             || MathF.Abs(v.X) - radius > v.Z * tanX
             || MathF.Abs(v.Y) - radius > v.Z * tanY;
@@ -249,6 +250,10 @@ internal sealed partial class MapComputerRenderer
     // The boot box's colours, a channel times 255 made whole.
     private static Bgra32 Pack((float R, float G, float B) c) =>
         Bgra32.FromRgba((byte)(int)(c.R * 255f), (byte)(int)(c.G * 255f), (byte)(int)(c.B * 255f), 255);
+
+    // The map camera's lens across the display, fitted to its shape as the picture under the marks is (see SceneView).
+    private static float MapLens(ComputerMap map, Igi1Computer computer) =>
+        WidescreenLens.HorizontalTangent(map.CameraFieldOfView, computer.Width, computer.Height);
 
     /// <summary>The map camera's projection (<c>0x4675B0</c>, <c>0x467620</c>), in display pixels.</summary>
     private readonly struct Projection(Vector3d centre, float zoom, float width, float height, float aspect)

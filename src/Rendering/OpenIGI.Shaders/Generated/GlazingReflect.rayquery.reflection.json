@@ -14,66 +14,6 @@
   ],
   "bindings": [
     {
-      "name": "uLit",
-      "group": 0,
-      "binding": 0,
-      "kind": "Texture",
-      "dimensions": 2,
-      "storageFormat": "None",
-      "wgslStorageFormat": "None",
-      "storageAccess": "None",
-      "hlsl": {
-        "class": "ShaderResource",
-        "register": 0,
-        "space": 0
-      }
-    },
-    {
-      "name": "uLitSampler",
-      "group": 0,
-      "binding": 1,
-      "kind": "Sampler",
-      "dimensions": 0,
-      "storageFormat": "None",
-      "wgslStorageFormat": "None",
-      "storageAccess": "None",
-      "hlsl": {
-        "class": "Sampler",
-        "register": 0,
-        "space": 0
-      }
-    },
-    {
-      "name": "uSceneDepth",
-      "group": 0,
-      "binding": 2,
-      "kind": "Texture",
-      "dimensions": 2,
-      "storageFormat": "None",
-      "wgslStorageFormat": "None",
-      "storageAccess": "None",
-      "hlsl": {
-        "class": "ShaderResource",
-        "register": 1,
-        "space": 0
-      }
-    },
-    {
-      "name": "uSceneDepthSampler",
-      "group": 0,
-      "binding": 3,
-      "kind": "Sampler",
-      "dimensions": 0,
-      "storageFormat": "None",
-      "wgslStorageFormat": "None",
-      "storageAccess": "None",
-      "hlsl": {
-        "class": "Sampler",
-        "register": 1,
-        "space": 0
-      }
-    },
-    {
       "name": "uGlass",
       "group": 0,
       "binding": 4,
@@ -84,7 +24,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 2,
+        "register": 0,
         "space": 0
       }
     },
@@ -99,7 +39,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "Sampler",
-        "register": 2,
+        "register": 0,
         "space": 0
       }
     },
@@ -114,7 +54,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 3,
+        "register": 1,
         "space": 0
       }
     },
@@ -129,7 +69,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "Sampler",
-        "register": 3,
+        "register": 1,
         "space": 0
       }
     },
@@ -159,7 +99,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 4,
+        "register": 2,
         "space": 0
       }
     },
@@ -174,7 +114,7 @@
       "storageAccess": "ReadOnly",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 5,
+        "register": 3,
         "space": 0,
         "stride": 16
       }
@@ -190,7 +130,7 @@
       "storageAccess": "ReadOnly",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 6,
+        "register": 4,
         "space": 0,
         "stride": 8
       }
@@ -206,7 +146,7 @@
       "storageAccess": "ReadOnly",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 7,
+        "register": 5,
         "space": 0,
         "stride": 4
       }
@@ -222,7 +162,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 8,
+        "register": 6,
         "space": 0
       }
     },
@@ -237,7 +177,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "Sampler",
-        "register": 4,
+        "register": 2,
         "space": 0
       }
     },
@@ -252,7 +192,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 9,
+        "register": 7,
         "space": 0
       }
     },
@@ -267,7 +207,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "Sampler",
-        "register": 5,
+        "register": 3,
         "space": 0
       }
     },
@@ -282,7 +222,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "ShaderResource",
-        "register": 10,
+        "register": 8,
         "space": 0
       }
     },
@@ -297,7 +237,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "Sampler",
-        "register": 6,
+        "register": 4,
         "space": 0
       }
     },
@@ -313,7 +253,7 @@
       "arrayed": true,
       "hlsl": {
         "class": "ShaderResource",
-        "register": 11,
+        "register": 9,
         "space": 0
       }
     },
@@ -328,7 +268,7 @@
       "storageAccess": "None",
       "hlsl": {
         "class": "Sampler",
-        "register": 7,
+        "register": 5,
         "space": 0
       }
     },
@@ -359,7 +299,7 @@
       "arrayed": true,
       "hlsl": {
         "class": "ShaderResource",
-        "register": 12,
+        "register": 10,
         "space": 0
       }
     }

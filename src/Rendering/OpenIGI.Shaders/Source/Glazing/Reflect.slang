@@ -16,14 +16,10 @@
 #include "../Common/SkyAtmosphere.slang"
 #include "../Common/SkyView.slang"
 
-// the finished frame, the reflection's source.
-[[vk::binding(0, 0)]] Texture2D<float4> uLit;
-[[vk::binding(1, 0)]] SamplerState uLitSampler;
-
-// where every opaque surface stands. A depth texture, declared as one: WGSL refuses a depth image bound
-// as a float texture.
-[[vk::binding(2, 0)]] DepthTexture2D uSceneDepth;
-[[vk::binding(3, 0)]] SamplerState uSceneDepthSampler;
+// Bindings 0 to 3 are free. They held the lit frame and the scene's depth, which only TracedScreen.slang
+// read, and nothing here calls it. Left declared, the depth was one a WebGPU layout could not describe: an
+// unread binding is dropped from the emitted WGSL, so nothing said slot 2 was a depth texture, its layout
+// described a colour one, and the depth view bound to it was refused.
 
 // the panes: world normal, and view depth in alpha.
 [[vk::binding(4, 0)]] Texture2D<float4> uGlass;
@@ -231,7 +227,6 @@ ShelterMap GlazingRoofs()
 #endif
 
 #include "../Common/SurfaceCache.slang"
-#include "../Common/TracedScreen.slang"
 
 // What the sky contributes when nothing was struck.
 //

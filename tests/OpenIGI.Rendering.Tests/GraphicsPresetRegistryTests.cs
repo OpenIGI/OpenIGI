@@ -150,6 +150,10 @@ public sealed class GraphicsPresetRegistryTests
             // the window would be doing something nobody choosing a quality tier asked for.
             "r_renderer", "r_window_mode", "r_resolution",
 
+            // How the lens is fitted to a screen that is not 4:3: what the player's screen shape shows, not how well
+            // the world is drawn. Vanilla clearing it would crop or stretch a widescreen picture nobody asked to change.
+            "r_widescreen_fov",
+
             // How worn the flashlight's switch is -- how often it chatters before it catches. A property of
             // the torch the player carries, kept whatever tier draws it; a preset resetting it would be
             // swapping their torch for a new one.
@@ -159,7 +163,7 @@ public sealed class GraphicsPresetRegistryTests
             // be writing something many machines it runs on cannot do; and a player who chose DLSS or a frame
             // cap keeps it whatever tier they pick. Each falls back to the engine's own path, and says why,
             // where it cannot run.
-            "r_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
+            "r_ray_reconstruction", "r_dlss_quality", "r_frame_generation", "r_low_latency", "r_frame_limit",
             "r_dlssg_ui_recomposition",
         ];
 
@@ -183,6 +187,29 @@ public sealed class GraphicsPresetRegistryTests
     }
 
     private readonly CVarRegistry _variables = new();
+
+    /// <summary>
+    /// What was captured comes back after another preset is applied: a player's own mix (Custom) included, as the editor's
+    /// Vanilla viewport puts it back on close.
+    /// </summary>
+    [Fact]
+    public void Restore_PutsBackWhatWasCaptured()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> fog = Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+        NumericCVar<int> shadows = Declare(presets, "r_shadows", 2, "0", "1", "2", "3");
+        presets.Apply(GraphicsPreset.Ultra);
+        shadows.Value = 1;
+        Assert.Equal(GraphicsPreset.Custom, presets.Current);
+
+        GraphicsPresetSnapshot before = presets.Capture();
+        presets.Apply(GraphicsPreset.Vanilla);
+        Assert.Equal((0, 0), (fog.Value, shadows.Value));
+
+        presets.Restore(before);
+        Assert.Equal((4, 1), (fog.Value, shadows.Value));
+        Assert.Equal(GraphicsPreset.Custom, presets.Current);
+    }
 
     [Fact]
     public void Apply_AssignsEveryVariableThePresetNames()
@@ -226,6 +253,22 @@ public sealed class GraphicsPresetRegistryTests
 
         // Nothing is silently overridden: the preset stops claiming to describe the settings.
         Assert.Equal(GraphicsPreset.Custom, presets.Current);
+    }
+
+    /// <summary>A value turned by hand and turned back reads as the preset again, not as Custom for good.</summary>
+    [Fact]
+    public void PuttingAHandChangeBackRestoresThePreset()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> storm = Declare(presets, "r_storm", 1, "0", "1", "1", "1");
+        Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+        presets.Apply(GraphicsPreset.Vanilla);
+
+        storm.Value = 1;
+        Assert.Equal(GraphicsPreset.Custom, presets.Current);
+
+        storm.Value = 0;
+        Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
     }
 
     [Fact]

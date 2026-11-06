@@ -58,7 +58,7 @@ internal static class SettingsPage
             Column(
                 // One folder row per game. A game not yet playable is optional: only mods that read its data need it.
                 Group(theme, "Game files", [.. model.Games
-                    .Where(static g => g.Retail is not null)
+                    .Where(static g => g.Retail is not null && g.LaunchSwitches.Count == 0)
                     .Select(g => (UiElement)GameFolder(theme, model, window, g.Retail!, g.Title, optional: !g.Released))]),
                 Group(theme, "Game launch", LaunchArguments(theme, model), MinimizeOnLaunch(theme, model))));
 

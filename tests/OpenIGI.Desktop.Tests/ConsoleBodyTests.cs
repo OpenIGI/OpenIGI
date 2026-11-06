@@ -34,7 +34,7 @@ public sealed class ConsoleBodyTests
         var registry = new CVarRegistry();
         var system = new ConsoleSystem(registry);
         var model = new ConsoleModel(system);
-        var theme = new DevConsoleTheme(new MonoFontSet(device, UiFontLibrary.Mono));
+        var theme = new DevConsoleTheme(new SizedFontSet(device, UiFontLibrary.Mono));
         var body = new ConsoleBody(model, theme);
 
         var context = new LayoutContext(width, height, reference: new UiVec2(width, height));

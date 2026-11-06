@@ -15,6 +15,9 @@ internal unsafe class D3D12PassState
 {
     private const int MaxGroups = 8;
 
+
+    internal static long ProbeRoots, ProbeApplies, ProbeTableSets, ProbePushes, ProbePushWords, ProbeBinds, ProbeBindSkips, ProbeDraws, ProbePipelines;
+
     private readonly (D3D12RhiBindGroup? Group, uint[] Offsets)[] _groups = new (D3D12RhiBindGroup?, uint[])[MaxGroups];
     private readonly byte[] _push = new byte[256];
     private int _pushEnd;
@@ -90,7 +93,29 @@ internal unsafe class D3D12PassState
             throw new ArgumentOutOfRangeException(nameof(index), index, $"A pass binds at most {MaxGroups} groups.");
         }
 
-        _groups[index] = ((D3D12RhiBindGroup)group, dynamicOffsets.ToArray());
+        D3D12RhiBindGroup bound = (D3D12RhiBindGroup)group;
+        (D3D12RhiBindGroup? current, uint[]? offsets) = _groups[index];
+
+        // The same group at the same offsets is already bound, and its uses already told to the tracker for
+        // this pass: nothing to do. A mesh draw binds its material and the pass's own group every draw, so
+        // without this every draw set the same root tables again and walked the same groups' resources
+        // through the barrier tracker again -- a tenth of the game thread on a scene of a few thousand draws.
+        if (ReferenceEquals(current, bound) && offsets is not null && dynamicOffsets.SequenceEqual(offsets))
+        {
+            return;
+        }
+
+        // The offsets array is reused when it is the right length: a fresh one every bind was garbage per draw.
+        if (offsets is null || offsets.Length != dynamicOffsets.Length)
+        {
+            offsets = dynamicOffsets.ToArray();
+        }
+        else
+        {
+            dynamicOffsets.CopyTo(offsets);
+        }
+
+        _groups[index] = (bound, offsets);
         _dirtyGroups |= 1 << index;
         ApplyGroup(index);
     }
@@ -232,6 +257,8 @@ internal sealed unsafe class D3D12RhiRenderPassEncoder : D3D12PassState, IRhiRen
     private readonly (D3D12RhiBuffer? Buffer, ulong Offset)[] _vertexBuffers = new (D3D12RhiBuffer?, ulong)[8];
     private D3D12RhiRenderPipeline? _pipeline;
     private D3D12RhiBuffer? _indexBuffer;
+    private ulong _indexOffset;
+    private RhiIndexFormat _indexFormat;
     private bool _vertexBuffersDirty;
     private bool _inputsUsed;
     private int _occlusionQuery = -1;
@@ -276,7 +303,15 @@ internal sealed unsafe class D3D12RhiRenderPassEncoder : D3D12PassState, IRhiRen
     public void SetVertexBuffer(int slot, IRhiBuffer buffer, ulong offset = 0)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        _vertexBuffers[slot] = ((D3D12RhiBuffer)buffer, offset);
+        D3D12RhiBuffer vertices = (D3D12RhiBuffer)buffer;
+
+        // Every mesh draw sets both its streams; the same ones as last time change nothing.
+        if (ReferenceEquals(_vertexBuffers[slot].Buffer, vertices) && _vertexBuffers[slot].Offset == offset)
+        {
+            return;
+        }
+
+        _vertexBuffers[slot] = (vertices, offset);
         _vertexBuffersDirty = true;
         _inputsUsed = false;
     }
@@ -286,7 +321,14 @@ internal sealed unsafe class D3D12RhiRenderPassEncoder : D3D12PassState, IRhiRen
     {
         ArgumentNullException.ThrowIfNull(buffer);
         D3D12RhiBuffer index = (D3D12RhiBuffer)buffer;
+        if (ReferenceEquals(index, _indexBuffer) && offset == _indexOffset && format == _indexFormat)
+        {
+            return;
+        }
+
         _indexBuffer = index;
+        _indexOffset = offset;
+        _indexFormat = format;
         _inputsUsed = false;
         IndexBufferView view = new()
         {
@@ -348,6 +390,22 @@ internal sealed unsafe class D3D12RhiRenderPassEncoder : D3D12PassState, IRhiRen
         D3D12RhiBuffer buffer = (D3D12RhiBuffer)arguments;
         BeforeDraw(buffer);
         List->ExecuteIndirect(Owner.Device.DrawIndexedSignature, 1, buffer.Resource, buffer.Offset + offset, null, 0);
+    }
+
+    /// <inheritdoc/>
+    public void DrawIndexedIndirect(IRhiBuffer arguments, ulong offset, int drawCount)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (drawCount <= 0)
+        {
+            return;
+        }
+
+        D3D12RhiBuffer buffer = (D3D12RhiBuffer)arguments;
+        BeforeDraw(buffer);
+
+        // The signature's stride is the argument record's size, so the count walks the records in order.
+        List->ExecuteIndirect(Owner.Device.DrawIndexedSignature, (uint)drawCount, buffer.Resource, buffer.Offset + offset, null, 0);
     }
 
     /// <inheritdoc/>

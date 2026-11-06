@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -61,6 +62,9 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     // per-brain enemy selection swaps the default target onto one of these when an opposing soldier is
     // nearer than any hostile player, so Harrison's team at the gate trades fire with the guards.
     private readonly Dictionary<SoldierView, AiCombatTarget> _npcTargets = [];
+
+    // What CandidatesFor hands back, refilled on every call; see there.
+    private readonly List<AiDetectionCandidate> _candidates = [];
 
     /// <summary>Gets or sets the world trace the level's sight lines are tested with, kept for the scenario runs.</summary>
     public WorldTraceCast? SightTraceForTesting { get; set; }
@@ -356,7 +360,8 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <remarks>
     /// The global human list's order: the player first, then every soldier whose container is live, the
     /// soldier itself left out. Each is described from this soldier's side, so the scan can register the
-    /// living of the other side as enemies and the dead of its own as fallen friends.
+    /// living of the other side as enemies and the dead of its own as fallen friends. The list is this query's
+    /// own and is refilled by the next call, so it is read before then and not kept.
     /// </remarks>
     public List<AiDetectionCandidate> CandidatesFor(
         SoldierView self,
@@ -366,11 +371,12 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         bool playerAlive,
         bool playerCrouching)
     {
-        List<AiDetectionCandidate> humans =
-        [
-            new(AiDetectionCandidate.PlayerId, brain.PlayerIsEnemy, playerAlive, playerMark, playerFeet,
-                playerCrouching, _context.PlayerTarget),
-        ];
+        // One list, refilled for each soldier: the brain reads it during its tick and keeps none of it, and a new
+        // one per soldier per tick was the largest garbage the simulation made.
+        List<AiDetectionCandidate> humans = _candidates;
+        humans.Clear();
+        humans.Add(new(AiDetectionCandidate.PlayerId, brain.PlayerIsEnemy, playerAlive, playerMark, playerFeet,
+            playerCrouching, _context.PlayerTarget));
         foreach ((SoldierView view, Igi1HumanAi other) in _context.Brains)
         {
             if (ReferenceEquals(view, self) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
@@ -399,6 +405,31 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         }
 
         return humans;
+    }
+
+    /// <summary>
+    /// Adds every soldier whose container is live, in the global human list's order, as a detection record that is not a
+    /// soldier's own is offered them (<c>0x45FE30</c>): its mark mid-body, its origin, its side and whether it lives.
+    /// </summary>
+    /// <param name="into">The list the soldiers are added to.</param>
+    public void AddDetectables(List<AiDetectable> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+        foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            into.Add(new AiDetectable(
+                view,
+                SoldierContext.ViewPosition(view, brain),
+                SoldierContext.OccupantOrigin(view),
+                view.Soldier.Team,
+                !view.IsDead && brain.Activity != AiSoldierActivity.Dead && !_context.HealthOf(view).IsDead,
+                view.Soldier));
+        }
     }
 
     /// <summary>Whether an AI sight ray from one point to another is clear, for scenario runs.</summary>

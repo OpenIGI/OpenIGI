@@ -200,10 +200,23 @@ public sealed class ElevatorState
         copy.Restore(motion);
         for (int i = 0; i < ticks && copy.TargetFloorIndex is not null; i++)
         {
-            copy.Tick(canStart: true, floorUp: false, floorDown: false);
+            copy.Coast();
         }
 
         return copy.Motion;
+    }
+
+    /// <summary>Moves the car one tick as it was told, and told nothing more: a co-op client's copy of a server's lift.</summary>
+    /// <remarks>
+    /// A request made here is dropped: the server's lift alone decides where the car goes, and its word comes with the
+    /// snapshots (<see cref="Restore"/>). The step is the one <see cref="Project"/> takes, so a car coasting here stands each
+    /// tick where the server's projection says it will.
+    /// </remarks>
+    public void Coast()
+    {
+        _pendingTargetFloor = null;
+        _pendingDirection = 0;
+        Tick(canStart: true, floorUp: false, floorDown: false);
     }
 
     public void Tick(bool canStart, bool floorUp, bool floorDown, int? wantedFloor = null, bool enabled = true)
