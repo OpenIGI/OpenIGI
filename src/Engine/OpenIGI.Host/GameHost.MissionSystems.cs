@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Configuration.Presets;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -275,11 +276,15 @@ public sealed partial class GameHost
         bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
         if (arena)
         {
-            int removed = Game.Multiplayer.Modes.ArenaLevel.RemoveSoldiers(levelRoot);
+            List<Vector3d> stood = [];
+            int removed = Game.Multiplayer.Modes.ArenaLevel.RemoveSoldiers(levelRoot, stood);
             _logger.Information("Session", $"An arena: {removed} of the level's soldiers and their generators taken out.");
             if (TickObserver is Multiplayer.ISessionMode session)
             {
-                session.Layout = ArenaLayout(_titleRuntime.Title.Id, loaded.Descriptor.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                string title = _titleRuntime.Title.Id;
+                string map = loaded.Descriptor.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Vector3d start = stood.Count > 0 ? stood[0] : default;
+                session.Layout = ArenaLayout(title, map) ?? Game.Multiplayer.Modes.ArenaLevel.Generated(title, map, stood, start);
             }
         }
 

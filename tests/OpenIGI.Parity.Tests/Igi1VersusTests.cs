@@ -19,6 +19,12 @@ public sealed class Igi1VersusTests
         Assert.Empty(pair.Host!.World.Soldiers?.SoldierViews ?? []);
         Assert.Empty(pair.Joiner!.World.Soldiers?.SoldierViews ?? []);
 
+        // Laid out from where they stood: spawns for both teams, and the host's own start inside play.
+        MpLayout layout = Assert.IsType<MpLayout>(pair.Session.Session.Layout);
+        Assert.Contains(layout.Spawns, s => s.Team == TeamRoster.Good);
+        Assert.Contains(layout.Spawns, s => s.Team == TeamRoster.Bad);
+        Assert.True(layout.InBounds(pair.Host.World.Player!.Body.Position));
+
         // One a side.
         Match match = pair.Session.Session.Match;
         int[] teams = [.. match.Players.Values.Select(p => p.Team).Order()];
@@ -45,7 +51,15 @@ public sealed class Igi1VersusTests
     {
         using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
         Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
-        Core.Numerics.Vector3d host = pair.Host.World.Player!.Body.Position;
+        // The host's feet once it has come down from the level's start, so the spawns stand on its ground.
+        Core.Numerics.Vector3d host = default;
+        Assert.True(pair.RunUntil(() =>
+        {
+            Core.Numerics.Vector3d now = pair.Host.World.Player!.Body.Position;
+            bool settled = Math.Abs(now.Z - host.Z) < 1;
+            host = now;
+            return settled;
+        }, 600) >= 0, "the host never came to rest");
 
         // Two spawns on the host's own ground: one beside it, one well away.
         double[] near = [host.X + 2048, host.Y, host.Z];
@@ -58,7 +72,7 @@ public sealed class Igi1VersusTests
         Assert.True(pair.RunUntil(() => partner.IsDead, 300) >= 0, "the partner never fell");
         Assert.True(pair.RunUntil(() => !partner.IsDead, 30 * 6) >= 0, "the partner was never put back");
         double fromFar = Math.Abs(partner.Player.Body.Position.X - far[0]) + Math.Abs(partner.Player.Body.Position.Y - far[1]);
-        Assert.True(fromFar < 4096, $"put back {fromFar} units from the far spawn");
+        Assert.True(fromFar < 4096, $"put back {fromFar} units from the far spawn, at {partner.Player.Body.Position}, host {pair.Host.World.Player!.Body.Position} was {host}, deaths {pair.Session.Session!.Match.Players.Values.Sum(p => p.Deaths)}");
     }
 
     private static Igi1CoopPair Joined(string mode)
