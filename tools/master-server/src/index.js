@@ -10,8 +10,10 @@
 // browser checks for itself, with the info query it sends every listed server.
 
 import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
+import { handleParties } from "./parties.js";
 
 export { Room } from "./rooms.js";
+export { Party } from "./parties.js";
 export { Relays } from "./relays.js";
 
 const ENTRY_TTL_MS = 90_000;
@@ -47,6 +49,10 @@ export default {
 
     if (url.pathname.startsWith("/v1/admin/")) {
       return cors(await admin(request, env, url));
+    }
+
+    if (url.pathname === "/v1/parties" || url.pathname.startsWith("/v1/parties/")) {
+      return cors(await handleParties(request, env, url));
     }
 
     if (url.pathname.startsWith("/v1/rooms")) {

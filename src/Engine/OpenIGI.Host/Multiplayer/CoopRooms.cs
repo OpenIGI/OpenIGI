@@ -177,6 +177,22 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         Shell?.StartMission(mission, _difficulty());
     }
 
+    /// <summary>
+    /// Joins where a party's leader plays: a room by its code, or a server by its browser key, asked after first when this
+    /// game's browser has not heard of it.
+    /// </summary>
+    /// <param name="target">The room's code or the server's key (<c>udp:host:port</c>).</param>
+    public void Follow(string target)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        if (ServerBrowser.TryAddressOf(target, out NetAddress address) && OpenUdp is not null)
+        {
+            Browser().Watch(address, target, _clock.Elapsed.TotalSeconds);
+        }
+
+        Join(target);
+    }
+
     /// <inheritdoc/>
     public void Leave()
     {

@@ -101,6 +101,7 @@ public sealed partial class GameHost
         _window.PumpEvents();
         ApplyTouchControls();
         _coop?.Update();
+        UpdateParty();
         FollowSession(state);
 
         // Typing wanted -- a text box with the focus, or a co-op line -- for a touch screen to raise its keyboard.

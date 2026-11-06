@@ -82,6 +82,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public string? RoomCode => Room?.Code;
 
+    /// <summary>Gets the server's address, as this client reaches it (a room's code is <see cref="RoomCode"/>).</summary>
+    public NetAddress Server => _server;
+
     /// <inheritdoc/>
     public string Place => _session?.Map is { Length: > 0 } map ? HostedSession.MapName(map) : string.Empty;
 

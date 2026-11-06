@@ -915,6 +915,9 @@ public sealed partial class GameHost : IDisposable
         ReleaseSettingHandlers();
         ReleaseSessionCheatLock();
 
+        // A party is told this member has gone, rather than waiting for it to stop asking.
+        LeaveParty();
+
         _sky?.Dispose();
         _rain?.Dispose();
         _storm?.Dispose();

@@ -28,6 +28,11 @@ class_name = "ServerList"
 name = "ROOMS"
 class_name = "Room"
 
+# Each party (friends following their leader from server to server) is a Durable Object of its own, named by its code.
+[[durable_objects.bindings]]
+name = "PARTIES"
+class_name = "Party"
+
 # The relay list: who they are, their secrets, and how their last probes went.
 [[durable_objects.bindings]]
 name = "RELAYS"
@@ -40,3 +45,7 @@ new_sqlite_classes = ["ServerList", "Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Relays"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Party"]
