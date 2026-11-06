@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using OpenIGI.Core.Titles;
 using OpenIGI.Core.Diagnostics;
@@ -344,12 +344,11 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         }
     }
 
-    // Where a server started here keeps its settings, log and bans: one folder a game.
-    private static string ServerFolder(string title) => Path.Combine(Core.Configuration.SettingsPaths.GetUserDirectory(), "server", title);
+    private static string ServerFolder(string title) => DedicatedServerLaunch.FolderFor(title);
 
     private static BrowserInfo? Decode(byte[] info) =>
         ServerInfo.Decode(info) is { } said
-            ? new BrowserInfo(said.TitleId, said.Name, said.Map, said.Mode, said.Players, said.MaxPlayers, said.HasPassword, said.Version, said.IsCompatible)
+            ? new BrowserInfo(said.TitleId, said.Name, said.Map, said.Mode, said.Players, said.MaxPlayers, said.HasPassword, said.Version, said.IsCompatibleWith(MultiplayerProtocol.Version))
             : null;
 
     // The browser's lines as the menu shows them.

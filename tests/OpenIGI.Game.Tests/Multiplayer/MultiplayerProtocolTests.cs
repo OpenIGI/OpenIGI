@@ -1,5 +1,6 @@
 using OpenIGI.Game.Multiplayer;
 using Xunit;
+using OpenIGI.Net.Browsing;
 
 namespace OpenIGI.Game.Tests.Multiplayer;
 
@@ -16,7 +17,7 @@ public sealed class MultiplayerProtocolTests
     [Fact]
     public void ServerInfo_RoundTrips()
     {
-        ServerInfo info = new("igi2", "Jones's server", "sandstorm", "objective", 3, 32, true, "0.4.0+abc");
+        ServerInfo info = new("igi2", "Jones's server", "sandstorm", "objective", 3, 32, true, "0.4.0+abc") { Protocol = MultiplayerProtocol.Version };
         Assert.Equal(info, ServerInfo.Decode(info.Encode()));
     }
 

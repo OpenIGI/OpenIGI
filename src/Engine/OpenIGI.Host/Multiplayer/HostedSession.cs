@@ -4,6 +4,7 @@ using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
 using OpenIGI.Net;
 using OpenIGI.Net.Rooms;
+using OpenIGI.Net.Browsing;
 
 namespace OpenIGI.Host.Multiplayer;
 
@@ -255,7 +256,10 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     /// <returns>The line.</returns>
     public ServerInfo Info() =>
         new(_titleId, _options.Name, _session?.Map ?? _options.Map, _mode, _known.Count + (_options.IncludesHost ? 1 : 0),
-            _options.MaxPlayers, _options.Password.Length > 0, _options.Version);
+            _options.MaxPlayers, _options.Password.Length > 0, _options.Version)
+        {
+            Protocol = MultiplayerProtocol.Version,
+        };
 
     /// <inheritdoc/>
     public string Mode => _mode;

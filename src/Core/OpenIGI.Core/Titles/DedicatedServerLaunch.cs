@@ -50,6 +50,11 @@ public sealed record DedicatedServerLaunch
     /// <summary>Gets the installation it reads the game's data from, or <see langword="null"/> for the one it finds.</summary>
     public string? GamePath { get; init; }
 
+    /// <summary>Gets where a server started from a form keeps its settings, log and bans: one folder a game, in the player's own.</summary>
+    /// <param name="title">The game, as <c>igi1</c>.</param>
+    /// <returns>The folder.</returns>
+    public static string FolderFor(string title) => Path.Combine(Configuration.SettingsPaths.GetUserDirectory(), "server", title);
+
     /// <summary>Writes the settings as the server's <c>server.cfg</c>.</summary>
     /// <returns>The file's text.</returns>
     public string ToConfig()

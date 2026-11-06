@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Net;
+using OpenIGI.Net.Browsing;
 
 namespace OpenIGI.Host.Multiplayer;
 
