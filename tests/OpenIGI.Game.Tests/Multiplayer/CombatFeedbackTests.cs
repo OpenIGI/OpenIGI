@@ -72,6 +72,16 @@ public sealed class CombatFeedbackTests
     }
 
     [Fact]
+    public void A_killing_hit_on_one_records_its_killer_and_when()
+    {
+        CombatFeedback feedback = new();
+        feedback.Take([new CombatNote(5, 1, 0.3f, Killed: false, false, default)], own: 1, now: 2);
+        Assert.Null(feedback.KilledBy);
+        feedback.Take([new CombatNote(5, 1, 0.7f, Killed: true, false, default)], own: 1, now: 3);
+        Assert.Equal((5, 3d), feedback.KilledBy);
+    }
+
+    [Fact]
     public void Others_hits_and_ones_own_harm_to_oneself_show_nothing()
     {
         CombatFeedback feedback = new();

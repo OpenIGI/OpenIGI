@@ -282,12 +282,15 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             return null;
         }
 
+        double now = _clock.Elapsed.TotalSeconds;
         return Game.Multiplayer.Modes.Spectating.Pick(
             board,
             own,
             Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
             entity => board.Lines.Where(l => l.Entity == entity).Select(static l => (int?)l.Slot).FirstOrDefault() is { } slot ? world.PositionOf(slot) : null,
-            pick);
+            pick,
+            _combat.KilledBy is { } killer ? (killer.Entity, now - killer.At) : null,
+            world.PositionOf(ServerSession.HostSlot));
     }
 
     /// <inheritdoc/>

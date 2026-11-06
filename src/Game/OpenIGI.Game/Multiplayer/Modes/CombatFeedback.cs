@@ -52,6 +52,10 @@ public sealed class CombatFeedback
     /// <summary>Gets the hits it scored since <see cref="ResetTally"/>.</summary>
     public int Hits { get; private set; }
 
+    /// <summary>Gets who last killed the local player and when, on the clock <see cref="Take"/> was given; <see langword="null"/>
+    /// before anyone has, or when the level did.</summary>
+    public (int Entity, double At)? KilledBy { get; private set; }
+
     /// <summary>Takes in the notes the session told of.</summary>
     /// <param name="notes">The notes.</param>
     /// <param name="own">The local player's entity.</param>
@@ -70,6 +74,11 @@ public sealed class CombatFeedback
 
             if (note.Victim == own && note.Attacker != own)
             {
+                if (note.Killed && note.Attacker >= 0)
+                {
+                    KilledBy = (note.Attacker, now);
+                }
+
                 _struck.Add((note.From, Math.Clamp(0.45f + (note.Damage * 2f), 0.45f, 1f), now));
                 Taken += note.Damage;
             }

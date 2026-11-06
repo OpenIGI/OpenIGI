@@ -7,6 +7,15 @@ public sealed partial class GameHost
     private int _spectatePick;
 
     // Who the dead player watches now, or null for its own body (no match, or nobody standing).
-    private Game.Multiplayer.Modes.SpectateTarget? Spectated() =>
-        Viewpoint?.IsDeathViewActive == true && TickObserver is ISessionScoreboard session ? session.Spectate(_spectatePick) : null;
+    private Game.Multiplayer.Modes.SpectateTarget? Spectated()
+    {
+        // Alive, the next death starts at its kill cam again.
+        if (Viewpoint?.IsDeathViewActive != true)
+        {
+            _spectatePick = 0;
+            return null;
+        }
+
+        return TickObserver is ISessionScoreboard session ? session.Spectate(_spectatePick) : null;
+    }
 }

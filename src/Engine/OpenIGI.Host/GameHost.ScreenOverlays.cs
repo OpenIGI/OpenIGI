@@ -438,7 +438,7 @@ public sealed partial class GameHost
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            spectateHud.DrawSpectating(state.Batch, watched.Name, SafeWindowWidth, SafeWindowHeight);
+            spectateHud.DrawSpectating(state.Batch, watched, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 

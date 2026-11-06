@@ -397,7 +397,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
                 entity => latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
                     ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
                     : null,
-                pick)
+                pick,
+                _combat.KilledBy is { } killer ? (killer.Entity, _clock.Elapsed.TotalSeconds - killer.At) : null,
+                latest.TryGet(own, out Game.Multiplayer.ReplicatedHuman self) ? new Core.Numerics.Vector3d(self.Position.X, self.Position.Y, self.Position.Z) : null)
             : null;
 
     /// <inheritdoc/>

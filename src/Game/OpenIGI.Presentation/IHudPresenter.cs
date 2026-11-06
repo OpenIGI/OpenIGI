@@ -278,12 +278,13 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
 
-    /// <summary>Draws whom a dead player watches, low in the middle of the screen, and how to watch the next.</summary>
+    /// <summary>Draws whom a dead player watches, low in the middle of the screen, and how to watch the next: its killer, for
+    /// the kill cam's moment, named in red with how far off it stood.</summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="name">The watched player's name.</param>
+    /// <param name="watched">The watched player.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawSpectating(SpriteBatch batch, string name, int screenWidth, int screenHeight)
+    void DrawSpectating(SpriteBatch batch, Game.Multiplayer.Modes.SpectateTarget watched, int screenWidth, int screenHeight)
     {
     }
 

@@ -29,6 +29,20 @@ public sealed class SpectatingTests
     }
 
     [Fact]
+    public void For_a_moment_after_the_death_the_killer_is_framed_then_ones_side_and_a_click_skips_it()
+    {
+        // The foe (12) killed "me" (10) a second ago, 2 m from where it fell.
+        SpectateTarget killer = Assert.NotNull(Spectating.Pick(Board, 10, teams: true, At, 0, (12, 1.0), new Vector3d(10, 0, 0)));
+        Assert.True(killer.Killer);
+        Assert.Equal(("foe", 12), (killer.Name, killer.Entity));
+        Assert.Equal(2f / (float)Core.Numerics.WorldUnits.PerMetre, killer.Metres, 0.0001f);
+
+        // Clicked, or past the moment: one's own side, from the first.
+        Assert.Equal("mate", Spectating.Pick(Board, 10, teams: true, At, 1, (12, 1.0), null)?.Name);
+        Assert.Equal("mate", Spectating.Pick(Board, 10, teams: true, At, 0, (12, Spectating.KillCamSeconds + 0.1), null)?.Name);
+    }
+
+    [Fact]
     public void Without_teams_anyone_standing_is_watched_and_with_nobody_one_watches_ones_own_body()
     {
         Assert.Equal(["mate", "foe", "mate two"], Enumerable.Range(0, 3).Select(p => Spectating.Pick(Board, 10, teams: false, At, p)?.Name));

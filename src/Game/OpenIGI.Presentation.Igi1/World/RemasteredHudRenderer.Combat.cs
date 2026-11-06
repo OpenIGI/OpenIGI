@@ -18,7 +18,7 @@ internal sealed partial class RemasteredHudRenderer
     private static Bgra32 DamageRed => Bgra32.FromRgb(232, 40, 32);
 
     /// <inheritdoc/>
-    public void DrawSpectating(SpriteBatch batch, string name, int screenWidth, int screenHeight)
+    public void DrawSpectating(SpriteBatch batch, SpectateTarget watched, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (_theme is not { } type)
@@ -31,14 +31,16 @@ internal sealed partial class RemasteredHudRenderer
         float Px(float units) => context.Px(units);
         UiRect safe = context.SafeRect;
         float centre = safe.X + (safe.Width * 0.5f);
-        string watched = $"SPECTATING  {name.ToUpperInvariant()}";
-        const string next = "FIRE: NEXT PLAYER";
+        string line = watched.Killer
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"KILLED BY  {watched.Name.ToUpperInvariant()}  ·  {watched.Metres:0} M")
+            : $"SPECTATING  {watched.Name.ToUpperInvariant()}";
+        string next = watched.Killer ? "FIRE: WATCH YOUR SIDE" : "FIRE: NEXT PLAYER";
         float big = Px(22f);
         float small = Px(12f);
-        float width = Math.Max(UiPainter.MeasureLabel(type.Heading, watched, big, 0.08f), UiPainter.MeasureLabel(type.Mono, next, small, 0.14f));
+        float width = Math.Max(UiPainter.MeasureLabel(type.Heading, line, big, 0.08f), UiPainter.MeasureLabel(type.Mono, next, small, 0.14f));
         var plate = new UiRect(centre - (width * 0.5f) - Px(22f), safe.Bottom - Px(150f), width + Px(44f), Px(64f));
         Band(painter, plate, StripFace);
-        painter.DrawLabel(type.Heading, watched, new UiVec2(centre - (UiPainter.MeasureLabel(type.Heading, watched, big, 0.08f) * 0.5f), plate.Y + Px(9f)), big, UiPalette.TextBright, 0.08f);
+        painter.DrawLabel(type.Heading, line, new UiVec2(centre - (UiPainter.MeasureLabel(type.Heading, line, big, 0.08f) * 0.5f), plate.Y + Px(9f)), big, watched.Killer ? Enemy : UiPalette.TextBright, 0.08f);
         painter.DrawLabel(type.Mono, next, new UiVec2(centre - (UiPainter.MeasureLabel(type.Mono, next, small, 0.14f) * 0.5f), plate.Y + Px(40f)), small, UiPalette.TextMuted, 0.14f);
     }
 
