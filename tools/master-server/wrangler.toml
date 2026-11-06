@@ -18,7 +18,7 @@ TURN_LON = "8.7"
 [triggers]
 crons = ["* * * * *"]
 
-# The whole list lives in one Durable Object; heartbeats keep it current, so nothing needs persisting. Each co-op room
+# The whole list lives in one Durable Object, kept in its storage too so a restart doesn't empty it. Each co-op room
 # is a Durable Object of its own, named by its code. SQLite-backed: the only kind the Workers free plan has.
 [[durable_objects.bindings]]
 name = "SERVER_LIST"

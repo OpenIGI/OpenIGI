@@ -2,7 +2,12 @@
 //
 // A game server heartbeats every 30 seconds and drops off the list 90 seconds after its last one. It is always listed
 // at the address its heartbeat came from (CF-Connecting-IP), never at an address it claims, so nobody can list a
-// server on someone else's machine. One Durable Object holds the whole list: a few hundred entries at most.
+// server on someone else's machine. One Durable Object holds the whole list: a few hundred entries at most. The list is
+// kept in the object's storage too, so a restart of the object does not empty the browser until the next heartbeats.
+//
+// A Worker can't send UDP, so the master can't ping a server's game port itself: a server is listed as "verified" only
+// when the room browsers join it through is open and hosted from the same address as its heartbeat. The rest the
+// browser checks for itself, with the info query it sends every listed server.
 
 import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
 
@@ -10,6 +15,10 @@ export { Room } from "./rooms.js";
 export { Relays } from "./relays.js";
 
 const ENTRY_TTL_MS = 90_000;
+
+// A server's entry is written to storage when it is new or changed, and otherwise at most this often: storage writes are
+// counted, a heartbeat comes every 30 seconds, and an entry restored a minute stale still outlives the gap to the next.
+const SAVE_EVERY_MS = 60_000;
 const MAX_SERVERS_PER_IP = 8;
 const MAX_FIELD = 64;
 
@@ -99,18 +108,25 @@ export class ServerList {
     this.servers = new Map();
     // Rooms by code, public or not: the public ones are listed, and all of them count against their host's address.
     this.rooms = new Map();
+    // The servers listed before the object last stopped, back before any request is served.
+    state.blockConcurrencyWhile(async () => {
+      const saved = await state.storage.list({ prefix: "server:" });
+      for (const [key, entry] of saved) {
+        this.servers.set(key.slice("server:".length), entry);
+      }
+    });
   }
 
   async fetch(request) {
     const url = new URL(request.url);
     const now = Date.now();
-    this.expire(now);
+    await this.expire(now);
 
     if (request.method === "GET" && url.pathname === "/v1/servers") {
       const title = url.searchParams.get("title");
       const protocol = url.searchParams.get("protocol");
       const matches = (s) => (!title || s.title === title) && (!protocol || s.protocol === protocol);
-      const servers = [...this.servers.values()].filter(matches).map(publicView);
+      const servers = [...this.servers.values()].filter(matches).map((s) => publicView(s, this.verified(s)));
       // A dedicated server's own room is the server, listed once.
       const servedRooms = new Set(servers.map((s) => s.room).filter(Boolean));
       const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view) && !servedRooms.has(r.view.room)).map((r) => r.view);
@@ -167,34 +183,78 @@ export class ServerList {
         return json({ error: entry }, 400);
       }
 
+      // A room is claimed only from the address that hosts it: nobody lists another's room as their server.
+      const claimed = entry.room === null ? undefined : this.rooms.get(entry.room);
+      if (claimed && claimed.ip !== ip) {
+        return json({ error: "that room is hosted from another address" }, 403);
+      }
+
       const key = `${ip}|${entry.port}`;
-      if (!this.servers.has(key) && countFrom(this.servers, ip) >= MAX_SERVERS_PER_IP) {
+      const before = this.servers.get(key);
+      if (!before && countFrom(this.servers, ip) >= MAX_SERVERS_PER_IP) {
         return json({ error: "too many servers from this address" }, 429);
       }
 
       this.servers.set(key, entry);
-      return json({ listed: true, address: ip, port: entry.port, ttl: ENTRY_TTL_MS / 1000 });
+      if (!before || changed(before, entry) || now - (before.savedAt ?? 0) >= SAVE_EVERY_MS) {
+        entry.savedAt = now;
+        await this.state.storage.put(`server:${key}`, entry);
+      } else {
+        entry.savedAt = before.savedAt;
+      }
+
+      return json({ listed: true, address: ip, port: entry.port, ttl: ENTRY_TTL_MS / 1000, verified: this.verified(entry) });
     }
 
     if (request.method === "POST" && url.pathname === "/v1/servers/shutdown") {
       const ip = request.headers.get("CF-Connecting-IP");
       const body = await request.json().catch(() => ({}));
-      this.servers.delete(`${ip}|${Number(body.port)}`);
+      const key = `${ip}|${Number(body.port)}`;
+      if (this.servers.delete(key)) {
+        await this.state.storage.delete(`server:${key}`);
+      }
+
       return json({ listed: false });
     }
 
     return json({ error: "not found" }, 404);
   }
 
-  expire(now) {
+  async expire(now) {
+    const gone = [];
     for (const map of [this.servers, this.rooms]) {
       for (const [key, entry] of map) {
         if (now - entry.lastSeen > ENTRY_TTL_MS) {
           map.delete(key);
+          if (map === this.servers) {
+            gone.push(`server:${key}`);
+          }
         }
       }
     }
+
+    // Storage takes at most 128 keys a delete.
+    for (let i = 0; i < gone.length; i += 128) {
+      await this.state.storage.delete(gone.slice(i, i + 128));
+    }
   }
+
+  // Whether the master could see the server is real: the room it names is open, hosted, from the heartbeat's address.
+  verified(entry) {
+    const room = entry.room === null ? undefined : this.rooms.get(entry.room);
+    return room !== undefined && room.hosted && room.ip === entry.address;
+  }
+}
+
+// Whether an entry differs from the one before in anything but its time and its player count: worth writing again.
+function changed(before, after) {
+  for (const field of ["port", "wsPort", "title", "protocol", "name", "map", "mode", "version", "maxPlayers", "passworded", "region", "room"]) {
+    if (before[field] !== after[field]) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function validate(body, ip, now) {
@@ -297,9 +357,9 @@ export function stats(servers, rooms, relayStatus = []) {
   return out;
 }
 
-function publicView(s) {
-  const { lastSeen, ...rest } = s;
-  return { ...rest, age: Math.round((Date.now() - lastSeen) / 1000) };
+function publicView(s, verified) {
+  const { lastSeen, savedAt, ...rest } = s;
+  return { ...rest, verified, age: Math.round((Date.now() - lastSeen) / 1000) };
 }
 
 function countFrom(servers, ip) {
