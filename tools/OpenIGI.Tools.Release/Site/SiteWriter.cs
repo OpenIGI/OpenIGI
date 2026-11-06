@@ -74,14 +74,45 @@ internal static class SiteWriter
                 }
 
                 Text(output, $"download/{runtime}/url", url + "\n");
-                string encoded = WebUtility.HtmlEncode(url);
-                Text(output, $"download/{runtime}/index.html",
-                    $"<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url={encoded}\">"
-                    + $"<title>OpenIGI Launcher</title><a href=\"{encoded}\">Download the OpenIGI Launcher {WebUtility.HtmlEncode(launcher.Version)}</a>\n");
+                Text(output, $"download/{runtime}/index.html", DownloadPage(runtime, launcher.Version, url));
             }
         }
 
         Text(output, "healthz", $"ok {releases.Count} release(s) {content.Count} content version(s)\n");
+    }
+
+    /// <summary>The page at <c>download/{runtime}</c>: the one a browser reaches from the site's button or a link to the old download address.</summary>
+    /// <param name="runtime">The runtime the launcher is built for.</param>
+    /// <param name="version">The launcher's version.</param>
+    /// <param name="url">The address of the launcher's file.</param>
+    /// <returns>The page's HTML.</returns>
+    /// <remarks>
+    /// Most runtimes get a page that sends the browser straight on to the file. A macOS build does not, because the
+    /// launcher is only ad-hoc signed, and an app a browser downloaded is quarantined, which Gatekeeper refuses as
+    /// "damaged" (issue 5). Sent on at once, the reader would meet that dialog having seen nothing that explains it, so
+    /// the page names the command that installs without the quarantine, and the command that clears it from a copy
+    /// already downloaded, and leaves the download a click away.
+    /// </remarks>
+    internal static string DownloadPage(string runtime, string version, string url)
+    {
+        string encoded = WebUtility.HtmlEncode(url);
+        string title = $"Download the OpenIGI Launcher {WebUtility.HtmlEncode(version)}";
+        if (!runtime.StartsWith("osx-", StringComparison.Ordinal))
+        {
+            return $"<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url={encoded}\">"
+                + $"<title>OpenIGI Launcher</title><a href=\"{encoded}\">{title}</a>\n";
+        }
+
+        return "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            + "<title>OpenIGI Launcher for macOS</title>"
+            + "<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem}"
+            + "pre{background:#eee;padding:.75rem;overflow-x:auto}</style>\n"
+            + "<h1>OpenIGI Launcher for macOS</h1>\n"
+            + "<p>The launcher is not notarized by Apple. macOS reports an app downloaded with a browser as damaged, so install it from a terminal instead:</p>\n"
+            + "<pre>curl -fsSL https://openigi.com/install.sh | bash</pre>\n"
+            + "<p>If you downloaded the launcher with a browser already, clear the quarantine before you open it:</p>\n"
+            + "<pre>xattr -dr com.apple.quarantine \"/Applications/OpenIGI Launcher.app\"</pre>\n"
+            + $"<p><a href=\"{encoded}\">{title}</a></p>\n";
     }
 
     private static void Text(string root, string path, string text)

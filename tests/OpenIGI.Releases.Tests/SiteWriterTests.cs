@@ -61,6 +61,39 @@ public sealed class SiteWriterTests : IDisposable
         Assert.StartsWith("ok 3 release(s)", Read("healthz"), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_macOS_download_page_explains_the_quarantine_instead_of_sending_the_browser_straight_on()
+    {
+        const string url = "https://github.com/OpenIGI/OpenIGI/releases/download/launcher-v0.1.1/openigi-launcher-0.1.1-osx-arm64.tar.gz";
+        ReleaseManifest launcher = Release("0.1.1", ReleaseComponent.Launcher) with
+        {
+            Tag = "launcher-v0.1.1",
+            Assets = [new ReleaseAsset("openigi-launcher-0.1.1-osx-arm64.tar.gz", ReleaseComponent.Launcher, "osx-arm64", 1, "ab")],
+        };
+        ReleaseIndex releases = new([launcher], "https://github.com/OpenIGI/OpenIGI/releases/download/{tag}/{name}");
+
+        SiteWriter.Write(Path.Combine(_root, "site"), releases, new ContentLibrary([], ChunkUrl), null);
+
+        // The script that installs reads the address alone, whatever the page says.
+        Assert.Equal(url + "\n", Read("download/osx-arm64/url"));
+        string page = Read("download/osx-arm64/index.html");
+        Assert.DoesNotContain("http-equiv", page, StringComparison.Ordinal);
+        Assert.Contains("curl -fsSL https://openigi.com/install.sh | bash", page, StringComparison.Ordinal);
+        Assert.Contains("xattr -dr com.apple.quarantine", page, StringComparison.Ordinal);
+        Assert.Contains($"href=\"{url}\"", page, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("win-x64")]
+    [InlineData("linux-x64")]
+    public void Any_other_download_page_still_sends_the_browser_straight_on(string runtime)
+    {
+        string page = SiteWriter.DownloadPage(runtime, "0.1.1", "https://example.test/a&b");
+
+        Assert.Contains("http-equiv=\"refresh\" content=\"0; url=https://example.test/a&amp;b\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("xattr", page, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("hd-textures_1.0.0.content.json", "hd-textures/1.0.0/content.json")]
     [InlineData("hd-textures.pack.json", "hd-textures/pack.json")]
