@@ -18,6 +18,15 @@ public sealed partial class Igi1ReplicatedWorld
 
     private Game.Multiplayer.Modes.MpLayout? _layout;
 
+    // A versus player put back is handed what it starts with again; a co-op partner revived keeps what it had.
+    private void Restock(PlayerCamera rig)
+    {
+        if (IsVersus && _game.PlayerSetup is { } setup)
+        {
+            setup.Restock(rig, [.. (_layout?.Loadout ?? []).Select(l => (l.Weapon, l.Rounds))]);
+        }
+    }
+
     // The mode the players' sides follow: co-op until a versus game is played.
     private string VersusMode => _versus switch
     {

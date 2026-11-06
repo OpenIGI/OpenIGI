@@ -417,6 +417,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
             {
                 own.PlaceAt(_game.World.Ground, (IsVersus ? VersusSpawn(slot, spawn) : null) ?? spawn);
+                Restock(own);
             }
 
             _dead.Remove(HostEntity);
@@ -428,6 +429,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             Igi1PlayerHarm.RevivePlayer(player, at: null, player.Player.Body.Yaw);
             _dead.Remove(slot + 1);
             Stand(player, slot);
+            Restock(player.Player);
         }
     }
 

@@ -92,6 +92,23 @@ public sealed class Igi1VersusTests
         Assert.False(pair.HostGame.ShowsMissionFailed);
     }
 
+    [RequiresGameDataFact]
+    public void A_player_put_back_in_a_deathmatch_has_its_ammunition_filled_again()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Player.PlayerWeapons weapons = partner.Player.Weapons!;
+        (int ammo, int full) = weapons.Ammunition.Contents.First(c => c.Value > 0);
+        weapons.Ammunition.Take(ammo, full);
+        Assert.Equal(0, weapons.Ammunition.Count(ammo));
+
+        Game.Igi1.World.IHarmedPlayer harmed = pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player));
+        harmed.Health.Apply(0, 100000f);
+        Assert.True(pair.RunUntil(() => partner.IsDead, 300) >= 0, "the partner never fell");
+        Assert.True(pair.RunUntil(() => !partner.IsDead, 30 * 6) >= 0, "the partner was never put back");
+        Assert.Equal(full, weapons.Ammunition.Count(ammo));
+    }
+
     private static Igi1CoopPair Joined(string mode)
     {
         Igi1CoopPair pair = new(mode, mission: 1);

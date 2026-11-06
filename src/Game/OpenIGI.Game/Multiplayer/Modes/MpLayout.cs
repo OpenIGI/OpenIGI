@@ -47,6 +47,11 @@ public sealed record MpBox(double[] Min, double[] Max)
 /// <param name="Team">The team that starts there, or -1 for anyone (free for all).</param>
 public sealed record MpSpawn(double[] Position, float Yaw = 0, int Team = -1);
 
+/// <summary>A weapon a map hands its players, and the rounds of its ammunition they are filled to.</summary>
+/// <param name="Weapon">The weapon's script id (<c>WEAPON_ID_AK47</c>).</param>
+/// <param name="Rounds">The rounds its ammunition is filled to; nought for the weapon alone.</param>
+public sealed record MpLoadout(string Weapon, int Rounds = 0);
+
 /// <summary>A point a mode plays for: a flag, a site, a hill.</summary>
 /// <param name="Id">Its name as the HUD shows it, as <c>A</c>.</param>
 /// <param name="Kind">What it is for.</param>
@@ -94,6 +99,12 @@ public sealed record MpLayout
 
     /// <summary>Gets the points the modes play for.</summary>
     public MpPoint[] Points { get; init; } = [];
+
+    /// <summary>
+    /// Gets what a player is handed each time it is put back, beside what the mission gives its own player: weapons by their
+    /// script id, each with the rounds its ammunition is filled to.
+    /// </summary>
+    public MpLoadout[] Loadout { get; init; } = [];
 
     /// <summary>Gets a value indicating whether the level's own soldiers are kept (a horde map); otherwise none are made.</summary>
     public bool KeepsSoldiers { get; init; }

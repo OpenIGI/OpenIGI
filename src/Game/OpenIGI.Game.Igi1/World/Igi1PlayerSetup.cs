@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="sounds">The clatter of a dropped gun landing.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(
+public sealed partial class Igi1PlayerSetup(
     MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
