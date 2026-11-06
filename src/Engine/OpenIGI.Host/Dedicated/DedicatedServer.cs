@@ -43,6 +43,8 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         session.Banned = bans.Check;
         session.Rcon = Remote;
         session.RotatesMaps = config.Rotation.Count > 1;
+        session.ChangeMap = ChangeMap;
+        session.IdleKickSeconds = config.IdleKickSeconds;
     }
 
     /// <summary>Gets the console its commands run through.</summary>

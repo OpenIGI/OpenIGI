@@ -381,6 +381,54 @@ public sealed class SessionLoopbackTests
         Assert.Equal(1, resets);
     }
 
+    [Fact]
+    public void A_vote_is_called_in_chat_without_the_command_being_said_and_a_player_standing_idle_is_put_off()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy") { IdleKickSeconds = 3 };
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+        ];
+        clients[0].Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+        clients[1].Connect(serverNet.LocalAddress, new JoinRequest("two", "test", string.Empty), now);
+
+        // One keeps moving its look; two stands still from the moment it is in.
+        float[] idle = new float[ToyWorld.Channels];
+        List<string> heardByTwo = [];
+        for (long tick = 0; tick < 8 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            if (tick == 1 * TickRate)
+            {
+                clients[0].Say("/vote restart");
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                float[] look = new float[ToyWorld.Channels];
+                look[0] = (tick % 2) * 0.5f;
+                clients[i].SendCommand(i == 0 ? look : idle, now);
+                clients[i].Flush(now);
+            }
+
+            heardByTwo.AddRange(clients[1].TakeChat().Select(static l => l.Text));
+        }
+
+        Assert.DoesNotContain("/vote restart", heardByTwo);
+        Assert.Contains(heardByTwo, l => l.Contains("calls a vote to start the match over", StringComparison.Ordinal));
+        Assert.Contains("idle", clients[1].EndReason ?? string.Empty, StringComparison.Ordinal);
+        Assert.Null(clients[0].EndReason);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);

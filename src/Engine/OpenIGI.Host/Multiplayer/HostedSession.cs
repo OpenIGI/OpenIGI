@@ -177,6 +177,8 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
             _session.Banned = Banned;
             _session.Rcon = Rcon;
+            _session.ChangeMap = ChangeMap;
+            _session.IdleKickSeconds = IdleKickSeconds;
             _session.Mode = NewMode(_world);
             if (Layout is { } layout)
             {
@@ -307,7 +309,14 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     }
 
     /// <inheritdoc/>
-    public void Say(string text) => _session?.Say(text);
+    public void Say(string text)
+    {
+        // The host's own /vote, /yes and /no are its say in the room, not lines to it.
+        if (_session is { } session && !session.TryHostCommand(text))
+        {
+            session.Say(text);
+        }
+    }
 
     /// <inheritdoc/>
     public void Mark(Int3 position) => _session?.Mark(position);

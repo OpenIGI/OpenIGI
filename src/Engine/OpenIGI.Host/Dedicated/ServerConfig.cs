@@ -61,6 +61,9 @@ public sealed record ServerConfig
     /// <summary>Gets the master server.</summary>
     public Uri Master { get; init; } = Net.Rooms.RoomTransport.DefaultMaster;
 
+    /// <summary>Gets how long a player may stand idle before it is put off, in seconds; 0 never (<c>afk_kick</c>).</summary>
+    public int IdleKickSeconds { get; init; }
+
     /// <summary>Gets the ban list's file, beside the server unless rooted.</summary>
     public string BansFile { get; init; } = "bans.json";
 
@@ -121,6 +124,10 @@ public sealed record ServerConfig
                     break;
                 case "rcon_password":
                     config = config with { RconPassword = value };
+                    break;
+                case "afk_kick" or "idle_kick":
+                    ok = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int idle) && idle >= 0;
+                    config = ok ? config with { IdleKickSeconds = idle } : config;
                     break;
                 case "motd":
                     config = config with { Motd = value };

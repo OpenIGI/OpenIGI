@@ -29,6 +29,12 @@ public sealed partial class HostedSession
     /// <summary>Gets or sets a value indicating whether the server goes on to other maps, so a decided match ends its map rather than playing again.</summary>
     public bool RotatesMaps { get; set; }
 
+    /// <summary>Gets or sets what changes the map a players' vote carried (<see cref="ServerSession.ChangeMap"/>).</summary>
+    public Func<int, string?, string?>? ChangeMap { get; set; }
+
+    /// <summary>Gets or sets how long a joined player may stand idle before it is put off, in seconds; 0 never.</summary>
+    public double IdleKickSeconds { get; set; }
+
     /// <summary>Gets a value indicating whether the match on this map is over and the next map is due.</summary>
     public bool IsMapOver => _session?.Mode.IsMapOver == true;
 

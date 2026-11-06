@@ -312,6 +312,7 @@ public sealed partial class ServerSession : IModeHost
     /// <param name="tick">The tick just run.</param>
     public void Send(double now, long tick)
     {
+        TickSay(now);
         foreach ((string name, (int parked, double since)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
         {
             _world.ForgetPlayer(parked);
@@ -830,7 +831,7 @@ public sealed partial class ServerSession : IModeHost
             // Said or marked by a client: told to everyone, under its own entity whatever it claimed, and only as fast as its
             // budget allows -- what one client sends, every other is sent.
             case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
-                if (client.Chat.TrySpend(_now))
+                if (client.Chat.TrySpend(_now) && !TryCommand(slot, line.Text))
                 {
                     Say(line with { Entity = client.Entity });
                 }
@@ -881,6 +882,11 @@ public sealed partial class ServerSession : IModeHost
             foreach (UserCommand command in _commands)
             {
                 buffer.Push(command);
+                if (Differs(command.Channels, client.LastChannels))
+                {
+                    client.ActiveAt = _now;
+                    client.LastChannels = (float[])command.Channels.Clone();
+                }
             }
         }
     }
@@ -939,6 +945,11 @@ public sealed partial class ServerSession : IModeHost
         public long SnapshotBytes { get; set; }
 
         public int LevelMessages { get; set; }
+
+        // When its player last touched the keys, and what it sent then (the idle kick's).
+        public double ActiveAt { get; set; } = double.NaN;
+
+        public float[]? LastChannels { get; set; }
 
         public long LevelBytes { get; set; }
     }

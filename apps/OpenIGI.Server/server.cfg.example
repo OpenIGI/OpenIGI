@@ -7,6 +7,7 @@ port 26001                    # UDP; open it in your firewall for desktop player
 maxplayers 16                 # 1-32
 password ""                   # empty: anyone may join
 motd "Welcome! Be nice."      # told to each player as they join
+afk_kick 180                  # seconds a player may stand idle before being put off; 0 never
 rcon_password ""              # set to allow the remote console: in game, rcon_password <pw> then rcon <command>
 region eu                     # shown in the browser: eu, na, sa, asia, oce, af, me
 
