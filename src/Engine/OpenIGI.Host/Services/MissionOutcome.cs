@@ -51,6 +51,9 @@ internal interface IMissionOutcomeHost
     // A co-op client's: the mission goes on, or again, where its server takes it.
     bool FollowsSession { get; }
 
+    // A versus session's: the level is an arena, so its own objectives and failures end nothing; the mode does.
+    bool PlaysArena { get; }
+
     /// <summary>Lets go of the mission being played.</summary>
     void ReleasePlayedMission();
 }
@@ -90,6 +93,12 @@ internal sealed class MissionOutcome(MissionSession session, IOpenIgiLogger logg
         }
 
         host.Objectives?.TickAfterLevelState();
+        if (host.PlaysArena)
+        {
+            session.ClearFailure();
+            return;
+        }
+
         if (host.Objectives is { IsFailed: true } || host.TitlePlayer is { Outcome: TitleMissionOutcome.Failed })
         {
             // The retail grace period first; see MissionSession.CountFailure.

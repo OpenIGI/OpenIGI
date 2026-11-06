@@ -25,6 +25,9 @@ public sealed partial class GameHost
     // The mission being played: which, its level tree, and how far it has got to being decided.
     private readonly MissionSession _session;
 
+    /// <summary>Gets whether the mission-failed page is up: what a versus test checks never opens.</summary>
+    internal bool ShowsMissionFailed => _session.FailedMenu;
+
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))

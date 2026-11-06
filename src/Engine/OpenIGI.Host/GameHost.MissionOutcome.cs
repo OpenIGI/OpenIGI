@@ -69,6 +69,8 @@ public sealed partial class GameHost
 
         public bool FollowsSession => host.TickObserver is Multiplayer.ISessionFollower;
 
+        public bool PlaysArena => host.TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
+
         public void ReleasePlayedMission() => host.ReleasePlayedMission();
     }
 }

@@ -75,6 +75,17 @@ public sealed class Igi1VersusTests
         Assert.True(fromFar < 4096, $"put back {fromFar} units from the far spawn, at {partner.Player.Body.Position}, host {pair.Host.World.Player!.Body.Position} was {host}, deaths {pair.Session.Session!.Match.Players.Values.Sum(p => p.Deaths)}");
     }
 
+    [RequiresGameDataFact]
+    public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        Game.Igi1.World.IHarmedPlayer own = pair.Host!.Harm.Players.First(p => ReferenceEquals(p.Rig, pair.Host.World.Player));
+        own.Health.Apply(0, 100000f);
+        Assert.True(pair.RunUntil(() => pair.Host.World.IsPlayerDead, 300) >= 0, "the host never fell");
+        Assert.True(pair.RunUntil(() => !pair.Host.World.IsPlayerDead, 30 * 8) >= 0, "the host was never put back");
+        Assert.False(pair.HostGame.ShowsMissionFailed);
+    }
+
     private static Igi1CoopPair Joined(string mode)
     {
         Igi1CoopPair pair = new(mode, mission: 1);
