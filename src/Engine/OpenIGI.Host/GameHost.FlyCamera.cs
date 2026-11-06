@@ -86,6 +86,12 @@ public sealed partial class GameHost
                 Viewpoint?.ControlDeathView(rawX, rawY);
                 _window.CursorLocked = !state.CaptureMode;
 
+                // In a match, fire watches the next living player of one's side.
+                if (_window.Input.Mouse.WasPressed(Input.MouseButton.Left))
+                {
+                    _spectatePick++;
+                }
+
                 // The look is not driving the view this frame, so it must not consider itself
                 // capturing: whenever the orbit hands control back, the first frame of look is a
                 // settling one and the re-lock's re-centring is absorbed rather than aimed with.

@@ -348,10 +348,18 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     // A round from a player's gun hurt a player: noted against the one it hurt, if a player fired it.
     private void NoteHurt(IHarmedPlayer hurt, ShotTally? by)
     {
-        if (by is not null && EntityOf(hurt.Rig) is { } entity && EntityOf(by) != entity)
+        if (EntityOf(hurt.Rig) is not { } entity)
+        {
+            return;
+        }
+
+        int? attacker = by is not null ? EntityOf(by) : null;
+        if (by is not null && attacker != entity)
         {
             _lastHurtBy[entity] = (by, CurrentTick);
         }
+
+        NoteCombat(hurt, entity, attacker == entity ? null : attacker);
     }
 
     // The player who killed one that just died: the last whose round hurt it, lately enough; -1 for the level (a guard, a fall).

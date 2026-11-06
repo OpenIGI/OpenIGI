@@ -274,6 +274,48 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
         _session is { } session && _world is { } world ? session.CurrentMatch(world.CurrentTick).Banner(0) : null;
 
     /// <inheritdoc/>
+    public Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick)
+    {
+        if (_world is not { } world || CurrentScoreboard is not { } board || LocalEntity is not { } own || !Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
+        {
+            return null;
+        }
+
+        return Game.Multiplayer.Modes.Spectating.Pick(
+            board,
+            own,
+            Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+            entity => board.Lines.Where(l => l.Entity == entity).Select(static l => (int?)l.Slot).FirstOrDefault() is { } slot ? world.PositionOf(slot) : null,
+            pick);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> NetGraph =>
+        _session is { } session
+            ?
+            [
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"HOSTING {session.Clients.Count()} {(session.Clients.Count() == 1 ? "PLAYER" : "PLAYERS")}   {_tickRate} TICKS/S"),
+                .. session.Clients.Select(slot => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture, $"{session.NameOf(slot) ?? "?",-16}  {session.PingOf(slot)} ms")),
+            ]
+            : [];
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view)
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        if (_session is not { } session || _world is not { } world)
+        {
+            return null;
+        }
+
+        _combat.Take(session.TakeHostCombat(), ServerSession.HostEntity, now);
+        return _combat.Shown(now, eye, view, session.CurrentMatch(world.CurrentTick));
+    }
+
+    private readonly Game.Multiplayer.Modes.CombatFeedback _combat = new();
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session is { } session && _world is { } world
             ? Game.Multiplayer.Modes.MatchHud.Of(session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout)

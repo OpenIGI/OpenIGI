@@ -118,6 +118,10 @@ public interface IReplicatedWorld
     /// <returns>The deaths; the killer is -1 when nobody killed it.</returns>
     IReadOnlyList<WorldDeath> TakeDeaths();
 
+    /// <summary>Takes the hits since the last call: on players, and players' on the level's soldiers.</summary>
+    /// <returns>The hits.</returns>
+    IReadOnlyList<CombatNote> TakeCombat() => [];
+
     /// <summary>Gets the map's round objectives, or none for a map played without them.</summary>
     IReadOnlyList<IRoundObjective> RoundObjectives { get; }
 
@@ -347,4 +351,8 @@ public enum SessionMessage : byte
     /// Only ever over a sealed line -- UDP's AES-GCM or WebRTC's DTLS -- so the password is never readable on the way.
     /// </summary>
     Rcon = 16,
+
+    /// <summary>Server to client: hits the client's player scored or took (<see cref="CombatNote"/>), for its hit marker and
+    /// the marks of where shots came from.</summary>
+    Combat = 18,
 }

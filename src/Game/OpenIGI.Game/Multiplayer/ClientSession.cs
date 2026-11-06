@@ -143,6 +143,22 @@ public sealed class ClientSession
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    private readonly List<CombatNote> _combat = [];
+
+    /// <summary>Takes the hits this client's player scored or took that the server told of since the last call.</summary>
+    /// <returns>The hits.</returns>
+    public IReadOnlyList<CombatNote> TakeCombat()
+    {
+        if (_combat.Count == 0)
+        {
+            return [];
+        }
+
+        CombatNote[] notes = [.. _combat];
+        _combat.Clear();
+        return notes;
+    }
+
     // Level resets the server has told of and the client has not yet made.
     private int _levelResets;
 
@@ -569,6 +585,14 @@ public sealed class ClientSession
                 break;
             case SessionMessage.LevelReset:
                 _levelResets++;
+                break;
+            case SessionMessage.Combat when CombatNote.Read(ref reader) is { } hit:
+                _combat.Add(hit);
+                if (_combat.Count > 64)
+                {
+                    _combat.RemoveAt(0);
+                }
+
                 break;
             case SessionMessage.Rcon:
                 int lines = (int)reader.ReadBits(8);

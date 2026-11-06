@@ -385,6 +385,74 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     }
 
     /// <inheritdoc/>
+    public Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick) =>
+        _session is { EntityId: { } own, Latest: { } latest } session && Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode)
+            ? Game.Multiplayer.Modes.Spectating.Pick(
+                session.Scoreboard,
+                own,
+                Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+                entity => latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
+                    ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
+                    : null,
+                pick)
+            : null;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> NetGraph
+    {
+        get
+        {
+            double now = _clock.Elapsed.TotalSeconds;
+            if (_session is not { } session || _netClient?.Connection is not { } connection)
+            {
+                return [];
+            }
+
+            // The rates over the last second or so, sampled as they are asked for.
+            if (now - _graphAt >= 1)
+            {
+                double seconds = now - _graphAt;
+                _graphSnapshots = (session.SnapshotsAssembled - _graphSnapshotsAt) / seconds;
+                _graphCorrections = (session.Reconciler.Corrections - _graphCorrectionsAt) / seconds;
+                _graphAt = now;
+                _graphSnapshotsAt = session.SnapshotsAssembled;
+                _graphCorrectionsAt = session.Reconciler.Corrections;
+            }
+
+            NetStatistics stats = connection.Statistics;
+            System.Globalization.CultureInfo invariant = System.Globalization.CultureInfo.InvariantCulture;
+            return
+            [
+                string.Create(invariant, $"PING {stats.RoundTripTime * 1000:0} ms   JITTER {stats.RoundTripJitter * 1000:0} ms   LOSS {stats.PacketLoss * 100:0.0}%"),
+                string.Create(invariant, $"IN {stats.BytesReceivedPerSecond / 1024:0.0} KiB/s   OUT {stats.BytesSentPerSecond / 1024:0.0} KiB/s   CHOKE {stats.Choked}"),
+                string.Create(invariant, $"SNAPSHOTS {_graphSnapshots:0}/s   INTERP {(session.Clock?.AppliedInterpolationDelay ?? 0) * 1000:0} ms"),
+                string.Create(invariant, $"CORRECTIONS {_graphCorrections:0.0}/s   LAST {session.Reconciler.LastError:0}   {(Relayed ? "RELAYED" : "DIRECT")}"),
+            ];
+        }
+    }
+
+    private double _graphAt;
+    private double _graphSnapshots;
+    private double _graphCorrections;
+    private long _graphSnapshotsAt;
+    private long _graphCorrectionsAt;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view)
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        if (_session is not { } session)
+        {
+            return null;
+        }
+
+        _combat.Take(session.TakeCombat(), session.EntityId ?? -1, now);
+        return _combat.Shown(now, eye, view, session.MatchState);
+    }
+
+    private readonly Game.Multiplayer.Modes.CombatFeedback _combat = new();
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session?.MatchState is { } state
             ? Game.Multiplayer.Modes.MatchHud.Of(

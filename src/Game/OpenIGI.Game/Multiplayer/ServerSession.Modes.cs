@@ -93,6 +93,51 @@ public sealed partial class ServerSession
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    private readonly List<CombatNote> _hostCombat = [];
+
+    /// <summary>Takes the hits the listen server's own player scored or took since the last call, for its HUD.</summary>
+    /// <returns>The hits.</returns>
+    public IReadOnlyList<CombatNote> TakeHostCombat()
+    {
+        if (_hostCombat.Count == 0)
+        {
+            return [];
+        }
+
+        CombatNote[] notes = [.. _hostCombat];
+        _hostCombat.Clear();
+        return notes;
+    }
+
+    // Each hit to the two in it -- the shooter and the one hit -- and to no one else: what a player learns of a fight is its own.
+    private void TellCombat()
+    {
+        foreach (CombatNote note in _world.TakeCombat())
+        {
+            int shooter = note.Attacker >= 0 ? SlotOf(note.Attacker) : -1;
+            int victim = note.Victim >= 0 ? SlotOf(note.Victim) : -1;
+            foreach (int slot in shooter == victim ? [shooter] : (int[])[shooter, victim])
+            {
+                if (slot == HostSlot)
+                {
+                    _hostCombat.Add(note);
+                }
+                else if (slot >= 0 && _clients.ContainsKey(slot))
+                {
+                    _writer.Reset();
+                    _writer.WriteBits((uint)SessionMessage.Combat, 8);
+                    note.Write(_writer);
+                    _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+                }
+            }
+        }
+
+        if (_hostCombat.Count > 64)
+        {
+            _hostCombat.RemoveRange(0, _hostCombat.Count - 64);
+        }
+    }
+
     // Where the match stands, when it changes and every few seconds besides, which a late joiner and a clock that drifted are
     // put right by.
     private void TellMatch(long tick)

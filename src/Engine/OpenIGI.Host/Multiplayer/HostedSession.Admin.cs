@@ -38,6 +38,17 @@ public sealed partial class HostedSession
     /// <summary>Gets a value indicating whether the match on this map is over and the next map is due.</summary>
     public bool IsMapOver => _session?.Mode.IsMapOver == true;
 
+    /// <summary>Gets a value indicating whether the match is decided and its card is up: the time to vote the next map.</summary>
+    public bool IsMatchDecided => _session?.Mode.Flow.Phase == MatchPhase.Intermission;
+
+    /// <summary>Offers the players the next map to vote for (<see cref="ServerSession.OfferMaps"/>).</summary>
+    /// <param name="choices">The maps.</param>
+    public void OfferMaps(IReadOnlyList<(int Mission, string Mode)> choices) => _session?.OfferMaps(choices);
+
+    /// <summary>Takes the map the players picked (<see cref="ServerSession.TakeChosenMap"/>).</summary>
+    /// <returns>The map, or <see langword="null"/>.</returns>
+    public (int Mission, string Mode)? TakeChosenMap() => _session?.TakeChosenMap();
+
     /// <summary>Gets the map played.</summary>
     public string Map => _session?.Map ?? _options.Map;
 

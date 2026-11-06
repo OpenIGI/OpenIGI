@@ -113,7 +113,7 @@ public sealed partial class GameHost
             }
         }
 
-        public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(centre);
+        public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(host.Spectated()?.Position ?? centre);
 
         public void FollowTeammate(Vector3d eye, float yaw, float pitch) => host.Viewpoint?.FollowTeammateView(eye, yaw, pitch);
 

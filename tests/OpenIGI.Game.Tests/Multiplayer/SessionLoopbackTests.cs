@@ -429,6 +429,103 @@ public sealed class SessionLoopbackTests
         Assert.Null(clients[0].EndReason);
     }
 
+    [Fact]
+    public void A_hit_is_told_to_the_shooter_and_the_one_hit_and_to_no_one_else()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        List<CombatNote>[] told = [[], [], []];
+        float[] idle = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            if (tick == 2 * TickRate)
+            {
+                world.Combat.Add(new CombatNote(clients[0].EntityId!.Value, clients[1].EntityId!.Value, 0.3f, Killed: false, Head: true, new(100, 200, 300)));
+            }
+
+            server.Send(now, tick);
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                told[i].AddRange(clients[i].TakeCombat());
+            }
+        }
+
+        CombatNote hit = Assert.Single(told[0]);
+        Assert.Equal(hit, Assert.Single(told[1]));
+        Assert.Equal((0.3f, true, 200d), (MathF.Round(hit.Damage, 2), hit.Head, hit.From.Y));
+        Assert.Empty(told[2]);
+    }
+
+    [Fact]
+    public void A_decided_match_offers_the_next_maps_and_the_most_picked_one_is_taken()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        float[] idle = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            if (tick == 1 * TickRate)
+            {
+                server.OfferMaps([(3, "sd"), (5, "tdm")]);
+            }
+
+            if (tick == 2 * TickRate)
+            {
+                clients[0].Say("/2");
+                clients[1].Say("/2");
+                clients[2].Say("/1");
+            }
+
+            server.Send(now, tick);
+            foreach (ClientSession client in clients)
+            {
+                client.Receive(now);
+                client.SendCommand(idle, now);
+                client.Flush(now);
+            }
+        }
+
+        Assert.Equal((5, "tdm"), server.TakeChosenMap());
+        Assert.Null(server.TakeChosenMap());
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);
@@ -516,6 +613,16 @@ public sealed class SessionLoopbackTests
         public int TeamOf(int slot) => _bySlot.ContainsKey(slot) ? slot % 2 : -1;
 
         public IReadOnlyList<WorldDeath> TakeDeaths() => [];
+
+        // Hits a test makes happen, taken by the server on its next tick.
+        public List<CombatNote> Combat { get; } = [];
+
+        public IReadOnlyList<CombatNote> TakeCombat()
+        {
+            CombatNote[] taken = [.. Combat];
+            Combat.Clear();
+            return taken;
+        }
 
         public IReadOnlyList<IRoundObjective> RoundObjectives => [];
 

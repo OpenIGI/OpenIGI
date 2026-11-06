@@ -428,6 +428,34 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // Dead in a match, watching a living player.
+        if (Spectated() is { } watched && _remasteredHud is { IsReady: true } spectateHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            spectateHud.DrawSpectating(state.Batch, watched.Name, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The connection, as net_graph asks.
+        if (Game.Multiplayer.NetCVars.NetGraph.Value && TickObserver is ISessionScoreboard { NetGraph: { Count: > 0 } graph } && _remasteredHud is { IsReady: true } graphHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            graphHud.DrawNetGraph(state.Batch, graph, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The local player's fight: the hit marker and where shots that struck it came from.
+        if (TickObserver is ISessionScoreboard fighting && TitlePlayer is { } eyes && _remasteredHud is { IsReady: true } combatHud
+            && fighting.Combat(eyes.EyePosition, eyes.ViewOrientation) is { } combat)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            combatHud.DrawCombat(state.Batch, combat, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // The kills of late, down the top right corner.
         if (TickObserver is ISessionScoreboard { KillFeed: { Count: > 0 } kills } && _remasteredHud is { IsReady: true } feedHud)
         {

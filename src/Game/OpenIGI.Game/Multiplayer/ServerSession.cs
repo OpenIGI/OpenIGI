@@ -327,6 +327,7 @@ public sealed partial class ServerSession : IModeHost
         }
 
         Mode.Tick(this, tick, _world.TakeDeaths());
+        TellCombat();
         TellMatch(tick);
 
         if (tick % TickRate == 0)

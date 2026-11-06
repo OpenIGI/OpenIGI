@@ -253,6 +253,33 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws whom a dead player watches, low in the middle of the screen, and how to watch the next.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="name">The watched player's name.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawSpectating(SpriteBatch batch, string name, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the net graph: a few lines on the connection, on a plate at the right of the screen.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="lines">The lines.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawNetGraph(SpriteBatch batch, IReadOnlyList<string> lines, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the local player's combat feedback round the crosshair: the hit marker, and where shots that struck it came from.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="hud">What to show.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawCombat(SpriteBatch batch, Game.Multiplayer.Modes.CombatHud hud, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws the kills of late down the top right corner, each killer and victim in its team's colour.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="kills">The kills, oldest first.</param>

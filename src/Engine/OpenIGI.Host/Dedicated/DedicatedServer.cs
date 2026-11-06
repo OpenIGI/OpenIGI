@@ -21,6 +21,9 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     private int _rotationAt;
     private bool _changing;
 
+    // Whether the decided match has offered its next maps yet.
+    private bool _offered;
+
     /// <summary>Initialises a new instance of the <see cref="DedicatedServer"/> class.</summary>
     /// <param name="session">The session.</param>
     /// <param name="config">The server's settings.</param>
@@ -78,15 +81,36 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     /// <param name="now">The clock, in seconds.</param>
     public void Tick(double now)
     {
-        // A decided match on a server with a rotation: on to the next map, once.
+        // A decided match: the next few of the rotation offered to vote for while its card is up.
+        if (_session.IsMatchDecided && !_offered && _config.Rotation.Count > 1)
+        {
+            _offered = true;
+            _session.OfferMaps([.. Enumerable.Range(1, Math.Min(3, _config.Rotation.Count - 1))
+                .Select(step => _config.Rotation[(_rotationAt + step) % _config.Rotation.Count])
+                .Select(static r => (r.Mission, r.Mode))]);
+        }
+
+        // Then on to the map the players picked, or the rotation's next; once.
         if (_session.IsMapOver && !_changing)
         {
             _changing = true;
-            _ = NextMap();
+            if (_session.TakeChosenMap() is { } picked)
+            {
+                _rotationAt = Math.Max(0, _config.Rotation.ToList().FindIndex(r => r.Mission == picked.Mission && r.Mode == picked.Mode));
+                if (ChangeMap(picked.Mission, picked.Mode.Length > 0 ? picked.Mode : null) is { } problem)
+                {
+                    _logger.Warning(LogCategory, $"The picked mission {picked.Mission} cannot be played: {problem}");
+                }
+            }
+            else
+            {
+                _ = NextMap();
+            }
         }
         else if (!_session.IsMapOver)
         {
             _changing = false;
+            _offered = _session.IsMatchDecided && _offered;
         }
 
         Greet();

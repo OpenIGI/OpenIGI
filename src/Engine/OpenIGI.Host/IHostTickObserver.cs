@@ -37,6 +37,20 @@ public interface ISessionScoreboard
     /// <returns>The HUD.</returns>
     Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) => null;
 
+    /// <summary>Gets who the local player, dead, watches: the next living player of its side for each time it asked.</summary>
+    /// <param name="pick">How many times it asked for the next.</param>
+    /// <returns>The watched player, or <see langword="null"/> for its own body.</returns>
+    Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick) => null;
+
+    /// <summary>Gets the net graph's lines now (<c>net_graph</c>): the connection as this end sees it.</summary>
+    IReadOnlyList<string> NetGraph => [];
+
+    /// <summary>Gets the local player's combat feedback now -- its hit marker, where shots that struck it came from -- for a view.</summary>
+    /// <param name="eye">Where the view is, in world units.</param>
+    /// <param name="view">Which way it looks: rows right, up and forward.</param>
+    /// <returns>The feedback, or <see langword="null"/> for nothing to show.</returns>
+    Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view) => null;
+
     /// <summary>Gets what the mode last said of itself (a bomb planted, and where), or <see langword="null"/>.</summary>
     Game.Multiplayer.Modes.ModeReport? ModeReport => null;
 
