@@ -1,4 +1,5 @@
 using OpenIGI.Game.Igi1.Player;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Igi1.World;
@@ -42,6 +43,10 @@ public sealed partial class Igi1PlayerSetup
             Hand(rig, weapons, weapon, rounds);
         }
     }
+
+    /// <summary>Writes a line of the session's diagnostics, where a versus player was put and how.</summary>
+    /// <param name="line">The line.</param>
+    public void NoteSession(string line) => host.Logger.Information("NetDiag", line);
 
     private void Hand(PlayerCamera rig, OpenIGI.Game.Player.PlayerWeapons weapons, string scriptId, int rounds)
     {

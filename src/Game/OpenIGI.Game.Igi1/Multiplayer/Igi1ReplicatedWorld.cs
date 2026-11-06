@@ -416,7 +416,15 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             _game.Harm.RevivePlayer(at: null, facing: 0f);
             if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
             {
-                own.PlaceAt(_game.World.Ground, (IsVersus ? VersusSpawn(slot, spawn) : null) ?? spawn);
+                if (IsVersus)
+                {
+                    PlaceVersus(own, slot, spawn);
+                }
+                else
+                {
+                    own.PlaceAt(_game.World.Ground, spawn);
+                }
+
                 Restock(own);
             }
 
@@ -800,9 +808,9 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             return;
         }
 
-        if (IsVersus && VersusSpawn(slot, spawn) is { } arena)
+        if (IsVersus)
         {
-            player.Player.PlaceAt(_game.World.Ground, arena);
+            PlaceVersus(player.Player, slot, spawn);
             return;
         }
 

@@ -82,6 +82,44 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_joiner_put_down_in_a_laid_out_arena_lands_on_its_feet_and_lives()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Core.Numerics.Vector3d first = partner.Player.Body.Position;
+        double lowest = first.Z;
+        pair.RunUntil(() =>
+        {
+            lowest = Math.Min(lowest, partner.Player.Body.Position.Z);
+            return partner.IsDead;
+        }, 30 * 10);
+        Assert.False(partner.IsDead, $"put down at {first}, fell to {lowest} ({(first.Z - lowest) / 4096:0.0} m) and died");
+    }
+
+    [RequiresGameDataFact]
+    public void A_spawn_with_no_ground_under_it_is_passed_over_for_one_that_has()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Core.Numerics.Vector3d host = Landed(pair);
+
+        // Mission 1 has a soldier far below its ground, where a player put would fall forever (seen live, 2026-11-06); it is
+        // the farthest spawn, and passed over for the one on the host's ground.
+        double[] grounded = [host.X + 20480, host.Y, host.Z];
+        double[] under = [24103034, -55681832, 161166576];
+        MpLayout layout = new() { Title = "igi1", Map = "1", Spawns = [new MpSpawn(grounded), new MpSpawn(under)] };
+        ((IModeHost)pair.Session.Session!).World.UseLayout(layout);
+
+        Game.Igi1.World.IHarmedPlayer harmed = pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player));
+        harmed.Health.Apply(0, 100000f);
+        Assert.True(pair.RunUntil(() => partner.IsDead, 300) >= 0, "the partner never fell");
+        Assert.True(pair.RunUntil(() => !partner.IsDead, 30 * 6) >= 0, "the partner was never put back");
+        Assert.True(Math.Abs(partner.Player.Body.Position.X - grounded[0]) < 4096, $"put back at {partner.Player.Body.Position}");
+        pair.RunUntil(() => partner.IsDead, 90);
+        Assert.False(partner.IsDead, "the partner fell to its death again");
+    }
+
+    [RequiresGameDataFact]
     public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
     {
         using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
@@ -117,6 +155,33 @@ public sealed class Igi1VersusTests
         Assert.Equal(GameModes.FreeForAll, pair.Client.Mode);
         Assert.True(pair.RunUntil(() => pair.Joiner?.World.Soldiers?.SoldierViews is { } views && !views.Any(), 3000) >= 0,
             "the joiner still has the level's soldiers");
+
+        // And, the level loaded again, it stands where the server has it and lives.
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Core.Numerics.Vector3d first = partner.Player.Body.Position;
+        double lowest = first.Z;
+        pair.RunUntil(() =>
+        {
+            lowest = Math.Min(lowest, partner.Player.Body.Position.Z);
+            return partner.IsDead;
+        }, 30 * 10);
+        Assert.False(partner.IsDead, $"at {first}, fell to {lowest} ({(first.Z - lowest) / 4096:0.0} m) and died");
+        double apart = Core.Numerics.Vector3d.Distance(pair.Joiner!.World.Player!.Body.Position, partner.Player.Body.Position);
+        Assert.True(apart < 4096, $"the joiner's own body is {apart / 4096:0.0} m from the server's");
+    }
+
+    // The host's feet once it has come down from the level's start.
+    private static Core.Numerics.Vector3d Landed(Igi1CoopPair pair)
+    {
+        Core.Numerics.Vector3d host = default;
+        Assert.True(pair.RunUntil(() =>
+        {
+            Core.Numerics.Vector3d now = pair.Host!.World.Player!.Body.Position;
+            bool settled = Math.Abs(now.Z - host.Z) < 1;
+            host = now;
+            return settled;
+        }, 600) >= 0, "the host never came to rest");
+        return host;
     }
 
     private static Igi1CoopPair Joined(string mode)

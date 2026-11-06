@@ -98,8 +98,22 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public bool Relayed => _room?.Relayed == true;
 
+    /// <summary>Ends the host's own player in a versus game, as the <c>kill</c> command does.</summary>
+    /// <returns><see langword="true"/> when there was one to end.</returns>
+    public bool KillOwn()
+    {
+        if (!_options.IncludesHost || _world is not { } world || !Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
+        {
+            return false;
+        }
+
+        world.KillPlayer(ServerSession.HostSlot);
+        return true;
+    }
+
     /// <inheritdoc/>
-    public float? OwnRevive => _options.IncludesHost ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
+    public float? OwnRevive =>
+        _options.IncludesHost && Game.Multiplayer.Modes.PlayerSides.Revivable(Mode) ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
 
     /// <summary>A map as a player reads it: a mission by its number, anything else as it is.</summary>
     /// <param name="map">The map.</param>

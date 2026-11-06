@@ -88,7 +88,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     /// <remarks>A fallen player's health byte carries its revival, in the snapshots the server sends.</remarks>
     public float? OwnRevive =>
-        _session is { EntityId: { } self, Latest: { } latest } && latest.TryGet(self, out ReplicatedHuman own) && (own.Flags & ReplicatedHumanCondition.Alive) == 0
+        Game.Multiplayer.Modes.PlayerSides.Revivable(Mode) && _session is { EntityId: { } self, Latest: { } latest } && latest.TryGet(self, out ReplicatedHuman own) && (own.Flags & ReplicatedHumanCondition.Alive) == 0
             ? own.Health / 255f
             : null;
 

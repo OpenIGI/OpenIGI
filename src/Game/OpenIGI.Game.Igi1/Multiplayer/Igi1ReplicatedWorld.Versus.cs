@@ -55,11 +55,11 @@ public sealed partial class Igi1ReplicatedWorld
 
     // Where a player of a versus match is put: one of its team's spawns (anyone's in a free-for-all), the one farthest from
     // every other player still standing, as Source's deathmatch spawn picks; the level's own start without a layout.
-    private PlayerSpawnPoint? VersusSpawn(int slot, PlayerSpawnPoint start)
+    private IEnumerable<PlayerSpawnPoint> VersusSpawns(int slot, PlayerSpawnPoint start)
     {
         if (_layout is not { Spawns.Length: > 0 } layout)
         {
-            return null;
+            return [];
         }
 
         List<Vector3d> others = [];
@@ -70,21 +70,34 @@ public sealed partial class Igi1ReplicatedWorld
 
         others.AddRange(_bySlot.Where(p => p.Key != slot && !p.Value.IsDead).Select(p => p.Value.Player.Body.Position));
         int team = _versus == Versus.Teams ? TeamOf(slot) : -1;
-        Game.Multiplayer.Modes.MpSpawn? best = null;
-        double farthest = double.MinValue;
-        foreach (Game.Multiplayer.Modes.MpSpawn spawn in layout.SpawnsFor(team))
-        {
-            Vector3d at = new(spawn.Position[0], spawn.Position[1], spawn.Position[2]);
-            double nearest = others.Count == 0 ? 0 : others.Min(o => Vector3d.Distance(o, at));
-            if (nearest > farthest)
+
+        // Farthest from the nearest other player first.
+        return layout.SpawnsFor(team)
+            .Select(spawn => start with
             {
-                (best, farthest) = (spawn, nearest);
+                Position = new Vector3d(spawn.Position[0], spawn.Position[1], spawn.Position[2]),
+                Gamma = spawn.Yaw * MathF.PI / 180f,
+            })
+            .OrderByDescending(at => others.Count == 0 ? 0 : others.Min(o => Vector3d.Distance(o, at.Position)));
+    }
+
+    // Puts a versus player at the farthest of the map's spawns that has ground under it -- one with none (a soldier's place
+    // up a tower, or over a drop) would leave it falling -- or, failing all, at the level's own start.
+    private void PlaceVersus(PlayerCamera rig, int slot, PlayerSpawnPoint start)
+    {
+        foreach (PlayerSpawnPoint spawn in VersusSpawns(slot, start))
+        {
+            bool grounded = rig.PlaceAt(_game.World.Ground, spawn);
+            _game.PlayerSetup?.NoteSession(
+                $"versus spawn for slot {slot}: {spawn.Position} -> {rig.Body.Position} ({(spawn.Position.Z - rig.Body.Position.Z) / 4096:0.0} m down), ground {grounded}");
+            if (grounded)
+            {
+                return;
             }
         }
 
-        return best is null
-            ? null
-            : start with { Position = new Vector3d(best.Position[0], best.Position[1], best.Position[2]), Gamma = best.Yaw * MathF.PI / 180f };
+        bool atStart = rig.PlaceAt(_game.World.Ground, start);
+        _game.PlayerSetup?.NoteSession($"versus spawn for slot {slot}: level start {start.Position} -> {rig.Body.Position}, ground {atStart}");
     }
 
     /// <inheritdoc/>

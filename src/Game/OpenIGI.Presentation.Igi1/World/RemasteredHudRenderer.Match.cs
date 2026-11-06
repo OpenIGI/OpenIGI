@@ -71,24 +71,26 @@ internal sealed partial class RemasteredHudRenderer
         float y = context.SafeRect.Y + Px(64f);
         foreach (KillNote kill in kills)
         {
-            // Killer, then what happened, then victim: right-aligned, a killer of none read as the victim's own end.
-            string verb = kill.Killer.Length == 0 ? "died" : "killed";
-            float victimWidth = type.Body.MeasureWidth(kill.Victim, size);
-            float verbWidth = type.Body.MeasureWidth(verb, size);
-            float killerWidth = kill.Killer.Length == 0 ? 0f : type.Body.MeasureWidth(kill.Killer, size);
-            float width = killerWidth + verbWidth + victimWidth + (gap * (kill.Killer.Length == 0 ? 3 : 4));
+            // Killer, then what happened, then victim; a death with no killer reads as the victim's own: "Joe died".
+            bool own = kill.Killer.Length == 0;
+            (string Text, Bgra32 Colour)[] parts = own
+                ? [(kill.Victim, SideColour(kill.VictimTeam)), ("died", UiPalette.TextBody)]
+                : [(kill.Killer, SideColour(kill.KillerTeam)), ("killed", UiPalette.TextBody), (kill.Victim, SideColour(kill.VictimTeam))];
+            float width = gap;
+            foreach ((string text, _) in parts)
+            {
+                width += type.Body.MeasureWidth(text, size) + gap;
+            }
+
             var row = new UiRect(right - width, y, width, Px(28f));
             painter.FillRoundedRect(row, _surfaces?.Rounded ?? default, BoardFace, Px(6f));
             float x = row.X + gap;
-            if (kill.Killer.Length > 0)
+            foreach ((string text, Bgra32 colour) in parts)
             {
-                painter.DrawLabel(type.Body, kill.Killer, new UiVec2(x, y + Px(5f)), size, SideColour(kill.KillerTeam), 0f);
-                x += killerWidth + gap;
+                painter.DrawLabel(type.Body, text, new UiVec2(x, y + Px(5f)), size, colour, 0f);
+                x += type.Body.MeasureWidth(text, size) + gap;
             }
 
-            painter.DrawLabel(type.Body, verb, new UiVec2(x, y + Px(5f)), size, UiPalette.TextBody, 0f);
-            x += verbWidth + gap;
-            painter.DrawLabel(type.Body, kill.Victim, new UiVec2(x, y + Px(5f)), size, SideColour(kill.VictimTeam), 0f);
             y += Px(32f);
         }
     }

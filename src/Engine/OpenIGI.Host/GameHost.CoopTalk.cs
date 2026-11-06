@@ -47,6 +47,17 @@ public sealed partial class GameHost
             "<text>");
 
         console.Commands.Add(
+            "kill",
+            "Ends the host's own player in a versus game, which comes back at a spawn as any player killed does.",
+            context =>
+            {
+                if (TickObserver is not Multiplayer.HostedSession hosted || !hosted.KillOwn())
+                {
+                    context.Error("Only a versus game's host can do that.");
+                }
+            });
+
+        console.Commands.Add(
             "coop_mark",
             "Marks the place under the crosshair for the others in the co-op room.",
             context =>
