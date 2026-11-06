@@ -68,7 +68,7 @@ public sealed class SoldierRendererCorpseTests
         scenario.Device.MeshDraws.Clear();
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         scenario.Renderer.Draw(
-            new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)),
+            Watching(ray.Origin, ray.End),
             Matrix4f.Identity);
 
         Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == bodyMesh);
@@ -220,7 +220,7 @@ public sealed class SoldierRendererCorpseTests
         Assert.True(replacementMember.HasHandState);
         Assert.True(replacementMember.HasWeaponFrameState);
         Assert.Contains(scenario.Renderer.Simulation.MapContacts(), position => position == replacement.Position);
-        Camera3D drawCamera = new(ray.Origin, Camera3D.LookRotation(0f, 0f));
+        Camera3D drawCamera = Watching(ray.Origin, replacement.Position);
         Matrix4f replacementWeaponTransform = drawCamera.CreateModelView(
             replacementMember.DrawnWeaponOrigin,
             replacementMember.DrawnWeaponRotation);
@@ -276,7 +276,7 @@ public sealed class SoldierRendererCorpseTests
         Assert.Equal(soldiersAlive, scenario.Renderer.Count);
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         scenario.Device.MeshDraws.Clear();
-        scenario.Renderer.Draw(new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)), Matrix4f.Identity);
+        scenario.Renderer.Draw(Watching(ray.Origin, ray.End), Matrix4f.Identity);
         Assert.DoesNotContain(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
     }
 
@@ -362,6 +362,16 @@ public sealed class SoldierRendererCorpseTests
             new Camera3D(spawnMetres + new Vector3d(0.0, -10.0, 2.0), Camera3D.LookRotation(0f, 0f)),
             Matrix4f.Identity);
         Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == bodyMesh);
+    }
+
+    // A camera where a round came from, in metres as cameras are, looking at where it went: soldiers are culled per view, so
+    // one drawn from anywhere else might not be drawn at all.
+    private static Camera3D Watching(Vector3d fromUnits, Vector3d atUnits)
+    {
+        Vector3d along = atUnits - fromUnits;
+        float yaw = (float)Math.Atan2(along.X, along.Y);
+        float pitch = (float)Math.Atan2(along.Z, Math.Sqrt((along.X * along.X) + (along.Y * along.Y)));
+        return new Camera3D(fromUnits / WorldScene.UnitsPerMetre, Camera3D.LookRotation(yaw, pitch));
     }
 
     private static void AssertDistinctRuntimeLifetimes(SoldierRenderer renderer, List<int> soundEmitters)
