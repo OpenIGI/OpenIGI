@@ -1,1 +1,2 @@
 #nullable enable
+static OpenIGI.Modding.Presentation.PresentationMods.Presenters(this OpenIGI.Modding.IModBuilder! mod, System.Action<OpenIGI.Presentation.PresenterRegistry!>! configure) -> OpenIGI.Modding.IModBuilder!
