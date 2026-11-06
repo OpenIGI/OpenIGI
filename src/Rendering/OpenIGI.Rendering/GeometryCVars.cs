@@ -8,11 +8,12 @@ namespace OpenIGI.Rendering;
 [CVarContainer]
 public static class GeometryCVars
 {
-    /// <summary>Whether the world pass culls back faces of eligible meshes after repairing triangle winding.</summary>
+    /// <summary>Whether the world pass culls back faces of eligible meshes, as the original culls every model.</summary>
     /// <remarks>
-    /// The mesh builder repairs winding using authored vertex normals. Interior sectors and meshes
-    /// without usable normals remain two-sided even when this setting is enabled: in particular,
-    /// IGI2 lightmapped geometry carries no normals. Off draws both facings for every world mesh.
+    /// The mesh builder turns each model's stored triangle order over into this renderer's front, the
+    /// facing the original culls to. Interior sectors and meshes without usable normals remain two-sided
+    /// even when this setting is enabled: in particular, IGI2 lightmapped geometry carries no normals.
+    /// Off draws both facings for every world mesh.
     /// </remarks>
     public static readonly NumericCVar<int> WorldCull = Presets.Define(
         CVar.Int(
@@ -26,7 +27,7 @@ public static class GeometryCVars
         enhanced: "0",
         high: "0",
 
-        // The renderer retains two-sided drawing for sectors and meshes winding repair cannot orient.
+        // The renderer retains two-sided drawing for sectors and for meshes without normals.
         ultra: "1");
 
     /// <summary>How far the terrain keeps subdividing before it settles for a coarser mesh.</summary>
