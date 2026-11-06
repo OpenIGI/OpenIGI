@@ -52,10 +52,17 @@ public sealed class LagCompensation(SnapshotInterpolator history, int tickRate)
     /// <see cref="MaxUnlag"/>, is not believed: the first is clamped to the command, the second to the limit, as Source clamps
     /// its correction to <c>sv_maxunlag</c>.
     /// </remarks>
-    public double AimedAt(long commandTick, long viewTick) =>
+    public double AimedAt(long commandTick, long viewTick) => AimedAt(commandTick, viewTick, 0f);
+
+    /// <summary>Gets the moment a command was aimed at, to the fraction of a tick its client was drawing at.</summary>
+    /// <param name="commandTick">The server's tick the shot is traced on.</param>
+    /// <param name="viewTick">The tick the client drew the others at, or <see cref="long.MinValue"/> when not known.</param>
+    /// <param name="fraction">How far past it towards the next, 0 to 1.</param>
+    /// <returns>The moment to sample the history at.</returns>
+    public double AimedAt(long commandTick, long viewTick, float fraction) =>
         viewTick == long.MinValue
             ? AimedAt(commandTick)
-            : Math.Clamp(viewTick, commandTick - (MaxUnlag * TickRate), commandTick);
+            : Math.Clamp(viewTick + Math.Clamp(fraction, 0f, 1f), commandTick - (MaxUnlag * TickRate), commandTick);
 
     /// <summary>Gets a player where the shooter's client drew it when it fired, from the view tick its command carried.</summary>
     /// <param name="commandTick">The server's tick the shot is traced on.</param>

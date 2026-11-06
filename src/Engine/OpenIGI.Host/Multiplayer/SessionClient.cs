@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDisposable
+public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -249,9 +249,10 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         return true;
     }
 
-    /// <summary>Saves the session so far as a demo.</summary>
-    /// <param name="path">Where to.</param>
-    /// <returns>Why it could not be, or <see langword="null"/> once saved.</returns>
+    /// <summary>Gets the demo being played, when this session is one's playback; <see langword="null"/> otherwise.</summary>
+    public DemoPlayback? Playback => _transport as DemoPlayback;
+
+    /// <inheritdoc/>
     public string? SaveDemo(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -260,17 +261,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             return _transport is DemoPlayback ? "a demo being played is not recorded again" : "nothing has been recorded yet";
         }
 
-        string? folder = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(folder))
-        {
-            Directory.CreateDirectory(folder);
-        }
-
-        using FileStream file = File.Create(path);
-        DemoFile.Write(file, new DemoHeader(MultiplayerProtocol.Version, _titleId, session.Map ?? string.Empty, Mode, _request.PlayerName), recording.Messages);
         _logger.Information(
             LogCategory,
-            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Saved {recording.Seconds:0} s of {Where} ({recording.Bytes / 1024} KiB) to {path}{(recording.IsFull ? "; the recording had filled, so it ends early" : string.Empty)}."));
+            DemoFile.Save(path, new DemoHeader(MultiplayerProtocol.Version, _titleId, session.Map ?? string.Empty, Mode, _request.PlayerName), recording));
         return null;
     }
 

@@ -107,6 +107,7 @@ public static class ClientReplication
         }
 
         double moment = clock.InterpolationTick(now);
+        session.DrawnTick = moment;
         HashSet<int> present = [];
         foreach (ReplicatedHuman human in latest.Humans)
         {

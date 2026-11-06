@@ -63,6 +63,9 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     public string Map => _session.Map;
 
     /// <inheritdoc/>
+    public string? SaveDemo(string path) => _session.SaveDemo(path);
+
+    /// <inheritdoc/>
     public string Mode => _session.Mode;
 
     /// <inheritdoc/>

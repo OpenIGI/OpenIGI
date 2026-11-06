@@ -17,7 +17,7 @@ namespace OpenIGI.Host.Multiplayer;
 public sealed class DemoPlayback : INetTransport
 {
     /// <summary>The entity the viewer is welcomed as: one no session gives out.</summary>
-    public const int GhostEntity = 65000;
+    public const int GhostEntity = ServerSession.WatcherEntity;
 
     private readonly NetServer _server;
     private readonly LoopbackTransport _client;
@@ -25,7 +25,9 @@ public sealed class DemoPlayback : INetTransport
     private readonly Func<double> _now;
     private readonly BitWriter _writer = new();
     private int? _peer;
-    private double _startedAt;
+    private double _wallAt;
+    private double _played;
+    private double _speed = 1;
     private int _next;
 
     /// <summary>Initializes a new instance of the <see cref="DemoPlayback"/> class.</summary>
@@ -59,8 +61,18 @@ public sealed class DemoPlayback : INetTransport
     /// <summary>Gets a value indicating whether every message has been delivered.</summary>
     public bool IsFinished => _next >= _messages.Count;
 
-    /// <summary>Gets how far in the demo has played, in seconds.</summary>
-    public double Seconds => _peer is null ? 0 : _now() - _startedAt;
+    /// <summary>Gets how far in the demo has played, in seconds of the recording.</summary>
+    public double Seconds => _played;
+
+    /// <summary>Gets or sets a value indicating whether the demo is held where it is.</summary>
+    public bool Paused { get; set; }
+
+    /// <summary>Gets or sets how fast the demo plays: 1 as it was recorded, from a quarter to eight times.</summary>
+    public double Speed
+    {
+        get => _speed;
+        set => _speed = double.IsFinite(value) ? Math.Clamp(value, 0.25, 8) : 1;
+    }
 
     /// <summary>Gets the demo's length, in seconds.</summary>
     public double Length => _messages.Count == 0 ? 0 : _messages[^1].Seconds;
@@ -99,7 +111,8 @@ public sealed class DemoPlayback : INetTransport
             {
                 case NetEventKind.Connected:
                     _peer = e.Peer;
-                    _startedAt = now;
+                    _wallAt = now;
+                    _played = 0;
                     _next = 0;
                     break;
                 case NetEventKind.Disconnected when e.Peer == _peer:
@@ -113,7 +126,10 @@ public sealed class DemoPlayback : INetTransport
             return;
         }
 
-        double at = now - _startedAt;
+        // The recording's own clock: the wall's time since last, as fast as it is played, and none while paused.
+        _played += Paused ? 0 : (now - _wallAt) * _speed;
+        _wallAt = now;
+        double at = _played;
         while (_next < _messages.Count && _messages[_next].Seconds <= at)
         {
             DemoMessage message = _messages[_next++];
@@ -123,11 +139,25 @@ public sealed class DemoPlayback : INetTransport
         _server.Flush(now);
     }
 
-    // A message as the viewer is given it: the welcome to a player nobody is, the rest as they came.
+    // A message as the viewer is given it: the welcome and each travel to a player nobody is, the rest as they came.
     private byte[] Viewed(byte[] data)
     {
         BitReader reader = new(data);
-        if (data.Length == 0 || (SessionMessage)reader.ReadBits(8) != SessionMessage.Welcome)
+        SessionMessage kind = data.Length == 0 ? default : (SessionMessage)reader.ReadBits(8);
+        if (kind == SessionMessage.Travel)
+        {
+            uint travelEpoch = reader.ReadBits(8);
+            _ = reader.ReadVarUInt();
+            string to = reader.ReadString(64);
+            _writer.Reset();
+            _writer.WriteBits((uint)SessionMessage.Travel, 8);
+            _writer.WriteBits(travelEpoch, 8);
+            _writer.WriteVarUInt(GhostEntity);
+            _writer.WriteString(to, 64);
+            return _writer.AsSpan().ToArray();
+        }
+
+        if (kind != SessionMessage.Welcome)
         {
             return data;
         }

@@ -60,12 +60,15 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
             float scale = 1f + (enemyHealth / 100f);
             Assert.Equal(soldiers.HealthOf(guards[0]).BaseMaximumHealth * scale, soldiers.HealthOf(guards[0]).MaximumHealth, 3);
 
-            (int Rounds, string Log) host = RoundsToFell(pair, partner, hostShoots: true, guards[0], running, automatic, hostAway: false, head, live);
-            (int Rounds, string Log) joiner = RoundsToFell(pair, partner, hostShoots: false, guards[1], running, automatic, hostAway, head, live);
-            output.WriteLine($"+{enemyHealth}% ping {ping} running {running} automatic {automatic} hostAway {hostAway} head {head} live {live} thirdPerson {thirdPerson}: host {host.Rounds} rounds ({host.Log}); joiner {joiner.Rounds} rounds ({joiner.Log})");
+            (int Rounds, int Missed, string Log) host = RoundsToFell(pair, partner, hostShoots: true, guards[0], running, automatic, hostAway: false, head, live);
+            (int Rounds, int Missed, string Log) joiner = RoundsToFell(pair, partner, hostShoots: false, guards[1], running, automatic, hostAway, head, live);
+            output.WriteLine($"+{enemyHealth}% ping {ping} running {running} automatic {automatic} hostAway {hostAway} head {head} live {live} thirdPerson {thirdPerson}: host {host.Rounds} rounds, {host.Missed} missed ({host.Log}); joiner {joiner.Rounds} rounds, {joiner.Missed} missed ({joiner.Log})");
+
+            // The rounds that missed, not the rounds it took: a head shot the host happens to land fells a guard in one, and
+            // how many land is the netcode's business.
             Assert.True(
-                joiner.Rounds <= (host.Rounds * 3 / 2) + 1,
-                $"at +{enemyHealth}%, {ping * 1000:0} ms, {(running ? "running" : "standing")}: the host felled its guard with {host.Rounds} rounds, the joiner needed {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
+                joiner.Missed <= (host.Missed * 3 / 2) + 1,
+                $"at +{enemyHealth}%, {ping * 1000:0} ms, {(running ? "running" : "standing")}: the host missed {host.Missed} of {host.Rounds} rounds, the joiner {joiner.Missed} of {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
         }
         finally
         {
@@ -128,16 +131,17 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
             .First(g => g.Count() >= 2)
             .Take(2)
             .ToArray();
-        (int Rounds, string Log) host = RoundsToFell(pair, partner, hostShoots: true, guards[0], running: false, automatic: false, hostAway: false, head: false, live: false);
-        (int Rounds, string Log) joiner = RoundsToFell(pair, partner, hostShoots: false, guards[1], running: false, automatic: false, hostAway: false, head: false, live: false);
+        (int Rounds, int Missed, string Log) host = RoundsToFell(pair, partner, hostShoots: true, guards[0], running: false, automatic: false, hostAway: false, head: false, live: false);
+        (int Rounds, int Missed, string Log) joiner = RoundsToFell(pair, partner, hostShoots: false, guards[1], running: false, automatic: false, hostAway: false, head: false, live: false);
         output.WriteLine($"{how}: host {host.Rounds} rounds ({host.Log}); joiner {joiner.Rounds} rounds ({joiner.Log})");
-        Assert.True(joiner.Rounds <= host.Rounds + 1, $"{how}: the host felled its guard with {host.Rounds} rounds, the joiner needed {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
+        // The rounds that missed, not the rounds it took, which a head shot either happens to land changes.
+        Assert.True(joiner.Missed <= host.Missed + 1, $"{how}: the host missed {host.Missed} of {host.Rounds} rounds, the joiner {joiner.Missed} of {joiner.Rounds}; host {host.Log}; joiner {joiner.Log}");
     }
 
     // One shooter, a gun in hand, five metres from a guard -- standing, or running three metres either way across its front --
     // clicking the fire button at the guard's chest where its own game shows the guard, until the host's soldier falls: the
     // rounds that took, as the host's game counts them.
-    private static (int Rounds, string Log) RoundsToFell(Igi1CoopPair pair, Igi1NetworkPlayer partner, bool hostShoots, Game.Igi1.Player.SoldierView guard, bool running, bool automatic, bool hostAway, bool head, bool live)
+    private static (int Rounds, int Missed, string Log) RoundsToFell(Igi1CoopPair pair, Igi1NetworkPlayer partner, bool hostShoots, Game.Igi1.Player.SoldierView guard, bool running, bool automatic, bool hostAway, bool head, bool live)
     {
         Game.Igi1.Ai.SoldierSimulation soldiers = pair.Host!.World.Soldiers!;
         Game.Igi1.Player.PlayerCamera shooter = hostShoots ? pair.Host.World.Player! : partner.Player;
@@ -148,21 +152,8 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
 
         // A live guard is left to its own mind: the shooter goes to it instead, eight metres off.
         Vector3d feet = live ? ClearSpot(pair, guard)!.Value : shooter.Body.Position;
-        // Five metres off along a line nothing solid crosses.
-        Vector3d ahead = new(0, 1, 0);
-        if (!live && pair.Host.World.Solids?.Caster() is { } cast)
-        {
-            for (int i = 0; i < 16; i++)
-            {
-                Vector3d along = new(Math.Sin(i * Math.PI / 8), Math.Cos(i * Math.PI / 8), 0);
-                Vector3d from = feet + new Vector3d(0, 0, 1.6 * 4096);
-                if (!cast(from, from + (along * 7 * 4096), out _) && !cast(from + (along * 5 * 4096), feet + (along * 5 * 4096) + new Vector3d(0, 0, 256), out _))
-                {
-                    ahead = along;
-                    break;
-                }
-            }
-        }
+        // Five metres off along a line nothing solid crosses -- nor any line to where the guard runs, three metres either side.
+        Vector3d ahead = live ? new Vector3d(0, 1, 0) : pair.ClearAhead(feet, running ? 3.5 : 0) ?? new Vector3d(0, 1, 0);
 
         Vector3d side = new(ahead.Y, -ahead.X, 0);
         Vector3d middle = feet + (ahead * 5 * 4096);
@@ -237,6 +228,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
         int shotsBefore = shooter.Weapons!.ShotSequence;
         List<string> log = [$"weapon {shooter.Weapons.InHand?.Weapon.WeaponId} max {soldiers.HealthOf(guard).MaximumHealth:0.0}"];
         float damage = soldiers.HealthOf(guard).Damage;
+        int landed = 0;
 
         // Clicked, as a pistol wants: a press, then let go, over and over; an automatic's held down.
         int frame = 0;
@@ -257,6 +249,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
                 float now = soldiers.HealthOf(guard).Damage;
                 if (now != damage)
                 {
+                    landed++;
                     log.Add($"r{shooter.Weapons.ShotSequence - shotsBefore}:+{now - damage:0.00}");
                     damage = now;
                 }
@@ -274,7 +267,7 @@ public sealed class Igi1CoopShotsTests(Xunit.Abstractions.ITestOutputHelper outp
             $"the {(hostShoots ? "host" : "joiner")}'s guard never fell: {rounds} rounds, {string.Join(" ", log)}; shooter dead {(hostShoots ? pair.Host.World.IsPlayerDead : partner.IsDead)} "
             + $"health {(hostShoots ? pair.Host.World.PlayerHealth.Damage : partner.Health.Damage)} grounded {shooter.Body.IsGrounded} at {shooter.Body.Position} feet {feet} "
             + $"clip {shooter.Weapons.InHand?.Gun.State.RoundsInClip} guard dead {guard.IsDead} at {guard.Position}");
-        return (rounds, string.Join(" ", log));
+        return (rounds, Math.Max(0, rounds - landed), string.Join(" ", log));
     }
 
     // Somewhere eight metres from a guard with nothing solid between an eye there and its chest, or null.

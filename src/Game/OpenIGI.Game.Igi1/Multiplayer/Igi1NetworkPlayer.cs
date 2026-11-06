@@ -191,7 +191,7 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
                 continue;
             }
 
-            BeforeCommand?.Invoke(Commands.LastTakenTick, Commands.LastViewTick);
+            BeforeCommand?.Invoke(this, Commands.LastTakenTick, Commands.LastViewTick, Commands.LastViewFraction);
             try
             {
                 RunCommand(ground, rung);
@@ -208,11 +208,11 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
     }
 
     /// <summary>
-    /// Gets or sets what the world does before each of its commands runs, given the command's tick and the tick its client
-    /// was drawing the others at: the server's lag compensation puts the soldiers back where that client saw them, for the
-    /// command's rounds to meet.
+    /// Gets or sets what the world does before each of its commands runs, given the player, the command's tick, and the tick
+    /// (and fraction of one past it) its client was drawing the others at: the server's lag compensation puts the soldiers and
+    /// the other players back where that client saw them, for the command's rounds to meet.
     /// </summary>
-    public Action<long, long>? BeforeCommand { get; set; }
+    public Action<Igi1NetworkPlayer, long, long, float>? BeforeCommand { get; set; }
 
     /// <summary>Gets or sets what the world does once a command has run: the soldiers put back where they stand now.</summary>
     public Action? AfterCommand { get; set; }

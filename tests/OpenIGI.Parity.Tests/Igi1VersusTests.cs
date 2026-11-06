@@ -1,4 +1,5 @@
-﻿using OpenIGI.Game.Igi1.World;
+﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.World;
@@ -363,6 +364,118 @@ public sealed class Igi1VersusTests
         Assert.NotEmpty(Kit(joiner.Player));
         Assert.Equal(Kit(joiner.Player), Kit(pair.Joiner.World.Player!));
         Assert.True(Carries(pair.Host.World.Player!, "WEAPON_ID_UZI"), "the surviving host lost its Uzi");
+    }
+
+    [Fact]
+    public void A_joiner_on_a_slow_line_hits_a_host_running_across_where_its_own_game_shows_the_host()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        pair.Ping(0.2);
+        pair.RunUntil(() => false, 60);
+        Game.Igi1.Player.PlayerCamera host = pair.Host!.World.Player!;
+        Igi1NetworkPlayer joiner = Assert.Single(pair.Host.World.NetworkPlayers);
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+
+        // The joiner stands; the host runs three metres either way across its front, five metres off, where no wall is between.
+        (Vector3d Feet, Vector3d Ahead)? lane = new[] { joiner.Player.Body.Position, host.Body.Position, pair.Host.PlayerSetup!.LevelSpawn()!.Value.Position }
+            .Select(f => pair.ClearAhead(f, 3.5) is { } way ? (f, way) : ((Vector3d, Vector3d)?)null)
+            .FirstOrDefault(l => l is not null);
+        Assert.True(lane is not null, "no clear lane to shoot along in the arena");
+        (Vector3d feet, Vector3d ahead) = lane.Value;
+        Vector3d side = new(ahead.Y, -ahead.X, 0);
+        Vector3d middle = feet + (ahead * 5 * 4096);
+        int tick = 0;
+        void Run() => host.Body.Position = middle + (side * 3 * 4096 * Math.Sin(tick++ * 2 * Math.PI / 120));
+        own.Body.Position = joiner.Player.Body.Position = feet;
+        pair.RunUntil(() => { Run(); return false; }, 40);
+
+        // A gun in hand, picked with the number keys.
+        foreach (OpenIGI.Input.KeyCode category in new[] { OpenIGI.Input.KeyCode.D2, OpenIGI.Input.KeyCode.D3, OpenIGI.Input.KeyCode.D4, OpenIGI.Input.KeyCode.D5 })
+        {
+            if (joiner.Player.Weapons?.InHand?.Weapon.Category is Game.Weapons.WeaponCategory.Pistol or Game.Weapons.WeaponCategory.Gun)
+            {
+                break;
+            }
+
+            Igi1CoopPair.Hold(pair.JoinerInput, category, true);
+            pair.RunUntil(() => { Run(); return false; }, 3);
+            Igi1CoopPair.Hold(pair.JoinerInput, category, false);
+            pair.RunUntil(() => { Run(); return false; }, 45);
+        }
+
+        Assert.True(joiner.Player.Weapons?.InHand?.Weapon.Category is Game.Weapons.WeaponCategory.Pistol or Game.Weapons.WeaponCategory.Gun, "the joiner holds no gun");
+
+        // Aimed at the chest where the joiner's own game draws the host, clicked; until the host falls or ten rounds are out.
+        int before = joiner.Player.Weapons!.ShotSequence;
+        float damage = pair.Host.World.PlayerHealth.Damage;
+        int landed = 0;
+        int frame = 0;
+        pair.RunUntil(
+            () =>
+            {
+                Run();
+                if (pair.Joiner.World.ShownPartners.FirstOrDefault() is { } shown)
+                {
+                    Vector3d toward = shown.Player.Body.Position + new Vector3d(0, 0, 1.3 * 4096) - own.Body.Eye;
+                    own.Body.Yaw = (float)Math.Atan2(toward.X, toward.Y);
+                    own.Body.Pitch = (float)Math.Atan2(toward.Z, Math.Sqrt((toward.X * toward.X) + (toward.Y * toward.Y)));
+                }
+
+                pair.JoinerInput.Mouse.SetButton(OpenIGI.Input.MouseButton.Left, frame++ % 6 < 2);
+                if (pair.Host.World.PlayerHealth.Damage != damage)
+                {
+                    landed++;
+                    damage = pair.Host.World.PlayerHealth.Damage;
+                }
+
+                return pair.Host.World.IsPlayerDead || joiner.Player.Weapons.ShotSequence - before >= 10;
+            },
+            900);
+        pair.JoinerInput.Mouse.SetButton(OpenIGI.Input.MouseButton.Left, false);
+
+        int rounds = joiner.Player.Weapons.ShotSequence - before;
+        Assert.True(rounds > 0, "the joiner never fired");
+        Assert.True(rounds - landed <= 1, $"the joiner's rounds passed by a host it drew running: {landed} of {rounds} landed");
+    }
+
+    [Fact]
+    public void A_hosted_match_is_saved_as_a_demo_that_plays_back_with_both_players_in_it()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        pair.RunUntil(() => false, 150);
+        string path = Path.Combine(Path.GetTempPath(), $"openigi-host-{Guid.NewGuid():N}.oidemo");
+        try
+        {
+            Assert.Null(pair.Session.SaveDemo(path));
+            DemoHeader header;
+            IReadOnlyList<DemoMessage> messages;
+            using (FileStream file = File.OpenRead(path))
+            {
+                (header, messages) = DemoFile.Read(file);
+            }
+
+            Assert.Equal(("igi1", GameModes.TeamDeathmatch), (header.Title, header.Mode));
+            Assert.True(messages.Count > 30, $"only {messages.Count} messages were recorded");
+
+            // Played back to an ordinary client: welcomed as nobody, and sent the host and the joiner as they played.
+            double now = 0;
+            using OpenIGI.Host.Multiplayer.DemoPlayback playback = new(header, messages, () => now);
+            ClientSession viewer = new(new OpenIGI.Net.NetClient(playback, MultiplayerProtocol.IdFor("igi1"), MultiplayerProtocol.Version), 64);
+            viewer.Connect(playback.Server, new JoinRequest("viewer", "test", string.Empty), now);
+            for (; now < 4; now += 1 / 30.0)
+            {
+                viewer.Receive(now);
+                viewer.Flush(now);
+            }
+
+            Assert.Equal(OpenIGI.Host.Multiplayer.DemoPlayback.GhostEntity, viewer.EntityId);
+            int joiner = Assert.Single(pair.Host!.World.NetworkPlayers).Entity;
+            Assert.True(viewer.Latest is { } seen && seen.TryGet(ServerSession.HostEntity, out _) && seen.TryGet(joiner, out _), "the demo did not carry both players");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private static Igi1CoopPair Joined(string mode, bool hostSkipsIntro = true)

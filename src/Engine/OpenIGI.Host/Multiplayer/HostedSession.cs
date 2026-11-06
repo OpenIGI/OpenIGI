@@ -28,7 +28,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDisposable
+public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -66,11 +66,13 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
         _room = transport as RoomTransport ?? (transport as MultiTransport)?.Part<RoomTransport>();
         _transport = transport;
         _mode = options.Mode;
-        _net = new NetServer(transport, new NetServerOptions
+        _net = new NetServer(WithRecorder(transport), new NetServerOptions
         {
             ProtocolId = MultiplayerProtocol.IdFor(titleId),
             ProtocolVersion = MultiplayerProtocol.Version,
-            MaxClients = options.MaxPlayers,
+
+            // The recorder's line is one more than the players'.
+            MaxClients = options.MaxPlayers + (Records ? 1 : 0),
             Admit = Admit,
             Info = _ => Info().Encode(),
         });
@@ -157,6 +159,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             session.Receive(_clock.Elapsed.TotalSeconds, _world.CurrentTick);
             ReportJoinsAndDepartures();
             session.Flush(_clock.Elapsed.TotalSeconds);
+            PumpRecorder();
         }
     }
 
@@ -187,6 +190,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
                 _session.Layout = layout;
             }
             _logger.Information(LogCategory, $"Playing {_session.Mode.Id} (asked for {_mode}).");
+            StartRecorder();
             _logger.Information(
                 LogCategory,
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
@@ -229,6 +233,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     public void AfterTitleTick(object title)
     {
         _session?.Send(_clock.Elapsed.TotalSeconds, _world!.CurrentTick - 1);
+        PumpRecorder();
         Diagnose();
     }
 
@@ -339,6 +344,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
         {
             _disposed = true;
             _net.Dispose();
+            _recorderLine?.Dispose();
         }
     }
 

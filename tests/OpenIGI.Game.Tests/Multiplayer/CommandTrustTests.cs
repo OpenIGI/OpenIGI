@@ -143,6 +143,25 @@ public sealed class CommandTrustTests
         Assert.True(server + 1 - queue.LastViewTick <= 33, $"held to {server + 1 - queue.LastViewTick} ticks back");
     }
 
+    [Fact]
+    public void A_views_fraction_is_kept_and_dropped_where_its_tick_is_held()
+    {
+        UserCommandBuffer queue = new(Channels) { TargetDepth = 0 };
+        float[] frame = new float[Channels];
+        queue.Push(new UserCommand(10, new float[Channels], ViewTick: 95, ViewFraction: 0.4f));
+        queue.ServerTick = 100;
+        queue.Due();
+        Assert.True(queue.TryTake(frame));
+        Assert.Equal((95L, 0.4f), (queue.LastViewTick, queue.LastViewFraction));
+
+        // From the future: held to now, to the tick.
+        queue.Push(new UserCommand(11, new float[Channels], ViewTick: 140, ViewFraction: 0.6f));
+        queue.ServerTick = 101;
+        queue.Due();
+        Assert.True(queue.TryTake(frame));
+        Assert.Equal((101L, 0f), (queue.LastViewTick, queue.LastViewFraction));
+    }
+
     private static void Take(UserCommandBuffer queue, float[] frame, long tick, long server, long view)
     {
         queue.Push(new UserCommand(tick, new float[Channels], ViewTick: view));

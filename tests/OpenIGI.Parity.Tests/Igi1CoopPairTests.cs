@@ -645,7 +645,7 @@ public sealed class Igi1CoopPairTests
         // Where the server has the guard now, the round passes through empty air; put back where the client drew it, it is met.
         float whole = soldiers.HealthOf(guard).Damage;
         Assert.False(Shoot(), "a round met the guard where its client had never drawn it");
-        partner.BeforeCommand!(seenAt + 2, seenAt);
+        partner.BeforeCommand!(partner, seenAt + 2, seenAt, 0f);
         try
         {
             Assert.True(Vector3d.Distance(guard.Position, stood) < 64, $"the guard was put back {Vector3d.Distance(guard.Position, stood)} units from where the client drew it");

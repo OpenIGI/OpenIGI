@@ -25,7 +25,7 @@ namespace OpenIGI.Game.Multiplayer;
 /// </remarks>
 public sealed class UserCommandBuffer
 {
-    private readonly SortedDictionary<long, (float[] Channels, long ViewTick)> _pending = [];
+    private readonly SortedDictionary<long, (float[] Channels, long ViewTick, float ViewFraction)> _pending = [];
     private readonly float[] _last;
     private bool _primed;
     private double _credit;
@@ -77,6 +77,9 @@ public sealed class UserCommandBuffer
     /// a client numbers its commands on one a tick, and its clock and the server's drift apart over a session.
     /// </remarks>
     public long LastViewTick { get; private set; } = long.MinValue;
+
+    /// <summary>Gets how far past <see cref="LastViewTick"/> towards the next its client was drawing, 0 to 1.</summary>
+    public float LastViewFraction { get; private set; }
 
     /// <summary>Gets or sets how far behind the server's present a client may have been drawing the others, in ticks; the session sets it from the client's line.</summary>
     public int MaxRewindTicks { get; set; } = int.MaxValue;
@@ -135,7 +138,7 @@ public sealed class UserCommandBuffer
             return;
         }
 
-        _pending.TryAdd(command.Tick, (channels, command.ViewTick));
+        _pending.TryAdd(command.Tick, (channels, command.ViewTick, float.IsFinite(command.ViewFraction) ? Math.Clamp(command.ViewFraction, 0f, 1f) : 0f));
         NewestTick = command.Tick;
     }
 
@@ -184,14 +187,19 @@ public sealed class UserCommandBuffer
             return false;
         }
 
-        (long tick, (float[] channels, long viewTick)) = _pending.First();
+        (long tick, (float[] channels, long viewTick, float viewFraction)) = _pending.First();
         _pending.Remove(tick);
         channels.CopyTo(_last, 0);
         _last.CopyTo(frame);
         LastTakenTick = tick;
         if (viewTick != long.MinValue && ServerTick != long.MinValue)
         {
-            viewTick = Math.Min(viewTick, ServerTick);
+            if (viewTick >= ServerTick)
+            {
+                viewTick = ServerTick;
+                viewFraction = 0f;
+            }
+
             if (MaxRewindTicks != int.MaxValue)
             {
                 // As far back as the line explains, or as the client's own views usually are and a hitch beyond (Source's
@@ -208,6 +216,7 @@ public sealed class UserCommandBuffer
                     _viewsSeen++;
                     _typicalViewAge = _viewsSeen == 1 ? learned : _typicalViewAge + ((learned - _typicalViewAge) / _viewsSeen);
                     LastViewTick = viewTick;
+                    LastViewFraction = viewFraction;
                     return true;
                 }
 
@@ -217,6 +226,7 @@ public sealed class UserCommandBuffer
                     Backtracked++;
                     age = (long)Math.Ceiling(allowed);
                     viewTick = ServerTick - age;
+                    viewFraction = 0f;
                 }
 
                 _typicalViewAge += (age - _typicalViewAge) / 16;
@@ -224,6 +234,7 @@ public sealed class UserCommandBuffer
         }
 
         LastViewTick = viewTick;
+        LastViewFraction = viewTick == long.MinValue ? 0f : viewFraction;
         return true;
     }
 

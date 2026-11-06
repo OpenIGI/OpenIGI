@@ -779,33 +779,42 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         }
     }
 
-    // Lag compensation for a partner's command: every living soldier put where the partner's client drew it when the command
-    // was made (the server's own snapshots sampled at the tick the client was drawing, as the client itself samples them),
-    // so the rounds the command fires meet the soldier the partner aimed at. The history reaches back no further than
-    // LagCompensation.MaxUnlag; a soldier it never held, or a command with no view tick, stands where it is.
-    private void RewindSoldiers(long commandTick, long viewTick)
+    // Lag compensation for a partner's command: every living soldier, and in a versus game every other living player, put where
+    // the partner's client drew it when the command was made (the server's own snapshots sampled at the moment the client was
+    // drawing, to the fraction of a tick, as the client itself samples them), so the rounds the command fires meet the one the
+    // partner aimed at. The history reaches back no further than LagCompensation.MaxUnlag; one it never held, or a command with
+    // no view tick, stands where it is.
+    private void RewindSoldiers(Igi1NetworkPlayer shooter, long commandTick, long viewTick, float fraction)
     {
-        if (LagCompensation is not { } lag || _game.World.Soldiers is not { } soldiers || viewTick == long.MinValue)
+        if (LagCompensation is not { } lag || viewTick == long.MinValue)
         {
             return;
         }
 
-        double moment = lag.AimedAt(commandTick, viewTick);
-        foreach (Player.SoldierView soldier in soldiers.SoldierViews)
+        double moment = lag.AimedAt(commandTick, viewTick, fraction);
+        if (_game.World.Soldiers is { } soldiers)
         {
-            if (soldier.IsDead || !lag.History.Sample(moment, SoldierEntityBase + soldiers.RuntimeIdOf(soldier), out ReplicatedHuman then))
+            foreach (Player.SoldierView soldier in soldiers.SoldierViews)
             {
-                continue;
+                if (soldier.IsDead || !lag.History.Sample(moment, SoldierEntityBase + soldiers.RuntimeIdOf(soldier), out ReplicatedHuman then))
+                {
+                    continue;
+                }
+
+                _rewound.Add((soldier, soldier.Position, soldier.Orientation));
+                soldier.PlaceAt(then.Position.ToVector(), Matrix3f.RotationZ(Quantize.AngleFromBits(then.Yaw)));
             }
 
-            _rewound.Add((soldier, soldier.Position, soldier.Orientation));
-            soldier.PlaceAt(then.Position.ToVector(), Matrix3f.RotationZ(Quantize.AngleFromBits(then.Yaw)));
+            soldiers.Rewound = _rewound.Count > 0;
         }
 
-        soldiers.Rewound = _rewound.Count > 0;
+        if (IsVersus)
+        {
+            RewindPlayers(lag, shooter, moment);
+        }
     }
 
-    // The soldiers put back where this tick has them.
+    // The soldiers and players put back where this tick has them.
     private void RestoreSoldiers()
     {
         foreach ((Player.SoldierView soldier, Vector3d position, Matrix3f orientation) in _rewound)
@@ -818,6 +827,8 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         {
             soldiers.Rewound = false;
         }
+
+        RestorePlayers();
     }
 
     // Where a player is stood: beside the level's start, or -- joining a level the host has gone on into -- where the host is.

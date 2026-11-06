@@ -20,20 +20,21 @@ public sealed partial class GameHost
         return Path.Combine(SettingsPaths.GetUserDirectory(), "demos", file);
     }
 
-    private void RegisterDemoCommands(ConsoleSystem console) =>
+    private void RegisterDemoCommands(ConsoleSystem console)
+    {
         console.Commands.Add(
             "demo_save",
-            "Saves the multiplayer session joined, from its start until now, as a demo in the demos folder; play it with -playdemo <file>.",
+            "Saves the multiplayer session joined or hosted, from its start until now, as a demo in the demos folder; play it with -playdemo <file>.",
             context =>
             {
-                if (TickObserver is not SessionClient client)
+                if (TickObserver is not IDemoSource session)
                 {
-                    context.Error("Only a session joined is recorded: join a server or a room first.");
+                    context.Error("Only a multiplayer session is recorded: join or host one first.");
                     return;
                 }
 
                 string path = DemoPath(context.Count > 0 ? context[0] : null);
-                if (client.SaveDemo(path) is { } problem)
+                if (session.SaveDemo(path) is { } problem)
                 {
                     context.Error($"Not saved: {problem}.");
                     return;
@@ -42,4 +43,37 @@ public sealed partial class GameHost
                 context.Print($"Saved {path}.");
             },
             "[name]");
+        console.Commands.Add(
+            "demo_pause",
+            "Pauses the demo being played, or plays it on.",
+            context =>
+            {
+                if (Playing() is { } playback)
+                {
+                    playback.Paused = !playback.Paused;
+                    context.Print(playback.Paused ? "Paused." : "Playing.");
+                }
+            });
+        console.Commands.Add(
+            "demo_speed",
+            "Sets how fast the demo being played runs: 1 as it was recorded, 0.25 to 8.",
+            context =>
+            {
+                if (Playing() is not { } playback)
+                {
+                    return;
+                }
+
+                if (context.Count > 0 && double.TryParse(context[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double speed))
+                {
+                    playback.Speed = speed;
+                }
+
+                context.Print(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Speed {playback.Speed:0.##}x, {playback.Seconds:0} of {playback.Length:0} s."));
+            },
+            "[speed]");
+
+        // The demo being played, or an error to the console when none is.
+        DemoPlayback? Playing() => TickObserver is SessionClient { Playback: { } playback } ? playback : null;
+    }
 }

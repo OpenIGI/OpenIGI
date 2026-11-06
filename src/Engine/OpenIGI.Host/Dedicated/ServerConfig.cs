@@ -64,6 +64,12 @@ public sealed record ServerConfig
     /// <summary>Gets how long a player may stand idle before it is put off, in seconds; 0 never (<c>afk_kick</c>).</summary>
     public int IdleKickSeconds { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether the server keeps a recording of each map from its start, for <c>demo_save</c>
+    /// (<c>record_demos</c>): off by default, as a long-running server would hold up to 128 MB of it.
+    /// </summary>
+    public bool RecordDemos { get; init; }
+
     /// <summary>Gets the ban list's file, beside the server unless rooted.</summary>
     public string BansFile { get; init; } = "bans.json";
 
@@ -142,6 +148,10 @@ public sealed record ServerConfig
                 case "room":
                     ok = Flag(value, out bool room);
                     config = config with { Room = room };
+                    break;
+                case "record_demos":
+                    ok = Flag(value, out bool record);
+                    config = config with { RecordDemos = record };
                     break;
                 case "master":
                     ok = Uri.TryCreate(value, UriKind.Absolute, out Uri? master) && master.Scheme is "https" or "http";

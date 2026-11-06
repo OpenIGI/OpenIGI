@@ -243,6 +243,54 @@ internal sealed class Igi1CoopPair : IDisposable
 
     /// <summary>Puts a round trip between the joiner and the host, half each way.</summary>
     /// <param name="seconds">The round trip, in seconds.</param>
+    /// <summary>
+    /// Finds a way ahead from a spot along which a round flies five metres clear: nothing solid crosses it, the ground is under
+    /// its end, and nothing stands between an eye there and a target anywhere up to <paramref name="sweepMetres"/> to either
+    /// side of that end -- or a round aimed at a target running across stops on a wall beside the shooter instead.
+    /// </summary>
+    /// <param name="feet">The shooter's feet.</param>
+    /// <param name="sweepMetres">How far either side the target runs; nought for a standing one.</param>
+    /// <returns>The way, flat; <see langword="null"/> when there is none.</returns>
+    public Core.Numerics.Vector3d? ClearAhead(Core.Numerics.Vector3d feet, double sweepMetres)
+    {
+        if (Host?.World.Solids?.Caster() is not { } cast)
+        {
+            return null;
+        }
+
+        Core.Numerics.Vector3d from = feet + new Core.Numerics.Vector3d(0, 0, 1.6 * 4096);
+        bool Clear(Core.Numerics.Vector3d along)
+        {
+            if (cast(from, from + (along * 7 * 4096), out _)
+                || cast(from + (along * 5 * 4096), feet + (along * 5 * 4096) + new Core.Numerics.Vector3d(0, 0, 256), out _))
+            {
+                return false;
+            }
+
+            Core.Numerics.Vector3d across = new(along.Y, -along.X, 0);
+            for (double metres = -sweepMetres; sweepMetres > 0 && metres <= sweepMetres; metres += sweepMetres / 4)
+            {
+                if (cast(from, feet + (along * 5 * 4096) + (across * metres * 4096) + new Core.Numerics.Vector3d(0, 0, 1.3 * 4096), out _))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        for (int i = 0; i < 16; i++)
+        {
+            Core.Numerics.Vector3d along = new(Math.Sin(i * Math.PI / 8), Math.Cos(i * Math.PI / 8), 0);
+            if (Clear(along))
+            {
+                return along;
+            }
+        }
+
+        return null;
+    }
+
     public void Ping(double seconds)
     {
         JoinerLink.Send.Latency = seconds / 2;

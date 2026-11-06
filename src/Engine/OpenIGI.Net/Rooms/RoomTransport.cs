@@ -56,6 +56,11 @@ public sealed class RoomTransport : INetTransport
     /// <summary>The master server rooms are opened on.</summary>
     public static readonly Uri DefaultMaster = new("https://master.openigi.com");
 
+    /// <summary>Gets the link a friend opens to join a room: in the browser, or the game where it handles the link.</summary>
+    /// <param name="code">The room's code.</param>
+    /// <returns>The link.</returns>
+    public static string InviteLink(string code) => $"https://openigi.com/join/{Uri.EscapeDataString(code)}";
+
     /// <summary>The host's address, to a joiner.</summary>
     public static readonly NetAddress HostAddress = NetAddress.Peer(0);
 

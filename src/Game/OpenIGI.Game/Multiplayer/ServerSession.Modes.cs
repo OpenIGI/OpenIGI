@@ -13,10 +13,10 @@ public sealed partial class ServerSession
     IReplicatedWorld IModeHost.World => _world;
 
     /// <inheritdoc/>
-    IReadOnlyList<int> IModeHost.PlayerSlots => [.. _clients.Keys, HostSlot];
+    IReadOnlyList<int> IModeHost.PlayerSlots => [.. Clients, HostSlot];
 
     /// <inheritdoc/>
-    IReadOnlyList<int> IModeHost.ClientSlots => [.. _clients.Keys];
+    IReadOnlyList<int> IModeHost.ClientSlots => [.. Clients];
 
     /// <inheritdoc/>
     int IModeHost.SlotOf(int entity) => SlotOf(entity);

@@ -77,6 +77,31 @@ public static class DemoFile
     // A message larger than any the session sends: a file claiming one is not a demo.
     private const int MaxMessageBytes = 1 << 20;
 
+    /// <summary>Saves a recording as a demo file, its folder made if need be.</summary>
+    /// <param name="path">Where to.</param>
+    /// <param name="header">What it is of.</param>
+    /// <param name="recording">The recording.</param>
+    /// <returns>A line saying what was saved, for the log.</returns>
+    public static string Save(string path, DemoHeader header, DemoRecording recording)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(recording);
+        string? folder = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
+
+        using (FileStream file = File.Create(path))
+        {
+            Write(file, header, recording.Messages);
+        }
+
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"Saved {recording.Seconds:0} s ({recording.Bytes / 1024} KiB) to {path}{(recording.IsFull ? "; the recording had filled, so it ends early" : string.Empty)}.");
+    }
+
     /// <summary>Writes a demo.</summary>
     /// <param name="stream">Where to.</param>
     /// <param name="header">What it is of.</param>

@@ -43,6 +43,11 @@ public interface IServerControl
     /// <returns>Why it could not, or <see langword="null"/>.</returns>
     string? ChangeMap(int mission, string? mode);
 
+    /// <summary>Saves the session so far as a demo.</summary>
+    /// <param name="path">Where to.</param>
+    /// <returns>Why it could not be, or <see langword="null"/> once saved.</returns>
+    string? SaveDemo(string path) => "this server keeps no recording";
+
     /// <summary>Goes on to the rotation's next map now.</summary>
     /// <returns>The entry gone on to, or <see langword="null"/> with no rotation.</returns>
     RotationEntry? NextMap();
@@ -76,6 +81,7 @@ public sealed class ServerConsole(IServerControl server)
         "next                           go on to the rotation's next map",
         "mode <mode>                    play a mode from the next map",
         "rotation                       the maps played in turn",
+        "demo_save [name]               save the session so far as a demo in demos/ (record_demos 1)",
         "quit                           stop the server",
     ];
 
@@ -104,9 +110,18 @@ public sealed class ServerConsole(IServerControl server)
             "next" => server.NextMap() is { } next ? [$"Going on to mission {next.Mission} ({ModeOf(next)})."] : ["There is no rotation; use map <mission> [mode]."],
             "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}."],
             "rotation" => Rotation(),
+            "demo_save" => SaveDemo(words.Length > 1 ? words[1] : null),
             "quit" or "exit" or "stop" => Quit(),
             _ => [$"Unknown command or missing argument: {words[0]}. Type help."],
         };
+    }
+
+    // A demo saved in the demos folder beside the server, named as asked or by the time.
+    private string[] SaveDemo(string? name)
+    {
+        string file = string.Concat((name ?? DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture)).Split(Path.GetInvalidFileNameChars()));
+        string path = Path.Combine(AppContext.BaseDirectory, "demos", file.EndsWith(Game.Multiplayer.DemoFile.Extension, StringComparison.OrdinalIgnoreCase) ? file : file + Game.Multiplayer.DemoFile.Extension);
+        return server.SaveDemo(path) is { } problem ? [$"Not saved: {problem}."] : [$"Saved {path}."];
     }
 
     /// <summary>Finds a player by <c>#slot</c>, its whole name, or an unambiguous start of it.</summary>

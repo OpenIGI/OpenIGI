@@ -178,7 +178,7 @@ public sealed partial class ServerSession
 
         foreach ((int slot, ClientState client) in _clients.ToArray())
         {
-            if (now - client.ActiveAt > IdleKickSeconds)
+            if (!client.Watching && now - client.ActiveAt > IdleKickSeconds)
             {
                 string name = client.Name;
                 Remove(slot, "idle too long");

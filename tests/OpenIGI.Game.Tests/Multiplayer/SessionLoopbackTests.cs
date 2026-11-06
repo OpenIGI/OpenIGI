@@ -526,6 +526,46 @@ public sealed class SessionLoopbackTests
         Assert.Null(server.TakeChosenMap());
     }
 
+    [Fact]
+    public void A_watcher_is_sent_the_world_but_is_no_player_and_is_never_put_off_for_standing_idle()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy") { IdleKickSeconds = 3 };
+        ClientSession player = new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels);
+        ClientSession watcher = new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels);
+        player.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+        watcher.Connect(serverNet.LocalAddress, new JoinRequest("demo", "test", string.Empty, Watch: true), now);
+
+        float[] still = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 8 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            float[] look = new float[ToyWorld.Channels];
+            look[0] = (tick % 2) * 0.5f;
+            foreach ((ClientSession client, float[] frame) in new[] { (player, look), (watcher, still) })
+            {
+                client.Receive(now);
+                client.SendCommand(frame, now);
+                client.Flush(now);
+            }
+        }
+
+        // Welcomed as nobody, sent the player it does not have, and no player of the match or the server's.
+        Assert.Equal(ServerSession.WatcherEntity, watcher.EntityId);
+        Assert.NotNull(player.EntityId);
+        Assert.True(watcher.Latest is { } seen && seen.TryGet(player.EntityId!.Value, out _), "the watcher was never sent the player");
+        Assert.Single(server.Clients);
+        Assert.Single(server.Match.Players.Keys, k => k != ServerSession.HostSlot);
+        Assert.Null(watcher.EndReason);
+        Assert.Null(player.EndReason);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);

@@ -357,6 +357,9 @@ public sealed class ClientSession
     /// <param name="now">The current time in seconds.</param>
     public void Poll(double now) => _net.Update(now);
 
+    /// <summary>Gets or sets the server tick, to a fraction, the others were last drawn at: what a shot made now was aimed at.</summary>
+    public double? DrawnTick { get; set; }
+
     /// <summary>Gets or sets where every message the server delivers is kept, for a demo; <see langword="null"/> keeps none.</summary>
     public DemoRecording? Recording { get; set; }
 
@@ -456,8 +459,10 @@ public sealed class ClientSession
         // One command for each tick this client ran, numbered on from the last: the server runs exactly these, in this order,
         // so its copy of the player goes where this one went. Only the first is placed by the clock.
         long tick = _sent.Count > 0 ? _sent[^1].Tick + 1 : clock.CommandTick(now, connection.Statistics.RoundTripTime);
-        long viewTick = (long)Math.Floor(clock.InterpolationTick(now));
-        Keep(new UserCommand(tick, channels.ToArray(), viewTick));
+        // What the player aimed at is what is on its screen: the moment the others were last drawn at, not the clock's now.
+        double drawn = DrawnTick ?? clock.InterpolationTick(now);
+        long viewTick = (long)Math.Floor(drawn);
+        Keep(new UserCommand(tick, channels.ToArray(), viewTick, (float)(drawn - viewTick)));
         if (connection.Backlog > NetConstants.CommandChokeBacklog)
         {
             CommandPacketsHeld++;

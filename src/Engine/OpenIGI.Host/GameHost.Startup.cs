@@ -68,6 +68,7 @@ public sealed partial class GameHost
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
         RegisterDemoCommands(state.Console.System);
+        RegisterInviteCommand(state.Console.System);
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterEditorCommands(state.Console.System);
@@ -648,7 +649,7 @@ public sealed partial class GameHost
                 {
                     // Out of the mission is out of its room -- or out of the server the command line joined or hosted, whose
                     // session would otherwise run on against the menu's backdrop.
-                    if (Game.Multiplayer.NetCVars.AutoRecord.Value && TickObserver is Multiplayer.SessionClient recorded)
+                    if (Game.Multiplayer.NetCVars.AutoRecord.Value && TickObserver is Multiplayer.IDemoSource recorded and not Multiplayer.SessionClient { Playback: not null })
                     {
                         _ = recorded.SaveDemo(DemoPath(null));
                     }

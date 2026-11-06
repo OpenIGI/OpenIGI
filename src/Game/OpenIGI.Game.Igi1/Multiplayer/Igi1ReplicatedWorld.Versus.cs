@@ -56,6 +56,46 @@ public sealed partial class Igi1ReplicatedWorld
     }
 
     private readonly List<RearmedPlayer> _rearmed = [];
+    private readonly List<(PlayerCamera Rig, Vector3d Position, float Yaw)> _rewoundPlayers = [];
+
+    // Every living player but the shooter put where the shooter's client drew it at that moment: the rounds trace against the
+    // rig's body where it stands (CoopPlayerBodies), so it stands there while the shooter's command runs.
+    private void RewindPlayers(LagCompensation lag, Igi1NetworkPlayer shooter, double moment)
+    {
+        if (IncludesHost && !_game.World.IsPlayerDead && _game.World.Player is { } own)
+        {
+            Rewind(own, HostEntity);
+        }
+
+        foreach (Igi1NetworkPlayer other in _bySlot.Values)
+        {
+            if (!ReferenceEquals(other, shooter) && !other.IsDead)
+            {
+                Rewind(other.Player, other.Entity);
+            }
+        }
+
+        void Rewind(PlayerCamera rig, int entity)
+        {
+            if (lag.History.Sample(moment, entity, out ReplicatedHuman then))
+            {
+                _rewoundPlayers.Add((rig, rig.Body.Position, rig.Body.Yaw));
+                rig.Body.Position = then.Position.ToVector();
+                rig.Body.Yaw = Quantize.AngleFromBits(then.Yaw);
+            }
+        }
+    }
+
+    private void RestorePlayers()
+    {
+        foreach ((PlayerCamera rig, Vector3d position, float yaw) in _rewoundPlayers)
+        {
+            rig.Body.Position = position;
+            rig.Body.Yaw = yaw;
+        }
+
+        _rewoundPlayers.Clear();
+    }
 
     /// <inheritdoc/>
     public IReadOnlyList<RearmedPlayer> TakeRearmed()

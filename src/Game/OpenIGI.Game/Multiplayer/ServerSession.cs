@@ -142,7 +142,7 @@ public sealed partial class ServerSession : IModeHost
     public SnapshotInterpolator LagCompensationHistory { get; } = new(64);
 
     /// <summary>Gets the connected clients' slots.</summary>
-    public IEnumerable<int> Clients => _clients.Keys;
+    public IEnumerable<int> Clients => _clients.Where(static c => !c.Value.Watching).Select(static c => c.Key);
 
     /// <summary>Gets a client's player name, or <see langword="null"/>.</summary>
     /// <param name="slot">The client's slot.</param>
@@ -171,12 +171,14 @@ public sealed partial class ServerSession : IModeHost
                 case NetEventKind.Connected:
                     JoinRequest? request = JoinRequest.Decode(e.Payload ?? []);
                     BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
+                    NoteWatch(e.Peer, request);
                     ApplyRates(e.Peer, request);
                     break;
                 case NetEventKind.Disconnected when _pending.Remove(e.Peer):
+                    _watching.Remove(e.Peer);
                     break;
                 case NetEventKind.Disconnected:
-                    if (_clients.Remove(e.Peer, out ClientState? gone))
+                    if (_clients.Remove(e.Peer, out ClientState? gone) && !gone.Watching)
                     {
                         // Kept aside a while, in case the line dropped rather than the player leaving.
                         int parked = _nextParked--;
@@ -551,6 +553,12 @@ public sealed partial class ServerSession : IModeHost
             return;
         }
 
+        if (_watching.Remove(slot))
+        {
+            Watch(slot, name, playerId);
+            return;
+        }
+
         // Back on a new line before this one's old line timed out: the old one gone quiet is that same player's, and goes,
         // its player kept for this one. Two lines both alive under one key are two copies of the game on one machine.
         ReplaceQuietLine(playerId);
@@ -583,14 +591,7 @@ public sealed partial class ServerSession : IModeHost
 
         Match.Players[slot].Skin = skin;
         _world.SetSkin(slot, skin);
-        _writer.Reset();
-        _writer.WriteBits((uint)SessionMessage.Welcome, 8);
-        _writer.WriteVarUInt((uint)entity.Value);
-        _writer.WriteVarUInt((uint)TickRate);
-        _writer.WriteString(Map, 64);
-        _writer.WriteBits(_epoch, 8);
-        _writer.WriteString(Mode.Id, 16);
-        _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+        Welcome(slot, entity.Value);
     }
 
     /// <summary>Gets whether a player of this name has been put out of the room.</summary>
@@ -777,7 +778,7 @@ public sealed partial class ServerSession : IModeHost
 
         foreach ((int slot, ClientState client) in _clients.ToArray())
         {
-            if (world.AddPlayer(slot, client.Name) is not { } entity)
+            if ((client.Watching ? WatcherEntity : world.AddPlayer(slot, client.Name)) is not { } entity)
             {
                 _clients.Remove(slot);
                 Match.Leave(slot);
@@ -785,8 +786,12 @@ public sealed partial class ServerSession : IModeHost
                 continue;
             }
 
-            world.SetSkin(slot, Match.Players.GetValueOrDefault(slot)?.Skin ?? string.Empty);
-            _clients[slot] = new ClientState(client.Name, entity, client.PlayerId);
+            if (!client.Watching)
+            {
+                world.SetSkin(slot, Match.Players.GetValueOrDefault(slot)?.Skin ?? string.Empty);
+            }
+
+            _clients[slot] = new ClientState(client.Name, entity, client.PlayerId) { Watching = client.Watching };
             _writer.Reset();
             _writer.WriteBits((uint)SessionMessage.Travel, 8);
             _writer.WriteBits(_epoch, 8);
@@ -920,6 +925,8 @@ public sealed partial class ServerSession : IModeHost
 
     private sealed class ClientState(string name, int entity, string playerId)
     {
+        public bool Watching { get; init; }
+
         public string Name { get; } = name;
 
         public string PlayerId { get; } = playerId;

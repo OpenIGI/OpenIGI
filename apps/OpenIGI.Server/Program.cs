@@ -142,6 +142,8 @@ else if (config.Room)
     logger.Warning(LogCategory, "No WebRTC library beside the server: browsers cannot join it, desktops can.");
 }
 
+// A recording of the session is kept only where the server's settings ask for one.
+OpenIGI.Game.Multiplayer.NetCVars.HostRecord.Value = config.RecordDemos;
 using HostedSession server = new(
     transport,
     new HostedSessionOptions(config.Name, config.MaxPlayers, config.Password, mode, map, version, IncludesHost: false),
@@ -203,7 +205,7 @@ while (!stopping && !dedicated.QuitAsked && host.Step())
     if (!roomTold && room?.Code is { } code)
     {
         roomTold = true;
-        logger.Information(LogCategory, $"Room {code}: browsers join with it at openigi.com/join/{code}.");
+        logger.Information(LogCategory, $"Room {code}: browsers join with it at {OpenIGI.Net.Rooms.RoomTransport.InviteLink(code)}.");
     }
 
     // A host step ends as soon as its frame is done; with nothing to draw, the next tick is most of a period away. With the

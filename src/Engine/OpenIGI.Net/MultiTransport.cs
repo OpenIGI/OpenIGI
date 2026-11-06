@@ -12,6 +12,9 @@ namespace OpenIGI.Net;
 public sealed class MultiTransport : INetTransport
 {
     private readonly INetTransport[] _parts;
+
+    // Which part each address was last heard on: answered there, whatever kind of address it is.
+    private readonly Dictionary<NetAddress, INetTransport> _heardOn = [];
     private int _next;
 
     /// <summary>Initialises a new instance of the <see cref="MultiTransport"/> class.</summary>
@@ -27,6 +30,9 @@ public sealed class MultiTransport : INetTransport
         _parts = [.. parts];
         MaxDatagramSize = _parts.Min(p => p.MaxDatagramSize);
     }
+
+    // How many addresses are remembered before the memory is let go and learnt again: far more than a server's players.
+    private const int MaxRemembered = 4096;
 
     /// <summary>Gets the transports.</summary>
     public IReadOnlyList<INetTransport> Parts => _parts;
@@ -54,6 +60,12 @@ public sealed class MultiTransport : INetTransport
             INetTransport part = _parts[(_next + i) % _parts.Length];
             if (part.TryReceive(buffer, out source, out length))
             {
+                if (_heardOn.Count > MaxRemembered)
+                {
+                    _heardOn.Clear();
+                }
+
+                _heardOn[source] = part;
                 _next = (_next + i + 1) % _parts.Length;
                 return true;
             }
@@ -80,6 +92,20 @@ public sealed class MultiTransport : INetTransport
     // part that does not.
     private INetTransport For(NetAddress destination)
     {
+        // The part it was heard on; else a part of its own kind, as an in-process loopback part beside a UDP one.
+        if (_heardOn.TryGetValue(destination, out INetTransport? heard))
+        {
+            return heard;
+        }
+
+        foreach (INetTransport part in _parts)
+        {
+            if (part.LocalAddress.Kind == destination.Kind)
+            {
+                return part;
+            }
+        }
+
         bool peer = destination.Kind == NetAddressKind.Peer;
         foreach (INetTransport part in _parts)
         {
