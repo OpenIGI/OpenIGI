@@ -331,6 +331,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     public string Mode { get; init; } = string.Empty;
 
     /// <inheritdoc/>
+    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchBanner? Banner =>
         _session?.MatchState is { } state ? state.Banner(_clock.Elapsed.TotalSeconds - _session.MatchStateAt) : null;
 

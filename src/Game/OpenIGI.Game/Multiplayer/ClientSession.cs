@@ -53,6 +53,9 @@ public sealed class ClientSession
     /// <summary>Gets the entity id of this client's own human, once welcomed.</summary>
     public int? EntityId { get; private set; }
 
+    /// <summary>Gets the kills of late the server has told of, stamped with the receiving clock.</summary>
+    public Modes.KillFeed Feed { get; } = new();
+
     /// <summary>Gets the server's ticks per second, once welcomed.</summary>
     public int TickRate { get; private set; }
 
@@ -502,6 +505,14 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
+                break;
+            case SessionMessage.KillNote:
+                Modes.KillNote note = Modes.KillNote.Read(ref reader);
+                if (!reader.IsOverflowed)
+                {
+                    Feed.Add(note, now);
+                }
+
                 break;
             case SessionMessage.MatchState:
                 Modes.MatchState state = Modes.MatchFlow.Read(ref reader);

@@ -51,4 +51,49 @@ internal sealed partial class RemasteredHudRenderer
                 type.Heading, warning, new UiVec2(context.SafeRect.X + ((context.SafeRect.Width - warnWidth) * 0.5f), context.SafeRect.Y + (context.SafeRect.Height * 0.3f)), warn, Bad, 0.06f);
         }
     }
+
+    /// <inheritdoc/>
+    public void DrawKillFeed(SpriteBatch batch, IReadOnlyList<KillNote> kills, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(kills);
+        if (_theme is not { } type || kills.Count == 0)
+        {
+            return;
+        }
+
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+        var painter = UiPainter.Create(batch, context);
+        float Px(float units) => context.Px(units);
+        float size = Px(16f);
+        float gap = Px(10f);
+        float right = context.SafeRect.X + context.SafeRect.Width - Px(16f);
+        float y = context.SafeRect.Y + Px(64f);
+        foreach (KillNote kill in kills)
+        {
+            // Killer, then what happened, then victim: right-aligned, a killer of none read as the victim's own end.
+            string verb = kill.Killer.Length == 0 ? "died" : "killed";
+            float victimWidth = type.Body.MeasureWidth(kill.Victim, size);
+            float verbWidth = type.Body.MeasureWidth(verb, size);
+            float killerWidth = kill.Killer.Length == 0 ? 0f : type.Body.MeasureWidth(kill.Killer, size);
+            float width = killerWidth + verbWidth + victimWidth + (gap * (kill.Killer.Length == 0 ? 3 : 4));
+            var row = new UiRect(right - width, y, width, Px(28f));
+            painter.FillRoundedRect(row, _surfaces?.Rounded ?? default, BoardFace, Px(6f));
+            float x = row.X + gap;
+            if (kill.Killer.Length > 0)
+            {
+                painter.DrawLabel(type.Body, kill.Killer, new UiVec2(x, y + Px(5f)), size, SideColour(kill.KillerTeam), 0f);
+                x += killerWidth + gap;
+            }
+
+            painter.DrawLabel(type.Body, verb, new UiVec2(x, y + Px(5f)), size, UiPalette.TextBody, 0f);
+            x += verbWidth + gap;
+            painter.DrawLabel(type.Body, kill.Victim, new UiVec2(x, y + Px(5f)), size, SideColour(kill.VictimTeam), 0f);
+            y += Px(32f);
+        }
+    }
+
+    // A team's colour in the feed: the accent for one side, the warning red for the other, white for nobody's.
+    private static Bgra32 SideColour(int team) =>
+        team == Game.Multiplayer.TeamRoster.Good ? Accent : team == Game.Multiplayer.TeamRoster.Bad ? Bad : UiPalette.TextBright;
 }

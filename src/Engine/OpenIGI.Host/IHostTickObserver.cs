@@ -31,6 +31,9 @@ public interface ISessionScoreboard
 
     /// <summary>Gets what the player is shown of the match across the top of the screen, or <see langword="null"/> for nothing.</summary>
     Game.Multiplayer.Modes.MatchBanner? Banner => null;
+
+    /// <summary>Gets the kills of late, oldest first, as the feed in the corner lists them.</summary>
+    IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => [];
 }
 
 /// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>

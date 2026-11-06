@@ -163,6 +163,25 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void The_kill_feed_keeps_the_last_few_for_a_few_seconds_and_reads_back_as_written()
+    {
+        KillFeed feed = new();
+        for (int i = 0; i < KillFeed.Kept + 2; i++)
+        {
+            feed.Add(new KillNote($"k{i}", 1, "v", 2), i);
+        }
+
+        Assert.Equal(KillFeed.Kept, feed.Shown(KillFeed.Kept + 1).Count);
+        Assert.Equal("k6", Assert.Single(feed.Shown(6 + KillFeed.ShownSeconds - 0.5)).Killer);
+
+        OpenIGI.Net.BitWriter writer = new();
+        KillNote note = new("Anya", TeamRoster.Good, "Joe", -1);
+        note.Write(writer);
+        OpenIGI.Net.BitReader reader = new(writer.AsSpan());
+        Assert.Equal(note, KillNote.Read(ref reader));
+    }
+
+    [Fact]
     public void The_banner_runs_its_clock_down_and_names_the_winner()
     {
         MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);

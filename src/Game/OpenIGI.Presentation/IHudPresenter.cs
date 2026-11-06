@@ -242,6 +242,15 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the kills of late down the top right corner, each killer and victim in its team's colour.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="kills">The kills, oldest first.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawKillFeed(SpriteBatch batch, IReadOnlyList<Game.Multiplayer.Modes.KillNote> kills, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws other players' names over their heads, each standing in the level and turned to the eye.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="tags">The names and where they stand.</param>

@@ -47,6 +47,7 @@ public sealed class Igi1VersusTests
 
         MatchPlayer standing = pair.Session.Session!.Match.Players.Values.Single(p => p.Name == "Anya");
         Assert.True(pair.RunUntil(() => standing.Deaths == 1, 120) >= 0, "the death was never counted");
+        Assert.True(pair.RunUntil(() => pair.Client.KillFeed.Any(k => k.Victim == "Anya"), 120) >= 0, "the joiner's feed never listed the death");
         Assert.True(pair.RunUntil(() => !partner.IsDead, 30 * 6) >= 0, "the partner was never put back");
         Assert.True(standing.IsAlive);
     }

@@ -302,4 +302,7 @@ public enum SessionMessage : byte
 
     /// <summary>Server to client, reliable: where the match stands -- its mode, phase, round, winner and clock.</summary>
     MatchState = 14,
+
+    /// <summary>A kill for the feed: a <see cref="Modes.KillNote"/>.</summary>
+    KillNote = 15,
 }

@@ -417,6 +417,15 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // The kills of late, down the top right corner.
+        if (TickObserver is ISessionScoreboard { KillFeed: { Count: > 0 } kills } && _remasteredHud is { IsReady: true } feedHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            feedHud.DrawKillFeed(state.Batch, kills, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // Co-op talk: the lines said and being typed, and the places marked.
         string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
         Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];

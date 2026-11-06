@@ -236,6 +236,9 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     public string Mode => _options.Mode;
 
     /// <inheritdoc/>
+    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchBanner? Banner =>
         _session is { } session && _world is { } world ? session.CurrentMatch(world.CurrentTick).Banner(0) : null;
 

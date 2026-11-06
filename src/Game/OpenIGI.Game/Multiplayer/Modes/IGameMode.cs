@@ -23,6 +23,13 @@ public interface IModeHost
     /// <returns>The slot.</returns>
     int SlotOf(int entity);
 
+    /// <summary>Lists a counted death in every player's kill feed.</summary>
+    /// <param name="victim">The victim's slot.</param>
+    /// <param name="killer">The killer's slot, or -1 for none.</param>
+    void Announce(int victim, int killer)
+    {
+    }
+
     /// <summary>Gets the layout of the map being played, or <see langword="null"/> when it has none.</summary>
     MpLayout? Layout => null;
 
