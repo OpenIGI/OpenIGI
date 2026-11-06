@@ -62,6 +62,18 @@ public sealed class ClientSession
     /// <summary>Gets the map the server plays, once welcomed.</summary>
     public string? Map { get; private set; }
 
+    /// <summary>Gets the mode the server plays, once welcomed, or <see langword="null"/>.</summary>
+    public string? ServerMode { get; private set; }
+
+    /// <summary>Has the map loaded again, as the server's Travel to it does: for a level brought up under the wrong mode.</summary>
+    public void ReloadMap()
+    {
+        if (Map is { Length: > 0 } map)
+        {
+            _travel = map;
+        }
+    }
+
     /// <summary>Gets which of the server's levels this client is on, counted on at each travel.</summary>
     public byte Epoch { get; private set; }
 
@@ -463,6 +475,7 @@ public sealed class ClientSession
                 TickRate = (int)reader.ReadVarUInt();
                 Map = reader.ReadString(64);
                 Epoch = (byte)reader.ReadBits(8);
+                ServerMode = reader.ReadString(16);
                 Clock = new TickClockSync(Math.Max(1, TickRate));
                 break;
             case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:

@@ -75,15 +75,17 @@ internal sealed class Igi1CoopPair : IDisposable
     /// <summary>Initializes a new instance of the <see cref="Igi1CoopPair"/> class playing a mode other than co-op.</summary>
     /// <param name="mode">The mode's id, as <c>tdm</c>.</param>
     /// <param name="mission">The mission both play.</param>
-    public Igi1CoopPair(string mode, int mission)
-        : this(null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro: true, mode)
+    /// <param name="joinerMode">The mode the joiner believes it is joining, as a stale listing would say; the host's by default.</param>
+    public Igi1CoopPair(string mode, int mission, string? joinerMode = null)
+        : this(null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro: true, mode, joinerMode)
     {
     }
 
     private Igi1CoopPair(
-        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop")
+        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null)
     {
         _mode = mode;
+        _joinerMode = joinerMode ?? mode;
         bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
@@ -221,12 +223,13 @@ internal sealed class Igi1CoopPair : IDisposable
         return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance, _joinerIdentity,
             reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0))
         {
-            Mode = _mode,
+            Mode = _joinerMode,
         };
     }
 
-    // The mode both play.
+    // The mode both play, and the one the joiner is told before it is welcomed.
     private readonly string _mode;
+    private readonly string _joinerMode;
 
     // The joiner's identity, kept across its reconnections as its game keeps its key file.
     private readonly OpenIGI.Net.Identity.EcdsaPlayerIdentity _joinerIdentity = OpenIGI.Net.Identity.EcdsaPlayerIdentity.CreateEphemeral();

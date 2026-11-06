@@ -138,6 +138,15 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         if (!_welcomed && _session!.EntityId is { } id)
         {
             _welcomed = true;
+
+            // Brought up as a co-op level for a versus server, or the other way: loaded again, the server's way.
+            if (_levelMode is { } loadedAs
+                && Game.Multiplayer.Modes.ArenaLevel.IsVersus(loadedAs) != Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
+            {
+                _logger.Information(LogCategory, $"The level was brought up for {loadedAs}; {Where} plays {Mode}, so it is loaded again.");
+                _session.ReloadMap();
+            }
+
             _lostAt = null;
             _logger.Information(LogCategory, $"Joined {Where}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
         }
@@ -224,6 +233,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
             _world = replicated.CreateClientWorld();
             _level = replicated.Level;
+            _levelMode = Mode;
             _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId), MultiplayerProtocol.Version);
             _session = new ClientSession(_netClient, _world.LocalFrame.Length, _identity, MultiplayerProtocol.IdFor(_titleId));
             _session.Connect(_server, _request, now);
@@ -314,6 +324,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
         _world = next.CreateClientWorld();
         _level = level;
+        _levelMode = Mode;
         _session.Arrived();
         _heldSince = _clock.Elapsed.TotalSeconds;
         _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
@@ -327,8 +338,17 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     public string? Ended => _ended;
 
     /// <inheritdoc/>
-    /// <remarks>The mode of the room or server joined, as it was listed; set by whoever made the session.</remarks>
-    public string Mode { get; init; } = string.Empty;
+    /// <remarks>The server's own once welcomed; until then the mode of the room or server joined as it was listed.</remarks>
+    public string Mode
+    {
+        get => _session?.ServerMode is { Length: > 0 } told ? told : _listedMode;
+        init => _listedMode = value ?? string.Empty;
+    }
+
+    private readonly string _listedMode = string.Empty;
+
+    // The mode the level here was brought up under, which says whether the level's soldiers were taken out of it.
+    private string? _levelMode;
 
     /// <inheritdoc/>
     public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];

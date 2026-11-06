@@ -565,6 +565,7 @@ public sealed partial class ServerSession : IModeHost
         _writer.WriteVarUInt((uint)TickRate);
         _writer.WriteString(Map, 64);
         _writer.WriteBits(_epoch, 8);
+        _writer.WriteString(Mode.Id, 16);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
     }
 

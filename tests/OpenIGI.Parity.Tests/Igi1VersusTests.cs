@@ -109,6 +109,16 @@ public sealed class Igi1VersusTests
         Assert.Equal(full, weapons.Ammunition.Count(ammo));
     }
 
+    [RequiresGameDataFact]
+    public void A_joiner_that_brought_the_level_up_for_co_op_loads_it_again_as_the_servers_arena()
+    {
+        using Igi1CoopPair pair = new(GameModes.FreeForAll, mission: 1, joinerMode: GameModes.Coop);
+        Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
+        Assert.Equal(GameModes.FreeForAll, pair.Client.Mode);
+        Assert.True(pair.RunUntil(() => pair.Joiner?.World.Soldiers?.SoldierViews is { } views && !views.Any(), 3000) >= 0,
+            "the joiner still has the level's soldiers");
+    }
+
     private static Igi1CoopPair Joined(string mode)
     {
         Igi1CoopPair pair = new(mode, mission: 1);
