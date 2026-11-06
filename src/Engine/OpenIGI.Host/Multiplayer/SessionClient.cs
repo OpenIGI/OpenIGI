@@ -237,6 +237,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _levelMode = Mode;
             _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId), MultiplayerProtocol.Version);
             _session = new ClientSession(_netClient, _world.LocalFrame.Length, _identity, MultiplayerProtocol.IdFor(_titleId));
+            _session.Recording = _transport is DemoPlayback ? null : new DemoRecording();
             _session.Connect(_server, _request, now);
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
@@ -246,6 +247,31 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         return true;
+    }
+
+    /// <summary>Saves the session so far as a demo.</summary>
+    /// <param name="path">Where to.</param>
+    /// <returns>Why it could not be, or <see langword="null"/> once saved.</returns>
+    public string? SaveDemo(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (_session is not { Recording: { Messages.Count: > 0 } recording } session)
+        {
+            return _transport is DemoPlayback ? "a demo being played is not recorded again" : "nothing has been recorded yet";
+        }
+
+        string? folder = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
+
+        using FileStream file = File.Create(path);
+        DemoFile.Write(file, new DemoHeader(MultiplayerProtocol.Version, _titleId, session.Map ?? string.Empty, Mode, _request.PlayerName), recording.Messages);
+        _logger.Information(
+            LogCategory,
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Saved {recording.Seconds:0} s of {Where} ({recording.Bytes / 1024} KiB) to {path}{(recording.IsFull ? "; the recording had filled, so it ends early" : string.Empty)}."));
+        return null;
     }
 
     /// <inheritdoc/>

@@ -12,4 +12,11 @@ public static class NetCVars
         false,
         CVarOptions.Archive,
         "Shows the connection in a multiplayer session: round trip, jitter, loss, rates, snapshots, interpolation, corrections.");
+
+    /// <summary>Whether a session joined is saved as a demo when it is left.</summary>
+    public static readonly BoolCVar AutoRecord = CVar.Bool(
+        "cl_autorecord",
+        false,
+        CVarOptions.Archive,
+        "Saves every session joined as a demo when it is left, in the demos folder beside the settings. demo_save saves one at any time.");
 }

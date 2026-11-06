@@ -342,6 +342,9 @@ public sealed class ClientSession
     /// <param name="now">The current time in seconds.</param>
     public void Poll(double now) => _net.Update(now);
 
+    /// <summary>Gets or sets where every message the server delivers is kept, for a demo; <see langword="null"/> keeps none.</summary>
+    public DemoRecording? Recording { get; set; }
+
     /// <summary>Reads what has arrived and acts on it.</summary>
     /// <param name="now">The clock, in seconds.</param>
     public void Receive(double now)
@@ -356,6 +359,7 @@ public sealed class ClientSession
                     EntityId = null;
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0:
+                    Recording?.Add(now, e.Message.Channel, e.Message.Data);
                     Read(e.Message.Data, now);
                     break;
             }

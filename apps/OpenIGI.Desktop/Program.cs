@@ -61,6 +61,23 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
     }
 
     JoinRequest join = new(session.PlayerName, version, session.Password);
+    if (session.Demo is { } demo)
+    {
+        try
+        {
+            using FileStream file = File.OpenRead(demo);
+            (DemoHeader header, IReadOnlyList<DemoMessage> messages) = DemoFile.Read(file);
+            DemoPlayback playback = new(header, messages);
+            logger.Information("Session", $"Playing {demo}: {header.Player}'s {header.Mode} on map {header.Map}, {playback.Length:0} s.");
+            return new SessionClient(playback, playback.Server, join, title.Id, logger) { Mode = header.Mode };
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            logger.Warning("Session", $"Cannot play {demo}: {e.Message}.");
+            return null;
+        }
+    }
+
     if (session.Connect is { } target)
     {
         if (UdpTransport.Parse(target, SessionArguments.DefaultPort) is not { } server)
@@ -321,6 +338,25 @@ using (window)
         // The window was made without Vulkan because there is no loader; Direct3D 12 is all there is.
         logger.Warning("Renderer", "No Vulkan loader on this machine; drawing over Direct3D 12.");
         backend = RendererBackend.D3D12;
+    }
+
+    // A demo brings up the map it was recorded on, played its way.
+    if (session.Demo is { } demoPath && File.Exists(demoPath))
+    {
+        try
+        {
+            using FileStream file = File.OpenRead(demoPath);
+            (DemoHeader header, _) = DemoFile.Read(file);
+            session = session with { Mode = header.Mode };
+            if (int.TryParse(header.Map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int demoMission))
+            {
+                options = options with { StartMission = demoMission };
+            }
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException)
+        {
+            logger.Warning("Session", $"Cannot read {demoPath}: {e.Message}.");
+        }
     }
 
     // A server joined is asked first what it plays, so its level is brought up once, its way: the right map, an arena's or a
