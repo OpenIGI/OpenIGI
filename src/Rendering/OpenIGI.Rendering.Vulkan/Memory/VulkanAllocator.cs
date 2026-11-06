@@ -184,7 +184,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
         MemoryAllocateFlagsInfo flagsInfo = new()
         {
             SType = StructureType.MemoryAllocateFlagsInfo,
-            Flags = MemoryAllocateFlags.AddressBit,
+            Flags = MemoryAllocateFlags.DeviceAddressBit,
         };
 
         MemoryAllocateInfo info = new()
