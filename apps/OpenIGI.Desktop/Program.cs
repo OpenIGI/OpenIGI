@@ -380,6 +380,14 @@ using (window)
 
     int RunOnce(ref RendererBackend backend, HostOptions runOptions, out RendererSwitch? switched)
     {
+        // WebGPU where asked for: a window it cannot present to, or a wgpu-native that will not start, says why and draws
+        // over the native API instead of ending the game.
+        using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu ? TryCreateWebGpu() : null;
+        if (backend == RendererBackend.WebGpu && webGpu is null)
+        {
+            backend = RendererBackend.Vulkan;
+        }
+
         if (backend == RendererBackend.Vulkan && window.VkSurface is null)
         {
             backend = RendererBackend.D3D12;
@@ -402,10 +410,6 @@ using (window)
                 logger,
                 vulkanValidation,
                 streamline)
-            : null;
-
-        using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu
-            ? WebGpuWindow.Create(window, width, height, vsync: true)
             : null;
 
         IRhiDevice rhiDevice = d3d12?.Device ?? vulkan?.Device ?? webGpu!;
@@ -437,6 +441,19 @@ using (window)
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;
+    }
+
+    WebGpuRhiDevice? TryCreateWebGpu()
+    {
+        try
+        {
+            return WebGpuWindow.Create(window, width, height, vsync: true);
+        }
+        catch (Exception ex) when (ex is PlatformException or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            logger.Warning("Renderer", $"WebGPU is not available here ({ex.Message}); drawing over the native renderer.");
+            return null;
+        }
     }
 
     D3D12Rhi? TryCreateD3D12()
