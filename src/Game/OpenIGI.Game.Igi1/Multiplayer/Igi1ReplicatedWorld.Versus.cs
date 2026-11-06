@@ -11,10 +11,33 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 public sealed partial class Igi1ReplicatedWorld
 {
     /// <inheritdoc/>
-    public void SetTeam(int slot, int team) => _teams[slot] = team;
+    public void SetTeam(int slot, int team)
+    {
+        bool changed = !_teams.TryGetValue(slot, out int was) || was != team;
+        _teams[slot] = team;
+        if (changed && slot == ServerSession.HostSlot)
+        {
+            PutHostInArena();
+        }
+    }
 
     /// <inheritdoc/>
-    public void UseLayout(Game.Multiplayer.Modes.MpLayout layout) => _layout = layout ?? throw new ArgumentNullException(nameof(layout));
+    public void UseLayout(Game.Multiplayer.Modes.MpLayout layout)
+    {
+        _layout = layout ?? throw new ArgumentNullException(nameof(layout));
+        PutHostInArena();
+    }
+
+    // A listen server's own player starts the match in the arena, at one of its side's spawns: left where the level puts
+    // it -- often a long walk from where the level is fought, so outside the arena's bounds -- it would be killed for it.
+    private void PutHostInArena()
+    {
+        if (IsVersus && _layout is { Spawns.Length: > 0 } && IncludesHost && _game.World.Player is { } own && !_game.World.IsPlayerDead
+            && _game.PlayerSetup?.LevelSpawn() is { } start)
+        {
+            PlaceVersus(own, ServerSession.HostSlot, start);
+        }
+    }
 
     private Game.Multiplayer.Modes.MpLayout? _layout;
 
@@ -108,6 +131,7 @@ public sealed partial class Igi1ReplicatedWorld
     public bool TryPlayVersus(bool teams)
     {
         _versus = teams ? Versus.Teams : Versus.Everyone;
+        PutHostInArena();
         return true;
     }
 

@@ -64,21 +64,25 @@ public sealed class MpLayoutTests
         Assert.Contains(reason, problem, StringComparison.Ordinal);
     }
     [Fact]
-    public void A_level_nobody_laid_out_gets_its_soldiers_ground_split_between_two_teams_in_a_box_around_it()
+    public void A_level_nobody_laid_out_is_laid_out_around_its_base_and_split_between_two_teams()
     {
         const double M = OpenIGI.Core.Numerics.WorldUnits.PerMetre;
         OpenIGI.Core.Numerics.Vector3d[] stood =
         [
-            new(0, 0, 0), new(1 * M, 0, 0), new(20 * M, 0, 0), new(180 * M, 10 * M, 0), new(200 * M, 0, 5 * M),
-        ];
-        MpLayout layout = ArenaLevel.Generated("igi1", "3", stood, new(10 * M, 5 * M, 0))!;
+            // The base: six soldiers over 100 m, one a metre from another.
+            new(0, 0, 0), new(1 * M, 0, 0), new(20 * M, 5 * M, 0), new(50 * M, -10 * M, 2 * M), new(80 * M, 10 * M, 0), new(100 * M, 0, 5 * M),
 
-        // The soldier a metre from another is folded into it; the start is one more.
+            // A sniper on a ridge a kilometre off, and one far below the level.
+            new(1000 * M, 0, 60 * M), new(40 * M, 0, -800 * M),
+        ];
+        MpLayout layout = ArenaLevel.Generated("igi1", "3", stood)!;
+
         Assert.Equal(5, layout.Spawns.Length);
-        Assert.Equal(3, layout.Spawns.Count(s => s.Team == TeamRoster.Good));
-        Assert.Equal(2, layout.Spawns.Count(s => s.Team == TeamRoster.Bad));
-        Assert.True(layout.InBounds(new(100 * M, 0, 0)));
-        Assert.False(layout.InBounds(new(300 * M, 0, 0)));
-        Assert.Null(ArenaLevel.Generated("igi1", "3", [new(0, 0, 0)], new(0, 0, 0)));
+        Assert.Equal(2, layout.Spawns.Count(s => s.Team == TeamRoster.Good));
+        Assert.Equal(3, layout.Spawns.Count(s => s.Team == TeamRoster.Bad));
+        Assert.True(layout.InBounds(new(50 * M, 0, 0)));
+        Assert.False(layout.InBounds(new(1000 * M, 0, 60 * M)));
+        Assert.False(layout.InBounds(new(40 * M, 0, -800 * M)));
+        Assert.Null(ArenaLevel.Generated("igi1", "3", [new(0, 0, 0), new(500 * M, 0, 0)]));
     }
 }

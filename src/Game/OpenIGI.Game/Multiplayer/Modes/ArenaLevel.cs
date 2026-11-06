@@ -53,19 +53,27 @@ public static class ArenaLevel
     }
 
     /// <summary>
-    /// Lays out a level nobody laid out by hand: its players start where its soldiers stood, the two teams at the two ends
-    /// of the ground they held, and play is the box around it all and the level's own start, a margin wide.
+    /// Lays out a level nobody laid out by hand, around where its soldiers stand thickest -- the base a campaign level is
+    /// fought over: its players start where those soldiers stood, the two teams at the two ends of that ground, and play is
+    /// the box around it a margin wide. Soldiers posted far from it (a lone patrol, a sniper on a far ridge, one below the
+    /// level) and the level's own start (often a long walk away) are no part of it.
     /// </summary>
     /// <param name="title">The game.</param>
     /// <param name="map">The level.</param>
     /// <param name="stood">Where the level's soldiers stood.</param>
-    /// <param name="start">The level's own start.</param>
-    /// <returns>The layout, or <see langword="null"/> for a level with too few soldiers to lay one out from.</returns>
-    public static MpLayout? Generated(string title, string map, IReadOnlyList<Vector3d> stood, Vector3d start)
+    /// <returns>The layout, or <see langword="null"/> for a level with too few soldiers together to lay one out from.</returns>
+    public static MpLayout? Generated(string title, string map, IReadOnlyList<Vector3d> stood)
     {
         ArgumentNullException.ThrowIfNull(stood);
+        if (stood.Count == 0)
+        {
+            return null;
+        }
+
+        // The heart of the level: the soldier with the most others near it.
+        Vector3d heart = stood.MaxBy(at => stood.Count(other => Near(at, other, ClusterRadius)));
         List<Vector3d> spots = [];
-        foreach (Vector3d at in stood.Append(start))
+        foreach (Vector3d at in stood.Where(at => Near(heart, at, ArenaRadius)))
         {
             if (spots.All(s => Vector3d.Distance(s, at) > MinimumSpawnSpacing))
             {
@@ -97,9 +105,18 @@ public static class ArenaLevel
         };
     }
 
+    // Within a reach across the ground, and not far above or below.
+    private static bool Near(Vector3d a, Vector3d b, double reach) =>
+        Math.Sqrt(((a.X - b.X) * (a.X - b.X)) + ((a.Y - b.Y) * (a.Y - b.Y))) <= reach && Math.Abs(a.Z - b.Z) <= HeightReach;
+
     // Spawns closer than this are one; the box reaches this far past the outermost.
     private const double MinimumSpawnSpacing = 4 * WorldUnits.PerMetre;
-    private const double Margin = 40 * WorldUnits.PerMetre;
+    private const double Margin = 30 * WorldUnits.PerMetre;
+
+    // What counts as near in finding the level's heart, how far from it the arena reaches, and how far up or down.
+    private const double ClusterRadius = 60 * WorldUnits.PerMetre;
+    private const double ArenaRadius = 150 * WorldUnits.PerMetre;
+    private const double HeightReach = 40 * WorldUnits.PerMetre;
 
     private static bool IsSoldierOrMaker(GameTask task) =>
         task is GuardGeneratorTask || HumanSoldierClass.All.Any(soldier => string.Equals(soldier.TypeName, task.Type.Name, StringComparison.Ordinal));

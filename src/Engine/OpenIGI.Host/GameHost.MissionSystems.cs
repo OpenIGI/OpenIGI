@@ -283,8 +283,7 @@ public sealed partial class GameHost
             {
                 string title = _titleRuntime.Title.Id;
                 string map = loaded.Descriptor.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                Vector3d start = stood.Count > 0 ? stood[0] : default;
-                session.Layout = ArenaLayout(title, map) ?? Game.Multiplayer.Modes.ArenaLevel.Generated(title, map, stood, start);
+                session.Layout = ArenaLayout(title, map) ?? Game.Multiplayer.Modes.ArenaLevel.Generated(title, map, stood);
             }
         }
 

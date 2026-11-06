@@ -30,6 +30,11 @@ public sealed class Igi1VersusTests
         int[] teams = [.. match.Players.Values.Select(p => p.Team).Order()];
         Assert.Equal([TeamRoster.Good, TeamRoster.Bad], teams);
 
+        // Both in the same arena: not one in the base and the other at the level's far-off start.
+        double apart = Core.Numerics.Vector3d.Distance(pair.Host.World.Player!.Body.Position, Assert.Single(pair.Host.World.NetworkPlayers).Player.Body.Position);
+        Assert.True(apart < 300 * 4096, $"the players start {apart / 4096:0} m apart");
+        Assert.True(layout.InBounds(pair.Host.World.Player.Body.Position));
+
         // The campaign's objectives and messages are nobody's here: neither game shows them.
         pair.RunUntil(() => false, 60);
         Assert.Empty(pair.Host.World.Objectives!.Objectives);
@@ -129,10 +134,9 @@ public sealed class Igi1VersusTests
     public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
     {
         using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
-        Game.Igi1.World.IHarmedPlayer own = pair.Host!.Harm.Players.First(p => ReferenceEquals(p.Rig, pair.Host.World.Player));
-        own.Health.Apply(0, 100000f);
-        Assert.True(pair.RunUntil(() => pair.Host.World.IsPlayerDead, 300) >= 0, "the host never fell");
-        Assert.True(pair.RunUntil(() => !pair.Host.World.IsPlayerDead, 30 * 8) >= 0, "the host was never put back");
+        ((IModeHost)pair.Session.Session!).World.KillPlayer(ServerSession.HostSlot);
+        Assert.True(pair.RunUntil(() => pair.Host!.World.IsPlayerDead, 300) >= 0, "the host never fell");
+        Assert.True(pair.RunUntil(() => !pair.Host!.World.IsPlayerDead, 30 * 8) >= 0, "the host was never put back");
         Assert.False(pair.HostGame.ShowsMissionFailed);
     }
 
