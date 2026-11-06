@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -207,6 +207,7 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenHeight">The target height in pixels.</param>
     /// <param name="controls">The host's hand on the board -- the players it may remove, and the pointer -- or <see langword="null"/> for a board only read.</param>
     /// <param name="relayed">Whether this player's connection goes through the TURN relay.</param>
+    /// <param name="mode">The mode played, a <see cref="Game.Multiplayer.Modes.GameModes"/> id; empty for co-op.</param>
     void DrawScoreboard(
         SpriteBatch batch,
         Game.Multiplayer.Scoreboard board,
@@ -216,7 +217,8 @@ public interface IRemasteredHudPresenter : IDisposable
         int screenWidth,
         int screenHeight,
         ScoreboardControls? controls = null,
-        bool relayed = false)
+        bool relayed = false,
+        string mode = "")
     {
     }
 

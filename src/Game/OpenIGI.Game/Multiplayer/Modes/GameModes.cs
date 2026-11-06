@@ -29,6 +29,20 @@ public static class GameModes
     /// <returns><see langword="true"/> for the versus modes.</returns>
     public static bool IsVersus(string? id) => id is TeamDeathmatch or FreeForAll or Elimination or SearchAndDestroy;
 
+    /// <summary>Gets the name a mode is shown by, in capitals: <c>SEARCH &amp; DESTROY</c>.</summary>
+    /// <param name="id">The mode's id.</param>
+    /// <returns>Its name; co-op's is <c>CO-OP</c>.</returns>
+    public static string Title(string? id) => id switch
+    {
+        null or "" or Coop => "CO-OP",
+        TeamDeathmatch => "TEAM DEATHMATCH",
+        FreeForAll => "FREE FOR ALL",
+        Elimination => "ELIMINATION",
+        SearchAndDestroy => "SEARCH & DESTROY",
+        Objective => "OBJECTIVE",
+        _ => id.ToUpperInvariant(),
+    };
+
     /// <summary>Gets whether a versus mode plays two teams, rather than everyone for themselves.</summary>
     /// <param name="id">The mode's id.</param>
     /// <returns><see langword="true"/> for the team modes.</returns>

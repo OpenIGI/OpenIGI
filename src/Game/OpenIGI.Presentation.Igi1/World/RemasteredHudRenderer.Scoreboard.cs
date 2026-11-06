@@ -64,7 +64,8 @@ internal sealed partial class RemasteredHudRenderer
         int screenWidth,
         int screenHeight,
         ScoreboardControls? controls = null,
-        bool relayed = false)
+        bool relayed = false,
+        string mode = "")
     {
         _removeButtons.Clear();
         ArgumentNullException.ThrowIfNull(batch);
@@ -95,12 +96,13 @@ internal sealed partial class RemasteredHudRenderer
 
         // The header: the mode, the room, and the numbers that matter on the right.
         var header = new UiRect(x, top, width, Px(BoardHeader));
-        string mode = teamed ? "TEAM" : "CO-OP";
+        bool versus = Game.Multiplayer.Modes.GameModes.IsVersus(mode) || mode == Game.Multiplayer.Modes.GameModes.Objective;
+        string tag = versus ? Game.Multiplayer.Modes.GameModes.Title(mode) : teamed ? "TEAM" : "CO-OP";
         float chipText = Px(LabelText + 2f);
-        float chipWidth = (type.Heading.MeasureWidth(mode, chipText) * 1.12f) + Px(24f);
+        float chipWidth = (type.Heading.MeasureWidth(tag, chipText) * 1.12f) + Px(24f);
         var chip = new UiRect(x + pad, header.Y + ((header.Height - Px(36f)) * 0.5f), chipWidth, Px(36f));
         painter.FillRect(chip, Accent);
-        painter.DrawLabel(type.Heading, mode, new UiVec2(chip.X + Px(12f), UiRowStyle.CapsCenterY(type.Heading, chipText, chip)), chipText, Bgra32.FromRgb(20, 16, 10), 0.1f);
+        painter.DrawLabel(type.Heading, tag, new UiVec2(chip.X + Px(12f), UiRowStyle.CapsCenterY(type.Heading, chipText, chip)), chipText, Bgra32.FromRgb(20, 16, 10), 0.1f);
 
         float nameX = chip.Right + Px(22f);
         string caption = roomCode is null ? "SERVER" : "ROOM";
@@ -111,9 +113,20 @@ internal sealed partial class RemasteredHudRenderer
         int up = lines.Count(static l => l.IsAlive);
         if (teamed)
         {
-            statRight = Stat(painter, type, context, statRight, header, "TEAM 2", board.BadScore.ToString(CultureInfo.InvariantCulture), Accent);
-            statRight = Stat(painter, type, context, statRight - Px(44f), header, "TEAM 1", board.GoodScore.ToString(CultureInfo.InvariantCulture), UiPalette.Info);
+            string good = Game.Multiplayer.Modes.MatchState.TeamName(TeamRoster.Good).ToUpperInvariant();
+            string bad = Game.Multiplayer.Modes.MatchState.TeamName(TeamRoster.Bad).ToUpperInvariant();
+            statRight = Stat(painter, type, context, statRight, header, bad, board.BadScore.ToString(CultureInfo.InvariantCulture), Accent);
+            statRight = Stat(painter, type, context, statRight - Px(44f), header, good, board.GoodScore.ToString(CultureInfo.InvariantCulture), UiPalette.Info);
             Stat(painter, type, context, statRight - Px(44f), header, "ROUND", board.Round.ToString(CultureInfo.InvariantCulture), Text);
+        }
+        else if (versus)
+        {
+            // Everyone for themselves: who leads, and who is still up.
+            statRight = Stat(painter, type, context, statRight, header, "ALIVE", string.Create(CultureInfo.InvariantCulture, $"{up}/{lines.Length}"), up == 0 ? Bad : Alive);
+            if (lines.MaxBy(static l => l.Kills) is { Kills: > 0 } leader)
+            {
+                Stat(painter, type, context, statRight - Px(44f), header, "LEADER", leader.Name.ToUpperInvariant(), Accent);
+            }
         }
         else
         {

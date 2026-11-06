@@ -362,7 +362,7 @@ public sealed partial class GameHost
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             boardHud.DrawScoreboard(
-                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board), session.Relayed);
+                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board), session.Relayed, session.Mode);
             state.Batch.End();
         }
 

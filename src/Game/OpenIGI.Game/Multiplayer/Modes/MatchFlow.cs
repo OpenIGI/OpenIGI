@@ -148,15 +148,7 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
         }
 
         string? clock = SecondsLeft is { } left ? Clock(Math.Max(0, left - secondsSince)) : null;
-        string title = Mode switch
-        {
-            GameModes.TeamDeathmatch => "TEAM DEATHMATCH",
-            GameModes.FreeForAll => "FREE FOR ALL",
-            GameModes.Elimination => "ELIMINATION",
-            GameModes.SearchAndDestroy => "SEARCH & DESTROY",
-            GameModes.Objective => "OBJECTIVE",
-            _ => Mode.ToUpperInvariant(),
-        };
+        string title = GameModes.Title(Mode);
         return Phase switch
         {
             MatchPhase.Warmup => new MatchBanner("WARMUP", clock, "The match begins when the clock runs out"),

@@ -135,7 +135,7 @@ public sealed record MatchHud
         MatchHud hud = new()
         {
             Mode = state.Mode,
-            Title = TitleOf(state.Mode),
+            Title = GameModes.Title(state.Mode),
             Phase = state.Phase,
             Round = rounds ? state.Round : 0,
             Target = report.Target,
@@ -195,15 +195,6 @@ public sealed record MatchHud
         return hud with { Result = ResultOf(state, report, own, hud, left) };
     }
 
-    private static string TitleOf(string mode) => mode switch
-    {
-        GameModes.TeamDeathmatch => "TEAM DEATHMATCH",
-        GameModes.FreeForAll => "FREE FOR ALL",
-        GameModes.Elimination => "ELIMINATION",
-        GameModes.SearchAndDestroy => "SEARCH & DESTROY",
-        GameModes.Objective => "OBJECTIVE",
-        _ => mode.ToUpperInvariant(),
-    };
 
     private static TeamStrip Strip(int team, Scoreboard? board, ScoreboardLine[] lines, ScoreboardLine? own, ModeReport report)
     {

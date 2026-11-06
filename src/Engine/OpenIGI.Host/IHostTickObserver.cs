@@ -17,6 +17,9 @@ public interface ISessionScoreboard
     /// <summary>Gets the room's code, when the session is played through one.</summary>
     string? RoomCode => null;
 
+    /// <summary>Gets the mode the session plays, a <see cref="Game.Multiplayer.Modes.GameModes"/> id; empty for co-op.</summary>
+    string Mode => string.Empty;
+
     /// <summary>Gets where the session is played: the mission or map, as a player reads it.</summary>
     string Place => Title;
 
