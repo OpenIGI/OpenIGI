@@ -48,11 +48,22 @@ public sealed partial class Igi1PlayerSetup
     /// <param name="line">The line.</param>
     public void NoteSession(string line) => host.Logger.Information("NetDiag", line);
 
-    private void Hand(PlayerCamera rig, OpenIGI.Game.Player.PlayerWeapons weapons, string scriptId, int rounds)
+    /// <summary>Hands a player one weapon, with its ammunition filled to a count: what it bought in a match.</summary>
+    /// <param name="rig">The player's rig.</param>
+    /// <param name="scriptId">The weapon's script id.</param>
+    /// <param name="rounds">The rounds its ammunition is filled to.</param>
+    /// <returns><see langword="true"/> when the level knows the weapon and the player could take it.</returns>
+    public bool Give(PlayerCamera rig, string scriptId, int rounds)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        return rig.Weapons is { } weapons && Weapons is not null && Ammunition is not null && Hand(rig, weapons, scriptId, rounds);
+    }
+
+    private bool Hand(PlayerCamera rig, OpenIGI.Game.Player.PlayerWeapons weapons, string scriptId, int rounds)
     {
         if (!Weapons.TryGetByScriptId(scriptId, out WeaponType weapon))
         {
-            return;
+            return false;
         }
 
         bool hasAmmo = Ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
@@ -65,6 +76,8 @@ public sealed partial class Igi1PlayerSetup
         {
             FillTo(weapons, ammo.AmmoId, rounds);
         }
+
+        return true;
     }
 
     private static void FillTo(OpenIGI.Game.Player.PlayerWeapons weapons, int ammoId, int rounds)

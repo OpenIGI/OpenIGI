@@ -37,6 +37,26 @@ public sealed partial class ServerSession
         : Match.Players.TryGetValue(winner, out MatchPlayer? player) ? player.Name : string.Empty;
 
     /// <inheritdoc/>
+    bool IModeHost.Give(int slot, string weapon, int rounds)
+    {
+        if (!_world.Give(slot, weapon, rounds))
+        {
+            return false;
+        }
+
+        // A joined player's own game carries it too; the listen host's own player is the world's, already holding it.
+        if (slot != HostSlot && _clients.ContainsKey(slot))
+        {
+            _writer.Reset();
+            _writer.WriteBits((uint)SessionMessage.Given, 8);
+            _writer.WriteString(weapon, 64);
+            _writer.WriteVarUInt((uint)Math.Max(0, rounds));
+            _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+        }
+
+        return true;
+    }
+
     void IModeHost.Respawn(int slot)
     {
         // The match's team first: a side swap or a scramble changed it, and the spawn the world picks follows it.

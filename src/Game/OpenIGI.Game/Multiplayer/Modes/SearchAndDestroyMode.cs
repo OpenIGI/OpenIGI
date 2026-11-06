@@ -48,6 +48,9 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     /// <inheritdoc/>
     protected override bool SidesDiffer => true;
 
+    /// <inheritdoc/>
+    protected override bool HasArmoury => true;
+
     /// <summary>Gets how the bomb is played.</summary>
     public BombSettings Bomb { get; } = bomb ?? new BombSettings();
 
@@ -152,8 +155,9 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
             Attackers,
             at => SiteAt(sites, at) is not null,
             Bomb.PlantSeconds,
-            (_, at) =>
+            (planter, at) =>
             {
+                host.Match.Award(planter, host.Match.Rules.MoneyPlant);
                 PlantedAt = at;
                 PlantedSite = SiteAt(sites, at)?.Id ?? "?";
                 BlowsAt = tick + (long)Ticks(Bomb.FuseSeconds);

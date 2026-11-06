@@ -15,6 +15,15 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     /// <inheritdoc/>
     public void ResetToLevelStart() => _game.ResetToLevelStart();
 
+    /// <inheritdoc/>
+    public void GiveOwn(string weapon, int rounds)
+    {
+        if (_game.World.Player is { } own && _game.PlayerSetup is { } setup)
+        {
+            _ = setup.Give(own, weapon, rounds);
+        }
+    }
+
     private readonly Igi1Gameplay _game;
     private readonly Dictionary<int, Igi1NetworkPlayer> _others = [];
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];

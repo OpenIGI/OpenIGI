@@ -223,12 +223,51 @@ public sealed class Match
         }
     }
 
-    /// <summary>Changes the teams' sides at the half: every player goes to the other team, and each team's score goes with it.</summary>
+    /// <summary>Pays a player for something it did (a plant), within the cap.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="amount">The pay.</param>
+    public void Award(int slot, int amount)
+    {
+        if (_players.TryGetValue(slot, out MatchPlayer? player))
+        {
+            Pay(player, amount);
+        }
+    }
+
+    /// <summary>Takes a price from a player who can pay it.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="price">The price.</param>
+    /// <returns><see langword="true"/> when it was paid.</returns>
+    public bool TrySpend(int slot, int price)
+    {
+        if (!_players.TryGetValue(slot, out MatchPlayer? player) || player.Money < price)
+        {
+            return false;
+        }
+
+        player.Money -= price;
+        return true;
+    }
+
+    /// <summary>Pays every player for a round decided: the winners' pay, or the losers' (a draw pays everyone as losers).</summary>
+    /// <param name="winningTeam">The team that won it, or -1.</param>
+    public void PayRound(int winningTeam)
+    {
+        foreach (MatchPlayer player in _players.Values)
+        {
+            Pay(player, player.Team == winningTeam ? Rules.MoneyMissionWin : Rules.MoneyMissionLost);
+        }
+    }
+
+    /// <summary>Changes the teams' sides at the half: every player goes to the other team, each team's score goes with it, and
+    /// every player's money starts again.</summary>
     public void SwapSides()
     {
         (_teamScores[0], _teamScores[1]) = (_teamScores[1], _teamScores[0]);
         foreach (MatchPlayer player in _players.Values)
         {
+            // The second half's economy starts over, as the first's did.
+            player.Money = Math.Min(Rules.MoneyStart, Rules.MoneyCap);
             player.Team = player.Team switch
             {
                 TeamRoster.Good => TeamRoster.Bad,

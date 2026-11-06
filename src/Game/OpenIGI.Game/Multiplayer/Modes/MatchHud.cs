@@ -98,6 +98,12 @@ public sealed record MatchHud
     /// <summary>Gets a decided round's or match's card, or <see langword="null"/> while one is played.</summary>
     public ResultCard? Result { get; init; }
 
+    /// <summary>Gets the local player's money in a mode with an economy, or <see langword="null"/>.</summary>
+    public int? Money { get; init; }
+
+    /// <summary>Gets the buy time left, as <c>0:14</c>, while the armoury sells; <see langword="null"/> once it is shut.</summary>
+    public string? BuyClock { get; init; }
+
     /// <summary>Gets a line under the strip explaining the phase (a warmup's), or <see langword="null"/>.</summary>
     public string? Notice { get; init; }
 
@@ -191,6 +197,13 @@ public sealed record MatchHud
         {
             hud = hud with { Hint = could };
         }
+
+        double buyLeft = Math.Max(0, report.BuyLeft - secondsSince);
+        hud = hud with
+        {
+            Money = state.Mode == GameModes.SearchAndDestroy ? own?.Money : null,
+            BuyClock = buyLeft > 0 && own is { IsAlive: true } ? MatchState.Clock(buyLeft) : null,
+        };
 
         return hud with { Result = ResultOf(state, report, own, hud, left) };
     }

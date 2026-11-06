@@ -176,8 +176,9 @@ public enum PlayerInputSlot
     /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
     Scoreboard = 37,
 
-    /// <summary>Unassigned.</summary>
-    Unused38 = 38,
+    /// <summary>Action bit <c>0x80</c> — <see cref="PlayerAction.BuyMenu"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
+    BuyMenu = 38,
 
     /// <summary>Unassigned.</summary>
     Unused39 = 39,
@@ -231,6 +232,7 @@ public static class PlayerInputBindings
         (PlayerInputSlot.Flashlight, PlayerAction.Flashlight),
         (PlayerInputSlot.WeaponWheel, PlayerAction.WeaponWheel),
         (PlayerInputSlot.Scoreboard, PlayerAction.Scoreboard),
+        (PlayerInputSlot.BuyMenu, PlayerAction.BuyMenu),
     ];
 
     /// <summary>Gets the action name used by the persisted retail configuration.</summary>

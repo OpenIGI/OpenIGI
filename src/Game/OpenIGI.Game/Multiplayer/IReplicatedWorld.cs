@@ -88,6 +88,13 @@ public interface IReplicatedWorld
     /// <returns><see langword="true"/> while it holds it.</returns>
     bool IsUsing(int slot) => false;
 
+    /// <summary>Hands a living player a weapon, with rounds of its ammunition: what it bought.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="weapon">The title's weapon script id.</param>
+    /// <param name="rounds">The rounds it comes with.</param>
+    /// <returns><see langword="true"/> when it was handed over.</returns>
+    bool Give(int slot, string weapon, int rounds) => false;
+
     /// <summary>Shows a blast the mode set off -- a bomb's -- where it is, as the world shows its own explosions.</summary>
     /// <param name="at">Where, in world units.</param>
     /// <param name="radius">How far it reaches, in world units.</param>
@@ -203,6 +210,13 @@ public interface IReplicatedClientWorld
 
     /// <summary>Records the client's copy of the level as it stands, as what <see cref="ResetToLevelStart"/> puts back.</summary>
     void MarkLevelStart()
+    {
+    }
+
+    /// <summary>Hands the client's own player a weapon the server handed its copy (a buy).</summary>
+    /// <param name="weapon">The title's weapon script id.</param>
+    /// <param name="rounds">The rounds its ammunition is filled to.</param>
+    void GiveOwn(string weapon, int rounds)
     {
     }
 
@@ -355,4 +369,8 @@ public enum SessionMessage : byte
     /// <summary>Server to client: hits the client's player scored or took (<see cref="CombatNote"/>), for its hit marker and
     /// the marks of where shots came from.</summary>
     Combat = 18,
+
+    /// <summary>Server to client: a weapon the server handed the client's player (a buy), for the client's own copy of it to
+    /// carry too; the weapon's script id and the rounds of its ammunition.</summary>
+    Given = 19,
 }

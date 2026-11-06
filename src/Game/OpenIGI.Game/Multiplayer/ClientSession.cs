@@ -162,6 +162,23 @@ public sealed class ClientSession
     // Level resets the server has told of and the client has not yet made.
     private int _levelResets;
 
+    // Weapons the server handed this client's player and its own copy has not yet taken.
+    private readonly List<(string Weapon, int Rounds)> _given = [];
+
+    /// <summary>Takes the weapons the server handed this client's player since the last call (its buys).</summary>
+    /// <returns>Each weapon's script id and rounds.</returns>
+    public IReadOnlyList<(string Weapon, int Rounds)> TakeGiven()
+    {
+        if (_given.Count == 0)
+        {
+            return [];
+        }
+
+        (string, int)[] taken = [.. _given];
+        _given.Clear();
+        return taken;
+    }
+
     /// <summary>Takes whether the server put its level back since the last call: the client's copy goes back too.</summary>
     /// <returns><see langword="true"/> once for each reset told of (several at once are one).</returns>
     public bool TakeLevelReset()
@@ -585,6 +602,15 @@ public sealed class ClientSession
                 break;
             case SessionMessage.LevelReset:
                 _levelResets++;
+                break;
+            case SessionMessage.Given:
+                string weapon = reader.ReadString(64);
+                int rounds = (int)reader.ReadVarUInt();
+                if (!reader.IsOverflowed && _given.Count < 32)
+                {
+                    _given.Add((weapon, rounds));
+                }
+
                 break;
             case SessionMessage.Combat when CombatNote.Read(ref reader) is { } hit:
                 _combat.Add(hit);

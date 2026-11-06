@@ -25,7 +25,7 @@ internal sealed partial class RemasteredHudRenderer
     private static Bgra32 Victory => Bgra32.FromRgb(255, 206, 92);
 
     /// <inheritdoc/>
-    public void DrawMatchHud(SpriteBatch batch, MatchHud hud, string? warning, string useKey, int screenWidth, int screenHeight)
+    public void DrawMatchHud(SpriteBatch batch, MatchHud hud, string? warning, string useKey, int screenWidth, int screenHeight, string buyKey = "G")
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(hud);
@@ -63,7 +63,14 @@ internal sealed partial class RemasteredHudRenderer
 
         if (hud.TeamNote is { } note)
         {
-            _ = Chip(painter, type, note, centre, y, Ally.WithAlpha(150), UiPalette.TextBright, Px);
+            y = Chip(painter, type, note, centre, y, Ally.WithAlpha(150), UiPalette.TextBright, Px);
+        }
+
+        if (hud.Money is { } money)
+        {
+            string cash = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"${money:N0}");
+            string line = hud.BuyClock is { } buy ? $"{cash}   ·   {buyKey}  BUY  {buy}" : cash;
+            _ = Chip(painter, type, line, centre, y, hud.BuyClock is null ? StripFace : Victory.WithAlpha(190), hud.BuyClock is null ? Victory : Bgra32.FromRgb(20, 16, 10), Px);
         }
 
         // Under the crosshair: the plant or defuse under way, or what the player can do here.

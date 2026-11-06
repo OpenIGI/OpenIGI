@@ -53,6 +53,12 @@ public sealed partial class ServerSession : IModeHost
     /// <summary>Gets the newest snapshot the world gave, where every human stood at the end of the last tick.</summary>
     public Snapshot? LastSnapshot { get; private set; }
     private double _now;
+
+    // The tick the mode last ran on: what a command between ticks is dated by.
+    private long _tick;
+
+    /// <summary>Gets or sets the title played, as <c>igi1</c>.</summary>
+    public string Title { get; set; } = string.Empty;
     private readonly Dictionary<int, ClientState> _clients = [];
     private readonly UserCommandCodec _codec;
     private readonly BitWriter _writer = new(2048);
@@ -326,6 +332,7 @@ public sealed partial class ServerSession : IModeHost
             Mode.Start(this, tick);
         }
 
+        _tick = tick;
         Mode.Tick(this, tick, _world.TakeDeaths());
         TellCombat();
         TellMatch(tick);

@@ -318,6 +318,24 @@ public sealed class Igi1VersusTests
         Assert.True(joinerWalked > 4096, $"the joiner walked {joinerWalked / 4096:0.00} m");
     }
 
+    [RequiresGameDataFact]
+    public void In_the_buy_time_the_host_and_the_joiner_each_buy_a_gun_and_carry_it()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        static bool Carries(Game.Igi1.Player.PlayerCamera rig, string weapon) =>
+            rig.Weapons?.Carried.Any(c => c.Weapon.ScriptId == weapon) == true;
+
+        pair.Session.Say("/buy uzi");
+        pair.Client.Say("/buy uzi");
+        Igi1NetworkPlayer joiner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Assert.True(pair.RunUntil(() => Carries(joiner.Player, "WEAPON_ID_UZI"), 300) >= 0, "the joiner's Uzi never came");
+        Assert.True(Carries(pair.Host.World.Player!, "WEAPON_ID_UZI"), "the host's Uzi never came");
+        Assert.True(pair.RunUntil(() => Carries(pair.Joiner!.World.Player!, "WEAPON_ID_UZI"), 300) >= 0, "the joiner's own game never got its Uzi");
+
+        Match match = pair.Session.Session!.Match;
+        Assert.All(match.Players.Values, p => Assert.Equal(match.Rules.MoneyStart - 900, p.Money));
+    }
+
     private static Igi1CoopPair Joined(string mode, bool hostSkipsIntro = true)
     {
         Igi1CoopPair pair = new(mode, mission: 1, hostSkipsIntro: hostSkipsIntro);

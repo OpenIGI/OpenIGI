@@ -353,6 +353,42 @@ public sealed class GameModeTests
         Assert.Null(new MatchState(GameModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
     }
 
+    [Fact]
+    public void In_the_buy_time_near_its_start_a_player_buys_what_it_can_afford_and_not_after()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        Assert.True(mode.Report(1).BuyLeft > 0);
+
+        // An Uzi from the start money; a rifle it cannot pay for; then walked off, and later, nothing.
+        Assert.StartsWith("Bought Uzi", mode.Buy(host, 0, "uzi", 1), StringComparison.Ordinal);
+        Assert.Equal([(0, "WEAPON_ID_UZI", 160)], host.Given);
+        Assert.Equal(host.Match.Rules.MoneyStart - 900, host.Match.Players[0].Money);
+        Assert.Contains("costs", mode.Buy(host, 0, "ak47", 1), StringComparison.Ordinal);
+        host.Positions[0] = new(40 * Metre, 0, 0);
+        Assert.Equal("Buy where your side starts.", mode.Buy(host, 0, "colt", 1));
+        host.Positions[0] = new(0, 0, 0);
+        Assert.Equal("The buy time is over.", mode.Buy(host, 0, "colt", (TickRate * 21) + 1));
+        Assert.Single(host.Given);
+        Assert.StartsWith("Buy: 1 colt", mode.Buy(host, 0, "nothing", 1), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_round_pays_its_winners_and_losers_and_a_plant_pays_its_planter()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        int start = host.Match.Rules.MoneyStart;
+        host.Positions[0] = new(102 * Metre, 0, 0);
+        host.Using.Add(0);
+        long tick = Run(mode, host, 1, TickRate + 1);
+        Assert.Equal(start + host.Match.Rules.MoneyPlant, host.Match.Players[0].Money);
+
+        // The defender stood clear; the blast wins the round for the attackers, and each side is paid for it.
+        host.Using.Clear();
+        _ = Run(mode, host, tick, (TickRate * 10) + 1);
+        Assert.Equal(start + host.Match.Rules.MoneyPlant + host.Match.Rules.MoneyMissionWin, host.Match.Players[0].Money);
+        Assert.Equal(start + host.Match.Rules.MoneyMissionLost, host.Match.Players[1].Money);
+    }
+
     // A match of players in slots 0.., each entity 10 + slot, on the teams given.
     private sealed class Host : IModeHost
     {
@@ -382,6 +418,10 @@ public sealed class GameModeTests
         public List<OpenIGI.Core.Numerics.Vector3d> Blasts => _world.Blasts;
 
         public Match Match { get; }
+
+        public string Title => "igi1";
+
+        public List<(int Slot, string Weapon, int Rounds)> Given => _world.Given;
 
         public IReplicatedWorld World => _world;
 
@@ -418,6 +458,14 @@ public sealed class GameModeTests
         public HashSet<int> Using { get; } = [];
 
         public List<OpenIGI.Core.Numerics.Vector3d> Blasts { get; } = [];
+
+        public List<(int Slot, string Weapon, int Rounds)> Given { get; } = [];
+
+        public bool Give(int slot, string weapon, int rounds)
+        {
+            Given.Add((slot, weapon, rounds));
+            return true;
+        }
 
         public bool IsUsing(int slot) => Using.Contains(slot);
 

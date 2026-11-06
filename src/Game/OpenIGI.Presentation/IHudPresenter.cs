@@ -251,9 +251,32 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="useKey">The use key's name, as its hints show it.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawMatchHud(SpriteBatch batch, Game.Multiplayer.Modes.MatchHud hud, string? warning, string useKey, int screenWidth, int screenHeight)
+    /// <param name="buyKey">The buy menu's key's name.</param>
+    void DrawMatchHud(SpriteBatch batch, Game.Multiplayer.Modes.MatchHud hud, string? warning, string useKey, int screenWidth, int screenHeight, string buyKey = "G")
     {
     }
+
+    /// <summary>Draws a match's buy menu: what the armoury sells, each with its price, those the player cannot afford dimmed.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="items">What it sells.</param>
+    /// <param name="money">The player's money.</param>
+    /// <param name="buyClock">The buy time left, as <c>0:14</c>.</param>
+    /// <param name="pointer">Where the pointer is, in pixels.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawBuyMenu(
+        SpriteBatch batch,
+        IReadOnlyList<Game.Multiplayer.Modes.ArmouryItem> items,
+        int money,
+        string buyClock,
+        (float X, float Y) pointer,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
+    IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
 
     /// <summary>Draws whom a dead player watches, low in the middle of the screen, and how to watch the next.</summary>
     /// <param name="batch">The batch to draw into.</param>

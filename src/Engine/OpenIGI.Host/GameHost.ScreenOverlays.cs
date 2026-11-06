@@ -418,7 +418,12 @@ public sealed partial class GameHost
             if (shown is Game.Multiplayer.Modes.MatchHud hud)
             {
                 string useKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.Activate)) ?? "E";
-                matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight);
+                matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
+                if (_buyMenuUp && hud is { BuyClock: { } buyClock, Money: { } money })
+                {
+                    matchHud.DrawBuyMenu(
+                        state.Batch, BuyItems, money, buyClock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                }
             }
             else if (shown is Game.Multiplayer.Modes.MatchBanner banner)
             {

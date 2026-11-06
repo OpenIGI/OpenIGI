@@ -62,6 +62,9 @@ public sealed record ModeReport
     /// <summary>Gets the fuse's whole length, in seconds.</summary>
     public double FuseSeconds { get; init; }
 
+    /// <summary>Gets the seconds the armoury still sells for this round, as of when it was said; nought while it is shut.</summary>
+    public double BuyLeft { get; init; }
+
     /// <summary>Gets the players at work on the objective now.</summary>
     public IReadOnlyList<ModeWork> Working { get; init; } = [];
 
@@ -71,7 +74,7 @@ public sealed record ModeReport
         get
         {
             StringBuilder key = new();
-            key.Append(CultureInfo.InvariantCulture, $"{Target}|{Attackers}|{Reason}|{Planted}|{BombAt is not null}|{FuseSeconds}");
+            key.Append(CultureInfo.InvariantCulture, $"{Target}|{Attackers}|{Reason}|{Planted}|{BombAt is not null}|{FuseSeconds}|{BuyLeft > 0}");
             foreach (ModeWork work in Working)
             {
                 // A hold begun or let go, not its progress: the clients run that on themselves from Seconds.
@@ -101,6 +104,7 @@ public sealed record ModeReport
 
         writer.WriteRanged((int)Math.Clamp(Math.Ceiling(FuseLeft * 10), 0, 4095), 0, 4095);
         writer.WriteRanged((int)Math.Clamp(Math.Ceiling(FuseSeconds * 10), 0, 4095), 0, 4095);
+        writer.WriteRanged((int)Math.Clamp(Math.Ceiling(BuyLeft * 10), 0, 4095), 0, 4095);
         int count = Math.Min(Working.Count, 15);
         writer.WriteBits((uint)count, 4);
         for (int i = 0; i < count; i++)
@@ -125,6 +129,7 @@ public sealed record ModeReport
         Core.Numerics.Vector3d? bombAt = reader.ReadBool() ? new Core.Numerics.Vector3d(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble()) : null;
         double fuseLeft = reader.ReadRanged(0, 4095) / 10.0;
         double fuseSeconds = reader.ReadRanged(0, 4095) / 10.0;
+        double buyLeft = reader.ReadRanged(0, 4095) / 10.0;
         int count = (int)reader.ReadBits(4);
         ModeWork[] working = new ModeWork[count];
         for (int i = 0; i < count; i++)
@@ -144,6 +149,7 @@ public sealed record ModeReport
             BombAt = bombAt,
             FuseLeft = fuseLeft,
             FuseSeconds = fuseSeconds,
+            BuyLeft = buyLeft,
             Working = working,
         };
     }

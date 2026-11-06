@@ -175,6 +175,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             _session = new ServerSession(
                 _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
+            _session.Title = _titleId;
             _session.Banned = Banned;
             _session.Rcon = Rcon;
             _session.ChangeMap = ChangeMap;

@@ -31,6 +31,12 @@ public static class ClientReplication
             world.ResetToLevelStart();
         }
 
+        // What the server handed this client's player -- a buy -- its own copy carries too.
+        foreach ((string weapon, int rounds) in session.TakeGiven())
+        {
+            world.GiveOwn(weapon, rounds);
+        }
+
         // The rest of the server's world first -- its lifts, its doors, and what it did to this client's player that the
         // client learns of only now, a knock among them -- so the server's word on the player below is weighed against a
         // prediction that has taken them. The snapshot's world stands after the server ran this client's command for

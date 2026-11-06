@@ -183,6 +183,7 @@ public sealed partial class GameHost
             UpdateCoopVoice();
             UpdateCoopTalk();
             UpdateScoreboard();
+            UpdateBuyMenu();
         }
     }
 

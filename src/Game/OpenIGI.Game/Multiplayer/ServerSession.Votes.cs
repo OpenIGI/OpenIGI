@@ -92,6 +92,9 @@ public sealed partial class ServerSession
                 }
 
                 return true;
+            case "buy" or "b":
+                Tell(slot, Mode.Buy(this, slot, words.Length > 1 ? words[1] : string.Empty, _tick));
+                return true;
             case "vote" or "callvote":
                 CallVote(slot, words[1..]);
                 return true;

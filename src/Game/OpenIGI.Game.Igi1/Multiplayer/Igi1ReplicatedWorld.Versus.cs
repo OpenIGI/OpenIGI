@@ -68,13 +68,17 @@ public sealed partial class Igi1ReplicatedWorld
     public void Blast(Vector3d at, double radius) => _game.Blasts.ModeBlast(at, radius);
 
     /// <inheritdoc/>
-    public bool IsUsing(int slot)
-    {
-        PlayerCamera? rig = slot == ServerSession.HostSlot
+    public bool IsUsing(int slot) => LivingRig(slot) is { } rig && rig.LastFrame.IsSet(PlayerInputSlot.Activate);
+
+    /// <inheritdoc/>
+    public bool Give(int slot, string weapon, int rounds) =>
+        LivingRig(slot) is { } rig && _game.PlayerSetup is { } setup && setup.Give(rig, weapon, rounds);
+
+    // A player's rig while it lives: the host's own, or a joined player's.
+    private PlayerCamera? LivingRig(int slot) =>
+        slot == ServerSession.HostSlot
             ? (IncludesHost && !_game.World.IsPlayerDead ? _game.World.Player : null)
             : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) && !player.IsDead ? player.Player : null;
-        return rig is not null && rig.LastFrame.IsSet(PlayerInputSlot.Activate);
-    }
 
     /// <inheritdoc/>
     public void KillPlayer(int slot)

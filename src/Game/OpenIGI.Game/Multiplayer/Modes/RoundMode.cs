@@ -15,6 +15,12 @@ public sealed record RoundSettings
     /// <summary>Gets the seconds the scores are shown once the match is decided.</summary>
     public double IntermissionSeconds { get; init; } = 15;
 
+    /// <summary>Gets the seconds from a round's start a mode with a buy phase sells for.</summary>
+    public double BuySeconds { get; init; } = 20;
+
+    /// <summary>Gets how far from where it started the round a player may still buy, in metres, on a map without buy zones.</summary>
+    public double BuyMetres { get; init; } = 15;
+
     /// <summary>Gets a value indicating whether the teams change sides at the half, for a mode whose sides differ (attack, defence).</summary>
     public bool SwapSides { get; init; } = true;
 }
@@ -65,6 +71,81 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     /// <summary>Gets a value indicating whether the mode's two sides play differently, so the teams change sides at the half.</summary>
     protected virtual bool SidesDiffer => false;
 
+    /// <summary>Gets a value indicating whether the mode has a buy phase and an economy: round pay, and the armoury for the
+    /// first <see cref="RoundSettings.BuySeconds"/> of each round.</summary>
+    protected virtual bool HasArmoury => false;
+
+    // When the round in play began, and where each player stood as it did: where it may buy.
+    private long _roundBegan;
+    private readonly Dictionary<int, Core.Numerics.Vector3d> _startedAt = [];
+
+    /// <inheritdoc/>
+    public string Buy(IModeHost host, int slot, string asked, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(asked);
+        IReadOnlyList<ArmouryItem> items = Armoury.For(host.Title);
+        if (!HasArmoury || items.Count == 0)
+        {
+            return "There is nothing to buy in this mode.";
+        }
+
+        if (Armoury.Find(items, asked) is not { } item)
+        {
+            return $"Buy: {string.Join(", ", items.Select((i, n) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{n + 1} {i.Id} ${i.Price}")))}.";
+        }
+
+        if (BuyLeft(tick) <= 0)
+        {
+            return "The buy time is over.";
+        }
+
+        if (!host.Match.Players.TryGetValue(slot, out MatchPlayer? player) || !player.IsAlive)
+        {
+            return "Only the living can buy.";
+        }
+
+        if (!InBuyZone(host, slot, player.Team))
+        {
+            return "Buy where your side starts.";
+        }
+
+        if (!host.Match.TrySpend(slot, item.Price))
+        {
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{item.Name} costs ${item.Price}; you have ${player.Money}.");
+        }
+
+        if (!host.Give(slot, item.Weapon, item.Rounds))
+        {
+            host.Match.Award(slot, item.Price);
+            return $"{item.Name} can't be handed over here.";
+        }
+
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Bought {item.Name}. ${player.Money} left.");
+    }
+
+    // The seconds the armoury still sells for this round: nought outside a round in play, or for a mode without one.
+    private double BuyLeft(long tick) =>
+        HasArmoury && Flow.Phase == MatchPhase.Live ? Math.Max(0, Settings.BuySeconds - ((tick - _roundBegan) / (double)tickRate)) : 0;
+
+    // A player may buy in one of its side's buy zones, or on a map without them near where it began the round.
+    private bool InBuyZone(IModeHost host, int slot, int team)
+    {
+        if (host.World.PositionOf(slot) is not { } at)
+        {
+            return false;
+        }
+
+        MpPoint[] zones = [.. (host.Layout?.Points ?? []).Where(p => p.Kind == MpPointKind.BuyZone && (p.Team < 0 || p.Team == team))];
+        if (zones.Length > 0)
+        {
+            return zones.Any(z => Core.Numerics.Vector3d.Distance(new Core.Numerics.Vector3d(z.Position[0], z.Position[1], z.Position[2]), at) <= z.Radius);
+        }
+
+        return !_startedAt.TryGetValue(slot, out Core.Numerics.Vector3d start)
+            || Core.Numerics.Vector3d.Distance(start, at) <= Settings.BuyMetres * Core.Numerics.WorldUnits.PerMetre;
+    }
+
     /// <inheritdoc/>
     public int TeamFor(IModeHost host, int slot) => GameModes.FairTeam(host, slot);
 
@@ -76,6 +157,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     {
         Target = Settings.RoundsToWin,
         Reason = Flow.Phase is MatchPhase.RoundOver or MatchPhase.Intermission ? EndReason : RoundEnd.None,
+        BuyLeft = BuyLeft(tick),
     };
 
     /// <summary>Gets or sets why the round was decided, which <see cref="RoundWinner"/> says as it decides it.</summary>
@@ -223,6 +305,16 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 
         Flow.Enter(MatchPhase.Live, tick, Settings.RoundSeconds);
         EndReason = RoundEnd.None;
+        _roundBegan = tick;
+        _startedAt.Clear();
+        foreach (int slot in host.PlayerSlots)
+        {
+            if (host.World.PositionOf(slot) is { } at)
+            {
+                _startedAt[slot] = at;
+            }
+        }
+
         OnRoundBegun(host, tick);
     }
 
@@ -234,6 +326,10 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         }
 
         RoundsPlayed++;
+        if (HasArmoury)
+        {
+            host.Match.PayRound(winner);
+        }
 
         Flow.Enter(MatchPhase.RoundOver, tick, Settings.RoundOverSeconds, winner);
     }

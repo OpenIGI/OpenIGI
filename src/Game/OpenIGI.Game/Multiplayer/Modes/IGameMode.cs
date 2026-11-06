@@ -37,6 +37,16 @@ public interface IModeHost
     /// <param name="slot">The player's slot.</param>
     void Respawn(int slot);
 
+    /// <summary>Hands a living player a weapon on the server, and tells the player's own game so it carries it too.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="weapon">The title's weapon script id.</param>
+    /// <param name="rounds">The rounds it comes with.</param>
+    /// <returns><see langword="true"/> when it was handed over.</returns>
+    bool Give(int slot, string weapon, int rounds) => World.Give(slot, weapon, rounds);
+
+    /// <summary>Gets the title played, as <c>igi1</c>: whose armoury a buy phase sells from.</summary>
+    string Title => string.Empty;
+
     /// <summary>Puts the level back as it stood when the session took it up, on the server and every client: a new round's or
     /// a new match's start, before anyone is put back at a spawn.</summary>
     void ResetLevel()
@@ -73,6 +83,14 @@ public interface IGameMode
     /// <param name="tick">The tick now.</param>
     /// <returns>The line.</returns>
     string Status(long tick) => string.Empty;
+
+    /// <summary>Sells a player something from the title's armoury, when the mode has a buy phase and it is on.</summary>
+    /// <param name="host">The session.</param>
+    /// <param name="slot">The buyer's slot.</param>
+    /// <param name="asked">What it asked for: an item's id or its number.</param>
+    /// <param name="tick">The tick.</param>
+    /// <returns>What to tell the buyer.</returns>
+    string Buy(IModeHost host, int slot, string asked, long tick) => "There is nothing to buy in this mode.";
 
     /// <summary>Gets what the mode tells the clients of itself, which their HUD is drawn from.</summary>
     /// <param name="tick">The tick now.</param>
