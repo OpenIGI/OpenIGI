@@ -453,7 +453,8 @@ public sealed partial class CutsceneRuntime
     /// <summary>
     /// Gets or sets a value indicating whether no scene runs, whatever its expressions say: a versus match's arena, where a
     /// scene would take the players' views and bodies from them mid-round -- the level's intro among them, and one a new
-    /// round's counters would start again.
+    /// round's counters would start again. A held scene that would start is finished at once instead, so what waits on its
+    /// end still happens.
     /// </summary>
     public bool Held { get; set; }
 
@@ -631,9 +632,18 @@ public sealed partial class CutsceneRuntime
         }
         else
         {
-            scene.IsRun = !Held && (string.IsNullOrWhiteSpace(scene.Run)
+            bool wants = string.IsNullOrWhiteSpace(scene.Run)
                 ? scene.InitialRun && !scene.IsFinished
-                : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene));
+                : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+
+            // Held, a scene that would start is over at once instead, as if played to its end unseen: the level's scripts
+            // waiting on it (mission 1 hands the player its controls once the intro is finished) carry on as they would.
+            if (Held && (wants || wasRun))
+            {
+                scene.IsFinished = true;
+            }
+
+            scene.IsRun = !Held && wants;
         }
 
         if (!wasRun && scene.IsRun)

@@ -297,9 +297,30 @@ public sealed class Igi1VersusTests
         return host;
     }
 
-    private static Igi1CoopPair Joined(string mode)
+    [RequiresGameDataFact]
+    public void With_the_levels_intro_left_to_play_both_players_in_an_arena_still_get_their_controls()
     {
-        Igi1CoopPair pair = new(mode, mission: 1);
+        // A player's game plays cutscenes; held in an arena, mission 1's intro must still count as over, or the level never
+        // hands either player its controls (seen live, 2026-11-06).
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy, hostSkipsIntro: false);
+        pair.RunUntil(() => false, 90);
+        Core.Numerics.Vector3d hostFrom = pair.Host!.World.Player!.Body.Position;
+        Core.Numerics.Vector3d joinerFrom = pair.Joiner!.World.Player!.Body.Position;
+        Igi1CoopPair.Hold(pair.HostInput, OpenIGI.Input.KeyCode.W, true);
+        Igi1CoopPair.Hold(pair.JoinerInput, OpenIGI.Input.KeyCode.W, true);
+        pair.RunUntil(() => false, 90);
+        Igi1CoopPair.Hold(pair.HostInput, OpenIGI.Input.KeyCode.W, false);
+        Igi1CoopPair.Hold(pair.JoinerInput, OpenIGI.Input.KeyCode.W, false);
+
+        double hostWalked = Core.Numerics.Vector3d.Distance(hostFrom, pair.Host.World.Player.Body.Position);
+        double joinerWalked = Core.Numerics.Vector3d.Distance(joinerFrom, pair.Joiner.World.Player!.Body.Position);
+        Assert.True(hostWalked > 4096, $"the host walked {hostWalked / 4096:0.00} m");
+        Assert.True(joinerWalked > 4096, $"the joiner walked {joinerWalked / 4096:0.00} m");
+    }
+
+    private static Igi1CoopPair Joined(string mode, bool hostSkipsIntro = true)
+    {
+        Igi1CoopPair pair = new(mode, mission: 1, hostSkipsIntro: hostSkipsIntro);
         Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
         return pair;
     }
