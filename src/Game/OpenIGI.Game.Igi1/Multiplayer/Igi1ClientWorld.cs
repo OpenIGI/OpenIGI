@@ -106,9 +106,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                 h.Shots,
                 fired,
                 (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? Igi1ReplicatedWorld.UnpackClipTime(h.ClipTime) : null,
-                _names.GetValueOrDefault(h.Id),
+                Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
                 !alive,
-                alive ? null : h.Health / 255f,
+                alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
                 PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model));
         }
 
@@ -350,6 +350,13 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
 
     /// <inheritdoc/>
     public void Skin(int entity, string skin) => _skins[entity] = skin;
+
+    /// <inheritdoc/>
+    public void Sides(string mode, Func<int, int?> teamOf, int? ownTeam) => (_mode, _teamOf, _ownTeam) = (mode, teamOf, ownTeam);
+
+    private string _mode = Game.Multiplayer.Modes.GameModes.Coop;
+    private Func<int, int?> _teamOf = static _ => null;
+    private int? _ownTeam;
 
     /// <inheritdoc/>
     public void MoveLocal(Vector3d offset, bool serverGrounded)

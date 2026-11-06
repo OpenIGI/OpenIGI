@@ -151,6 +151,18 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void Names_are_shown_over_team_mates_only_and_revive_marks_only_in_co_op()
+    {
+        Assert.True(PlayerSides.ShowsName(GameModes.Coop, null, null));
+        Assert.True(PlayerSides.ShowsName(GameModes.TeamDeathmatch, 1, 1));
+        Assert.False(PlayerSides.ShowsName(GameModes.TeamDeathmatch, 1, 2));
+        Assert.False(PlayerSides.ShowsName(GameModes.TeamDeathmatch, null, 1));
+        Assert.False(PlayerSides.ShowsName(GameModes.FreeForAll, 1, 1));
+        Assert.True(PlayerSides.Revivable(GameModes.Coop));
+        Assert.False(PlayerSides.Revivable(GameModes.FreeForAll));
+    }
+
+    [Fact]
     public void The_banner_runs_its_clock_down_and_names_the_winner()
     {
         MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);

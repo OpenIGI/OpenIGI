@@ -68,6 +68,10 @@ public static class ClientReplication
                     world.Skin(line.Entity, line.Skin);
                 }
             }
+
+            // The sides, which say whose names and revive marks this player is shown: the server's mode, the board's teams.
+            int? ownTeam = session.EntityId is { } ownEntity ? TeamOf(board, ownEntity) : null;
+            world.Sides(session.MatchState?.Mode ?? Modes.GameModes.Coop, entity => TeamOf(board, entity), ownTeam);
         }
 
         // The server level's running state, taken each time a new one comes.
@@ -110,5 +114,18 @@ public static class ClientReplication
         {
             world.Hide(id);
         }
+    }
+
+    private static int? TeamOf(Scoreboard board, int entity)
+    {
+        foreach (ScoreboardLine line in board.Lines)
+        {
+            if (line.Entity == entity)
+            {
+                return line.Team;
+            }
+        }
+
+        return null;
     }
 }

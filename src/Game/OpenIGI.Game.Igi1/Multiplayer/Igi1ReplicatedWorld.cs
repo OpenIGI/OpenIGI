@@ -116,13 +116,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>
-            [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.ClipTime) with
+            [.. _bySlot.Select(pair => (Slot: pair.Key, p: pair.Value)).Select(e => Ai.PartnerBody.Of(e.p, e.p.Player, e.p.ClipTime) with
             {
-                Fired = p.FiredThisTick,
-                Name = p.Name,
-                Dead = p.IsDead,
-                Revive = p.IsDead ? ReviveProgressOf(p.Entity) : null,
-                Model = PlayerSkins.Of(p.Skin).Model,
+                Fired = e.p.FiredThisTick,
+                Name = Game.Multiplayer.Modes.PlayerSides.ShowsName(VersusMode, TeamOf(ServerSession.HostSlot), TeamOf(e.Slot)) ? e.p.Name : null,
+                Dead = e.p.IsDead,
+                Revive = e.p.IsDead && Game.Multiplayer.Modes.PlayerSides.Revivable(VersusMode) ? ReviveProgressOf(e.p.Entity) : null,
+                Model = PlayerSkins.Of(e.p.Skin).Model,
             })];
     }
 

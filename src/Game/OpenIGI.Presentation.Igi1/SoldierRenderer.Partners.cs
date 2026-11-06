@@ -14,7 +14,7 @@ public sealed partial class SoldierRenderer
     private readonly Dictionary<object, string> _partnerNames = [];
 
     // The fallen partners: what lies where, and how far each one's revival has gone.
-    private readonly Dictionary<object, (Vector3d Feet, float Progress)> _fallen = [];
+    private readonly Dictionary<object, (Vector3d Feet, float? Progress)> _fallen = [];
 
     // A body lying a little above its feet: where a revive mark stands over it, in metres.
     private const double ReviveMarkLift = 0.7;
@@ -53,8 +53,14 @@ public sealed partial class SoldierRenderer
             return marks;
         }
 
-        foreach ((object key, (Vector3d feet, float progress)) in _fallen)
+        foreach ((object key, (Vector3d feet, float? revive)) in _fallen)
         {
+            // Only one a teammate can bring back is marked; a fallen enemy just lies there.
+            if (revive is not { } progress)
+            {
+                continue;
+            }
+
             Vector3d metres = feet / OpenIGI.Game.Ai.AiViewCone.UnitsPerMetre;
             marks.Add(new ReviveMarker(
                 new Vector3d(metres.X, metres.Y, metres.Z + ReviveMarkLift), _partnerNames.GetValueOrDefault(key) ?? "Teammate", progress));
@@ -110,9 +116,14 @@ public sealed partial class SoldierRenderer
                 _partnerModels[partner.Key] = look;
             }
 
+            // A name shown over its head only while the session shows it: a team mate's, never an enemy's.
             if (partner.Name is { Length: > 0 } fallenName)
             {
                 _partnerNames[partner.Key] = fallenName;
+            }
+            else
+            {
+                _partnerNames.Remove(partner.Key);
             }
 
             // A fallen partner falls once and lies there; stood up again, it walks on from where it lay.
@@ -123,7 +134,7 @@ public sealed partial class SoldierRenderer
                     body.Kill(OpenIGI.Game.Igi1.Player.HumanPlayerDeath.Choose(0, OpenIGI.Game.Player.HumanHitZoneTable.Player, 0), partner.Feet, partner.Facing);
                 }
 
-                _fallen[partner.Key] = (partner.Feet, partner.Revive ?? 0f);
+                _fallen[partner.Key] = (partner.Feet, partner.Revive);
                 body.Tick();
                 continue;
             }

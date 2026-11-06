@@ -18,6 +18,14 @@ public sealed partial class Igi1ReplicatedWorld
 
     private Game.Multiplayer.Modes.MpLayout? _layout;
 
+    // The mode the players' sides follow: co-op until a versus game is played.
+    private string VersusMode => _versus switch
+    {
+        Versus.Teams => Game.Multiplayer.Modes.GameModes.TeamDeathmatch,
+        Versus.Everyone => Game.Multiplayer.Modes.GameModes.FreeForAll,
+        _ => Game.Multiplayer.Modes.GameModes.Coop,
+    };
+
     /// <inheritdoc/>
     public Vector3d? PositionOf(int slot) =>
         slot == ServerSession.HostSlot

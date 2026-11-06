@@ -29,6 +29,11 @@ public sealed class Igi1VersusTests
         Match match = pair.Session.Session.Match;
         int[] teams = [.. match.Players.Values.Select(p => p.Team).Order()];
         Assert.Equal([TeamRoster.Good, TeamRoster.Bad], teams);
+
+        // On opposite sides, neither is shown the other's name: not on the host, and not on the joiner once its board has come.
+        Assert.Null(Assert.Single(pair.Host.World.PartnerBodies!()).Name);
+        Assert.True(pair.RunUntil(() => pair.Joiner.World.PartnerBodies!() is [{ Name: null }] && pair.Client.CurrentScoreboard is not null, 300) >= 0,
+            "the joiner was shown its enemy's name");
     }
 
     [RequiresGameDataFact]

@@ -186,6 +186,14 @@ public interface IReplicatedClientWorld
     /// <param name="serverGrounded">Whether the server has the player standing on the ground there.</param>
     void MoveLocal(Vector3d offset, bool serverGrounded);
 
+    /// <summary>Takes the sides the players are on, which say whose names and revive marks this player is shown.</summary>
+    /// <param name="mode">The session's mode.</param>
+    /// <param name="teamOf">A player's team by its entity, or <see langword="null"/> when it isn't known.</param>
+    /// <param name="ownTeam">This player's team, or <see langword="null"/> when it isn't known.</param>
+    void Sides(string mode, Func<int, int?> teamOf, int? ownTeam)
+    {
+    }
+
     /// <summary>Takes another player's look, a <see cref="PlayerSkins"/> id, from the server's scoreboard.</summary>
     /// <param name="entity">Its entity.</param>
     /// <param name="skin">Its look.</param>
