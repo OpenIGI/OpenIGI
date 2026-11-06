@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 /// plus one.
 /// </para>
 /// </remarks>
-public sealed class Igi1ReplicatedWorld : IReplicatedWorld
+public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 {
     /// <summary>The entity id of the mission's own player.</summary>
     public const int HostEntity = 0;
@@ -66,6 +66,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // The players whose clients dropped, kept aside out of the level by their parked keys.
     private readonly Dictionary<int, Igi1NetworkPlayer> _parked = [];
 
+    // The player whose round last hurt each player, by entity, and the tick it did: the death that follows is its kill.
+    private readonly Dictionary<int, (ShotTally By, long Tick)> _lastHurtBy = [];
+
+    // How long after a player's round hurt another its death is still that player's kill, in ticks (Source credits the last
+    // attacker the same way).
+    private const long KillCreditTicks = 5 * 30;
+
     // Who took each pickup, by entity: a client shows it gone, and takes what its own player took into its own hands.
     private readonly Dictionary<object, int> _takenBy = [];
 
@@ -104,7 +111,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
 
         // With friendly fire on, a player's round meets the other players as it meets the guards.
-        _game.World.Bodies.Add(new CoopPlayerBodies(_game));
+        _game.World.Bodies.Add(new CoopPlayerBodies(_game, this));
+        _game.Harm.RoundTaken = NoteHurt;
 
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>
@@ -212,7 +220,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     public UserCommandBuffer? CommandsFor(int slot) => _bySlot.GetValueOrDefault(slot)?.Commands;
 
     /// <inheritdoc/>
-    public int TeamOf(int slot) => _bySlot.ContainsKey(slot) ? PlayerTeam : -1;
+    public int TeamOf(int slot) =>
+        _teams.TryGetValue(slot, out int team) ? team : _bySlot.ContainsKey(slot) || slot == ServerSession.HostSlot ? PlayerTeam : -1;
 
     /// <inheritdoc/>
     public Snapshot Capture(long tick)
@@ -319,7 +328,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
             else if (_dead.Add(entity))
             {
-                deaths.Add(new WorldDeath(entity, -1));
+                deaths.Add(new WorldDeath(entity, KillerOf(entity)));
             }
         }
 
@@ -336,6 +345,68 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         return deaths;
     }
 
+    // A round from a player's gun hurt a player: noted against the one it hurt, if a player fired it.
+    private void NoteHurt(IHarmedPlayer hurt, ShotTally? by)
+    {
+        if (by is not null && EntityOf(hurt.Rig) is { } entity && EntityOf(by) != entity)
+        {
+            _lastHurtBy[entity] = (by, CurrentTick);
+        }
+    }
+
+    // The player who killed one that just died: the last whose round hurt it, lately enough; -1 for the level (a guard, a fall).
+    private int KillerOf(int entity)
+    {
+        if (!_lastHurtBy.Remove(entity, out (ShotTally By, long Tick) last) || CurrentTick - last.Tick > KillCreditTicks)
+        {
+            return -1;
+        }
+
+        return EntityOf(last.By) ?? -1;
+    }
+
+    // The entity of a player of the session by its rig, or by the tally its rounds count on.
+    private int? EntityOf(Player.PlayerCamera? rig)
+    {
+        if (rig is null)
+        {
+            return null;
+        }
+
+        if (IncludesHost && ReferenceEquals(rig, _game.World.Player))
+        {
+            return HostEntity;
+        }
+
+        foreach (Igi1NetworkPlayer other in _bySlot.Values)
+        {
+            if (ReferenceEquals(other.Player, rig))
+            {
+                return other.Entity;
+            }
+        }
+
+        return null;
+    }
+
+    private int? EntityOf(ShotTally tally)
+    {
+        if (IncludesHost && _game.World.Player is { } own && ReferenceEquals(own.Shots, tally))
+        {
+            return HostEntity;
+        }
+
+        foreach (Igi1NetworkPlayer other in _bySlot.Values)
+        {
+            if (ReferenceEquals(other.Player.Shots, tally))
+            {
+                return other.Entity;
+            }
+        }
+
+        return null;
+    }
+
     /// <inheritdoc/>
     /// <remarks>A fallen co-op partner comes back at full health beside the level's spawn.</remarks>
     public void Respawn(int slot)
@@ -345,7 +416,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             _game.Harm.RevivePlayer(at: null, facing: 0f);
             if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
             {
-                own.PlaceAt(_game.World.Ground, spawn);
+                own.PlaceAt(_game.World.Ground, (IsVersus ? VersusSpawn(slot, spawn) : null) ?? spawn);
             }
 
             _dead.Remove(HostEntity);
@@ -454,7 +525,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
     /// <inheritdoc/>
     /// <remarks>Co-op: a fallen player lies where it fell until a teammate stands by it for <see cref="ReviveTicks"/>.</remarks>
-    public bool HoldsTheDead => true;
+    public bool HoldsTheDead => _versus == Versus.None;
 
     // The level's running state as a client takes it: the objectives' counters, messages and result, and the scenes.
     private readonly BitWriter _level = new(1024);
@@ -727,7 +798,14 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             return;
         }
 
-        if (IncludesHost
+        if (IsVersus && VersusSpawn(slot, spawn) is { } arena)
+        {
+            player.Player.PlaceAt(_game.World.Ground, arena);
+            return;
+        }
+
+        if (!IsVersus
+            && IncludesHost
             && _game.World.Player is { } host
             && !_game.World.IsPlayerDead
             && Vector3d.Distance(host.Body.Position, spawn.Position) > LateJoinDistance)

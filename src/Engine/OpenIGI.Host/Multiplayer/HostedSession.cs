@@ -27,7 +27,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, IDisposable
+public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -159,6 +159,12 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             _session = new ServerSession(
                 _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
+            _session.Mode = Game.Multiplayer.Modes.GameModes.For(_options.Mode, _world, _tickRate);
+            if (Layout is { } layout)
+            {
+                _world.UseLayout(layout);
+            }
+            _logger.Information(LogCategory, $"Playing {_session.Mode.Id} (asked for {_options.Mode}).");
             _logger.Information(
                 LogCategory,
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
@@ -224,6 +230,12 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     public ServerInfo Info() =>
         new(_titleId, _options.Name, _options.Map, _options.Mode, _known.Count + (_options.IncludesHost ? 1 : 0),
             _options.MaxPlayers, _options.Password.Length > 0, _options.Version);
+
+    /// <inheritdoc/>
+    public string Mode => _options.Mode;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
 
     /// <inheritdoc/>
     public void Dispose() => _net.Dispose();

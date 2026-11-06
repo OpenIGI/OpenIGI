@@ -1,0 +1,118 @@
+using OpenIGI.Net;
+
+namespace OpenIGI.Game.Multiplayer.Modes;
+
+/// <summary>Where a match stands.</summary>
+public enum MatchPhase : byte
+{
+    /// <summary>Players gather and play, scoring nothing, until the match begins.</summary>
+    Warmup,
+
+    /// <summary>The match is being played.</summary>
+    Live,
+
+    /// <summary>A round was decided; the next begins after a pause.</summary>
+    RoundOver,
+
+    /// <summary>The match was decided; the scores are shown before the next map.</summary>
+    Intermission,
+}
+
+/// <summary>A match's progress: its phase, when the phase ends, the round, and who won what was last decided.</summary>
+/// <remarks>
+/// A mode moves it on; the session sends it to every client whenever it changes (<see cref="Version"/>), so the clients' clocks
+/// and banners follow the server's without a message every tick.
+/// </remarks>
+/// <param name="tickRate">The world's ticks per second.</param>
+public sealed class MatchFlow(int tickRate)
+{
+    /// <summary>The tick a phase ends on when it has no clock.</summary>
+    public const long Untimed = long.MaxValue;
+
+    /// <summary>Gets the phase.</summary>
+    public MatchPhase Phase { get; private set; } = MatchPhase.Live;
+
+    /// <summary>Gets the tick the phase ends on, or <see cref="Untimed"/>.</summary>
+    public long EndsAt { get; private set; } = Untimed;
+
+    /// <summary>Gets the round being played, from 1.</summary>
+    public int Round { get; private set; } = 1;
+
+    /// <summary>Gets who won what was last decided: a team, a player's slot in a free-for-all, or -1 for nobody (a draw).</summary>
+    public int Winner { get; private set; } = -1;
+
+    /// <summary>Gets a number raised by every change, which says when the clients need telling.</summary>
+    public int Version { get; private set; }
+
+    /// <summary>Moves to a phase.</summary>
+    /// <param name="phase">The phase.</param>
+    /// <param name="tick">The tick it begins on.</param>
+    /// <param name="seconds">How long it lasts, or zero or less for no clock.</param>
+    /// <param name="winner">Who won, for a decided phase; -1 otherwise.</param>
+    public void Enter(MatchPhase phase, long tick, double seconds, int winner = -1)
+    {
+        if (phase == MatchPhase.Live && Phase == MatchPhase.RoundOver)
+        {
+            Round++;
+        }
+        else if (phase is MatchPhase.Warmup || (phase == MatchPhase.Live && Phase == MatchPhase.Intermission))
+        {
+            Round = 1;
+        }
+
+        Phase = phase;
+        EndsAt = seconds > 0 ? tick + (long)Math.Ceiling(seconds * tickRate) : Untimed;
+        Winner = phase is MatchPhase.RoundOver or MatchPhase.Intermission ? winner : -1;
+        Version++;
+    }
+
+    /// <summary>Gets whether the phase's clock has run out.</summary>
+    /// <param name="tick">The tick now.</param>
+    /// <returns><see langword="true"/> once the phase's end has come.</returns>
+    public bool IsDue(long tick) => EndsAt != Untimed && tick >= EndsAt;
+
+    /// <summary>Gets the phase's seconds left, or <see langword="null"/> when it has no clock.</summary>
+    /// <param name="tick">The tick now.</param>
+    /// <returns>The seconds, never below zero.</returns>
+    public double? SecondsLeft(long tick) => EndsAt == Untimed ? null : Math.Max(0, (EndsAt - tick) / (double)tickRate);
+
+    /// <summary>Writes where the match stands, for the clients.</summary>
+    /// <param name="writer">Where it goes.</param>
+    /// <param name="mode">The mode's id.</param>
+    /// <param name="tick">The tick now.</param>
+    public void Write(BitWriter writer, string mode, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteString(mode, 16);
+        writer.WriteBits((uint)Phase, 8);
+        writer.WriteRanged(Math.Clamp(Round, 0, 255), 0, 255);
+        writer.WriteRanged(Math.Clamp(Winner, -1, 254), -1, 254);
+        double? left = SecondsLeft(tick);
+        writer.WriteBool(left is not null);
+        if (left is { } seconds)
+        {
+            writer.WriteRanged((int)Math.Min(Math.Ceiling(seconds * 10), 65535), 0, 65535);
+        }
+    }
+
+    /// <summary>Reads where a server's match stands.</summary>
+    /// <param name="reader">What arrived.</param>
+    /// <returns>It, as the client keeps it.</returns>
+    public static MatchState Read(ref BitReader reader)
+    {
+        string mode = reader.ReadString(16);
+        MatchPhase phase = (MatchPhase)reader.ReadBits(8);
+        int round = reader.ReadRanged(0, 255);
+        int winner = reader.ReadRanged(-1, 254);
+        double? left = reader.ReadBool() ? reader.ReadRanged(0, 65535) / 10.0 : null;
+        return new MatchState(mode, phase, round, winner, left);
+    }
+}
+
+/// <summary>Where a server's match stood when it last said: as a client shows it.</summary>
+/// <param name="Mode">The mode's id.</param>
+/// <param name="Phase">The phase.</param>
+/// <param name="Round">The round, from 1.</param>
+/// <param name="Winner">Who won what was last decided, or -1.</param>
+/// <param name="SecondsLeft">The phase's seconds left when it was said, or <see langword="null"/> for no clock.</param>
+public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft);

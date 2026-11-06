@@ -176,6 +176,12 @@ public sealed class ClientSession
     /// <summary>Gets the newest scoreboard, or <see langword="null"/>.</summary>
     public Scoreboard? Scoreboard { get; private set; }
 
+    /// <summary>Gets where the server's match stood when it last said, or <see langword="null"/> before it has.</summary>
+    public Modes.MatchState? MatchState { get; private set; }
+
+    /// <summary>Gets the local time <see cref="MatchState"/> arrived, from which its clock runs down here.</summary>
+    public double MatchStateAt { get; private set; }
+
     /// <summary>Gets the server level's running state as last sent, or <see langword="null"/> before any.</summary>
     public byte[]? Level { get; private set; }
 
@@ -496,6 +502,15 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
+                break;
+            case SessionMessage.MatchState:
+                Modes.MatchState state = Modes.MatchFlow.Read(ref reader);
+                if (!reader.IsOverflowed)
+                {
+                    MatchState = state;
+                    MatchStateAt = now;
+                }
+
                 break;
             case SessionMessage.Level:
                 uint length = reader.ReadVarUInt();

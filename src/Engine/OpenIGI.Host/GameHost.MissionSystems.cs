@@ -225,6 +225,37 @@ public sealed partial class GameHost
         ApplyWeatherSettings();
     }
 
+    // The layout of an arena's map: a mod's or the game's own content first, then the layouts shipped beside the game;
+    // null for a map nobody laid out, which is played from the level's own start.
+    private Game.Multiplayer.Modes.MpLayout? ArenaLayout(string title, string map)
+    {
+        string name = $"LOCAL:multiplayer/{title}/{map}.json";
+        string? json = null;
+        if (_fileSystem.TryOpenRead(name, out Stream? stream))
+        {
+            using StreamReader reader = new(stream);
+            json = reader.ReadToEnd();
+        }
+        else if (Path.Combine(AppContext.BaseDirectory, "Assets", "multiplayer", title, $"{map}.json") is { } shipped && File.Exists(shipped))
+        {
+            json = File.ReadAllText(shipped);
+        }
+
+        if (json is null)
+        {
+            _logger.Information("Session", $"No layout for {title} map {map}; the level's own start is used.");
+            return null;
+        }
+
+        Game.Multiplayer.Modes.MpLayout? layout = Game.Multiplayer.Modes.MpLayout.Parse(json, out string? problem);
+        if (layout is null)
+        {
+            _logger.Warning("Session", $"The layout {name} can't be played: {problem}.");
+        }
+
+        return layout;
+    }
+
     /// <summary>The soldiers' meshes and textures.</summary>
     private void MissionSoldiers(MissionBuild b)
     {
@@ -240,7 +271,19 @@ public sealed partial class GameHost
         // A promoted backdrop has already built these, behind the menu and against the very same level
         // and collision index, so it hands them over rather than uploading a second copy of every
         // soldier's mesh. Taking the reference is also what stops the backdrop disposing them.
-        if (promoted && _menuBackdrop.TakeSoldiers() is { } armedSoldiers)
+        // A versus match makes the level an arena: nobody of the level's own, on the host and on every joiner alike.
+        bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
+        if (arena)
+        {
+            int removed = Game.Multiplayer.Modes.ArenaLevel.RemoveSoldiers(levelRoot);
+            _logger.Information("Session", $"An arena: {removed} of the level's soldiers and their generators taken out.");
+            if (TickObserver is Multiplayer.ISessionMode session)
+            {
+                session.Layout = ArenaLayout(_titleRuntime.Title.Id, loaded.Descriptor.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        if (!arena && promoted && _menuBackdrop.TakeSoldiers() is { } armedSoldiers)
         {
             _soldiers?.Dispose();
             _soldiers = armedSoldiers;

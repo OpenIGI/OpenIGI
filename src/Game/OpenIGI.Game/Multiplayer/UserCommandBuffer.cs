@@ -86,8 +86,12 @@ public sealed class UserCommandBuffer
 
     // How far behind the server the client's views usually are, in ticks (an average of the believed ones; negative until
     // the first), and how much further one may reach and still be believed: about Source's 200 ms.
-    private double _typicalViewAge = -1;
+    private double _typicalViewAge;
     private const int ViewAgeToleranceTicks = 6;
+
+    // The client's first views, a second's worth, are what its usual age is learned from before any is held.
+    private int _viewsSeen;
+    private const int LearnedViews = 30;
 
     /// <summary>Gets the commands whose view tick reached back further than the client's line explains, and were held to it.</summary>
     public long Backtracked { get; private set; }
@@ -193,13 +197,18 @@ public sealed class UserCommandBuffer
                 // As far back as the line explains, or as the client's own views usually are and a hitch beyond (Source's
                 // 200 ms): a backtrack is one shot reaching further than the rest, which is what is held. The commands still
                 // waiting here add to its age, a tick each.
-                // The usual age starts at what the line explains and learns from every view, a held one only as far as it
-                // was held: it follows a client that honestly draws later (a slow machine, a deep buffer) within a couple of
-                // seconds, but a reach is never learned in one go.
+                // The usual age is the average of the client's first views, believed (sv_maxunlag still bounds them), and
+                // after them learns from every view, a held one only as far as it was held: it follows a client that
+                // honestly draws later (a slow machine, a deep buffer), but a reach is never learned in one go.
                 long age = ServerTick - viewTick;
-                if (_typicalViewAge < 0)
+                if (_viewsSeen < LearnedViews)
                 {
-                    _typicalViewAge = MaxRewindTicks;
+                    // Learned no further than twice what the line explains: a client can't teach the server a reach.
+                    double learned = Math.Min(age, (2.0 * MaxRewindTicks) + ViewAgeToleranceTicks);
+                    _viewsSeen++;
+                    _typicalViewAge = _viewsSeen == 1 ? learned : _typicalViewAge + ((learned - _typicalViewAge) / _viewsSeen);
+                    LastViewTick = viewTick;
+                    return true;
                 }
 
                 double allowed = Math.Max(MaxRewindTicks, _typicalViewAge + ViewAgeToleranceTicks) + _pending.Count;

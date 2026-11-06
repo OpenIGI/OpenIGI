@@ -68,6 +68,9 @@ public sealed class Match
     /// <summary>Gets the team that defends the current objective, which pays less to respawn, or -1.</summary>
     public int DefendingTeam { get; set; } = -1;
 
+    /// <summary>Gets or sets a value indicating whether everyone plays for themselves: no kill is a team kill.</summary>
+    public bool IsFreeForAll { get; set; }
+
     /// <summary>Gets a team's score.</summary>
     /// <param name="team">The team.</param>
     /// <returns>Its score.</returns>
@@ -120,7 +123,7 @@ public sealed class Match
             return;
         }
 
-        if (shooter.Team == dead.Team)
+        if (shooter.Team == dead.Team && !IsFreeForAll)
         {
             Pay(shooter, Rules.MoneyTeamKill);
             return;
@@ -217,6 +220,17 @@ public sealed class Match
             player.Objectives = 0;
             player.IsAlive = true;
             player.DiedAt = null;
+        }
+    }
+
+    /// <summary>Adds to a team's score, never below nothing: a kill in team deathmatch, a point held.</summary>
+    /// <param name="team">The team.</param>
+    /// <param name="points">The points, negative for a fine.</param>
+    public void AddTeamScore(int team, int points)
+    {
+        if ((uint)team < 2)
+        {
+            _teamScores[team] = Math.Max(0, _teamScores[team] + points);
         }
     }
 

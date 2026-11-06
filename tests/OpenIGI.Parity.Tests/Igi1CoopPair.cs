@@ -72,15 +72,25 @@ internal sealed class Igi1CoopPair : IDisposable
     {
     }
 
-    private Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true)
+    /// <summary>Initializes a new instance of the <see cref="Igi1CoopPair"/> class playing a mode other than co-op.</summary>
+    /// <param name="mode">The mode's id, as <c>tdm</c>.</param>
+    /// <param name="mission">The mission both play.</param>
+    public Igi1CoopPair(string mode, int mission)
+        : this(null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro: true, mode)
     {
+    }
+
+    private Igi1CoopPair(
+        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop")
+    {
+        _mode = mode;
         bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
         string[] skip = hostSkipsIntro ? ["-skipcutscene"] : [];
         _session = new HostedSession(
             _network.Open(26001),
-            new HostedSessionOptions("coop", 4, string.Empty, "coop", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
+            new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
             "igi1",
             30,
             NullLogger.Instance);
@@ -209,8 +219,14 @@ internal sealed class Igi1CoopPair : IDisposable
     {
         JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0);
         return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance, _joinerIdentity,
-            reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0));
+            reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0))
+        {
+            Mode = _mode,
+        };
     }
+
+    // The mode both play.
+    private readonly string _mode;
 
     // The joiner's identity, kept across its reconnections as its game keeps its key file.
     private readonly OpenIGI.Net.Identity.EcdsaPlayerIdentity _joinerIdentity = OpenIGI.Net.Identity.EcdsaPlayerIdentity.CreateEphemeral();
@@ -264,9 +280,23 @@ internal sealed class Igi1CoopPair : IDisposable
     }
 
     // The session's talk passes through too, as the game finds it on the session itself.
-    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold
+    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold, ISessionMode
     {
         public IHostTickObserver Inner { get; set; } = inner;
+
+        public string Mode => (Inner as ISessionMode)?.Mode ?? string.Empty;
+
+        public Game.Multiplayer.Modes.MpLayout? Layout
+        {
+            get => (Inner as ISessionMode)?.Layout;
+            set
+            {
+                if (Inner is ISessionMode mode)
+                {
+                    mode.Layout = value;
+                }
+            }
+        }
 
         public bool HoldsLevel => Inner is ISessionHold { HoldsLevel: true };
 

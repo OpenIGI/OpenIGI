@@ -61,6 +61,7 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
         HumanHealth health = target.Health;
         HumanHit struck = round.Hit;
         health.Apply(struck.Zone, round.DamageFactor);
+        harm.RoundTaken?.Invoke(target, round.Credit);
         sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
 
         // 0x412440's order: the grunt, then the shake, then the flash from the corners the round came in through, each on

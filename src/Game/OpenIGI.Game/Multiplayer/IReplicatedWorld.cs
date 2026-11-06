@@ -73,6 +73,24 @@ public interface IReplicatedWorld
     /// <returns>The team, or -1.</returns>
     int TeamOf(int slot);
 
+    /// <summary>Makes the world one where the players fight each other rather than the level together.</summary>
+    /// <param name="teams">Whether in two teams (a team mate's rounds never hurt) or every player for itself.</param>
+    /// <returns><see langword="false"/> when the world can't be played so: its mode stays its own.</returns>
+    bool TryPlayVersus(bool teams) => false;
+
+    /// <summary>Plays the world as a multiplayer map lays it out: where players start, where play is.</summary>
+    /// <param name="layout">The map's layout.</param>
+    void UseLayout(Modes.MpLayout layout)
+    {
+    }
+
+    /// <summary>Puts a player on the team its mode chose, for a world that plays teams against each other.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="team">The team.</param>
+    void SetTeam(int slot, int team)
+    {
+    }
+
     /// <summary>Takes the deaths since the last call: each player killed, and by whom, by entity id.</summary>
     /// <returns>The deaths; the killer is -1 when nobody killed it.</returns>
     IReadOnlyList<WorldDeath> TakeDeaths();
@@ -262,4 +280,7 @@ public enum SessionMessage : byte
 
     /// <summary>Client to server, reliable: the client's public key and its signature over the challenge.</summary>
     Proof = 13,
+
+    /// <summary>Server to client, reliable: where the match stands -- its mode, phase, round, winner and clock.</summary>
+    MatchState = 14,
 }

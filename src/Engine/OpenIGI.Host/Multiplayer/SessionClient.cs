@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, IDisposable
+public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -325,6 +325,13 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
 
     /// <inheritdoc/>
     public string? Ended => _ended;
+
+    /// <inheritdoc/>
+    /// <remarks>The mode of the room or server joined, as it was listed; set by whoever made the session.</remarks>
+    public string Mode { get; init; } = string.Empty;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
 
     /// <summary>Gets a value indicating whether the line went quiet and the session is joining again.</summary>
     public bool IsRejoining => _lostAt is not null && _ended is null;

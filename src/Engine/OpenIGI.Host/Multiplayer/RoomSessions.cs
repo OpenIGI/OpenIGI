@@ -35,7 +35,10 @@ public static class RoomSessions
                 new JoinRequest(session.PlayerName, version, session.Password, content, Skin(session)),
                 titleId,
                 logger,
-                reopen: () => RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger));
+                reopen: () => RoomTransport.Join(RoomTransport.DefaultMaster, code, peers, logger))
+            {
+                Mode = session.Mode,
+            };
         }
 
         if (!session.Host)

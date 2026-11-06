@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
 using OpenIGI.Net.Identity;
 
@@ -17,7 +18,7 @@ namespace OpenIGI.Game.Multiplayer;
 /// slow line.
 /// </para>
 /// </remarks>
-public sealed class ServerSession
+public sealed class ServerSession : IModeHost
 {
     private readonly NetServer _net;
     private IReplicatedWorld _world;
@@ -87,6 +88,7 @@ public sealed class ServerSession
         _codec = new UserCommandCodec(world.ChannelCount);
         world.LagCompensation = new LagCompensation(LagCompensationHistory, tickRate);
         Match = new Match(rules ?? new MultiplayerRules());
+        Mode = GameModes.For(null, world, tickRate);
         if (hostName is not null)
         {
             Match.Join(HostSlot, hostName, TeamRoster.Good).Skin = hostSkin;
@@ -103,11 +105,38 @@ public sealed class ServerSession
     /// <summary>Gets the match: money, kills, scores and rounds.</summary>
     public Match Match { get; }
 
-    /// <summary>Gets the round of objectives, once a map that has them is played, or <see langword="null"/>.</summary>
-    public ObjectiveRound? Round { get; private set; }
+    /// <summary>Gets or sets the mode the match is played by; set before the first tick (the world's own by default).</summary>
+    public IGameMode Mode { get; set; }
 
-    /// <summary>Gets or sets how long a dead player waits before the server respawns it, in seconds, once it can pay.</summary>
-    public double RespawnDelay { get; set; } = 3;
+    /// <summary>Gets the round of objectives, once a map that has them is played under the objective game, or <see langword="null"/>.</summary>
+    public ObjectiveRound? Round => (Mode as ObjectiveMode)?.Round;
+
+    /// <inheritdoc/>
+    IReplicatedWorld IModeHost.World => _world;
+
+    /// <inheritdoc/>
+    IReadOnlyList<int> IModeHost.PlayerSlots => [.. _clients.Keys, HostSlot];
+
+    /// <inheritdoc/>
+    IReadOnlyList<int> IModeHost.ClientSlots => [.. _clients.Keys];
+
+    /// <inheritdoc/>
+    int IModeHost.SlotOf(int entity) => SlotOf(entity);
+
+    /// <inheritdoc/>
+    void IModeHost.Respawn(int slot)
+    {
+        _world.Respawn(slot);
+        if (Match.Players.TryGetValue(slot, out MatchPlayer? player))
+        {
+            player.IsAlive = true;
+            player.DiedAt = null;
+        }
+    }
+
+    // Whether the mode has begun, and the flow's version the clients were last told.
+    private bool _modeStarted;
+    private int _toldFlow = -1;
 
     /// <summary>Gets the world's ticks per second.</summary>
     public int TickRate { get; }
@@ -298,7 +327,6 @@ public sealed class ServerSession
     /// <param name="tick">The tick just run.</param>
     public void Send(double now, long tick)
     {
-        double seconds = (double)tick / TickRate;
         foreach ((string name, (int parked, double since)) in _away.Where(a => now - a.Value.Since > Match.Rules.RejoinSeconds).ToArray())
         {
             _world.ForgetPlayer(parked);
@@ -306,34 +334,22 @@ public sealed class ServerSession
             _away.Remove(name);
         }
 
-        RunRound(tick);
-        foreach (WorldDeath death in _world.TakeDeaths())
+        if (!_modeStarted)
         {
-            Match.Kill(SlotOf(death.Victim), death.Killer < 0 ? -1 : SlotOf(death.Killer), seconds);
+            _modeStarted = true;
+            Mode.Start(this, tick);
         }
 
-        if (_world.HoldsTheDead)
+        Mode.Tick(this, tick, _world.TakeDeaths());
+        if (Mode.Flow.Version != _toldFlow || tick % (TickRate * 5) == 0)
         {
-            // Down until someone comes for them: the world says who was revived, and the match counts them alive.
-            foreach (int slot in _world.TakeRevivals())
-            {
-                if (Match.Players.TryGetValue(slot, out MatchPlayer? revived))
-                {
-                    revived.IsAlive = true;
-                    revived.DiedAt = null;
-                }
-            }
-        }
-        else
-        {
-            foreach (int slot in _clients.Keys.Append(HostSlot))
-            {
-                if (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.DiedAt is { } died
-                    && seconds - died >= RespawnDelay && Match.TrySpawn(slot, seconds))
-                {
-                    _world.Respawn(slot);
-                }
-            }
+            // Where the match stands, when it changes and every few seconds besides, which a late joiner and a clock that
+            // drifted are put right by.
+            _toldFlow = Mode.Flow.Version;
+            _writer.Reset();
+            _writer.WriteBits((uint)SessionMessage.MatchState, 8);
+            Mode.Flow.Write(_writer, Mode.Id, tick);
+            _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
         }
 
         if (tick % TickRate == 0)
@@ -574,7 +590,9 @@ public sealed class ServerSession
         _clients[slot] = new ClientState(name, entity.Value, playerId);
         if (!Match.Players.ContainsKey(slot))
         {
-            Match.Join(slot, name, _world.TeamOf(slot));
+            int team = Mode.TeamFor(this, slot);
+            Match.Join(slot, name, team);
+            _world.SetTeam(slot, team);
         }
 
         Match.Players[slot].Skin = skin;
@@ -793,38 +811,6 @@ public sealed class ServerSession
         {
             player.IsAlive = true;
             player.DiedAt = null;
-        }
-    }
-
-    // The map's objectives, taken in order; a new round puts every player back at its team's spawn.
-    private void RunRound(long tick)
-    {
-        if (Round is null)
-        {
-            if (_world.RoundObjectives.Count == 0)
-            {
-                return;
-            }
-
-            Round = new ObjectiveRound(_world.RoundObjectives, Match, TickRate);
-            Round.Start(tick);
-            _world.CurrentObjective = Round.Current;
-            return;
-        }
-
-        RoundEvent happened = Round.Tick(tick);
-        _world.CurrentObjective = Round.Current;
-        if (happened == RoundEvent.Restart)
-        {
-            foreach (int slot in _clients.Keys)
-            {
-                _world.Respawn(slot);
-                if (Match.Players.TryGetValue(slot, out MatchPlayer? player))
-                {
-                    player.IsAlive = true;
-                    player.DiedAt = null;
-                }
-            }
         }
     }
 

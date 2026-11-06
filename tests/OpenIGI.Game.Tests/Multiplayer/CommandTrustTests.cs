@@ -80,59 +80,75 @@ public sealed class CommandTrustTests
     }
 
     [Fact]
-    public void A_view_further_back_than_the_clients_line_explains_is_held_to_what_it_does()
+    public void A_view_further_back_than_the_client_usually_draws_is_held_to_what_it_does()
     {
-        // The client's own stamps run far from the server's clock, as they do after a long session: they are no measure.
-        UserCommandBuffer queue = new(Channels) { TargetDepth = 1, MaxRewindTicks = 10 };
+        // A second of honest views 8 ticks behind, under a line that explains 10. The client's own stamps run far from the
+        // server's clock, as they do after a long session: they are no measure.
+        UserCommandBuffer queue = new(Channels) { TargetDepth = 0, MaxRewindTicks = 10 };
         float[] frame = new float[Channels];
-        queue.Push(new UserCommand(5000, new float[Channels], ViewTick: 70));
-        queue.Push(new UserCommand(5001, new float[Channels], ViewTick: 95));
-        queue.Push(new UserCommand(5002, new float[Channels], ViewTick: 140));
+        long server = 100;
+        for (int i = 0; i < 30; i++, server++)
+        {
+            Take(queue, frame, 5000 + i, server, server - 8);
+        }
 
-        // Taken with the server at 100: the line's 10 ticks and a hitch's 6, and the other two still waiting count too.
-        queue.ServerTick = 100;
-        queue.Due();
-        Assert.True(queue.TryTake(frame));
-        Assert.Equal(82, queue.LastViewTick);
-        queue.ServerTick = 101;
-        queue.Due();
-        Assert.True(queue.TryTake(frame));
-        Assert.Equal(95, queue.LastViewTick);
-        queue.ServerTick = 102;
-        queue.Due();
-        Assert.True(queue.TryTake(frame));
-        Assert.Equal(102, queue.LastViewTick);
+        Assert.Equal(0, queue.Backtracked);
+
+        // A shot claiming a view 70 ticks back is held to the larger of the line's 10 and its usual 8 and a hitch's 6; one
+        // ahead of the server, to now.
+        Take(queue, frame, 5030, server, server - 70);
+        Assert.Equal(server - 14, queue.LastViewTick);
+        Take(queue, frame, 5031, server + 1, server + 40);
+        Assert.Equal(server + 1, queue.LastViewTick);
         Assert.Equal(1, queue.Backtracked);
     }
 
     [Fact]
     public void A_client_whose_views_are_always_late_is_believed_but_one_shot_reaching_further_is_not()
     {
-        // The line says 10 ticks, but this client honestly draws 25 behind (a slow machine, a deep buffer): believed once
-        // the server has seen it do so steadily for a couple of seconds.
+        // The line says 10 ticks, but this client honestly draws 25 behind (a slow machine, a deep buffer): believed.
         UserCommandBuffer queue = new(Channels) { TargetDepth = 0, MaxRewindTicks = 10 };
         float[] frame = new float[Channels];
         long server = 1000;
         for (int i = 0; i < 90; i++, server++)
         {
-            queue.Push(new UserCommand(i + 1, new float[Channels], ViewTick: server - 25));
-            queue.ServerTick = server;
-            queue.Due();
-            Assert.True(queue.TryTake(frame));
-            if (i >= 60)
-            {
-                Assert.Equal(server - 25, queue.LastViewTick);
-            }
+            Take(queue, frame, i + 1, server, server - 25);
+            Assert.Equal(server - 25, queue.LastViewTick);
         }
 
+        Assert.Equal(0, queue.Backtracked);
+
         // Then one shot claims a view a second further back: held to the usual age and a hitch.
-        long held = queue.Backtracked;
-        queue.Push(new UserCommand(91, new float[Channels], ViewTick: server - 55));
+        Take(queue, frame, 91, server, server - 55);
+        Assert.Equal(1, queue.Backtracked);
+        Assert.InRange(server - queue.LastViewTick, 25, 32);
+    }
+
+    [Fact]
+    public void A_client_claiming_old_views_from_the_start_never_teaches_the_server_a_reach()
+    {
+        UserCommandBuffer queue = new(Channels) { TargetDepth = 0, MaxRewindTicks = 10 };
+        float[] frame = new float[Channels];
+        long server = 1000;
+        for (int i = 0; i < 30; i++, server++)
+        {
+            Take(queue, frame, i + 1, server, server - 29);
+        }
+
+        // Learned as no more than twice the line and a hitch (26), so 29 back is held to that and a hitch again.
+        Take(queue, frame, 31, server, server - 29);
+        Assert.Equal(server - 29, queue.LastViewTick);
+        Take(queue, frame, 32, server + 1, server - 60);
+        Assert.Equal(1, queue.Backtracked);
+        Assert.True(server + 1 - queue.LastViewTick <= 33, $"held to {server + 1 - queue.LastViewTick} ticks back");
+    }
+
+    private static void Take(UserCommandBuffer queue, float[] frame, long tick, long server, long view)
+    {
+        queue.Push(new UserCommand(tick, new float[Channels], ViewTick: view));
         queue.ServerTick = server;
         queue.Due();
         Assert.True(queue.TryTake(frame));
-        Assert.Equal(held + 1, queue.Backtracked);
-        Assert.InRange(server - queue.LastViewTick, 25, 32);
     }
 
     [Fact]
