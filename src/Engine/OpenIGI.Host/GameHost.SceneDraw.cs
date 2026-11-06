@@ -465,6 +465,9 @@ public sealed partial class GameHost
                 GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla);
         }
 
+        // A multiplayer mode's places -- the bomb sites -- on the ground, over the lit scene like the tracers.
+        DrawModePoints(eye, projection);
+
         // The soldiers' muzzle flames, for the same reason: drawn from the soldier pass they
         // landed in the G-buffer and shaded as scenery -- the one-frame black square at a
         // firing guard's muzzle. Light draws over the lit scene.

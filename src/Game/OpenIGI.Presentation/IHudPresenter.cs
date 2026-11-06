@@ -242,6 +242,17 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws a multiplayer mode's HUD: the score strip, the bomb, a plant or defuse under way, a decided round's card.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="hud">What to show.</param>
+    /// <param name="warning">A warning over everything else (out of bounds), or <see langword="null"/>.</param>
+    /// <param name="useKey">The use key's name, as its hints show it.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawMatchHud(SpriteBatch batch, Game.Multiplayer.Modes.MatchHud hud, string? warning, string useKey, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws the kills of late down the top right corner, each killer and victim in its team's colour.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="kills">The kills, oldest first.</param>

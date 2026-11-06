@@ -358,6 +358,15 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         _session?.MatchState is { } state ? state.Banner(_clock.Elapsed.TotalSeconds - _session.MatchStateAt) : null;
 
     /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
+        _session?.MatchState is { } state
+            ? Game.Multiplayer.Modes.MatchHud.Of(state, _clock.Elapsed.TotalSeconds - _session.MatchStateAt, CurrentScoreboard, LocalEntity, ownPosition, Layout)
+            : null;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.ModeReport? ModeReport => _session?.MatchState?.Report;
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
 
     /// <summary>Gets a value indicating whether the line went quiet and the session is joining again.</summary>

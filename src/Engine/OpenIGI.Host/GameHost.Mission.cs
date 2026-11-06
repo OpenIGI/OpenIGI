@@ -591,6 +591,7 @@ public sealed partial class GameHost
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
+        DisposeModePoints();
         _menuBackdrop.ReleaseSoldiers();
         _heldWeapon?.Dispose();
         _gunPickupRenderer?.Dispose();

@@ -63,6 +63,16 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     public virtual string Status(long tick) => string.Empty;
 
     /// <inheritdoc/>
+    public virtual ModeReport Report(long tick) => new()
+    {
+        Target = Settings.RoundsToWin,
+        Reason = Flow.Phase is MatchPhase.RoundOver or MatchPhase.Intermission ? EndReason : RoundEnd.None,
+    };
+
+    /// <summary>Gets or sets why the round was decided, which <see cref="RoundWinner"/> says as it decides it.</summary>
+    protected RoundEnd EndReason { get; set; }
+
+    /// <inheritdoc/>
     public void Start(IModeHost host, long tick)
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -163,10 +173,17 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         int bad = AliveOn(host, TeamRoster.Bad);
         if (good == 0 || bad == 0)
         {
+            EndReason = RoundEnd.Eliminated;
             return good > 0 ? TeamRoster.Good : bad > 0 ? TeamRoster.Bad : -1;
         }
 
-        return Flow.IsDue(tick) ? TimeoutWinner(host) : null;
+        if (!Flow.IsDue(tick))
+        {
+            return null;
+        }
+
+        EndReason = RoundEnd.TimeRanOut;
+        return TimeoutWinner(host);
     }
 
     /// <summary>Called as a round begins, everyone standing again: a mode's own reset (the bomb back with the attackers).</summary>
@@ -187,6 +204,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         }
 
         Flow.Enter(MatchPhase.Live, tick, Settings.RoundSeconds);
+        EndReason = RoundEnd.None;
         OnRoundBegun(host, tick);
     }
 

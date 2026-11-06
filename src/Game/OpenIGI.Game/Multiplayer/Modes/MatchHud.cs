@@ -1,0 +1,297 @@
+using System.Globalization;
+using OpenIGI.Core.Numerics;
+
+namespace OpenIGI.Game.Multiplayer.Modes;
+
+/// <summary>One side of the score strip: a team's name, score and players, alive or down.</summary>
+/// <param name="Team">The team.</param>
+/// <param name="Name">Its name, as the strip shows it.</param>
+/// <param name="Score">Its score: rounds won, or kills.</param>
+/// <param name="Alive">Each of its players, <see langword="true"/> while standing; the player's own first.</param>
+/// <param name="IsOwn">Whether it is the local player's team.</param>
+public sealed record TeamStrip(int Team, string Name, int Score, IReadOnlyList<bool> Alive, bool IsOwn);
+
+/// <summary>The large card a decided round or match shows in the middle of the screen.</summary>
+/// <param name="Title">What happened, as <c>ROUND WON</c> or <c>VICTORY</c>.</param>
+/// <param name="Detail">Why, or the final score.</param>
+/// <param name="Outcome">1 for the local player's side winning, -1 for it losing, 0 for a draw or nobody's.</param>
+public sealed record ResultCard(string Title, string Detail, int Outcome);
+
+/// <summary>An action the local player can take where it stands, as <c>HOLD [E] TO PLANT AT A</c>.</summary>
+/// <param name="Verb">The verb before the key, as <c>HOLD</c>.</param>
+/// <param name="Action">What it does, as <c>TO PLANT THE BOMB AT A</c>.</param>
+public sealed record ModeHint(string Verb, string Action);
+
+/// <summary>
+/// Everything a multiplayer mode's HUD draws, made each frame from where the match stands, the scoreboard and the local
+/// player: the score strip across the top with the clock and each side's players, the bomb and its fuse, a plant or defuse in
+/// progress, what the player can do where it stands, and a decided round's or match's card.
+/// </summary>
+public sealed record MatchHud
+{
+    /// <summary>Gets the mode's id.</summary>
+    public string Mode { get; init; } = string.Empty;
+
+    /// <summary>Gets the mode's name as the strip shows it.</summary>
+    public string Title { get; init; } = string.Empty;
+
+    /// <summary>Gets the match's phase.</summary>
+    public MatchPhase Phase { get; init; }
+
+    /// <summary>Gets the round being played, or 0 for a mode without rounds.</summary>
+    public int Round { get; init; }
+
+    /// <summary>Gets the rounds or score that win, or 0.</summary>
+    public int Target { get; init; }
+
+    /// <summary>Gets the phase's clock, as <c>1:42</c>, or <see langword="null"/>.</summary>
+    public string? Clock { get; init; }
+
+    /// <summary>Gets whether the clock is in its last seconds.</summary>
+    public bool ClockUrgent { get; init; }
+
+    /// <summary>Gets the local player's team's side of the strip (or the first team's, for a player with none); <see langword="null"/> in a free-for-all.</summary>
+    public TeamStrip? Left { get; init; }
+
+    /// <summary>Gets the other side.</summary>
+    public TeamStrip? Right { get; init; }
+
+    /// <summary>Gets the local player's role, as <c>ATTACK</c>, or <see langword="null"/>.</summary>
+    public string? Role { get; init; }
+
+    /// <summary>Gets the local player's score in a free-for-all.</summary>
+    public int OwnScore { get; init; }
+
+    /// <summary>Gets the local player's place in a free-for-all, from 1.</summary>
+    public int OwnRank { get; init; }
+
+    /// <summary>Gets the free-for-all's leader's name (another player's, or the local one's when it leads).</summary>
+    public string LeaderName { get; init; } = string.Empty;
+
+    /// <summary>Gets the leader's score.</summary>
+    public int LeaderScore { get; init; }
+
+    /// <summary>Gets how many play.</summary>
+    public int Players { get; init; }
+
+    /// <summary>Gets the site the bomb is planted at, or empty.</summary>
+    public string Planted { get; init; } = string.Empty;
+
+    /// <summary>Gets the planted bomb's fuse, as <c>0:32</c>, or <see langword="null"/>.</summary>
+    public string? Fuse { get; init; }
+
+    /// <summary>Gets how much of the fuse is left, in <c>[0,1]</c>.</summary>
+    public float FuseFraction { get; init; }
+
+    /// <summary>Gets how far the local player's plant or defuse has got, or <see langword="null"/> while it is at neither.</summary>
+    public float? Progress { get; init; }
+
+    /// <summary>Gets what the progress is of, as <c>PLANTING THE BOMB</c>.</summary>
+    public string? ProgressLabel { get; init; }
+
+    /// <summary>Gets a teammate's work the player is told of, as <c>ANYA IS DEFUSING</c>, or <see langword="null"/>.</summary>
+    public string? TeamNote { get; init; }
+
+    /// <summary>Gets what the player can do where it stands, or <see langword="null"/>.</summary>
+    public ModeHint? Hint { get; init; }
+
+    /// <summary>Gets a decided round's or match's card, or <see langword="null"/> while one is played.</summary>
+    public ResultCard? Result { get; init; }
+
+    /// <summary>Gets a line under the strip explaining the phase (a warmup's), or <see langword="null"/>.</summary>
+    public string? Notice { get; init; }
+
+    /// <summary>Gets a value indicating whether the mode plays teams.</summary>
+    public bool HasTeams => Left is not null;
+
+    /// <summary>Makes the HUD of a match.</summary>
+    /// <param name="state">Where the match stood when the server last said.</param>
+    /// <param name="secondsSince">The seconds since, which its clocks have run down by.</param>
+    /// <param name="board">The scoreboard, or <see langword="null"/> before there is one.</param>
+    /// <param name="localEntity">The local player's entity, or <see langword="null"/>.</param>
+    /// <param name="ownPosition">Where the local player stands, in world units, or <see langword="null"/>.</param>
+    /// <param name="layout">The map's layout, for the sites the player stands in, or <see langword="null"/>.</param>
+    /// <returns>The HUD, or <see langword="null"/> for a match with none (co-op).</returns>
+    public static MatchHud? Of(MatchState state, double secondsSince, Scoreboard? board, int? localEntity, Vector3d? ownPosition = null, MpLayout? layout = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Mode == GameModes.Coop || string.IsNullOrEmpty(state.Mode))
+        {
+            return null;
+        }
+
+        ModeReport report = state.Report ?? ModeReport.None;
+        ScoreboardLine[] lines = board?.Lines ?? [];
+        ScoreboardLine? own = localEntity is { } entity && Array.FindIndex(lines, l => l.Entity == entity) is var at and >= 0 ? lines[at] : null;
+        bool teams = GameModes.HasTeams(state.Mode);
+        bool rounds = state.Mode is GameModes.Elimination or GameModes.SearchAndDestroy;
+        double? left = state.SecondsLeft is { } s ? Math.Max(0, s - secondsSince) : null;
+
+        MatchHud hud = new()
+        {
+            Mode = state.Mode,
+            Title = TitleOf(state.Mode),
+            Phase = state.Phase,
+            Round = rounds ? state.Round : 0,
+            Target = report.Target,
+            Clock = left is { } l ? MatchState.Clock(l) : null,
+            ClockUrgent = state.Phase == MatchPhase.Live && left is <= 10,
+            Players = lines.Length,
+            Notice = state.Phase == MatchPhase.Warmup ? "WARMUP  ·  THE MATCH BEGINS WHEN THE CLOCK RUNS OUT" : null,
+        };
+
+        int ownTeam = own?.Team ?? -1;
+        if (teams)
+        {
+            int first = ownTeam is TeamRoster.Good or TeamRoster.Bad ? ownTeam : TeamRoster.Good;
+            int second = first == TeamRoster.Good ? TeamRoster.Bad : TeamRoster.Good;
+            hud = hud with
+            {
+                Left = Strip(first, board, lines, own, report),
+                Right = Strip(second, board, lines, own, report),
+                Role = report.Attackers >= 0 && ownTeam >= 0 ? (ownTeam == report.Attackers ? "ATTACK" : "DEFEND") : null,
+            };
+        }
+        else
+        {
+            ScoreboardLine[] ranked = [.. lines.OrderByDescending(x => x.Kills)];
+            int ownScore = own?.Kills ?? 0;
+            ScoreboardLine? leader = ranked.Length > 0 ? ranked[0] : null;
+            ScoreboardLine? rival = own is { } me && leader is { } top && top.Slot == me.Slot && ranked.Length > 1 ? ranked[1] : leader;
+            hud = hud with
+            {
+                OwnScore = ownScore,
+                OwnRank = 1 + lines.Count(x => x.Kills > ownScore),
+                LeaderName = rival?.Name ?? string.Empty,
+                LeaderScore = rival?.Kills ?? 0,
+            };
+        }
+
+        if (report.Planted.Length > 0)
+        {
+            double fuse = Math.Max(0, report.FuseLeft - secondsSince);
+            hud = hud with
+            {
+                Planted = report.Planted,
+                Fuse = MatchState.Clock(fuse),
+                FuseFraction = report.FuseSeconds > 0 ? (float)Math.Clamp(fuse / report.FuseSeconds, 0, 1) : 0f,
+            };
+        }
+
+        hud = Work(hud, report, lines, own);
+        if (state.Phase == MatchPhase.Live && own is { IsAlive: true } alive && ownPosition is { } where)
+        {
+            hud = hud with { Hint = HintFor(report, alive.Team, where, layout, hud.Progress is not null) };
+        }
+
+        return hud with { Result = ResultOf(state, report, own, hud, left) };
+    }
+
+    private static string TitleOf(string mode) => mode switch
+    {
+        GameModes.TeamDeathmatch => "TEAM DEATHMATCH",
+        GameModes.FreeForAll => "FREE FOR ALL",
+        GameModes.Elimination => "ELIMINATION",
+        GameModes.SearchAndDestroy => "SEARCH & DESTROY",
+        GameModes.Objective => "OBJECTIVE",
+        _ => mode.ToUpperInvariant(),
+    };
+
+    private static TeamStrip Strip(int team, Scoreboard? board, ScoreboardLine[] lines, ScoreboardLine? own, ModeReport report)
+    {
+        int score = board is null ? 0 : team == TeamRoster.Good ? board.GoodScore : board.BadScore;
+        bool[] alive = [.. lines.Where(l => l.Team == team).OrderBy(l => own is { } me && l.Slot == me.Slot ? 0 : 1).ThenBy(l => l.Slot).Select(l => l.IsAlive)];
+        string name = report.Attackers >= 0 ? (team == report.Attackers ? "ATTACKERS" : "DEFENDERS") : MatchState.TeamName(team).ToUpperInvariant();
+        return new TeamStrip(team, name, score, alive, own is { } o && o.Team == team);
+    }
+
+    // The local player's own plant or defuse, and a teammate's.
+    private static MatchHud Work(MatchHud hud, ModeReport report, ScoreboardLine[] lines, ScoreboardLine? own)
+    {
+        foreach (ModeWork work in report.Working)
+        {
+            string what = work.Defusing ? "DEFUSING" : "PLANTING";
+            if (own is { } me && work.Slot == me.Slot)
+            {
+                hud = hud with { Progress = work.Progress, ProgressLabel = $"{what} THE BOMB" };
+            }
+            else if (Array.FindIndex(lines, l => l.Slot == work.Slot) is var at and >= 0 && own is { } mine && lines[at].Team == mine.Team)
+            {
+                hud = hud with { TeamNote = $"{lines[at].Name.ToUpperInvariant()} IS {what}" };
+            }
+        }
+
+        return hud;
+    }
+
+    // What the local player can do where it stands: plant at a site it is in, defuse a bomb it is beside.
+    private static ModeHint? HintFor(ModeReport report, int team, Vector3d where, MpLayout? layout, bool working)
+    {
+        if (working || report.Attackers < 0)
+        {
+            return null;
+        }
+
+        if (report.Planted.Length == 0 && team == report.Attackers && layout is not null)
+        {
+            foreach (MpPoint site in layout.Points)
+            {
+                if (site.Kind == MpPointKind.BombSite
+                    && Vector3d.Distance(new Vector3d(site.Position[0], site.Position[1], site.Position[2]), where) <= site.Radius)
+                {
+                    return new ModeHint("HOLD", $"TO PLANT THE BOMB AT {site.Id}");
+                }
+            }
+        }
+
+        if (report.BombAt is { } bomb && team != report.Attackers
+            && Vector3d.Distance(bomb, where) <= new BombSettings().DefuseMetres * WorldUnits.PerMetre)
+        {
+            return new ModeHint("HOLD", "TO DEFUSE THE BOMB");
+        }
+
+        return null;
+    }
+
+    private static ResultCard? ResultOf(MatchState state, ModeReport report, ScoreboardLine? own, MatchHud hud, double? left)
+    {
+        int ownTeam = own?.Team ?? -1;
+        bool teams = hud.HasTeams;
+        int outcome = state.Winner < 0 ? 0
+            : teams ? (ownTeam < 0 ? 0 : state.Winner == ownTeam ? 1 : -1)
+            : own is { } me ? (state.Winner == me.Slot ? 1 : -1) : 0;
+        string next = left is { } l ? string.Create(CultureInfo.InvariantCulture, $"NEXT MATCH IN {MatchState.Clock(l)}") : string.Empty;
+        switch (state.Phase)
+        {
+            case MatchPhase.RoundOver:
+                string title = state.Winner < 0 ? "ROUND DRAWN" : outcome == 0 ? $"{state.WinnerName.ToUpperInvariant()} WIN THE ROUND" : outcome > 0 ? "ROUND WON" : "ROUND LOST";
+                return new ResultCard(title, ReasonOf(report.Reason, outcome), outcome);
+            case MatchPhase.Intermission when teams:
+                string score = string.Create(CultureInfo.InvariantCulture, $"{hud.Left?.Score ?? 0} – {hud.Right?.Score ?? 0}");
+                return new ResultCard(
+                    state.Winner < 0 ? "DRAW" : outcome == 0 ? $"{state.WinnerName.ToUpperInvariant()} WIN" : outcome > 0 ? "VICTORY" : "DEFEAT",
+                    next.Length > 0 ? $"{score}  ·  {next}" : score,
+                    outcome);
+            case MatchPhase.Intermission:
+                string place = own is null ? string.Empty : $"YOU PLACED {Ordinal(hud.OwnRank)}";
+                return new ResultCard(
+                    outcome > 0 ? "VICTORY" : state.WinnerName.Length > 0 ? $"{state.WinnerName.ToUpperInvariant()} WINS" : "DRAW",
+                    string.Join("  ·  ", new[] { place, next }.Where(x => x.Length > 0)),
+                    outcome);
+            default:
+                return null;
+        }
+    }
+
+    private static string ReasonOf(RoundEnd reason, int outcome) => reason switch
+    {
+        RoundEnd.Eliminated => outcome < 0 ? "YOUR TEAM WAS ELIMINATED" : "ENEMY ELIMINATED",
+        RoundEnd.TimeRanOut => "TIME RAN OUT",
+        RoundEnd.Detonated => "TARGET DESTROYED",
+        RoundEnd.Defused => "BOMB DEFUSED",
+        _ => string.Empty,
+    };
+
+    private static string Ordinal(int n) =>
+        string.Create(CultureInfo.InvariantCulture, $"{n}{(n % 100 is 11 or 12 or 13 ? "TH" : (n % 10) switch { 1 => "ST", 2 => "ND", 3 => "RD", _ => "TH" })}");
+}

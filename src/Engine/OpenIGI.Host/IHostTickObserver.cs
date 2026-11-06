@@ -32,6 +32,14 @@ public interface ISessionScoreboard
     /// <summary>Gets what the player is shown of the match across the top of the screen, or <see langword="null"/> for nothing.</summary>
     Game.Multiplayer.Modes.MatchBanner? Banner => null;
 
+    /// <summary>Gets the match's HUD as the local player sees it, or <see langword="null"/> for none.</summary>
+    /// <param name="ownPosition">Where the local player stands, in world units, or <see langword="null"/>.</param>
+    /// <returns>The HUD.</returns>
+    Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) => null;
+
+    /// <summary>Gets what the mode last said of itself (a bomb planted, and where), or <see langword="null"/>.</summary>
+    Game.Multiplayer.Modes.ModeReport? ModeReport => null;
+
     /// <summary>Gets the kills of late, oldest first, as the feed in the corner lists them.</summary>
     IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => [];
 }

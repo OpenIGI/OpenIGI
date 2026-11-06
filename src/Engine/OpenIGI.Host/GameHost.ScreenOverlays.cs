@@ -404,8 +404,10 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // A match's banner -- its mode, clock and result -- and, out of the map's bounds, the word to get back.
-        if (TickObserver is ISessionScoreboard { Banner: { } banner } && _remasteredHud is { IsReady: true } matchHud)
+        // A match's HUD -- the score strip, the bomb, a plant under way, a decided round's card -- and, out of the map's bounds,
+        // the word to get back. A session with no HUD of its own shows the plain banner.
+        if (TickObserver is ISessionScoreboard scored && _remasteredHud is { IsReady: true } matchHud
+            && (CurrentMatchHud() is { } modeHud ? (object)modeHud : scored.Banner) is { } shown)
         {
             string? warning = TickObserver is Multiplayer.ISessionMode { Layout: { Bounds.Length: > 0 } layout }
                 && TitlePlayer is { } own && !layout.InBounds(own.Position)
@@ -413,7 +415,16 @@ public sealed partial class GameHost
                 : null;
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            matchHud.DrawMatchBanner(state.Batch, banner, warning, SafeWindowWidth, SafeWindowHeight);
+            if (shown is Game.Multiplayer.Modes.MatchHud hud)
+            {
+                string useKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.Activate)) ?? "E";
+                matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight);
+            }
+            else if (shown is Game.Multiplayer.Modes.MatchBanner banner)
+            {
+                matchHud.DrawMatchBanner(state.Batch, banner, warning, SafeWindowWidth, SafeWindowHeight);
+            }
+
             state.Batch.End();
         }
 
@@ -430,7 +441,8 @@ public sealed partial class GameHost
         string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
         Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
         string[] talking = [.. Talking().Select(e => e < 0 ? "You" : talkLines.FirstOrDefault(l => l.Entity == e).Name ?? "Teammate")];
-        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, marks)
+        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, talkMarks)
+            && ModePointMarks(talkMarks) is var marks
             && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null || talking.Length > 0))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
@@ -487,5 +499,35 @@ public sealed partial class GameHost
         _device.EndStageTiming();
 
         _debugOverlays.Draw(state, eye, cameraIndoors, horizontalTangent);
+    }
+
+    // The places a mode plays for -- search and destroy's bomb sites -- marked as a player's marks are, always up, so they are
+    // found from anywhere: held on the screen's edge when out of view, with their distance.
+    private IReadOnlyList<HudMark> ModePointMarks(IReadOnlyList<HudMark> marks)
+    {
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy, Layout: { } layout })
+        {
+            return marks;
+        }
+
+        List<HudMark> all = [.. marks];
+        Game.Multiplayer.Modes.ModeReport? report = (TickObserver as ISessionScoreboard)?.ModeReport;
+        if (report?.BombAt is { } bomb)
+        {
+            // Planted: the bomb is all that matters.
+            all.Add(new HudMark((bomb / WorldScene.UnitsPerMetre) + new Vector3d(0, 0, 1.0), "BOMB", 1f));
+            return all;
+        }
+
+        foreach (Game.Multiplayer.Modes.MpPoint point in layout.Points)
+        {
+            if (point.Kind == Game.Multiplayer.Modes.MpPointKind.BombSite)
+            {
+                Vector3d metres = new Vector3d(point.Position[0], point.Position[1], point.Position[2]) / WorldScene.UnitsPerMetre;
+                all.Add(new HudMark(metres + new Vector3d(0, 0, 2.5), $"SITE {point.Id}", 1f));
+            }
+        }
+
+        return all;
     }
 }

@@ -923,6 +923,7 @@ public sealed partial class GameHost : IDisposable
         _retailWeather = null;
         _world?.Dispose();
         _soldiers?.Dispose();
+        DisposeModePoints();
         _menuBackdrop.Dispose();
         _menuFlow.Dispose();
         _heldWeapon?.Dispose();

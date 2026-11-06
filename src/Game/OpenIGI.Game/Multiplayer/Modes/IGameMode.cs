@@ -68,6 +68,11 @@ public interface IGameMode
     /// <returns>The line.</returns>
     string Status(long tick) => string.Empty;
 
+    /// <summary>Gets what the mode tells the clients of itself, which their HUD is drawn from.</summary>
+    /// <param name="tick">The tick now.</param>
+    /// <returns>The report.</returns>
+    ModeReport Report(long tick) => ModeReport.None;
+
     /// <summary>Begins the match on the tick given.</summary>
     /// <param name="host">The session.</param>
     /// <param name="tick">The tick.</param>

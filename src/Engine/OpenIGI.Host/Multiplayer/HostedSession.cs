@@ -257,6 +257,15 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         _session is { } session && _world is { } world ? session.CurrentMatch(world.CurrentTick).Banner(0) : null;
 
     /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
+        _session is { } session && _world is { } world
+            ? Game.Multiplayer.Modes.MatchHud.Of(session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout)
+            : null;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.ModeReport? ModeReport => _session is { } session && _world is { } world ? session.Mode.Report(world.CurrentTick) : null;
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
 
     /// <inheritdoc/>

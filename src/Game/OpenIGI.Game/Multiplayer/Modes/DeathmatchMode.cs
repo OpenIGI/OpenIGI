@@ -34,6 +34,9 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
     public string Id => teams ? GameModes.TeamDeathmatch : GameModes.FreeForAll;
 
     /// <inheritdoc/>
+    public ModeReport Report(long tick) => new() { Target = Settings.ScoreLimit };
+
+    /// <inheritdoc/>
     public bool IsTeamMode => teams;
 
     /// <inheritdoc/>

@@ -81,8 +81,8 @@ public sealed class MatchFlow(int tickRate)
     /// <param name="mode">The mode's id.</param>
     /// <param name="tick">The tick now.</param>
     /// <param name="winnerName">The winner's name as players read it (a team's, a player's), or empty.</param>
-    /// <param name="status">The mode's own word on the round in play, or empty.</param>
-    public void Write(BitWriter writer, string mode, long tick, string winnerName = "", string status = "")
+    /// <param name="report">What the mode tells of itself, or <see langword="null"/> for nothing.</param>
+    public void Write(BitWriter writer, string mode, long tick, string winnerName = "", ModeReport? report = null)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.WriteString(mode, 16);
@@ -97,7 +97,7 @@ public sealed class MatchFlow(int tickRate)
         }
 
         writer.WriteString(winnerName ?? string.Empty, 32);
-        writer.WriteString(status ?? string.Empty, 64);
+        (report ?? ModeReport.None).Write(writer);
     }
 
     /// <summary>Reads where a server's match stands.</summary>
@@ -111,7 +111,8 @@ public sealed class MatchFlow(int tickRate)
         int winner = reader.ReadRanged(-1, 254);
         double? left = reader.ReadBool() ? reader.ReadRanged(0, 65535) / 10.0 : null;
         string winnerName = reader.ReadString(32);
-        return new MatchState(mode, phase, round, winner, left, winnerName, reader.ReadString(64));
+        ModeReport report = ModeReport.Read(ref reader);
+        return new MatchState(mode, phase, round, winner, left, winnerName, report.Key == ModeReport.None.Key ? null : report);
     }
 }
 
@@ -122,9 +123,15 @@ public sealed class MatchFlow(int tickRate)
 /// <param name="Winner">Who won what was last decided, or -1.</param>
 /// <param name="SecondsLeft">The phase's seconds left when it was said, or <see langword="null"/> for no clock.</param>
 /// <param name="WinnerName">The winner's name as players read it, or empty.</param>
-/// <param name="Status">The mode's own word on the round in play (a bomb planted), or empty.</param>
-public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft, string WinnerName = "", string Status = "")
+/// <param name="Report">What the mode tells of itself (a bomb planted, who is defusing), or <see langword="null"/> for nothing.</param>
+public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft, string WinnerName = "", ModeReport? Report = null)
 {
+    /// <summary>Gets the mode's own line on the round in play: a bomb planted and its fuse, as of the seconds since it was said.</summary>
+    /// <param name="secondsSince">The seconds since the state was said.</param>
+    /// <returns>The line, or empty.</returns>
+    public string Status(double secondsSince) =>
+        Report is { Planted.Length: > 0 } bomb ? $"BOMB PLANTED AT {bomb.Planted}  ·  {Clock(Math.Max(0, bomb.FuseLeft - secondsSince))}" : string.Empty;
+
     /// <summary>Gets the name a team is shown by.</summary>
     /// <param name="team">The team.</param>
     /// <returns>Its name.</returns>
@@ -156,12 +163,15 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
             MatchPhase.Intermission or MatchPhase.RoundOver => new MatchBanner(
                 title, clock, Winner < 0 || WinnerName.Length == 0 ? "DRAW" : $"{WinnerName.ToUpperInvariant()} WINS"),
             _ when Round > 0 && Mode is GameModes.Elimination or GameModes.SearchAndDestroy =>
-                new MatchBanner($"{title}  ·  ROUND {Round}", clock, Status.Length > 0 ? Status : null),
+                new MatchBanner($"{title}  ·  ROUND {Round}", clock, Status(secondsSince) is { Length: > 0 } status ? status : null),
             _ => new MatchBanner(title, clock, null),
         };
     }
 
-    private static string Clock(double seconds)
+    /// <summary>Gets seconds as a clock reads them, as <c>1:05</c>.</summary>
+    /// <param name="seconds">The seconds.</param>
+    /// <returns>The clock.</returns>
+    public static string Clock(double seconds)
     {
         int whole = (int)Math.Ceiling(seconds);
         return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{whole / 60}:{whole % 60:00}");

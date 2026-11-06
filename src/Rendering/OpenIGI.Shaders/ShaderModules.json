@@ -597,6 +597,10 @@
     {
       "id": "Silhouette",
       "source": "Post/Silhouette.slang"
+    },
+    {
+      "id": "ModePoint",
+      "source": "World/ModePoint.slang"
     }
   ]
 }

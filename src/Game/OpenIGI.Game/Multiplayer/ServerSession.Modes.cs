@@ -28,7 +28,7 @@ public sealed partial class ServerSession
     /// <param name="tick">The tick now.</param>
     /// <returns>The state.</returns>
     public MatchState CurrentMatch(long tick) =>
-        new(Mode.Id, Mode.Flow.Phase, Mode.Flow.Round, Mode.Flow.Winner, Mode.Flow.SecondsLeft(tick), WinnerName(Mode.Flow.Winner), Mode.Status(tick));
+        new(Mode.Id, Mode.Flow.Phase, Mode.Flow.Round, Mode.Flow.Winner, Mode.Flow.SecondsLeft(tick), WinnerName(Mode.Flow.Winner), Mode.Report(tick));
 
     // The winner as players read it: a team's name, or a player's.
     private string WinnerName(int winner) =>
@@ -75,21 +75,23 @@ public sealed partial class ServerSession
     // put right by.
     private void TellMatch(long tick)
     {
-        // The mode's status line changes on its own (a fuse counting down): told when it does, at most each second.
-        string status = Mode.Status(tick);
-        if (Mode.Flow.Version == _toldFlow && tick % (TickRate * 5) != 0 && (status == _toldStatus || tick % TickRate != 0))
+        // The mode's report: told as soon as it changes (a plant, a defuse's progress a tenth at a time); the fuse runs down on
+        // each client's own clock, put right with the rest every few seconds.
+        ModeReport report = Mode.Report(tick);
+        string key = report.Key;
+        if (Mode.Flow.Version == _toldFlow && tick % (TickRate * 5) != 0 && key == _toldReport)
         {
             return;
         }
 
         _toldFlow = Mode.Flow.Version;
-        _toldStatus = status;
+        _toldReport = key;
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.MatchState, 8);
-        Mode.Flow.Write(_writer, Mode.Id, tick, WinnerName(Mode.Flow.Winner), status);
+        Mode.Flow.Write(_writer, Mode.Id, tick, WinnerName(Mode.Flow.Winner), report);
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
 
-    // The status line the clients were last told.
-    private string _toldStatus = string.Empty;
+    // The report's key the clients were last told.
+    private string _toldReport = string.Empty;
 }

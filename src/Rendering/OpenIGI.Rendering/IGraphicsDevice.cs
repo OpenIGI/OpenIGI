@@ -246,6 +246,17 @@ public interface IGraphicsDevice :
             TextureHandle.None,
             style == TracerStyle.Retail ? BlendMode.AlphaBlend : BlendMode.Additive);
 
+    /// <summary>Draws a place a multiplayer mode plays for -- a bomb site -- through the mode point shader: a disc and a low wall.</summary>
+    /// <param name="mesh">The point's disc (lightmap u 0, diffuse uv -1..1 across it) and wall (lightmap u 1, v up it).</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw.</param>
+    /// <param name="modelView">The mesh's transform into view space.</param>
+    /// <param name="look">Its colour, letter and state.</param>
+    /// <remarks>Depth tested, never written, never fogged. A device without the shader draws nothing.</remarks>
+    void DrawModePoint(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, in ModePointLook look)
+    {
+    }
+
     /// <summary>Draws part of a sheet of I.G.I. 2's water, as its own vertex shader lights it.</summary>
     /// <param name="mesh">The sheet's mesh: a position and a normal a vertex, with how shallow the water is there in the diffuse U.</param>
     /// <param name="indexOffset">The first index to draw.</param>

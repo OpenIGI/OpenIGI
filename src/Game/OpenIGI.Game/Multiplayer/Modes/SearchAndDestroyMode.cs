@@ -91,6 +91,17 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         return string.Create(CultureInfo.InvariantCulture, $"BOMB PLANTED AT {PlantedSite}  ·  {seconds / 60}:{seconds % 60:00}");
     }
 
+    /// <inheritdoc/>
+    public override ModeReport Report(long tick) => base.Report(tick) with
+    {
+        Attackers = Attackers,
+        Planted = PlantedAt is not null && !Exploded && !Defused ? PlantedSite ?? string.Empty : string.Empty,
+        FuseLeft = PlantedAt is not null ? Math.Max(0, BlowsAt - tick) / (double)TickRate : 0,
+        BombAt = PlantedAt is not null && !Exploded && !Defused ? PlantedAt : null,
+        FuseSeconds = Bomb.FuseSeconds,
+        Working = [.. _holding.Select(h => new ModeWork(h.Key, ProgressOf(h.Key) ?? 0f, PlantedAt is not null))],
+    };
+
     /// <summary>Gets how far a player is with its plant or defuse, in <c>[0,1]</c>, or <see langword="null"/> when it is at neither.</summary>
     /// <param name="slot">The player's slot.</param>
     /// <returns>Its progress.</returns>
@@ -152,18 +163,26 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         ArgumentNullException.ThrowIfNull(host);
         if (Exploded)
         {
+            EndReason = RoundEnd.Detonated;
             return Attackers;
         }
 
         if (Defused)
         {
+            EndReason = RoundEnd.Defused;
             return Defenders;
         }
 
         if (PlantedAt is not null)
         {
             // Down: the defenders must defuse it; with none left standing, it is the attackers'.
-            return PlayersOn(host, Defenders) > 0 && AliveOn(host, Defenders) == 0 ? Attackers : null;
+            if (PlayersOn(host, Defenders) > 0 && AliveOn(host, Defenders) == 0)
+            {
+                EndReason = RoundEnd.Eliminated;
+                return Attackers;
+            }
+
+            return null;
         }
 
         return base.RoundWinner(host, tick);
