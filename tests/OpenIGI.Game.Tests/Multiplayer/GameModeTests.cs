@@ -1,4 +1,4 @@
-using OpenIGI.Game.Multiplayer;
+﻿using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using Xunit;
 
@@ -223,6 +223,21 @@ public sealed class GameModeTests
         mode.Start(host, 0);
         mode.Tick(host, TickRate * 200, []);
         Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
+    }
+
+    [Fact]
+    public void At_the_half_the_teams_change_sides_and_take_their_scores_with_them()
+    {
+        Host host = new(teams: [0, 1]) { Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [100 * Metre, 0, 0], 5 * Metre)] } };
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundsToWin = 3, RoundSeconds = 1, RoundOverSeconds = 1 });
+        mode.Start(host, 0);
+
+        // Two rounds run out on the clock, both the defenders'; the third begins with the sides changed.
+        long tick = Run(mode, host, 1, (TickRate * 4) + 4);
+        Assert.Equal((2, MatchPhase.Live), (mode.RoundsPlayed, mode.Flow.Phase));
+        Assert.Equal((TeamRoster.Bad, TeamRoster.Good), (host.Match.Players[0].Team, host.Match.Players[1].Team));
+        Assert.Equal((2, 0), (host.Match.ScoreOf(TeamRoster.Good), host.Match.ScoreOf(TeamRoster.Bad)));
+        Assert.True(tick > 0);
     }
 
     private const double Metre = OpenIGI.Core.Numerics.WorldUnits.PerMetre;

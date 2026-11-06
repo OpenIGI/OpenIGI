@@ -39,8 +39,14 @@ public sealed partial class ServerSession
     /// <inheritdoc/>
     void IModeHost.Respawn(int slot)
     {
-        _world.Respawn(slot);
+        // The match's team first: a side swap or a scramble changed it, and the spawn the world picks follows it.
         if (Match.Players.TryGetValue(slot, out MatchPlayer? player))
+        {
+            _world.SetTeam(slot, player.Team);
+        }
+
+        _world.Respawn(slot);
+        if (player is not null)
         {
             player.IsAlive = true;
             player.DiedAt = null;

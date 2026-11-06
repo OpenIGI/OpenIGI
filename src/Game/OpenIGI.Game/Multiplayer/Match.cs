@@ -223,6 +223,21 @@ public sealed class Match
         }
     }
 
+    /// <summary>Changes the teams' sides at the half: every player goes to the other team, and each team's score goes with it.</summary>
+    public void SwapSides()
+    {
+        (_teamScores[0], _teamScores[1]) = (_teamScores[1], _teamScores[0]);
+        foreach (MatchPlayer player in _players.Values)
+        {
+            player.Team = player.Team switch
+            {
+                TeamRoster.Good => TeamRoster.Bad,
+                TeamRoster.Bad => TeamRoster.Good,
+                _ => player.Team,
+            };
+        }
+    }
+
     /// <summary>Adds to a team's score, never below nothing: a kill in team deathmatch, a point held.</summary>
     /// <param name="team">The team.</param>
     /// <param name="points">The points, negative for a fine.</param>

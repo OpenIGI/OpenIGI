@@ -45,6 +45,9 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     /// <inheritdoc/>
     public override string Id => GameModes.SearchAndDestroy;
 
+    /// <inheritdoc/>
+    protected override bool SidesDiffer => true;
+
     /// <summary>Gets how the bomb is played.</summary>
     public BombSettings Bomb { get; } = bomb ?? new BombSettings();
 

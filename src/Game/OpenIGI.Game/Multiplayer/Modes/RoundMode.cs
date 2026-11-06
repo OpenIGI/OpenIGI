@@ -14,6 +14,9 @@ public sealed record RoundSettings
 
     /// <summary>Gets the seconds the scores are shown once the match is decided.</summary>
     public double IntermissionSeconds { get; init; } = 15;
+
+    /// <summary>Gets a value indicating whether the teams change sides at the half, for a mode whose sides differ (attack, defence).</summary>
+    public bool SwapSides { get; init; } = true;
 }
 
 /// <summary>
@@ -56,6 +59,12 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     /// <summary>Gets the world's ticks per second.</summary>
     protected int TickRate => tickRate;
 
+    /// <summary>Gets the rounds decided this match.</summary>
+    public int RoundsPlayed { get; private set; }
+
+    /// <summary>Gets a value indicating whether the mode's two sides play differently, so the teams change sides at the half.</summary>
+    protected virtual bool SidesDiffer => false;
+
     /// <inheritdoc/>
     public int TeamFor(IModeHost host, int slot) => GameModes.FairTeam(host, slot);
 
@@ -78,6 +87,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         ArgumentNullException.ThrowIfNull(host);
         host.Match.IsFreeForAll = false;
         host.Match.NewMap();
+        RoundsPlayed = 0;
         BeginRound(host, tick);
     }
 
@@ -104,6 +114,12 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
                 }
                 else
                 {
+                    // At the half (one round short of the most a team needs), attack and defence change over.
+                    if (SidesDiffer && Settings.SwapSides && RoundsPlayed == Settings.RoundsToWin - 1)
+                    {
+                        host.Match.SwapSides();
+                    }
+
                     BeginRound(host, tick);
                 }
 
@@ -113,6 +129,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
                 if (PlaysAgain)
                 {
                     host.Match.NewMap();
+                    RoundsPlayed = 0;
                     BeginRound(host, tick);
                 }
                 else
@@ -215,6 +232,8 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         {
             host.Match.AddTeamScore(winner, 1);
         }
+
+        RoundsPlayed++;
 
         Flow.Enter(MatchPhase.RoundOver, tick, Settings.RoundOverSeconds, winner);
     }
