@@ -163,6 +163,23 @@ public sealed class PlacedRotatingObject
     /// <summary>Gets a value indicating whether a round has broken it (<c>+424</c>), which switches it off for good.</summary>
     public bool IsBroken { get; private set; }
 
+    // As the match began: its speeds, its angles, whether it ran and whether it was shot to a stop.
+    private (float Tx, float Ty, float Tz, float Cx, float Cy, float Cz, float Ax, float Ay, float Az, bool Active, bool Broken) _start;
+
+    internal void MarkLevelStart() =>
+        _start = (TargetSpeedX, TargetSpeedY, TargetSpeedZ, CurrentSpeedX, CurrentSpeedY, CurrentSpeedZ, AngleX, AngleY, AngleZ, IsActive, IsBroken);
+
+    internal void ResetToLevelStart()
+    {
+        (TargetSpeedX, TargetSpeedY, TargetSpeedZ, CurrentSpeedX, CurrentSpeedY, CurrentSpeedZ) =
+            (_start.Tx, _start.Ty, _start.Tz, _start.Cx, _start.Cy, _start.Cz);
+        (AngleX, AngleY, AngleZ) = (_start.Ax, _start.Ay, _start.Az);
+        (PreviousAngleX, PreviousAngleY, PreviousAngleZ) = (_start.Ax, _start.Ay, _start.Az);
+        IsActive = _start.Active;
+        IsBroken = _start.Broken;
+        CurrentOrientation = ComputeOrientation(AngleX, AngleY, AngleZ);
+    }
+
     /// <summary>A round strikes it: its <c>WeaponHit</c> handler.</summary>
     /// <remarks>
     /// A radar dish's (<c>0x449260</c>, I.G.I. 2's <c>RadarDish_WeaponHitHandler</c> the same) wants no more speed, so it runs
@@ -357,7 +374,7 @@ public sealed class PlacedRotatingObject
 /// Both integrate rotation at the 30 Hz simulation tick and compose their live orientation with their base transform.
 /// </para>
 /// </remarks>
-public sealed class RotatingObjectRegistry
+public sealed class RotatingObjectRegistry : ILevelReset
 {
     private const string RadarDishTaskType = "TASKTYPE_RADARDISH";
     private const string RotatingObjectTaskType = "RotatingObject";
@@ -658,6 +675,30 @@ public sealed class RotatingObjectRegistry
             && !string.IsNullOrWhiteSpace(obj.OnExpression)
             && !_expressions.EvaluateCondition(obj.OnExpression, emptyValue: true, obj.Owner);
         obj.TickRotatingObject(switchedOff);
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (PlacedRotatingObject obj in _objects)
+        {
+            obj.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Each fan and dish turning, or stopped, as the match began; its solid turned back with it.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (PlacedRotatingObject obj in _objects)
+        {
+            obj.ResetToLevelStart();
+        }
+
+        if (solids is not null)
+        {
+            ApplyCollision(solids);
+        }
     }
 
     /// <summary>Updates one rotating object's collision solid, if its orientation changed.</summary>

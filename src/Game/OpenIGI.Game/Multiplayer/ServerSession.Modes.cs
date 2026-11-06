@@ -71,6 +71,28 @@ public sealed partial class ServerSession
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The server's level first, then every client told on the reliable line: whatever the server sends after it -- the level's
+    /// state, the snapshots -- reaches a client after its own level went back too.
+    /// </remarks>
+    void IModeHost.ResetLevel()
+    {
+        // The first round's start is the level's: settled from its load (its own first ticks run, an arena made of it), the
+        // state every later round goes back to.
+        if (!_levelMarked)
+        {
+            _world.MarkLevelStart();
+            _levelMarked = true;
+            return;
+        }
+
+        _world.ResetToLevelStart();
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.LevelReset, 8);
+        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+    }
+
     // Where the match stands, when it changes and every few seconds besides, which a late joiner and a clock that drifted are
     // put right by.
     private void TellMatch(long tick)

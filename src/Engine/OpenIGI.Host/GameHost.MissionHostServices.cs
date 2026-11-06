@@ -163,6 +163,10 @@ public sealed partial class GameHost
 
         public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
 
+        public void WeaponRemoved(GunPickup pickup) => host._gunPickupRenderer?.Remove(pickup);
+
+        public void LevelWasReset() => host._effects.Clear();
+
         public void TerrainRowRead(int? row) => host._mission.TerrainMaterialRow = row;
 
         public SoundSystem? SoundOutput => host._audioOut.Sounds;

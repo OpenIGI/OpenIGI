@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// <summary>
 /// All direct retail world interactions, with the original two-metre, most-head-on resolver.
 /// </summary>
-public sealed partial class WorldInteractionRegistry : IPlacementVariant
+public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevelReset
 {
     /// <summary><c>Human_UpdateActivate</c>'s regular query radius: two metres.</summary>
     public const double ActivateRadius = 8192.0;
@@ -62,6 +62,54 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant
 
     /// <summary>Adds a collected generator.</summary>
     internal void AddGenerator(GeneratorPowerState generator) => _generators.Add(generator);
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (WorldInteraction item in _items)
+        {
+            item.MarkLevelStart();
+        }
+
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            generator.MarkLevelStart();
+        }
+
+        foreach (RadioRuntime radio in _radios)
+        {
+            radio.MarkLevelStart();
+        }
+
+        _startPressed = [.. _serverPressed];
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Every switch, terminal, cabinet, lock, fence, generator and radio as the match began: unhacked, unsearched, unpicked,
+    /// its model the one it showed then.
+    /// </remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (WorldInteraction item in _items)
+        {
+            item.ResetToLevelStart();
+        }
+
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            generator.ResetToLevelStart();
+        }
+
+        foreach (RadioRuntime radio in _radios)
+        {
+            radio.ResetToLevelStart();
+        }
+
+        _serverPressed = [.. _startPressed];
+    }
+
+    private bool[] _startPressed = [];
 
     /// <summary>Adds a collected radio.</summary>
     internal void AddRadio(RadioRuntime radio) => _radios.Add(radio);

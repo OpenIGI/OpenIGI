@@ -27,7 +27,13 @@ public enum RoundEnd : byte
 /// <param name="Slot">The player's slot.</param>
 /// <param name="Progress">How far, in <c>[0,1]</c>.</param>
 /// <param name="Defusing"><see langword="true"/> for a defuse, <see langword="false"/> for a plant.</param>
-public readonly record struct ModeWork(int Slot, float Progress, bool Defusing);
+/// <param name="Seconds">How long the whole hold takes, so a client runs the bar on between reports; 0 when it is not known.</param>
+public readonly record struct ModeWork(int Slot, float Progress, bool Defusing, float Seconds = 0);
+
+/// <summary>The local player's use key as its own machine sees it, which the HUD starts a plant or defuse from at once.</summary>
+/// <param name="Held">Whether it is down.</param>
+/// <param name="Seconds">How long it has been down.</param>
+public readonly record struct LocalUse(bool Held, double Seconds);
 
 /// <summary>What a mode tells the clients of itself beyond the match's phase and clock: what its HUD is drawn from.</summary>
 public sealed record ModeReport
@@ -68,7 +74,8 @@ public sealed record ModeReport
             key.Append(CultureInfo.InvariantCulture, $"{Target}|{Attackers}|{Reason}|{Planted}|{BombAt is not null}|{FuseSeconds}");
             foreach (ModeWork work in Working)
             {
-                key.Append(CultureInfo.InvariantCulture, $"|{work.Slot}:{(int)(work.Progress * 10)}:{work.Defusing}");
+                // A hold begun or let go, not its progress: the clients run that on themselves from Seconds.
+                key.Append(CultureInfo.InvariantCulture, $"|{work.Slot}:{work.Defusing}");
             }
 
             return key.ToString();
@@ -102,6 +109,7 @@ public sealed record ModeReport
             writer.WriteRanged(Math.Clamp(work.Slot, 0, 65535), 0, 65535);
             writer.WriteRanged((int)Math.Round(Math.Clamp(work.Progress, 0f, 1f) * 255f), 0, 255);
             writer.WriteBool(work.Defusing);
+            writer.WriteRanged((int)Math.Clamp(Math.Round(work.Seconds * 10), 0, 1023), 0, 1023);
         }
     }
 
@@ -123,7 +131,8 @@ public sealed record ModeReport
         {
             int slot = reader.ReadRanged(0, 65535);
             float progress = reader.ReadRanged(0, 255) / 255f;
-            working[i] = new ModeWork(slot, progress, reader.ReadBool());
+            bool defusing = reader.ReadBool();
+            working[i] = new ModeWork(slot, progress, defusing, reader.ReadRanged(0, 1023) / 10f);
         }
 
         return new ModeReport

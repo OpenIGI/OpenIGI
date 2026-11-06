@@ -1,7 +1,11 @@
+using System.Diagnostics;
 using System.Globalization;
+using OpenIGI.Core.Titles;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Net;
+using OpenIGI.Net.Browsing;
 using OpenIGI.Net.Rooms;
 
 namespace OpenIGI.Host.Multiplayer;
@@ -32,7 +36,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     private IDisposable? _session;
     private Task<RoomListing?>? _finding;
     private string? _findingCode;
-    private Task<IReadOnlyList<RoomListing>>? _listing;
+    private ServerBrowser? _browser;
+    private string? _browsing;
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     private IReadOnlyList<CoopRoomInfo>? _rooms = [];
     private string? _listingError;
     private string? _failure;
@@ -71,6 +77,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         HostedSession => new CoopStatus(CoopPhase.Connecting, Hosting: true),
         SessionClient { Ended: { } ended } client => new CoopStatus(CoopPhase.Failed, client.RoomCode, Error: ended),
         SessionClient { IsRejoining: true } client => new CoopStatus(CoopPhase.Connecting, client.RoomCode),
+        SessionClient { Room: null } => new CoopStatus(CoopPhase.Playing),
         SessionClient client when client.Room is { } room => room.Status switch
         {
             RoomStatus.Open => new CoopStatus(CoopPhase.Playing, room.Code),
@@ -78,6 +85,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             _ => new CoopStatus(CoopPhase.Connecting, room.Code),
         },
         _ when _finding is not null => new CoopStatus(CoopPhase.Connecting, _findingCode),
+        _ when _waitingFor is not null => new CoopStatus(CoopPhase.Connecting),
         _ when _failure is not null => new CoopStatus(CoopPhase.Failed, Error: _failure),
         _ => new CoopStatus(CoopPhase.None),
     };
@@ -111,13 +119,68 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             return;
         }
 
+        // A line of the list: a server this build reaches by address is joined so; any other through its room.
+        if (_browser?.Servers.FirstOrDefault(s => s.Key == code) is { } line)
+        {
+            _browser.Played(line);
+            if (line.Address is { } address && OpenUdp is { } open)
+            {
+                // One not yet heard from (a saved or recent server) is joined once it answers with what it plays.
+                if (!line.Answered)
+                {
+                    _waitingFor = (line.Key, _clock.Elapsed.TotalSeconds, WaitSeconds);
+                    _browser.Refresh(_clock.Elapsed.TotalSeconds);
+                    return;
+                }
+
+                JoinServer(line, address, open);
+                return;
+            }
+
+            if (line.Room is not { } room)
+            {
+                _failure = "that server can't be reached from this build";
+                return;
+            }
+
+            code = room;
+        }
+
         _findingCode = code.Trim().ToUpperInvariant();
         _finding = RoomDirectory.FindAsync(RoomTransport.DefaultMaster, _findingCode);
+    }
+
+    // A server by its address, its level brought up as it plays it: its map, an arena or a mission.
+    private void JoinServer(BrowserServer line, NetAddress address, Func<int, INetTransport> open)
+    {
+        if (line.Info.Passworded)
+        {
+            _failure = "that server asks a password; join it with -connect and -password";
+            return;
+        }
+
+        if (!line.Info.Compatible)
+        {
+            _failure = $"that server runs another version ({line.Info.Version})";
+            return;
+        }
+
+        if (!int.TryParse(line.Info.Map, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) || mission <= 0)
+        {
+            _failure = "that server's map isn't one this game has";
+            return;
+        }
+
+        JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.Of(PlayerSkins.Chosen.Value).Id);
+        Begin(new SessionClient(open(0), address, request, _titleId(), _logger, reopen: () => open(0)) { Mode = line.Info.Mode });
+        _logger.Information(LogCategory, $"Joining {line.Info.Name} at {address} on mission {mission} ({line.Info.Mode}).");
+        Shell?.StartMission(mission, _difficulty());
     }
 
     /// <inheritdoc/>
     public void Leave()
     {
+        _waitingFor = null;
         _finding = null;
         _findingCode = null;
         _failure = null;
@@ -142,37 +205,210 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <inheritdoc/>
     public void RetryFromCheckpoint() => (_session as HostedSession)?.RetryFromCheckpoint();
 
-    public void RefreshListing()
+    public void RefreshListing() => Browser().Refresh(_clock.Elapsed.TotalSeconds);
+
+    /// <summary>Gets or sets what opens a UDP socket on a port (0 for any), where this build has UDP: servers on this network and
+    /// dedicated servers are asked after directly and joined by address. Without it the list is the master's alone.</summary>
+    public Func<int, INetTransport>? OpenUdp { get; set; }
+
+    /// <summary>Gets or sets the file the player's favourite and recent servers are kept in, or <see langword="null"/> for none.</summary>
+    public string? BookPath { get; set; }
+
+    /// <inheritdoc/>
+    public void SetFavourite(string code, bool favourite)
     {
-        if (_listing is { IsCompleted: false })
+        if (Browser().Servers.FirstOrDefault(s => s.Key == code) is { } server)
+        {
+            _browser!.SetFavourite(server, favourite);
+            _rooms = Lines();
+        }
+    }
+
+    /// <inheritdoc/>
+    public string? LastPlayed => Browser().Book.History is [var last, ..] ? last.Name : null;
+
+    /// <inheritdoc/>
+    public void Reconnect()
+    {
+        if (Browser().Book.History is not [var last, ..])
         {
             return;
         }
 
-        _listing = RoomDirectory.ListAsync(RoomTransport.DefaultMaster, _titleId(), Protocol);
+        // The booked line is in the list once it has been asked after; a room's code joins as typed in.
+        _browser!.Refresh(_clock.Elapsed.TotalSeconds);
+        Join(last.Key.StartsWith("room:", StringComparison.Ordinal) && _browser.Servers.All(s => s.Key != last.Key) ? last.Key["room:".Length..] : last.Key);
     }
+
+    /// <inheritdoc/>
+    public void QuickPlay()
+    {
+        if (BrowserFilter.QuickPlay(Browser().Servers) is { } best)
+        {
+            Join(best.Key);
+            return;
+        }
+
+        Leave();
+        _failure = "no open game to join right now; host one, or refresh the list";
+        RefreshListing();
+    }
+
+    // The browser of the game played now: made again when the player switches game, as each lists its own servers.
+    private ServerBrowser Browser()
+    {
+        string title = _titleId();
+        if (_browser is null || _browsing != title)
+        {
+            _browser?.Dispose();
+            _browsing = title;
+            _book ??= new ServerBook(BookPath);
+            NetQueryClient? query = OpenUdp is { } open ? new NetQueryClient(open(0), MultiplayerProtocol.IdFor(title)) : null;
+            _browser = new ServerBrowser(new ServerBrowserOptions(RoomTransport.DefaultMaster, title, Decode) { Version = _version }, query, _book);
+        }
+
+        return _browser;
+    }
+
+    private ServerBook? _book;
+
+    // A server waited on to answer before it is joined, since when, and for how long before it is given up on.
+    private (string Key, double Since, double Seconds)? _waitingFor;
+    private const double WaitSeconds = 4;
+
+    // A dedicated server brings its level up before it answers: a minute, on a slow disk.
+    private const double ServerStartSeconds = 60;
+    private Process? _server;
+    private DedicatedServerLaunch? _serverLaunch;
+    private double _askedServerAt;
+
+    /// <summary>Gets or sets where the game played now reads its data from, for a dedicated server started here to read the same.</summary>
+    public Func<string?>? GamePath { get; set; }
+
+    /// <inheritdoc/>
+    public bool CanHostServer => OpenUdp is not null && DedicatedServerLaunch.FindServer(Core.Configuration.SettingsPaths.ExecutableDirectory) is not null;
+
+    /// <inheritdoc/>
+    public string? ServerStatus => _server is null || _serverLaunch is not { } launch
+        ? null
+        : _server.HasExited
+            ? $"The server stopped (exit code {_server.ExitCode}); its log is in {ServerFolder(launch.Title)}."
+            : string.Create(CultureInfo.InvariantCulture, $"Your server plays {launch.Mode.ToUpperInvariant()} on port {launch.Port}{(launch.Public ? ", listed" : string.Empty)}.");
+
+    /// <inheritdoc/>
+    public void HostServer(int missionId, string mode, bool listed)
+    {
+        StopServer();
+        Leave();
+        if (DedicatedServerLaunch.FindServer(Core.Configuration.SettingsPaths.ExecutableDirectory) is not { } executable)
+        {
+            _failure = "this build has no dedicated server beside it";
+            return;
+        }
+
+        DedicatedServerLaunch launch = new()
+        {
+            Title = _titleId(),
+            Name = $"{_playerName()}'s server",
+            Mission = missionId,
+            Mode = mode,
+            Public = listed,
+            GamePath = GamePath?.Invoke(),
+        };
+        try
+        {
+            _server = launch.Start(executable, ServerFolder(launch.Title));
+            _serverLaunch = launch;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _failure = $"the server didn't start: {ex.Message}";
+            return;
+        }
+
+        _logger.Information(LogCategory, $"Started a dedicated server ({executable}) for mission {missionId}, {mode}, on port {launch.Port}.");
+        NetAddress.TryParseIp("127.0.0.1", launch.Port, out NetAddress here);
+        string key = Browser().Watch(here, launch.Name, _clock.Elapsed.TotalSeconds);
+        _waitingFor = (key, _clock.Elapsed.TotalSeconds, ServerStartSeconds);
+    }
+
+    /// <inheritdoc/>
+    public void StopServer()
+    {
+        if (_server is { } server)
+        {
+            DedicatedServerLaunch.Stop(server);
+            server.Dispose();
+            _server = null;
+            _serverLaunch = null;
+        }
+    }
+
+    // Where a server started here keeps its settings, log and bans: one folder a game.
+    private static string ServerFolder(string title) => Path.Combine(Core.Configuration.SettingsPaths.GetUserDirectory(), "server", title);
+
+    private static BrowserInfo? Decode(byte[] info) =>
+        ServerInfo.Decode(info) is { } said
+            ? new BrowserInfo(said.TitleId, said.Name, said.Map, said.Mode, said.Players, said.MaxPlayers, said.HasPassword, said.Version, said.IsCompatible)
+            : null;
+
+    // The browser's lines as the menu shows them.
+    private CoopRoomInfo[] Lines() =>
+        [.. new BrowserFilter().Apply(_browser?.Servers ?? []).Select(static s => new CoopRoomInfo(
+            s.Key,
+            s.Info.Name,
+            int.TryParse(s.Info.Map, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mission) ? mission : 0,
+            s.Info.Players,
+            s.Info.MaxPlayers,
+            s.Info.Passworded)
+        {
+            Mode = s.Info.Mode,
+            PingMs = s.Ping is { } ping ? (int)Math.Round(ping * 1000) : null,
+            Region = s.Region,
+            Dedicated = s.Address is not null && s.Sources.HasFlag(BrowserSource.Internet),
+            Lan = s.Sources.HasFlag(BrowserSource.Lan),
+            Favourite = s.Sources.HasFlag(BrowserSource.Favourite),
+            Recent = s.Sources.HasFlag(BrowserSource.History),
+            Compatible = s.Info.Compatible,
+        })];
 
     /// <summary>Acts on what the master server answered since the last frame.</summary>
     public void Update()
     {
-        if (_listing is { IsCompleted: true } listing)
+        if (_waitingFor is { } waiting && _browser is { } asked)
         {
-            _listing = null;
-            if (listing.IsCompletedSuccessfully)
+            if (asked.Servers.FirstOrDefault(s => s.Key == waiting.Key) is { Answered: true, Address: { } at } heard && OpenUdp is { } udp)
             {
-                CoopRoomInfo[] rooms = [.. listing.Result.Select(r => new CoopRoomInfo(r.Code, r.Name, r.Mission() ?? 0, r.Players, r.MaxPlayers, r.Passworded))];
-                if (_listingError is not null || _rooms is null || !_rooms.SequenceEqual(rooms))
-                {
-                    _rooms = rooms;
-                }
+                _waitingFor = null;
+                JoinServer(heard, at, udp);
+            }
+            else if (_server is { HasExited: true } && waiting.Seconds == ServerStartSeconds)
+            {
+                _waitingFor = null;
+                _failure = ServerStatus;
+            }
+            else if (_clock.Elapsed.TotalSeconds - waiting.Since > waiting.Seconds)
+            {
+                _waitingFor = null;
+                _failure = "that server didn't answer";
+            }
+            else if (_clock.Elapsed.TotalSeconds - _askedServerAt >= 1 && ServerBrowser.TryAddressOf(waiting.Key, out NetAddress again))
+            {
+                // Asked again each second: a server bringing its level up answers only once it is.
+                _askedServerAt = _clock.Elapsed.TotalSeconds;
+                asked.Watch(again, asked.Servers.FirstOrDefault(s => s.Key == waiting.Key)?.Info.Name ?? waiting.Key, _askedServerAt);
+            }
+        }
 
-                _listingError = null;
-            }
-            else if (_listingError is null)
+        if (_browser is { } browser && browser.Update(_clock.Elapsed.TotalSeconds))
+        {
+            CoopRoomInfo[] rooms = Lines();
+            if (_rooms is null || !_rooms.SequenceEqual(rooms))
             {
-                _rooms = [];
-                _listingError = "couldn't reach the room list";
+                _rooms = rooms;
             }
+
+            _listingError = browser.MasterError is not null && rooms.Length == 0 ? "couldn't reach the server list" : null;
         }
 
         if (_finding is { IsCompleted: true } finding)
@@ -220,7 +456,12 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     public void TurnLook(float radians) => _turn(radians);
 
     /// <inheritdoc/>
-    public void Dispose() => Leave();
+    public void Dispose()
+    {
+        Leave();
+        StopServer();
+        _browser?.Dispose();
+    }
 
     private void Begin(IDisposable? session)
     {

@@ -103,6 +103,45 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <returns>The player's setup.</returns>
     public Igi1PlayerSetup NewPlayerSetup() => PlayerSetup = new(World, Harm, Audio, Sounds, _host);
 
+    /// <summary>Records the level as it stands, for <see cref="ResetToLevelStart"/>: as a match's session takes it up.</summary>
+    public void MarkLevelStart() => World.MarkLevelStart();
+
+    /// <summary>
+    /// Puts the level back as <see cref="MarkLevelStart"/> found it, without loading anything: the world's parts, and what play
+    /// left in it -- every grenade, mine, rocket and round in flight, every bullet hole and scorch, every burst still burning.
+    /// The players themselves are the match's to put back.
+    /// </summary>
+    public void ResetToLevelStart()
+    {
+        World.ResetToLevelStart();
+        foreach (Player.PlayerCamera rig in Rigs())
+        {
+            rig.Grenades.Clear();
+            rig.Missiles.Clear();
+            rig.M203.Clear();
+            rig.Marks.Clear();
+        }
+
+        World.ShownProjectiles.Clear();
+        World.VehicleMissiles.Clear();
+        Impacts.Runtime.Clear();
+        _host.LevelWasReset();
+    }
+
+    // Every player's rig: the mission's own and each partner's, whose weapons leave their marks in the level.
+    private IEnumerable<Player.PlayerCamera> Rigs()
+    {
+        if (World.Player is { } own)
+        {
+            yield return own;
+        }
+
+        foreach (Multiplayer.Igi1NetworkPlayer partner in World.NetworkPlayers)
+        {
+            yield return partner.Player;
+        }
+    }
+
     /// <inheritdoc/>
     public OpenIGI.Game.Multiplayer.IReplicatedWorld CreateReplicatedWorld(bool includesHost) =>
         new Multiplayer.Igi1ReplicatedWorld(this) { IncludesHost = includesHost };

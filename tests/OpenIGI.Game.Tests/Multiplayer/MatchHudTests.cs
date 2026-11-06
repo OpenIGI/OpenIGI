@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
@@ -80,6 +80,32 @@ public sealed class MatchHudTests
         Assert.Equal(0.4f, planting.Progress);
         Assert.Equal("PLANTING THE BOMB", planting.ProgressLabel);
         Assert.Null(planting.Hint);
+    }
+
+    [Fact]
+    public void A_clients_own_plant_starts_as_its_key_goes_down_runs_on_between_reports_and_ends_as_it_comes_up()
+    {
+        MpLayout layout = new() { Points = [new MpPoint("A", MpPointKind.BombSite, [0, 0, 0], 5 * Metre)] };
+        ModeReport report = new() { Attackers = TeamRoster.Good };
+        Vector3d inSite = new(2 * Metre, 0, 0);
+
+        // Held for a second, and the server has not heard yet: the bar is already a third of the way.
+        MatchHud early = MatchHud.Of(Live(report), 0, Board(), 10, inSite, layout, new LocalUse(true, 1))!;
+        Assert.Equal(1 / 3f, early.Progress!.Value, 3);
+        Assert.Equal("PLANTING THE BOMB", early.ProgressLabel);
+        Assert.Null(early.Hint);
+
+        // The server's word, half a second old: run on by that half second, not held at what it said.
+        ModeReport working = report with { Working = [new ModeWork(0, 0.2f, false, 3)] };
+        MatchHud between = MatchHud.Of(Live(working), 0.5, Board(), 10, inSite, layout, new LocalUse(true, 0.1))!;
+        Assert.Equal(0.2f + (0.5f / 3f), between.Progress!.Value, 3);
+
+        // Let go: gone at once, though the server still says it is planting.
+        MatchHud released = MatchHud.Of(Live(working), 0.5, Board(), 10, inSite, layout, new LocalUse(false, 0))!;
+        Assert.Null(released.Progress);
+
+        // Held outside any site: nothing to start.
+        Assert.Null(MatchHud.Of(Live(report), 0, Board(), 10, new Vector3d(20 * Metre, 0, 0), layout, new LocalUse(true, 1))!.Progress);
     }
 
     [Fact]

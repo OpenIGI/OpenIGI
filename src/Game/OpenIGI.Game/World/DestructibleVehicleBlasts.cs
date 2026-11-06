@@ -28,6 +28,14 @@ internal sealed class DestructibleVehicleBlasts
     /// Each is an <c>Explosion0</c> of its own: the caller applies it to the world exactly as it does any
     /// other, handing it no source record — so no car blast can set another car off.
     /// </remarks>
+    // Nothing burning or due to go up: a round put the cars back.
+    internal void ResetToLevelStart()
+    {
+        _pendingVehicleBlasts.Clear();
+        _readyVehicleBlasts.Clear();
+        _explodedVehicles.Clear();
+    }
+
     internal IReadOnlyList<VehicleBlast> ConsumeVehicleBlasts()
     {
         if (_readyVehicleBlasts.Count == 0)

@@ -69,7 +69,10 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
             return null;
         }
 
-        return new SessionClient(UdpTransport.Open(0), server, join, title.Id, logger, reopen: () => UdpTransport.Open(0));
+        return new SessionClient(UdpTransport.Open(0), server, join, title.Id, logger, reopen: () => UdpTransport.Open(0))
+        {
+            Mode = session.Mode,
+        };
     }
 
     if (session.Listen)
@@ -320,6 +323,25 @@ using (window)
         backend = RendererBackend.D3D12;
     }
 
+    // A server joined is asked first what it plays, so its level is brought up once, its way: the right map, an arena's or a
+    // mission's. One that does not answer is joined on the command line's word, and followed to its map once welcomed.
+    if (session.Connect is { } connect && UdpTransport.Parse(connect, SessionArguments.DefaultPort) is { } asked)
+    {
+        if (ServerProbe.Ask(UdpTransport.Open(0), asked, title.Id) is { } info)
+        {
+            logger.Information("Session", $"{connect} plays {info.Mode} on map {info.Map}.");
+            session = session with { Mode = info.Mode };
+            if (ServerProbe.MissionOf(info) is { } mission)
+            {
+                options = options with { StartMission = mission };
+            }
+        }
+        else
+        {
+            logger.Warning("Session", $"{connect} did not answer before its level was loaded; joining on the command line's word.");
+        }
+    }
+
     HostOptions runOptions = options;
 
     // Who this player is to every server: a key kept beside the settings, made on first play.
@@ -443,6 +465,7 @@ using (window)
         nint owner = window.NativeHandles is { System: DesktopWindowSystem.Win32 } owning ? owning.Window : 0;
         game.EditorFactory = new OpenIGI.Editor.EditorFactory { PickFolder = (title, initial) => FolderPicker.PickAsync(title, initial, owner) };
         game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
+        game.OpenUdp = port => UdpTransport.Open(port);
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;

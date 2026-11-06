@@ -24,6 +24,10 @@ public sealed partial class ThreadingTests
         Path.Combine("src", "Rendering", "OpenIGI.Rendering.D3D12") + Path.DirectorySeparatorChar,
         Path.Combine("src", "Platform", "OpenIGI.Platform.Desktop") + Path.DirectorySeparatorChar,
         Path.Combine("src", "Audio", "OpenIGI.Audio.OpenAL") + Path.DirectorySeparatorChar,
+
+        // The log file's writer: opened only by the desktop game and the dedicated server, which have files and threads; a
+        // browser's build has neither and never opens one.
+        Path.Combine("src", "Core", "OpenIGI.Core", "Diagnostics", "FileSink.cs"),
     ];
 
     [Fact]

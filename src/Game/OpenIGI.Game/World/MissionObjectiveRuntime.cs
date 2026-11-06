@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Input;
 using OpenIGI.Net;
@@ -15,7 +15,7 @@ namespace OpenIGI.Game.World;
 /// level may contain several objective definitions and switch between them with <c>Objectives Valid</c>.
 /// The last valid definition in task-update order is the one the original publishes globally.
 /// </remarks>
-public sealed class MissionObjectiveRuntime : IComputerObjectives
+public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
 {
     /// <summary>The maximum number of objective rows in one IGI1 definition.</summary>
     public const int ObjectiveSlotCount = 6;
@@ -219,6 +219,42 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     {
         get => _messages.Mirrored;
         set => _messages.Mirrored = value;
+    }
+
+    // As the match began: each edit variable's value, each level flow's verdict and clock, each area's count.
+    private (int[] Edits, (sbyte Complete, sbyte Failed, int Tick)[] Flows, int Tick) _start = ([], [], 0);
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        _start = ([.. _editVariables.Select(static e => e.Value)], [.. _levelFlows.Select(static f => (f.Complete, f.Failed, f.Tick))], _tick);
+        _messages.MarkLevelStart();
+        _areas.MarkLevelStart();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every counter, message and verdict as the match began, so a level's own expressions read what they read then.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        // A co-op client's counters, verdicts and messages are its server's, which sends them as they went back.
+        if (Mirrored)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _editVariables.Count && i < _start.Edits.Length; i++)
+        {
+            _editVariables[i].Value = _start.Edits[i];
+        }
+
+        for (int i = 0; i < _levelFlows.Count && i < _start.Flows.Length; i++)
+        {
+            (_levelFlows[i].Complete, _levelFlows[i].Failed, _levelFlows[i].Tick) = _start.Flows[i];
+        }
+
+        _tick = _start.Tick;
+        _messages.ResetToLevelStart();
+        _areas.ResetToLevelStart();
     }
 
     /// <summary>Writes the level's running state, for a co-op server's clients: counters, messages sent, result.</summary>

@@ -195,6 +195,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 
     private void BeginRound(IModeHost host, long tick)
     {
+        host.ResetLevel();
         foreach (int slot in host.PlayerSlots)
         {
             if (host.Match.Players.ContainsKey(slot))

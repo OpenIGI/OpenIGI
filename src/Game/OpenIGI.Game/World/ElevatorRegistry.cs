@@ -48,7 +48,7 @@ public sealed record PlacedElevator(
 }
 
 /// <summary>Collects, advances and presents the level's <c>Elevator</c> tasks.</summary>
-public sealed class ElevatorRegistry
+public sealed class ElevatorRegistry : ILevelReset
 {
     /// <summary>Horizontal radius (engine units) around the platform centre a player must be within.</summary>
     public const double PlayerInsideHorizontalRadius = 8192.0;
@@ -218,6 +218,48 @@ public sealed class ElevatorRegistry
         {
             elevator.IsSounding = false;
             _sounds(elevator, ElevatorSoundEvent.Stopped);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (ElevatorCommand command in _commands)
+        {
+            command.MarkLevelStart();
+        }
+
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            elevator.State.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Each car back where the match began, its calls as they were; its collision and what rides it with it (not its doors, whose
+    /// own reset puts them back) jump with it at once, because the next tick's move would carry only that tick's step.
+    /// </remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (ElevatorCommand command in _commands)
+        {
+            command.ResetToLevelStart();
+        }
+
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            elevator.State.ResetToLevelStart();
+            if (solids is not null)
+            {
+                ApplyCollision(solids, elevator);
+            }
+
+            if (elevator.IsSounding)
+            {
+                elevator.IsSounding = false;
+                _sounds?.Invoke(elevator, ElevatorSoundEvent.Stopped);
+            }
         }
     }
 
@@ -644,6 +686,12 @@ public sealed class ElevatorRegistry
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
         public List<ExteriorSwitchCall> ExteriorCalls { get; } = ExteriorCalls;
         public bool HasExteriorRequest { get; private set; }
+
+        private bool _startRequest;
+
+        public void MarkLevelStart() => _startRequest = HasExteriorRequest;
+
+        public void ResetToLevelStart() => HasExteriorRequest = _startRequest;
 
         public void ClearExteriorRequestAfterStart()
         {

@@ -25,6 +25,12 @@ public static class ClientReplication
             return;
         }
 
+        // A new round's level, put back here as the server's was, before anything it sent after is taken.
+        if (session.TakeLevelReset())
+        {
+            world.ResetToLevelStart();
+        }
+
         // The rest of the server's world first -- its lifts, its doors, and what it did to this client's player that the
         // client learns of only now, a knock among them -- so the server's word on the player below is weighed against a
         // prediction that has taken them. The snapshot's world stands after the server ran this client's command for
@@ -52,7 +58,10 @@ public static class ClientReplication
             world.ApplyOwn(own);
         }
 
-        if (session.SendCommand(world.LocalFrame, now) is { } sent)
+        ReadOnlySpan<float> frame = world.LocalFrame;
+        int use = (int)Player.PlayerInputSlot.Activate;
+        session.NoteUse(use < frame.Length && frame[use] > 0.5f, now);
+        if (session.SendCommand(frame, now) is { } sent)
         {
             session.Reconciler.Record(sent, world.LocalPosition, world.LocalPlatform);
         }

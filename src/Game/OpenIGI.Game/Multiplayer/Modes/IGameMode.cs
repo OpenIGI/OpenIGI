@@ -36,6 +36,12 @@ public interface IModeHost
     /// <summary>Puts a player back into the world, alive at a spawn point, and counts it alive.</summary>
     /// <param name="slot">The player's slot.</param>
     void Respawn(int slot);
+
+    /// <summary>Puts the level back as it stood when the session took it up, on the server and every client: a new round's or
+    /// a new match's start, before anyone is put back at a spawn.</summary>
+    void ResetLevel()
+    {
+    }
 }
 
 /// <summary>

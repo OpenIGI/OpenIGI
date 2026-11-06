@@ -16,6 +16,13 @@ public sealed partial class GameHost
     /// </remarks>
     public IRtcPeerFactory? RoomPeers { get; set; }
 
+    /// <summary>Gets or sets what opens a UDP socket on a port (0 for any), or <see langword="null"/> where this build has no UDP.</summary>
+    /// <remarks>
+    /// Set by the composition root before <see cref="Start"/>: with it the menu's server list asks servers on this network and
+    /// dedicated servers after directly, and joins them by address.
+    /// </remarks>
+    public Func<int, Net.INetTransport>? OpenUdp { get; set; }
+
     // Into a mission from over a played one -- a restart, or a co-op client following its server -- behind the same going-in
     // sequence: the frozen level under the menu is the picture held, the menu leaves, and the place comes back as asked.
     private void GoIntoMission(FrameLoopState state, int missionId)
@@ -113,5 +120,10 @@ public sealed partial class GameHost
                 .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
                 .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev",
             _logger)
+        {
+            OpenUdp = OpenUdp,
+            GamePath = () => _gamePath,
+            BookPath = OpenUdp is null ? null : Core.Configuration.SettingsPaths.GetFilePath("servers.json"),
+        }
         : null;
 }

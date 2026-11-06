@@ -116,6 +116,7 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
     // The match from nothing: scores cleared, everyone put back at a spawn, the clock started.
     private void BeginLive(IModeHost host, long tick)
     {
+        host.ResetLevel();
         host.Match.NewMap();
         foreach (int slot in host.PlayerSlots)
         {

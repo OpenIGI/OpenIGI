@@ -106,7 +106,21 @@ public sealed partial class ServerSession : IModeHost
     public Match Match { get; }
 
     /// <summary>Gets or sets the mode the match is played by; set before the first tick (the world's own by default).</summary>
-    public IGameMode Mode { get; set; }
+    /// <remarks>A new mode's rounds start the level afresh: it is marked again as the first of them begins.</remarks>
+    public IGameMode Mode
+    {
+        get => _mode;
+        set
+        {
+            _mode = value ?? throw new ArgumentNullException(nameof(value));
+            _levelMarked = false;
+        }
+    }
+
+    private IGameMode _mode = null!;
+
+    // Whether the level's start has been marked for this mode's rounds to go back to (IModeHost.ResetLevel).
+    private bool _levelMarked;
 
 
     /// <summary>Gets the world's ticks per second.</summary>
@@ -735,6 +749,7 @@ public sealed partial class ServerSession : IModeHost
         _world = world;
         Map = map;
         _epoch++;
+        _levelMarked = false;
 
         // A player away when the level changed is not kept into the next: if it comes back, it joins as anyone does.
         foreach ((int parked, double _) in _away.Values)

@@ -128,6 +128,16 @@ public interface IReplicatedWorld
     /// <param name="slot">The client's slot.</param>
     void Respawn(int slot);
 
+    /// <summary>Records the level as it stands, as what <see cref="ResetToLevelStart"/> puts back: as the session takes it up.</summary>
+    void MarkLevelStart()
+    {
+    }
+
+    /// <summary>Puts the level back as <see cref="MarkLevelStart"/> found it, without loading anything: a match's new round.</summary>
+    void ResetToLevelStart()
+    {
+    }
+
     /// <summary>Writes the level's running state for the clients to take, or nothing for a world without one.</summary>
     /// <returns>The state, or <see langword="null"/>.</returns>
     /// <remarks>Sent reliably to each client whenever it differs from what that client last had.</remarks>
@@ -186,6 +196,16 @@ public interface IReplicatedClientWorld
 {
     /// <summary>Gets the channel frame the client's own player ran on this tick, which is the command sent up for it.</summary>
     ReadOnlySpan<float> LocalFrame { get; }
+
+    /// <summary>Records the client's copy of the level as it stands, as what <see cref="ResetToLevelStart"/> puts back.</summary>
+    void MarkLevelStart()
+    {
+    }
+
+    /// <summary>Puts the client's copy of the level back as <see cref="MarkLevelStart"/> found it, as the server's was.</summary>
+    void ResetToLevelStart()
+    {
+    }
 
     /// <summary>Gets the entity ids of the other players shown.</summary>
     IReadOnlyCollection<int> Shown { get; }
@@ -317,6 +337,10 @@ public enum SessionMessage : byte
 
     /// <summary>A kill for the feed: a <see cref="Modes.KillNote"/>.</summary>
     KillNote = 15,
+
+    /// <summary>The level was put back to where the match began (a new round): a client puts its own copy back too, before
+    /// anything the server sends after it.</summary>
+    LevelReset = 17,
 
     /// <summary>
     /// The remote console: from a client, a password and a command for the server's console; from the server, its answer's lines.

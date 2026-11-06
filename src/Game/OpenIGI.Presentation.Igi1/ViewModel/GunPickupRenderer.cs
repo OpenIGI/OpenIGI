@@ -76,6 +76,18 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
     }
 
     /// <summary>Prepares the interpolated pickup transforms for one rendered frame.</summary>
+    /// <summary>Stops drawing a gun and lets go of its model: a round put the level back without it.</summary>
+    /// <param name="pickup">The gun.</param>
+    public void Remove(GunPickup pickup)
+    {
+        int at = _entries.FindIndex(e => ReferenceEquals(e.Pickup, pickup));
+        if (at >= 0)
+        {
+            _entries[at].Renderer.Dispose();
+            _entries.RemoveAt(at);
+        }
+    }
+
     public void BeginFrame(float tickFraction, bool smooth)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

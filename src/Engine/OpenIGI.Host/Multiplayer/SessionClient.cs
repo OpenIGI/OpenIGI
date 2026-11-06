@@ -232,6 +232,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             }
 
             _world = replicated.CreateClientWorld();
+            _world.MarkLevelStart();
             _level = replicated.Level;
             _levelMode = Mode;
             _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId), MultiplayerProtocol.Version);
@@ -323,6 +324,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         _world = next.CreateClientWorld();
+        _world.MarkLevelStart();
         _level = level;
         _levelMode = Mode;
         _session.Arrived();
@@ -385,7 +387,16 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session?.MatchState is { } state
-            ? Game.Multiplayer.Modes.MatchHud.Of(state, _clock.Elapsed.TotalSeconds - _session.MatchStateAt, CurrentScoreboard, LocalEntity, ownPosition, Layout)
+            ? Game.Multiplayer.Modes.MatchHud.Of(
+                state,
+                _clock.Elapsed.TotalSeconds - _session.MatchStateAt,
+                CurrentScoreboard,
+                LocalEntity,
+                ownPosition,
+                Layout,
+                _session.UseHeldSince is { } since
+                    ? new Game.Multiplayer.Modes.LocalUse(true, _clock.Elapsed.TotalSeconds - since)
+                    : new Game.Multiplayer.Modes.LocalUse(false, 0))
             : null;
 
     /// <inheritdoc/>

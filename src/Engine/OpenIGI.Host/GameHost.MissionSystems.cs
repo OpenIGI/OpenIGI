@@ -230,7 +230,7 @@ public sealed partial class GameHost
     // null for a map nobody laid out, which is played from the level's own start.
     private Game.Multiplayer.Modes.MpLayout? ArenaLayout(string title, string map)
     {
-        string name = $"LOCAL:multiplayer/{title}/{map}.json";
+        string name = Game.Multiplayer.Modes.MpLayout.ContentPath(title, map);
         string? json = null;
         if (_fileSystem.TryOpenRead(name, out Stream? stream))
         {

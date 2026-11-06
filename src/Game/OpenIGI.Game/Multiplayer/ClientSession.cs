@@ -143,6 +143,26 @@ public sealed class ClientSession
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    // Level resets the server has told of and the client has not yet made.
+    private int _levelResets;
+
+    /// <summary>Takes whether the server put its level back since the last call: the client's copy goes back too.</summary>
+    /// <returns><see langword="true"/> once for each reset told of (several at once are one).</returns>
+    public bool TakeLevelReset()
+    {
+        bool any = _levelResets > 0;
+        _levelResets = 0;
+        return any;
+    }
+
+    /// <summary>Gets when the local player's use key went down, on the session's clock; <see langword="null"/> while it is up.</summary>
+    public double? UseHeldSince { get; private set; }
+
+    /// <summary>Notes the local player's use key, as each command goes out.</summary>
+    /// <param name="held">Whether it is down.</param>
+    /// <param name="now">The session's clock.</param>
+    public void NoteUse(bool held, double now) => UseHeldSince = held ? UseHeldSince ?? now : null;
+
     /// <summary>Sends a command to the server's remote console.</summary>
     /// <param name="password">The server's remote console password.</param>
     /// <param name="command">The command, as its console takes it.</param>
@@ -546,6 +566,9 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
+                break;
+            case SessionMessage.LevelReset:
+                _levelResets++;
                 break;
             case SessionMessage.Rcon:
                 int lines = (int)reader.ReadBits(8);

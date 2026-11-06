@@ -32,6 +32,13 @@ internal sealed class GeneratorPowerState(
 
     public void Initialize() => IsOn = onCondition?.Invoke() ?? IsOn;
 
+    // As the match began.
+    private (bool Exploded, bool On, int Backup, bool? Mirrored, bool Running) _start;
+
+    public void MarkLevelStart() => _start = (_explodedWhenTicked, IsOn, BackupTimer, MirroredOn, _running);
+
+    public void ResetToLevelStart() => (_explodedWhenTicked, IsOn, BackupTimer, MirroredOn, _running) = _start;
+
     public void Tick()
     {
         _explodedWhenTicked = isExploded();

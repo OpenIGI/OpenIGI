@@ -111,8 +111,13 @@ public sealed record MatchHud
     /// <param name="localEntity">The local player's entity, or <see langword="null"/>.</param>
     /// <param name="ownPosition">Where the local player stands, in world units, or <see langword="null"/>.</param>
     /// <param name="layout">The map's layout, for the sites the player stands in, or <see langword="null"/>.</param>
+    /// <param name="use">
+    /// The local player's use key on a client, which starts and ends its own plant or defuse bar without waiting on the server;
+    /// <see langword="null"/> where the report is the mode's own (a listen host).
+    /// </param>
     /// <returns>The HUD, or <see langword="null"/> for a match with none (co-op).</returns>
-    public static MatchHud? Of(MatchState state, double secondsSince, Scoreboard? board, int? localEntity, Vector3d? ownPosition = null, MpLayout? layout = null)
+    public static MatchHud? Of(
+        MatchState state, double secondsSince, Scoreboard? board, int? localEntity, Vector3d? ownPosition = null, MpLayout? layout = null, LocalUse? use = null)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (state.Mode == GameModes.Coop || string.IsNullOrEmpty(state.Mode))
@@ -178,10 +183,13 @@ public sealed record MatchHud
             };
         }
 
-        hud = Work(hud, report, lines, own);
-        if (state.Phase == MatchPhase.Live && own is { IsAlive: true } alive && ownPosition is { } where)
+        ModeHint? could = state.Phase == MatchPhase.Live && own is { IsAlive: true } alive && ownPosition is { } where
+            ? HintFor(report, alive.Team, where, layout, false)
+            : null;
+        hud = Work(hud, report, lines, own, secondsSince, use, could is not null);
+        if (hud.Progress is null)
         {
-            hud = hud with { Hint = HintFor(report, alive.Team, where, layout, hud.Progress is not null) };
+            hud = hud with { Hint = could };
         }
 
         return hud with { Result = ResultOf(state, report, own, hud, left) };
@@ -205,20 +213,46 @@ public sealed record MatchHud
         return new TeamStrip(team, name, score, alive, own is { } o && o.Team == team);
     }
 
-    // The local player's own plant or defuse, and a teammate's.
-    private static MatchHud Work(MatchHud hud, ModeReport report, ScoreboardLine[] lines, ScoreboardLine? own)
+    // The local player's own plant or defuse, and a teammate's. A client's own bar starts as its key goes down and goes as it
+    // comes up, ahead of the server hearing of either; between reports each bar runs on by the time since.
+    private static MatchHud Work(MatchHud hud, ModeReport report, ScoreboardLine[] lines, ScoreboardLine? own, double secondsSince, LocalUse? use, bool canWork)
     {
+        bool reported = false;
         foreach (ModeWork work in report.Working)
         {
             string what = work.Defusing ? "DEFUSING" : "PLANTING";
             if (own is { } me && work.Slot == me.Slot)
             {
-                hud = hud with { Progress = work.Progress, ProgressLabel = $"{what} THE BOMB" };
+                reported = true;
+                if (use is { Held: false })
+                {
+                    continue;
+                }
+
+                double progress = work.Seconds > 0 ? work.Progress + (secondsSince / work.Seconds) : work.Progress;
+                if (use is { } local && work.Seconds > 0)
+                {
+                    progress = Math.Max(progress, local.Seconds / work.Seconds);
+                }
+
+                hud = hud with { Progress = (float)Math.Clamp(progress, 0, 1), ProgressLabel = $"{what} THE BOMB" };
             }
             else if (Array.FindIndex(lines, l => l.Slot == work.Slot) is var at and >= 0 && own is { } mine && lines[at].Team == mine.Team)
             {
                 hud = hud with { TeamNote = $"{lines[at].Name.ToUpperInvariant()} IS {what}" };
             }
+        }
+
+        if (!reported && canWork && use is { Held: true } held)
+        {
+            bool defusing = report.BombAt is not null;
+            BombSettings bomb = new();
+            double seconds = defusing ? bomb.DefuseSeconds : bomb.PlantSeconds;
+            hud = hud with
+            {
+                Progress = (float)Math.Clamp(held.Seconds / seconds, 0, 1),
+                ProgressLabel = defusing ? "DEFUSING THE BOMB" : "PLANTING THE BOMB",
+            };
         }
 
         return hud;

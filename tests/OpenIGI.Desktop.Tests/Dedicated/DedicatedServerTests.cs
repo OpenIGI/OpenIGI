@@ -33,6 +33,31 @@ public sealed class DedicatedServerTests
     }
 
     [Fact]
+    public void A_server_hosted_from_a_form_writes_a_config_the_server_reads_as_it_was_filled_in()
+    {
+        Core.Titles.DedicatedServerLaunch form = new()
+        {
+            Name = "Jones \"the\" host",
+            Port = 26005,
+            MaxPlayers = 40,
+            Password = "pw",
+            Mission = 3,
+            Mode = "sd",
+            Region = "eu",
+            Public = true,
+            Room = false,
+        };
+
+        List<string> problems = [];
+        ServerConfig config = ServerConfig.Parse(form.ToConfig().Split('\n', StringSplitOptions.TrimEntries), problems);
+
+        Assert.Empty(problems);
+        Assert.Equal("Jones 'the' host", config.Name);
+        Assert.Equal((26005, 32, "pw", "eu", true, false), (config.Port, config.MaxPlayers, config.Password, config.Region, config.Public, config.Room));
+        Assert.Equal([new RotationEntry(3, "sd")], config.Rotation);
+    }
+
+    [Fact]
     public void A_ban_keeps_a_key_out_until_it_runs_out_and_outlives_the_list_that_made_it()
     {
         string path = Path.Combine(Path.GetTempPath(), $"bans-{Guid.NewGuid():N}.json");

@@ -349,6 +349,38 @@ public sealed class SessionLoopbackTests
         Assert.Equal(["Wrong remote console password.", "Test  ·  mission toy", "  #0 one"], answers);
     }
 
+    [Fact]
+    public void A_level_reset_after_the_first_rounds_mark_reaches_each_client_once_on_the_reliable_line_even_over_a_lossy_one()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.05, 0.02, 0.2, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, 0.05, 0.02, 0.2, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        int resets = 0;
+        for (long tick = 0; tick < 6 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            // The first round's start marks the level; the next puts it back, and only that is told.
+            if (tick == 2 * TickRate || tick == 3 * TickRate)
+            {
+                ((OpenIGI.Game.Multiplayer.Modes.IModeHost)server).ResetLevel();
+            }
+
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            resets += client.TakeLevelReset() ? 1 : 0;
+            client.Flush(now);
+        }
+
+        Assert.Equal(1, resets);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);

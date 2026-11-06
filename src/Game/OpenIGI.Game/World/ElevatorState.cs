@@ -77,6 +77,7 @@ public sealed class ElevatorState
         PreviousPosition = startPosition;
         CurrentFloorIndex = FindStartFloor(startPosition, startFloorTaskId);
         LastFloorPosition = CurrentFloorIndex;
+        MarkLevelStart();
     }
 
     public Vector3d StartPosition { get; }
@@ -189,6 +190,31 @@ public sealed class ElevatorState
         _pendingDirection = 0;
         LastFloorPosition = FloorPosition;
     }
+
+    /// <summary>Records the car as it stands, for <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart() =>
+        _start = new Start(Motion, _pendingDirection, _pendingTargetFloor, _lastUp, _lastDown, _lastCanStart, LastFloorPosition, InactiveTicks);
+
+    /// <summary>Puts the car back as <see cref="MarkLevelStart"/> found it, its switches' memory with it.</summary>
+    /// <remarks>Its previous position stays where the car was, so whatever moves with it is moved by the jump.</remarks>
+    public void ResetToLevelStart()
+    {
+        Restore(_start.Motion);
+        _pendingDirection = _start.PendingDirection;
+        _pendingTargetFloor = _start.PendingTarget;
+        _lastUp = _start.LastUp;
+        _lastDown = _start.LastDown;
+        _lastCanStart = _start.LastCanStart;
+        LastFloorPosition = _start.LastFloor;
+        InactiveTicks = _start.Inactive;
+        IsStart = false;
+        IsStop = false;
+    }
+
+    private Start _start;
+
+    private readonly record struct Start(
+        ElevatorMotion Motion, int PendingDirection, int? PendingTarget, bool LastUp, bool LastDown, bool LastCanStart, double LastFloor, int Inactive);
 
     /// <summary>Gets where the car will be some ticks on from a motion, moving as it was told and told nothing more.</summary>
     /// <param name="motion">Where it starts.</param>

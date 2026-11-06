@@ -22,6 +22,9 @@ public sealed class GunPickup
     private (Vector3d Position, double Speed)? _impact;
     private Vector3d _drawPosition;
     private Matrix3f _drawOrientation;
+    private Vector3d _startPosition;
+    private Matrix3f _startOrientation;
+    private bool _startCollected;
 
     internal GunPickup(
         DeclaredTask? task,
@@ -33,8 +36,34 @@ public sealed class GunPickup
         Task = task;
         _position = position;
         _orientation = orientation;
+        _startPosition = position;
+        _startOrientation = orientation;
         Weapon = weapon;
         Ammo = ammo;
+    }
+
+    internal void MarkLevelStart()
+    {
+        _startPosition = Position;
+        _startOrientation = Orientation;
+        _startCollected = IsCollected;
+    }
+
+    // Back where the match began with it, lying still.
+    internal void ResetToLevelStart()
+    {
+        _position = _startPosition;
+        _orientation = _startOrientation;
+        _motion = null;
+        _previousMotion = null;
+        _body = null;
+        _rigid = null;
+        _retail = null;
+        _realistic = false;
+        _impact = null;
+        _drawPosition = _startPosition;
+        _drawOrientation = _startOrientation;
+        IsCollected = _startCollected;
     }
 
     /// <summary>Lays the pickup at rest where another machine has it: a co-op server's drop, as a client shows it.</summary>
@@ -231,13 +260,20 @@ public sealed class GunPickup
 /// <para>Presentation owns the sound and notification; this registry owns only the level data, range
 /// test and task lifetime.</para>
 /// </remarks>
-public sealed class GunPickupRegistry
+public sealed class GunPickupRegistry : ILevelReset
 {
     private readonly List<GunPickup> _items = [];
     private readonly List<GunPickupImpact> _impacts = [];
     private readonly AmmoTypeRegistry _ammunition;
     private ScriptVarRegistry? _variables;
     private bool _inWalk;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a taken pickup keeps its task: for a level a match's rounds put back
+    /// (<see cref="ILevelReset"/>), where the task has to be there to come back. The pickup is out of play by being taken either
+    /// way; only the original's deletion of its task, which nothing reads in such a level, is not done.
+    /// </summary>
+    public bool KeepsTakenTasks { get; set; }
 
     private GunPickupRegistry(AmmoTypeRegistry ammunition) => _ammunition = ammunition;
 
@@ -356,7 +392,7 @@ public sealed class GunPickupRegistry
         {
             if (pickup.Task is { } task)
             {
-                TakenPickupTask.BindUpdate(walker, task, () => pickup.IsCollected, _variables);
+                TakenPickupTask.BindUpdate(walker, task, () => pickup.IsCollected && !KeepsTakenTasks, _variables);
             }
         }
     }
@@ -366,7 +402,7 @@ public sealed class GunPickupRegistry
     private void Take(GunPickup pickup)
     {
         pickup.IsCollected = true;
-        if (!_inWalk && pickup.Task is { } task)
+        if (!_inWalk && !KeepsTakenTasks && pickup.Task is { } task)
         {
             TakenPickupTask.Delete(task, _variables);
         }
@@ -411,6 +447,47 @@ public sealed class GunPickupRegistry
 
     /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>
     public event Action<GunPickup>? Spawned;
+
+    /// <summary>Raised as a dropped gun leaves the level for good: a round put the level back without it.</summary>
+    public event Action<GunPickup>? Removed;
+
+    // The guns there were as the match began; every other was dropped since.
+    private readonly HashSet<GunPickup> _atStart = new(ReferenceEqualityComparer.Instance);
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        _atStart.Clear();
+        foreach (GunPickup pickup in _items)
+        {
+            pickup.MarkLevelStart();
+            _atStart.Add(pickup);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The guns there were as the match began lie where they lay then, taken or not as they were; every gun dropped since is
+    /// gone.
+    /// </remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        for (int i = _items.Count - 1; i >= 0; i--)
+        {
+            GunPickup pickup = _items[i];
+            if (!_atStart.Contains(pickup))
+            {
+                _items.RemoveAt(i);
+                Removed?.Invoke(pickup);
+            }
+            else
+            {
+                pickup.ResetToLevelStart();
+            }
+        }
+
+        _impacts.Clear();
+    }
 
     /// <summary>Advances runtime gun drops; authored level pickups remain fixed in place.</summary>
     public void Tick(RagdollWorld world)

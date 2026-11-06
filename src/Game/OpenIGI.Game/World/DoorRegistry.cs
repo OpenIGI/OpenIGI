@@ -436,7 +436,7 @@ public sealed record PlacedDoor(
 /// <see cref="Nearest"/> is the walker's broadcast query (<c>sub_446470</c> keeps the nearest answer
 /// and has <b>no radius cap</b>).
 /// </remarks>
-public sealed class DoorRegistry
+public sealed class DoorRegistry : ILevelReset
 {
     private readonly List<PlacedDoor> _doors = [];
 
@@ -595,6 +595,26 @@ public sealed class DoorRegistry
                 Tick(door);
                 ticked?.Invoke(door);
             });
+        }
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (PlacedDoor door in _doors)
+        {
+            door.State.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Each door as the match began, re-placed by its next tick; a sound it was making stops.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (PlacedDoor door in _doors)
+        {
+            door.State.ResetToLevelStart();
+            door.IsSounding = false;
         }
     }
 

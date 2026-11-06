@@ -9,6 +9,12 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 /// <summary>A co-op client's I.G.I. mission: its own player as usual, the others stood where the server's snapshots put them.</summary>
 public sealed class Igi1ClientWorld : IReplicatedClientWorld
 {
+    /// <inheritdoc/>
+    public void MarkLevelStart() => _game.MarkLevelStart();
+
+    /// <inheritdoc/>
+    public void ResetToLevelStart() => _game.ResetToLevelStart();
+
     private readonly Igi1Gameplay _game;
     private readonly Dictionary<int, Igi1NetworkPlayer> _others = [];
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];

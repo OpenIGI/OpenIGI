@@ -19,7 +19,7 @@ namespace OpenIGI.Game.World;
 /// same answer except for two objects at exactly the same distance, where the original's order decides.
 /// </para>
 /// </remarks>
-public sealed class RetailWorldObjects
+public sealed class RetailWorldObjects : ILevelReset
 {
     /// <summary>The grid cell size in world units (16 m).</summary>
     private const double Cell = 65536.0;
@@ -33,6 +33,35 @@ public sealed class RetailWorldObjects
 
     /// <summary>Gets how many objects were placed.</summary>
     public int Count => _objects.Count;
+
+    // The panes broken as the match began.
+    private readonly HashSet<RetailGlassPane> _brokenAtStart = [];
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        _brokenAtStart.Clear();
+        foreach (object item in _objects)
+        {
+            if (item is RetailRayModel { Owner: RetailGlassPane { IsBroken: true } pane })
+            {
+                _brokenAtStart.Add(pane);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every pane of glass as the match began, so a car meets it as it would have then.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (object item in _objects)
+        {
+            if (item is RetailRayModel { Owner: RetailGlassPane pane })
+            {
+                pane.IsBroken = _brokenAtStart.Contains(pane);
+            }
+        }
+    }
 
     /// <summary>Gets how many spline segments were skipped because they are laid rigid (path B, not transcribed).</summary>
     public int SkippedRigidSegments { get; private set; }

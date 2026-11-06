@@ -52,7 +52,7 @@ public sealed class GenericPickup
 /// <para>An <c>AmmoPickup</c> is touched the same way (<c>0x46D990</c>) but does not stay: its own update
 /// (<c>0x46D740</c>) deletes its task once taken, and that drops its <c>isPickedUp</c> (<see cref="TakenPickupTask"/>).</para>
 /// </remarks>
-public sealed class GenericPickupRegistry
+public sealed class GenericPickupRegistry : ILevelReset
 {
     private readonly List<GenericPickup> _items = [];
     private readonly Dictionary<GameTask, GenericPickup> _byTask = [];
@@ -123,6 +123,25 @@ public sealed class GenericPickupRegistry
     /// </summary>
     public bool Mirrored { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether a taken ammunition pickup keeps its task, as <see cref="GunPickupRegistry.KeepsTakenTasks"/>.</summary>
+    public bool KeepsTakenTasks { get; set; }
+
+    // Which were taken as the match began.
+    private bool[] _startCollected = [];
+
+    /// <inheritdoc/>
+    public void MarkLevelStart() => _startCollected = [.. _items.Select(static p => p.IsCollected)];
+
+    /// <inheritdoc/>
+    /// <remarks>Every pickup lies there again, or is gone, as it was when the match began.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        for (int i = 0; i < _items.Count; i++)
+        {
+            _items[i].IsCollected = i < _startCollected.Length && _startCollected[i];
+        }
+    }
+
     /// <summary>Takes a pickup out of the level, as walking over it does.</summary>
     /// <param name="pickup">The pickup.</param>
     /// <returns><see langword="false"/> when it was already taken.</returns>
@@ -151,7 +170,7 @@ public sealed class GenericPickupRegistry
         {
             if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
             {
-                TakenPickupTask.BindUpdate(walker, pickup.Task, () => pickup.IsCollected, _variables);
+                TakenPickupTask.BindUpdate(walker, pickup.Task, () => pickup.IsCollected && !KeepsTakenTasks, _variables);
             }
         }
     }

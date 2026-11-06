@@ -278,6 +278,7 @@ public sealed partial class Igi1PlayerSetup(
 
             // Every drop is drawn, a soldier's here or a co-op server's laid down on a client.
             gunPickups.Spawned += pickup => host.WeaponDropped(loaded, pickup);
+            gunPickups.Removed += host.WeaponRemoved;
             mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) => gunPickups.Spawn(position, orientation, weapon, velocity));
 
             // What a dropped gun lands on: the same solids and terrain a round strikes, as triangles

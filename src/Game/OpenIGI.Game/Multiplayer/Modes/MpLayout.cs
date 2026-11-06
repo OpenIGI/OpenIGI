@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenIGI.Core.Numerics;
 
@@ -70,6 +70,12 @@ public sealed record MpPoint(string Id, MpPointKind Kind, double[] Position, dou
 /// </remarks>
 public sealed record MpLayout
 {
+    /// <summary>Gets where a map's layout is read from in the game's content (a mod's first): one file a map, under its game.</summary>
+    /// <param name="title">The game, as <c>igi1</c>.</param>
+    /// <param name="map">The map, as the session names it.</param>
+    /// <returns>The content path.</returns>
+    public static string ContentPath(string title, string map) => $"LOCAL:multiplayer/{title}/{map}.json";
+
     /// <summary>The layout format this build reads.</summary>
     public const int CurrentFormat = 1;
 

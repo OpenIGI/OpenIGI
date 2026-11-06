@@ -99,7 +99,8 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         FuseLeft = PlantedAt is not null ? Math.Max(0, BlowsAt - tick) / (double)TickRate : 0,
         BombAt = PlantedAt is not null && !Exploded && !Defused ? PlantedAt : null,
         FuseSeconds = Bomb.FuseSeconds,
-        Working = [.. _holding.Select(h => new ModeWork(h.Key, ProgressOf(h.Key) ?? 0f, PlantedAt is not null))],
+        Working = [.. _holding.Select(h => new ModeWork(
+            h.Key, ProgressOf(h.Key) ?? 0f, PlantedAt is not null, (float)(PlantedAt is null ? Bomb.PlantSeconds : Bomb.DefuseSeconds)))],
     };
 
     /// <summary>Gets how far a player is with its plant or defuse, in <c>[0,1]</c>, or <see langword="null"/> when it is at neither.</summary>

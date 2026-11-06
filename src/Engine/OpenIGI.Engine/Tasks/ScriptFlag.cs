@@ -39,6 +39,15 @@ public sealed class ScriptFlag
     /// <summary>Copies the current value into the shadow. Call at the end of the owner's update.</summary>
     public void CommitTick() => Last = Value;
 
+    /// <summary>Puts the flag back as it once stood, both halves: a level put back to where a match began.</summary>
+    /// <param name="value">This tick's value.</param>
+    /// <param name="last">Last tick's.</param>
+    public void Restore(bool value, bool last)
+    {
+        Value = value;
+        Last = last;
+    }
+
     /// <summary>Ends a held pulse and exposes its previous value through the shadow for one tick.</summary>
     /// <remarks>
     /// IGI1 switches keep <c>isLastPressed</c> false while <c>isPressed</c> is held. When the three-tick

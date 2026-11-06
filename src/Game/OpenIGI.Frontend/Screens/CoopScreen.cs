@@ -28,6 +28,15 @@ public sealed class CoopScreen : ShellScreen
     private static readonly int[] ReviveChoices = [3, 5, 10];
     private static readonly int[] ToughnessChoices = [0, 50, 100, 150];
 
+    // What the server list shows: every line, or those of one kind.
+    private static readonly string[] Shows = ["ALL", "SERVERS", "ROOMS", "LAN", "SAVED", "RECENT"];
+    private int _show;
+
+    // What a dedicated server started here plays: the modes' ids, and how the form names them.
+    private static readonly string[] ServerModes = ["tdm", "ffa", "elim", "sd", "coop"];
+    private static readonly string[] ServerModeNames = ["Team deathmatch", "Free for all", "Elimination", "Search & destroy", "Co-op"];
+    private int _serverMode;
+
     private CoopStatus _shown;
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
 
@@ -153,10 +162,10 @@ public sealed class CoopScreen : ShellScreen
                 content.AddChild(Body(theme, "Friends join with this code, on the desktop or at openigi.com.", theme.TextMuted));
                 break;
             case CoopPhase.Playing:
-                content.AddChild(Body(theme, $"In room {status.Code}.", UiPalette.TextBody));
+                content.AddChild(Body(theme, status.Code is { } room ? $"In room {room}." : "On a server.", UiPalette.TextBody));
                 break;
             case CoopPhase.Connecting:
-                content.AddChild(Body(theme, status.Hosting ? "Opening a room…" : $"Finding room {status.Code}…", UiPalette.TextBody));
+                content.AddChild(Body(theme, status.Hosting ? "Opening a room…" : status.Code is { } finding ? $"Finding room {finding}…" : "Reaching the server…", UiPalette.TextBody));
                 break;
             default:
                 content.AddChild(Body(theme, $"Couldn't play together: {status.Error}.", theme.Danger));
@@ -191,6 +200,33 @@ public sealed class CoopScreen : ShellScreen
         line.Add(code, 0, 0);
         line.Add(join, 0, 1);
         column.AddChild(line);
+        var quick = new Button(theme, "QUICK PLAY")
+        {
+            Accent = ButtonAccent.Ghost,
+            TextSize = 16f,
+            Tracking = 0.18f,
+            Padding = new Thickness(22f, 12f),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Tooltip = "Join the best open game listed: near, with people in it, room for you.",
+        };
+        quick.Activated += _ => coop.QuickPlay();
+        var again = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12f };
+        again.AddChild(quick);
+        if (coop.LastPlayed is { } last)
+        {
+            var reconnect = new Button(theme, "RECONNECT")
+            {
+                Accent = ButtonAccent.Ghost,
+                TextSize = 16f,
+                Tracking = 0.18f,
+                Padding = new Thickness(22f, 12f),
+                Tooltip = $"Join {last} again, where you last played.",
+            };
+            reconnect.Activated += _ => coop.Reconnect();
+            again.AddChild(reconnect);
+        }
+
+        column.AddChild(again);
         return column;
     }
 
@@ -203,21 +239,31 @@ public sealed class CoopScreen : ShellScreen
         layout.ColumnDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
-        layout.Add(new GroupHeader(theme, "Open rooms"), 0, 0);
-        var refresh = new Button(theme, "REFRESH") { Accent = ButtonAccent.Text, TextSize = 15f, Tracking = 0.18f, Padding = new Thickness(8f, 4f), VerticalAlignment = VerticalAlignment.Center };
+        layout.Add(new GroupHeader(theme, "Servers and rooms"), 0, 0);
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8f, VerticalAlignment = VerticalAlignment.Center };
+        var show = new Button(theme, Shows[_show]) { Accent = ButtonAccent.Text, TextSize = 15f, Tracking = 0.18f, Padding = new Thickness(8f, 4f), Tooltip = "Which servers the list shows." };
+        show.Activated += _ =>
+        {
+            _show = (_show + 1) % Shows.Length;
+            Invalidate();
+        };
+        var refresh = new Button(theme, "REFRESH") { Accent = ButtonAccent.Text, TextSize = 15f, Tracking = 0.18f, Padding = new Thickness(8f, 4f) };
         refresh.Activated += _ => coop.RefreshListing();
-        layout.Add(refresh, 0, 1);
+        tools.AddChild(show);
+        tools.AddChild(refresh);
+        layout.Add(tools, 0, 1);
 
-        if (coop.Listing is { Count: 0 } && coop.ListingError is null)
+        IReadOnlyList<CoopRoomInfo>? listed = coop.Listing?.Where(Shown).ToList();
+        if (listed is { Count: 0 } && coop.ListingError is null)
         {
             layout.Add(BuildNoRooms(theme), 1, 0, columnSpan: 2);
             return layout;
         }
 
         var rows = new StackPanel { Orientation = Orientation.Vertical };
-        if (coop.Listing is not { } rooms)
+        if (listed is not { } rooms)
         {
-            rows.AddChild(Body(theme, "Looking for rooms…", theme.TextMuted));
+            rows.AddChild(Body(theme, "Looking for servers…", theme.TextMuted));
         }
         else if (coop.ListingError is { } error)
         {
@@ -233,13 +279,36 @@ public sealed class CoopScreen : ShellScreen
                 var card = new ListCard(
                     theme,
                     string.Create(CultureInfo.InvariantCulture, $"{room.Players}/{room.MaxPlayers}"),
-                    $"{room.Name}  ·  {mission}")
+                    Describe(room, mission))
                 {
-                    IsEnabled = room.Players < room.MaxPlayers,
+                    IsEnabled = room.Players < room.MaxPlayers && room.Compatible,
+                    Tooltip = room.Compatible ? string.Empty : "This server runs another version of the game.",
                 };
                 string join = room.Code;
                 card.Activated += _ => coop.Join(join);
-                rows.AddChild(card);
+
+                var line = new Grid { ColumnSpacing = 8f };
+                line.RowDefinitions.Add(GridLength.Auto);
+                line.ColumnDefinitions.Add(GridLength.Star);
+                line.ColumnDefinitions.Add(GridLength.Auto);
+                line.Add(card, 0, 0);
+                bool favourite = room.Favourite;
+                var keep = new Button(theme, favourite ? "SAVED" : "SAVE")
+                {
+                    Accent = favourite ? ButtonAccent.Solid : ButtonAccent.Ghost,
+                    TextSize = 13f,
+                    Tracking = 0.16f,
+                    Padding = new Thickness(10f, 6f),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tooltip = favourite ? "Take it off your saved servers." : "Keep it in your saved servers, asked after even when it isn't listed.",
+                };
+                keep.Activated += _ =>
+                {
+                    coop.SetFavourite(join, !favourite);
+                    Invalidate();
+                };
+                line.Add(keep, 0, 1);
+                rows.AddChild(line);
             }
         }
 
@@ -247,6 +316,27 @@ public sealed class CoopScreen : ShellScreen
         scroll.SetContent(rows);
         layout.Add(scroll, 1, 0, columnSpan: 2);
         return layout;
+    }
+
+    // Whether the list's choice of kind shows a line.
+    private bool Shown(CoopRoomInfo room) => _show switch
+    {
+        1 => room.Dedicated,
+        2 => !room.Dedicated && !room.Lan,
+        3 => room.Lan,
+        4 => room.Favourite,
+        5 => room.Recent,
+        _ => true,
+    };
+
+    // A line's name, then what it plays, and how near it is once it has answered.
+    private static string Describe(CoopRoomInfo room, string mission)
+    {
+        string mode = room.Mode.Length > 0 ? $"  ·  {room.Mode.ToUpperInvariant()}" : string.Empty;
+        string kind = room.Lan ? "  ·  LAN" : room.Dedicated ? "  ·  SERVER" : string.Empty;
+        string ping = room.PingMs is { } ms ? string.Create(CultureInfo.InvariantCulture, $"  ·  {ms} ms") : string.Empty;
+        string locked = room.Passworded ? "  ·  PASSWORD" : string.Empty;
+        return $"{room.Name}  ·  {mission}{mode}{kind}{ping}{locked}";
     }
 
     // No public rooms: said on a faint panel.
@@ -259,7 +349,7 @@ public sealed class CoopScreen : ShellScreen
             TintBottom = Bgra32.FromRgba(10, 11, 12, 150),
             VerticalAlignment = VerticalAlignment.Top,
         };
-        panel.AddChild(new Label(theme.Body, "No public rooms right now.", 16f, UiPalette.TextBody));
+        panel.AddChild(new Label(theme.Body, "Nothing to show here right now.", 16f, UiPalette.TextBody));
         return panel;
     }
 
@@ -353,6 +443,11 @@ public sealed class CoopScreen : ShellScreen
             column.AddChild(host);
         }
 
+        if (coop.CanHostServer && missions.Count > 0)
+        {
+            column.AddChild(BuildServer(theme, coop));
+        }
+
         var panel = new GlassPanel(theme)
         {
             Tint = Bgra32.FromRgba(16, 17, 19, 214),
@@ -362,6 +457,49 @@ public sealed class CoopScreen : ShellScreen
         };
         panel.AddChild(column);
         return panel;
+    }
+
+    // A dedicated server on this machine, for the mission and listing above and a mode of its own: started headless, then joined
+    // as any player joins it; or, while one runs, what it does and the way to stop it.
+    private StackPanel BuildServer(UiTheme theme, ICoopRooms coop)
+    {
+        var column = new StackPanel { Orientation = Orientation.Vertical };
+        column.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.08f) });
+        column.AddChild(Section(theme, "Dedicated server"));
+        if (coop.ServerStatus is { } status)
+        {
+            column.AddChild(new Label(theme.Body, status, 15f, UiPalette.TextBody) { Wrap = true, Margin = new Thickness(20f, 4f, 20f, 8f) });
+            var stop = new Button(theme, "STOP SERVER") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(22f, 12f), Margin = new Thickness(20f, 4f, 20f, 20f), HorizontalAlignment = HorizontalAlignment.Left };
+            stop.Activated += _ =>
+            {
+                coop.StopServer();
+                Invalidate();
+            };
+            column.AddChild(stop);
+            return column;
+        }
+
+        OptionCycler mode = Row(theme, "Mode", ServerModeNames, _serverMode, "What the server plays. It runs on its own, with no window, until you stop it or leave the game.");
+        mode.SelectionChanged += index => _serverMode = index;
+        column.AddChild(mode);
+        var start = new Button(theme, "HOST SERVER")
+        {
+            Accent = ButtonAccent.Ghost,
+            TextSize = 16f,
+            Tracking = 0.18f,
+            Padding = new Thickness(22f, 12f),
+            Margin = new Thickness(20f, 8f, 20f, 20f),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Tooltip = "Start a dedicated server on this machine for the mission above, then join it. Others reach it on UDP port 26001.",
+        };
+        start.Activated += _ =>
+        {
+            IReadOnlyList<MissionInfo> missions = Context.Missions;
+            coop.HostServer(missions[Math.Clamp(_mission, 0, missions.Count - 1)].Id, ServerModes[_serverMode], listed: _listing == 0);
+            Invalidate();
+        };
+        column.AddChild(start);
+        return column;
     }
 
     // HOST: the mission, difficulty and listing chosen.

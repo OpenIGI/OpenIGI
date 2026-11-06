@@ -1,5 +1,7 @@
+﻿using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.World;
 using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -146,6 +148,65 @@ public sealed class Igi1VersusTests
 
         Assert.True(pair.RunUntil(() => mode.Flow.Round == 2 && !partner.IsDead, 30 * 8) >= 0, "round 2 never began with everyone standing");
         Assert.Equal(1, pair.Session.Session.Match.ScoreOf(hostTeam));
+    }
+
+    [RequiresGameDataFact]
+    public void A_new_round_puts_the_level_back_on_the_server_and_the_joiner_with_no_load()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.Elimination);
+        ServerSession session = pair.Session.Session!;
+        IGameMode mode = session.Mode;
+        Igi1Gameplay server = pair.Host!;
+        Igi1Gameplay joiner = pair.Joiner!;
+        Assert.True(pair.RunUntil(() => mode.Flow.Phase == MatchPhase.Live, 30 * 30) >= 0, "the first round never began");
+
+        // The round's play: doors opened, the level's guns taken, a gun dropped, something broken.
+        PlacedDoor[] doors = [.. server.World.Doors!.Doors.Take(3)];
+        Assert.NotEmpty(doors);
+        foreach (PlacedDoor door in doors)
+        {
+            door.State.CommandOpen();
+        }
+
+        GunPickup[] guns = [.. server.World.GunPickups!.Items.Where(static g => g.Task is not null && !g.IsCollected).Take(2)];
+        foreach (GunPickup gun in guns)
+        {
+            server.World.GunPickups.Withdraw(gun);
+        }
+
+        int gunsAtStart = server.World.GunPickups.Items.Count;
+        GunPickup dropped = server.World.GunPickups.Spawn(server.World.Player!.Body.Position, Core.Numerics.Matrix3f.Identity, guns.Length > 0 ? guns[0].Weapon : server.World.WeaponTypes!.Weapons[0]);
+        DestructibleObject? broken = server.World.Destructibles!.Objects.FirstOrDefault(static o => !o.IsDestroyed);
+        if (broken is not null)
+        {
+            server.World.Destructibles.TryDestroy(broken.Owner, broken.Placement, float.MaxValue);
+        }
+
+        Assert.True(pair.RunUntil(() => doors.All(static d => d.State.IsFullyOpen), 30 * 5) >= 0, "the doors never opened");
+        Assert.True(pair.RunUntil(() => joiner.World.Doors!.Doors.Take(doors.Length).All(static d => d.State.IsFullyOpen), 30 * 5) >= 0,
+            "the joiner never saw the doors open");
+
+        // The round ends; the next begins with the level as the match found it, on both games.
+        ((IModeHost)session).World.KillPlayer(0);
+        Assert.True(pair.RunUntil(() => mode.Flow.Round == 2 && mode.Flow.Phase == MatchPhase.Live, 30 * 20) >= 0, "round 2 never began");
+        pair.RunUntil(() => false, 3);
+
+        foreach (Igi1Gameplay game in new[] { server, joiner })
+        {
+            string who = ReferenceEquals(game, server) ? "server" : "joiner";
+            Assert.All(game.World.Doors!.Doors.Take(doors.Length), d => Assert.True(d.State.IsFullyClosed, $"a door stayed open on the {who}"));
+            Assert.DoesNotContain(dropped, game.World.GunPickups!.Items);
+            if (broken is not null)
+            {
+                Assert.False(game.World.Destructibles!.IsDestroyed(broken.Owner), $"{broken.TypeName} stayed broken on the {who}");
+            }
+        }
+
+        Assert.Equal(gunsAtStart, server.World.GunPickups.Items.Count);
+        Assert.All(guns, g => Assert.False(g.IsCollected, "a gun the round took stayed taken on the server"));
+        Assert.All(
+            joiner.World.GunPickups!.Items.Where(g => guns.Any(t => ReferenceEquals(t.Task, g.Task) || (t.Task is not null && g.Task?.Id == t.Task.Id))),
+            g => Assert.False(g.IsCollected, "a gun the round took stayed taken on the joiner"));
     }
 
     [RequiresGameDataFact]

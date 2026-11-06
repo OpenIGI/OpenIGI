@@ -20,8 +20,14 @@ public sealed class RetailCarWorld(
     RetailWorldObjects? objects = null,
     Func<IReadOnlyList<RetailRayModel>>? vehicles = null,
     Func<object, bool>? present = null,
-    Func<RetailGlassPane, Vector3d, bool>? touchGlass = null) : IRetailCarWorld
+    Func<RetailGlassPane, Vector3d, bool>? touchGlass = null) : IRetailCarWorld, ILevelReset
 {
+    /// <inheritdoc/>
+    public void MarkLevelStart() => objects?.MarkLevelStart();
+
+    /// <inheritdoc/>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids) => objects?.ResetToLevelStart(solids);
+
     private readonly RetailTerrainRay _terrain = terrain ?? throw new ArgumentNullException(nameof(terrain));
 
     /// <inheritdoc/>

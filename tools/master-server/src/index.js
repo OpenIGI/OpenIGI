@@ -4,7 +4,7 @@
 // at the address its heartbeat came from (CF-Connecting-IP), never at an address it claims, so nobody can list a
 // server on someone else's machine. One Durable Object holds the whole list: a few hundred entries at most.
 
-import { handleRooms, readGeo } from "./rooms.js";
+import { handleRooms, isCode as isRoomCode, readGeo } from "./rooms.js";
 
 export { Room } from "./rooms.js";
 export { Relays } from "./relays.js";
@@ -12,6 +12,9 @@ export { Relays } from "./relays.js";
 const ENTRY_TTL_MS = 90_000;
 const MAX_SERVERS_PER_IP = 8;
 const MAX_FIELD = 64;
+
+// The regions a server may say it plays from (server.cfg's region).
+const REGIONS = ["eu", "na", "sa", "asia", "oce", "af", "me"];
 
 // Live rooms one address may have open at once, public or not.
 const MAX_ROOMS_PER_IP = 4;
@@ -108,7 +111,9 @@ export class ServerList {
       const protocol = url.searchParams.get("protocol");
       const matches = (s) => (!title || s.title === title) && (!protocol || s.protocol === protocol);
       const servers = [...this.servers.values()].filter(matches).map(publicView);
-      const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view)).map((r) => r.view);
+      // A dedicated server's own room is the server, listed once.
+      const servedRooms = new Set(servers.map((s) => s.room).filter(Boolean));
+      const rooms = [...this.rooms.values()].filter((r) => r.public && matches(r.view) && !servedRooms.has(r.view.room)).map((r) => r.view);
       return json({ servers: [...servers, ...rooms] });
     }
 
@@ -209,6 +214,18 @@ function validate(body, ip, now) {
     return "players/maxPlayers out of range";
   }
 
+  // Where it plays from, for the browser's filter: one of the listed regions, or none said.
+  const region = body.region === undefined || body.region === "" ? null : String(body.region).toLowerCase();
+  if (region !== null && !REGIONS.includes(region)) {
+    return `region must be one of ${REGIONS.join(", ")}`;
+  }
+
+  // The room browsers join it through, which the list shows once, as this server, not again as a room of its own.
+  const room = body.room === undefined || body.room === "" ? null : String(body.room).toUpperCase();
+  if (room !== null && !isRoomCode(room)) {
+    return "room is not a room code";
+  }
+
   for (const field of ["title", "protocol", "name", "map", "mode", "version"]) {
     if (typeof body[field] !== "string" || body[field].length === 0 || body[field].length > MAX_FIELD) {
       return `${field} must be a string of 1-${MAX_FIELD} characters`;
@@ -228,6 +245,8 @@ function validate(body, ip, now) {
     players: Math.min(players, maxPlayers),
     maxPlayers,
     passworded: body.passworded === true,
+    region,
+    room,
     lastSeen: now,
   };
 }

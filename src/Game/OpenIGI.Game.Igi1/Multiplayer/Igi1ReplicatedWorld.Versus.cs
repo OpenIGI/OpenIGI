@@ -143,8 +143,29 @@ public sealed partial class Igi1ReplicatedWorld
     public bool TryPlayVersus(bool teams)
     {
         _versus = teams ? Versus.Teams : Versus.Everyone;
+
+        // No cameras in an arena: they would only raise an alarm for soldiers who are not there.
+        _game.World.SecurityCameras?.SwitchedOff = true;
+
+        // Nor the level's scenes, which would take the players' views from them mid-round.
+        _game.World.Cutscenes?.Held = true;
+
+        // A match's rounds put the level back, so a pickup taken keeps its task to come back to.
+        _game.World.GunPickups?.KeepsTakenTasks = true;
+        _game.World.GenericPickups?.KeepsTakenTasks = true;
         PutHostInArena();
         return true;
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart() => _game.MarkLevelStart();
+
+    /// <inheritdoc/>
+    /// <remarks>Who took which gun goes with the guns.</remarks>
+    public void ResetToLevelStart()
+    {
+        _game.ResetToLevelStart();
+        _takenBy.Clear();
     }
 
     /// <summary>Gets a value indicating whether the players fight each other rather than the level together.</summary>

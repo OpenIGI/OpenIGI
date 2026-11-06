@@ -18,6 +18,32 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public class MissionState : IInspectableMission
 {
+    /// <summary>Gets the parts of the level a match's rounds put back, in the order they go back.</summary>
+    /// <remarks>
+    /// Lifts before doors, so a door riding a car is re-placed against the car where it stands again. A title with parts of
+    /// its own adds them (<see cref="ILevelReset"/>); every part listed here that is <see langword="null"/> is skipped.
+    /// </remarks>
+    protected virtual IEnumerable<ILevelReset?> LevelParts =>
+        [Elevators, Doors, Interactions, GunPickups, GenericPickups, AlarmSpeakers, Destructibles, SecurityCameras, RotatingObjects, Objectives];
+
+    /// <summary>Records the whole level as it stands now, as what <see cref="ResetToLevelStart"/> puts back.</summary>
+    public void MarkLevelStart()
+    {
+        foreach (ILevelReset? part in LevelParts)
+        {
+            part?.MarkLevelStart();
+        }
+    }
+
+    /// <summary>Puts the whole level back as <see cref="MarkLevelStart"/> found it, without loading anything.</summary>
+    public void ResetToLevelStart()
+    {
+        foreach (ILevelReset? part in LevelParts)
+        {
+            part?.ResetToLevelStart(Solids);
+        }
+    }
+
     private LevelCollision _collision = LevelCollision.Empty;
 
     /// <summary>Gets or sets the doors.</summary>

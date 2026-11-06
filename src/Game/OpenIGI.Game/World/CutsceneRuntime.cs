@@ -450,6 +450,13 @@ public sealed partial class CutsceneRuntime
     /// <summary>Gets or sets whether the scenes run when a co-op server's do, rather than when their own expressions hold.</summary>
     public bool Mirrored { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether no scene runs, whatever its expressions say: a versus match's arena, where a
+    /// scene would take the players' views and bodies from them mid-round -- the level's intro among them, and one a new
+    /// round's counters would start again.
+    /// </summary>
+    public bool Held { get; set; }
+
     /// <summary>Writes which scenes are running and which have finished, for a co-op server's clients.</summary>
     /// <param name="writer">Where to.</param>
     public void WriteRuns(BitWriter writer)
@@ -624,9 +631,9 @@ public sealed partial class CutsceneRuntime
         }
         else
         {
-            scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
+            scene.IsRun = !Held && (string.IsNullOrWhiteSpace(scene.Run)
                 ? scene.InitialRun && !scene.IsFinished
-                : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+                : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene));
         }
 
         if (!wasRun && scene.IsRun)
