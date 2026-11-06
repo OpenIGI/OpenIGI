@@ -358,6 +358,31 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         _session?.MatchState is { } state ? state.Banner(_clock.Elapsed.TotalSeconds - _session.MatchStateAt) : null;
 
     /// <inheritdoc/>
+    public void Poll()
+    {
+        _session?.Poll(_clock.Elapsed.TotalSeconds);
+        foreach (string line in _session?.TakeRconAnswers() ?? [])
+        {
+            _logger.Information("Rcon", line);
+        }
+    }
+
+    /// <summary>Sends a command to the server's remote console; its answer is told in the log as it comes.</summary>
+    /// <param name="password">The server's remote console password.</param>
+    /// <param name="command">The command.</param>
+    /// <returns><see langword="true"/> when there is a server to send it to.</returns>
+    public bool SendRcon(string password, string command)
+    {
+        if (_session is null)
+        {
+            return false;
+        }
+
+        _session.SendRcon(password, command);
+        return true;
+    }
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session?.MatchState is { } state
             ? Game.Multiplayer.Modes.MatchHud.Of(state, _clock.Elapsed.TotalSeconds - _session.MatchStateAt, CurrentScoreboard, LocalEntity, ownPosition, Layout)

@@ -125,6 +125,38 @@ public sealed class NetSessionTests
     }
 
     [Fact]
+    public void A_line_with_no_latency_reads_no_ping_however_long_the_server_waits_for_its_tick()
+    {
+        // On one machine: the server reads its socket every pass but answers only on its tick, a fifth of a second apart --
+        // the wait that read as a 35 ms ping on localhost. Its acks carry that wait, and both ends take it off.
+        using NetSessionHarness session = new();
+        NetSessionHarness.ClientEnd client = Join(session);
+        double now = session.Now;
+        for (int pass = 1; pass <= 4000; pass++)
+        {
+            now += 0.001;
+            session.Server.Update(now);
+            while (session.Server.TryReceive(out _))
+            {
+            }
+
+            client.Client.Update(now);
+            while (client.Client.TryReceive(out _))
+            {
+            }
+
+            client.Client.Flush(now);
+            if (pass % 33 == 0)
+            {
+                session.Server.Flush(now);
+            }
+        }
+
+        Assert.InRange(client.Client.Connection!.Statistics.RoundTripTime, 0, 0.005);
+        Assert.InRange(session.Server.GetConnection(client.Client.Slot)!.Statistics.RoundTripTime, 0, 0.005);
+    }
+
+    [Fact]
     public void AdmissionCanTurnAClientDownWithAReason()
     {
         using NetSessionHarness session = new(new NetServerOptions { Admit = r => NetAdmission.Reject("wrong password") });

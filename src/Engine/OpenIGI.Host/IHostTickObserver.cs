@@ -58,6 +58,11 @@ public interface IHostTickObserver
     /// <summary>Called just after the game has run a tick.</summary>
     /// <param name="title">What ticked.</param>
     void AfterTitleTick(object title);
+
+    /// <summary>Called every pass of the host's loop, ticks or not: a session reads its socket, so a packet is timed as it arrives.</summary>
+    void Poll()
+    {
+    }
 }
 
 /// <summary>The host's observers.</summary>

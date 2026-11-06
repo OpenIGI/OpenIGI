@@ -670,6 +670,7 @@ public sealed partial class GameHost : IDisposable
 
             // The editor opening or closing, or loading a mission, at the same boundary: each swaps what is drawn.
             ApplyEditorRequests(state);
+            ApplyMissionAsked();
 
             // The frame's input and its world, in the order each one has to see the keys and the clock. While the
             // editor is open it owns the input -- the shell, the player and the game's own keys stand down -- and
@@ -725,6 +726,9 @@ public sealed partial class GameHost : IDisposable
                 pausableLevel.IsPaused = _menuFlow.PauseMenu || PresentationHoldsLevel || EditorHoldsLevel;
             }
 
+            // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
+            TickObserver?.Poll();
+
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
             state.LastOutcome = outcome;
@@ -765,7 +769,7 @@ public sealed partial class GameHost : IDisposable
 
             TickMission(state, outcome);
 
-            if (outcome != FrameOutcome.Render)
+            if (outcome != FrameOutcome.Render || _options.SimulationOnly)
             {
                 continue;
             }

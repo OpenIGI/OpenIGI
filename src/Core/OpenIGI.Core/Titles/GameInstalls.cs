@@ -1,25 +1,32 @@
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
-using OpenIGI.Core.Titles;
 
-namespace OpenIGI.Launcher.Services;
+namespace OpenIGI.Core.Titles;
 
 /// <summary>
-/// Looks for a player's own copy of a game everywhere it is likely to be: the folders <see cref="GameStarter"/>
-/// knows, every Steam library, and GOG's installs.
+/// Looks for a player's own copy of a game everywhere it is likely to be: the usual install folders, every Steam library,
+/// and GOG's installs. The launcher's first-run guide and the dedicated server both ask it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Slower than <see cref="GameStarter.Locate"/>, which the launcher asks on every refresh: this one lists folders,
-/// so it runs once, off the frame, when the first-run guide asks where the game is.
+/// It lists folders, so it is asked once, off any frame: when the launcher's first-run guide asks where the game is, or as a
+/// server starts without being told.
 /// </para>
 /// <para>
 /// A store's folder is not taken on trust. Every folder found is a candidate only, and counts when the game's
 /// signature file is in it or in its <c>pc</c> folder, the same proof the game itself asks for.
 /// </para>
 /// </remarks>
-internal static partial class GameFinder
+public static partial class GameInstalls
 {
+    /// <summary>Whether a folder holds an installation of a title.</summary>
+    /// <param name="title">The title.</param>
+    /// <param name="folder">The folder.</param>
+    /// <returns>Whether the title's signature file is there.</returns>
+    public static bool IsInstallation(GameTitle title, string? folder) =>
+        title is not null && !string.IsNullOrWhiteSpace(folder) && File.Exists(Path.Combine(folder.Trim().Trim('"'), title.SignatureFile));
+
+
     /// <summary>Finds every installation of a title on this machine.</summary>
     /// <param name="title">The title.</param>
     /// <returns>The installation folders, each once, in the order found.</returns>
@@ -28,7 +35,7 @@ internal static partial class GameFinder
         ArgumentNullException.ThrowIfNull(title);
         string? variable = Environment.GetEnvironmentVariable(title == GameTitle.Igi2 ? "IGI2_GAME_PATH" : "IGI_GAME_PATH");
 
-        IEnumerable<string?> candidates = GameStarter.Candidates(title)
+        IEnumerable<string?> candidates = Candidates(title)
             .Prepend(variable)
             .Concat(StoreFolders().SelectMany(ChildrenOf));
 
@@ -63,8 +70,8 @@ internal static partial class GameFinder
         }
 
         string trimmed = folder.Trim().Trim('"');
-        return GameStarter.IsInstallation(title, trimmed) ? trimmed
-            : GameStarter.IsInstallation(title, Path.Combine(trimmed, "pc")) ? Path.Combine(trimmed, "pc")
+        return IsInstallation(title, trimmed) ? trimmed
+            : IsInstallation(title, Path.Combine(trimmed, "pc")) ? Path.Combine(trimmed, "pc")
             : null;
     }
 
@@ -207,4 +214,31 @@ internal static partial class GameFinder
 
     [GeneratedRegex("\"path\"\\s+\"([^\"]+)\"", RegexOptions.IgnoreCase)]
     private static partial Regex LibraryPath();
+
+    /// <summary>Where retail installs of a title land by default, and the folders people commonly use.</summary>
+    /// <param name="title">The title.</param>
+    /// <returns>The folders, whether or not they exist.</returns>
+    public static IEnumerable<string> Candidates(GameTitle title)
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string[] names = title == GameTitle.Igi2
+            ? [Path.Combine("IGI 2 Covert Strike", "pc"), Path.Combine("I.G.I 2 Covert Strike", "pc"), Path.Combine("IGI2", "pc")]
+            : ["Project IGI", Path.Combine("Project IGI", "pc"), Path.Combine("I'm Going In", "pc"), "IGI"];
+        string[] roots = OperatingSystem.IsWindows()
+            ? [
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                @"C:\Games",
+                Path.Combine(home, "Games"),
+            ]
+            : [Path.Combine(home, "Games"), home];
+
+        foreach (string root in roots.Where(static r => !string.IsNullOrEmpty(r)))
+        {
+            foreach (string name in names)
+            {
+                yield return Path.Combine(root, name);
+            }
+        }
+    }
 }

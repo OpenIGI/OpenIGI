@@ -308,6 +308,13 @@ public sealed partial class GameHost
         _lastWarmUpMilliseconds = _loop.TimeSource.Milliseconds;
 
         _warmUp = new MissionWarmUpGate(FrameCVars.MissionWarmUp.Value);
+
+        // Nobody watches a dedicated server's level: there is no picture to settle, so nothing to withhold it for.
+        if (_options.SimulationOnly)
+        {
+            return;
+        }
+
         _warmUp.Begin();
 
         // A level started with nothing on screen -- the command line's -mission -- has no picture to

@@ -1,0 +1,26 @@
+# OpenIGI dedicated server settings. Copy to server.cfg beside the server and edit.
+# One setting a line: key value. Quote a value with spaces. # or // starts a comment.
+# Anything given on the command line (-servername, -port, -maxplayers, -password, -mode, -mission) wins over this file.
+
+name "My OpenIGI server"      # shown in the server browser
+port 26001                    # UDP; open it in your firewall for desktop players
+maxplayers 16                 # 1-32
+password ""                   # empty: anyone may join
+motd "Welcome! Be nice."      # told to each player as they join
+rcon_password ""              # set to allow the remote console: in game, rcon_password <pw> then rcon <command>
+region eu                     # shown in the browser: eu, na, sa, asia, oce, af, me
+
+public 1                      # list on the master server (openigi.com server browser)
+room 1                        # also host a WebRTC room, so browser players can join without opening ports
+
+bans bans.json                # banned players' keys, kept between runs
+log server.log                # the server's log (rolled, the last 8 kept); empty for the console only
+
+# The maps played in turn: mission number, then the mode. Leave the mode off to keep the one played.
+# Modes: coop, objective, tdm, ffa, elim, sd
+map 1 sd
+map 1 tdm
+map 1 elim
+
+# Console commands (typed at the server's terminal): help, status, say, kick, ban, unban, bans, map, next, mode,
+# rotation, quit. Players are named by name, an unambiguous start of it, or #slot from status.

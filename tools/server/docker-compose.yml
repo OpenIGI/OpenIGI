@@ -1,0 +1,18 @@
+# OpenIGI dedicated server with Docker Compose.
+#
+#   1. Put your own game's folder at ./game (the folder the desktop game uses).
+#   2. cp server.cfg.example data/server.cfg and edit it (name, rcon_password, rotation).
+#   3. docker compose up -d        then: docker attach openigi-server   for the console (Ctrl+P Ctrl+Q to leave it)
+services:
+  openigi-server:
+    image: ghcr.io/openigi/server:latest
+    container_name: openigi-server
+    restart: unless-stopped
+    command: ["-title", "igi1"]
+    ports:
+      - "26001:26001/udp"
+    volumes:
+      - ./data:/data
+      - ./game:/game:ro
+    stdin_open: true
+    tty: true

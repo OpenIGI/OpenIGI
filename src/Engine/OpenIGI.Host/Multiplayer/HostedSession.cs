@@ -27,7 +27,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDisposable
+public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -62,8 +62,9 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         _titleId = titleId ?? throw new ArgumentNullException(nameof(titleId));
         _tickRate = tickRate;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _room = transport as RoomTransport;
+        _room = transport as RoomTransport ?? (transport as MultiTransport)?.Part<RoomTransport>();
         _transport = transport;
+        _mode = options.Mode;
         _net = new NetServer(transport, new NetServerOptions
         {
             ProtocolId = MultiplayerProtocol.IdFor(titleId),
@@ -173,13 +174,15 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             _session = new ServerSession(
                 _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
-            _session.Mode = Game.Multiplayer.Modes.GameModes.For(_options.Mode, _world, _tickRate);
+            _session.Banned = Banned;
+            _session.Rcon = Rcon;
+            _session.Mode = NewMode(_world);
             if (Layout is { } layout)
             {
                 _world.UseLayout(layout);
                 _session.Layout = layout;
             }
-            _logger.Information(LogCategory, $"Playing {_session.Mode.Id} (asked for {_options.Mode}).");
+            _logger.Information(LogCategory, $"Playing {_session.Mode.Id} (asked for {_mode}).");
             _logger.Information(
                 LogCategory,
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
@@ -193,6 +196,14 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             _level = next.Level;
             string map = next.Map.Length > 0 ? next.Map : _session.Map;
             _session.Travel(_world, map);
+
+            // The new level's match, under the mode now asked for, on its own layout.
+            _session.RestartMode(NewMode(_world));
+            _session.Layout = Layout;
+            if (Layout is { } layout)
+            {
+                _world.UseLayout(layout);
+            }
 
             // Begun: whoever loaded it is held no longer, and whoever didn't follows as it can.
             _goingSince = null;
@@ -243,11 +254,11 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <summary>Gets the server list's line for this server now.</summary>
     /// <returns>The line.</returns>
     public ServerInfo Info() =>
-        new(_titleId, _options.Name, _options.Map, _options.Mode, _known.Count + (_options.IncludesHost ? 1 : 0),
+        new(_titleId, _options.Name, _session?.Map ?? _options.Map, _mode, _known.Count + (_options.IncludesHost ? 1 : 0),
             _options.MaxPlayers, _options.Password.Length > 0, _options.Version);
 
     /// <inheritdoc/>
-    public string Mode => _options.Mode;
+    public string Mode => _mode;
 
     /// <inheritdoc/>
     public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];

@@ -1,5 +1,4 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Platform.Desktop.Logging;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

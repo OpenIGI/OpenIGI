@@ -29,6 +29,9 @@ public sealed partial class GameHost
 
     private ISessionTalk? Talk => TickObserver as ISessionTalk;
 
+    // The server's remote console password, as rcon_password set it; held for the process, never written anywhere.
+    private string _rconPassword = string.Empty;
+
     private void RegisterCoopTalk(ConsoleSystem console)
     {
         console.Commands.Add(
@@ -45,6 +48,24 @@ public sealed partial class GameHost
                 talk.Say(context.Rest(0));
             },
             "<text>");
+
+        console.Commands.Add(
+            "rcon_password",
+            "Sets the password the server's remote console asks, for this session; it is never saved.",
+            context => _rconPassword = context.Rest(0),
+            "<password>");
+
+        console.Commands.Add(
+            "rcon",
+            "Runs a command on the server's console (status, kick, ban, map, mode, next, say, ...); set rcon_password first.",
+            context =>
+            {
+                if (TickObserver is not Multiplayer.SessionClient client || !client.SendRcon(_rconPassword, context.Rest(0)))
+                {
+                    context.Error("Not connected to a server.");
+                }
+            },
+            "<command>");
 
         console.Commands.Add(
             "kill",

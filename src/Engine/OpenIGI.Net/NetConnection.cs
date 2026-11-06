@@ -179,13 +179,13 @@ public sealed class NetConnection : IDisposable
             {
                 if (packets == 0 && (_ackOwed || keepAliveDue))
                 {
-                    SendPacket(WritePayloadHeader(), now);
+                    SendPacket(WritePayloadHeader(now), now);
                 }
 
                 break;
             }
 
-            int offset = WritePayloadHeader();
+            int offset = WritePayloadHeader(now);
             int headerEnd = offset;
             _packetReliableIds.Clear();
 
@@ -263,6 +263,7 @@ public sealed class NetConnection : IDisposable
         ushort sequence = BinaryPrimitives.ReadUInt16LittleEndian(packet[start..]);
         ushort ack = BinaryPrimitives.ReadUInt16LittleEndian(packet[(start + 2)..]);
         uint ackBits = BinaryPrimitives.ReadUInt32LittleEndian(packet[(start + 4)..]);
+        double ackDelay = BinaryPrimitives.ReadUInt16LittleEndian(packet[(start + 8)..]) / AckDelayUnitsPerSecond;
 
         if (_received.Contains(sequence)
             || (_anyReceived && SequenceMath.Distance(sequence, _latestReceived) <= -NetConstants.WindowSize / 2))
@@ -291,13 +292,14 @@ public sealed class NetConnection : IDisposable
         if (!_anyReceived || SequenceMath.IsNewer(sequence, _latestReceived))
         {
             _latestReceived = sequence;
+            _latestReceivedAt = now;
         }
 
         _anyReceived = true;
         _ackOwed = true;
         LastReceiveTime = now;
         Statistics.CountReceived(packet.Length, now);
-        ReceiveAcks(ack, ackBits, now);
+        ReceiveAcks(ack, ackBits, ackDelay, now);
 
         bool sequencedFresh = !_anySequenced || SequenceMath.IsNewer(sequence, _latestSequenced);
         bool anySequenced = false;
@@ -350,7 +352,13 @@ public sealed class NetConnection : IDisposable
         }
     }
 
-    private void ReceiveAcks(ushort ack, uint ackBits, double now)
+    // The ack delay's unit on the wire: a tenth of a millisecond, so 16 bits hold six and a half seconds.
+    private const double AckDelayUnitsPerSecond = 10_000;
+
+    // When the newest packet received arrived, which the ack delay is counted from.
+    private double _latestReceivedAt;
+
+    private void ReceiveAcks(ushort ack, uint ackBits, double ackDelay, double now)
     {
         for (int i = 0; i <= 32; i++)
         {
@@ -368,7 +376,9 @@ public sealed class NetConnection : IDisposable
             packet.Acked = true;
             if (i == 0)
             {
-                Statistics.AddRoundTripSample(now - packet.Time);
+                // The line's round trip: what the other end held the packet before answering is its wait, not the line's.
+                double roundTrip = now - packet.Time;
+                Statistics.AddRoundTripSample(Math.Max(0, roundTrip - Math.Min(ackDelay, roundTrip)));
             }
 
             foreach (ushort id in packet.ReliableIds)
@@ -444,7 +454,7 @@ public sealed class NetConnection : IDisposable
         }
     }
 
-    private int WritePayloadHeader()
+    private int WritePayloadHeader(double now)
     {
         Span<byte> span = _packet.AsSpan(NetConstants.PacketPrefixSize);
         BinaryPrimitives.WriteUInt32LittleEndian(span, Salt);
@@ -463,6 +473,12 @@ public sealed class NetConnection : IDisposable
 
         BinaryPrimitives.WriteUInt16LittleEndian(span[6..], _anyReceived ? _latestReceived : (ushort)0);
         BinaryPrimitives.WriteUInt32LittleEndian(span[8..], bits);
+
+        // How long the newest packet acknowledged was held here before this one went, in tenths of a millisecond: the other
+        // end takes it off its round trip, so a ping counts the line and not this end's wait for its next tick (QUIC's ack
+        // delay). Without it a game on the same machine read 35 ms.
+        double held = _anyReceived ? now - _latestReceivedAt : 0;
+        BinaryPrimitives.WriteUInt16LittleEndian(span[12..], (ushort)Math.Clamp(held * AckDelayUnitsPerSecond, 0, ushort.MaxValue));
         return NetConstants.PacketPrefixSize + NetConstants.PayloadHeaderSize;
     }
 

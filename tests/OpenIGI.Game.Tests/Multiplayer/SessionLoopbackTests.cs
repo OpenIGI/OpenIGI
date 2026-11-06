@@ -307,6 +307,48 @@ public sealed class SessionLoopbackTests
         Assert.Equal(world.Doors, newest.Doors);
     }
 
+    [Fact]
+    public void A_remote_console_command_reaches_the_server_and_its_answer_comes_back()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        List<(int Slot, string Password, string Command)> asked = [];
+        server.Rcon = (slot, password, command) =>
+        {
+            asked.Add((slot, password, command));
+            return password == "pw" ? ["Test  ·  mission toy", "  #0 one"] : ["Wrong remote console password."];
+        };
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, 0, 0, 0, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        List<string> answers = [];
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            if (tick == 2 * TickRate)
+            {
+                client.SendRcon("nope", "status");
+            }
+            else if (tick == (2 * TickRate) + 15)
+            {
+                client.SendRcon("pw", "status");
+            }
+
+            answers.AddRange(client.TakeRconAnswers());
+            client.Flush(now);
+        }
+
+        Assert.Equal([("nope", "status"), ("pw", "status")], asked.Select(a => (a.Password, a.Command)));
+        Assert.Equal(["Wrong remote console password.", "Test  ·  mission toy", "  #0 one"], answers);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);

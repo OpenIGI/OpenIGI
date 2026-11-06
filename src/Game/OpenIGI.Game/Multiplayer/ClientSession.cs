@@ -143,6 +143,30 @@ public sealed class ClientSession
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
+    /// <summary>Sends a command to the server's remote console.</summary>
+    /// <param name="password">The server's remote console password.</param>
+    /// <param name="command">The command, as its console takes it.</param>
+    public void SendRcon(string password, string command)
+    {
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Rcon, 8);
+        _writer.WriteString(password ?? string.Empty, 64);
+        _writer.WriteString(command ?? string.Empty, 256);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    /// <summary>Takes the remote console's answers that came since the last call.</summary>
+    /// <returns>Their lines, oldest first.</returns>
+    public IReadOnlyList<string> TakeRconAnswers()
+    {
+        string[] lines = [.. _rconAnswers];
+        _rconAnswers.Clear();
+        return lines;
+    }
+
+    // The remote console's answers, waiting to be taken.
+    private readonly List<string> _rconAnswers = [];
+
     /// <summary>Marks a place for every player.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position)
@@ -263,6 +287,10 @@ public sealed class ClientSession
 
     /// <summary>Reads what arrived.</summary>
     /// <param name="now">The current time in seconds.</param>
+    public void Poll(double now) => _net.Update(now);
+
+    /// <summary>Reads what has arrived and acts on it.</summary>
+    /// <param name="now">The clock, in seconds.</param>
     public void Receive(double now)
     {
         _net.Update(now);
@@ -518,6 +546,14 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
+                break;
+            case SessionMessage.Rcon:
+                int lines = (int)reader.ReadBits(8);
+                for (int i = 0; i < lines && !reader.IsOverflowed; i++)
+                {
+                    _rconAnswers.Add(reader.ReadString(200));
+                }
+
                 break;
             case SessionMessage.KillNote:
                 Modes.KillNote note = Modes.KillNote.Read(ref reader);

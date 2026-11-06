@@ -126,7 +126,7 @@ internal sealed partial class RemasteredHudRenderer
         }
 
         string under = hud.Round > 0 ? $"ROUND {hud.Round}" : hud.Phase == MatchPhase.Warmup ? "WARMUP" : "TIME";
-        Centred(painter, type.Body, under, hud.Fuse is null ? centre : clock.X + (clockWidth * 0.56f), clock.Y + Px(34f), Px(11f), UiPalette.TextMuted, 0.16f);
+        Centred(painter, type.Body, under, hud.Fuse is null ? centre : clock.X + (clockWidth * 0.56f), clock.Y + Px(34f), Px(13f), UiPalette.TextSecondary, 0.14f);
 
         // Each side's score in its colour, cut on its outer edge.
         var leftScore = new UiRect(clock.X - scoreWidth - Px(4f), top, scoreWidth, height);
@@ -139,9 +139,9 @@ internal sealed partial class RemasteredHudRenderer
         Pips(painter, right.Alive, rightScore.Right + Px(10f), top + Px(8f), 1, rightColour, Px);
 
         // The teams' names under their scores.
-        Centred(painter, type.Body, left.Name, leftScore.X + (scoreWidth * 0.5f), top + height + Px(4f), Px(10f), leftColour, 0.14f);
-        Centred(painter, type.Body, right.Name, rightScore.X + (scoreWidth * 0.5f), top + height + Px(4f), Px(10f), rightColour, 0.14f);
-        return top + height + Px(16f);
+        Centred(painter, type.Body, left.Name, leftScore.X + (scoreWidth * 0.5f), top + height + Px(4f), Px(13f), leftColour, 0.12f);
+        Centred(painter, type.Body, right.Name, rightScore.X + (scoreWidth * 0.5f), top + height + Px(4f), Px(13f), rightColour, 0.12f);
+        return top + height + Px(20f);
     }
 
     // A free-for-all: the player's own score and place, the clock, and the one to beat; returns the strip's bottom.
@@ -157,18 +157,18 @@ internal sealed partial class RemasteredHudRenderer
             UiGradientDirection.Vertical);
         Bgra32 ink = hud.ClockUrgent ? UiGeometry.Lerp(Enemy, UiPalette.TextBright, pulse * 0.4f) : UiPalette.TextBright;
         Centred(painter, type.Display, hud.Clock ?? "--:--", centre, top + Px(4f), Px(28f), ink, 0.02f);
-        Centred(painter, type.Body, hud.Phase == MatchPhase.Warmup ? "WARMUP" : "TIME", centre, top + Px(34f), Px(11f), UiPalette.TextMuted, 0.16f);
+        Centred(painter, type.Body, hud.Phase == MatchPhase.Warmup ? "WARMUP" : "TIME", centre, top + Px(34f), Px(13f), UiPalette.TextSecondary, 0.14f);
 
         bool leading = hud.OwnRank == 1;
         var own = new UiRect(clock.X - side - Px(4f), top, side, height);
         painter.FillCutRect(own, Px(12f), UiCorners.BottomLeft, (leading ? Victory : Ally).WithAlpha(220));
-        painter.DrawLabel(type.Body, $"YOU  ·  {Place(hud.OwnRank)}", new UiVec2(own.X + Px(12f), own.Y + Px(8f)), Px(11f), Bgra32.FromRgba(8, 10, 14, 230), 0.14f);
+        painter.DrawLabel(type.Body, $"YOU  ·  {Place(hud.OwnRank)}", new UiVec2(own.X + Px(12f), own.Y + Px(8f)), Px(13f), Bgra32.FromRgba(8, 10, 14, 230), 0.12f);
         painter.DrawLabel(type.Display, hud.OwnScore.ToString(System.Globalization.CultureInfo.InvariantCulture), new UiVec2(own.X + Px(12f), own.Y + Px(20f)), Px(26f), Bgra32.FromRgb(8, 10, 14), 0f);
 
         var rival = new UiRect(clock.Right + Px(4f), top, side, height);
         painter.FillCutRect(rival, Px(12f), UiCorners.BottomRight, StripFace);
         string who = hud.LeaderName.Length > 0 ? (leading ? $"NEXT  ·  {hud.LeaderName}" : $"LEADER  ·  {hud.LeaderName}") : "NO RIVAL YET";
-        painter.DrawLabel(type.Body, Clip(type.Body, who.ToUpperInvariant(), Px(11f), side - Px(24f)), new UiVec2(rival.X + Px(12f), rival.Y + Px(8f)), Px(11f), UiPalette.TextMuted, 0.14f);
+        painter.DrawLabel(type.Body, Clip(type.Body, who.ToUpperInvariant(), Px(13f), side - Px(24f)), new UiVec2(rival.X + Px(12f), rival.Y + Px(6f)), Px(13f), UiPalette.TextSecondary, 0.12f);
         painter.DrawLabel(type.Display, hud.LeaderScore.ToString(System.Globalization.CultureInfo.InvariantCulture), new UiVec2(rival.X + Px(12f), rival.Y + Px(20f)), Px(26f), UiPalette.TextBright, 0f);
         return top + height + Px(4f);
     }
@@ -178,13 +178,13 @@ internal sealed partial class RemasteredHudRenderer
     {
         string target = hud.Target <= 0 ? string.Empty : hud.Round > 0 ? $"FIRST TO {hud.Target}" : $"FIRST TO {hud.Target} KILLS";
         string line = target.Length > 0 ? $"{hud.Title}  ·  {target}" : hud.Title;
-        float size = Px(11f);
+        float size = Px(14f);
         float width = UiPainter.MeasureLabel(type.Body, line, size, 0.18f);
         float roleWidth = hud.Role is { } role ? UiPainter.MeasureLabel(type.Heading, role, size, 0.2f) + Px(18f) : 0f;
         float x = centre - ((width + roleWidth + (roleWidth > 0 ? Px(10f) : 0f)) * 0.5f);
         if (hud.Role is { } shown)
         {
-            var chip = new UiRect(x, y - Px(3f), roleWidth, Px(18f));
+            var chip = new UiRect(x, y - Px(4f), roleWidth, Px(22f));
             painter.FillCutRect(chip, Px(5f), UiCorners.TopLeft | UiCorners.BottomRight, shown == "ATTACK" ? Enemy.WithAlpha(210) : Ally.WithAlpha(210));
             painter.DrawLabel(type.Heading, shown, new UiVec2(chip.X + Px(9f), y - Px(1f)), size, UiPalette.TextBright, 0.2f);
             x += roleWidth + Px(10f);

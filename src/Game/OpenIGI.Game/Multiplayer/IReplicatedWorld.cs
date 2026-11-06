@@ -317,4 +317,10 @@ public enum SessionMessage : byte
 
     /// <summary>A kill for the feed: a <see cref="Modes.KillNote"/>.</summary>
     KillNote = 15,
+
+    /// <summary>
+    /// The remote console: from a client, a password and a command for the server's console; from the server, its answer's lines.
+    /// Only ever over a sealed line -- UDP's AES-GCM or WebRTC's DTLS -- so the password is never readable on the way.
+    /// </summary>
+    Rcon = 16,
 }

@@ -521,9 +521,9 @@ public sealed partial class ServerSession : IModeHost
 
     private void Join(int slot, string name, string skin, string playerId)
     {
-        if (_barred.ContainsKey(playerId))
+        if (TurnedAway(playerId) is { } refusal)
         {
-            _net.Disconnect(slot, "the host removed you from this room");
+            _net.Disconnect(slot, refusal);
             return;
         }
 
@@ -834,6 +834,9 @@ public sealed partial class ServerSession : IModeHost
                     Speak(voice with { Entity = client.Entity }, except: slot);
                 }
 
+                return;
+            case SessionMessage.Rcon:
+                ReadRcon(slot, client, ref reader);
                 return;
             case SessionMessage.Ready:
                 byte ready = (byte)reader.ReadBits(8);

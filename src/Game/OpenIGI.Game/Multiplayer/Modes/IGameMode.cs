@@ -73,6 +73,18 @@ public interface IGameMode
     /// <returns>The report.</returns>
     ModeReport Report(long tick) => ModeReport.None;
 
+    /// <summary>Gets a value indicating whether the match on this map is over and a server with a rotation goes on to the next.</summary>
+    bool IsMapOver => false;
+
+    /// <summary>Gets or sets a value indicating whether a decided match is played again on the same map; a server with a rotation sets it false.</summary>
+    bool PlaysAgain
+    {
+        get => true;
+        set
+        {
+        }
+    }
+
     /// <summary>Begins the match on the tick given.</summary>
     /// <param name="host">The session.</param>
     /// <param name="tick">The tick.</param>

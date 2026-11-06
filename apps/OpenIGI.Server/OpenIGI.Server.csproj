@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,10 +13,18 @@
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Net\OpenIGI.Net.csproj" />
     <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.Udp\OpenIGI.Net.Udp.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Net.WebRtc\OpenIGI.Net.WebRtc.csproj" />
     <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="server.cfg.example" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- libdatachannel beside the server, so browsers can join it through its room. -->
+  <Import Project="..\..\src\Engine\OpenIGI.Net.WebRtc\DataChannelNative.props" />
 
 </Project>

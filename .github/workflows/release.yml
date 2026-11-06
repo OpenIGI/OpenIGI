@@ -131,6 +131,11 @@ jobs:
             done
             # The browser build goes to the site, not into the downloads.
             tools/release/package.sh web browser-wasm "$VERSION"
+            # The dedicated server, for the hosts people rent: kept out of artifacts/release, whose files the launcher's
+            # manifest lists, and uploaded beside them.
+            for rid in linux-x64 win-x64; do
+              tools/release/package.sh server "$rid" "$VERSION" artifacts/server
+            done
           fi
 
       - name: Write the manifest
@@ -183,6 +188,10 @@ jobs:
             echo "On macOS and Linux, the launcher installs with one command: \`curl -fsSL https://openigi.com/install.sh | bash\`."
             echo "The macOS builds are not notarized, so macOS reports an app downloaded with a browser as \"damaged\"; clear that with \`xattr -dr com.apple.quarantine \"/Applications/OpenIGI Launcher.app\"\` (or the app's path)."
             echo "OpenIGI needs your own copy of Project I.G.I.; it ships none of the game's data. Verify a download with \`sha256sum -c SHA256SUMS\`."
+            if [ "$PRODUCT" = game ]; then
+              echo
+              echo "**Dedicated server**: [openigi-server-$v-linux-x64.tar.gz]($dl/openigi-server-$v-linux-x64.tar.gz) (\`sudo ./install.sh\`) or [openigi-server-$v-win-x64.zip]($dl/openigi-server-$v-win-x64.zip) (\`.\install.ps1\`); it plays your own copy of the game too."
+            fi
           } > "$RUNNER_TEMP/notes/release.md"
           cp "$RUNNER_TEMP/notes/notes.md" artifacts/release/CHANGELOG.md
 
@@ -193,7 +202,7 @@ jobs:
           [ "$PRODUCT" = launcher ] && { title="OpenIGI Launcher $VERSION"; flags=(--latest=false); }
           # The browser build rides along for the site to read back; it is not one of the downloads release.json lists.
           files=(artifacts/release/*)
-          [ "$PRODUCT" = game ] && files+=("artifacts/web/openigi-web-$VERSION.tar.gz")
+          [ "$PRODUCT" = game ] && files+=("artifacts/web/openigi-web-$VERSION.tar.gz" artifacts/server/*)
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber
           else
@@ -244,6 +253,48 @@ jobs:
             echo
             cat "$RUNNER_TEMP/notes/notes.md"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The dedicated server's container, made from the release's own Linux server. Built on every game release so a broken
+  # image is caught; pushed to ghcr.io/openigi/server only once the PUBLISH_SERVER_IMAGE variable is set to true.
+  server-image:
+    needs: publish
+    if: needs.publish.outputs.product == 'game'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      - name: Fetch the server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p artifacts/server
+          gh release download "$TAG" --pattern "openigi-server-$VERSION-linux-x64.tar.gz" --dir artifacts/server
+          tar -C artifacts/server -xzf "artifacts/server/openigi-server-$VERSION-linux-x64.tar.gz"
+
+      - uses: docker/login-action@v3
+        if: vars.PUBLISH_SERVER_IMAGE == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tools/server/Dockerfile
+          build-args: SERVER=artifacts/server/openigi-server-${{ needs.publish.outputs.version }}-linux-x64
+          push: ${{ vars.PUBLISH_SERVER_IMAGE == 'true' }}
+          tags: |
+            ghcr.io/openigi/server:${{ needs.publish.outputs.version }}
+            ${{ needs.publish.outputs.channel == 'stable' && 'ghcr.io/openigi/server:latest' || 'ghcr.io/openigi/server:beta' }}
 
   # The site lists what is now on GitHub: the feeds, and for a game release its browser build.
   site:

@@ -183,6 +183,14 @@ public readonly record struct HostOptions(
     /// </remarks>
     public int MissionCycleFrames { get; init; }
 
+    /// <summary>Gets a value indicating whether the host only simulates: a dedicated server, which nobody watches.</summary>
+    /// <remarks>
+    /// No frame is drawn and no level is withheld for its lighting to settle; the ticks, the session and the level's own
+    /// tasks run exactly as they do under a picture. The device is a null one, so a draw would have cost the CPU every
+    /// pass of the renderer for nothing.
+    /// </remarks>
+    public bool SimulationOnly { get; init; }
+
     /// <summary>Gets how many frames a game runs for before the next installed one is switched to.</summary>
     /// <remarks>
     /// Zero for never. Set by <c>-titlecycle</c>, and <see cref="MissionCycleFrames"/> one level up: a

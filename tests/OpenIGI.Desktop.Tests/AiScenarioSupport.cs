@@ -10,7 +10,6 @@ using OpenIGI.Game.Igi1.World;
 using OpenIGI.Host;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
-using OpenIGI.Platform.Desktop.Logging;
 using OpenIGI.TestSupport;
 using OpenIGI.Platform.Headless;
 using OpenIGI.Rendering.Headless;

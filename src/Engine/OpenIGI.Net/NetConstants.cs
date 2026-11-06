@@ -10,7 +10,7 @@ public static class NetConstants
     public const int PacketPrefixSize = 5;
 
     /// <summary>The bytes a payload packet's header takes after the prefix: salt, sequence, ack and ack bits.</summary>
-    public const int PayloadHeaderSize = 12;
+    public const int PayloadHeaderSize = 14;
 
     /// <summary>The largest piece a reliable message is cut into.</summary>
     public const int MaxFragmentSize = 1024;

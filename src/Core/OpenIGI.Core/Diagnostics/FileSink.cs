@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using OpenIGI.Core.Diagnostics;
 
-namespace OpenIGI.Platform.Desktop.Logging;
+namespace OpenIGI.Core.Diagnostics;
 
 /// <summary>Writes records to a log file from a background thread, keeping the previous sessions' files beside it.</summary>
 /// <remarks>
