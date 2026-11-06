@@ -23,6 +23,9 @@ public interface IModeHost
     /// <returns>The slot.</returns>
     int SlotOf(int entity);
 
+    /// <summary>Gets the layout of the map being played, or <see langword="null"/> when it has none.</summary>
+    MpLayout? Layout => null;
+
     /// <summary>Puts a player back into the world, alive at a spawn point, and counts it alive.</summary>
     /// <param name="slot">The player's slot.</param>
     void Respawn(int slot);

@@ -163,6 +163,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             if (Layout is { } layout)
             {
                 _world.UseLayout(layout);
+                _session.Layout = layout;
             }
             _logger.Information(LogCategory, $"Playing {_session.Mode.Id} (asked for {_options.Mode}).");
             _logger.Information(
@@ -233,6 +234,10 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
 
     /// <inheritdoc/>
     public string Mode => _options.Mode;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchBanner? Banner =>
+        _session is { } session && _world is { } world ? session.CurrentMatch(world.CurrentTick).Banner(0) : null;
 
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }

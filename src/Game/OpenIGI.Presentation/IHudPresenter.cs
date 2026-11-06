@@ -232,6 +232,16 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the match's banner across the top: its mode and clock, a decided match's result, a warning to get back in play.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="banner">What to show.</param>
+    /// <param name="warning">A warning over everything else (out of bounds), or <see langword="null"/>.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawMatchBanner(SpriteBatch batch, Game.Multiplayer.Modes.MatchBanner banner, string? warning, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws other players' names over their heads, each standing in the level and turned to the eye.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="tags">The names and where they stand.</param>

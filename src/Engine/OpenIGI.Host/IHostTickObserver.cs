@@ -28,6 +28,9 @@ public interface ISessionScoreboard
 
     /// <summary>Gets whether this player's connection is poor enough to tell them: a long round trip, or rounds of packets lost.</summary>
     bool PoorConnection => false;
+
+    /// <summary>Gets what the player is shown of the match across the top of the screen, or <see langword="null"/> for nothing.</summary>
+    Game.Multiplayer.Modes.MatchBanner? Banner => null;
 }
 
 /// <summary>Something run either side of each game tick: a multiplayer session reads before and sends after.</summary>

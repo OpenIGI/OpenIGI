@@ -80,7 +80,8 @@ public sealed class MatchFlow(int tickRate)
     /// <param name="writer">Where it goes.</param>
     /// <param name="mode">The mode's id.</param>
     /// <param name="tick">The tick now.</param>
-    public void Write(BitWriter writer, string mode, long tick)
+    /// <param name="winnerName">The winner's name as players read it (a team's, a player's), or empty.</param>
+    public void Write(BitWriter writer, string mode, long tick, string winnerName = "")
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.WriteString(mode, 16);
@@ -93,6 +94,8 @@ public sealed class MatchFlow(int tickRate)
         {
             writer.WriteRanged((int)Math.Min(Math.Ceiling(seconds * 10), 65535), 0, 65535);
         }
+
+        writer.WriteString(winnerName ?? string.Empty, 32);
     }
 
     /// <summary>Reads where a server's match stands.</summary>
@@ -105,7 +108,7 @@ public sealed class MatchFlow(int tickRate)
         int round = reader.ReadRanged(0, 255);
         int winner = reader.ReadRanged(-1, 254);
         double? left = reader.ReadBool() ? reader.ReadRanged(0, 65535) / 10.0 : null;
-        return new MatchState(mode, phase, round, winner, left);
+        return new MatchState(mode, phase, round, winner, left, reader.ReadString(32));
     }
 }
 
@@ -115,4 +118,50 @@ public sealed class MatchFlow(int tickRate)
 /// <param name="Round">The round, from 1.</param>
 /// <param name="Winner">Who won what was last decided, or -1.</param>
 /// <param name="SecondsLeft">The phase's seconds left when it was said, or <see langword="null"/> for no clock.</param>
-public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft);
+/// <param name="WinnerName">The winner's name as players read it, or empty.</param>
+public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft, string WinnerName = "")
+{
+    /// <summary>Gets the name a team is shown by.</summary>
+    /// <param name="team">The team.</param>
+    /// <returns>Its name.</returns>
+    public static string TeamName(int team) => team == TeamRoster.Good ? "Team A" : team == TeamRoster.Bad ? "Team B" : "Nobody";
+
+    /// <summary>Gets what a player is shown of the match: its mode and clock, and once decided, who won.</summary>
+    /// <param name="secondsSince">The seconds since the state was said, which its clock has run down by.</param>
+    /// <returns>The banner, or <see langword="null"/> for a match with nothing to show (co-op).</returns>
+    public MatchBanner? Banner(double secondsSince)
+    {
+        if (Mode == GameModes.Coop || string.IsNullOrEmpty(Mode))
+        {
+            return null;
+        }
+
+        string? clock = SecondsLeft is { } left ? Clock(Math.Max(0, left - secondsSince)) : null;
+        string title = Mode switch
+        {
+            GameModes.TeamDeathmatch => "TEAM DEATHMATCH",
+            GameModes.FreeForAll => "FREE FOR ALL",
+            GameModes.Objective => "OBJECTIVE",
+            _ => Mode.ToUpperInvariant(),
+        };
+        return Phase switch
+        {
+            MatchPhase.Warmup => new MatchBanner("WARMUP", clock, "The match begins when the clock runs out"),
+            MatchPhase.Intermission or MatchPhase.RoundOver => new MatchBanner(
+                title, clock, Winner < 0 || WinnerName.Length == 0 ? "DRAW" : $"{WinnerName.ToUpperInvariant()} WINS"),
+            _ => new MatchBanner(title, clock, null),
+        };
+    }
+
+    private static string Clock(double seconds)
+    {
+        int whole = (int)Math.Ceiling(seconds);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{whole / 60}:{whole % 60:00}");
+    }
+}
+
+/// <summary>What a player is shown of the match across the top of the screen.</summary>
+/// <param name="Title">The mode, or the phase while warming up.</param>
+/// <param name="Clock">The phase's time left, as <c>7:32</c>, or <see langword="null"/>.</param>
+/// <param name="Headline">A decided match's result, or a line of explanation; <see langword="null"/> while playing.</param>
+public sealed record MatchBanner(string Title, string? Clock, string? Headline);

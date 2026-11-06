@@ -18,6 +18,24 @@ public sealed partial class Igi1ReplicatedWorld
 
     private Game.Multiplayer.Modes.MpLayout? _layout;
 
+    /// <inheritdoc/>
+    public Vector3d? PositionOf(int slot) =>
+        slot == ServerSession.HostSlot
+            ? IncludesHost && _game.World.Player is { } own ? own.Body.Position : null
+            : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) ? player.Player.Body.Position : null;
+
+    /// <inheritdoc/>
+    public void KillPlayer(int slot)
+    {
+        PlayerCamera? rig = slot == ServerSession.HostSlot ? _game.World.Player : _bySlot.GetValueOrDefault(slot)?.Player;
+        if (rig is null || _game.Harm.Players.FirstOrDefault(p => ReferenceEquals(p.Rig, rig)) is not { IsDead: false } target)
+        {
+            return;
+        }
+
+        _game.Harm.BeginPlayerDeath(target, rig.Body.Position, zone: 0, bone: -1, Game.Weapons.WeaponCategory.Gun);
+    }
+
     // Where a player of a versus match is put: one of its team's spawns (anyone's in a free-for-all), the one farthest from
     // every other player still standing, as Source's deathmatch spawn picks; the level's own start without a layout.
     private PlayerSpawnPoint? VersusSpawn(int slot, PlayerSpawnPoint start)

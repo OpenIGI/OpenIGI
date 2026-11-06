@@ -78,6 +78,17 @@ public interface IReplicatedWorld
     /// <returns><see langword="false"/> when the world can't be played so: its mode stays its own.</returns>
     bool TryPlayVersus(bool teams) => false;
 
+    /// <summary>Gets where a player stands, or <see langword="null"/> when it isn't in the world (or the world doesn't say).</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns>Its feet, in world units.</returns>
+    Core.Numerics.Vector3d? PositionOf(int slot) => null;
+
+    /// <summary>Kills a player outright, as the world kills one that strayed out of play.</summary>
+    /// <param name="slot">The player's slot.</param>
+    void KillPlayer(int slot)
+    {
+    }
+
     /// <summary>Plays the world as a multiplayer map lays it out: where players start, where play is.</summary>
     /// <param name="layout">The map's layout.</param>
     void UseLayout(Modes.MpLayout layout)

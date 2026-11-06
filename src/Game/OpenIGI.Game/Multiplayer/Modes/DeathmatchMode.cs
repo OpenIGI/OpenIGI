@@ -48,6 +48,9 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
     /// <summary>Gets how many matches were played to the end on this map.</summary>
     public int MatchesPlayed { get; private set; }
 
+    /// <summary>Gets what keeps the players inside the map's bounds.</summary>
+    public OutOfBounds Bounds { get; } = new();
+
     /// <summary>Gets or sets a value indicating whether the same map is played again after the intermission, for a server with no rotation.</summary>
     public bool PlaysAgain { get; set; } = true;
 
@@ -101,6 +104,7 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
                 RespawnTheDead(host, tick);
                 break;
             case MatchPhase.Live:
+                Bounds.Tick(host, tick);
                 ScoreTeams(host, counted);
                 RespawnTheDead(host, tick);
                 if (Decided(host, tick) is { } winner)

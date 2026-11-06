@@ -121,6 +121,24 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void A_player_out_of_bounds_dies_when_its_grace_runs_out_and_one_who_comes_back_is_spared()
+    {
+        Host host = new(teams: [0, 1])
+        {
+            Layout = new MpLayout { OutOfBoundsSeconds = 2, Bounds = [new MpBox([0, 0, 0], [100, 100, 100])], Spawns = [new MpSpawn([1, 1, 1])] },
+        };
+        DeathmatchMode mode = new(TickRate, teams: true, new DeathmatchSettings { ScoreLimit = 0 });
+        mode.Start(host, 0);
+        host.Positions[0] = new(500, 50, 50);
+        host.Positions[1] = new(500, 50, 50);
+        mode.Tick(host, 1, []);
+        host.Positions[1] = new(50, 50, 50);
+        mode.Tick(host, TickRate, []);
+        mode.Tick(host, 1 + (TickRate * 2), []);
+        Assert.Equal([0], host.Killed);
+    }
+
+    [Fact]
     public void The_match_state_reads_back_as_it_was_written()
     {
         MatchFlow flow = new(TickRate);
@@ -130,6 +148,17 @@ public sealed class GameModeTests
         OpenIGI.Net.BitReader reader = new(writer.AsSpan());
         MatchState read = MatchFlow.Read(ref reader);
         Assert.Equal(new MatchState(GameModes.TeamDeathmatch, MatchPhase.RoundOver, 1, 1, 6.5), read);
+    }
+
+    [Fact]
+    public void The_banner_runs_its_clock_down_and_names_the_winner()
+    {
+        MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);
+        Assert.Equal(new MatchBanner("FREE FOR ALL", "1:20", null), live.Banner(10));
+        MatchState over = new(GameModes.TeamDeathmatch, MatchPhase.Intermission, 1, 0, 15, MatchState.TeamName(0));
+        Assert.Equal("TEAM A WINS", over.Banner(0)!.Headline);
+        Assert.Equal("DRAW", (over with { Winner = -1 }).Banner(0)!.Headline);
+        Assert.Null(new MatchState(GameModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
     }
 
     // A match of players in slots 0.., each entity 10 + slot, on the teams given.
@@ -149,6 +178,12 @@ public sealed class GameModeTests
         }
 
         public bool HoldsTheDead { get => _world.Holds; init => _world.Holds = value; }
+
+        public MpLayout? Layout { get; init; }
+
+        public Dictionary<int, OpenIGI.Core.Numerics.Vector3d> Positions => _world.Positions;
+
+        public List<int> Killed => _world.Killed;
 
         public Match Match { get; }
 
@@ -179,6 +214,14 @@ public sealed class GameModeTests
         public bool Holds { get; set; }
 
         public List<int> Revived { get; } = [];
+
+        public Dictionary<int, OpenIGI.Core.Numerics.Vector3d> Positions { get; } = [];
+
+        public List<int> Killed { get; } = [];
+
+        public OpenIGI.Core.Numerics.Vector3d? PositionOf(int slot) => Positions.TryGetValue(slot, out OpenIGI.Core.Numerics.Vector3d at) ? at : null;
+
+        public void KillPlayer(int slot) => Killed.Add(slot);
 
         public bool HoldsTheDead => Holds;
 

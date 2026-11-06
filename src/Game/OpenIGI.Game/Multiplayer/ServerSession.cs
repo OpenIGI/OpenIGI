@@ -123,6 +123,21 @@ public sealed class ServerSession : IModeHost
     /// <inheritdoc/>
     int IModeHost.SlotOf(int entity) => SlotOf(entity);
 
+    /// <summary>Gets or sets the layout of the map being played, or <see langword="null"/> when it has none.</summary>
+    public MpLayout? Layout { get; set; }
+
+    /// <summary>Gets where the match stands now, as a client is told it.</summary>
+    /// <param name="tick">The tick now.</param>
+    /// <returns>The state.</returns>
+    public MatchState CurrentMatch(long tick) =>
+        new(Mode.Id, Mode.Flow.Phase, Mode.Flow.Round, Mode.Flow.Winner, Mode.Flow.SecondsLeft(tick), WinnerName(Mode.Flow.Winner));
+
+    // The winner as players read it: a team's name, or a player's.
+    private string WinnerName(int winner) =>
+        winner < 0 ? string.Empty
+        : Mode.IsTeamMode ? MatchState.TeamName(winner)
+        : Match.Players.TryGetValue(winner, out MatchPlayer? player) ? player.Name : string.Empty;
+
     /// <inheritdoc/>
     void IModeHost.Respawn(int slot)
     {
@@ -348,7 +363,7 @@ public sealed class ServerSession : IModeHost
             _toldFlow = Mode.Flow.Version;
             _writer.Reset();
             _writer.WriteBits((uint)SessionMessage.MatchState, 8);
-            Mode.Flow.Write(_writer, Mode.Id, tick);
+            Mode.Flow.Write(_writer, Mode.Id, tick, WinnerName(Mode.Flow.Winner));
             _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
         }
 

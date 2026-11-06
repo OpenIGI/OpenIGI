@@ -404,6 +404,19 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // A match's banner -- its mode, clock and result -- and, out of the map's bounds, the word to get back.
+        if (TickObserver is ISessionScoreboard { Banner: { } banner } && _remasteredHud is { IsReady: true } matchHud)
+        {
+            string? warning = TickObserver is Multiplayer.ISessionMode { Layout: { Bounds.Length: > 0 } layout }
+                && TitlePlayer is { } own && !layout.InBounds(own.Position)
+                ? "RETURN TO THE MATCH"
+                : null;
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            matchHud.DrawMatchBanner(state.Batch, banner, warning, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // Co-op talk: the lines said and being typed, and the places marked.
         string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
         Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
