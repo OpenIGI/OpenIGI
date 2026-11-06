@@ -645,8 +645,14 @@ public sealed partial class GameHost
                 },
                 abandonMission: () =>
                 {
-                    // Out of the mission is out of its room.
+                    // Out of the mission is out of its room -- or out of the server the command line joined or hosted, whose
+                    // session would otherwise run on against the menu's backdrop.
                     _coop?.Leave();
+                    if (TickObserver is IDisposable session and ISessionScoreboard)
+                    {
+                        TickObserver = null;
+                        session.Dispose();
+                    }
                     // Before it was ever shown, possibly. Counting the rest of the warm-up down would
                     // hold a loading panel over the campaign screen.
                     CancelMissionWarmUp();

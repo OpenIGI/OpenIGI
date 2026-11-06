@@ -339,6 +339,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public string? Ended => _ended;
 
+    // Whether the session was ended.
+    private bool _disposed;
+
     /// <inheritdoc/>
     /// <remarks>The server's own once welcomed; until then the mode of the room or server joined as it was listed.</remarks>
     public string Mode
@@ -539,6 +542,13 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public void Dispose()
     {
+        // Ended once: by leaving the mission, and again by the program that made it as it closes.
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         if (_netClient is { } client)
         {
             client.Dispose();

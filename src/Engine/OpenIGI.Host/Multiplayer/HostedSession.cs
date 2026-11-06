@@ -329,7 +329,17 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
 
     /// <inheritdoc/>
-    public void Dispose() => _net.Dispose();
+    public void Dispose()
+    {
+        // Ended once: by leaving the mission, and again by the program that made it as it closes.
+        if (!_disposed)
+        {
+            _disposed = true;
+            _net.Dispose();
+        }
+    }
+
+    private bool _disposed;
 
     /// <summary>Gets the names of the players who joined, the host's own not among them.</summary>
     public IReadOnlyList<string> Players => _session is { } session ? [.. session.Clients.Select(session.NameOf).OfType<string>()] : [];
