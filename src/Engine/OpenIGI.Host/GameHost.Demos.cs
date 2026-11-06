@@ -6,6 +6,34 @@ namespace OpenIGI.Host;
 /// <content>Demos: a joined session saved from the console, into the demos folder beside the settings.</content>
 public sealed partial class GameHost
 {
+    // In a demo: which of its players the viewer watches, counted on from its recorder; null walks the level as a ghost.
+    private int? _demoFollow = 0;
+
+    // The player the count starts from: one named with demo_follow, else the demo's recorder.
+    private string? _demoFollowFrom;
+
+    // Who the viewer watches this tick, for the view, the input and the HUD; null when it walks the level itself.
+    private Game.Multiplayer.Modes.SpectateTarget? _demoWatched;
+
+    // Each tick of a demo: the watched player's place handed to the view, or the view given back to the viewer's own body.
+    private void FollowInDemo()
+    {
+        if (TickObserver is SessionClient { Playback: { } playback } client
+            && _demoFollow is int pick
+            && client.Follow(pick, _demoFollowFrom ?? playback.Header.Player) is { } seen)
+        {
+            Viewpoint?.FollowPlayerView(seen.Feet, seen.Yaw, seen.Pitch);
+            _demoWatched = new Game.Multiplayer.Modes.SpectateTarget(seen.Entity, seen.Name, seen.Feet);
+            return;
+        }
+
+        if (_demoWatched is not null)
+        {
+            Viewpoint?.StopFollowingPlayer();
+            _demoWatched = null;
+        }
+    }
+
     // Where a demo is saved: named as asked, or by the time it was saved.
     private static string DemoPath(string? name)
     {
@@ -54,6 +82,33 @@ public sealed partial class GameHost
                     context.Print(playback.Paused ? "Paused." : "Playing.");
                 }
             });
+        console.Commands.Add(
+            "demo_follow",
+            "Watches the demo's players over their shoulder (fire for the next, the other button to walk as a ghost): next, off, or a player's name.",
+            context =>
+            {
+                if (Playing() is null)
+                {
+                    return;
+                }
+
+                string how = context.Count > 0 ? context[0] : "next";
+                if (how.Equals("off", StringComparison.OrdinalIgnoreCase))
+                {
+                    _demoFollow = null;
+                }
+                else if (how.Equals("next", StringComparison.OrdinalIgnoreCase))
+                {
+                    _demoFollow = _demoFollow is int pick ? pick + 1 : 0;
+                }
+                else
+                {
+                    // A name: watched first, the next counted on from it.
+                    _demoFollowFrom = how;
+                    _demoFollow = 0;
+                }
+            },
+            "[next|off|name]");
         console.Commands.Add(
             "demo_speed",
             "Sets how fast the demo being played runs: 1 as it was recorded, 0.25 to 8.",

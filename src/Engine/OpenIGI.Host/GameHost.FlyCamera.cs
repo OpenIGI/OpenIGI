@@ -78,6 +78,22 @@ public sealed partial class GameHost
                 HostedPlayer?.HoldStill();
                 _window.CursorLocked = false;
             }
+            else if (_demoWatched is not null)
+            {
+                // Watching a player in a demo: the viewer's own body stands still; fire watches the next player, the other
+                // button lets the viewer walk the level itself again.
+                HostedPlayer?.HoldStill();
+                HostedPlayer?.ReleaseLook();
+                _window.CursorLocked = !state.CaptureMode;
+                if (_window.Input.Mouse.WasPressed(Input.MouseButton.Left))
+                {
+                    _demoFollow = (_demoFollow ?? 0) + 1;
+                }
+                else if (_window.Input.Mouse.WasPressed(Input.MouseButton.Right))
+                {
+                    _demoFollow = null;
+                }
+            }
             else if (Viewpoint?.IsDeathViewActive == true)
             {
                 // Dead: the mouse orbits the death camera around the body rather than turning a head that

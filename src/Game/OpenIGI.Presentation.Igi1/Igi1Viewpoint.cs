@@ -57,10 +57,33 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool IsInteractionViewActive => _interaction.IsActive;
 
     /// <inheritdoc/>
-    public bool ShowsViewModel => _thirdPerson.ShowsViewModel;
+    public bool ShowsViewModel => _thirdPerson.ShowsViewModel && !_following;
 
     /// <inheritdoc/>
-    public bool ShowsBody => _thirdPerson.ShowsBody;
+    public bool ShowsBody => _thirdPerson.ShowsBody && !_following;
+
+    // Whether another player is watched while the player's own body is left aside (a demo's viewer), and what pulls that
+    // camera in off the walls.
+    private bool _following;
+    private WorldRayCast? _followWalls;
+
+    /// <inheritdoc/>
+    public void FollowPlayerView(Vector3d feet, float yaw, float pitch)
+    {
+        _following = true;
+        _followWalls = gameplay.World.Solids?.Caster();
+        _teammate.Follow(EyeOver(feet), yaw, pitch);
+    }
+
+    /// <inheritdoc/>
+    public void StopFollowingPlayer()
+    {
+        if (_following)
+        {
+            _following = false;
+            _teammate.Reset();
+        }
+    }
 
     /// <inheritdoc/>
     public bool IsThirdPersonEngaged => _thirdPerson.IsEngaged;
@@ -213,8 +236,8 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
         }
 
         // A downed co-op player watching a teammate sees what the teammate sees.
-        Camera3D eye = mission.IsPlayerDead && _teammate.IsActive
-            ? _teammate.Present(frame.Smooth ? frame.TickBlend : 1f, _deathWalls)
+        Camera3D eye = (mission.IsPlayerDead || _following) && _teammate.IsActive
+            ? _teammate.Present(frame.Smooth ? frame.TickBlend : 1f, _following ? _followWalls : _deathWalls)
             : mission.IsPlayerDead && _death.IsActive
             ? _death.Camera
             : (mission.Player is { IsOnLadder: true } or { IsInWorldInteraction: true })

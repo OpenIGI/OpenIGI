@@ -717,6 +717,7 @@ public sealed partial class GameHost
         if (observed)
         {
             TickObserver!.AfterTitleTick(_hosted);
+            FollowInDemo();
         }
     }
 

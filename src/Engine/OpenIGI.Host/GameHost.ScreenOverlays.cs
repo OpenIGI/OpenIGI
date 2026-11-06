@@ -48,6 +48,7 @@ public sealed partial class GameHost
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && Viewpoint?.IsDeathViewActive != true
+            && _demoWatched is null
             && Viewpoint?.HasPlayerHud == true;
 
         // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown

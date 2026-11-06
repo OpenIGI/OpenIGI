@@ -249,6 +249,40 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         return true;
     }
 
+    /// <summary>
+    /// Gets a living player to watch, where this client draws it: the players on the board in its order, starting from one
+    /// named (a demo's recorder), stepped on by <paramref name="pick"/>.
+    /// </summary>
+    /// <param name="pick">How many on from the first.</param>
+    /// <param name="first">The name to start from, or <see langword="null"/> for the board's first.</param>
+    /// <returns>Who, and where, or <see langword="null"/> when nobody is drawn.</returns>
+    public (int Entity, string Name, Core.Numerics.Vector3d Feet, float Yaw, float Pitch)? Follow(int pick, string? first)
+    {
+        if (_session is not { Scoreboard: { } board, DrawnTick: { } drawn, Latest: { } latest } session)
+        {
+            return null;
+        }
+
+        List<ScoreboardLine> living =
+        [
+            .. board.Lines.Where(l => l.Entity >= 0 && l.Entity != session.EntityId
+                && latest.TryGet(l.Entity, out ReplicatedHuman now) && (now.Flags & ReplicatedHumanCondition.Alive) != 0),
+        ];
+        if (living.Count == 0)
+        {
+            return null;
+        }
+
+        int start = first is null ? 0 : Math.Max(0, living.FindIndex(l => l.Name == first));
+        ScoreboardLine line = living[(start + Math.Max(0, pick)) % living.Count];
+        if (!session.Remote.Sample(drawn, line.Entity, out ReplicatedHuman seen))
+        {
+            return null;
+        }
+
+        return (line.Entity, line.Name, seen.Position.ToVector(), Quantize.AngleFromBits(seen.Yaw), Quantize.AngleFromBits(seen.Pitch));
+    }
+
     /// <summary>Gets the demo being played, when this session is one's playback; <see langword="null"/> otherwise.</summary>
     public DemoPlayback? Playback => _transport as DemoPlayback;
 
