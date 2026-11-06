@@ -56,25 +56,7 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
 
     /// <inheritdoc/>
     /// <remarks>With teams, the smaller team, as I.G.I. 2's <c>TeamManager_GetFairTeam</c> chooses; alone, everyone the same.</remarks>
-    public int TeamFor(IModeHost host, int slot)
-    {
-        ArgumentNullException.ThrowIfNull(host);
-        if (!teams)
-        {
-            return TeamRoster.Good;
-        }
-
-        TeamRoster roster = new((uint)slot);
-        foreach ((int other, MatchPlayer player) in host.Match.Players)
-        {
-            if (other != slot)
-            {
-                roster.Assign(other, player.Team);
-            }
-        }
-
-        return roster.FairTeam();
-    }
+    public int TeamFor(IModeHost host, int slot) => teams ? GameModes.FairTeam(host, slot) : TeamRoster.Good;
 
     /// <inheritdoc/>
     public void Start(IModeHost host, long tick)

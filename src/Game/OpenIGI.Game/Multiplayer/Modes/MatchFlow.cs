@@ -141,6 +141,7 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
         {
             GameModes.TeamDeathmatch => "TEAM DEATHMATCH",
             GameModes.FreeForAll => "FREE FOR ALL",
+            GameModes.Elimination => "ELIMINATION",
             GameModes.Objective => "OBJECTIVE",
             _ => Mode.ToUpperInvariant(),
         };
@@ -149,6 +150,7 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
             MatchPhase.Warmup => new MatchBanner("WARMUP", clock, "The match begins when the clock runs out"),
             MatchPhase.Intermission or MatchPhase.RoundOver => new MatchBanner(
                 title, clock, Winner < 0 || WinnerName.Length == 0 ? "DRAW" : $"{WinnerName.ToUpperInvariant()} WINS"),
+            _ when Round > 0 && Mode == GameModes.Elimination => new MatchBanner($"{title}  ·  ROUND {Round}", clock, null),
             _ => new MatchBanner(title, clock, null),
         };
     }

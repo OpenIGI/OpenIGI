@@ -182,6 +182,50 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void An_elimination_round_goes_to_the_team_left_standing_and_the_dead_wait_for_the_next()
+    {
+        Host host = new(teams: [0, 0, 1]);
+        EliminationMode mode = new(TickRate, new RoundSettings { RoundsToWin = 2, RoundOverSeconds = 1 });
+        mode.Start(host, 0);
+        Assert.Equal([0, 1, 2], host.Respawned);
+        host.Respawned.Clear();
+
+        // One of team 0 falls: no respawn, the round plays on.
+        mode.Tick(host, 10, [new WorldDeath(10, 12)]);
+        mode.Tick(host, 10 + (TickRate * 10), []);
+        Assert.Empty(host.Respawned);
+        Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
+
+        // Team 1's only player falls: round to team 0, everyone back for round 2 after the pause.
+        mode.Tick(host, 400, [new WorldDeath(12, 11)]);
+        Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
+        Assert.Equal(0, mode.Flow.Winner);
+        Assert.Equal(1, host.Match.ScoreOf(0));
+        mode.Tick(host, 400 + TickRate, []);
+        Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
+        Assert.Equal(2, mode.Flow.Round);
+        Assert.Equal([0, 1, 2], host.Respawned);
+
+        // Round 2 to the clock, two of team 0 standing to one: theirs, and with it the match after the pause.
+        mode.Tick(host, 400 + TickRate + (TickRate * 120), []);
+        Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
+        Assert.Equal(2, host.Match.ScoreOf(0));
+        mode.Tick(host, 400 + (TickRate * 122) + 1, []);
+        Assert.Equal(MatchPhase.Intermission, mode.Flow.Phase);
+        Assert.Equal(0, mode.Flow.Winner);
+    }
+
+    [Fact]
+    public void An_elimination_round_is_never_decided_with_one_team_empty()
+    {
+        Host host = new(teams: [0]);
+        EliminationMode mode = new(TickRate);
+        mode.Start(host, 0);
+        mode.Tick(host, TickRate * 200, []);
+        Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
+    }
+
+    [Fact]
     public void The_banner_runs_its_clock_down_and_names_the_winner()
     {
         MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);

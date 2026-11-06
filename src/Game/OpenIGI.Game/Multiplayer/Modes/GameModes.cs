@@ -15,8 +15,40 @@ public static class GameModes
     /// <summary>Everyone for themselves, a point a kill.</summary>
     public const string FreeForAll = "ffa";
 
+    /// <summary>Two teams, rounds of one life each, won by the team left standing.</summary>
+    public const string Elimination = "elim";
+
     /// <summary>Gets every mode id, in the order a menu lists them.</summary>
-    public static IReadOnlyList<string> All { get; } = [Coop, Objective, TeamDeathmatch, FreeForAll];
+    public static IReadOnlyList<string> All { get; } = [Coop, Objective, TeamDeathmatch, FreeForAll, Elimination];
+
+    /// <summary>Gets whether a mode plays players against each other on a level made an arena.</summary>
+    /// <param name="id">The mode's id.</param>
+    /// <returns><see langword="true"/> for the versus modes.</returns>
+    public static bool IsVersus(string? id) => id is TeamDeathmatch or FreeForAll or Elimination;
+
+    /// <summary>Gets whether a versus mode plays two teams, rather than everyone for themselves.</summary>
+    /// <param name="id">The mode's id.</param>
+    /// <returns><see langword="true"/> for the team modes.</returns>
+    public static bool HasTeams(string? id) => id is not FreeForAll;
+
+    /// <summary>Gets the team a joining player is put on to keep the teams even: the smaller, as I.G.I. 2's <c>TeamManager_GetFairTeam</c>.</summary>
+    /// <param name="host">The session.</param>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns>The team.</returns>
+    public static int FairTeam(IModeHost host, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        TeamRoster roster = new((uint)slot);
+        foreach ((int other, MatchPlayer player) in host.Match.Players)
+        {
+            if (other != slot)
+            {
+                roster.Assign(other, player.Team);
+            }
+        }
+
+        return roster.FairTeam();
+    }
 
     /// <summary>Makes the mode a server was asked for.</summary>
     /// <param name="id">The mode's id, or <see langword="null"/> or unknown for the world's own.</param>
@@ -30,9 +62,13 @@ public static class GameModes
     public static IGameMode For(string? id, IReplicatedWorld world, int tickRate)
     {
         ArgumentNullException.ThrowIfNull(world);
-        if (ArenaLevel.IsVersus(id) && world.TryPlayVersus(teams: id == TeamDeathmatch))
+        if (IsVersus(id) && world.TryPlayVersus(teams: HasTeams(id)))
         {
-            return new DeathmatchMode(tickRate, teams: id == TeamDeathmatch);
+            return id switch
+            {
+                Elimination => new EliminationMode(tickRate),
+                _ => new DeathmatchMode(tickRate, teams: id == TeamDeathmatch),
+            };
         }
 
         if (world.HoldsTheDead)

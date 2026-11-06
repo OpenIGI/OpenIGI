@@ -13,7 +13,7 @@ public static class PlayerSides
     /// <param name="theirTeam">The other's team, or <see langword="null"/> when it isn't known.</param>
     /// <returns><see langword="true"/> for a team mate.</returns>
     public static bool ShowsName(string? mode, int? ownTeam, int? theirTeam) =>
-        !ArenaLevel.IsVersus(mode) || (mode == GameModes.TeamDeathmatch && ownTeam is { } own && theirTeam == own);
+        !ArenaLevel.IsVersus(mode) || (GameModes.HasTeams(mode) && ownTeam is { } own && theirTeam == own);
 
     /// <summary>Gets whether a fallen player can be brought back by a team mate, and so is marked where it lies.</summary>
     /// <param name="mode">The mode's id.</param>

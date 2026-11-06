@@ -16,7 +16,7 @@ public static class ArenaLevel
     /// <summary>Gets whether a mode plays players against each other, so a level it is played on is an arena.</summary>
     /// <param name="mode">The mode's id.</param>
     /// <returns><see langword="true"/> for the versus modes.</returns>
-    public static bool IsVersus(string? mode) => mode is GameModes.TeamDeathmatch or GameModes.FreeForAll;
+    public static bool IsVersus(string? mode) => GameModes.IsVersus(mode);
 
     /// <summary>Takes a level's soldiers and soldier generators out of it.</summary>
     /// <param name="root">The level's root task.</param>

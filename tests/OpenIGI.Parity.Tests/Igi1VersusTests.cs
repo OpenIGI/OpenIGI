@@ -131,6 +131,24 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void An_elimination_round_ends_when_a_side_falls_and_everyone_stands_again_for_the_next()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.Elimination);
+        IGameMode mode = pair.Session.Session!.Mode;
+        Assert.Equal(GameModes.Elimination, mode.Id);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        int hostTeam = pair.Session.Session.Match.Players[ServerSession.HostSlot].Team;
+
+        ((IModeHost)pair.Session.Session).World.KillPlayer(0);
+        Assert.True(pair.RunUntil(() => mode.Flow.Phase == MatchPhase.RoundOver, 300) >= 0, "the round never ended");
+        Assert.Equal(hostTeam, mode.Flow.Winner);
+        Assert.True(partner.IsDead, "the fallen came back inside the round");
+
+        Assert.True(pair.RunUntil(() => mode.Flow.Round == 2 && !partner.IsDead, 30 * 8) >= 0, "round 2 never began with everyone standing");
+        Assert.Equal(1, pair.Session.Session.Match.ScoreOf(hostTeam));
+    }
+
+    [RequiresGameDataFact]
     public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
     {
         using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
