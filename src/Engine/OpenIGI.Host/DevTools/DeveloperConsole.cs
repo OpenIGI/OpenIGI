@@ -62,7 +62,7 @@ public sealed class DeveloperConsole : IDisposable
     private readonly Action _closeInspector;
 
     private UiSurfaces? _surfaces;
-    private MonoFontSet? _fonts;
+    private SizedFontSet? _fonts;
 
     private bool _disposed;
     private int _viewportWidth = 1;
@@ -156,7 +156,7 @@ public sealed class DeveloperConsole : IDisposable
 
         try
         {
-            _fonts = new MonoFontSet(_device, UiFontLibrary.Mono);
+            _fonts = new SizedFontSet(_device, UiFontLibrary.Mono);
             _surfaces = UiSurfaces.Create(_device);
             var theme = new DevConsoleTheme(_fonts, DevConsoleCVars.Palette.Value);
             var layer = new WindowLayer { SnapDistance = DevConsoleCVars.Snap.Value };

@@ -218,6 +218,24 @@ public interface IRhiRenderPassEncoder : IRhiPassEncoder
     /// <param name="offset">Where they start.</param>
     void DrawIndexedIndirect(IRhiBuffer arguments, ulong offset);
 
+    /// <summary>Draws indexed several times, each draw's arguments the next record of a buffer, in order.</summary>
+    /// <param name="arguments">The buffer holding them, as <see cref="RhiDrawIndexedArguments"/> records.</param>
+    /// <param name="offset">Where the first draw's arguments start.</param>
+    /// <param name="drawCount">How many draws.</param>
+    /// <remarks>
+    /// One call for what would be <paramref name="drawCount"/> draws, which is where the saving is: the draws
+    /// run in order with the state bound once, so the picture is the one the separate draws make. A device
+    /// without <see cref="RhiFeatures.MultiDrawIndirect"/> gets the loop this falls back to, which is no
+    /// cheaper than direct draws -- a caller asks the feature before choosing this over them.
+    /// </remarks>
+    void DrawIndexedIndirect(IRhiBuffer arguments, ulong offset, int drawCount)
+    {
+        for (int i = 0; i < drawCount; i++)
+        {
+            DrawIndexedIndirect(arguments, offset + ((ulong)i * RhiDrawIndexedArguments.Size));
+        }
+    }
+
     /// <summary>Begins counting the samples the following draws write.</summary>
     /// <param name="queryIndex">The slot of the pass's occlusion query set.</param>
     void BeginOcclusionQuery(int queryIndex);

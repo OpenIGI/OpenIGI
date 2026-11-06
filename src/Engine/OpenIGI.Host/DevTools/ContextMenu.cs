@@ -103,11 +103,7 @@ public sealed class ContextMenu
     /// <param name="theme">The palette and type scale.</param>
     /// <param name="viewport">The back buffer's size, so the menu can stay on screen.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// Flipped rather than clamped when it would run off an edge: a menu opened near the bottom of the
-    /// screen appears above the pointer instead of being pushed up over it, which is what every
-    /// desktop does and what keeps the pointer beside the menu rather than on top of it.
-    /// </remarks>
+    /// <remarks>Placed as every popup is (<see cref="PopupLayout.Place"/>): flipped rather than clamped at an edge.</remarks>
     public void Draw(UiPainter painter, DevConsoleTheme theme, UiVec2 viewport)
     {
         ArgumentNullException.ThrowIfNull(painter);
@@ -123,10 +119,7 @@ public sealed class ContextMenu
         float width = MathF.Round(theme.Cell * 18f);
         float height = MathF.Round((rowHeight * _items.Count) + 2f);
 
-        float x = Anchor.X + width > viewport.X ? MathF.Max(0f, Anchor.X - width) : Anchor.X;
-        float y = Anchor.Y + height > viewport.Y ? MathF.Max(0f, Anchor.Y - height) : Anchor.Y;
-
-        var rect = new UiRect(MathF.Round(x), MathF.Round(y), width, height);
+        UiRect rect = PopupLayout.Place(new UiRect(Anchor.X, Anchor.Y, 0f, 0f), PopupPlacement.At, new UiVec2(width, height), viewport);
         Bounds = rect;
 
         painter.FillRect(rect, theme.Ui.SurfaceRaised);

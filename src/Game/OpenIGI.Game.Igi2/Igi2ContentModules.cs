@@ -65,9 +65,10 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        context.Natives.RegisterConstant("AIType_Defensive", 0);
-        context.Natives.RegisterConstant("AIType_Offensive", 1);
-        context.Natives.RegisterConstant("AIType_OnVehicle", 2);
+        for (int i = 0; i < Ai.Igi2AiConstants.SquadTypes.Count; i++)
+        {
+            context.Natives.RegisterConstant(Ai.Igi2AiConstants.SquadTypes[i], i);
+        }
 
         context.Natives.RegisterConstant("OVERLAY_BINOCULAR", 0);
         context.Natives.RegisterConstant("OVERLAY_SNIPER", 2);

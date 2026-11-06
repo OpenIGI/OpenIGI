@@ -14,7 +14,26 @@ public sealed class QvmCodeWriter
 {
     private readonly List<byte> _code = [];
     private readonly List<(int Position, QvmLabel Label, bool Relative)> _fixups = [];
+    private readonly QvmOpcodeEncoding _encoding;
     private int _labelCount;
+
+    /// <summary>Initializes a new instance of the <see cref="QvmCodeWriter"/> class for I.G.I.'s version 5 encoding.</summary>
+    public QvmCodeWriter()
+        : this(QvmOpcodeEncoding.Version5)
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="QvmCodeWriter"/> class.</summary>
+    /// <param name="encoding">The opcode numbering to write, which differs between the two games' bytecode versions.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="encoding"/> is <see langword="null"/>.</exception>
+    public QvmCodeWriter(QvmOpcodeEncoding encoding)
+    {
+        ArgumentNullException.ThrowIfNull(encoding);
+        _encoding = encoding;
+    }
+
+    /// <summary>Gets the opcode numbering this writer emits.</summary>
+    public QvmOpcodeEncoding OpcodeEncoding => _encoding;
 
     /// <summary>Gets the current code offset, which is where the next instruction will start.</summary>
     public int Position => _code.Count;
@@ -38,7 +57,7 @@ public sealed class QvmCodeWriter
     /// <returns>This writer.</returns>
     public QvmCodeWriter Emit(QvmOpcode opcode)
     {
-        _code.Add((byte)opcode);
+        AddOpcode(opcode);
         return this;
     }
 
@@ -52,7 +71,7 @@ public sealed class QvmCodeWriter
     /// <returns>This writer.</returns>
     public QvmCodeWriter PushB(sbyte value)
     {
-        _code.Add((byte)QvmOpcode.PushB);
+        AddOpcode(QvmOpcode.PushB);
         _code.Add((byte)value);
         return this;
     }
@@ -62,7 +81,7 @@ public sealed class QvmCodeWriter
     /// <returns>This writer.</returns>
     public QvmCodeWriter PushW(short value)
     {
-        _code.Add((byte)QvmOpcode.PushW);
+        AddOpcode(QvmOpcode.PushW);
         AddInt16(value);
         return this;
     }
@@ -72,7 +91,7 @@ public sealed class QvmCodeWriter
     /// <returns>This writer.</returns>
     public QvmCodeWriter PushF(float value)
     {
-        _code.Add((byte)QvmOpcode.PushF);
+        AddOpcode(QvmOpcode.PushF);
         Span<byte> bytes = stackalloc byte[4];
         BinaryPrimitives.WriteSingleLittleEndian(bytes, value);
         _code.AddRange(bytes);
@@ -119,7 +138,7 @@ public sealed class QvmCodeWriter
             throw new ArgumentOutOfRangeException(nameof(opcode), opcode, "Only BRA, BF and BT take a branch target.");
         }
 
-        _code.Add((byte)opcode);
+        AddOpcode(opcode);
         _fixups.Add((_code.Count, target, Relative: true));
         AddInt32(0);
         return this;
@@ -131,7 +150,7 @@ public sealed class QvmCodeWriter
     public QvmCodeWriter Call(params QvmLabel[] arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        _code.Add((byte)QvmOpcode.Call);
+        AddOpcode(QvmOpcode.Call);
         AddInt32(arguments.Length);
         foreach (QvmLabel argument in arguments)
         {
@@ -186,12 +205,12 @@ public sealed class QvmCodeWriter
 
         if (index <= byte.MaxValue)
         {
-            _code.Add((byte)narrow);
+            AddOpcode(narrow);
             _code.Add((byte)index);
         }
         else if (index <= ushort.MaxValue)
         {
-            _code.Add((byte)medium);
+            AddOpcode(medium);
             AddInt16((short)index);
         }
         else
@@ -205,7 +224,7 @@ public sealed class QvmCodeWriter
     private QvmCodeWriter EmitInline(QvmOpcode opcode, string value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        _code.Add((byte)opcode);
+        AddOpcode(opcode);
         _code.AddRange(Encoding.Latin1.GetBytes(value));
         _code.Add(0);
         return this;
@@ -213,9 +232,20 @@ public sealed class QvmCodeWriter
 
     private QvmCodeWriter EmitInt32(QvmOpcode opcode, int value)
     {
-        _code.Add((byte)opcode);
+        AddOpcode(opcode);
         AddInt32(value);
         return this;
+    }
+
+    private void AddOpcode(QvmOpcode opcode)
+    {
+        if (!_encoding.TryEncode(opcode, out byte value))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(opcode), opcode, $"QVM version {_encoding.Version} has no encoding for {opcode}.");
+        }
+
+        _code.Add(value);
     }
 
     private void AddInt16(short value)

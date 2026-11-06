@@ -72,38 +72,88 @@ public sealed class Igi2TerrainHeightPyramid
             minimum[level] = new float[coarseWidth * coarseHeight];
             maximum[level] = new float[coarseWidth * coarseHeight];
 
-            for (int y = 0; y < coarseHeight; y++)
-            {
-                for (int x = 0; x < coarseWidth; x++)
-                {
-                    float low = float.PositiveInfinity;
-                    float high = float.NegativeInfinity;
-                    for (int dy = 0; dy < 2; dy++)
-                    {
-                        for (int dx = 0; dx < 2; dx++)
-                        {
-                            int sx = (x * 2) + dx;
-                            int sy = (y * 2) + dy;
-                            if (sx >= width || sy >= height)
-                            {
-                                continue;
-                            }
-
-                            low = MathF.Min(low, minimum[level - 1][(sy * pitch[level - 1]) + sx]);
-                            high = MathF.Max(high, maximum[level - 1][(sy * pitch[level - 1]) + sx]);
-                        }
-                    }
-
-                    minimum[level][(y * coarseWidth) + x] = low;
-                    maximum[level][(y * coarseWidth) + x] = high;
-                }
-            }
-
             width = coarseWidth;
             height = coarseHeight;
         }
 
-        return new Igi2TerrainHeightPyramid(minimum, maximum, pitch);
+        Igi2TerrainHeightPyramid pyramid = new(minimum, maximum, pitch);
+        for (int level = 1; level < levels; level++)
+        {
+            pyramid.Reduce(level, 0, 0, pitch[level] - 1, (minimum[level].Length / pitch[level]) - 1);
+        }
+
+        return pyramid;
+    }
+
+    /// <summary>Brings the bounds up to date after some of a tile's heights changed.</summary>
+    /// <param name="tile">The tile, its heights as they now stand.</param>
+    /// <param name="left">The first changed column.</param>
+    /// <param name="top">The first changed row.</param>
+    /// <param name="right">The last changed column.</param>
+    /// <param name="bottom">The last changed row.</param>
+    /// <remarks>The changed samples are read again and only the blocks above them are reduced again, level by level.</remarks>
+    public void Update(Igi2TerrainTile tile, int left, int top, int right, int bottom)
+    {
+        int width = _pitch[0];
+        int rows = _minimum[0].Length / width;
+        left = Math.Max(0, left);
+        top = Math.Max(0, top);
+        right = Math.Min(width - 1, right);
+        bottom = Math.Min(rows - 1, bottom);
+        if (left > right || top > bottom)
+        {
+            return;
+        }
+
+        for (int y = top; y <= bottom; y++)
+        {
+            for (int x = left; x <= right; x++)
+            {
+                float z = (float)tile.HeightAt(x, y);
+                _minimum[0][(y * width) + x] = z;
+                _maximum[0][(y * width) + x] = z;
+            }
+        }
+
+        for (int level = 1; level < _pitch.Length; level++)
+        {
+            (left, top, right, bottom) = (left / 2, top / 2, right / 2, bottom / 2);
+            Reduce(level, left, top, right, bottom);
+        }
+    }
+
+    // Each block of a level is the least and greatest of the up to four blocks under it.
+    private void Reduce(int level, int left, int top, int right, int bottom)
+    {
+        int finePitch = _pitch[level - 1];
+        int fineRows = _minimum[level - 1].Length / finePitch;
+        int pitch = _pitch[level];
+        for (int y = top; y <= bottom; y++)
+        {
+            for (int x = left; x <= right; x++)
+            {
+                float low = float.PositiveInfinity;
+                float high = float.NegativeInfinity;
+                for (int dy = 0; dy < 2; dy++)
+                {
+                    for (int dx = 0; dx < 2; dx++)
+                    {
+                        int sx = (x * 2) + dx;
+                        int sy = (y * 2) + dy;
+                        if (sx >= finePitch || sy >= fineRows)
+                        {
+                            continue;
+                        }
+
+                        low = MathF.Min(low, _minimum[level - 1][(sy * finePitch) + sx]);
+                        high = MathF.Max(high, _maximum[level - 1][(sy * finePitch) + sx]);
+                    }
+                }
+
+                _minimum[level][(y * pitch) + x] = low;
+                _maximum[level][(y * pitch) + x] = high;
+            }
+        }
     }
 
     /// <summary>Gets the height range over one block.</summary>

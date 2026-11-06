@@ -186,34 +186,8 @@ public sealed class ScriptExpression
         ScriptExpressionKind.Group => $"({Left})",
         ScriptExpressionKind.Conditional => $"({Left} ? {Right} : {Extra})",
         ScriptExpressionKind.Operator => ScriptOperatorInfo.IsUnary(Operator)
-            ? $"({Symbol(Operator)}{Right})"
-            : $"({Left} {Symbol(Operator)} {Right})",
+            ? $"({ScriptOperatorInfo.GetSymbol(Operator)}{Right})"
+            : $"({Left} {ScriptOperatorInfo.GetSymbol(Operator)} {Right})",
         _ => base.ToString() ?? string.Empty,
-    };
-
-    private static string Symbol(ScriptOperator op) => op switch
-    {
-        ScriptOperator.Add or ScriptOperator.UnaryPlus => "+",
-        ScriptOperator.Subtract or ScriptOperator.UnaryMinus => "-",
-        ScriptOperator.Multiply => "*",
-        ScriptOperator.Divide => "/",
-        ScriptOperator.BitwiseOr => "|",
-        ScriptOperator.BitwiseXor => "^",
-        ScriptOperator.BitwiseAnd => "&",
-        ScriptOperator.ShiftLeft => "<<",
-        ScriptOperator.ShiftRight => ">>",
-        ScriptOperator.BitwiseNot => "~",
-        ScriptOperator.Equal => "==",
-        ScriptOperator.NotEqual => "!=",
-        ScriptOperator.Less => "<",
-        ScriptOperator.Greater => ">",
-        ScriptOperator.LessOrEqual => "<=",
-        ScriptOperator.GreaterOrEqual => ">=",
-        ScriptOperator.Not => "!",
-        ScriptOperator.Assign => "=",
-        ScriptOperator.LogicalOr => "||",
-        ScriptOperator.LogicalAnd => "&&",
-        ScriptOperator.Comma => ",",
-        _ => op.ToString(),
     };
 }

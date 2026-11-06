@@ -221,7 +221,8 @@ public sealed class SilkGameWindow : IGameWindow
 
     /// <summary>Gets the window's native handles, or null on a window system that has none to give.</summary>
     /// <remarks>
-    /// macOS has none here: a surface there is made from a Metal layer, which this window does not create.
+    /// On macOS this is the <c>NSWindow</c> alone. A surface there is made from a layer on the window's view, which is a
+    /// graphics backend's to attach, so the window does not create one.
     /// </remarks>
     public DesktopWindowHandles? NativeHandles
     {
@@ -242,6 +243,11 @@ public sealed class SilkGameWindow : IGameWindow
             if (native?.X11 is { } x11)
             {
                 return new DesktopWindowHandles(DesktopWindowSystem.Xlib, x11.Display, (nint)x11.Window);
+            }
+
+            if (native?.Cocoa is { } cocoa && cocoa != 0)
+            {
+                return new DesktopWindowHandles(DesktopWindowSystem.Cocoa, 0, cocoa);
             }
 
             return null;

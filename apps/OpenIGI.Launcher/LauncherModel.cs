@@ -53,6 +53,16 @@ internal sealed class LauncherGame
     /// </remarks>
     public bool Released { get; init; }
 
+    /// <summary>Gets the switches this entry adds to the game's command line, such as <c>+editor</c> for the editor.</summary>
+    /// <remarks>
+    /// The editor is not a game of its own: it is the same build, started on <see cref="Retail"/>'s files and opened
+    /// straight into the editor, which can switch to the other title from inside.
+    /// </remarks>
+    public IReadOnlyList<string> LaunchSwitches { get; init; } = [];
+
+    /// <summary>Gets what the main button says when the entry is ready: PLAY for a game.</summary>
+    public string ReadyAction { get; init; } = "PLAY";
+
     public GameState State { get; set; }
 
     public string Version { get; set; } = string.Empty;
@@ -159,7 +169,16 @@ internal sealed partial class LauncherModel : IDisposable
         [
             new LauncherGame { Id = "igi1", Title = "Project I.G.I.", Tagline = "I'M GOING IN", Retail = GameTitle.Igi1, Released = true },
             new LauncherGame { Id = "igi2", Title = "I.G.I. 2", Tagline = "COVERT STRIKE", Retail = GameTitle.Igi2, State = GameState.Unavailable },
-            new LauncherGame { Id = "editor", Title = "Editor", Tagline = "MISSION TOOLS", State = GameState.Unavailable },
+            new LauncherGame
+            {
+                Id = "editor",
+                Title = "Editor",
+                Tagline = "MISSION TOOLS",
+                Retail = GameTitle.Igi1,
+                Released = true,
+                LaunchSwitches = ["+editor"],
+                ReadyAction = "OPEN",
+            },
         ];
         Recompute();
     }
@@ -604,7 +623,7 @@ internal sealed partial class LauncherModel : IDisposable
         try
         {
             // The launcher keeps running while the game does, in the tray or not, so it always reads its log.
-            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title), followOutput: true);
+            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments, game.LaunchSwitches), GameEnvironment(title), followOutput: true);
             _log.Follow(_running);
 
             _logger.Information(GameLogCategory, $"Started {title.DisplayName} from {build.Folder} (process {_running.Id}).");

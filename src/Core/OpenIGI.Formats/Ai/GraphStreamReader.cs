@@ -213,6 +213,17 @@ public sealed class GraphStreamReader
         return tag;
     }
 
+    /// <summary>Skips the raw bytes a blob's header announced, for a reader that keeps the record whole.</summary>
+    /// <param name="length">The byte count.</param>
+    /// <returns>The bytes.</returns>
+    /// <exception cref="GraphFormatException">Fewer bytes remain.</exception>
+    public ReadOnlyMemory<byte> ReadBlobPayload(int length)
+    {
+        int start = _position;
+        Take(length);
+        return _data.Slice(start, length);
+    }
+
     /// <summary>Reads the four-byte value the whole file opens with, without a tag.</summary>
     /// <returns>The magic.</returns>
     /// <exception cref="GraphFormatException">The stream is shorter than four bytes.</exception>

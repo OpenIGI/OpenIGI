@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Core.Diagnostics;
@@ -79,7 +80,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
                 m203Reserve,
                 frame.Width,
                 frame.Height,
-                frame.UiScale);
+                frame.RetailUiScale);
         }
 
         batch.End();
@@ -105,7 +106,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
             actionSprite,
             frame.Width,
             frame.Height,
-            frame.UiScale);
+            frame.RetailUiScale);
         batch.End();
     }
 
@@ -124,7 +125,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
             messageRuntime.DisplayedMessages.Where(static message => !message.IsCutscene),
             frame.Width,
             frame.Height,
-            frame.UiScale);
+            frame.RetailUiScale);
         batch.End();
     }
 
@@ -145,7 +146,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
             mission.Objectives?.InterfaceTimerRemainingTicks,
             frame.Width,
             frame.Height,
-            frame.UiScale);
+            frame.RetailUiScale);
         batch.End();
     }
     }
@@ -257,7 +258,7 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
         _device.Set2DProjection(frame.SafeWidth, frame.SafeHeight);
         batch.Begin();
         HudProjector? projector = modernPlayer.View is { } view
-            ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, view.TanX, frame.Width, frame.Height)
+            ? HudProjector.FromYawPitch(modernPlayer.Body.Eye, modernPlayer.Yaw, modernPlayer.Pitch, WidescreenLens.HorizontalTangent(view.TanX, frame.Width, frame.Height), frame.Width, frame.Height)
             : null;
         _remastered.Draw(batch, _model, Igi1HudTheme.Theme, icons, HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 8f) with
         {

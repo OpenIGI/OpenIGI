@@ -1,11 +1,10 @@
-using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Text;
 
-namespace OpenIGI.Host.DevTools;
+namespace OpenIGI.Presentation.Text;
 
 /// <summary>
-/// The developer tools' fixed-pitch faces, rasterised once per pixel size actually drawn.
+/// One typeface rasterised once per pixel size actually drawn: the developer console's and the editor's faces.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,7 +16,7 @@ namespace OpenIGI.Host.DevTools;
 /// </para>
 /// <para>
 /// So each size the interface asks for gets its own atlas at exactly that height, and every draw is
-/// one-to-one. The cost is bounded and small: the tools use three or four sizes, each is a few
+/// one-to-one. The cost is bounded and small: a tool uses three or four sizes, each is a few
 /// hundred kilobytes, and <see cref="FontAtlasCache"/> keys on the pixel height so every one of them
 /// is rasterised once ever and read from disk afterwards.
 /// </para>
@@ -27,7 +26,7 @@ namespace OpenIGI.Host.DevTools;
 /// soft.
 /// </para>
 /// </remarks>
-public sealed class MonoFontSet : IDisposable
+public sealed class SizedFontSet : IDisposable
 {
     /// <summary>The smallest atlas built, below which text is unreadable anyway.</summary>
     private const int MinimumSize = 8;
@@ -37,20 +36,23 @@ public sealed class MonoFontSet : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly string _fileName;
+    private readonly IReadOnlyList<int>? _codepoints;
     private readonly Dictionary<int, UiFont> _bySize = [];
     private bool _disposed;
 
-    /// <summary>Initialises a new instance of the <see cref="MonoFontSet"/> class.</summary>
+    /// <summary>Initialises a new instance of the <see cref="SizedFontSet"/> class.</summary>
     /// <param name="device">The device atlases are uploaded to.</param>
     /// <param name="fileName">The font file in the shipped fonts directory.</param>
+    /// <param name="codepoints">The characters to rasterise, or <see langword="null"/> for the usual extended Latin set.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public MonoFontSet(IGraphicsDevice device, string fileName)
+    public SizedFontSet(IGraphicsDevice device, string fileName, IReadOnlyList<int>? codepoints = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
 
         _device = device;
         _fileName = fileName;
+        _codepoints = codepoints;
     }
 
     /// <summary>Gets how many distinct sizes have been rasterised.</summary>
@@ -76,7 +78,7 @@ public sealed class MonoFontSet : IDisposable
             return existing;
         }
 
-        UiFont built = UiFontLibrary.Load(_device, _fileName, size);
+        UiFont built = UiFontLibrary.Load(_device, _fileName, size, codepoints: _codepoints);
         _bySize[size] = built;
         return built;
     }

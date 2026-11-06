@@ -72,7 +72,11 @@ public sealed class Igi2TerrainMap
     /// </remarks>
     public const uint VersionWord = 1008981770;
 
-    private readonly ReadOnlyMemory<byte> _samples;
+    // The whole file, owned: a map is edited in place, and everything holding it (the ground, the drawing, collision) sees
+    // the edit at once. The samples are a window into it.
+    private readonly byte[] _file;
+    private readonly int _headerSize;
+    private readonly int _sampleBytes;
 
     private Igi2TerrainMap(
         Igi2TerrainMapKind kind,
@@ -80,16 +84,18 @@ public sealed class Igi2TerrainMap
         int height,
         float offset,
         float scale,
-        ReadOnlyMemory<byte> samples,
-        ReadOnlyMemory<byte> trailing)
+        byte[] file,
+        int headerSize,
+        int sampleBytes)
     {
         Kind = kind;
         Width = width;
         Height = height;
         Offset = offset;
         Scale = scale;
-        _samples = samples;
-        Trailing = trailing;
+        _file = file;
+        _headerSize = headerSize;
+        _sampleBytes = sampleBytes;
     }
 
     /// <summary>Gets which of the three maps this is.</summary>
@@ -117,7 +123,10 @@ public sealed class Igi2TerrainMap
     public float Scale { get; }
 
     /// <summary>Gets the sample payload, row-major, <see cref="SampleSize"/> bytes per sample.</summary>
-    public ReadOnlyMemory<byte> Samples => _samples;
+    public ReadOnlyMemory<byte> Samples => _file.AsMemory(_headerSize, _sampleBytes);
+
+    /// <summary>Gets a number that changes whenever a sample is set, so a cache built from the map can tell it is stale.</summary>
+    public int Revision { get; private set; }
 
     /// <summary>Gets whatever follows the declared extent; empty for all but two retail files.</summary>
     /// <remarks>
@@ -138,7 +147,7 @@ public sealed class Igi2TerrainMap
     /// them.
     /// </para>
     /// </remarks>
-    public ReadOnlyMemory<byte> Trailing { get; }
+    public ReadOnlyMemory<byte> Trailing => _file.AsMemory(_headerSize + _sampleBytes);
 
     /// <summary>Gets how many bytes one sample of this map occupies.</summary>
     public int SampleSize => SampleSizeOf(Kind);
@@ -240,8 +249,7 @@ public sealed class Igi2TerrainMap
                 $"A {width}x{height} {kind} terrain map carries {actual} sample bytes, needs {expected}.");
         }
 
-        int payload = headerSize + (int)expected;
-        return new Igi2TerrainMap(kind, width, height, offset, scale, data[headerSize..payload], data[payload..]);
+        return new Igi2TerrainMap(kind, width, height, offset, scale, data.ToArray(), headerSize, (int)expected);
     }
 
     /// <summary>Reads a terrain map and requires it to be of a particular kind.</summary>
@@ -302,10 +310,41 @@ public sealed class Igi2TerrainMap
     /// <remarks>The fallback buffer for a missing <c>.tmm</c> is zeroed, so index zero is the default.</remarks>
     public byte GetMaterial(int x, int y) => SampleAt(x, y, Igi2TerrainMapKind.Material)[0];
 
+    /// <summary>Sets one height sample.</summary>
+    /// <param name="x">The column, from zero.</param>
+    /// <param name="y">The row, from zero.</param>
+    /// <param name="value">The height, in world units, stored as is.</param>
+    /// <exception cref="InvalidOperationException">This is not a height map.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The coordinates fall outside the map.</exception>
+    public void SetHeight(int x, int y, float value)
+    {
+        BinaryPrimitives.WriteSingleLittleEndian(SampleAt(x, y, Igi2TerrainMapKind.Height), value);
+        Revision++;
+    }
+
+    /// <summary>Sets one material index.</summary>
+    /// <param name="x">The column, from zero.</param>
+    /// <param name="y">The row, from zero.</param>
+    /// <param name="material">The index of a <c>TerrainMaterial</c> the level declares.</param>
+    /// <exception cref="InvalidOperationException">This is not a material map.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The coordinates fall outside the map.</exception>
+    public void SetMaterial(int x, int y, byte material)
+    {
+        SampleAt(x, y, Igi2TerrainMapKind.Material)[0] = material;
+        Revision++;
+    }
+
+    /// <summary>Writes the map back to a file.</summary>
+    /// <returns>
+    /// The header as it was read, the samples as they now stand, and any trailing bytes as they were: a map with no sample
+    /// set is the file it was read from, byte for byte.
+    /// </returns>
+    public byte[] Write() => (byte[])_file.Clone();
+
     /// <inheritdoc/>
     public override string ToString() => $"{Kind} terrain map {Width}x{Height}";
 
-    private ReadOnlySpan<byte> SampleAt(int x, int y, Igi2TerrainMapKind expected)
+    private Span<byte> SampleAt(int x, int y, Igi2TerrainMapKind expected)
     {
         if (Kind != expected)
         {
@@ -318,6 +357,6 @@ public sealed class Igi2TerrainMap
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(y, Height);
 
         int size = SampleSizeOf(Kind);
-        return _samples.Span.Slice(((y * Width) + x) * size, size);
+        return _file.AsSpan(_headerSize + (((y * Width) + x) * size), size);
     }
 }

@@ -471,7 +471,8 @@ internal sealed unsafe partial class VulkanRhiDevice
         Float32Filterable: true,
         DepthClamp: true,
         IndirectFirstInstance: true,
-        TextureCompressionBc: device.Capabilities.TextureCompressionBc);
+        TextureCompressionBc: device.Capabilities.TextureCompressionBc,
+        MultiDrawIndirect: device.Capabilities.MultiDrawIndirect);
 
     /// <summary>The sizes this device will not exceed.</summary>
     /// <remarks>

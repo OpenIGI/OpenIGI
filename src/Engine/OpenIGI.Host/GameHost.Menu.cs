@@ -59,6 +59,7 @@ public sealed partial class GameHost
         _scene = preview.Scene;
         _mission.Solids = preview.Solids;
         _mission.Spins = preview.Spins;
+        _mission.Models = preview.Models;
         _timeOfDay.Sun = preview.Sun;
 
         _mission.Terrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;

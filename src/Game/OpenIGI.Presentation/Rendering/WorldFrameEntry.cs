@@ -16,6 +16,12 @@ internal struct WorldFrameEntry
     /// <summary>Whether the placement moves on its own, so its draws stamp their own motion.</summary>
     public bool Moving;
 
+    /// <summary>
+    /// Whether the title's view culling leaves the placement out of the eye's picture this frame. Only the eye's passes drop it: a
+    /// room the portal walk did not reach still stands between the sun and the room the eye is in, so it keeps casting and tracing.
+    /// </summary>
+    public bool EyeCulled;
+
     /// <summary>The window the title's view culling sees the placement through this frame, or null for the whole view.</summary>
     public ViewClip? Clip;
     public ResolvedWorldModel? Model;

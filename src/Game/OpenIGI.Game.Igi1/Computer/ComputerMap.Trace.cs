@@ -103,7 +103,8 @@ public sealed partial class ComputerMap
         }
 
         IIgi1ComputerWorld world = _computer.World;
-        float fov = CameraFieldOfView;
+        // The lens across the display as the picture was drawn with it, fitted to the display's shape (WidescreenLens).
+        float fov = WidescreenLens.HorizontalTangent(CameraFieldOfView, w, h);
         double sx = (((double)(mx + mx) - w) * fov) / w;
         double sy = (((double)(my + my) - h) * (_computer.PixelAspect * fov)) / w;
         Matrix3f m = View;
@@ -115,7 +116,7 @@ public sealed partial class ComputerMap
         Vector3d start = CameraPosition;
         Vector3d end = start + (dir * (Far / length));
         bool found = world.TryLine(start, end, out Vector3d hit, out GameTask? struck);
-        double near = fov * Near;
+        double near = CameraFieldOfView * Near;
 
         GameTask? human = null;
         foreach (ComputerObject candidate in world.Humans())

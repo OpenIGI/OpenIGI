@@ -21,11 +21,17 @@ public static class HumanSoldierFemaleStates
     /// <summary>Standing — <c>0x453A30</c>. Plays the declared stand animation, else 6.</summary>
     public const int StandState = 0;
 
-    /// <summary>Walking forward — <c>0x453C40</c>, animation 3.</summary>
-    public const int WalkState = 1;
+    /// <summary>Running forward — <c>0x453C40</c>, animation 3: the run clip, 3.4 m in 21 frames.</summary>
+    /// <remarks>
+    /// Entered while the byte at <c>Human+3328</c> is clear, which is the AI's run gait: its run setter (<c>0x452660</c>)
+    /// clears the byte, its walk setter (<c>0x4525E0</c>) sets it. The female table puts the run clip in the slot the
+    /// soldier's walk takes, so Anya and Ekk run their RunTo legs in this state (issue #42).
+    /// </remarks>
+    public const int RunState = 1;
 
-    /// <summary>Running forward — <c>0x453DE0</c>, animation 2.</summary>
-    public const int RunState = 2;
+    /// <summary>Walking forward — <c>0x453DE0</c>, animation 2: the walk clip, 1.3 m in 31 frames.</summary>
+    /// <remarks>Entered while the byte at <c>Human+3328</c> is set, the AI's walk gait (<c>0x4525E0</c>).</remarks>
+    public const int WalkState = 2;
 
     /// <summary>Firing — <c>0x453F80</c>, animation 9. The only state that forwards the trigger.</summary>
     public const int FiringState = 3;

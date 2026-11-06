@@ -114,7 +114,8 @@ internal sealed class AiScenarioSupport : IDisposable
             .LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout)
             .ApplyTo(fileSystem);
 
-        HostOptions options = HostOptions.Parse(args);
+        // A scenario host writes nothing of the player's own: no profile, no settings.
+        HostOptions options = HostOptions.Parse([.. args, "-nosave"]);
         return new GameHost(
             new HeadlessPlatformHost(),
             window,

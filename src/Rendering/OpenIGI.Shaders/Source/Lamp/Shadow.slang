@@ -122,6 +122,10 @@ struct Params
 
 [[vk::binding(8, 0)]] ConstantBuffer<Params> p;
 
+// Which lamps can reach each cell of the view (Lamp/Grid.slang), so the reservoirs stream those alone.
+[[vk::binding(15, 0)]] StructuredBuffer<uint> uLampGrid;
+#include "../Common/LampGrid.slang"
+
 #if OPENIGI_LAMP_FIELD
 // Where the distance field stands, in a block of its own so the traced form's layout is untouched.
 struct FieldParams
@@ -354,9 +358,18 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         pick[k] = frac(u + (float(k) / float(kSamples)));
     }
 
+    // The lamps that can reach this pixel's cell, in the frame's order: a lamp the cell leaves out has no reach
+    // here and would be passed over below before it touched a reservoir, so the draw is the same.
+    uint lampCell;
+    uint lampFirst = 0u;
+    uint lampListed = 0u;
+    bool lampGridded = LampGridCell(uv, viewPos.z, lampCell) && LampGridList(lampCell, lampFirst, lampListed);
+    int lampWalk = lampGridded ? int(lampListed) : lampCount;
+
     float weightSum = 0.0;
-    for (int i = 0; i < lampCount; i++)
+    for (int n = 0; n < lampWalk; n++)
     {
+        int i = lampGridded ? LampGridLamp(lampFirst, uint(n)) : n;
         // The lighting pass's own diffuse term for this lamp, from the same function: a tube integrated along
         // its length, a point softened inside its fitting, the reach window and the cone. Weighed any other way,
         // a lamp the shading lights a surface with can count as reaching it not at all, and its light goes

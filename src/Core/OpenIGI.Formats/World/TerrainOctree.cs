@@ -36,11 +36,15 @@ public sealed class TerrainOctree
 
     private readonly TerrainNode[] _nodes;
 
-    private TerrainOctree(TerrainNode[] nodes, IReadOnlyList<string> defects)
+    private TerrainOctree(TerrainNode[] nodes, IReadOnlyList<string> defects, ReadOnlyMemory<byte> data)
     {
         _nodes = nodes;
         Defects = defects;
+        Data = data;
     }
+
+    /// <summary>Gets the file's bytes.</summary>
+    public ReadOnlyMemory<byte> Data { get; }
 
     /// <summary>Gets the nodes, in file order.</summary>
     public ReadOnlySpan<TerrainNode> Nodes => _nodes;
@@ -111,7 +115,7 @@ public sealed class TerrainOctree
             nodes[i] = new TerrainNode(span.Slice(i * TerrainNode.Stride, TerrainNode.Stride));
         }
 
-        return new TerrainOctree(nodes, new ReadOnlyCollection<string>(Validate(nodes)));
+        return new TerrainOctree(nodes, new ReadOnlyCollection<string>(Validate(nodes)), data);
     }
 
     /// <inheritdoc/>

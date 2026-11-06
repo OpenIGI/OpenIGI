@@ -37,4 +37,28 @@ public readonly record struct UiVec2(float X, float Y)
     /// <param name="s">The scalar.</param>
     /// <returns>The scaled vector.</returns>
     public static UiVec2 operator *(UiVec2 v, float s) => new(v.X * s, v.Y * s);
+
+    /// <summary>Gets the vector's length.</summary>
+    public float Length => MathF.Sqrt((X * X) + (Y * Y));
+
+    /// <summary>Gets the distance between two points.</summary>
+    /// <param name="a">The first point.</param>
+    /// <param name="b">The second point.</param>
+    /// <returns>The distance.</returns>
+    public static float Distance(UiVec2 a, UiVec2 b) => (a - b).Length;
+
+    /// <summary>Gets the distance from a point to the nearest point of a segment.</summary>
+    /// <param name="point">The point.</param>
+    /// <param name="start">The segment's start.</param>
+    /// <param name="end">The segment's end.</param>
+    /// <returns>The distance.</returns>
+    public static float DistanceToSegment(UiVec2 point, UiVec2 start, UiVec2 end)
+    {
+        UiVec2 along = end - start;
+        float t = Math.Clamp(
+            (((point.X - start.X) * along.X) + ((point.Y - start.Y) * along.Y)) / MathF.Max(1e-6f, (along.X * along.X) + (along.Y * along.Y)),
+            0f,
+            1f);
+        return Distance(point, start + (along * t));
+    }
 }

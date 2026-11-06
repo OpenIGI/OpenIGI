@@ -68,6 +68,8 @@ public sealed partial class GraphicsDevice
     private bool _groundDetail;
     private bool _paintedSky;
     private bool _frameHasPaintedSky;
+    private float _paintedSkyWeight = 1f;
+    private bool _paintedSkyFogged = true;
     private float _floorGloss = 1f;
     private float _writtenFloorGloss = float.NaN;
     private float _materialDetail;
@@ -143,6 +145,14 @@ public sealed partial class GraphicsDevice
         ThrowIfDisposed();
         _paintedSky = painted;
         _frameHasPaintedSky |= painted;
+    }
+
+    /// <inheritdoc/>
+    public void SetPaintedSkyWeight(float weight, bool fogged = true)
+    {
+        ThrowIfDisposed();
+        _paintedSkyWeight = Math.Clamp(weight, 0f, 1f);
+        _paintedSkyFogged = fogged;
     }
 
     /// <inheritdoc/>

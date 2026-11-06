@@ -75,6 +75,38 @@ public readonly struct TerrainCommandBlock
         return new TerrainPackedVertex(BinaryPrimitives.ReadUInt32LittleEndian(_vertices.Span[(index * 4)..]));
     }
 
+    /// <summary>Writes the block again with new heights for its vertices, every other bit as it was.</summary>
+    /// <param name="heights">Each vertex's Z offset, in twenty-fourths of the extent; clamped to the chunk's cube.</param>
+    /// <param name="highest">
+    /// The highest offset kept: the cube's top by default, or up to the 39 six bits can store, which the descent draws
+    /// as readily (a quad may lean out of the top of its cube; it can never reach below it, as the bias is 24).
+    /// </param>
+    /// <returns>The block's bytes, header first, ready to be appended to a <c>terrain.cmd</c>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="heights"/> does not hold one value per vertex.</exception>
+    public byte[] WithHeights(ReadOnlySpan<int> heights, int highest = TerrainPackedVertex.UnitsPerExtent)
+    {
+        if (heights.Length != VertexCount)
+        {
+            throw new ArgumentException($"A block of {VertexCount} vertices needs as many heights, got {heights.Length}.", nameof(heights));
+        }
+
+        byte[] bytes = new byte[HeaderSize + _triangles.Length + _vertices.Length];
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes, (ushort)TriangleCount);
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(2), (short)(TriangleCount * 4));
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(4), (ushort)BaseVertexCount);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(6), (ushort)ExtraVertexCount);
+        _triangles.Span.CopyTo(bytes.AsSpan(HeaderSize));
+        Span<byte> vertices = bytes.AsSpan(HeaderSize + _triangles.Length);
+        for (int i = 0; i < VertexCount; i++)
+        {
+            uint z = (uint)(Math.Clamp(heights[i], -TerrainPackedVertex.UnitsPerExtent, Math.Min(highest, 63 - TerrainPackedVertex.UnitsPerExtent)) + TerrainPackedVertex.UnitsPerExtent);
+            uint packed = (Vertex(i).Packed & ~(0x3Fu << 14)) | (z << 14);
+            BinaryPrimitives.WriteUInt32LittleEndian(vertices[(i * 4)..], packed);
+        }
+
+        return bytes;
+    }
+
     /// <inheritdoc/>
     public override string ToString() =>
         $"{TriangleCount} triangles, {BaseVertexCount}+{ExtraVertexCount} vertices";

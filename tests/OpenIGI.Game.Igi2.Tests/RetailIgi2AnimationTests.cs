@@ -126,4 +126,25 @@ public sealed class RetailIgi2AnimationTests
         Assert.Equal((raise.TotalTime - 100) % (raise.TotalTime + 1), animation.MainTime);
         Assert.Equal(-Igi2AnimController.TicksPerFrame, animation.MainTimeStep);
     }
+
+    /// <summary>A clip file plays on a body of its rig, opening on itself, and moves the body as it plays.</summary>
+    [RequiresTitleDataFact("igi2")]
+    public void A_clip_file_plays_on_a_body_of_its_rig()
+    {
+        Igi2Level level = Igi2Level.Find("location1", "level1");
+        (List<LoadedPack> packs, ResourceRegistry resources) = Igi2LevelScene.Packs(level);
+        (Igi2AnimationLibrary library, Igi2BoneHierarchy rig) = Mission1.Value;
+        Igi2AnimationClip walk = library.ClipsOf(rig).First(static c => c.TotalTime > 10);
+        Assert.True(resources.TryLoad(Igi2AnimationLibrary.ClipResourceName(walk.Name), out ReadOnlyMemory<byte> file));
+
+        AnimationFilePreview preview = Igi2ModelAnimator.PreviewFile(file, packs, library)!;
+        Assert.Equal(0, preview.OpenClip);
+        Assert.StartsWith(walk.Name, preview.Animator.Clips[0], StringComparison.Ordinal);
+        Assert.True(preview.Animator.Clips.Count > 1);
+        Core.Graphics.Vertex3D[] first = new Core.Graphics.Vertex3D[preview.Body.Vertices.Length];
+        Core.Graphics.Vertex3D[] later = new Core.Graphics.Vertex3D[first.Length];
+        preview.Animator.Pose(0, 0f, first);
+        preview.Animator.Pose(0, preview.Animator.Seconds(0) * 0.5f, later);
+        Assert.Contains(first.Zip(later), static p => (p.First.Position - p.Second.Position).Length > 1f);
+    }
 }

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -235,6 +236,8 @@ public sealed class GunPickupRegistry
     private readonly List<GunPickup> _items = [];
     private readonly List<GunPickupImpact> _impacts = [];
     private readonly AmmoTypeRegistry _ammunition;
+    private ScriptVarRegistry? _variables;
+    private bool _inWalk;
 
     private GunPickupRegistry(AmmoTypeRegistry ammunition) => _ammunition = ammunition;
 
@@ -260,7 +263,7 @@ public sealed class GunPickupRegistry
         ArgumentNullException.ThrowIfNull(weapons);
         ArgumentNullException.ThrowIfNull(ammunition);
 
-        GunPickupRegistry registry = new(ammunition);
+        GunPickupRegistry registry = new(ammunition) { _variables = variables };
         Collect(root, registry, weapons, ammunition);
         if (variables is not null)
         {
@@ -268,7 +271,7 @@ public sealed class GunPickupRegistry
             {
                 if (pickup.Task is { } task)
                 {
-                    variables.BindBool(task, "isPickedUp", () => pickup.IsCollected, value => pickup.IsCollected = value);
+                    TakenPickupTask.Export(variables, task, () => pickup.IsCollected, value => pickup.IsCollected = value);
                 }
             }
         }
@@ -322,12 +325,7 @@ public sealed class GunPickupRegistry
         // GunPickup::Update forwards its configured clip size. The human handler deliberately
         // leaves an existing weapon in place and turns the same payload into loose reserve ammo.
         inventory.PickUp(pickup.Weapon, pickup.Ammo, pickup.Weapon.RoundsPerClip);
-        pickup.IsCollected = true;
-        if (pickup.Task is { } task)
-        {
-            task.Tree.Delete(task);
-        }
-
+        Take(pickup);
         return true;
     }
 
@@ -344,10 +342,33 @@ public sealed class GunPickupRegistry
             return;
         }
 
-        pickup.IsCollected = true;
-        if (pickup.Task is { } task)
+        Take(pickup);
+    }
+
+    /// <summary>Puts each authored pickup's update into the level's walk, where its task deletes itself once taken.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>See <see cref="TakenPickupTask"/>.</remarks>
+    public void AttachTo(LevelRun walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        _inWalk = true;
+        foreach (GunPickup pickup in _items)
         {
-            task.Tree.Delete(task);
+            if (pickup.Task is { } task)
+            {
+                TakenPickupTask.BindUpdate(walker, task, () => pickup.IsCollected, _variables);
+            }
+        }
+    }
+
+    // Takes the pickup out of the level. In a level walk, its task stays until its own update deletes it. Without
+    // a walk, nothing would run that update, so the task goes now.
+    private void Take(GunPickup pickup)
+    {
+        pickup.IsCollected = true;
+        if (!_inWalk && pickup.Task is { } task)
+        {
+            TakenPickupTask.Delete(task, _variables);
         }
     }
 

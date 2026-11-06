@@ -65,7 +65,7 @@ public sealed class ResourceOverrides : IFileOverlay
     public const string ArchiveExtension = ".res";
 
     private readonly IOpenIgiLogger _logger;
-    private readonly Layer[] _layers;
+    private Layer[] _layers;
 
     // The index is read from more than one thread. A menu backdrop builds its level on a worker, and the
     // registry it builds into resolves every archived entry through this store while the render thread is
@@ -179,24 +179,69 @@ public sealed class ResourceOverrides : IFileOverlay
     {
         // Built off to the side and published at the end, so the walk -- which opens and reads the header
         // of every archive in every folder -- never holds the lock a level load is resolving through.
-        var indexes = new Dictionary<string, Candidate>[_layers.Length];
-        for (int layer = 0; layer < _layers.Length; layer++)
+        Layer[] layers = _layers;
+        var indexes = new Dictionary<string, Candidate>[layers.Length];
+        for (int layer = 0; layer < layers.Length; layer++)
         {
-            indexes[layer] = ScanLayer(layer);
+            indexes[layer] = ScanLayer(layers, layer);
         }
 
         lock (_gate)
         {
             Dictionary<string, Candidate> previous = _files;
 
-            for (int layer = 0; layer < _layers.Length; layer++)
+            for (int layer = 0; layer < layers.Length; layer++)
             {
-                _layers[layer].Index = indexes[layer];
+                layers[layer].Index = indexes[layer];
             }
 
             _files = Merge();
             return Compare(previous, _files);
         }
+    }
+
+    /// <summary>
+    /// Puts a layer on top of the stack, above every other, replacing any layer with the same id, and rescans.
+    /// </summary>
+    /// <param name="layer">The layer, such as the editor's open project.</param>
+    /// <returns>What changed.</returns>
+    /// <remarks>
+    /// For a tool that brings its own content while the game runs: the editor mounts the project it is saving
+    /// to, so the level it reloads is built from the project's files over the game's.
+    /// </remarks>
+    public ScanResult Mount(OverrideLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        Layer added = new(layer.Id, layer.Name, string.IsNullOrWhiteSpace(layer.Root) ? null : Path.GetFullPath(layer.Root), layer.Enabled);
+        lock (_gate)
+        {
+            _layers = [added, .. _layers.Where(existing => !string.Equals(existing.Id, layer.Id, StringComparison.OrdinalIgnoreCase))];
+        }
+
+        return Rescan();
+    }
+
+    /// <summary>Takes a mounted layer off the stack and rescans.</summary>
+    /// <param name="layer">The layer's id.</param>
+    /// <param name="result">Receives what changed.</param>
+    /// <returns><see langword="false"/> when no layer has that id.</returns>
+    public bool Unmount(string layer, out ScanResult result)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        result = default;
+        lock (_gate)
+        {
+            Layer[] kept = [.. _layers.Where(existing => !string.Equals(existing.Id, layer, StringComparison.OrdinalIgnoreCase))];
+            if (kept.Length == _layers.Length)
+            {
+                return false;
+            }
+
+            _layers = kept;
+        }
+
+        result = Rescan();
+        return true;
     }
 
     /// <summary>Switches one layer on or off, re-resolving every path from the indexes already held.</summary>
@@ -514,10 +559,10 @@ public sealed class ResourceOverrides : IFileOverlay
         return [.. found];
     }
 
-    private Dictionary<string, Candidate> ScanLayer(int layer)
+    private Dictionary<string, Candidate> ScanLayer(Layer[] layers, int layer)
     {
         Dictionary<string, Candidate> index = new(StringComparer.OrdinalIgnoreCase);
-        string? root = _layers[layer].Root;
+        string? root = layers[layer].Root;
 
         if (root is null || !Directory.Exists(root))
         {
@@ -610,7 +655,7 @@ public sealed class ResourceOverrides : IFileOverlay
             }
         }
 
-        _logger.Information(LogCategory, $"'{_layers[layer].Name}': '{archive}' contributes {registered} override(s).");
+        _logger.Information(LogCategory, $"'{LayerName(layer)}': '{archive}' contributes {registered} override(s).");
     }
 
     // Under _gate. Walks the layers top-down so each path keeps the first enabled layer that has it.
@@ -686,6 +731,12 @@ public sealed class ResourceOverrides : IFileOverlay
     /// <param name="Winner">The index of the layer that supplies it.</param>
     /// <param name="Covered">The indexes of the enabled layers below that also carry it.</param>
     public sealed record Conflict(string Path, int Winner, IReadOnlyList<int> Covered);
+
+    private string LayerName(int layer)
+    {
+        Layer[] layers = _layers;
+        return layer < layers.Length ? layers[layer].Name : string.Empty;
+    }
 
     private sealed class Layer(string id, string name, string? root, bool enabled)
     {

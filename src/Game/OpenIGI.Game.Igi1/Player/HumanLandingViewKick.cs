@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// if (camera[452] != 0.0) {
 ///     s = sin(camera[456]);
 ///     z          += camera[452] * s;          // the camera's world-space height
-///     rigOffset   = camera[452] * 0.075 * s;  // the first-person rig follows at 7.5%
+///     rigOffset   = camera[452] * 0.075 * s;  // added to the rig, on top of the dipped eye
 ///     camera[456] += 0.20943952;
 ///     if (camera[456] >= 3.1415927) camera[452] = 0.0;
 /// }
@@ -48,7 +48,8 @@ public sealed class HumanLandingViewKick
     /// <summary>The phase at which the dip is over and the amplitude is dropped.</summary>
     public const float EndPhaseRadians = 3.1415927f;
 
-    /// <summary>The share of the camera's drop the first-person rig takes — <c>0.075</c>.</summary>
+    /// <summary>The share of the camera's drop the first-person rig takes again on top of the dipped eye — <c>0.075</c>.</summary>
+    /// <remarks>The rig is placed from the eye <c>0x464BD0</c> has already dipped, so it drops by 107.5% of the dip in all.</remarks>
     public const float ViewModelShare = 0.075f;
 
     /// <summary>How many ticks a dip runs for: fifteen, which is half a second at 30 Hz.</summary>
@@ -60,7 +61,7 @@ public sealed class HumanLandingViewKick
     /// <summary>Gets this tick's camera displacement, in world units. Negative is downward.</summary>
     public float OffsetUnits { get; private set; }
 
-    /// <summary>Gets the share of that displacement the first-person rig takes, in world units.</summary>
+    /// <summary>Gets the extra drop the first-person rig takes beyond the camera's, in world units.</summary>
     public float ViewModelOffsetUnits => OffsetUnits * ViewModelShare;
 
     /// <summary>Gets whether a dip is still playing.</summary>

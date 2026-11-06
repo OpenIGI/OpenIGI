@@ -88,7 +88,10 @@ internal sealed class TracedWorld : ITracedWorld, IDisposable
         _scene.CasterGeometryCount,
         _scene.PlacementCount,
         _albedo.Count,
-        _albedo.Overflowed);
+        _albedo.Overflowed,
+        _scene.Memory.BottomLevel,
+        _scene.Memory.TopLevel,
+        _scene.Memory.Scratch);
 
     /// <inheritdoc/>
     public ulong HitRecordHandle => _scene.RecordHandle;

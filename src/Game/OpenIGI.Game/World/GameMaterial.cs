@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.World;
 
 /// <summary>
@@ -31,7 +33,7 @@ public readonly record struct GunShotEffect(
     string Model)
 {
     /// <summary>World units in a metre, which the reader multiplies the size by.</summary>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     /// <summary>Gets the mark's width in world units — the size as the original stores it.</summary>
     public float SizeInUnits => SizeInMetres * UnitsPerMetre;

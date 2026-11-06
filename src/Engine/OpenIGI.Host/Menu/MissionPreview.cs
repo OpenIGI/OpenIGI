@@ -84,6 +84,10 @@ namespace OpenIGI.Host.Menu;
 /// The title's view culling over the scene, when its walk produced one. Carried for the same reason as
 /// <paramref name="Spins"/>: a promoted mission keeps the backdrop's renderer.
 /// </param>
+/// <param name="Models">
+/// Finds a model by the name level data gives it, when the title's walk offers that; carried so the editor can draw new
+/// objects in a mission entered from the menu as well.
+/// </param>
 /// <param name="BeforePlay">
 /// Puts the level back as a cold load finds it. The backdrop shows every section the level streams in by area (see
 /// <see cref="ConditionalContainerGate.OpenEveryArea"/>); a promoted mission runs this first, so its areas start as
@@ -115,4 +119,5 @@ public sealed record MissionPreview(
     IGroundHeightField? Ground = null,
     IPlacementSpin? Spins = null,
     IPlacementVisibility? Visibility = null,
-    Action? BeforePlay = null);
+    Action? BeforePlay = null,
+    Func<string, WorldModelBinding?>? Models = null);

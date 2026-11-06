@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
 
@@ -116,11 +117,17 @@ public readonly record struct TerrainView(
         float tangentY = MathF.Tan(verticalFieldOfView * 0.5f);
         float tangentX = tangentY * aspectRatio;
 
+        // The detail distance follows the lens as authored across 4:3, not as a wide screen widens it: the extra
+        // width shows more ground at the sides, at the detail the original lens would draw it. See WidescreenLens.
+        float authoredTangentX = WidescreenLens.HorPlus
+            ? MathF.Min(tangentX, tangentY * WidescreenLens.AuthoredAspect)
+            : tangentX;
+
         return new TerrainView(
             camera,
             tangentX,
             tangentY,
-            viewDistance is { } given ? Math.Max(MinimumViewDistance, given) : ViewDistanceFor(tangentX),
+            viewDistance is { } given ? Math.Max(MinimumViewDistance, given) : ViewDistanceFor(authoredTangentX),
             floorZ);
     }
 

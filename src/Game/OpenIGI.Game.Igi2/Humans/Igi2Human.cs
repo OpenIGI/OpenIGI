@@ -17,7 +17,7 @@ namespace OpenIGI.Game.Igi2.Humans;
 public abstract partial class Igi2Human : Game.Ai.IAiHuman, Animation.IIgi2MorphTargets
 {
     /// <summary>The animation controller's ticks per game frame, <c>AnimController_nTicksPerFrame</c> (<c>igi2 0x63681C</c>).</summary>
-    public const int AnimationTicksPerFrame = 160;
+    public const int AnimationTicksPerFrame = OpenIGI.Game.Igi2.Animation.Igi2AnimController.TicksPerFrame;
 
     /// <summary>The ground tolerance a human normally has, and returns to after a jump or a crawl.</summary>
     public const float LandingGroundTolerance = 819.20001f;

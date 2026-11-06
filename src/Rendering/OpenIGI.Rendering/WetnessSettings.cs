@@ -69,8 +69,8 @@ public readonly record struct WetnessSettings(
     /// <remarks>
     /// <para>
     /// Soaked but not drowned. The wetness stops short of one so that the damp darkening and the puddle
-    /// mask keep some headroom, and a little under half of the level ground stands under water, which is
-    /// enough for the yard to read as flooded in patches without turning into a lake.
+    /// mask keep some headroom, and a quarter of the level ground stands under water: puddles in the
+    /// hollows of a soaked yard. Nearly half read as a flooded landscape of mirrors.
     /// </para>
     /// <para>
     /// The ripple lattice is half a metre, which puts a few strikes in every puddle a stride across and
@@ -80,7 +80,7 @@ public readonly record struct WetnessSettings(
     /// </remarks>
     public static WetnessSettings Storm { get; } = new(
         Amount: 0.7f,
-        PuddleCoverage: 0.45f,
+        PuddleCoverage: 0.25f,
         PuddleSizeMetres: 3.2f,
         RippleStrength: 1f,
         RippleSizeMetres: 0.5f,

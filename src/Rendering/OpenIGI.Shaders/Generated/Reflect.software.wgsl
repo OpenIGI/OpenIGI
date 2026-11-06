@@ -326,7 +326,7 @@ fn PuddleDepth_0( w_4 : WetParams_0,  relative_4 : vec3<f32>) -> f32
 
 fn PuddleLevel_0( normal_0 : vec3<f32>) -> f32
 {
-    return clamp((normal_0.z - 0.86000001430511475f) * 12.0f, 0.0f, 1.0f);
+    return clamp((normal_0.z - 0.9779999852180481f) * 60.0f, 0.0f, 1.0f);
 }
 
 fn PuddleMask_0( w_5 : WetParams_0,  relative_5 : vec3<f32>,  normal_1 : vec3<f32>) -> f32
@@ -464,7 +464,7 @@ fn WaterSurfaceAt_0( w_8 : WetParams_0,  relative_8 : vec3<f32>,  footprint_0 : 
     var surface_0 : WaterSurface_0;
     var _S28 : f32 = 1.0f - blur_0;
     surface_0.normal_2 = normalize(vec3<f32>(slope_3 * vec2<f32>(_S28), 1.0f));
-    surface_0.roughness_0 = clamp(0.05000000074505806f + length(slope_3) * _S28 * 0.10000000149011612f + (0.20000000298023224f * w_8.rippleStrength_0 + 0.10000000149011612f * w_8.windStrength_0) * blur_0, 0.05000000074505806f, 0.31999999284744263f);
+    surface_0.roughness_0 = clamp(0.05000000074505806f + 0.2199999988079071f * clamp(w_8.rippleStrength_0, 0.0f, 1.0f) + length(slope_3) * _S28 * 0.10000000149011612f + (0.20000000298023224f * w_8.rippleStrength_0 + 0.10000000149011612f * w_8.windStrength_0) * blur_0, 0.05000000074505806f, 0.44999998807907104f);
     surface_0.mirror_0 = clamp(1.0f - blur_0 * 2.0f, 0.0f, 1.0f);
     return surface_0;
 }
@@ -474,6 +474,16 @@ fn WaterFresnel_0( normal_3 : vec3<f32>,  toEye_0 : vec3<f32>) -> f32
     var grazing_0 : f32 = 1.0f - clamp(dot(normal_3, toEye_0), 0.0f, 1.0f);
     var squared_0 : f32 = grazing_0 * grazing_0;
     return 0.01999999955296516f + 0.98000001907348633f * squared_0 * squared_0 * grazing_0;
+}
+
+fn RainOvercast_0( w_9 : WetParams_0) -> f32
+{
+    return clamp(w_9.amount_0 * 5.0f, 0.0f, 1.0f);
+}
+
+fn RainReflection_0( w_10 : WetParams_0) -> f32
+{
+    return 1.0f - 0.75f * RainOvercast_0(w_10);
 }
 
 fn EnvironmentBrdf_0( roughness_1 : f32,  cosNV_0 : f32) -> vec2<f32>
@@ -1144,11 +1154,11 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     var _S86 : f32 = max(dot(groundNormal_0, _S85), 0.00100000004749745f);
     var _S87 : mat4x4<f32> = mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)]);
     var relative_10 : vec3<f32> = (((viewPos_0) * (mat3x3<f32>(_S87[i32(0)].xyz, _S87[i32(1)].xyz, _S87[i32(2)].xyz))));
-    var w_9 : WetParams_0 = Weather_0();
+    var w_11 : WetParams_0 = Weather_0();
     var screenAllowed_0 : bool;
-    if((w_9.amount_0) > 0.0f)
+    if((w_11.amount_0) > 0.0f)
     {
-        screenAllowed_0 = (groundNormal_0.z) > 0.86000001430511475f;
+        screenAllowed_0 = (groundNormal_0.z) > 0.9779999852180481f;
     }
     else
     {
@@ -1165,7 +1175,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     var puddle_0 : f32;
     if(screenAllowed_0)
     {
-        puddle_0 = PuddleMask_0(w_9, relative_10, groundNormal_0);
+        puddle_0 = PuddleMask_0(w_11, relative_10, groundNormal_0);
     }
     else
     {
@@ -1179,9 +1189,9 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     var normalW_0 : vec3<f32>;
     if(water_0)
     {
-        var surface_1 : WaterSurface_0 = WaterSurfaceAt_0(w_9, relative_10, WetFootprint_0(2.0f * p_0.resolution_0.z, viewPos_0.z, p_0.unproject_0.x, _S86));
+        var surface_1 : WaterSurface_0 = WaterSurfaceAt_0(w_11, relative_10, WetFootprint_0(2.0f * p_0.resolution_0.z, viewPos_0.z, p_0.unproject_0.x, _S86));
         var normalW_1 : vec3<f32> = normalize(mix(groundNormal_0, surface_1.normal_2, vec3<f32>(puddle_0)));
-        var share_0 : f32 = WaterFresnel_0(normalW_1, _S85) * puddle_0 * surface_1.mirror_0;
+        var share_0 : f32 = WaterFresnel_0(normalW_1, _S85) * puddle_0 * surface_1.mirror_0 * RainReflection_0(w_11);
         reflectance_0 = vec3<f32>(share_0, share_0, share_0);
         normalW_0 = normalW_1;
         screenAllowed_0 = true;

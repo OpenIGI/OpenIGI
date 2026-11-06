@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -29,9 +29,13 @@ namespace OpenIGI.Game.World;
 /// of which sample the same table. <see cref="Resolve(Vector3d)"/> is that rule without the stack.
 /// </para>
 /// <para>
-/// <b>Divergence, recorded.</b> The original drops a ray from the task's position to find the ground
-/// before snapping its Z to the node; the port snaps the authored Z. Both land in the same cube unless
-/// the authored point is more than a node's height off the ground, which no retail level does.
+/// The original drops a ray from the task's position to find the ground before snapping its Z to the node, and
+/// then (with <c>Drop To Ground</c>, which every retail task leaves on) adds a child box sharing the grid for every
+/// cube above or below that the ground under the node reaches into, so a grid over a slope that crosses a cube's
+/// top or bottom still displaces all of it. <see cref="Entry.CubesBelow"/> and <see cref="Entry.CubesAbove"/> are
+/// those children. <b>Divergence, recorded:</b> the original finds the ground's lowest and highest points from 200
+/// seeded random drops over the node; the port drops on a regular 17 × 17 lattice, which can only find the same
+/// extremes or more extreme ones.
 /// </para>
 /// <para>
 /// Without these bindings the fine levels of detail are drawn as <c>terrain.cmd</c> stores them, and
@@ -49,17 +53,16 @@ public sealed class TerrainHeightBindings
     private static readonly ConditionalWeakTable<TerrainData, TerrainHeightBindings> Bindings = new();
     private static readonly TerrainHeightBindings Empty = new([], 0);
 
-    private readonly Entry[] _entries;
+    private Entry[] _entries;
 
     private TerrainHeightBindings(Entry[] entries, int skipped)
     {
         _entries = entries;
-        Entries = new ReadOnlyCollection<Entry>(entries);
         Skipped = skipped;
     }
 
     /// <summary>Gets the bindings, innermost (deepest level) first.</summary>
-    public IReadOnlyList<Entry> Entries { get; }
+    public IReadOnlyList<Entry> Entries => _entries;
 
     /// <summary>Gets how many <c>HeightMap</c> tasks named a grid the level does not carry at the declared size.</summary>
     /// <remarks>The original allocates a flat grid for those, which displaces nothing — the same as skipping them.</remarks>
@@ -118,14 +121,13 @@ public sealed class TerrainHeightBindings
                     metres.Y * WorldScene.UnitsPerMetre,
                     metres.Z * WorldScene.UnitsPerMetre);
 
-                if (TryCreate(
-                        terrain.Heightmap,
+                if (TryBind(
+                        terrain,
                         position,
                         IntStrict(declared, "Level", -1),
                         IntStrict(declared, "Size", -1),
                         IntStrict(declared, "Bitmap ID", -1),
-                        out Entry? entry)
-                    && entry is not null)
+                        out Entry? entry))
                 {
                     entries.Add(entry);
                 }
@@ -141,6 +143,78 @@ public sealed class TerrainHeightBindings
         // tree order within a level, so the later task wins the tie.
         entries = [.. entries.OrderByDescending(e => e.Level)];
         return new TerrainHeightBindings([.. entries], skipped);
+    }
+
+    /// <summary>Places a grid the way a <c>HeightMap</c> task does: dropped to the ground, snapped to its node, and reaching into the cubes above and below that the ground under it crosses.</summary>
+    /// <param name="terrain">The level's terrain, whose <see cref="TerrainData.Heightmap"/> holds the grid.</param>
+    /// <param name="position">The task's position, in engine units.</param>
+    /// <param name="level">The task's <c>Level</c>: the depth of the node the grid covers.</param>
+    /// <param name="size">The task's <c>Size</c>: the grid's cells along an edge.</param>
+    /// <param name="bitmapId">The task's <c>Bitmap ID</c>.</param>
+    /// <param name="entry">Receives the binding.</param>
+    /// <returns><see langword="false"/> when the task names no grid the level carries at that size, or an impossible node.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
+    public static bool TryBind(TerrainData terrain, Vector3d position, int level, int size, int bitmapId, [NotNullWhen(true)] out Entry? entry)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+        entry = null;
+        if (terrain.Heightmap is null)
+        {
+            return false;
+        }
+
+        // The ground under the authored point, as the original drops for it before snapping.
+        if (terrain.IsUsable
+            && terrain.TryDrop(position.X, position.Y, position.Z, GroundSearchUnits, upward: false, out TerrainGround under))
+        {
+            position = new Vector3d(position.X, position.Y, under.Height);
+        }
+
+        if (!TryCreate(terrain.Heightmap, position, level, size, bitmapId, out Entry? placed) || placed is null)
+        {
+            return false;
+        }
+
+        entry = terrain.IsUsable ? WithChildren(terrain, placed) : placed;
+        return true;
+    }
+
+    /// <summary>Adds a binding while the level runs, as a <c>HeightMap</c> task made in the editor would publish it.</summary>
+    /// <param name="entry">The binding, from <see cref="TryBind"/>.</param>
+    /// <remarks>It goes after the bindings of its own depth, as the task registered last is the one the descent enters last.</remarks>
+    public void Add(Entry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (ReferenceEquals(this, Empty))
+        {
+            throw new InvalidOperationException("The shared empty set of bindings cannot be added to; bind the level first.");
+        }
+
+        int index = Array.FindIndex(_entries, e => e.Level < entry.Level);
+        List<Entry> entries = [.. _entries];
+        entries.Insert(index < 0 ? entries.Count : index, entry);
+        _entries = [.. entries];
+    }
+
+    /// <summary>Takes away every binding of a grid.</summary>
+    /// <param name="bitmapId">The grid's id.</param>
+    /// <returns>Whether any binding went.</returns>
+    public bool Remove(int bitmapId)
+    {
+        int before = _entries.Length;
+        _entries = [.. _entries.Where(e => e.BitmapId != bitmapId)];
+        return _entries.Length != before;
+    }
+
+    /// <summary>Fetches every binding's grid again from a heightmap whose layout changed (<see cref="TerrainHeightmap.AddGrid"/>).</summary>
+    /// <param name="heightmap">The heightmap.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="heightmap"/> is <see langword="null"/>.</exception>
+    public void Regrid(TerrainHeightmap heightmap)
+    {
+        ArgumentNullException.ThrowIfNull(heightmap);
+        _entries = [.. _entries.Select(e => heightmap.TryGetGrid(e.BitmapId, out TerrainHeightGrid grid)
+            ? e with { Binding = e.Binding with { Grid = grid } }
+            : e)];
     }
 
     /// <summary>Gets the bindings bound to a terrain, or none.</summary>
@@ -179,6 +253,48 @@ public sealed class TerrainHeightBindings
     /// <returns>The binding, or an unbound default.</returns>
     public TerrainHeightBinding Resolve(in TerrainLeaf leaf) =>
         Resolve(new Vector3d(leaf.Cursor.Centre.X, leaf.Cursor.Centre.Y, leaf.Cursor.Centre.Z));
+
+    // How far the drops for a task's ground look, up and down: the original's are effectively unbounded, but a
+    // drop walks the column a leaf at a time, and no retail terrain spans more than this.
+    private const double GroundSearchUnits = 2048.0 * WorldScene.UnitsPerMetre;
+
+    private const int ChildLattice = 16;
+
+    // The cubes above and below a task's own that the ground under it reaches into (sub_507410's children).
+    private static Entry WithChildren(TerrainData terrain, Entry entry)
+    {
+        double extent = entry.Extent;
+        double low = entry.Centre.Z;
+        double high = entry.Centre.Z;
+        double top = entry.Centre.Z + Math.Min(GroundSearchUnits, 4.0 * extent);
+        for (int j = 0; j <= ChildLattice; j++)
+        {
+            for (int i = 0; i <= ChildLattice; i++)
+            {
+                double x = entry.Centre.X - extent + (2.0 * extent * i / ChildLattice);
+                double y = entry.Centre.Y - extent + (2.0 * extent * j / ChildLattice);
+                if (terrain.TryDrop(x, y, top, Math.Min(GroundSearchUnits, 8.0 * extent), upward: false, out TerrainGround ground))
+                {
+                    low = Math.Min(low, ground.Height);
+                    high = Math.Max(high, ground.Height);
+                }
+            }
+        }
+
+        int below = 0;
+        for (double bottom = entry.Centre.Z - extent; low < bottom; bottom -= 2.0 * extent)
+        {
+            below++;
+        }
+
+        int above = 0;
+        for (double ceiling = entry.Centre.Z + extent; high > ceiling; ceiling += 2.0 * extent)
+        {
+            above++;
+        }
+
+        return entry with { CubesBelow = below, CubesAbove = above };
+    }
 
     private static bool TryCreate(
         TerrainHeightmap heightmap,
@@ -236,19 +352,26 @@ public sealed class TerrainHeightBindings
         /// <summary>Gets the node's half-width in engine units.</summary>
         public long Extent => TerrainOctree.RootExtent >> Level;
 
+        /// <summary>Gets how many cubes directly below the node the grid also displaces, for ground that reaches down into them.</summary>
+        public int CubesBelow { get; init; }
+
+        /// <summary>Gets how many cubes directly above the node the grid also displaces.</summary>
+        public int CubesAbove { get; init; }
+
         /// <summary>Returns whether the node's cube contains a point.</summary>
         /// <param name="point">The point in engine units.</param>
         /// <returns><see langword="true"/> when inside on all three axes.</returns>
         /// <remarks>
         /// A node is a cube, so Z counts: the task is registered in the node its snapped position falls
-        /// in, and the descent only enters that node for chunks at its height.
+        /// in and in each child cube stacked above or below it, and the descent only enters those for chunks at
+        /// their height.
         /// </remarks>
         public bool Contains(Vector3d point)
         {
             long extent = Extent;
             return point.X >= Centre.X - extent && point.X < Centre.X + extent
                 && point.Y >= Centre.Y - extent && point.Y < Centre.Y + extent
-                && point.Z >= Centre.Z - extent && point.Z < Centre.Z + extent;
+                && point.Z >= Centre.Z - extent - (2 * extent * CubesBelow) && point.Z < Centre.Z + extent + (2 * extent * CubesAbove);
         }
     }
 }

@@ -164,6 +164,22 @@
         "register": 3,
         "space": 0
       }
+    },
+    {
+      "name": "uLampGrid",
+      "group": 0,
+      "binding": 15,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 5,
+        "space": 0,
+        "stride": 4
+      }
     }
   ],
   "pushBlock": null,

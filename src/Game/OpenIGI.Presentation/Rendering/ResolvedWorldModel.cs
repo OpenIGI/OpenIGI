@@ -11,19 +11,18 @@ internal sealed class ResolvedWorldModel(MeshGeometry geometry, MeshHandle mesh,
 
     public MeshHandle Mesh { get; } = mesh;
 
-    /// <summary>Whether winding repair has usable normals and the mesh is not an interior sector.</summary>
+    /// <summary>Whether the mesh was wound to the original's front (it has normals) and is not an interior sector.</summary>
     /// <remarks>
-    /// IGI2 lightmapped MEFs omit normals. Their authored winding must remain two-sided; applying
+    /// IGI2 lightmapped MEFs omit normals and are not turned over. They must remain two-sided; applying
     /// the prop optimization erases mission 2's cave. IGI1 sectors likewise enclose the viewer.
     /// Evaluate once at residency, rather than scanning vertices in every render pass.
     /// </remarks>
     public bool CanCullBackFaces => !isSector && _hasNormals;
 
-    /// <summary>Whether this is an interior sector whose winding repair has usable normals: culled while the eye is outside it.</summary>
+    /// <summary>Whether this is an interior sector wound to the original's front: culled while the eye is outside it.</summary>
     public bool CanCullFromOutside => isSector && _hasNormals;
 
-    private readonly bool _hasNormals = Array.TrueForAll(
-        geometry.Vertices, vertex => float.IsFinite(vertex.Normal.LengthSquared) && vertex.Normal.LengthSquared > 0.000001f);
+    private readonly bool _hasNormals = MefMeshBuilder.HasNormals(geometry.Vertices);
 
     public WorldSubsetDraw[]? Subsets { get; set; }
 

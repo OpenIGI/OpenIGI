@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Humans;
 
 namespace OpenIGI.Game.Igi2.Player;
@@ -35,7 +36,7 @@ public sealed record Igi2HumanPlayerGeneral(
     IReadOnlyList<float> DamageMultipliersMultiplayer)
 {
     /// <summary>World units per metre.</summary>
-    public const float UnitsPerMetre = 4096f;
+    public const float UnitsPerMetre = (float)WorldUnits.PerMetre;
 
     /// <summary>Game ticks per second.</summary>
     public const float TicksPerSecond = 30f;

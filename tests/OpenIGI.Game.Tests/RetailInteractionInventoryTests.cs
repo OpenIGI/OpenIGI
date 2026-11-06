@@ -561,8 +561,13 @@ public sealed class RetailInteractionInventoryTests
             foreach (GenericPickup pickup in genericPickups.Items)
             {
                 Assert.Contains(pickup.Task, pickupTasks);
-                Assert.True(variables.TryRead($"{pickup.Task.Name}.isPickedUp", out var pickedUp));
-                Assert.Equal(0, pickedUp.Integer);
+                // The level registers isPickedUp only for a task with an id (0x4F0780 sends the activate event to no other).
+                bool exported = variables.TryRead($"{pickup.Task.Name}.isPickedUp", out var pickedUp);
+                Assert.Equal(pickup.Task.Id >= 0, exported);
+                if (exported)
+                {
+                    Assert.Equal(0, pickedUp.Integer);
+                }
 
                 if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
                 {
@@ -696,18 +701,17 @@ public sealed class RetailInteractionInventoryTests
                 Assert.Equal(transform.CableStart, wire.Anchor);
                 Assert.Equal(transform.CableEnd, wire.End);
 
-                Vector3d mount = wire.WireMountPoint(wire.Anchor - ((wire.End - wire.Anchor) * 10.0));
-                double expected = Math.Min(3072.0, (wire.End - wire.Anchor).Length * 0.49);
-                Assert.Equal(expected, Vector3d.Distance(wire.Anchor, mount), precision: 3);
+                // The ride is measured from the model's origin, the middle of the authored span.
+                Assert.Equal(transform.PositionUnits, wire.WireOrigin);
 
-                Vector3d body = wire.WireBodyPoint(
-                    wire.Anchor - ((wire.End - wire.Anchor) * 10.0));
-                Vector3d attachment = mount - body;
-                Assert.Equal(3686.4, attachment.Length, precision: 3);
-                Assert.Equal(
-                    0.0,
-                    Vector3d.Dot(attachment, (wire.End - wire.Anchor).Normalized()),
-                    precision: 3);
+                // Mounting from far before the start keeps the origin 3072 in from magic vertex 0's local Y, and
+                // hangs it straight below the model's own axis there, along the cable's up.
+                Vector3d body = wire.WireBodyPoint(wire.Anchor - ((wire.End - wire.Anchor) * 10.0));
+                Assert.Equal(wire.WireStartLocalY + WorldInteraction.WireEndMargin, wire.WireCoordinate(body), 0.01);
+                Vector3d onAxis = wire.WireOrigin + (wire.WireAxis * wire.WireCoordinate(body));
+                Vector3d attachment = onAxis - body;
+                Assert.Equal(WorldInteraction.ZiplineDrop, attachment.Length, 0.01);
+                Assert.Equal(0.0, Vector3d.Dot(attachment, wire.WireAxis), 0.01);
             }
             foreach (WorldInteraction fence in interactions.Items.Where(
                          static item => item.Type == InteractionActivateType.Fence))

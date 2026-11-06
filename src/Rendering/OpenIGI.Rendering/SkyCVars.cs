@@ -87,9 +87,12 @@ public static class SkyCVars
             CVarOptions.Archive,
             "How much of the moon's light the night sky scatters, which is what fills a night's shadows."),
         vanilla: "0.02",
-        enhanced: "0.35",
-        high: "0.35",
-        ultra: "0.35");
+
+        // All of it on the modern presets, with the brighter moon above: it is what fills the snow the moon
+        // does not reach, which at a third stayed black a few metres from the player on the seventh mission.
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>The night sky's own glow at the zenith, in the atmosphere's units.</summary>
     /// <remarks>
@@ -128,7 +131,7 @@ public static class SkyCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>How strongly the moon lights the world, against the cycle's own moon; 0.1 by default.</summary>
+    /// <summary>How strongly the moon lights the world, against the cycle's own moon: 0.1 on vanilla, 4 on the modern presets.</summary>
     /// <remarks>
     /// Scales the moon's light -- what throws moon shadows and lights the ground -- and with it the
     /// moonlit sky, which is scattered from the same moon, as a dimmer moon makes a darker sky. The disc
@@ -140,13 +143,20 @@ public static class SkyCVars
             "r_moonlight",
             0.1f,
             0f,
-            4f,
+            8f,
             CVarOptions.Archive,
-            "How strongly the moon lights the world; 0 leaves only the night sky's fill."),
+            "How strongly the moon lights the world; 0 leaves only the night sky's fill. A mission's look may scale it."),
         vanilla: "0.1",
-        enhanced: "0.1",
-        high: "0.1",
-        ultra: "0.1");
+
+        // Four on the modern presets, measured mission by mission against the original's nights. At a tenth
+        // every night mission came out ten to fifty times darker than vanilla draws it -- black but for the
+        // lamps -- because the original lights its nights as a bright blue moonlight over its bakes, not as
+        // a real moon. Four, with the sky's fill at one and the eye a stop more open, lands the snow of the
+        // seventh and eleventh and the storm of the third on vanilla's own ground brightness, and keeps the
+        // lamps from flaring as they did when the eye alone was opened to get there.
+        enhanced: "4",
+        high: "4",
+        ultra: "4");
 
     /// <summary>How bright the moon's disc and halo are drawn in a night sky; one is the default.</summary>
     /// <remarks>
@@ -164,6 +174,66 @@ public static class SkyCVars
         enhanced: "1",
         high: "1",
         ultra: "1");
+
+    /// <summary>How much of a level's own painted sky to keep over the atmosphere, or -1 for the mission's own look.</summary>
+    /// <remarks>
+    /// Project I.G.I. paints a dome and scrolls cloud layers over it, and that sky is most of a mission's
+    /// mood: the storm over the radar base, the overcast valley, the navy night over the snow. The atmosphere
+    /// that replaces it knows only a clear sky. A mission's look says how much of the painted one to keep at
+    /// the hour it was painted for; this overrides that for every mission, which is how a share is judged.
+    /// </remarks>
+    public static readonly NumericCVar<float> PaintedSky = CVar.Float(
+        "r_painted_sky",
+        -1f,
+        -1f,
+        1f,
+        CVarOptions.None,
+        "Share of the level's painted sky kept over the atmosphere, 0 to 1; -1 (the default) is the mission's own look.");
+
+    /// <summary>How strongly the running mission's moon lights the world against <see cref="Moonlight"/>, as a multiple.</summary>
+    /// <remarks>
+    /// The mission's own look (see <c>MissionLook.Moonlight</c>), set by the host as the level comes up and read
+    /// only through <see cref="EffectiveMoonlight"/>, so the player's <see cref="Moonlight"/> is never rewritten.
+    /// </remarks>
+    public static readonly NumericCVar<float> MissionMoonlight = CVar.Float(
+        "r_mission_moonlight",
+        1f,
+        0f,
+        8f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "The running mission's own multiple of r_moonlight; not a setting.");
+
+    /// <summary>How much the running mission's night sky scatters against <see cref="NightSkyScale"/>, as a multiple.</summary>
+    /// <remarks>Set by the host from <c>MissionLook.NightSky</c>; read only through <see cref="EffectiveNightSky"/>.</remarks>
+    public static readonly NumericCVar<float> MissionNightSky = CVar.Float(
+        "r_mission_night_sky",
+        1f,
+        0f,
+        8f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "The running mission's own multiple of r_night_sky; not a setting.");
+
+    /// <summary>How brightly the running mission's night sky glows against <see cref="NightAirglow"/>, as a multiple.</summary>
+    /// <remarks>Set by the host from <c>MissionLook.NightGlow</c>; read only through <see cref="EffectiveAirglow"/>.</remarks>
+    public static readonly NumericCVar<float> MissionNightGlow = CVar.Float(
+        "r_mission_night_glow",
+        1f,
+        0f,
+        32f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "The running mission's own multiple of r_night_airglow at full night; not a setting.");
+
+    /// <summary>Gets the night sky's own glow this mission: the player's setting, raised by the mission's multiple as night falls.</summary>
+    /// <param name="nightfall">How far into night the sky is, nought to one.</param>
+    /// <returns>The glow, in the atmosphere's units.</returns>
+    public static float EffectiveAirglow(float nightfall) =>
+        NightAirglow.Value * (1f + ((MissionNightGlow.Value - 1f) * Math.Clamp(nightfall, 0f, 1f)));
+
+    /// <summary>Gets how strongly the moon lights the world this mission: the player's setting by the mission's multiple.</summary>
+    public static float EffectiveMoonlight => Moonlight.Value * MissionMoonlight.Value;
+
+    /// <summary>Gets how much of the moon the night sky scatters this mission: the player's setting by the mission's multiple.</summary>
+    public static float EffectiveNightSky => NightSkyScale.Value * MissionNightSky.Value;
 
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;

@@ -24,8 +24,13 @@ namespace OpenIGI.Formats.World;
 /// </remarks>
 public sealed class TerrainLightmaps
 {
-    private TerrainLightmaps(IReadOnlyList<TerrainLightmapPage> pages, int consumed, int length)
+    private readonly ReadOnlyMemory<byte> _data;
+    private readonly int[] _offsets;
+
+    private TerrainLightmaps(IReadOnlyList<TerrainLightmapPage> pages, int[] offsets, ReadOnlyMemory<byte> data, int consumed, int length)
     {
+        _data = data;
+        _offsets = offsets;
         Pages = pages;
         BytesConsumed = consumed;
         Length = length;
@@ -68,6 +73,7 @@ public sealed class TerrainLightmaps
     public static TerrainLightmaps Read(ReadOnlyMemory<byte> data)
     {
         List<TerrainLightmapPage> pages = [];
+        List<int> offsets = [];
         int cursor = 0;
 
         while (data.Length - cursor >= 4)
@@ -78,6 +84,7 @@ public sealed class TerrainLightmaps
             if (size == 0)
             {
                 pages.Add(default);
+                offsets.Add(-1);
                 continue;
             }
 
@@ -94,10 +101,32 @@ public sealed class TerrainLightmaps
             }
 
             pages.Add(new TerrainLightmapPage((int)size, data.Slice(cursor, (int)texels)));
+            offsets.Add(cursor);
             cursor += (int)texels;
         }
 
-        return new TerrainLightmaps(new ReadOnlyCollection<TerrainLightmapPage>(pages), cursor, data.Length);
+        return new TerrainLightmaps(new ReadOnlyCollection<TerrainLightmapPage>(pages), [.. offsets], data, cursor, data.Length);
+    }
+
+    /// <summary>Writes the file again with some pages' texels replaced, every other byte as it was read.</summary>
+    /// <param name="replaced">New texels by page index, each exactly the page's size squared.</param>
+    /// <returns>The file's bytes.</returns>
+    /// <exception cref="ArgumentException">A page is empty or not a page, or its texels are the wrong size.</exception>
+    public byte[] Write(IReadOnlyDictionary<int, byte[]> replaced)
+    {
+        ArgumentNullException.ThrowIfNull(replaced);
+        byte[] bytes = _data.ToArray();
+        foreach ((int page, byte[] texels) in replaced)
+        {
+            if ((uint)page >= (uint)Pages.Count || Pages[page].IsEmpty || texels.Length != Pages[page].Texels.Length)
+            {
+                throw new ArgumentException($"Page {page} cannot take {texels.Length} texels.", nameof(replaced));
+            }
+
+            texels.CopyTo(bytes.AsSpan(_offsets[page]));
+        }
+
+        return bytes;
     }
 
     /// <inheritdoc/>

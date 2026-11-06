@@ -309,6 +309,15 @@ public abstract class UiElement
         DesiredSize = new UiVec2(desiredW + margin.Horizontal, desiredH + margin.Vertical);
     }
 
+    /// <summary>Measures the element against a rectangle's size and arranges it there: a fixed slot in a parent's layout.</summary>
+    /// <param name="context">The layout context.</param>
+    /// <param name="rect">The slot.</param>
+    public void Place(LayoutContext context, UiRect rect)
+    {
+        Measure(context, rect.Size);
+        Arrange(rect);
+    }
+
     /// <summary>Arranges the element into the rectangle its parent gives it.</summary>
     /// <param name="finalRect">The rectangle in pixels, including the element's own margin.</param>
     public void Arrange(UiRect finalRect)

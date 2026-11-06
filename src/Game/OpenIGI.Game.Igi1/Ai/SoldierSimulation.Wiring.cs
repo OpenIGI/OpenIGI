@@ -262,9 +262,6 @@ public sealed partial class SoldierSimulation
         set => _playerBody.SuppressRootHeight = value;
     }
 
-    /// <inheritdoc cref="SoldierPlayerBody.VisualLift"/>
-    internal double PlayerBodyVisualLift { get => _playerBody.VisualLift; set => _playerBody.VisualLift = value; }
-
     /// <inheritdoc cref="SoldierPlayerBody.RootHeightAtStart"/>
     internal double PlayerBodyRootHeightAtStart
     {
@@ -435,6 +432,9 @@ public sealed partial class SoldierSimulation
 
     /// <inheritdoc cref="SoldierBodyQueries.CameraSubjects"/>
     public IReadOnlyList<SecurityCameraSubject> CameraSubjects() => _bodies.CameraSubjects();
+
+    /// <inheritdoc cref="SoldierSightQueries.AddDetectables"/>
+    public void AddDetectables(List<AiDetectable> into) => _sight.AddDetectables(into);
 
     /// <inheritdoc cref="SoldierCutsceneStaging.CutscenePose"/>
     public CutsceneTargetPose? CutscenePose(int taskId) => _staging.CutscenePose(taskId);
@@ -666,9 +666,8 @@ public sealed partial class SoldierSimulation
         bool loops,
         bool backwards,
         bool paused,
-        bool suppressRootHeight,
-        double visualLift) =>
-        _playerBody.StartTraversalAnimation(view, animation, loops, backwards, paused, suppressRootHeight, visualLift);
+        bool suppressRootHeight) =>
+        _playerBody.StartTraversalAnimation(view, animation, loops, backwards, paused, suppressRootHeight);
 
     /// <summary>Marks every soldier drawn close up, as a frame looking at all of them would.</summary>
     internal void ObserveAllForTesting()

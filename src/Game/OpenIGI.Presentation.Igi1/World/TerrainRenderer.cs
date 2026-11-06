@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -32,7 +33,7 @@ namespace OpenIGI.Presentation.Igi1.World;
 /// uniformly wound within every block, and only a mirrored orientation flips a chunk's facing.
 /// </para>
 /// </remarks>
-public sealed class TerrainRenderer : ITerrainPresenter
+public sealed partial class TerrainRenderer : ITerrainPresenter
 {
     private const string LogCategory = "Terrain";
     private const int SparseVisibleQueryInterval = 16;
@@ -67,7 +68,19 @@ public sealed class TerrainRenderer : ITerrainPresenter
     // The refined chunks this frame draws, which cast with their refined triangles. See SubmitShadowCaster.
     private readonly HashSet<Vector3d> _drawnFine = [];
 
+    // What the last walk of the caster added, so a frame whose descent chose the same ground can replay it
+    // from the records it found rather than look every chunk up again. See ReplayCaster.
+    private readonly List<TerrainChunk> _casterLast = [];
+    private TerrainChunkEntry?[] _casterEntries = [];
+    private bool[] _casterCoarse = [];
+    private bool _casterReplayable;
+    private int _casterSmoothing;
+    private Vector3d _casterCamera;
+    private float _casterOffset;
+    private float _casterSlope;
+
     // What the ray-traced world traces instead of the pages: this frame's chunks, morphed as drawn.
+    private readonly Core.Threading.IWorkScheduler? _work;
     private readonly TerrainShadowCaster _caster;
 
     // Whether the last frame asked for the caster to be built for the sun's cascades as well as for the
@@ -99,6 +112,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private TerrainSmoothing? _smooth;
     private (int Level, float Relax, float Limit) _smoothSettings;
     private int _smoothGeneration;
+    private Igi1EditableTerrain? _editable;
 
     /// <summary>Initializes a new instance of the <see cref="TerrainRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -154,6 +168,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
         // On the GPU now; the level's terrain data need not hold the pictures as well.
         surface.Terrain.Tiles?.ReleasePixels();
         _caster = new TerrainShadowCaster(device, work);
+        _work = work;
     }
 
     /// <summary>Gets how many chunks the last <see cref="Draw"/> selected.</summary>
@@ -253,6 +268,28 @@ public sealed class TerrainRenderer : ITerrainPresenter
                     1 << Math.Clamp(value.Level, 1, 3),
                     value.Relax,
                     value.Limit * WorldScene.UnitsPerMetre);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The level's heightmap grids (<see cref="Igi1EditableTerrain"/>), to which the editor can add more. The chunks a
+    /// change reaches are dropped and rebuilt from the changed ground as they are next drawn.
+    /// </remarks>
+    public IEditableTerrain? Editable
+    {
+        get
+        {
+            if (_editable is null && !_disposed)
+            {
+                _editable = Igi1EditableTerrain.For(_surface);
+                _editable.Work ??= _work;
+                _editable.Changed += OnGroundChanged;
+                _editable.Painted += OnPainted;
+                _editable.Rebuilt += OnRebuilt;
+            }
+
+            return _editable;
         }
     }
 
@@ -358,6 +395,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
         bool batching = true,
         bool occlusionCulling = true)
     {
+        // A mountain area rebuilt away from the main thread goes in place before the ground is walked.
+        _editable?.Poll();
+
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         // The traversal works in engine units, which is the octree's own space; the camera arrives in
@@ -762,6 +802,13 @@ public sealed class TerrainRenderer : ITerrainPresenter
         }
 
         _disposed = true;
+        if (_editable is not null)
+        {
+            _editable.Changed -= OnGroundChanged;
+            _editable.Painted -= OnPainted;
+            _editable.Rebuilt -= OnRebuilt;
+        }
+
         _caster.Dispose();
         _batcher.DestroyPages();
         foreach (TerrainChunkEntry entry in _cache.Values)
@@ -900,14 +947,36 @@ public sealed class TerrainRenderer : ITerrainPresenter
             }
         }
 
-        _caster.Begin(camera.Position, fadeOffset, fadeSlope);
-        foreach (TerrainChunk chunk in _casterChunks)
+        if (!ReplayCaster(camera.Position, fadeOffset, fadeSlope))
         {
-            if (TryGetEntry(chunk, out TerrainChunkEntry? entry))
+            _caster.Begin(camera.Position, fadeOffset, fadeSlope);
+            EnsureCasterCapacity(_casterChunks.Count);
+            _casterReplayable = true;
+            for (int i = 0; i < _casterChunks.Count; i++)
             {
-                bool coarse = entry.Geometry.Coarse is not null && !_drawnFine.Contains(chunk.Position);
-                _caster.Add(chunk, entry.Geometry, coarse);
+                TerrainChunk chunk = _casterChunks[i];
+                if (TryGetEntry(chunk, out TerrainChunkEntry? entry))
+                {
+                    bool coarse = entry.Geometry.Coarse is not null && !_drawnFine.Contains(chunk.Position);
+                    _caster.Add(chunk, entry.Geometry, coarse);
+                    _casterEntries[i] = entry;
+                    _casterCoarse[i] = coarse;
+                }
+                else
+                {
+                    // A chunk with no record is one the next frame would try to build again; only a walk
+                    // through TryGetEntry does that, so the replay is off until the list changes.
+                    _casterEntries[i] = null;
+                    _casterReplayable = false;
+                }
             }
+
+            _casterLast.Clear();
+            _casterLast.AddRange(_casterChunks);
+            _casterSmoothing = _smoothGeneration;
+            _casterCamera = camera.Position;
+            _casterOffset = fadeOffset;
+            _casterSlope = fadeSlope;
         }
 
         _caster.Commit();
@@ -917,6 +986,88 @@ public sealed class TerrainRenderer : ITerrainPresenter
         }
 
         LastCasterTriangleCount = _caster.LastTriangleCount;
+    }
+
+    /// <summary>Gives the caster this frame's ground from the records the last walk found, when that is exact.</summary>
+    /// <param name="camera">The camera, in metres.</param>
+    /// <param name="fadeOffset">The detail cross-fade's offset.</param>
+    /// <param name="fadeSlope">The detail cross-fade's slope.</param>
+    /// <returns>
+    /// <see langword="true"/> when the caster now holds exactly what a walk through <see cref="TryGetEntry"/>
+    /// would have given it; <see langword="false"/> when the walk has to run.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// The caster is a walk of the whole octree from every direction, and its descent chooses the same ground
+    /// frame after frame until the camera crosses a level-of-detail boundary. Every one of those frames looked
+    /// each of a few thousand chunks up in the cache again, hashed it into the caster, and then found at
+    /// Commit that nothing had changed: a millisecond of the game thread for no change at all.
+    /// </para>
+    /// <para>
+    /// Exact, not approximate. The descent's list is compared whole, the records must all still be cached --
+    /// an evicted record's geometry has gone back to the pool -- and the smoothing must be the generation the
+    /// records were built at. Then the only things a walk could do differently are a chunk's coarse choice,
+    /// which follows what the frustum draws, and the camera and fade the caster is begun with. With those the
+    /// same as well, the caster already holds what the walk would add; otherwise it is begun again and given
+    /// the same chunks in the same order from the records, which is the walk without the lookups.
+    /// </para>
+    /// </remarks>
+    private bool ReplayCaster(in Vector3d camera, float fadeOffset, float fadeSlope)
+    {
+        if (!_casterReplayable
+            || _casterSmoothing != _smoothGeneration
+            || !CollectionsMarshal.AsSpan(_casterChunks).SequenceEqual(CollectionsMarshal.AsSpan(_casterLast)))
+        {
+            return false;
+        }
+
+        int count = _casterChunks.Count;
+        for (int i = 0; i < count; i++)
+        {
+            if (_casterEntries[i] is not { Evicted: false })
+            {
+                return false;
+            }
+        }
+
+        bool sameChoices = true;
+        for (int i = 0; i < count; i++)
+        {
+            TerrainChunkEntry entry = _casterEntries[i]!;
+            entry.LastUsedFrame = _frame;
+            bool coarse = entry.Geometry.Coarse is not null && !_drawnFine.Contains(_casterChunks[i].Position);
+            if (coarse != _casterCoarse[i])
+            {
+                _casterCoarse[i] = coarse;
+                sameChoices = false;
+            }
+        }
+
+        if (sameChoices && camera == _casterCamera && fadeOffset == _casterOffset && fadeSlope == _casterSlope)
+        {
+            return true;
+        }
+
+        _caster.Begin(camera, fadeOffset, fadeSlope);
+        for (int i = 0; i < count; i++)
+        {
+            _caster.Add(_casterChunks[i], _casterEntries[i]!.Geometry, _casterCoarse[i]);
+        }
+
+        _casterCamera = camera;
+        _casterOffset = fadeOffset;
+        _casterSlope = fadeSlope;
+        return true;
+    }
+
+    private void EnsureCasterCapacity(int count)
+    {
+        if (_casterEntries.Length < count)
+        {
+            int size = Math.Max(count, _casterEntries.Length * 2);
+            _casterEntries = new TerrainChunkEntry?[size];
+            _casterCoarse = new bool[size];
+        }
     }
 
     /// <inheritdoc/>

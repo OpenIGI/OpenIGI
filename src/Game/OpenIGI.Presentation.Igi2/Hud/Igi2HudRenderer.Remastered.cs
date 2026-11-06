@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Igi2.Interaction;
 using OpenIGI.Game.Igi2.Pickups;
 using OpenIGI.Game.Igi2.Player;
@@ -54,7 +55,7 @@ public sealed partial class Igi2HudRenderer : ITouchHudSource
         float seconds = title.Human.Ticks / 30f;
         // The player's view as the host draws it: the eye, the view's rows (right, up, forward) and its half width.
         OpenIGI.Core.Numerics.Matrix3f rows = title.ViewOrientation;
-        HudProjector projector = new(title.EyePosition, rows.Row1, rows.Row2, rows.Row3, title.FieldOfViewScale, screenWidth, screenHeight);
+        HudProjector projector = new(title.EyePosition, rows.Row1, rows.Row2, rows.Row3, WidescreenLens.HorizontalTangent(title.FieldOfViewScale, screenWidth, screenHeight), screenWidth, screenHeight);
         hud.Draw(batch, _model, Igi2HudTheme.Theme, _icons, HudFrame.FromSettings(screenWidth, screenHeight, requestedScale, seconds, crosshairSpread: 0f) with
         {
             Projector = projector,

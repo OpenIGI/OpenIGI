@@ -203,6 +203,24 @@ public interface IDrawStateDevice
         _ = painted;
     }
 
+    /// <summary>Sets how much of the painted sky this frame keeps over the atmosphere, nought to one.</summary>
+    /// <param name="weight">One keeps the painted sky whole, as <see cref="SetPaintedSky"/> always did.</param>
+    /// <param name="fogged">
+    /// Whether the frame's fog is laid over the painted sky. Project I.G.I. draws its dome with fog off
+    /// (<c>sub_52D060</c>), which is what keeps a painted dusk red over a valley full of mist.
+    /// </param>
+    /// <remarks>
+    /// The share, not the bracket: <see cref="SetPaintedSky"/> still marks the dome's draws, and this says how
+    /// much of what they drew survives. A title that keeps its own sky outright never calls it and gets one.
+    /// Below one the atmosphere shows through, which is how a level's painted mood gives way to the marched
+    /// sky as the clock moves off the hour the level was painted at.
+    /// </remarks>
+    void SetPaintedSkyWeight(float weight, bool fogged = true)
+    {
+        _ = weight;
+        _ = fogged;
+    }
+
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
     /// <param name="seed">
     /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose

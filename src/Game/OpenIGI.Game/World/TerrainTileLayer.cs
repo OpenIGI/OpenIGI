@@ -37,8 +37,10 @@ public sealed class TerrainTileLayer
         double originX,
         double originY,
         double scale,
-        TerrainVisibilityGrid mask)
+        TerrainVisibilityGrid mask,
+        int bitmapId)
     {
+        BitmapId = bitmapId;
         MaterialId = materialId;
         Level = level;
         Size = size;
@@ -47,6 +49,9 @@ public sealed class TerrainTileLayer
         Scale = scale;
         Mask = mask;
     }
+
+    /// <summary>Gets the <c>terrain.bit</c> record the mask is.</summary>
+    public int BitmapId { get; }
 
     /// <summary>Gets the terrain material a set bit selects.</summary>
     public int MaterialId { get; }
@@ -130,7 +135,8 @@ public sealed class TerrainTileLayer
             originX,
             originY,
             scale,
-            mask);
+            mask,
+            bitmapId);
         return true;
     }
 

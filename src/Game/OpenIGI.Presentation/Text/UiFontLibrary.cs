@@ -101,6 +101,7 @@ public static class UiFontLibrary
     /// <param name="fileName">The font file name in <see cref="FontsDirectory"/>.</param>
     /// <param name="pixelHeight">The pixel height to rasterise the atlas at.</param>
     /// <param name="kind">Whether to build a coverage or a signed-distance-field atlas.</param>
+    /// <param name="codepoints">The characters to rasterise, or <see langword="null"/> for <see cref="FontAtlasBuilder.Extended"/>.</param>
     /// <returns>The uploaded font.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
     /// <exception cref="FileNotFoundException">The font file is missing.</exception>
@@ -108,7 +109,8 @@ public static class UiFontLibrary
         IGraphicsDevice device,
         string fileName,
         float pixelHeight,
-        FontAtlasKind kind = FontAtlasKind.Coverage)
+        FontAtlasKind kind = FontAtlasKind.Coverage,
+        IReadOnlyList<int>? codepoints = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 
@@ -120,7 +122,7 @@ public static class UiFontLibrary
 
         byte[] data = File.ReadAllBytes(path);
         FontAtlasData atlas = FontAtlasCache.LoadOrBuild(
-            CacheDirectory, data, pixelHeight, kind, FontAtlasBuilder.Extended);
+            CacheDirectory, data, pixelHeight, kind, codepoints ?? FontAtlasBuilder.Extended);
         return UiFont.Upload(device, atlas);
     }
 }

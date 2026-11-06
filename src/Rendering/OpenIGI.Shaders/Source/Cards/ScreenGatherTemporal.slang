@@ -5,6 +5,10 @@
 // directions, a pool of the workgroup's neighbours that agree about the surface, and a history that is
 // reprojected, clamped to that pool and eased onto.
 
+#ifndef OPENIGI_SPLIT_TRACE
+#define OPENIGI_SPLIT_TRACE 0
+#endif
+
 #include "../Common/ComputeBindings.slang"
 
 // The probe's own world position, which the next frame reprojects against.
@@ -204,6 +208,103 @@ bool ProbeSurface(int2 probe, out float3 world, out float3 viewPosition, out flo
     return true;
 }
 
+#if OPENIGI_SPLIT_TRACE
+// The trace pass with one ray to a thread: a group is a four-by-four tile of probes and each probe's sixteen
+// rays, the ray on the slowest axis so that a wave holds neighbouring probes tracing the same direction --
+// the coherence the probe-a-thread form had, without one thread carrying sixteen traces in a row.
+//
+// That form ran every ray of a probe on one thread: a heavy loop, the registers it needs held for all
+// sixteen, and few waves resident to hide the waits of the march and the cache lookups. Measured, halving
+// the rays more than halved the pass. Here each thread traces one ray and leaves what the ray adds to the
+// probe's sums in group memory; the probe's first thread then adds the sixteen in ray order, which is the
+// arithmetic the loop made, in the loop's order -- the same estimate to the bit.
+static const int kSplitTile = 4;
+static const int kSplitProbes = kSplitTile * kSplitTile;
+
+groupshared float4 sRayRadiance[kSplitProbes * kTracesPerProbe];
+groupshared float4 sRaySurface[kSplitProbes * kTracesPerProbe];
+groupshared float4 sRayOpen[kSplitProbes * kTracesPerProbe];
+groupshared float sRayUnplaced[kSplitProbes * kTracesPerProbe];
+
+[shader("compute")]
+[numthreads(4, 4, 16)]
+void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
+{
+    int2 probe = (int2(groupId.xy) * kSplitTile) + int2(localId.xy);
+    int ray = int(localId.z);
+    int slot = ((int(localId.y) * kSplitTile) + int(localId.x)) * kTracesPerProbe;
+    int2 grid = (int2(uScreenWidth, uScreenHeight) + (uProbeStep - 1)) / uProbeStep;
+    bool inside = probe.x < grid.x && probe.y < grid.y;
+
+    float3 world = float3(0.0, 0.0, 0.0);
+    float3 viewPosition = float3(0.0, 0.0, 0.0);
+    float3 worldNormal = float3(0.0, 0.0, 1.0);
+    bool onSurface = inside && ProbeSurface(probe, world, viewPosition, worldNormal);
+
+    GatherProbe gather;
+    bool gathers = onSurface && BeginGather(world, worldNormal, viewPosition, gather);
+    if (gathers)
+    {
+        GatherRay r = GatherOneRay(gather, world, worldNormal, viewPosition, FrameJitter(probe, uFrameIndex), ray);
+        float flags = (r.hasSurface ? 1.0 : 0.0) + (r.hasOpen ? 2.0 : 0.0) + (r.hasUnplaced ? 4.0 : 0.0);
+        sRayRadiance[slot + ray] = float4(r.radiance, r.weight);
+        sRaySurface[slot + ray] = float4(r.surface, r.surfaceWeight);
+        sRayOpen[slot + ray] = float4(r.open, flags);
+        sRayUnplaced[slot + ray] = r.unplaced;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (ray != 0 || !inside)
+    {
+        return;
+    }
+
+    float3 traced = float3(0.0, 0.0, 0.0);
+    if (onSurface)
+    {
+        if (gathers)
+        {
+            GatherSums sums = BeginSums();
+            for (int k = 0; k < kTracesPerProbe; k++)
+            {
+                float4 radiance = sRayRadiance[slot + k];
+                float4 surface = sRaySurface[slot + k];
+                float4 open = sRayOpen[slot + k];
+                uint flags = uint(open.w);
+
+                GatherRay r;
+                r.radiance = radiance.xyz;
+                r.weight = radiance.w;
+                r.surface = surface.xyz;
+                r.surfaceWeight = surface.w;
+                r.open = open.xyz;
+                r.unplaced = sRayUnplaced[slot + k];
+                r.hasSurface = (flags & 1u) != 0u;
+                r.hasOpen = (flags & 2u) != 0u;
+                r.hasUnplaced = (flags & 4u) != 0u;
+                AddRay(sums, r);
+            }
+
+            traced = FinishGather(sums);
+        }
+
+        // r_gi_source 4, as the probe-a-thread form answers it: see computeMain below.
+        if (uDebugSource == 4)
+        {
+            float2 found;
+            float2 litFound;
+            float agreement;
+            traced = LookupCardHit(world, -worldNormal, found, litFound, agreement)
+                ? uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb
+                : float3(0.0, 0.0, 0.0);
+        }
+    }
+
+    uIndirect.Store(probe, float4(traced, onSurface ? 1.0 : 0.0));
+    uPosition.Store(probe, onSurface ? float4(world - uCameraToCache, 1.0) : float4(0.0, 0.0, 0.0, 0.0));
+}
+#else
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadID)
@@ -418,3 +519,4 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
     uIndirect.Store(probe, float4(accumulated, frames));
     uPosition.Store(probe, float4(world - uCameraToCache, 1.0));
 }
+#endif

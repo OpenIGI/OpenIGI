@@ -20,7 +20,7 @@ internal static class TacticalMapProjection
     public const double AltitudeMetres = 900.0;
 
     /// <summary>Engine units in a metre.</summary>
-    public const double UnitsPerMetre = 4096.0;
+    public const double UnitsPerMetre = WorldUnits.PerMetre;
 
     /// <summary>The widest the map opens out to, in radians — the retail overview.</summary>
     private const float WidestFieldOfView = 0.7853982f;

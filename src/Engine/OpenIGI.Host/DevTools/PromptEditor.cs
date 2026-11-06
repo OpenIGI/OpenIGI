@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Input;
 using OpenIGI.UI.Focus;
+using OpenIGI.UI.Text;
 
 namespace OpenIGI.Host.DevTools;
 
@@ -29,7 +30,11 @@ internal sealed class PromptEditor
     private readonly KeyRepeater _left = new();
     private readonly KeyRepeater _right = new();
 
+    private readonly DelegateClipboard _clipboard;
     private float _blink;
+
+    /// <summary>Initializes a new instance of the <see cref="PromptEditor"/> class.</summary>
+    public PromptEditor() => _clipboard = new DelegateClipboard(this);
 
     /// <summary>Gets the repeater for the up arrow, shared by every panel's list.</summary>
     public KeyRepeater Up { get; } = new();
@@ -88,12 +93,6 @@ internal sealed class PromptEditor
     /// <returns><see langword="true"/> when a chord was handled.</returns>
     public bool HandleClipboardKeys(ConsoleModel model, ConsoleBody? body, KeyboardState keyboard)
     {
-        if (keyboard.WasPressed(KeyCode.A))
-        {
-            model.SelectAll();
-            return true;
-        }
-
         // A scrollback selection wins over the prompt's, because it is the one the reader can see and
         // the one they just made with the mouse. The prompt's own selection is usually empty anyway.
         if (keyboard.WasPressed(KeyCode.C) && body is { } shown && shown.Selection.IsActive)
@@ -102,27 +101,19 @@ internal sealed class PromptEditor
             return true;
         }
 
-        if (keyboard.WasPressed(KeyCode.C) && model.Edit.HasSelection)
+        if (keyboard.WasPressed(KeyCode.A))
         {
-            WriteClipboard?.Invoke(model.Edit.SelectedText);
+            model.SelectAll();
             return true;
         }
 
-        if (keyboard.WasPressed(KeyCode.X) && model.Edit.HasSelection)
+        foreach (KeyCode chord in ClipboardChords)
         {
-            WriteClipboard?.Invoke(model.Edit.SelectedText);
-            model.Backspace();
-            return true;
-        }
-
-        if (keyboard.WasPressed(KeyCode.V))
-        {
-            if (ReadClipboard?.Invoke() is { Length: > 0 } pasted)
+            if (keyboard.WasPressed(chord))
             {
-                model.Insert(pasted);
+                model.EditWith(edit => ApplyKey(edit, chord, control: true, shift: false).Changed);
+                return true;
             }
-
-            return true;
         }
 
         return false;
@@ -136,77 +127,22 @@ internal sealed class PromptEditor
     /// <param name="elapsed">Real seconds since the last call.</param>
     /// <param name="control">Whether a control key is held.</param>
     /// <param name="shift">Whether a shift key is held.</param>
-    /// <returns><see langword="true"/> when anything changed.</returns>
+    /// <returns><see langword="true"/> when anything changed, the caret included.</returns>
     /// <remarks>
-    /// Separate from <see cref="EditText"/> because the prompt is not a plain field: every edit has to
-    /// refresh the completion list, which only the model can do.
+    /// The prompt is edited through the model so every change refreshes the completion list; the clipboard
+    /// chords are <see cref="HandleClipboardKeys"/>'s, so they are left out here.
     /// </remarks>
     public bool EditPrompt(ConsoleModel model, KeyboardState keyboard, float elapsed, bool control, bool shift)
     {
-        bool changed = false;
-
-        if (_backspace.Poll(keyboard, KeyCode.Backspace, elapsed))
+        bool used = false;
+        model.EditWith(edit =>
         {
-            model.Backspace();
-            changed = true;
-        }
+            (bool anyUsed, bool changed) = ApplyKeys(edit, keyboard, elapsed, control, shift, clipboardChords: false);
+            used = anyUsed;
+            return changed;
+        });
 
-        if (_delete.Poll(keyboard, KeyCode.Delete, elapsed))
-        {
-            model.Delete();
-            changed = true;
-        }
-
-        if (_left.Poll(keyboard, KeyCode.Left, elapsed))
-        {
-            if (control)
-            {
-                model.MoveCaretByWord(-1, shift);
-            }
-            else
-            {
-                model.MoveCaret(-1, shift);
-            }
-
-            changed = true;
-        }
-
-        if (_right.Poll(keyboard, KeyCode.Right, elapsed))
-        {
-            if (control)
-            {
-                model.MoveCaretByWord(1, shift);
-            }
-            else
-            {
-                model.MoveCaret(1, shift);
-            }
-
-            changed = true;
-        }
-
-        if (keyboard.WasPressed(KeyCode.Home))
-        {
-            model.CaretToStart(shift);
-            changed = true;
-        }
-
-        if (keyboard.WasPressed(KeyCode.End))
-        {
-            model.CaretToEnd(shift);
-            changed = true;
-        }
-
-        while (keyboard.TryDequeueCharacter(out char typed))
-        {
-            if (IsPrintable(typed))
-            {
-                model.Insert(typed.ToString());
-                changed = true;
-            }
-        }
-
-        return changed;
+        return used;
     }
 
     /// <summary>Applies editing keys and typed text to a plain field.</summary>
@@ -218,62 +154,62 @@ internal sealed class PromptEditor
     /// <returns><see langword="true"/> when the text changed.</returns>
     public bool EditText(TextEditState edit, KeyboardState keyboard, float elapsed, bool control, bool shift)
     {
-        bool changed = false;
-
-        if (control && keyboard.WasPressed(KeyCode.A))
-        {
-            edit.SelectAll();
-        }
-
-        if (control && keyboard.WasPressed(KeyCode.V) && ReadClipboard?.Invoke() is { Length: > 0 } pasted)
-        {
-            changed |= edit.Insert(pasted);
-        }
-
-        if (_backspace.Poll(keyboard, KeyCode.Backspace, elapsed))
-        {
-            changed |= edit.Backspace();
-        }
-
-        if (_delete.Poll(keyboard, KeyCode.Delete, elapsed))
-        {
-            changed |= edit.Delete();
-        }
-
-        if (_left.Poll(keyboard, KeyCode.Left, elapsed))
-        {
-            edit.Move(-1, shift);
-        }
-
-        if (_right.Poll(keyboard, KeyCode.Right, elapsed))
-        {
-            edit.Move(1, shift);
-        }
-
-        if (keyboard.WasPressed(KeyCode.Home))
-        {
-            edit.MoveToStart(shift);
-        }
-
-        if (keyboard.WasPressed(KeyCode.End))
-        {
-            edit.MoveToEnd(shift);
-        }
-
-        while (keyboard.TryDequeueCharacter(out char typed))
-        {
-            if (IsPrintable(typed))
-            {
-                changed |= edit.Insert(typed.ToString());
-            }
-        }
-
+        bool changed = ApplyKeys(edit, keyboard, elapsed, control, shift, clipboardChords: true).Changed;
         if (changed)
         {
             ResetBlink();
         }
 
         return changed;
+    }
+
+    private static readonly KeyCode[] ClipboardChords = [KeyCode.C, KeyCode.X, KeyCode.V];
+
+    // The one key map every field shares (TextEditKeys); the console only decides which keys repeat and reads
+    // them off the frame's keyboard rather than from key events.
+    private (bool Used, bool Changed) ApplyKeys(
+        TextEditState edit, KeyboardState keyboard, float elapsed, bool control, bool shift, bool clipboardChords)
+    {
+        bool used = false;
+        bool changed = false;
+        void Key(KeyCode key, bool pressed)
+        {
+            if (pressed)
+            {
+                (bool keyUsed, bool keyChanged) = ApplyKey(edit, key, control, shift);
+                used |= keyUsed;
+                changed |= keyChanged;
+            }
+        }
+
+        Key(KeyCode.Backspace, _backspace.Poll(keyboard, KeyCode.Backspace, elapsed));
+        Key(KeyCode.Delete, _delete.Poll(keyboard, KeyCode.Delete, elapsed));
+        Key(KeyCode.Left, _left.Poll(keyboard, KeyCode.Left, elapsed));
+        Key(KeyCode.Right, _right.Poll(keyboard, KeyCode.Right, elapsed));
+        Key(KeyCode.Home, keyboard.WasPressed(KeyCode.Home));
+        Key(KeyCode.End, keyboard.WasPressed(KeyCode.End));
+        if (control && clipboardChords)
+        {
+            Key(KeyCode.A, keyboard.WasPressed(KeyCode.A));
+            Key(KeyCode.V, keyboard.WasPressed(KeyCode.V));
+        }
+
+        while (keyboard.TryDequeueCharacter(out char typed))
+        {
+            if (IsPrintable(typed) && edit.Insert(typed.ToString()))
+            {
+                used = true;
+                changed = true;
+            }
+        }
+
+        return (used, changed);
+    }
+
+    private (bool Used, bool Changed) ApplyKey(TextEditState edit, KeyCode key, bool control, bool shift)
+    {
+        bool used = TextEditKeys.Apply(edit, key, control, shift, _clipboard, out bool changed);
+        return (used, changed);
     }
 
     /// <summary>
@@ -287,4 +223,14 @@ internal sealed class PromptEditor
     /// </remarks>
     private static bool IsPrintable(char c) =>
         c is not ('`' or '~' or '\r' or '\n' or '\t' or '\b') && !char.IsControl(c);
+
+    // The shared key map takes a clipboard object; the console's is the pair of delegates the host sets.
+    private sealed class DelegateClipboard(PromptEditor owner) : IUiClipboard
+    {
+        public string Text
+        {
+            get => owner.ReadClipboard?.Invoke() ?? string.Empty;
+            set => owner.WriteClipboard?.Invoke(value);
+        }
+    }
 }

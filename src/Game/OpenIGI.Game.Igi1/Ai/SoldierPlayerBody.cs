@@ -38,9 +38,6 @@ internal sealed class SoldierPlayerBody
     /// <summary>Gets or sets whether the traversal clip's root height is kept out of the drawn body.</summary>
     public bool SuppressRootHeight { get; set; }
 
-    /// <summary>Gets or sets how far the traversal clip's body is lifted where it is drawn.</summary>
-    public double VisualLift { get; set; }
-
     /// <summary>Gets or sets the clip's root height as the traversal started.</summary>
     public double RootHeightAtStart { get; set; }
 
@@ -84,12 +81,10 @@ internal sealed class SoldierPlayerBody
         bool loops,
         bool backwards,
         bool paused,
-        bool suppressRootHeight,
-        double visualLift)
+        bool suppressRootHeight)
     {
         Climbing = true;
         SuppressRootHeight = suppressRootHeight;
-        VisualLift = visualLift;
         view.StartLadderAnimation(animation, loops, backwards, paused);
         RootHeightAtStart = view.RootSample.Z;
     }
@@ -110,14 +105,13 @@ internal sealed class SoldierPlayerBody
         return new Vector3d(
             taskPosition.X,
             taskPosition.Y,
-            taskPosition.Z + view.RootSample.Z - RootHeightAtStart + VisualLift);
+            taskPosition.Z + view.RootSample.Z - RootHeightAtStart);
     }
 
     /// <summary>Stops showing the climbing body — the player has left the ladder.</summary>
     public void HideClimbing()
     {
         Climbing = false;
-        VisualLift = 0.0;
         RootHeightAtStart = 0.0;
     }
 

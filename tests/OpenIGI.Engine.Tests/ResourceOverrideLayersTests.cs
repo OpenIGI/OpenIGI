@@ -48,6 +48,33 @@ public sealed class ResourceOverrideLayersTests : IDisposable
         Assert.Equal(new byte[] { 1 }, Read(overrides, Texture));
     }
 
+    /// <summary>A mounted layer goes on top of the stack at once, and unmounting it falls back to what was there.</summary>
+    [Fact]
+    public void AMountedLayerGoesOnTopAndComesOffAgain()
+    {
+        Write("pack", Texture, [2]);
+        Write("project", Texture, [9]);
+
+        ResourceOverrides overrides = Stack(("pack", true));
+        _ = overrides.Rescan();
+        Assert.Equal(new byte[] { 2 }, Read(overrides, Texture));
+
+        ResourceOverrides.ScanResult mounted = overrides.Mount(new OverrideLayer("project", "project", Path.Combine(_root, "project")));
+        Assert.Equal(1, mounted.Changed);
+        Assert.Equal(new byte[] { 9 }, Read(overrides, Texture));
+        Assert.Equal("project", overrides.Layers[0].Id);
+
+        // Mounting the same id again is a rescan: a file saved into it since shows up.
+        Write("project", "common/textures/new.tex", [7]);
+        _ = overrides.Mount(new OverrideLayer("project", "project", Path.Combine(_root, "project")));
+        Assert.Equal(new byte[] { 7 }, Read(overrides, "common/textures/new.tex"));
+        Assert.Equal(2, overrides.Layers.Count);
+
+        Assert.True(overrides.Unmount("project", out _));
+        Assert.Equal(new byte[] { 2 }, Read(overrides, Texture));
+        Assert.False(overrides.Unmount("project", out _));
+    }
+
     /// <summary>With every layer that has a path switched off, the path is the game's own again.</summary>
     [Fact]
     public void AllLayersOffLeavesTheGamesOwnFile()

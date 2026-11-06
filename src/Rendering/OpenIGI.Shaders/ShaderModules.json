@@ -162,6 +162,13 @@
           ]
         },
         {
+          "name": "group16x8",
+          "defines": {
+            "OPENIGI_UPSCALE_GROUP": "16",
+            "OPENIGI_UPSCALE_GROUP_Y": "8"
+          }
+        },
+        {
           "name": "group8",
           "defines": {
             "OPENIGI_UPSCALE_GROUP": "8"
@@ -180,6 +187,18 @@
     {
       "id": "LampDenoiseSpatial",
       "source": "Lamp/DenoiseSpatial.slang"
+    },
+    {
+      "id": "LampGrid",
+      "source": "Lamp/Grid.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_LAMPS": "160"
+          }
+        }
+      ]
     },
     {
       "id": "LampShadow",
@@ -433,6 +452,24 @@
           "defines": {
             "OPENIGI_RAY_QUERY": "0"
           }
+        },
+        {
+          "name": "rayquery-split",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1",
+            "OPENIGI_SPLIT_BOUNCE": "1"
+          },
+          "targets": [
+            "Spirv",
+            "Dxil"
+          ]
+        },
+        {
+          "name": "software-split",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0",
+            "OPENIGI_SPLIT_BOUNCE": "1"
+          }
         }
       ]
     },
@@ -454,6 +491,24 @@
           "name": "software",
           "defines": {
             "OPENIGI_RAY_QUERY": "0"
+          }
+        },
+        {
+          "name": "rayquery-split",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1",
+            "OPENIGI_SPLIT_TRACE": "1"
+          },
+          "targets": [
+            "Spirv",
+            "Dxil"
+          ]
+        },
+        {
+          "name": "software-split",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0",
+            "OPENIGI_SPLIT_TRACE": "1"
           }
         }
       ]

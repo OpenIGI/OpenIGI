@@ -68,6 +68,9 @@ internal sealed class PlayerWeaponSelector
         }
     }
 
+    /// <summary>Gets whether the binoculars in hand are waiting to be put away by their key.</summary>
+    internal bool BinocularCloseQueued => _binocularTogglePending && InHand?.Weapon.Category == WeaponCategory.Binocular;
+
     /// <summary>Consumes a binocular toggle once the binoculars are in hand.</summary>
     /// <returns><see langword="true"/> when a toggle or open request was consumed.</returns>
     internal bool ConsumeBinocularToggle()

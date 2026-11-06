@@ -105,14 +105,15 @@ public sealed class TemporalResolve : IDisposable
     /// <param name="device">The device.</param>
     /// <returns>The widest tile its shared memory holds, among those compiled for it.</returns>
     /// <remarks>
-    /// The sixteen-wide tile carries its apron once over four times the area and is the faster of the two
-    /// where it fits; the eight-wide one fits every adapter. A group that asks for more shared memory than
+    /// The sixteen-square tile carries its apron once over four times the area and is the fastest where it
+    /// fits; sixteen by eight is the widest inside Direct3D 12's and Metal's 32 KiB; the eight-square one fits
+    /// every adapter. A group that asks for more shared memory than
     /// the adapter allows is not a slow path but a pipeline that will not build, so the choice is made
     /// from what the device reports, before the module is handed over.
     /// </remarks>
     private static ShaderVariant RejectShadingVariantFor(IRhiDevice device)
     {
-        (ShaderVariant widest, _) = UpscaleRejectShadingVariants.Select(
+        (ShaderVariant widest, _, _) = UpscaleRejectShadingVariants.Select(
             (uint)Math.Max(0, device.Limits.MaxComputeWorkgroupStorageBytes));
 
         return ShaderCatalog.Compiles(ShaderModuleId.UpscaleRejectShading, widest, device.ShaderTarget)

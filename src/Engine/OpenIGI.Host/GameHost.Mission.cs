@@ -562,6 +562,7 @@ public sealed partial class GameHost
         // without.
         _timeOfDay.Sun = null;
         _timeOfDay.EffectiveSun = null;
+        _timeOfDay.Sunless = false;
         _earCamera = null;
 
         // And so does what the level said about its own light. Left standing, the next title's mission
@@ -627,6 +628,9 @@ public sealed partial class GameHost
         _scene = null;
         _mission.Terrain = null;
         _mission.Ground = null;
+        _mission.Models = null;
+        _mission.Animators = null;
+        _mission.AnimationFiles = null;
         _mission.ReleaseWorld();
         _loadedMissionForWeapon = null;
 

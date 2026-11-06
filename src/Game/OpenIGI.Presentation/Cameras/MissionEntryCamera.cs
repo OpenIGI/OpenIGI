@@ -307,7 +307,7 @@ public sealed class MissionEntryCamera
     /// <param name="descend">Whether the shot ends in the player's eyes, or hands off to an authored camera over the start.</param>
     public void Begin(in CameraPose showcase, Vector3d spawnPositionUnits, double groundHeightMetres, bool descend = true)
     {
-        const double unitsPerMetre = 4096.0;
+        const double unitsPerMetre = WorldUnits.PerMetre;
 
         _start = showcase;
         Vector3d spawn = new(

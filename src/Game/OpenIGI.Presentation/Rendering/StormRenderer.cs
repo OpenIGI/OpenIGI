@@ -202,7 +202,7 @@ public sealed class StormRenderer : IDisposable
     public WorldRayCast? Ground { get; set; }
 
     /// <summary>Gets or sets how many world units make a metre, for <see cref="Ground"/>.</summary>
-    public double UnitsPerMetre { get; set; } = 4096.0;
+    public double UnitsPerMetre { get; set; } = WorldUnits.PerMetre;
 
     /// <summary>Gets or sets whether the eye is under cover.</summary>
     /// <remarks>

@@ -64,6 +64,7 @@ internal static class HostOptionsParser
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
         bool lockstep = false;
+        bool noSave = false;
         List<(int Frame, string Statement)> deferredCommands = [];
         List<string> contentDirectories = [];
         string? contentProfile = null;
@@ -299,6 +300,10 @@ internal static class HostOptionsParser
             {
                 lockstep = true;
             }
+            else if (arg.Equals("nosave", StringComparison.OrdinalIgnoreCase))
+            {
+                noSave = true;
+            }
             else if (arg.Equals("benchmark", StringComparison.OrdinalIgnoreCase))
             {
                 benchmarkPath = Next(args, ref i, "benchmark");
@@ -509,6 +514,7 @@ internal static class HostOptionsParser
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
+            NoSave = noSave,
             BakeAll = bakeAll,
         };
     }

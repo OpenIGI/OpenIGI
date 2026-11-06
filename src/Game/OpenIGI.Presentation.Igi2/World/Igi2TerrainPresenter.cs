@@ -98,6 +98,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly List<MeshHandle>[] _pools = [.. Enumerable.Range(0, ChunkPoolSlots).Select(_ => new List<MeshHandle>())];
     private readonly Igi2TerrainLodSettings _settings;
     private readonly bool _tessellates;
+    private readonly Igi2EditableTerrain? _editable;
 
     private readonly Dictionary<int, ushort> _remap = [];
     private readonly List<Vertex3D> _vertices = [];
@@ -208,10 +209,20 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 resolved));
         }
 
+        // The quadtree reads heights as it splits, every frame, so an edit shows on the next one; only its height bounds are
+        // built ahead and need telling.
+        _editable = surface.Editing;
+        _editable.Changed += OnHeightsChanged;
+        _editable.Painted += OnPainted;
+
         log.Information(
             LogCategory,
             $"Terrain: {_tiles.Count} tile(s) tessellated per frame, detail {settings.Detail}, adaption {settings.Adaption}.");
     }
+
+    /// <inheritdoc/>
+    /// <remarks>Only the tessellated ground follows edits; the full-detail one is uploaded once.</remarks>
+    public IEditableTerrain? Editable => _editable;
 
     /// <summary>Gets how many triangles the ground draws.</summary>
     /// <remarks>
@@ -436,6 +447,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         }
 
         _disposed = true;
+        if (_editable is not null)
+        {
+            _editable.Changed -= OnHeightsChanged;
+            _editable.Painted -= OnPainted;
+        }
+
         foreach (Chunk chunk in _chunks)
         {
             _device.DestroyMesh(chunk.Mesh);
@@ -453,6 +470,24 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
         _chunks.Clear();
         _tiles.Clear();
+    }
+
+    private void OnHeightsChanged(int tile, int left, int top, int right, int bottom)
+    {
+        if (tile < _tiles.Count)
+        {
+            _tiles[tile].Lod.Refresh(left, top, right, bottom);
+        }
+    }
+
+    // Paint changed a tile's material ids; the quadtree reads them as it splits, so only the set of materials it draws passes
+    // for needs finding again.
+    private void OnPainted(int tile, int left, int top, int right, int bottom)
+    {
+        if (tile < _tiles.Count)
+        {
+            _tiles[tile].Lod.RefreshMaterials();
+        }
     }
 
     /// <summary>Uploads the full-detail lightmap pass: every triangle once, at the tile's projection.</summary>

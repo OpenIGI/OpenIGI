@@ -312,7 +312,8 @@ internal sealed class PlayerFirstPersonView
             view.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits,
             weapons?.Sway.Pitch ?? 0f,
             weapons?.Sway.Yaw ?? 0f,
-            weapons?.RecoilPitch ?? 0f);
+            weapons?.RecoilPitch ?? 0f,
+            _landingKick.ViewModelOffsetUnits);
     }
 
     /// <summary>The camera's orientation for a frame between two ticks — the kick glides, the look is now.</summary>

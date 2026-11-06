@@ -96,7 +96,7 @@ public sealed partial class GameHost
                     // through the frame's smoothed camera or moving/zooming binoculars make the
                     // box visibly lag behind the soldier it is meant to surround.
                     eye,
-                    sight.TanX,
+                    view.HorizontalTangent,
                     _window.Width,
                     _window.Height,
                     // FUN_00471F60/FUN_00471B60 use Sys_GetTickCount (the retail
@@ -149,7 +149,12 @@ public sealed partial class GameHost
             binocularTargets,
             binocularRangeMetres,
             _hud,
-            _remasteredHud);
+            _remasteredHud,
+            // The original HUD's own size: hud_retail_scale, or a -uiscale given on the command line over it.
+            UiScale.Resolve(
+                _options.UiScale != UiScale.Automatic ? _options.UiScale : HudCVars.RetailHudScale.Value,
+                _window.Width,
+                _window.Height));
     }
 
     /// <summary>The mission's status messages, for a title's player standing in it in the mission's own player's stead.</summary>
@@ -257,7 +262,7 @@ public sealed partial class GameHost
         _hudOverlay?.DrawRetailStatus(state.Batch, hudFrame);
         DrawModHudOverlays(state, view);
 
-        if (_mission.CutsceneFrameShown is { } cinematicFraming)
+        if (CutsceneFrameShown is { } cinematicFraming)
         {
             CutsceneFramingRenderer.Draw(
                 _device, state.Batch, cinematicFraming, _window.Width, _window.Height, _hud, _loop.Clock.TickCount);
@@ -280,7 +285,13 @@ public sealed partial class GameHost
                 && Viewpoint?.IsDeathViewActive != true
                 && Viewpoint?.WalkingEye(smoothPresentation, tickBlend) is { } computerEye)
             {
-                deviceModel.DrawHeld(computerEye, ViewModelProjection.Create(HumanView.DefaultTanX, FarPlane), _world?.Shading.Sun);
+                // Drawn through the 4:3 lens spread across the window, as retail draws it at every shape: the
+                // screens' pages are laid out across the whole window, so the casing has to frame the whole window
+                // too. Fitting it Hor+ like the rig would leave the pages spilling past its sides.
+                deviceModel.DrawHeld(
+                    computerEye,
+                    ViewModelProjection.Create(HumanView.DefaultTanX, FarPlane, WidescreenLens.AuthoredAspect),
+                    _world?.Shading.Sun);
                 _device.SetDepthState(DepthState.Disabled);
             }
 

@@ -37,15 +37,21 @@ internal static class WorldInteractionCollector
             int magicIndex = type is InteractionActivateType.Terminal
                 or InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive ? 1 : 0;
             string modelName = ModelNameOf(declared, type);
-            // A wire traverses the dynamic model's transformed magic-vertex line. Its Start/Stop task
-            // parameters place and stretch that model, but the small local X/Z magic offset is still
-            // part of the cable the hands touch. The scene builder uses this same value.
+            // A wire's frame runs along the dynamic model's transformed magic-vertex line (Wire_GetMatrix), and its
+            // ride is measured from the model's origin, the middle of the Start/Stop span, against the magic
+            // vertices' stretched local Y. The scene builder places the model from this same transform.
+            WireTransform? wire = null;
             if (type == InteractionActivateType.Wire
                 && models.TryGetValue(modelName, out MefModel? wireModel)
-                && WireTransform.TryCreate(declared, wireModel, out WireTransform wire))
+                && WireTransform.TryCreate(declared, wireModel, out WireTransform built))
             {
-                start = wire.CableStart;
-                end = wire.CableEnd;
+                wire = built;
+                start = built.CableStart;
+                end = built.CableEnd;
+            }
+            else if (type == InteractionActivateType.Wire && WireTransform.TryCreate(declared, out WireTransform bare))
+            {
+                wire = bare;
             }
 
             // Fence evaluates its model bounds. It does not substitute magic vertex 0 for the task position.
@@ -117,6 +123,9 @@ internal static class WorldInteractionCollector
                 IsDestructable = type == InteractionActivateType.Switch && BoolStrict(declared, "Destructable"),
                 IsExplodable = type is InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive && BoolStrict(declared, "Explodable"),
                 TaskPosition = taskPosition,
+                WireOriginAuthored = wire?.PositionUnits ?? Vector3d.Lerp(start, end, 0.5),
+                WireStartLocalY = wire?.CableStartLocalY ?? -(end - start).Length * 0.5,
+                WireEndLocalY = wire?.CableEndLocalY ?? (end - start).Length * 0.5,
                 FenceSpan = type == InteractionActivateType.Fence
                     && models.TryGetValue(modelName, out MefModel? spanned)
                     && spanned.TryGetMagicVertex(0, out Vector3f firstPost)

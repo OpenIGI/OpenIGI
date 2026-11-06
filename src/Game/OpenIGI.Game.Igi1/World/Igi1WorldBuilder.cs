@@ -40,7 +40,11 @@ public sealed class Igi1WorldBuilder : ITitleWorldBuilder
         Igi1SectorVisibility? visibility = request.Magic is { } magic
             ? Igi1SectorVisibility.Build(scene, mission.TryGetModel, magic, solids)
             : null;
-        return new WorldBuildResult(scene, 0, 0, Solids: solids, Visibility: visibility);
+        Engine.Tasks.GameTask levelRoot = request.LevelRoot;
+        Lazy<IReadOnlyDictionary<string, Igi1BodyRig>> rigs = new(() => Igi1ModelAnimator.Rigs(levelRoot));
+        return new WorldBuildResult(
+            scene, 0, 0, Solids: solids, Visibility: visibility, Models: mission.BindModel, Animators: (model, name) => Igi1ModelAnimator.For(model, mission, name, rigs.Value),
+            AnimationFiles: file => Igi1ModelAnimator.PreviewFile(file, mission, rigs.Value));
     }
 
     /// <inheritdoc/>

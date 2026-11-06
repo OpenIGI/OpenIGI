@@ -22,7 +22,7 @@ internal sealed class FakeWebAudioPage : IWebAudioPage
 
     public Dictionary<int, int> BufferBytes { get; } = [];
 
-    public float[] BusGains { get; } = [1f, 1f, 1f, 1f];
+    public float[] BusGains { get; } = [.. Enumerable.Repeat(1f, Enum.GetValues<SoundCategory>().Length)];
 
     public Dictionary<int, VoiceState> Voices { get; } = [];
 

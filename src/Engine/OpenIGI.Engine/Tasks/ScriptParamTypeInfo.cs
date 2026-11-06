@@ -89,6 +89,28 @@ public static class ScriptParamTypeInfo
         return arity;
     }
 
+    /// <summary>Gets how many script arguments a parameter of any type consumes, the variable-length one included.</summary>
+    /// <param name="type">The type.</param>
+    /// <param name="leadingCount">
+    /// For <see cref="ScriptParamType.AnimData"/>, the value of its first argument: the entry count, after which
+    /// the parse callback (<c>0x4F3570</c>) reads an opcode and a value per entry. Ignored for every other type.
+    /// </param>
+    /// <returns>The argument count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered type.</exception>
+    public static int GetArgumentCount(ScriptParamType type, int leadingCount) =>
+        IsVariableLength(type) ? 1 + (AnimDataArgumentsPerEntry * Math.Max(leadingCount, 0)) : GetArgumentCount(type);
+
+    /// <summary>The arguments each <see cref="ScriptParamType.AnimData"/> entry takes: an opcode, then a value.</summary>
+    public const int AnimDataArgumentsPerEntry = 2;
+
+    /// <summary>Determines whether a type's value is text, which the parser reads as a string argument.</summary>
+    /// <param name="type">The type.</param>
+    /// <returns><see langword="true"/> for the string types, the enum strings, script files and level expressions.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered type.</exception>
+    public static bool IsText(ScriptParamType type) =>
+        GetBaseType(type) is ScriptParamType.VarString or ScriptParamType.String16 or ScriptParamType.String32
+            or ScriptParamType.String256 or ScriptParamType.LevelExpression;
+
     /// <summary>Determines whether a type's parse callback consumes a data-dependent number of arguments.</summary>
     /// <param name="type">The type.</param>
     /// <returns><see langword="true"/> only for <see cref="ScriptParamType.AnimData"/>.</returns>

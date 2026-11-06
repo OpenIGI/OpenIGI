@@ -109,4 +109,12 @@ public interface IShellHost
 
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;
+
+    /// <summary>Gets whether this build has the editor, so the menu offers it.</summary>
+    bool CanOpenEditor => false;
+
+    /// <summary>Opens the editor, putting the menu away.</summary>
+    void OpenEditor()
+    {
+    }
 }

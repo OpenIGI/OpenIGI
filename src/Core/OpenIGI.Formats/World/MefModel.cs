@@ -164,6 +164,29 @@ public sealed class MefModel
     /// <summary>Gets the draw records, in file order.</summary>
     public IReadOnlyList<MefDrawRecord> DrawRecords { get; }
 
+    /// <summary>Lists the render mesh's triangles as vertex indices, draw record by draw record.</summary>
+    /// <returns>Each triangle's three indices into <see cref="Vertices"/>; a triangle naming a vertex the model lacks is skipped.</returns>
+    public IEnumerable<(int A, int B, int C)> Triangles() => DrawRecords.SelectMany(Triangles);
+
+    /// <summary>Lists one draw record's triangles as vertex indices.</summary>
+    /// <param name="record">One of this model's <see cref="DrawRecords"/>.</param>
+    /// <returns>Each triangle's three indices into <see cref="Vertices"/>; a triangle naming a vertex the model lacks is skipped.</returns>
+    public IEnumerable<(int A, int B, int C)> Triangles(MefDrawRecord record)
+    {
+        int count = _vertices.Length;
+        ReadOnlyMemory<ushort> indices = record.Indices;
+        for (int i = 0; i + 2 < indices.Length; i += 3)
+        {
+            int a = record.ToVertexIndex(indices.Span[i]);
+            int b = record.ToVertexIndex(indices.Span[i + 1]);
+            int c = record.ToVertexIndex(indices.Span[i + 2]);
+            if ((uint)a < (uint)count && (uint)b < (uint)count && (uint)c < (uint)count)
+            {
+                yield return (a, b, c);
+            }
+        }
+    }
+
     /// <summary>Gets the baked-lightmap pages, empty on models that carry none.</summary>
     /// <remarks>
     /// Nearly every lightmapped model has exactly one page: of the 5628 in the retail corpus, 5520 have

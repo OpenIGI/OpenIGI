@@ -246,6 +246,15 @@ public sealed partial class GameHost
                 : FreeCameraFactory.Create(scene, _options.CameraYaw, _options.CameraPitch, _options.CameraHeight);
         }
 
+        // A level with no ground at all -- the last mission is only buildings and tunnels -- has no outdoors for a sun to shine
+        // into; its Dirlight is there for the original's object lighting. Decided after either route built the ground, and before
+        // the surface cache is lit, so the cache converges sunless too.
+        _timeOfDay.Sunless = _terrain is null;
+        if (_timeOfDay.Sunless)
+        {
+            _logger.Information("Light", "The level has no ground; it is lit without a sun.");
+        }
+
         // Now that the sun is known. The pages hold unlit albedo by design, so this is the only thing
         // that puts light into the cache -- and it runs once, because this game's sun is a fixed
         // direction per mission, which is the bargain the whole surface cache is built on.

@@ -232,7 +232,7 @@ internal sealed class Igi1CoopPair : IDisposable
         files.RegisterDevice(new LocalFileDevice(root));
         FileSystemConfig.LoadOrDefault(Path.Combine(root, FileSystemConfig.DefaultFileName), runtime.Layout).ApplyTo(files);
         return new GameHost(new HeadlessPlatformHost(), window, device, audio,
-            InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, HostOptions.Parse(args), root, NullLogger.Instance);
+            InlineWorkScheduler.Instance, AlwaysReadyLoadGate.Instance, TitleCatalog.Catalog, runtime.Title, files, HostOptions.Parse([.. args, "-nosave"]), root, NullLogger.Instance);
     }
 
     // Passes the ticks on to a session and keeps the level it runs on.

@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi2.Animation;
 public sealed class Igi2AnimBlend : IIgi2PoseSource
 {
     /// <summary>The ticks a run adds, <c>AnimBlender_nTicksPerFrame</c>.</summary>
-    public const int TicksPerFrame = 160;
+    public const int TicksPerFrame = Igi2AnimController.TicksPerFrame;
 
     private Igi2BoneBuffer? _old;
     private Igi2BoneBuffer? _new;
