@@ -481,6 +481,26 @@ public sealed class PlayerWeapons
     /// <summary>Takes the weapons out of death, as a co-op player is brought back.</summary>
     public void Revive() => _machine.Revive();
 
+    /// <summary>
+    /// Takes every weapon and round away, for a player who died in a match and stands again with only the spawn's kit: the
+    /// weapons carried after this come up as at a fresh spawn.
+    /// </summary>
+    public void Disarm()
+    {
+        _carried.Clear();
+        _selector.Reset();
+        Ammunition.Clear();
+        _shots.Clear();
+        _m203Shots.Clear();
+        _firedThisTick = false;
+        MinePlacement = null;
+        if (State != HumanWeaponState.Suspended)
+        {
+            // Alive: whatever the machine was doing with the weapon in hand ends, as nothing is.
+            _machine.Revive();
+        }
+    }
+
     /// <summary>Stops the weapons because the player has died.</summary>
     public void StopForDeath()
     {

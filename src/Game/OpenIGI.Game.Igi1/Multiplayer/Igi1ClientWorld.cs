@@ -16,6 +16,15 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     public void ResetToLevelStart() => _game.ResetToLevelStart();
 
     /// <inheritdoc/>
+    public void ArmOwn(IReadOnlyList<(string Weapon, int Rounds)> kit, bool fresh)
+    {
+        if (_game.World.Player is { } own && _game.PlayerSetup is { } setup)
+        {
+            setup.Arm(own, kit, fresh);
+        }
+    }
+
+    /// <inheritdoc/>
     public void GiveOwn(string weapon, int rounds)
     {
         if (_game.World.Player is { } own && _game.PlayerSetup is { } setup)

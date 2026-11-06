@@ -42,12 +42,32 @@ public sealed partial class Igi1ReplicatedWorld
     private Game.Multiplayer.Modes.MpLayout? _layout;
 
     // A versus player put back is handed what it starts with again; a co-op partner revived keeps what it had.
-    private void Restock(PlayerCamera rig)
+    // A versus player standing again: the spawn's kit topped up -- after a death, all it carries -- and its own game told.
+    private void Restock(PlayerCamera rig, int slot, bool fresh)
     {
         if (IsVersus && _game.PlayerSetup is { } setup)
         {
             setup.Restock(rig, [.. (_layout?.Loadout ?? []).Select(l => (l.Weapon, l.Rounds))]);
+            if (slot != ServerSession.HostSlot)
+            {
+                _rearmed.Add(new RearmedPlayer(slot, fresh, setup.Kit(rig)));
+            }
         }
+    }
+
+    private readonly List<RearmedPlayer> _rearmed = [];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RearmedPlayer> TakeRearmed()
+    {
+        if (_rearmed.Count == 0)
+        {
+            return [];
+        }
+
+        RearmedPlayer[] taken = [.. _rearmed];
+        _rearmed.Clear();
+        return taken;
     }
 
     // The mode the players' sides follow: co-op until a versus game is played.

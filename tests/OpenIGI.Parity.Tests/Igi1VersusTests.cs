@@ -336,6 +336,35 @@ public sealed class Igi1VersusTests
         Assert.All(match.Players.Values, p => Assert.Equal(match.Rules.MoneyStart - 900, p.Money));
     }
 
+    [Fact]
+    public void A_player_killed_after_buying_starts_the_next_round_with_the_spawn_kit_and_the_survivor_keeps_its_gun()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        static bool Carries(Game.Igi1.Player.PlayerCamera rig, string weapon) =>
+            rig.Weapons?.Carried.Any(c => c.Weapon.ScriptId == weapon) == true;
+        static string[] Kit(Game.Igi1.Player.PlayerCamera rig) =>
+            [.. (rig.Weapons?.Carried ?? []).Select(c => c.Weapon.ScriptId).Order(StringComparer.Ordinal)];
+
+        pair.Session.Say("/buy uzi");
+        pair.Client.Say("/buy uzi");
+        Igi1NetworkPlayer joiner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Assert.True(pair.RunUntil(() => Carries(joiner.Player, "WEAPON_ID_UZI") && Carries(pair.Joiner!.World.Player!, "WEAPON_ID_UZI"), 300) >= 0, "the Uzis never came");
+        Assert.True(Carries(pair.Host.World.Player!, "WEAPON_ID_UZI"), "the host's Uzi never came");
+
+        // The joiner falls, which ends the round; the next one stands everyone again.
+        Match match = pair.Session.Session!.Match;
+        ((IModeHost)pair.Session.Session).World.KillPlayer(0);
+        Assert.True(pair.RunUntil(() => match.Players[0] is { IsAlive: false }, 120) >= 0, "the joiner never fell");
+        Assert.True(pair.RunUntil(() => match.Players[0].IsAlive && !pair.Joiner!.World.IsPlayerDead, 3000) >= 0, "the next round never stood the joiner up");
+        pair.RunUntil(() => false, 60);
+
+        Assert.False(Carries(joiner.Player, "WEAPON_ID_UZI"), "the dead joiner kept its Uzi on the server");
+        Assert.False(Carries(pair.Joiner!.World.Player!, "WEAPON_ID_UZI"), "the dead joiner kept its Uzi in its own game");
+        Assert.NotEmpty(Kit(joiner.Player));
+        Assert.Equal(Kit(joiner.Player), Kit(pair.Joiner.World.Player!));
+        Assert.True(Carries(pair.Host.World.Player!, "WEAPON_ID_UZI"), "the surviving host lost its Uzi");
+    }
+
     private static Igi1CoopPair Joined(string mode, bool hostSkipsIntro = true)
     {
         Igi1CoopPair pair = new(mode, mission: 1, hostSkipsIntro: hostSkipsIntro);

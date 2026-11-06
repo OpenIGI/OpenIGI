@@ -59,6 +59,64 @@ public sealed partial class Igi1PlayerSetup
         return rig.Weapons is { } weapons && Weapons is not null && Ammunition is not null && Hand(rig, weapons, scriptId, rounds);
     }
 
+    /// <summary>Takes every weapon and round a player carries away: one who died in a match keeps nothing it had.</summary>
+    /// <param name="rig">The player's rig.</param>
+    public static void Disarm(PlayerCamera rig)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        rig.Weapons?.Disarm();
+    }
+
+    /// <summary>Reads what a player carries: each weapon's script id, and the rounds of its ammunition in the pouch.</summary>
+    /// <param name="rig">The player's rig.</param>
+    /// <returns>Its kit.</returns>
+    public IReadOnlyList<(string Weapon, int Rounds)> Kit(PlayerCamera rig)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        if (rig.Weapons is not { } weapons)
+        {
+            return [];
+        }
+
+        return
+        [
+            .. weapons.Carried.Select(c => (c.Weapon.ScriptId,
+                Ammunition is not null && Ammunition.TryGetByCalibre(c.Weapon.CalibreId, out AmmoType ammo) ? weapons.Ammunition.Count(ammo.AmmoId) : 0)),
+        ];
+    }
+
+    /// <summary>
+    /// Puts the server's kit on a client's own player: from nothing when the server's player was given only it (a respawn after
+    /// a death), so both start the same fresh guns; otherwise the weapons it lacks added and each pouch set to the server's count,
+    /// the guns it holds kept with their magazines.
+    /// </summary>
+    /// <param name="rig">The client's own player.</param>
+    /// <param name="kit">The server's kit.</param>
+    /// <param name="fresh">Whether the server's player was armed from nothing.</param>
+    public void Arm(PlayerCamera rig, IReadOnlyList<(string Weapon, int Rounds)> kit, bool fresh)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        ArgumentNullException.ThrowIfNull(kit);
+        if (rig.Weapons is not { } weapons || Weapons is null || Ammunition is null)
+        {
+            return;
+        }
+
+        if (fresh)
+        {
+            weapons.Disarm();
+        }
+
+        foreach ((string weapon, int rounds) in kit)
+        {
+            if (Hand(rig, weapons, weapon, 0) && Weapons.TryGetByScriptId(weapon, out WeaponType type)
+                && Ammunition.TryGetByCalibre(type.CalibreId, out AmmoType ammo))
+            {
+                weapons.Ammunition.Add(ammo.AmmoId, rounds - weapons.Ammunition.Count(ammo.AmmoId));
+            }
+        }
+    }
+
     private bool Hand(PlayerCamera rig, OpenIGI.Game.Player.PlayerWeapons weapons, string scriptId, int rounds)
     {
         if (!Weapons.TryGetByScriptId(scriptId, out WeaponType weapon))

@@ -88,4 +88,7 @@ public sealed class AmmoPool
 
     /// <summary>Gets every type carried, with its count.</summary>
     public IReadOnlyDictionary<int, int> Contents => _counts;
+
+    /// <summary>Empties the pouch, its limits kept.</summary>
+    public void Clear() => _counts.Clear();
 }

@@ -44,6 +44,22 @@ internal sealed class PlayerWeaponSelector
         _cycle.AddRange(weaponCycle);
     }
 
+    /// <summary>Forgets what was in hand and every pending pick, as a fresh spawn has it: the cycle brings up its first carried weapon.</summary>
+    internal void Reset()
+    {
+        _categoryIndex = -1;
+        _memberIndex = 0;
+        _cycleIndex = PlayerWeapons.NoCycleIndex;
+        _pendingWeaponId = -1;
+        _heldIndex = -1;
+        _categoryPick = -1;
+        _wheelPick = -1;
+        _wheelBinoculars = false;
+        _lastNonBinocularWeaponId = -1;
+        _binocularTogglePending = false;
+        _binocularOpenPending = false;
+    }
+
     /// <summary>Gets the weapon id a change is pending to, or <c>-1</c>.</summary>
     internal int PendingWeaponId => _pendingWeaponId;
 

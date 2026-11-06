@@ -164,6 +164,21 @@ public sealed class ClientSession
 
     // Weapons the server handed this client's player and its own copy has not yet taken.
     private readonly List<(string Weapon, int Rounds)> _given = [];
+    private readonly List<(bool Fresh, IReadOnlyList<(string Weapon, int Rounds)> Kit)> _kits = [];
+
+    /// <summary>Takes the kits the server sent for this client's player since last asked (respawns), oldest first.</summary>
+    /// <returns>Each kit, and whether it is from nothing.</returns>
+    public IReadOnlyList<(bool Fresh, IReadOnlyList<(string Weapon, int Rounds)> Kit)> TakeKits()
+    {
+        if (_kits.Count == 0)
+        {
+            return [];
+        }
+
+        (bool, IReadOnlyList<(string, int)>)[] taken = [.. _kits];
+        _kits.Clear();
+        return taken;
+    }
 
     /// <summary>Takes the weapons the server handed this client's player since the last call (its buys).</summary>
     /// <returns>Each weapon's script id and rounds.</returns>
@@ -613,6 +628,21 @@ public sealed class ClientSession
                 if (!reader.IsOverflowed && _given.Count < 32)
                 {
                     _given.Add((weapon, rounds));
+                }
+
+                break;
+            case SessionMessage.Kit:
+                bool fresh = reader.ReadBool();
+                int count = (int)Math.Min(reader.ReadVarUInt(), ServerSession.MaxKit);
+                List<(string, int)> kit = new(count);
+                for (int i = 0; i < count; i++)
+                {
+                    kit.Add((reader.ReadString(64), (int)reader.ReadVarUInt()));
+                }
+
+                if (!reader.IsOverflowed && _kits.Count < 8)
+                {
+                    _kits.Add((fresh, kit));
                 }
 
                 break;

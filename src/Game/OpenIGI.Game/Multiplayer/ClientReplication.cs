@@ -31,7 +31,13 @@ public static class ClientReplication
             world.ResetToLevelStart();
         }
 
-        // What the server handed this client's player -- a buy -- its own copy carries too.
+        // What the server re-armed this client's player with at a respawn, then what it handed it -- a buy -- its own copy
+        // carries too, in that order, as the server did them.
+        foreach ((bool fresh, IReadOnlyList<(string Weapon, int Rounds)> kit) in session.TakeKits())
+        {
+            world.ArmOwn(kit, fresh);
+        }
+
         foreach ((string weapon, int rounds) in session.TakeGiven())
         {
             world.GiveOwn(weapon, rounds);

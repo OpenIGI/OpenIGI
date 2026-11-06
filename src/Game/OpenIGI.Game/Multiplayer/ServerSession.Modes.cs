@@ -57,6 +57,34 @@ public sealed partial class ServerSession
         return true;
     }
 
+    // Each joined player the world re-armed is sent its kit, for its own game to carry what the server's copy does.
+    private void TellKits()
+    {
+        foreach (RearmedPlayer rearmed in _world.TakeRearmed())
+        {
+            if (rearmed.Slot == HostSlot || !_clients.ContainsKey(rearmed.Slot))
+            {
+                continue;
+            }
+
+            _writer.Reset();
+            _writer.WriteBits((uint)SessionMessage.Kit, 8);
+            _writer.WriteBool(rearmed.Fresh);
+            int count = Math.Min(rearmed.Kit.Count, MaxKit);
+            _writer.WriteVarUInt((uint)count);
+            for (int i = 0; i < count; i++)
+            {
+                _writer.WriteString(rearmed.Kit[i].Weapon, 64);
+                _writer.WriteVarUInt((uint)Math.Max(0, rearmed.Kit[i].Rounds));
+            }
+
+            _net.Send(rearmed.Slot, NetChannel.Reliable, _writer.AsSpan());
+        }
+    }
+
+    /// <summary>The most weapons a kit message carries.</summary>
+    internal const int MaxKit = 32;
+
     void IModeHost.Respawn(int slot)
     {
         // The match's team first: a side swap or a scramble changed it, and the spawn the world picks follows it.

@@ -421,6 +421,12 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     {
         if (slot == ServerSession.HostSlot)
         {
+            bool hostDied = _dead.Contains(HostEntity);
+            if (hostDied && IsVersus && _game.World.Player is { } fallen)
+            {
+                Igi1PlayerSetup.Disarm(fallen);
+            }
+
             _game.Harm.RevivePlayer(at: null, facing: 0f);
             if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
             {
@@ -433,7 +439,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
                     own.PlaceAt(_game.World.Ground, spawn);
                 }
 
-                Restock(own);
+                Restock(own, slot, hostDied);
             }
 
             _dead.Remove(HostEntity);
@@ -442,10 +448,16 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 
         if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player))
         {
+            bool died = _dead.Contains(slot + 1);
+            if (died && IsVersus)
+            {
+                Igi1PlayerSetup.Disarm(player.Player);
+            }
+
             Igi1PlayerHarm.RevivePlayer(player, at: null, player.Player.Body.Yaw);
             _dead.Remove(slot + 1);
             Stand(player, slot);
-            Restock(player.Player);
+            Restock(player.Player, slot, died);
         }
     }
 

@@ -95,6 +95,10 @@ public interface IReplicatedWorld
     /// <returns><see langword="true"/> when it was handed over.</returns>
     bool Give(int slot, string weapon, int rounds) => false;
 
+    /// <summary>Takes the players re-armed since last asked (respawned), for their own games to carry the same.</summary>
+    /// <returns>Each one's slot, kit, and whether it was armed from nothing.</returns>
+    IReadOnlyList<RearmedPlayer> TakeRearmed() => [];
+
     /// <summary>Shows a blast the mode set off -- a bomb's -- where it is, as the world shows its own explosions.</summary>
     /// <param name="at">Where, in world units.</param>
     /// <param name="radius">How far it reaches, in world units.</param>
@@ -210,6 +214,13 @@ public interface IReplicatedClientWorld
 
     /// <summary>Records the client's copy of the level as it stands, as what <see cref="ResetToLevelStart"/> puts back.</summary>
     void MarkLevelStart()
+    {
+    }
+
+    /// <summary>Puts the server's kit on the client's own player, after the server re-armed its copy (a respawn).</summary>
+    /// <param name="kit">Each weapon's script id and the rounds of its ammunition.</param>
+    /// <param name="fresh">Whether the server armed its copy from nothing, a respawn after a death.</param>
+    void ArmOwn(IReadOnlyList<(string Weapon, int Rounds)> kit, bool fresh)
     {
     }
 
@@ -373,4 +384,14 @@ public enum SessionMessage : byte
     /// <summary>Server to client: a weapon the server handed the client's player (a buy), for the client's own copy of it to
     /// carry too; the weapon's script id and the rounds of its ammunition.</summary>
     Given = 19,
+
+    /// <summary>Server to client: the client's player was re-armed (a respawn), for its own copy to carry the same; whether
+    /// from nothing, then each weapon's script id and the rounds of its ammunition.</summary>
+    Kit = 20,
 }
+
+/// <summary>A player the server re-armed: what it carries now, and whether it was armed from nothing.</summary>
+/// <param name="Slot">Its slot.</param>
+/// <param name="Fresh">Whether it was armed from nothing (it had died).</param>
+/// <param name="Kit">Each weapon's script id and the rounds of its ammunition.</param>
+public sealed record RearmedPlayer(int Slot, bool Fresh, IReadOnlyList<(string Weapon, int Rounds)> Kit);

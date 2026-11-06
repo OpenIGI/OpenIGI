@@ -334,6 +334,7 @@ public sealed partial class ServerSession : IModeHost
 
         _tick = tick;
         Mode.Tick(this, tick, _world.TakeDeaths());
+        TellKits();
         TellCombat();
         TellMatch(tick);
 
