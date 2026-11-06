@@ -276,7 +276,7 @@ public sealed partial class GameHost
         bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
         if (arena)
         {
-            List<Vector3d> stood = [];
+            List<Game.Multiplayer.Modes.ArenaLevel.Post> stood = [];
             int removed = Game.Multiplayer.Modes.ArenaLevel.RemoveSoldiers(levelRoot, stood);
             _logger.Information("Session", $"An arena: {removed} of the level's soldiers and their generators taken out.");
             if (TickObserver is Multiplayer.ISessionMode session)

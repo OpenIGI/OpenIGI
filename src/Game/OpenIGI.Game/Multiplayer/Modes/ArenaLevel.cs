@@ -23,11 +23,16 @@ public static class ArenaLevel
     /// <returns>How many were taken out.</returns>
     public static int RemoveSoldiers(GameTask root) => RemoveSoldiers(root, []);
 
+    /// <summary>A place a level's soldier stood, and the AI graph it walked: what a generated arena is laid out from.</summary>
+    /// <param name="Position">Where it stood, in world units.</param>
+    /// <param name="Graph">The id of the graph its <c>HumanAI</c> walks, or 0 for none.</param>
+    public readonly record struct Post(Vector3d Position, int Graph);
+
     /// <summary>Takes a level's soldiers and soldier generators out of it, noting where each soldier stood.</summary>
     /// <param name="root">The level's root task.</param>
-    /// <param name="stood">Where the soldiers stood, added to: the level's own ground a player can stand on.</param>
+    /// <param name="stood">Where the soldiers stood and the graph each walked, added to.</param>
     /// <returns>How many were taken out.</returns>
-    public static int RemoveSoldiers(GameTask root, List<Vector3d> stood)
+    public static int RemoveSoldiers(GameTask root, List<Post> stood)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(stood);
@@ -36,7 +41,8 @@ public static class ArenaLevel
         {
             if (task.TryGetScriptValue("Position", out object? at) && at is Vector3d position)
             {
-                stood.Add(position);
+                int graph = task.Children.OfType<HumanAiTask>().FirstOrDefault()?.GraphId ?? 0;
+                stood.Add(new Post(position, graph));
             }
         }
 
@@ -53,16 +59,17 @@ public static class ArenaLevel
     }
 
     /// <summary>
-    /// Lays out a level nobody laid out by hand, around where its soldiers stand thickest -- the base a campaign level is
-    /// fought over: its players start where those soldiers stood, the two teams at the two ends of that ground, and play is
-    /// the box around it a margin wide. Soldiers posted far from it (a lone patrol, a sniper on a far ridge, one below the
-    /// level) and the level's own start (often a long walk away) are no part of it.
+    /// Lays out a level nobody laid out by hand, inside the place it is fought over: around where its soldiers stand
+    /// thickest, and of those only the ones walking that place's AI graph -- a graph is ground its soldiers can walk between,
+    /// so a post outside the base's fence, which walks another, is no part of it and no player is put where it cannot get in.
+    /// The players start where those soldiers stood, the two teams at the two ends of that ground; play is the box around it
+    /// a margin wide. The level's own start and far-off posts are no part of it either.
     /// </summary>
     /// <param name="title">The game.</param>
     /// <param name="map">The level.</param>
-    /// <param name="stood">Where the level's soldiers stood.</param>
+    /// <param name="stood">Where the level's soldiers stood, and the graph each walked.</param>
     /// <returns>The layout, or <see langword="null"/> for a level with too few soldiers together to lay one out from.</returns>
-    public static MpLayout? Generated(string title, string map, IReadOnlyList<Vector3d> stood)
+    public static MpLayout? Generated(string title, string map, IReadOnlyList<Post> stood)
     {
         ArgumentNullException.ThrowIfNull(stood);
         if (stood.Count == 0)
@@ -70,14 +77,16 @@ public static class ArenaLevel
             return null;
         }
 
-        // The heart of the level: the soldier with the most others near it.
-        Vector3d heart = stood.MaxBy(at => stood.Count(other => Near(at, other, ClusterRadius)));
+        // The heart of the level: the soldier with the most others near it; and the graph most of those around it walk.
+        Post heart = stood.MaxBy(at => stood.Count(other => Near(at.Position, other.Position, ClusterRadius)));
+        List<Post> around = [.. stood.Where(at => Near(heart.Position, at.Position, ArenaRadius))];
+        int graph = around.Where(p => p.Graph > 0).GroupBy(p => p.Graph).MaxBy(g => g.Count())?.Key ?? 0;
         List<Vector3d> spots = [];
-        foreach (Vector3d at in stood.Where(at => Near(heart, at, ArenaRadius)))
+        foreach (Post at in around.Where(p => graph == 0 || p.Graph == graph))
         {
-            if (spots.All(s => Vector3d.Distance(s, at) > MinimumSpawnSpacing))
+            if (spots.All(s => Vector3d.Distance(s, at.Position) > MinimumSpawnSpacing))
             {
-                spots.Add(at);
+                spots.Add(at.Position);
             }
         }
 
