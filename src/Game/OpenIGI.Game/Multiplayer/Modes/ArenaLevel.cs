@@ -111,8 +111,32 @@ public static class ArenaLevel
             Name = $"Mission {map}",
             Bounds = [new MpBox([minX - Margin, minY - Margin, minZ - Margin], [maxX + Margin, maxY + Margin, maxZ + (Margin * 2)])],
             Spawns = spawns,
+            Points = BombSites(spawns),
         };
     }
+
+    // Two bomb sites on the defenders' ground: the two of their spawns farthest apart, so a site is never a step from the other.
+    private static MpPoint[] BombSites(MpSpawn[] spawns)
+    {
+        MpSpawn[] theirs = [.. spawns.Where(s => s.Team == TeamRoster.Bad)];
+        if (theirs.Length < 2)
+        {
+            return [];
+        }
+
+        static Vector3d At(MpSpawn s) => new(s.Position[0], s.Position[1], s.Position[2]);
+        (MpSpawn a, MpSpawn b) = theirs
+            .SelectMany((x, i) => theirs.Skip(i + 1).Select(y => (x, y)))
+            .MaxBy(pair => Vector3d.Distance(At(pair.x), At(pair.y)));
+        return
+        [
+            new MpPoint("A", MpPointKind.BombSite, a.Position, SiteRadius, TeamRoster.Bad),
+            new MpPoint("B", MpPointKind.BombSite, b.Position, SiteRadius, TeamRoster.Bad),
+        ];
+    }
+
+    // How near a generated bomb site counts as at it.
+    private const double SiteRadius = 5 * WorldUnits.PerMetre;
 
     // Within a reach across the ground, and not far above or below.
     private static bool Near(Vector3d a, Vector3d b, double reach) =>

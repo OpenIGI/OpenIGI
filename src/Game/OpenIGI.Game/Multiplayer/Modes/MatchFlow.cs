@@ -81,7 +81,8 @@ public sealed class MatchFlow(int tickRate)
     /// <param name="mode">The mode's id.</param>
     /// <param name="tick">The tick now.</param>
     /// <param name="winnerName">The winner's name as players read it (a team's, a player's), or empty.</param>
-    public void Write(BitWriter writer, string mode, long tick, string winnerName = "")
+    /// <param name="status">The mode's own word on the round in play, or empty.</param>
+    public void Write(BitWriter writer, string mode, long tick, string winnerName = "", string status = "")
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.WriteString(mode, 16);
@@ -96,6 +97,7 @@ public sealed class MatchFlow(int tickRate)
         }
 
         writer.WriteString(winnerName ?? string.Empty, 32);
+        writer.WriteString(status ?? string.Empty, 64);
     }
 
     /// <summary>Reads where a server's match stands.</summary>
@@ -108,7 +110,8 @@ public sealed class MatchFlow(int tickRate)
         int round = reader.ReadRanged(0, 255);
         int winner = reader.ReadRanged(-1, 254);
         double? left = reader.ReadBool() ? reader.ReadRanged(0, 65535) / 10.0 : null;
-        return new MatchState(mode, phase, round, winner, left, reader.ReadString(32));
+        string winnerName = reader.ReadString(32);
+        return new MatchState(mode, phase, round, winner, left, winnerName, reader.ReadString(64));
     }
 }
 
@@ -119,7 +122,8 @@ public sealed class MatchFlow(int tickRate)
 /// <param name="Winner">Who won what was last decided, or -1.</param>
 /// <param name="SecondsLeft">The phase's seconds left when it was said, or <see langword="null"/> for no clock.</param>
 /// <param name="WinnerName">The winner's name as players read it, or empty.</param>
-public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft, string WinnerName = "")
+/// <param name="Status">The mode's own word on the round in play (a bomb planted), or empty.</param>
+public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Winner, double? SecondsLeft, string WinnerName = "", string Status = "")
 {
     /// <summary>Gets the name a team is shown by.</summary>
     /// <param name="team">The team.</param>
@@ -142,6 +146,7 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
             GameModes.TeamDeathmatch => "TEAM DEATHMATCH",
             GameModes.FreeForAll => "FREE FOR ALL",
             GameModes.Elimination => "ELIMINATION",
+            GameModes.SearchAndDestroy => "SEARCH & DESTROY",
             GameModes.Objective => "OBJECTIVE",
             _ => Mode.ToUpperInvariant(),
         };
@@ -150,7 +155,8 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
             MatchPhase.Warmup => new MatchBanner("WARMUP", clock, "The match begins when the clock runs out"),
             MatchPhase.Intermission or MatchPhase.RoundOver => new MatchBanner(
                 title, clock, Winner < 0 || WinnerName.Length == 0 ? "DRAW" : $"{WinnerName.ToUpperInvariant()} WINS"),
-            _ when Round > 0 && Mode == GameModes.Elimination => new MatchBanner($"{title}  ·  ROUND {Round}", clock, null),
+            _ when Round > 0 && Mode is GameModes.Elimination or GameModes.SearchAndDestroy =>
+                new MatchBanner($"{title}  ·  ROUND {Round}", clock, Status.Length > 0 ? Status : null),
             _ => new MatchBanner(title, clock, null),
         };
     }

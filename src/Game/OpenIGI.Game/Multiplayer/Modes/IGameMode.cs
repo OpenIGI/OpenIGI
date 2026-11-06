@@ -63,6 +63,11 @@ public interface IGameMode
     /// <returns>The team; the world's own choice unless the mode makes teams of its own.</returns>
     int TeamFor(IModeHost host, int slot) => host.World.TeamOf(slot);
 
+    /// <summary>Gets the mode's own word on the round in play, shown under the banner (a bomb planted and its fuse), or empty.</summary>
+    /// <param name="tick">The tick now.</param>
+    /// <returns>The line.</returns>
+    string Status(long tick) => string.Empty;
+
     /// <summary>Begins the match on the tick given.</summary>
     /// <param name="host">The session.</param>
     /// <param name="tick">The tick.</param>

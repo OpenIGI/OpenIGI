@@ -28,7 +28,7 @@ public sealed partial class ServerSession
     /// <param name="tick">The tick now.</param>
     /// <returns>The state.</returns>
     public MatchState CurrentMatch(long tick) =>
-        new(Mode.Id, Mode.Flow.Phase, Mode.Flow.Round, Mode.Flow.Winner, Mode.Flow.SecondsLeft(tick), WinnerName(Mode.Flow.Winner));
+        new(Mode.Id, Mode.Flow.Phase, Mode.Flow.Round, Mode.Flow.Winner, Mode.Flow.SecondsLeft(tick), WinnerName(Mode.Flow.Winner), Mode.Status(tick));
 
     // The winner as players read it: a team's name, or a player's.
     private string WinnerName(int winner) =>
@@ -75,15 +75,21 @@ public sealed partial class ServerSession
     // put right by.
     private void TellMatch(long tick)
     {
-        if (Mode.Flow.Version == _toldFlow && tick % (TickRate * 5) != 0)
+        // The mode's status line changes on its own (a fuse counting down): told when it does, at most each second.
+        string status = Mode.Status(tick);
+        if (Mode.Flow.Version == _toldFlow && tick % (TickRate * 5) != 0 && (status == _toldStatus || tick % TickRate != 0))
         {
             return;
         }
 
         _toldFlow = Mode.Flow.Version;
+        _toldStatus = status;
         _writer.Reset();
         _writer.WriteBits((uint)SessionMessage.MatchState, 8);
-        Mode.Flow.Write(_writer, Mode.Id, tick, WinnerName(Mode.Flow.Winner));
+        Mode.Flow.Write(_writer, Mode.Id, tick, WinnerName(Mode.Flow.Winner), status);
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
     }
+
+    // The status line the clients were last told.
+    private string _toldStatus = string.Empty;
 }

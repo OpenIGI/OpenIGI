@@ -18,13 +18,16 @@ public static class GameModes
     /// <summary>Two teams, rounds of one life each, won by the team left standing.</summary>
     public const string Elimination = "elim";
 
+    /// <summary>Two teams, rounds of one life each: one plants a bomb at the map's sites, the other stops it.</summary>
+    public const string SearchAndDestroy = "sd";
+
     /// <summary>Gets every mode id, in the order a menu lists them.</summary>
-    public static IReadOnlyList<string> All { get; } = [Coop, Objective, TeamDeathmatch, FreeForAll, Elimination];
+    public static IReadOnlyList<string> All { get; } = [Coop, Objective, TeamDeathmatch, FreeForAll, Elimination, SearchAndDestroy];
 
     /// <summary>Gets whether a mode plays players against each other on a level made an arena.</summary>
     /// <param name="id">The mode's id.</param>
     /// <returns><see langword="true"/> for the versus modes.</returns>
-    public static bool IsVersus(string? id) => id is TeamDeathmatch or FreeForAll or Elimination;
+    public static bool IsVersus(string? id) => id is TeamDeathmatch or FreeForAll or Elimination or SearchAndDestroy;
 
     /// <summary>Gets whether a versus mode plays two teams, rather than everyone for themselves.</summary>
     /// <param name="id">The mode's id.</param>
@@ -67,6 +70,7 @@ public static class GameModes
             return id switch
             {
                 Elimination => new EliminationMode(tickRate),
+                SearchAndDestroy => new SearchAndDestroyMode(tickRate),
                 _ => new DeathmatchMode(tickRate, teams: id == TeamDeathmatch),
             };
         }

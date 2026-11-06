@@ -65,6 +65,18 @@ public sealed partial class Igi1ReplicatedWorld
             : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) ? player.Player.Body.Position : null;
 
     /// <inheritdoc/>
+    public void Blast(Vector3d at, double radius) => _game.Blasts.ModeBlast(at, radius);
+
+    /// <inheritdoc/>
+    public bool IsUsing(int slot)
+    {
+        PlayerCamera? rig = slot == ServerSession.HostSlot
+            ? (IncludesHost && !_game.World.IsPlayerDead ? _game.World.Player : null)
+            : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) && !player.IsDead ? player.Player : null;
+        return rig is not null && rig.LastFrame.IsSet(PlayerInputSlot.Activate);
+    }
+
+    /// <inheritdoc/>
     public void KillPlayer(int slot)
     {
         PlayerCamera? rig = slot == ServerSession.HostSlot ? _game.World.Player : _bySlot.GetValueOrDefault(slot)?.Player;

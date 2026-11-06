@@ -83,6 +83,18 @@ public interface IReplicatedWorld
     /// <returns>Its feet, in world units.</returns>
     Core.Numerics.Vector3d? PositionOf(int slot) => null;
 
+    /// <summary>Gets whether a living player is holding the use key: what plants and defuses a bomb.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns><see langword="true"/> while it holds it.</returns>
+    bool IsUsing(int slot) => false;
+
+    /// <summary>Shows a blast the mode set off -- a bomb's -- where it is, as the world shows its own explosions.</summary>
+    /// <param name="at">Where, in world units.</param>
+    /// <param name="radius">How far it reaches, in world units.</param>
+    void Blast(Core.Numerics.Vector3d at, double radius)
+    {
+    }
+
     /// <summary>Kills a player outright, as the world kills one that strayed out of play.</summary>
     /// <param name="slot">The player's slot.</param>
     void KillPlayer(int slot)

@@ -225,6 +225,108 @@ public sealed class GameModeTests
         Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
     }
 
+    private const double Metre = OpenIGI.Core.Numerics.WorldUnits.PerMetre;
+
+    // Attackers 0 (slot 0), defenders 1 (slot 1); site A at 100 m, B at 300 m.
+    private static (Host Host, SearchAndDestroyMode Mode) BombRound(BombSettings? bomb = null)
+    {
+        Host host = new(teams: [0, 1])
+        {
+            Layout = new MpLayout
+            {
+                Points =
+                [
+                    new MpPoint("A", MpPointKind.BombSite, [100 * Metre, 0, 0], 5 * Metre),
+                    new MpPoint("B", MpPointKind.BombSite, [300 * Metre, 0, 0], 5 * Metre),
+                ],
+            },
+        };
+        host.Positions[0] = new(0, 0, 0);
+        host.Positions[1] = new(-50 * Metre, 0, 0);
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundOverSeconds = 1 }, bomb ?? new BombSettings { PlantSeconds = 1, DefuseSeconds = 2, FuseSeconds = 10 });
+        mode.Start(host, 0);
+        return (host, mode);
+    }
+
+    private static long Run(SearchAndDestroyMode mode, Host host, long from, int ticks)
+    {
+        for (int i = 0; i < ticks; i++)
+        {
+            mode.Tick(host, from + i, []);
+        }
+
+        return from + ticks;
+    }
+
+    [Fact]
+    public void A_bomb_planted_at_a_site_goes_off_on_its_fuse_and_wins_the_round_for_the_attackers()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+
+        // Holding use away from a site plants nothing; at A, a second of it does.
+        host.Using.Add(0);
+        long tick = Run(mode, host, 1, TickRate * 2);
+        Assert.Null(mode.PlantedAt);
+        host.Positions[0] = new(102 * Metre, 0, 0);
+        tick = Run(mode, host, tick, TickRate + 1);
+        Assert.Equal("A", mode.PlantedSite);
+        Assert.StartsWith("BOMB PLANTED AT A", mode.Status(tick), StringComparison.Ordinal);
+
+        // The defender stood 150 m off: the blast reaches the attacker beside it, not him; the round is the attackers'.
+        host.Using.Clear();
+        tick = Run(mode, host, tick, (TickRate * 10) + 1);
+        Assert.Single(host.Blasts);
+        Assert.Equal([0], host.Killed);
+        Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
+        Assert.Equal(SearchAndDestroyMode.Attackers, mode.Flow.Winner);
+    }
+
+    [Fact]
+    public void A_defender_who_holds_use_beside_the_bomb_long_enough_defuses_it_and_one_who_lets_go_starts_again()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        host.Positions[0] = new(300 * Metre, 0, 0);
+        host.Using.Add(0);
+        long tick = Run(mode, host, 1, TickRate + 1);
+        Assert.Equal("B", mode.PlantedSite);
+        host.Using.Clear();
+
+        // A second and a half beside it, then let go: nothing; then two seconds unbroken.
+        host.Positions[1] = new(301 * Metre, 0, 0);
+        host.Using.Add(1);
+        tick = Run(mode, host, tick, TickRate + (TickRate / 2));
+        host.Using.Clear();
+        tick = Run(mode, host, tick, 1);
+        Assert.False(mode.Defused);
+        host.Using.Add(1);
+        tick = Run(mode, host, tick, (TickRate * 2) + 1);
+        Assert.True(mode.Defused);
+        Assert.Equal(SearchAndDestroyMode.Defenders, mode.Flow.Winner);
+        Assert.Empty(host.Blasts);
+        _ = tick;
+    }
+
+    [Fact]
+    public void A_round_the_clock_ends_with_no_bomb_down_is_the_defenders()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        Run(mode, host, 1, (TickRate * 120) + 1);
+        Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
+        Assert.Equal(SearchAndDestroyMode.Defenders, mode.Flow.Winner);
+    }
+
+    [Fact]
+    public void Once_the_bomb_is_down_the_attackers_falling_does_not_end_the_round()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        host.Positions[0] = new(100 * Metre, 0, 0);
+        host.Using.Add(0);
+        long tick = Run(mode, host, 1, TickRate + 1);
+        host.Using.Clear();
+        mode.Tick(host, tick, [new WorldDeath(10, 11)]);
+        Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
+    }
+
     [Fact]
     public void The_banner_runs_its_clock_down_and_names_the_winner()
     {
@@ -260,6 +362,10 @@ public sealed class GameModeTests
 
         public List<int> Killed => _world.Killed;
 
+        public HashSet<int> Using => _world.Using;
+
+        public List<OpenIGI.Core.Numerics.Vector3d> Blasts => _world.Blasts;
+
         public Match Match { get; }
 
         public IReplicatedWorld World => _world;
@@ -293,6 +399,14 @@ public sealed class GameModeTests
         public Dictionary<int, OpenIGI.Core.Numerics.Vector3d> Positions { get; } = [];
 
         public List<int> Killed { get; } = [];
+
+        public HashSet<int> Using { get; } = [];
+
+        public List<OpenIGI.Core.Numerics.Vector3d> Blasts { get; } = [];
+
+        public bool IsUsing(int slot) => Using.Contains(slot);
+
+        public void Blast(OpenIGI.Core.Numerics.Vector3d at, double radius) => Blasts.Add(at);
 
         public OpenIGI.Core.Numerics.Vector3d? PositionOf(int slot) => Positions.TryGetValue(slot, out OpenIGI.Core.Numerics.Vector3d at) ? at : null;
 

@@ -60,6 +60,9 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     public int TeamFor(IModeHost host, int slot) => GameModes.FairTeam(host, slot);
 
     /// <inheritdoc/>
+    public virtual string Status(long tick) => string.Empty;
+
+    /// <inheritdoc/>
     public void Start(IModeHost host, long tick)
     {
         ArgumentNullException.ThrowIfNull(host);

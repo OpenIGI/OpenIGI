@@ -149,6 +149,30 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void An_attacker_holding_use_at_a_site_plants_the_bomb_and_its_blast_wins_the_round()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        ServerSession session = pair.Session.Session!;
+        SearchAndDestroyMode mode = Assert.IsType<SearchAndDestroyMode>(session.Mode);
+        Landed(pair);
+
+        // Whoever attacks: a site under its feet, and the use key held on its own game.
+        bool hostAttacks = session.Match.Players[ServerSession.HostSlot].Team == SearchAndDestroyMode.Attackers;
+        Core.Numerics.Vector3d feet = hostAttacks ? pair.Host!.World.Player!.Body.Position : Assert.Single(pair.Host!.World.NetworkPlayers).Player.Body.Position;
+        session.Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [feet.X, feet.Y, feet.Z], 5 * 4096)] };
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, true);
+
+        Assert.True(pair.RunUntil(() => mode.PlantedAt is not null, 30 * 6) >= 0, "the bomb was never planted");
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, false);
+        Assert.True(pair.RunUntil(() => pair.Client.Banner?.Headline?.StartsWith("BOMB PLANTED AT A", StringComparison.Ordinal) == true, 30 * 3) >= 0,
+            "the joiner was never told of the plant");
+
+        Assert.True(pair.RunUntil(() => mode.Exploded, 30 * 45) >= 0, "the bomb never went off");
+        Assert.True(pair.RunUntil(() => mode.Flow.Phase == MatchPhase.RoundOver, 30) >= 0, "the round never ended");
+        Assert.Equal(SearchAndDestroyMode.Attackers, mode.Flow.Winner);
+    }
+
+    [RequiresGameDataFact]
     public void A_host_killed_in_an_arena_comes_back_rather_than_failing_the_mission()
     {
         using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
