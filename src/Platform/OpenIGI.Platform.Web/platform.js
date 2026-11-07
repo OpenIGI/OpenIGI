@@ -21,6 +21,25 @@ let pointerVisible = true;
 // do not lock, still work. A finger has nothing to lock, so the lock is asked for only from a mouse.
 let touching = matchMedia('(pointer: coarse)').matches;
 
+// An iPad (which says it is a Mac) or an iPhone, where the page never goes fullscreen: the iPad's Safari takes a game's
+// quick thumbs in fullscreen for typing on a fake keyboard, warns and leaves it, and its swipe to leave takes the stick's
+// finger. The iPhone's has no fullscreen for a page at all.
+const appleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+// Whether a touch screen's page should be fullscreen: from the start (Play took the screen), until the game's own setting says
+// windowed. A phone's browser drops fullscreen at a swipe from the edge, a notification or the back gesture, and its address
+// bar then takes a fifth of the screen with nothing to bring fullscreen back -- a page may ask for it only inside a tap.
+let screenWanted = !appleTouch && matchMedia('(pointer: coarse)').matches;
+
+// Takes the screen back, from inside a finger's tap on the game, when something has taken it away.
+function retakeScreen() {
+  if (!screenWanted || appleTouch || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => screen.orientation?.lock?.('landscape'))
+    .catch(() => {});
+}
+
 // Every device pixel, a phone's three to the CSS pixel included: drawn at fewer, the browser scaled the picture up and
 // the menus' small type smeared past reading.
 const ratio = () => window.devicePixelRatio || 1;
@@ -155,7 +174,11 @@ export function install(target) {
     if (textWanted || onTrigger(point.clientX, point.clientY)) raiseKeyboard();
   };
   canvas.addEventListener('touchend', raise, { signal });
-  canvas.addEventListener('pointerup', e => { if (e.pointerType === 'touch') raise(e); }, { signal });
+  canvas.addEventListener('pointerup', e => {
+    if (e.pointerType !== 'touch') return;
+    raise(e);
+    retakeScreen();
+  }, { signal });
   window.visualViewport?.addEventListener('resize', sayInset, { signal });
   window.visualViewport?.addEventListener('scroll', sayInset, { signal });
 
@@ -254,7 +277,8 @@ export const imports = {
   },
   requestFullscreen: fullscreen => {
     // The page rather than the canvas, so the touch controls laid over the canvas come along.
-    if (fullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+    screenWanted = fullscreen && !appleTouch;
+    if (fullscreen && !document.fullscreenElement && !appleTouch) document.documentElement.requestFullscreen?.().catch(() => {});
     if (!fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   },
   writeClipboard: text => { navigator.clipboard?.writeText(text).catch(() => {}); },

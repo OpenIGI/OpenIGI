@@ -123,8 +123,14 @@ async function pickFolder() {
 /** On a phone or a tablet: the page goes fullscreen and sideways as Play is pressed, while the press allows it. */
 const touchDevice = matchMedia('(pointer: coarse)').matches;
 
+// An iPad (which says it is a Mac) or an iPhone. The iPhone's Safari has no fullscreen for a page; the iPad's has, and
+// treats a game's quick thumbs in it as someone typing on a fake keyboard -- it warns and leaves fullscreen, and its
+// swipe and pinch to leave take the finger on the stick. The touch controls went dead on an iPad and only there.
+const appleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
 function takeTheScreen() {
-  if (!touchDevice || document.fullscreenElement) return;
+  if (!touchDevice || appleTouch || document.fullscreenElement) return;
   document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })
     .then(() => screen.orientation?.lock?.('landscape'))
     .catch(() => {});
