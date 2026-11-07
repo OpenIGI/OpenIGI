@@ -60,6 +60,13 @@ public sealed partial class GameHost
         _chatTypedAt = _loop.TimeSource.Milliseconds;
     }
 
+    // The editing keys repeat while held, as a text box's do: Backspace held clears the line rather than one character.
+    private readonly UI.Focus.KeyRepeater _chatBackspace = new();
+    private readonly UI.Focus.KeyRepeater _chatDelete = new();
+    private readonly UI.Focus.KeyRepeater _chatLeft = new();
+    private readonly UI.Focus.KeyRepeater _chatRight = new();
+    private double _chatKeysAt = double.NaN;
+
     // The line being typed takes the keyboard: characters go in at the caret, the keys that edit edit, Enter says it.
     private void UpdateChatEntry(ISessionTalk talk)
     {
@@ -106,21 +113,6 @@ public sealed partial class GameHost
                 case KeyCode.Tab:
                     _chatTeam = !_chatTeam;
                     break;
-                case KeyCode.Backspace when caret > 0:
-                    int from = control ? WordStart(entry, caret) : caret - 1;
-                    entry = entry.Remove(from, caret - from);
-                    caret = from;
-                    break;
-                case KeyCode.Delete when caret < entry.Length:
-                    int to = control ? WordEnd(entry, caret) : caret + 1;
-                    entry = entry.Remove(caret, to - caret);
-                    break;
-                case KeyCode.Left:
-                    caret = control ? WordStart(entry, caret) : Math.Max(0, caret - 1);
-                    break;
-                case KeyCode.Right:
-                    caret = control ? WordEnd(entry, caret) : Math.Min(entry.Length, caret + 1);
-                    break;
                 case KeyCode.Home:
                     caret = 0;
                     break;
@@ -147,6 +139,33 @@ public sealed partial class GameHost
                     Insert(_window.ClipboardText ?? string.Empty);
                     break;
             }
+        }
+
+        // The keys that repeat while held: their first press and then each repeat.
+        double now = _loop.TimeSource.Milliseconds;
+        float elapsed = double.IsNaN(_chatKeysAt) ? 0f : (float)Math.Clamp((now - _chatKeysAt) / 1000.0, 0.0, 0.25);
+        _chatKeysAt = now;
+        if (_chatBackspace.Poll(keys, KeyCode.Backspace, elapsed) && caret > 0)
+        {
+            int from = control ? WordStart(entry, caret) : caret - 1;
+            entry = entry.Remove(from, caret - from);
+            caret = from;
+        }
+
+        if (_chatDelete.Poll(keys, KeyCode.Delete, elapsed) && caret < entry.Length)
+        {
+            int to = control ? WordEnd(entry, caret) : caret + 1;
+            entry = entry.Remove(caret, to - caret);
+        }
+
+        if (_chatLeft.Poll(keys, KeyCode.Left, elapsed))
+        {
+            caret = control ? WordStart(entry, caret) : Math.Max(0, caret - 1);
+        }
+
+        if (_chatRight.Poll(keys, KeyCode.Right, elapsed))
+        {
+            caret = control ? WordEnd(entry, caret) : Math.Min(entry.Length, caret + 1);
         }
 
         if (wheel != 0f)
