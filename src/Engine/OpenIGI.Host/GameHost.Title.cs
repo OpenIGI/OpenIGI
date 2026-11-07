@@ -323,7 +323,7 @@ public sealed partial class GameHost
 
         // Every session can find the other games' installations, for content that reads one game's data in another.
         ServiceCatalog hostServices = new();
-        hostServices.Provide<ITitleDataLocator>(new InstalledTitles(_titles));
+        hostServices.Provide<ITitleDataLocator>(new InstalledTitles(_titles, _titleRuntime.Title, _gamePath));
         hostServices.Provide<ITitleAudioMixer>(new GuestAudioMixer(_audioOut, _logger));
         hostServices.Provide(new PlayedMods(_titleRuntime.Mods));
         _title = TitleSession.Start(
@@ -576,12 +576,16 @@ public sealed partial class GameHost
         }
     }
 
-    // The games installed beside this one, as the catalogue binds them.
-    private sealed class InstalledTitles(ITitleCatalog titles) : ITitleDataLocator
+    // The games installed beside this one, as the catalogue binds them. The one being played is where the host plays it
+    // from: -game names it, and the catalogue only knows the title's variable and the folders it searches, so a run the
+    // launcher started (-game, no IGI_GAME_PATH) would otherwise find its own game missing (#19).
+    internal sealed class InstalledTitles(ITitleCatalog titles, GameTitle active, string activeRoot) : ITitleDataLocator
     {
         public bool TryGetDataRoot(GameTitle title, [NotNullWhen(true)] out string? dataRoot)
         {
-            dataRoot = titles.TryResolve(title, out TitleBinding? binding) ? binding.DataRoot : null;
+            dataRoot = title == active ? activeRoot
+                : titles.TryResolve(title, out TitleBinding? binding) ? binding.DataRoot
+                : null;
             return !string.IsNullOrWhiteSpace(dataRoot)
                 && Directory.Exists(dataRoot)
                 && File.Exists(Path.Combine(dataRoot, title.SignatureFile));

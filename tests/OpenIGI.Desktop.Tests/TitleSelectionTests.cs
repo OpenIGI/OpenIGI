@@ -121,4 +121,37 @@ public sealed class TitleSelectionTests
         Assert.Same(TitleCatalog.Default, binding.Runtime);
         Assert.False(catalog.TryResolve(GameTitle.Igi2, out _));
     }
+
+    /// <summary>The game being played is found where the host plays it from, though the catalogue cannot find it.</summary>
+    /// <remarks>
+    /// Issue #19: the launcher names the played game with <c>-game</c> and sets no <c>IGI_GAME_PATH</c>, so the catalogue,
+    /// which knows only the variable and the folders beside the executable, bound Project I.G.I. to nothing. A mod reading
+    /// both games' data (I.G.I. 2 soldiers) then found the game it was running in missing and left its guards alone.
+    /// </remarks>
+    [Fact]
+    public void The_played_title_is_found_at_the_hosts_root_though_the_catalogue_misses_it()
+    {
+        string played = Path.Combine(Path.GetTempPath(), "openigi-issue19-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(played);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(played, GameTitle.Igi1.SignatureFile), []);
+
+            // A catalogue that cannot find Project I.G.I. at all, as on a machine with no IGI_GAME_PATH.
+            Host.Titles.ITitleCatalog catalog = TitleCatalog.Rooted(TitleCatalog.For(GameTitle.Igi2), Path.Combine(played, "missing"));
+            Assert.False(catalog.TryResolve(GameTitle.Igi1, out _));
+
+            Host.GameHost.InstalledTitles locator = new(catalog, GameTitle.Igi1, played);
+
+            Assert.True(locator.TryGetDataRoot(GameTitle.Igi1, out string? root));
+            Assert.Equal(played, root);
+
+            // The other title is still the catalogue's to answer, and one not installed is still missing.
+            Assert.False(locator.TryGetDataRoot(GameTitle.Igi2, out _));
+        }
+        finally
+        {
+            Directory.Delete(played, recursive: true);
+        }
+    }
 }
