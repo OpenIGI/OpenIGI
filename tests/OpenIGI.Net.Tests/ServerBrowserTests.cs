@@ -42,6 +42,34 @@ public sealed class ServerBrowserTests
     }
 
     [Fact]
+    public void A_room_the_master_stops_listing_leaves_the_list_and_a_saved_one_stays_saved()
+    {
+        static JsonNode Rooms(params string[] codes) => JsonNode.Parse(
+            "{ \"servers\": [" + string.Join(',', codes.Select(c => $"{{ \"title\": \"igi1\", \"room\": \"{c}\", \"name\": \"Joe's game\", \"map\": \"1\", \"mode\": \"coop\", \"players\": 1, \"maxPlayers\": 4 }}")) + "] }")!;
+        ServerBook book = new();
+        using ServerBrowser browser = new(new ServerBrowserOptions(null, "igi1", Decode), null, book);
+
+        browser.TakeMasterList(ServerBrowser.ReadMasterList(Rooms("AAAAAA", "BBBBBB", "CCCCCC"), "igi1"));
+        Assert.Equal(3, browser.Servers.Count());
+        browser.SetFavourite(browser.Servers.Single(s => s.Room == "CCCCCC"), true);
+
+        // Two rooms closed and one opened: the list is what the master says now, the saved room kept as saved alone.
+        browser.TakeMasterList(ServerBrowser.ReadMasterList(Rooms("BBBBBB", "DDDDDD"), "igi1"));
+        Assert.Equal(["BBBBBB", "CCCCCC", "DDDDDD"], browser.Servers.Select(s => s.Room).Order());
+        BrowserServer saved = browser.Servers.Single(s => s.Room == "CCCCCC");
+        Assert.Equal(BrowserSource.Favourite, saved.Sources);
+    }
+
+    [Fact]
+    public void A_line_of_another_protocol_is_not_compatible()
+    {
+        JsonNode list = JsonNode.Parse("""{ "servers": [ { "title": "igi1", "room": "XYZ789", "protocol": "0498fad9e47c6b7f", "name": "Old" }, { "title": "igi1", "room": "ABC234", "protocol": "7478398C138C41A2", "name": "Ours" } ] }""")!;
+        List<BrowserServer> servers = ServerBrowser.ReadMasterList(list, "igi1", "7478398c138c41a2");
+        Assert.False(servers[0].Info.Compatible);
+        Assert.True(servers[1].Info.Compatible);
+    }
+
+    [Fact]
     public void A_udp_key_reads_back_to_its_address()
     {
         Assert.True(NetAddress.TryParseIp("192.168.1.20", 26005, out NetAddress v4));

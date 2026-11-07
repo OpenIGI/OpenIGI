@@ -108,11 +108,7 @@ public sealed class ServerBrowser : IDisposable
             if (fetched.IsCompletedSuccessfully)
             {
                 MasterError = null;
-                foreach (BrowserServer listed in fetched.Result)
-                {
-                    Merge(listed);
-                }
-
+                TakeMasterList(fetched.Result);
                 QueryAll(now);
             }
             else
@@ -267,6 +263,37 @@ public sealed class ServerBrowser : IDisposable
     {
         string text = await Http.GetStringAsync(new Uri(master, $"/v1/servers?title={Uri.EscapeDataString(title)}"), cancel).ConfigureAwait(false);
         return ReadMasterList(JsonNode.Parse(text), title, protocol);
+    }
+
+    /// <summary>
+    /// Takes in the master's list as it now stands: each line merged, and a line the master listed before but no longer does
+    /// (a room closed, a server gone quiet) dropped -- or, when the player also knows it otherwise (saved, played on, on this
+    /// network), kept for that alone.
+    /// </summary>
+    /// <param name="listed">The master's lines.</param>
+    internal void TakeMasterList(IReadOnlyList<BrowserServer> listed)
+    {
+        HashSet<string> keys = new(listed.Select(static s => s.Key), StringComparer.Ordinal);
+        foreach ((string key, BrowserServer line) in _servers.ToArray())
+        {
+            if (line.Sources.HasFlag(BrowserSource.Internet) && !keys.Contains(key))
+            {
+                BrowserSource rest = line.Sources & ~BrowserSource.Internet;
+                if (rest == BrowserSource.None)
+                {
+                    _servers.Remove(key);
+                }
+                else
+                {
+                    _servers[key] = line with { Sources = rest };
+                }
+            }
+        }
+
+        foreach (BrowserServer server in listed)
+        {
+            Merge(server);
+        }
     }
 
     // A booked server as a line of its own until it answers or the master lists it.
