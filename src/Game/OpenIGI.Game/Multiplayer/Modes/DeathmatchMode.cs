@@ -170,6 +170,7 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
     {
         host.ResetLevel();
         host.Match.NewMap();
+        host.World.BeginMatch();
         foreach (int slot in host.PlayerSlots)
         {
             if (host.Match.Players.ContainsKey(slot))

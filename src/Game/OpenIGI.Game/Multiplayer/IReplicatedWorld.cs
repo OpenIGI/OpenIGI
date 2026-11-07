@@ -164,6 +164,14 @@ public interface IReplicatedWorld
     /// <returns>The room, nought when full; <see langword="null"/> when it does not carry the weapon.</returns>
     int? AmmoRoom(int slot, string weapon, int upTo) => null;
 
+    /// <summary>
+    /// Says a match begins -- the first on the map, or one played again on it -- just before its players are put back: each is
+    /// armed from nothing at that spawn, as at a first one, rather than keeping what it carried through the last.
+    /// </summary>
+    void BeginMatch()
+    {
+    }
+
     /// <summary>Takes the players re-armed since last asked (respawned), for their own games to carry the same.</summary>
     /// <returns>Each one's slot, kit, and whether it was armed from nothing.</returns>
     IReadOnlyList<RearmedPlayer> TakeRearmed() => [];

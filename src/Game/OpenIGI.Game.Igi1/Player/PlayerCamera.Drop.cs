@@ -58,7 +58,20 @@ public sealed partial class PlayerCamera
             return;
         }
 
-        if (!IsDroppable(inHand.Weapon))
+        if (IsDroppable(inHand.Weapon))
+        {
+            ThrowAway(inHand);
+        }
+    }
+
+    /// <summary>
+    /// Throws a carried gun down as the drop key does, a pickup with the rounds left in it, and carries it no more: what the
+    /// drop key does with the gun in hand, and what buying a gun into a place another fills does with that one.
+    /// </summary>
+    /// <param name="carried">The gun.</param>
+    public void ThrowAway(CarriedWeapon carried)
+    {
+        if (_weapons is null)
         {
             return;
         }
@@ -69,11 +82,11 @@ public sealed partial class PlayerCamera
             Vector3d origin = _body.Origin;
             Vector3d at = new(origin.X, origin.Y, origin.Z + PickupThrow.AboveRoot);
             Vector3d velocity = PickupThrow.Velocity(heading, far: true);
-            int rounds = inHand.Gun.State.RoundsInClip;
-            guns.Throw(at, Matrix3f.RotationZ(-(float)heading), inHand.Weapon, velocity, rounds >= 0 ? rounds : null, _weapons);
+            int rounds = carried.Gun.State.RoundsInClip;
+            guns.Throw(at, Matrix3f.RotationZ(-(float)heading), carried.Weapon, velocity, rounds >= 0 ? rounds : null, _weapons);
         }
 
-        _weapons.Drop(inHand.Weapon.WeaponId);
+        _weapons.Drop(carried.Weapon.WeaponId);
         PoseChanged = true;
     }
 }

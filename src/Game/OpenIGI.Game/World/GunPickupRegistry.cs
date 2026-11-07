@@ -376,7 +376,7 @@ public sealed class GunPickupRegistry : ILevelReset
     {
         ArgumentNullException.ThrowIfNull(pickup);
         ArgumentNullException.ThrowIfNull(inventory);
-        if (pickup.IsCollected || !_items.Contains(pickup))
+        if (pickup.IsCollected || !_items.Contains(pickup) || (inventory.LimitsCarry && !CarrySlots.Admits(inventory, pickup.Weapon, pickup.Ammo)))
         {
             return false;
         }

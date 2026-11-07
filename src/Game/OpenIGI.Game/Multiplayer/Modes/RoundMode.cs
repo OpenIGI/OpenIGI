@@ -124,6 +124,11 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
             return "Buy where your side starts.";
         }
 
+        if (!ammo && item.Rounds > 0 && host.AmmoRoom(slot, item.Weapon, item.Rounds) is 0)
+        {
+            return $"You can carry no more {name}.";
+        }
+
         if (ammo)
         {
             if (host.AmmoRoom(slot, item.Weapon, item.Rounds) is not { } room)
@@ -198,6 +203,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         ArgumentNullException.ThrowIfNull(host);
         host.Match.IsFreeForAll = false;
         host.Match.NewMap();
+        host.World.BeginMatch();
         RoundsPlayed = 0;
         BeginRound(host, tick);
     }
@@ -246,6 +252,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
                 if (PlaysAgain)
                 {
                     host.Match.NewMap();
+                    host.World.BeginMatch();
                     RoundsPlayed = 0;
                     BeginRound(host, tick);
                 }

@@ -80,8 +80,12 @@ public sealed partial class Igi1ReplicatedWorld
         }
     }
 
-    // The players armed on this map so far: a first spawn here is armed from nothing, whatever the level handed the rig.
+    // The players armed in this match so far: a first spawn in it is armed from nothing, whatever the level or the last match
+    // left on the rig.
     private readonly HashSet<int> _armedHere = [];
+
+    /// <inheritdoc/>
+    public void BeginMatch() => _armedHere.Clear();
 
     /// <summary>
     /// What a versus player spawns with: I.G.I. 2's spawn kit, the knife and its side's pistol -- the Glock for I.G.I. (and for a
@@ -305,8 +309,46 @@ public sealed partial class Igi1ReplicatedWorld
     }
 
     /// <inheritdoc/>
-    public bool Give(int slot, string weapon, int rounds) =>
-        LivingRig(slot) is { } rig && _game.PlayerSetup is { } setup && setup.Give(rig, weapon, rounds);
+    /// <remarks>
+    /// A gun bought into a place another fills throws that one down, as I.G.I. 2's shop drops it, and the joined player's own game
+    /// is armed again with what the server's carries.
+    /// </remarks>
+    public bool Give(int slot, string weapon, int rounds)
+    {
+        if (LivingRig(slot) is not { } rig || _game.PlayerSetup is not { } setup)
+        {
+            return false;
+        }
+
+        bool replaced = false;
+        if (rig.Weapons is { LimitsCarry: true } weapons && setup.Weapons is { } types && types.TryGetByScriptId(weapon, out Game.Weapons.WeaponType type)
+            && Game.Weapons.CarrySlots.InTheWay(weapons, type) is { } inTheWay)
+        {
+            // The pistol every spawn hands out is put away, not thrown: a deathmatch's loadout would litter the map with them.
+            if (SpawnKit(TeamRoster.Good).Concat(SpawnKit(TeamRoster.Bad)).Any(k => string.Equals(k.Weapon, inTheWay.Weapon.ScriptId, StringComparison.OrdinalIgnoreCase)))
+            {
+                weapons.Drop(inTheWay.Weapon.WeaponId);
+            }
+            else
+            {
+                rig.ThrowAway(inTheWay);
+            }
+
+            replaced = true;
+        }
+
+        if (!setup.Give(rig, weapon, rounds))
+        {
+            return false;
+        }
+
+        if (replaced && slot != ServerSession.HostSlot)
+        {
+            _rearmed.Add(new RearmedPlayer(slot, true, setup.Kit(rig)));
+        }
+
+        return true;
+    }
 
     /// <inheritdoc/>
     public int? AmmoRoom(int slot, string weapon, int upTo) =>
@@ -412,9 +454,34 @@ public sealed partial class Igi1ReplicatedWorld
     }
 
     // A player of a versus match takes I.G.I. 2's multiplayer body: its zones (the head lethal), what kills one, no difficulty
-    // scale; the rounds that meet it do I.G.I. 2's damage for their gun (Igi1VersusDamage).
-    private static void UseVersusBody(PlayerCamera rig) =>
+    // scale; the rounds that meet it do I.G.I. 2's damage for their gun (Igi1VersusDamage). It carries as I.G.I. 2's players
+    // do: one weapon in each place (CarrySlots), and the thrown and used things up to I.G.I. 2's counts.
+    private void UseVersusBody(PlayerCamera rig)
+    {
         rig.Body.Health.UseBody(HumanHitZoneTable.Versus, HumanHitZoneTable.VersusMaximumHealth, 1f);
+        if (rig.Weapons is not { } weapons)
+        {
+            return;
+        }
+
+        weapons.LimitsCarry = true;
+        if (_game.PlayerSetup is { Weapons: { } types, Ammunition: { } ammunition })
+        {
+            foreach ((string weapon, int most) in CountedLimits)
+            {
+                if (types.TryGetByScriptId(weapon, out Game.Weapons.WeaponType type) && ammunition.TryGetByCalibre(type.CalibreId, out Game.Weapons.AmmoType ammo))
+                {
+                    weapons.Ammunition.SetLimit(ammo.AmmoId, most);
+                }
+            }
+        }
+    }
+
+    // I.G.I. 2's multiplayer carry limits (its ammo limit script) for the things carried by the count.
+    private static readonly (string Weapon, int Most)[] CountedLimits =
+    [
+        ("WEAPON_ID_GRENADE", 3), ("WEAPON_ID_FLASHBANG", 3), ("WEAPON_ID_PROXIMITYMINE", 2), ("WEAPON_ID_MEDIPACK", 1),
+    ];
 
     /// <inheritdoc/>
     public void MarkLevelStart() => _game.MarkLevelStart();

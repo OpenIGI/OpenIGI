@@ -67,7 +67,7 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
-    public void A_new_round_puts_the_wounded_back_whole_and_a_first_spawn_carries_only_its_sides_knife_and_pistol()
+    public void A_restarted_match_puts_the_wounded_back_whole_and_everyone_carries_only_its_sides_knife_and_pistol()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
         Landed(pair);
@@ -88,12 +88,57 @@ public sealed class Igi1VersusTests
         pair.Host.World.PlayerHealth.Apply(13, 0.5f);
         pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player)).Health.Apply(13, 0.5f);
         Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction < 0.9f, 30 * 3) >= 0, "the joiner never saw its wound");
+
+        // Each carries a rifle with rounds spent into the restart; the match played again arms both from nothing.
+        IModeHost modes = pair.Session.Session;
+        int joinerSlot = pair.Session.Session.Match.Players.Single(p => p.Value.Name == "Anya").Key;
+        Assert.True(modes.Give(ServerSession.HostSlot, "WEAPON_ID_AK47", 43));
+        Assert.True(modes.Give(joinerSlot, "WEAPON_ID_AK47", 43));
+        Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Contains("WEAPON_ID_AK47"), 30 * 3) >= 0, "the joiner's own game never carried its rifle");
         pair.Session.PlayAgain();
+        Assert.True(pair.RunUntil(() => Kit(pair.Host.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(hostKit), 30 * 3) >= 0, $"the host restarted with {string.Join(", ", Kit(pair.Host.World.Player!))}");
+        Assert.True(Kit(partner.Player).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), $"the joiner restarted with {string.Join(", ", Kit(partner.Player))}");
+        Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game restarted with {string.Join(", ", Kit(pair.Joiner!.World.Player!))}");
         Assert.True(pair.RunUntil(() => pair.Host.World.PlayerHealth.RemainingFraction >= 1f && partner.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the server kept the wounds");
         Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction >= 1f, 30 * 3) >= 0, "the joiner's own game kept its wound");
 
         // The sides are I.G.I. 2's.
         Assert.Equal(("IGI", "Conspiracy"), (MatchState.TeamName(TeamRoster.Good), MatchState.TeamName(TeamRoster.Bad)));
+    }
+
+    [RequiresGameDataFact]
+    public void A_player_carries_one_gun_in_each_place_a_bought_one_throwing_down_what_it_replaces_and_one_walked_over_left()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        Landed(pair);
+        IModeHost host = pair.Session.Session!;
+        int joinerSlot = pair.Session.Session!.Match.Players.Single(p => p.Value.Name == "Anya").Key;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        static bool Carries(Game.Igi1.Player.PlayerCamera rig, string weapon) => rig.Weapons!.Carried.Any(c => c.Weapon.ScriptId == weapon);
+
+        // A rifle, then another: the first is thrown down as a pickup, the second carried in its place.
+        int lying = pair.Host.World.GunPickups!.Items.Count(g => !g.IsCollected);
+        Assert.True(host.Give(ServerSession.HostSlot, "WEAPON_ID_AK47", 300));
+        Assert.True(host.Give(ServerSession.HostSlot, "WEAPON_ID_M16A2", 300));
+        Game.Igi1.Player.PlayerCamera own = pair.Host.World.Player!;
+        Assert.True(Carries(own, "WEAPON_ID_M16A2") && !Carries(own, "WEAPON_ID_AK47"), "the host carries both rifles");
+        GunPickup thrown = Assert.Single(pair.Host.World.GunPickups.Items, g => !g.IsCollected && g.Weapon.ScriptId == "WEAPON_ID_AK47");
+        Assert.Equal(lying + 1, pair.Host.World.GunPickups.Items.Count(g => !g.IsCollected));
+
+        // Where it lands, beside the host, it is not walked into the place the M16 fills.
+        pair.RunUntil(() => !thrown.IsMoving, 30 * 4);
+        own.Body.Position = thrown.Position;
+        pair.RunUntil(() => thrown.IsCollected, 30);
+        Assert.False(thrown.IsCollected, "the host walked the AK-47 up beside its M16");
+
+        // A sub-machine gun takes the pistol's place: the spawn pistol put away, not thrown; the joiner's own game the same.
+        Assert.True(host.Give(joinerSlot, "WEAPON_ID_UZI", 320));
+        Assert.True(Carries(partner.Player, "WEAPON_ID_UZI"));
+        Assert.False(Carries(partner.Player, "WEAPON_ID_GLOCK") || Carries(partner.Player, "WEAPON_ID_COLT"), "the joiner kept its pistol beside the Uzi");
+        Assert.DoesNotContain(pair.Host.World.GunPickups.Items, g => !g.IsCollected && g.Weapon.ScriptId is "WEAPON_ID_GLOCK" or "WEAPON_ID_COLT");
+        Assert.True(
+            pair.RunUntil(() => Carries(pair.Joiner!.World.Player!, "WEAPON_ID_UZI") && !Carries(pair.Joiner!.World.Player!, "WEAPON_ID_GLOCK") && !Carries(pair.Joiner!.World.Player!, "WEAPON_ID_COLT"), 30 * 3) >= 0,
+            $"the joiner's own game carries {string.Join(", ", pair.Joiner!.World.Player!.Weapons!.Carried.Select(c => c.Weapon.ScriptId))}");
     }
 
     [RequiresGameDataFact]

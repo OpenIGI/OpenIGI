@@ -152,6 +152,12 @@ public sealed class PlayerWeapons
     /// <summary>Gets the loose ammunition the player carries.</summary>
     public AmmoPool Ammunition { get; } = new();
 
+    /// <summary>
+    /// Gets or sets whether what is walked over is held to <see cref="CarrySlots"/>: a multiplayer match's rule, one weapon in
+    /// each place; off in the campaigns, whose player gathers every weapon.
+    /// </summary>
+    public bool LimitsCarry { get; set; }
+
     /// <summary>Gets everything the player carries, in the order it was given.</summary>
     public IReadOnlyList<CarriedWeapon> Carried => _carried;
 
