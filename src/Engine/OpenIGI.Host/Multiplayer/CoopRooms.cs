@@ -283,7 +283,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
             _browsing = title;
             _book ??= new ServerBook(BookPath);
             NetQueryClient? query = OpenUdp is { } open ? new NetQueryClient(open(0), MultiplayerProtocol.IdFor(title)) : null;
-            _browser = new ServerBrowser(new ServerBrowserOptions(RoomTransport.DefaultMaster, title, Decode) { Version = _version }, query, _book);
+            _browser = new ServerBrowser(new ServerBrowserOptions(RoomTransport.DefaultMaster, title, Decode) { Version = _version, Protocol = Protocol }, query, _book);
         }
 
         return _browser;

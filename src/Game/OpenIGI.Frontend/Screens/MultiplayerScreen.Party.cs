@@ -22,7 +22,7 @@ public sealed partial class MultiplayerScreen
 
     private IPartyPanel? Parties => Context.Host.Party;
 
-    private string PartyKey => Parties is { } parties ? $"{parties.Party?.Key}|{parties.Failure}|{_copied}" : string.Empty;
+    private string PartyKey => Parties is { } parties ? $"{parties.Party?.Key}|{parties.Failure}|{parties.OrderError}|{_copied}" : string.Empty;
 
     private StackPanel BuildParty(UiTheme theme, IPartyPanel parties)
     {
@@ -69,9 +69,17 @@ public sealed partial class MultiplayerScreen
             return column;
         }
 
-        var (panel, content) = Group(theme, $"Party {partyCode}");
-        string members = string.Join(", ", party.Members.Select(m => m == party.Leader ? $"{m} (leads)" : m));
-        content.AddChild(Body(theme, members, UiPalette.TextBody));
+        var (panel, content) = Group(theme, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Party {partyCode}  ·  {party.Members.Count} of 8"));
+        foreach (PartyMemberView member in party.Members)
+        {
+            content.AddChild(BuildMember(theme, parties, party, member));
+        }
+
+        if (parties.OrderError is { } refused)
+        {
+            content.AddChild(Body(theme, $"Couldn't do that: {refused}.", theme.Danger));
+        }
+
         string where = party.Playing is { } playing
             ? party.Leading ? $"You lead it, in {playing}." : $"Following {party.Leader} to {playing}."
             : party.Leading ? "You lead it: host or join a game and the party follows." : $"Waiting for {party.Leader} to play somewhere.";
@@ -100,5 +108,54 @@ public sealed partial class MultiplayerScreen
         content.AddChild(buttons);
         column.AddChild(panel);
         return column;
+    }
+
+    // A member's line: its name with LEADER and YOU marks, where it plays under it, and for the leader looking at another
+    // member, LEAD to hand the party over and KICK to put the member out.
+    private Grid BuildMember(UiTheme theme, IPartyPanel parties, PartyView party, PartyMemberView member)
+    {
+        var line = new Grid { ColumnSpacing = 8f, Margin = new Thickness(0f, 2f, 0f, 2f) };
+        line.RowDefinitions.Add(GridLength.Auto);
+        line.ColumnDefinitions.Add(GridLength.Star);
+        line.ColumnDefinitions.Add(GridLength.Auto);
+        line.ColumnDefinitions.Add(GridLength.Auto);
+
+        var who = new StackPanel { Orientation = Orientation.Vertical, Spacing = 2f, VerticalAlignment = VerticalAlignment.Center };
+        var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f };
+        name.AddChild(new Label(theme.Body, member.Name, 18f, member.IsYou ? theme.TextBright : UiPalette.TextBody) { VerticalAlignment = VerticalAlignment.Center });
+        if (member.Leads)
+        {
+            name.AddChild(new Label(theme.Mono, "LEADER", 11f, theme.Accent) { VerticalAlignment = VerticalAlignment.Center });
+        }
+
+        if (member.IsYou)
+        {
+            name.AddChild(new Label(theme.Mono, "YOU", 11f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
+        }
+
+        who.AddChild(name);
+        who.AddChild(new Label(theme.Body, member.Where, 14f, member.Where == "with the leader" ? theme.Success : theme.TextMuted));
+        line.Add(who, 0, 0);
+
+        if (party.Leading && !member.IsYou)
+        {
+            int id = member.Id;
+            var lead = new Button(theme, "LEAD") { Accent = ButtonAccent.Ghost, TextSize = 12f, Tracking = 0.16f, Padding = new Thickness(10f, 6f), VerticalAlignment = VerticalAlignment.Center, Tooltip = $"Hand the party's lead to {member.Name}: the party then follows them." };
+            lead.Activated += _ =>
+            {
+                parties.Promote(id);
+                Invalidate();
+            };
+            var kick = new Button(theme, "KICK") { Accent = ButtonAccent.Ghost, TextSize = 12f, Tracking = 0.16f, Padding = new Thickness(10f, 6f), VerticalAlignment = VerticalAlignment.Center, Tooltip = $"Put {member.Name} out of the party." };
+            kick.Activated += _ =>
+            {
+                parties.Kick(id);
+                Invalidate();
+            };
+            line.Add(lead, 0, 1);
+            line.Add(kick, 0, 2);
+        }
+
+        return line;
     }
 }

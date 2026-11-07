@@ -9,7 +9,8 @@ namespace OpenIGI.Net.Rooms;
 /// <summary>A member of a party, as every member sees it.</summary>
 /// <param name="Id">Its number in the party.</param>
 /// <param name="Name">Its name.</param>
-public sealed record PartyMember(int Id, string Name);
+/// <param name="At">Where it plays, as <see cref="PartyState.Target"/> says a place, or <see langword="null"/> for nowhere.</param>
+public sealed record PartyMember(int Id, string Name, string? At = null);
 
 /// <summary>A party as the master server last told it.</summary>
 /// <param name="Code">Its code, which friends join it by.</param>
@@ -45,6 +46,10 @@ public sealed class Party : IDisposable
     private bool _telling;
     private string? _toTell;
 
+    // What the leader asked of the party (put a member out, hand the lead over), sent when no other call is in flight.
+    private (string Action, int Member)? _order;
+    private bool _ordering;
+
     private Party(Uri master, string path, string name, HttpMessageInvoker? http)
     {
         _master = master;
@@ -71,6 +76,9 @@ public sealed class Party : IDisposable
 
     /// <summary>Gets why the party was lost (could not be made or joined, or this member is no longer in it), or <see langword="null"/>.</summary>
     public string? Failure { get; private set; }
+
+    /// <summary>Gets why the leader's last order (a kick, the lead handed over) was turned down, or <see langword="null"/>.</summary>
+    public string? OrderError { get; private set; }
 
     /// <summary>Gets a value indicating whether the party is still being made or joined.</summary>
     public bool IsJoining => _joining && Failure is null;
@@ -117,6 +125,14 @@ public sealed class Party : IDisposable
         return new Party(master, $"/v1/parties/{Uri.EscapeDataString(code.Trim().ToUpperInvariant())}/join", name ?? string.Empty, http);
     }
 
+    /// <summary>Puts a member out of the party; only its leader may, and the member is told why.</summary>
+    /// <param name="member">The member's number.</param>
+    public void Kick(int member) => _order = ("kick", member);
+
+    /// <summary>Hands the lead to another member; only the leader may.</summary>
+    /// <param name="member">The member's number.</param>
+    public void Promote(int member) => _order = ("promote", member);
+
     /// <summary>Acts on what the master server said, and asks it again when it is time.</summary>
     /// <param name="now">The caller's clock, in seconds.</param>
     /// <param name="playing">Where this member plays now, as <see cref="PartyState.Target"/> says it; <see langword="null"/> for nowhere.</param>
@@ -134,8 +150,15 @@ public sealed class Party : IDisposable
             return Follow(playing);
         }
 
-        // The leader tells the party where it plays, whenever that changes; everyone asks, the leader too, to stay in.
-        if (IsLeader && playing != _told)
+        // The leader's order first; then where it plays, whenever that changes; everyone asks, the leader too, to stay in.
+        if (_order is { } order)
+        {
+            _order = null;
+            _ordering = true;
+            OrderError = null;
+            _call = Send(HttpMethod.Post, $"/v1/parties/{State!.Code}/{order.Action}", new JsonObject { ["member"] = Member, ["token"] = Token, ["target"] = order.Member });
+        }
+        else if (IsLeader && playing != _told)
         {
             _telling = true;
             _toTell = playing;
@@ -144,7 +167,8 @@ public sealed class Party : IDisposable
         else if (now - _askedAt >= AskSeconds)
         {
             _askedAt = now;
-            _call = Send(HttpMethod.Get, $"/v1/parties/{State!.Code}?member={Member.ToString(CultureInfo.InvariantCulture)}&token={Token}", null);
+            string at = playing is null ? string.Empty : $"&at={Uri.EscapeDataString(playing)}";
+            _call = Send(HttpMethod.Get, $"/v1/parties/{State!.Code}?member={Member.ToString(CultureInfo.InvariantCulture)}&token={Token}{at}", null);
         }
 
         return Follow(playing);
@@ -186,10 +210,23 @@ public sealed class Party : IDisposable
             }
 
             _telling = false;
+            _ordering = false;
             return;
         }
 
         (HttpStatusCode status, JsonObject? body) = call.Result;
+
+        // An order turned down (not the leader any more, the member gone) is said, and the party plays on.
+        if (_ordering)
+        {
+            _ordering = false;
+            if (status != HttpStatusCode.OK || body is null)
+            {
+                OrderError = body?["error"]?.GetValue<string>() ?? "the party's master server turned that down";
+                return;
+            }
+        }
+
         if (status != HttpStatusCode.OK || body is null)
         {
             Failure = body?["error"]?.GetValue<string>() is { Length: > 0 } error ? error
@@ -232,7 +269,7 @@ public sealed class Party : IDisposable
             {
                 if (member is JsonObject one)
                 {
-                    members.Add(new PartyMember(one["id"]?.GetValue<int>() ?? 0, one["name"]?.GetValue<string>() ?? string.Empty));
+                    members.Add(new PartyMember(one["id"]?.GetValue<int>() ?? 0, one["name"]?.GetValue<string>() ?? string.Empty, one["at"]?.GetValue<string>()));
                 }
             }
         }

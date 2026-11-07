@@ -17,6 +17,12 @@ public sealed record ServerBrowserOptions(Uri? Master, string Title, Func<byte[]
 
     /// <summary>Gets this build's own version, so a line of the same build sorts as compatible before it has answered.</summary>
     public string Version { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets the protocol id this build plays (as the master lists it, 16 hex digits), so a room of another version is shown as
+    /// one this build cannot join; empty to take every listed line as compatible until it answers.
+    /// </summary>
+    public string Protocol { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -77,7 +83,7 @@ public sealed class ServerBrowser : IDisposable
         {
             _cancel?.Dispose();
             _cancel = new CancellationTokenSource();
-            _fetch = FetchAsync(master, _options.Title, _cancel.Token);
+            _fetch = FetchAsync(master, _options.Title, _options.Protocol, _cancel.Token);
         }
 
         foreach ((BookedServer booked, BrowserSource source) in _book.Favourites.Select(static f => (f, BrowserSource.Favourite))
@@ -186,8 +192,9 @@ public sealed class ServerBrowser : IDisposable
     /// <summary>Reads the master server's list: its dedicated servers and its public rooms, one line each.</summary>
     /// <param name="list">The master's <c>/v1/servers</c> answer.</param>
     /// <param name="title">The game listed.</param>
+    /// <param name="protocol">This build's protocol id, which marks lines of another version incompatible; empty for none.</param>
     /// <returns>The lines, unanswered.</returns>
-    public static List<BrowserServer> ReadMasterList(JsonNode? list, string title)
+    public static List<BrowserServer> ReadMasterList(JsonNode? list, string title, string protocol = "")
     {
         List<BrowserServer> servers = [];
         foreach (JsonNode? node in (list as JsonObject)?["servers"] as JsonArray ?? [])
@@ -213,7 +220,7 @@ public sealed class ServerBrowser : IDisposable
                 (int?)entry["maxPlayers"] ?? 0,
                 (bool?)entry["passworded"] ?? false,
                 (string?)entry["version"] ?? string.Empty,
-                Compatible: true);
+                Compatible: protocol.Length == 0 || string.Equals((string?)entry["protocol"], protocol, StringComparison.OrdinalIgnoreCase));
             string key = address is { } at ? BrowserServer.KeyOf(at) : BrowserServer.KeyOfRoom(room!);
             servers.Add(new BrowserServer(key, address, room, info, (string?)entry["region"] ?? string.Empty, BrowserSource.Internet, null));
         }
@@ -256,10 +263,10 @@ public sealed class ServerBrowser : IDisposable
         return NetAddress.TryParseIp(host, port, out address);
     }
 
-    private static async Task<List<BrowserServer>> FetchAsync(Uri master, string title, CancellationToken cancel)
+    private static async Task<List<BrowserServer>> FetchAsync(Uri master, string title, string protocol, CancellationToken cancel)
     {
         string text = await Http.GetStringAsync(new Uri(master, $"/v1/servers?title={Uri.EscapeDataString(title)}"), cancel).ConfigureAwait(false);
-        return ReadMasterList(JsonNode.Parse(text), title);
+        return ReadMasterList(JsonNode.Parse(text), title, protocol);
     }
 
     // A booked server as a line of its own until it answers or the master lists it.

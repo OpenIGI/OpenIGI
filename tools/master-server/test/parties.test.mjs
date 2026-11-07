@@ -88,6 +88,27 @@ for (let i = 2; i <= 8; i++) {
 }
 
 assert.equal((await full.fetch(post("join", { name: "9" }))).status, 403);
+
+// The leader hands the lead over and puts a member out; a member can do neither, and one put out is told why.
+const crew = new Party(fakeState(), {});
+const boss = await read(await crew.fetch(post("create", { name: "Boss" })));
+const mate = await read(await crew.fetch(post("join", { name: "Mate" })));
+const pest = await read(await crew.fetch(post("join", { name: "Pest" })));
+assert.equal((await crew.fetch(post("kick", { member: mate.member, token: mate.token, target: pest.member }))).status, 403);
+const out = await read(await crew.fetch(post("kick", { member: boss.member, token: boss.token, target: pest.member })));
+assert.deepEqual(out.members.map((m) => m.name), ["Boss", "Mate"]);
+const told = await read(await crew.fetch(get(pest)));
+assert.equal(told.status, 403);
+assert.match(told.error, /removed you/);
+assert.equal((await crew.fetch(post("promote", { member: boss.member, token: boss.token, target: boss.member }))).status, 404);
+const handed = await read(await crew.fetch(post("promote", { member: boss.member, token: boss.token, target: mate.member })));
+assert.equal(handed.leader, mate.member);
+assert.deepEqual(handed.members.map((m) => m.name), ["Mate", "Boss"]);
+
+// Each member says where it plays as it asks, and everyone sees it.
+const where = await read(await crew.fetch(new Request(`https://party/ABCDEF/state?member=${boss.member}&token=${boss.token}&at=udp:203.0.113.5:26001`)));
+assert.equal(where.members.find((m) => m.name === "Boss").at, "udp:203.0.113.5:26001");
+assert.equal(where.members.find((m) => m.name === "Mate").at, null);
 // Through the routes, as the Worker serves them: each code its own object.
 const objects = new Map();
 const env = {

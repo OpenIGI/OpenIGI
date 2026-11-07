@@ -72,6 +72,36 @@ public sealed class PartyTests
         Assert.NotNull(nowhere.Failure);
     }
 
+    [Fact]
+    public void The_leader_hands_the_lead_over_and_a_member_put_out_is_told_so()
+    {
+        FakeMaster master = new();
+        using Party ann = Party.Create(Master, "Ann", master.Line);
+        Settle(ann, 0, null);
+        using Party bob = Party.Join(Master, ann.Code!, "Bob", master.Line);
+        Settle(bob, 0, null);
+        using Party cat = Party.Join(Master, ann.Code!, "Cat", master.Line);
+        Settle(cat, 0, null);
+
+        // Bob is no leader: his kick is turned down, and he stays in.
+        bob.Kick(cat.Member);
+        Settle(bob, Party.AskSeconds, null);
+        Assert.NotNull(bob.OrderError);
+        Assert.Null(bob.Failure);
+
+        ann.Kick(cat.Member);
+        Settle(ann, Party.AskSeconds, null);
+        Assert.Equal(["Ann", "Bob"], ann.State!.Members.Select(m => m.Name));
+        Settle(cat, Party.AskSeconds * 2, null);
+        Assert.Equal("the party's leader removed you from it", cat.Failure);
+
+        ann.Promote(bob.Member);
+        Settle(ann, Party.AskSeconds * 3, "QWERTY");
+        Assert.False(ann.IsLeader);
+        Settle(bob, Party.AskSeconds * 3, null);
+        Assert.True(bob.IsLeader);
+    }
+
     // Updates until the call in flight has come back, keeping the first place it says to go.
     private static string? Settle(Party party, double now, string? playing)
     {
@@ -97,6 +127,7 @@ public sealed class PartyTests
     private sealed class FakeMaster : HttpMessageHandler
     {
         private readonly Dictionary<string, (List<(int Id, string Name, string Token)> Members, string? Target, int Version)> _parties = [];
+        private readonly HashSet<string> _kicked = [];
         private int _codes;
 
         public HttpMessageInvoker Line => new(this, disposeHandler: false);
@@ -132,7 +163,29 @@ public sealed class PartyTests
                 int at = party.Members.FindIndex(m => m.Id == id && m.Token == token);
                 if (at < 0)
                 {
-                    return Answer(HttpStatusCode.Forbidden, new JsonObject { ["error"] = "not in the party" });
+                    return Answer(HttpStatusCode.Forbidden, new JsonObject { ["error"] = _kicked.Contains(token) ? "the party's leader removed you from it" : "not in the party" });
+                }
+
+                if (action is "kick" or "promote")
+                {
+                    int other = party.Members.FindIndex(m => m.Id == body["target"]!.GetValue<int>());
+                    if (at != 0 || other <= 0)
+                    {
+                        return Answer(HttpStatusCode.Forbidden, new JsonObject { ["error"] = "only the party's leader does that" });
+                    }
+
+                    var moved = party.Members[other];
+                    party.Members.RemoveAt(other);
+                    if (action == "kick")
+                    {
+                        _kicked.Add(moved.Token);
+                    }
+                    else
+                    {
+                        party.Members.Insert(0, moved);
+                    }
+
+                    return Answer(HttpStatusCode.OK, View(code));
                 }
 
                 if (action == "leave")

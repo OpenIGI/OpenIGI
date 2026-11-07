@@ -177,12 +177,24 @@ public sealed partial class GameHost
         }
 
         string leader = state.Members.FirstOrDefault(m => m.Id == state.Leader)?.Name ?? string.Empty;
-        return new PartyView(state.Code, leader, party.IsLeader, [.. state.Members.Select(m => m.Name)], state.Target is { } target ? PlaceName(target) : null);
+        PartyMemberView[] members =
+        [
+            .. state.Members.Select(m => new PartyMemberView(
+                m.Id,
+                m.Name,
+                m.Id == state.Leader,
+                m.Id == party.Member,
+                m.At is not { } at ? "in the menus"
+                    : m.Id != state.Leader && string.Equals(at, state.Target, StringComparison.OrdinalIgnoreCase) ? "with the leader"
+                    : $"in {PlaceName(at)}")),
+        ];
+        return new PartyView(state.Code, leader, party.IsLeader, members, state.Target is { } target ? PlaceName(target) : null);
     }
 
-    // A party's target as a player reads it: a room's code, or the server's address.
-    private static string PlaceName(string target) =>
-        target.StartsWith("udp:", StringComparison.OrdinalIgnoreCase) ? $"server {target[4..]}" : $"room {target}";
+    // A party's target as a player reads it: the name the server browser knows it by, else the room's code or server's address.
+    private string PlaceName(string target) =>
+        _coop?.Listing?.FirstOrDefault(r => string.Equals(r.Code, target, StringComparison.OrdinalIgnoreCase)) is { } known ? known.Name
+        : target.StartsWith("udp:", StringComparison.OrdinalIgnoreCase) ? $"server {target[4..]}" : $"room {target}";
 
     // Who leads, who is in, and where the party plays, logged when that changes; the link copied the moment a party is made.
     private void ReportParty(Party party)
@@ -237,6 +249,12 @@ public sealed partial class GameHost
         public PartyView? Party => host.PartyShown();
 
         public string? Failure => host._partyFailure;
+
+        public string? OrderError => host._party?.OrderError;
+
+        public void Kick(int member) => host._party?.Kick(member);
+
+        public void Promote(int member) => host._party?.Promote(member);
 
         public void Create() => host.CreateParty();
 

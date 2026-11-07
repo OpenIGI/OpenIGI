@@ -21,9 +21,13 @@ const MAX_NAME = 32;
 // What a party can follow: a room's code, or a server by address as the browser keys it (udp:host:port).
 const MAX_TARGET = 96;
 
+// How long a member the leader put out is told so when it asks, rather than only that it isn't in the party.
+const KICKED_TTL_MS = 120_000;
+
 /**
  * Serves /v1/parties: making one (POST /v1/parties), and joining, reading, moving and leaving it
- * (/v1/parties/{code}/join, GET /v1/parties/{code}, /v1/parties/{code}/target, /v1/parties/{code}/leave).
+ * (/v1/parties/{code}/join, GET /v1/parties/{code}, /v1/parties/{code}/target, /v1/parties/{code}/leave), and its leader
+ * putting a member out or handing the lead over (/v1/parties/{code}/kick, /v1/parties/{code}/promote).
  */
 export async function handleParties(request, env, url) {
   const parts = url.pathname.split("/").filter(Boolean); // ["v1", "parties", code?, action?]
@@ -46,7 +50,7 @@ export async function handleParties(request, env, url) {
   }
 
   const action = parts[3] ?? "";
-  if (!["", "join", "target", "leave"].includes(action) || (action === "" ? request.method !== "GET" : request.method !== "POST")) {
+  if (!["", "join", "target", "leave", "kick", "promote"].includes(action) || (action === "" ? request.method !== "GET" : request.method !== "POST")) {
     return json({ error: "not found" }, 404);
   }
 
@@ -105,11 +109,19 @@ export class Party {
     const token = String(action === "state" ? url.searchParams.get("token") : body?.token ?? "");
     const member = this.party.members.find((m) => m.id === id && m.token === token);
     if (!member) {
-      return json({ error: "not in the party" }, 403);
+      const kicked = (this.party.kicked ?? []).some((k) => k.id === id && k.token === token);
+      return json({ error: kicked ? "the party's leader removed you from it" : "not in the party" }, 403);
     }
 
     member.seen = now;
     if (action === "state") {
+      // Where the member plays, so every member sees who is with the leader.
+      const at = cleanTarget(url.searchParams.get("at"));
+      if (at !== undefined && at !== member.at) {
+        member.at = at;
+        member.saved = 0;
+      }
+
       // Asking is what keeps a member in; only written down now and then, as storage writes are counted.
       if (now - (member.saved ?? 0) > MEMBER_TTL_MS / 3) {
         member.saved = now;
@@ -132,6 +144,28 @@ export class Party {
       if (target !== this.party.target) {
         this.party.target = target;
         this.party.version++;
+      }
+
+      await this.save();
+      return json(this.view());
+    }
+
+    if (action === "kick" || action === "promote") {
+      if (this.party.members[0] !== member) {
+        return json({ error: "only the party's leader does that" }, 403);
+      }
+
+      const other = this.party.members.find((m) => m.id === Number(body?.target));
+      if (!other || other === member) {
+        return json({ error: "no such member" }, 404);
+      }
+
+      if (action === "kick") {
+        this.party.members = this.party.members.filter((m) => m !== other);
+        this.party.kicked = [...(this.party.kicked ?? []).filter((k) => now - k.at < KICKED_TTL_MS), { id: other.id, token: other.token, at: now }];
+      } else {
+        // The lead handed over: the new leader first, the old one next.
+        this.party.members = [other, ...this.party.members.filter((m) => m !== other)];
       }
 
       await this.save();
@@ -182,7 +216,7 @@ export class Party {
     return {
       code: this.party.code,
       leader: this.party.members[0]?.id ?? 0,
-      members: this.party.members.map((m) => ({ id: m.id, name: m.name })),
+      members: this.party.members.map((m) => ({ id: m.id, name: m.name, at: m.at ?? null })),
       target: this.party.target,
       version: this.party.version,
     };
