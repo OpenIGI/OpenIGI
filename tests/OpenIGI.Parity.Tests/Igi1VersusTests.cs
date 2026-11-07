@@ -67,6 +67,36 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_new_round_puts_the_wounded_back_whole_and_a_first_spawn_carries_only_its_sides_knife_and_pistol()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        Landed(pair);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+
+        // A first spawn on the map: I.G.I. 2's kit, not the campaign level's, each side its own pistol.
+        static string[] Kit(Game.Igi1.Player.PlayerCamera rig) => [.. rig.Weapons!.Carried.Select(c => c.Weapon.ScriptId).Order(StringComparer.Ordinal)];
+        static string Pistol(int team) => team == TeamRoster.Bad ? "WEAPON_ID_COLT" : "WEAPON_ID_GLOCK";
+        int hostTeam = pair.Session.Session!.Match.Players[ServerSession.HostSlot].Team;
+        int joinerTeam = pair.Session.Session.Match.Players.Values.Single(p => p.Name == "Anya").Team;
+        string[] hostKit = [.. new[] { "WEAPON_ID_KNIFE", Pistol(hostTeam) }.Order(StringComparer.Ordinal)];
+        string[] joinerKit = [.. new[] { "WEAPON_ID_KNIFE", Pistol(joinerTeam) }.Order(StringComparer.Ordinal)];
+        Assert.True(Kit(pair.Host.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(hostKit), $"the host carries {string.Join(", ", Kit(pair.Host.World.Player!))}");
+        Assert.True(Kit(partner.Player).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), $"the joiner carries {string.Join(", ", Kit(partner.Player))}");
+        Assert.True(pair.RunUntil(() => Kit(pair.Joiner!.World.Player!).Except(["WEAPON_ID_C4BOMB"]).SequenceEqual(joinerKit), 30 * 3) >= 0, $"the joiner's own game carries {string.Join(", ", Kit(pair.Joiner!.World.Player!))}");
+
+        // Both wounded and living; the next round (the match begun again in place) puts them back whole, on both games.
+        pair.Host.World.PlayerHealth.Apply(13, 0.5f);
+        pair.Host.Harm.Players.First(p => ReferenceEquals(p.Rig, partner.Player)).Health.Apply(13, 0.5f);
+        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction < 0.9f, 30 * 3) >= 0, "the joiner never saw its wound");
+        pair.Session.PlayAgain();
+        Assert.True(pair.RunUntil(() => pair.Host.World.PlayerHealth.RemainingFraction >= 1f && partner.Health.RemainingFraction >= 1f, 30 * 3) >= 0, "the server kept the wounds");
+        Assert.True(pair.RunUntil(() => pair.Joiner!.World.PlayerHealth.RemainingFraction >= 1f, 30 * 3) >= 0, "the joiner's own game kept its wound");
+
+        // The sides are I.G.I. 2's.
+        Assert.Equal(("IGI", "Conspiracy"), (MatchState.TeamName(TeamRoster.Good), MatchState.TeamName(TeamRoster.Bad)));
+    }
+
+    [RequiresGameDataFact]
     public void A_player_put_back_in_a_laid_out_map_starts_at_the_spawn_farthest_from_the_others()
     {
         using Igi1CoopPair pair = Joined(GameModes.FreeForAll);

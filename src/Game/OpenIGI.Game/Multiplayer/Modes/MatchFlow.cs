@@ -148,7 +148,8 @@ public sealed record MatchState(string Mode, MatchPhase Phase, int Round, int Wi
     /// <summary>Gets the name a team is shown by.</summary>
     /// <param name="team">The team.</param>
     /// <returns>Its name.</returns>
-    public static string TeamName(int team) => team == TeamRoster.Good ? "Team A" : team == TeamRoster.Bad ? "Team B" : "Nobody";
+    /// <remarks>I.G.I. 2's multiplayer sides: I.G.I. and the Conspiracy.</remarks>
+    public static string TeamName(int team) => team == TeamRoster.Good ? "IGI" : team == TeamRoster.Bad ? "Conspiracy" : "Nobody";
 
     /// <summary>Gets what a player is shown of the match: its mode and clock, and once decided, who won.</summary>
     /// <param name="secondsSince">The seconds since the state was said, which its clock has run down by.</param>

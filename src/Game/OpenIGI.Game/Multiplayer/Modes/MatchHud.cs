@@ -257,7 +257,8 @@ public sealed record MatchHud
     {
         int score = board is null ? 0 : team == TeamRoster.Good ? board.GoodScore : board.BadScore;
         bool[] alive = [.. lines.Where(l => l.Team == team).OrderBy(l => own is { } me && l.Slot == me.Slot ? 0 : 1).ThenBy(l => l.Slot).Select(l => l.IsAlive)];
-        string name = report.Attackers >= 0 ? (team == report.Attackers ? "ATTACKERS" : "DEFENDERS") : MatchState.TeamName(team).ToUpperInvariant();
+        // A side keeps its name whichever way it plays, as I.G.I. 2's do; its role is the player's own chip.
+        string name = MatchState.TeamName(team).ToUpperInvariant();
         return new TeamStrip(team, name, score, alive, own is { } o && o.Team == team);
     }
 

@@ -400,7 +400,7 @@ public sealed class GameModeTests
         MatchState live = new(GameModes.FreeForAll, MatchPhase.Live, 1, -1, 90);
         Assert.Equal(new MatchBanner("FREE FOR ALL", "1:20", null), live.Banner(10));
         MatchState over = new(GameModes.TeamDeathmatch, MatchPhase.Intermission, 1, 0, 15, MatchState.TeamName(0));
-        Assert.Equal("TEAM A WINS", over.Banner(0)!.Headline);
+        Assert.Equal("IGI WINS", over.Banner(0)!.Headline);
         Assert.Equal("DRAW", (over with { Winner = -1 }).Banner(0)!.Headline);
         Assert.Null(new MatchState(GameModes.Coop, MatchPhase.Live, 1, -1, null).Banner(0));
     }

@@ -162,6 +162,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         Record(made.Player, slot + 1);
         Stand(player, slot);
         _bySlot[slot] = player;
+
+        // One joining a match under way is armed as a first spawn is, not with the campaign level's kit: now without sides,
+        // or once its side is known (SetTeam).
+        if (_versus == Versus.Everyone || (_versus == Versus.Teams && _teams.ContainsKey(slot)))
+        {
+            Restock(made.Player, slot, fresh: true);
+        }
         _game.World.NetworkPlayers.Add(player);
         return slot + 1;
     }
@@ -429,6 +436,9 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             }
 
             _game.Harm.RevivePlayer(at: null, facing: 0f);
+
+            // Put back whole: a revive mends only the dead, and one who lived through the last round kept its wounds.
+            _game.World.Player?.Body.Health.Reset();
             if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
             {
                 if (IsVersus)
@@ -456,6 +466,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             }
 
             Igi1PlayerHarm.RevivePlayer(player, at: null, player.Player.Body.Yaw);
+            player.Player.Body.Health.Reset();
             _dead.Remove(slot + 1);
             Stand(player, slot);
             Restock(player.Player, slot, died);

@@ -59,7 +59,7 @@ public sealed class MatchHudTests
         Assert.Equal("DEFEND", hud.Role);
         Assert.Equal(TeamRoster.Bad, hud.Left!.Team);
         Assert.True(hud.Left.IsOwn);
-        Assert.Equal("DEFENDERS", hud.Left.Name);
+        Assert.Equal("CONSPIRACY", hud.Left.Name);
         Assert.Equal(1, hud.Left.Score);
         Assert.Equal([true, false], hud.Left.Alive);
         Assert.Equal([true], hud.Right!.Alive);
@@ -168,7 +168,7 @@ public sealed class MatchHudTests
     [Fact]
     public void A_decided_round_says_who_won_it_and_why_from_each_side()
     {
-        MatchState over = new(GameModes.SearchAndDestroy, MatchPhase.RoundOver, 3, TeamRoster.Bad, 5, "Team B", new ModeReport { Attackers = TeamRoster.Good, Reason = RoundEnd.Defused });
+        MatchState over = new(GameModes.SearchAndDestroy, MatchPhase.RoundOver, 3, TeamRoster.Bad, 5, "Conspiracy", new ModeReport { Attackers = TeamRoster.Good, Reason = RoundEnd.Defused });
 
         ResultCard won = MatchHud.Of(over, 0, Board(), localEntity: 11)!.Result!;
         ResultCard lost = MatchHud.Of(over, 0, Board(), localEntity: 10)!.Result!;

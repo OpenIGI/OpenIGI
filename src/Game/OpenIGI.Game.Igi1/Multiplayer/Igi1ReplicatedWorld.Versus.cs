@@ -13,11 +13,19 @@ public sealed partial class Igi1ReplicatedWorld
     /// <inheritdoc/>
     public void SetTeam(int slot, int team)
     {
-        bool changed = !_teams.TryGetValue(slot, out int was) || was != team;
+        bool first = !_teams.TryGetValue(slot, out int was);
+        bool changed = first || was != team;
         _teams[slot] = team;
         if (changed && slot == ServerSession.HostSlot)
         {
             PutHostInArena();
+        }
+
+        // A player's first side, given just after it joins, is what its spawn kit is chosen by: armed with it now. A later
+        // change of sides (the half) keeps what it carries.
+        if (first && _versus == Versus.Teams && LivingRig(slot) is { } rig)
+        {
+            Restock(rig, slot, fresh: true);
         }
     }
 
@@ -47,13 +55,43 @@ public sealed partial class Igi1ReplicatedWorld
     {
         if (IsVersus && _game.PlayerSetup is { } setup)
         {
-            setup.Restock(rig, [.. (_layout?.Loadout ?? []).Select(l => (l.Weapon, l.Rounds))]);
+            // Armed from nothing after a death and at a player's first spawn on the map, with its side's kit, as I.G.I. 2's
+            // spawn clears every weapon and gives the knife and a pistol; one who lived through the round keeps what it has.
+            bool first = _armedHere.Add(slot);
+            bool fromNothing = fresh || first;
+            if (fromNothing)
+            {
+                Igi1PlayerSetup.Disarm(rig);
+                foreach ((string weapon, int rounds) in SpawnKit(_versus == Versus.Teams ? TeamOf(slot) : -1))
+                {
+                    setup.Give(rig, weapon, rounds);
+                }
+            }
+
+            foreach (Game.Multiplayer.Modes.MpLoadout extra in _layout?.Loadout ?? [])
+            {
+                setup.Give(rig, extra.Weapon, extra.Rounds);
+            }
+
             if (slot != ServerSession.HostSlot)
             {
-                _rearmed.Add(new RearmedPlayer(slot, fresh, setup.Kit(rig)));
+                _rearmed.Add(new RearmedPlayer(slot, fromNothing, setup.Kit(rig)));
             }
         }
     }
+
+    // The players armed on this map so far: a first spawn here is armed from nothing, whatever the level handed the rig.
+    private readonly HashSet<int> _armedHere = [];
+
+    /// <summary>
+    /// What a versus player spawns with: I.G.I. 2's spawn kit, the knife and its side's pistol -- the Glock for I.G.I. (and for a
+    /// free-for-all), and for the Conspiracy, whose I.G.I. 2 pistol is the Makarov I.G.I. lacks, the Colt Anaconda, the other
+    /// pistol I.G.I. 2 sells only to it -- with I.G.I. 2's carry limit of rounds.
+    /// </summary>
+    /// <param name="team">The player's side, or <c>-1</c> without sides.</param>
+    /// <returns>Each weapon's script id and its rounds.</returns>
+    internal static IReadOnlyList<(string Weapon, int Rounds)> SpawnKit(int team) =>
+        [("WEAPON_ID_KNIFE", 0), (team == TeamRoster.Bad ? "WEAPON_ID_COLT" : "WEAPON_ID_GLOCK", 64)];
 
     private readonly List<RearmedPlayer> _rearmed = [];
     private readonly List<(PlayerCamera Rig, Vector3d Position, float Yaw)> _rewoundPlayers = [];
