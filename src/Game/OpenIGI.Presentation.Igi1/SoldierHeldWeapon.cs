@@ -1,3 +1,5 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
@@ -34,4 +36,22 @@ internal sealed class SoldierHeldWeapon(
 
     /// <summary>The multipart retail object, including its transient TASKTYPE_GUNFLAME child.</summary>
     public IHeldWeaponPresenter? Presentation { get; } = presentation;
+
+    /// <summary>The middle of the model's far end along its barrel (its +Y), in its own frame and units. <b>Not retail.</b></summary>
+    public Vector3f Muzzle => _muzzle ??= FarEnd(Geometry.Vertices);
+
+    private Vector3f? _muzzle;
+
+    // The vertices within 2 cm of the furthest along +Y, averaged across.
+    private static Vector3f FarEnd(Vertex3D[] vertices)
+    {
+        if (vertices.Length == 0)
+        {
+            return default;
+        }
+
+        float far = vertices.Max(v => v.Position.Y);
+        Vertex3D[] end = [.. vertices.Where(v => v.Position.Y > far - 0.02f)];
+        return new Vector3f(end.Average(v => v.Position.X), far, end.Average(v => v.Position.Z));
+    }
 }

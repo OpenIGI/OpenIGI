@@ -174,7 +174,12 @@ internal sealed class SoldierWeaponDrawer(
                     _device.SetObjectFogRange(depth - radius, depth + radius);
                 }
 
-                if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
+                if (member.Styled is { } styled)
+                {
+                    // A mod's body in his place (SoldierRenderer.BodyStyle): the same pass, the same placement.
+                    styled.Draw(camera, Visibility is null || Visibility.IsEye(camera), modelView);
+                }
+                else if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
                 {
                     SoldierLevel lower = group.Lower[level - 1];
                     SoldierLevelOfDetail.Flush(_device, group, member);
@@ -410,7 +415,7 @@ internal sealed class SoldierWeaponDrawer(
     /// </remarks>
     internal void DrawWeapon(SoldierMember member, in Camera3D camera, in Matrix4f projection)
     {
-        if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
+        if (member.Weapon is not { } weapon || !member.HasWeaponFrameState || member.Styled is { HidesHeldWeapon: true })
         {
             return;
         }

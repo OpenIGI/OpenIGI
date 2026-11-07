@@ -145,6 +145,20 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierGunShotRounds.FileTracer"/>
     public void FileTracer(GunShotTracer tracer) => _rounds.FileTracer(tracer);
 
+    /// <inheritdoc cref="SoldierDamage.Struck"/>
+    public List<Action<SoldierStrike>> Struck => _damage.Struck;
+
+    /// <inheritdoc cref="SoldierDamage.DropGun"/>
+    public void DropGun(SoldierView view, Vector3d position, Vector3d away) => _damage.DropGun(view, position, away);
+
+    /// <summary>Gets a soldier's brain, or <see langword="null"/> for one the simulation does not run: what a mod reads him by, and tells him with. <b>Not retail.</b></summary>
+    /// <param name="view">The soldier.</param>
+    /// <returns>His brain.</returns>
+    public Igi1HumanAi? BrainOf(SoldierView view) => Brains.GetValueOrDefault(view);
+
+    /// <summary>Gets how many ticks the simulation has run: a clock for a mod's own timings. <b>Not retail.</b></summary>
+    public int TicksRun => TickCount;
+
     /// <inheritdoc cref="SoldierDamage.BloodSpray"/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get => _damage.BloodSpray; set => _damage.BloodSpray = value; }
 
@@ -702,7 +716,8 @@ public sealed partial class SoldierSimulation
     internal RagdollSkeleton? RagdollRigFor(BoneAnimationSet set, MefModel? model) => _ragdolls.RagdollRigFor(set, model);
 
     /// <inheritdoc cref="SoldierRagdolls.RagdollWorldForCorpses"/>
-    internal RagdollWorld RagdollWorldForCorpses() => _ragdolls.RagdollWorldForCorpses();
+    /// <remarks>Public for a mod whose bodies fall as ragdolls of their own, among the same walls and floor as the game's. <b>Not retail.</b></remarks>
+    public RagdollWorld RagdollWorldForCorpses() => _ragdolls.RagdollWorldForCorpses();
 
     /// <inheritdoc cref="SoldierPlayerBody.StartTraversalAnimation"/>
     internal void StartPlayerTraversalAnimation(

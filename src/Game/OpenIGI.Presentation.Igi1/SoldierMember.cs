@@ -177,6 +177,9 @@ internal sealed class SoldierMember(SoldierAgent agent, MeshHandle mesh)
     /// <summary>Whether this frame is the body's first — nothing on screen is its history.</summary>
     public bool NoHistoryThisFrame { get; set; }
 
+    /// <summary>Gets or sets the body a mod's <see cref="ISoldierBodyStyle"/> draws in his place, or <see langword="null"/> for his own model.</summary>
+    public ISoldierBody? Styled { get; set; }
+
     /// <summary>Whether the weapon transform below is resolved.</summary>
     public bool HasWeaponFrameState { get; set; }
 

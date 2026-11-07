@@ -52,6 +52,29 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// <summary>Gets or sets where a dead soldier's weapon is published as it becomes a world pickup.</summary>
     public Action<WeaponType, Vector3d, Matrix3f, Vector3d>? WeaponDrop { get; set; }
 
+    /// <summary>Gets what mods are told of each round that strikes a living soldier. Empty unless a mod adds to it. <b>Not retail.</b></summary>
+    public List<Action<SoldierStrike>> Struck { get; } = [];
+
+    /// <summary>Gets the soldiers who let go of their gun before they died (<see cref="DropGun"/>), so their death drops no other. <b>Not retail.</b></summary>
+    public HashSet<SoldierView> LetGoOfGun { get; } = [];
+
+    /// <summary>Has a living soldier let go of his gun now, as a pickup that falls from his hand. <b>Not retail.</b></summary>
+    /// <param name="view">The soldier.</param>
+    /// <param name="position">Where it leaves his hand, in world units.</param>
+    /// <param name="away">Which way it goes.</param>
+    public void DropGun(SoldierView view, Vector3d position, Vector3d away)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (_context.FindAgent(view) is { CarriedWeaponType: { } gun } && LetGoOfGun.Add(view))
+        {
+            BonePose pose = view.UnrotatedPose();
+            Matrix3f rotation = HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount
+                ? view.Orientation * pose.Rotations[HumanAttachPoints.ThirdPersonWeapon]
+                : view.Orientation;
+            WeaponDrop?.Invoke(gun, position, rotation, DropVelocity(default, away));
+        }
+    }
+
     /// <summary>Gets or sets where a struck soldier's grunt is sounded.</summary>
     public Action<string, int, Vector3d>? HitSound { get; set; }
 
@@ -157,7 +180,9 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         // The gun leaves from where it hangs (Gun_Drop hands GunPickup_Create the gun's own position, gun+32): the origin
         // the last tick left plus the hand's offset in the palette as last built.
         SoldierAgent? dying = _context.FindAgent(view);
-        WeaponType? droppedWeapon = dying is null ? null : WeaponForDrop(dying.CarriedWeaponType, dying.WeaponType);
+        WeaponType? droppedWeapon = dying is null || (LetGoOfGun.Count > 0 && LetGoOfGun.Contains(view))
+            ? null
+            : WeaponForDrop(dying.CarriedWeaponType, dying.WeaponType);
         Vector3d dropPosition = view.Position;
         Matrix3f dropRotation = view.Orientation;
         if (droppedWeapon is not null && dying is not null)
@@ -269,9 +294,10 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             return;
         }
 
+        float dealt = 0f;
         if (!invulnerable)
         {
-            float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
             brain?.ReceiveDamage(origin, shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
             if (health.IsDead)
             {
@@ -280,6 +306,15 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             else
             {
                 ReactToHit(struck, brain, hit.Zone, dealt, explosion: false);
+            }
+        }
+
+        if (Struck.Count > 0)
+        {
+            SoldierStrike strike = new(struck, hit, origin, end, weapon, dealt, health.IsDead);
+            foreach (Action<SoldierStrike> told in Struck)
+            {
+                told(strike);
             }
         }
 
