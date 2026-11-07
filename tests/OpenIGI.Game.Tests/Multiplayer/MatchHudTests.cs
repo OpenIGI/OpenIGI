@@ -94,6 +94,23 @@ public sealed class MatchHudTests
     }
 
     [Fact]
+    public void Taking_the_bomb_up_from_the_ground_is_told_as_a_pickup_and_a_round_handing_it_out_is_not()
+    {
+        MatchHud handedOut = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, Carrier = 0 }), 0, Board(), 10)!;
+        MatchHud lying = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, DroppedAt = new Vector3d(0, 0, 0) }), 0, Board(), 10)!;
+        MatchHud flying = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, BombFlies = true }), 0, Board(), 10)!;
+        BombPickupWatch watch = new();
+
+        Assert.False(watch.Saw(null));
+        Assert.False(watch.Saw(handedOut));
+        Assert.False(watch.Saw(lying));
+        Assert.True(watch.Saw(handedOut));
+        Assert.False(watch.Saw(handedOut));
+        Assert.False(watch.Saw(flying));
+        Assert.True(watch.Saw(handedOut));
+    }
+
+    [Fact]
     public void Only_the_carrier_is_told_to_plant_and_an_attacker_is_told_who_has_the_bomb_or_where_it_lies()
     {
         MpLayout layout = new() { Points = [new MpPoint("A", MpPointKind.BombSite, [0, 0, 0], 5 * Metre)] };
@@ -102,6 +119,8 @@ public sealed class MatchHudTests
         MatchHud carrying = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, Carrier = 0 }), 0, Board(), 10, inSite, layout)!;
         Assert.Equal("YOU CARRY THE BOMB", carrying.BombNote);
         Assert.NotNull(carrying.Hint);
+        Assert.True(carrying.CarriesBomb);
+        Assert.False(carrying.BombIsLoose);
 
         // Another attacker has it (slot 5, not on this board, is nobody named): no hint, and no name to give.
         MatchHud without = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, Carrier = 5 }), 0, Board(), 10, inSite, layout)!;
@@ -112,6 +131,9 @@ public sealed class MatchHudTests
         MatchHud down = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, DroppedAt = dropped }), 0, Board(), 10, inSite, layout)!;
         Assert.Equal(dropped, down.BombMarkAt);
         Assert.StartsWith("THE BOMB IS DOWN", down.BombNote, StringComparison.Ordinal);
+        Assert.True(down.BombIsLoose);
+        Assert.False(down.CarriesBomb);
+        Assert.True(MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, BombFlies = true }), 0, Board(), 10, inSite, layout)!.BombIsLoose);
 
         // A defender is told nothing of the bomb's whereabouts.
         MatchHud defender = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, DroppedAt = dropped }), 0, Board(), 11, inSite, layout)!;

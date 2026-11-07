@@ -16,6 +16,18 @@ public sealed partial class GameHost
 
     // The bomb where it lies, planted at a site or dropped where its carrier fell, among the world's solid geometry -- unless it
     // was thrown, when the world draws it as it flies and where it lands.
+    // Whether this player has just taken the bomb up from where it lay.
+    private readonly Game.Multiplayer.Modes.BombPickupWatch _bombPickup = new();
+
+    // Once a frame: the bomb taken from the ground told as a gun's pickup is.
+    private void UpdateBombPickup()
+    {
+        if (_bombPickup.Saw(CurrentMatchHud()))
+        {
+            _mission.Objectives?.ShowTransientMessage(Game.Multiplayer.Modes.BombPickupWatch.Message);
+        }
+    }
+
     private void DrawBombs(in Camera3D eye, in Matrix4f projection)
     {
         if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy }

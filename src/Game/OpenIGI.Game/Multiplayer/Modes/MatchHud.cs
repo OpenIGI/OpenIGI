@@ -102,6 +102,12 @@ public sealed record MatchHud
     /// <summary>Gets who has the bomb, as an attacker is told it (<c>YOU CARRY THE BOMB</c>), or <see langword="null"/>.</summary>
     public string? BombNote { get; init; }
 
+    /// <summary>Gets a value indicating whether this player carries the bomb.</summary>
+    public bool CarriesBomb { get; init; }
+
+    /// <summary>Gets a value indicating whether the bomb lies on the ground or flies, thrown down, with nobody carrying it.</summary>
+    public bool BombIsLoose { get; init; }
+
     /// <summary>Gets where the dropped bomb lies, in world units, for an attacker to find it; <see langword="null"/> otherwise.</summary>
     public Vector3d? BombMarkAt { get; init; }
 
@@ -227,6 +233,8 @@ public sealed record MatchHud
                     : carrier is { Length: > 0 } ? $"{carrier.ToUpperInvariant()} CARRIES THE BOMB"
                     : null,
                 BombMarkAt = report.DroppedAt,
+                CarriesBomb = report.Carrier == attacker.Slot,
+                BombIsLoose = report.DroppedAt is not null || report.BombFlies,
             };
         }
 

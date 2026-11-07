@@ -188,6 +188,7 @@ public sealed partial class GameHost
             UpdateCoopTalk();
             UpdateScoreboard();
             UpdateBuyMenu();
+            UpdateBombPickup();
             UpdateMapVote();
         }
     }
