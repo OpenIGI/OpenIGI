@@ -77,7 +77,12 @@ internal readonly record struct D3D12Capabilities(
 internal sealed unsafe class D3D12Context : IDisposable
 {
     /// <summary>The Agility SDK version the runtime in <c>&lt;app&gt;/D3D12/</c> is.</summary>
-    public const uint SdkVersion = 619;
+    /// <remarks>
+    /// Read from the DLL beside the exe, whose file version is <c>1.&lt;sdk&gt;.&lt;patch&gt;</c>: a fixed number went
+    /// stale when the package was bumped from 1.619 to 1.620, the factory refused the mismatch with
+    /// D3D12_ERROR_INVALID_REDIST, and every run quietly fell back to Vulkan.
+    /// </remarks>
+    public static uint SdkVersion { get; private set; }
 
     private const string LogCategory = "D3D12";
 
@@ -314,10 +319,19 @@ internal sealed unsafe class D3D12Context : IDisposable
     private void CreateFactory(D3D12Validation validation)
     {
         string runtime = Path.Combine(AppContext.BaseDirectory, "D3D12");
-        if (!File.Exists(Path.Combine(runtime, "D3D12Core.dll")))
+        string core = Path.Combine(runtime, "D3D12Core.dll");
+        if (!File.Exists(core))
         {
             throw new D3D12UnavailableException($"The Agility runtime is not at {runtime}.");
         }
+
+        System.Diagnostics.FileVersionInfo coreVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(core);
+        if (coreVersion.FileMajorPart != 1 || coreVersion.FileMinorPart <= 0)
+        {
+            throw new D3D12UnavailableException($"{core} has file version {coreVersion.FileVersion}, which names no Agility SDK version.");
+        }
+
+        SdkVersion = (uint)coreVersion.FileMinorPart;
 
         Silk.NET.Direct3D12.D3D12 api = Silk.NET.Direct3D12.D3D12.GetApi();
         ID3D12SDKConfiguration1* configuration = null;
@@ -342,6 +356,16 @@ internal sealed unsafe class D3D12Context : IDisposable
                 }
 
                 _factory = factory;
+
+                // The process-wide runtime becomes this one too. Whatever else in the process asks D3D12 for
+                // a device by the global entry points -- OBS's game-capture hook, D3D11On12 -- otherwise gets
+                // the system's D3D12Core loaded beside ours: OBS's hook then never took hold, and a capture of
+                // the game stayed black.
+                int applied = factory->ApplyToGlobalState();
+                if (applied < 0)
+                {
+                    _logger.Warning(LogCategory, $"The Agility runtime could not be made the process's global one (0x{applied:X8}); a capture tool hooking D3D12 may show black.");
+                }
             }
             finally
             {
