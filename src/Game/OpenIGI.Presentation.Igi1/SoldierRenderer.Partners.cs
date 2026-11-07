@@ -110,6 +110,7 @@ public sealed partial class SoldierRenderer
             if (_partners.TryGetValue(partner.Key, out PlayerBodyRenderer? body) && _partnerModels.GetValueOrDefault(partner.Key) != look)
             {
                 body.Release();
+                _sim.UsePartnerBody(partner.Key, null);
                 _partners.Remove(partner.Key);
                 _fallen.Remove(partner.Key);
                 body = null;
@@ -117,12 +118,15 @@ public sealed partial class SoldierRenderer
 
             if (body is null)
             {
-                body = new PlayerBodyRenderer(this, _device, _sim, _logger, new SoldierPlayerBody());
+                SoldierPlayerBody state = new();
+                body = new PlayerBodyRenderer(this, _device, _sim, _logger, state);
                 if (!body.Load(lookMission, look, animations, partner.Feet, partner.Facing))
                 {
                     continue;
                 }
 
+                // Its rounds are met on the body it is drawn with, in its own stance.
+                _sim.UsePartnerBody(partner.Key, state);
                 _partners[partner.Key] = body;
                 _partnerModels[partner.Key] = look;
             }
@@ -205,6 +209,7 @@ public sealed partial class SoldierRenderer
         foreach (object gone in _partners.Keys.Where(key => !present.Contains(key)).ToArray())
         {
             _partners[gone].Release();
+            _sim.UsePartnerBody(gone, null);
             _partners.Remove(gone);
             _partnerGuns.Remove(gone);
             _partnerBombs.Remove(gone);
@@ -356,9 +361,10 @@ public sealed partial class SoldierRenderer
 
     private void ReleasePartners()
     {
-        foreach (PlayerBodyRenderer body in _partners.Values)
+        foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
             body.Release();
+            _sim.UsePartnerBody(key, null);
         }
 
         _partners.Clear();

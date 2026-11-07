@@ -107,6 +107,28 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_player_is_met_in_its_own_stance_whatever_the_hosts_body_is_doing()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        Landed(pair);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+
+        // The host lies dead, its body fallen; the joiner stands.
+        ((IModeHost)pair.Session.Session!).World.KillPlayer(ServerSession.HostSlot);
+        pair.RunUntil(() => false, 30 * 2);
+        Assert.False(partner.IsDead);
+
+        // A round across the joiner's chest meets it: in the joiner's standing body, not the host's fallen one.
+        Vector3d feet = partner.Player.Body.Position;
+        Vector3d from = feet + new Vector3d(10 * 4096, 0, 1.3 * 4096);
+        Vector3d to = feet + new Vector3d(-10 * 4096, 0, 1.3 * 4096);
+        Assert.True(
+            pair.Host.World.Soldiers!.TryCastPartnerBody(partner, from, to, feet, partner.Player.Body.Yaw, out var crossings) && crossings.Count > 0,
+            "a round across the standing joiner's chest went through it");
+        Assert.InRange(crossings[0].Hit.Zone, 12, 14);
+    }
+
+    [RequiresGameDataFact]
     public void A_player_carries_one_gun_in_each_place_a_bought_one_throwing_down_what_it_replaces_and_one_walked_over_left()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);

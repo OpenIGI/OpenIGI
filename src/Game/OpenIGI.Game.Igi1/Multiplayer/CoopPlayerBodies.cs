@@ -59,7 +59,12 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
                 return false;
             }
 
-            if (!soldiers.TryCastPlayerBody(origin, target, feet, rig.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> crossings) || crossings.Count == 0)
+            // The mission's own player is met in its own body; another player in the one it is drawn with, in its own stance.
+            IReadOnlyList<HumanBodyCrossing> crossings;
+            bool cast = ReferenceEquals(rig, game.World.Player)
+                ? soldiers.TryCastPlayerBody(origin, target, feet, rig.Body.Yaw, out crossings)
+                : soldiers.TryCastPartnerBody(player, origin, target, feet, rig.Body.Yaw, out crossings);
+            if (!cast || crossings.Count == 0)
             {
                 return false;
             }
