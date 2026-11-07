@@ -286,6 +286,9 @@ public sealed class ClientSession
     /// <summary>Gets where the server's match stood when it last said, or <see langword="null"/> before it has.</summary>
     public Modes.MatchState? MatchState { get; private set; }
 
+    /// <summary>Gets the vote for the next map as the server last told it to this player, or <see langword="null"/> while none is open.</summary>
+    public Modes.NextMapVote? MapVote { get; private set; }
+
     /// <summary>Gets the local time <see cref="MatchState"/> arrived, from which its clock runs down here.</summary>
     public double MatchStateAt { get; private set; }
 
@@ -672,6 +675,14 @@ public sealed class ClientSession
                 if (!reader.IsOverflowed)
                 {
                     Feed.Add(note, now);
+                }
+
+                break;
+            case SessionMessage.MapVote:
+                Modes.NextMapVote? vote = Modes.NextMapVote.Read(ref reader);
+                if (!reader.IsOverflowed)
+                {
+                    MapVote = vote;
                 }
 
                 break;

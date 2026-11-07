@@ -420,6 +420,11 @@ public sealed partial class GameHost
             {
                 string useKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.Activate)) ?? "E";
                 matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
+                if (hud.MapVote is { } vote)
+                {
+                    matchHud.DrawMapVote(state.Batch, vote, hud.Clock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                }
+
                 if (_buyMenuUp && hud is { BuyClock: { } buyClock, Money: { } money })
                 {
                     matchHud.DrawBuyMenu(

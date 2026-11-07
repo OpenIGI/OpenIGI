@@ -66,6 +66,19 @@ public sealed class MatchFlow(int tickRate)
         Version++;
     }
 
+    /// <summary>Brings the phase's end nearer, to a few seconds from now, when it is further off: a vote everyone has answered.</summary>
+    /// <param name="tick">The tick now.</param>
+    /// <param name="seconds">How long the phase may still last.</param>
+    public void Hasten(long tick, double seconds)
+    {
+        long by = tick + (long)Math.Ceiling(seconds * tickRate);
+        if (EndsAt != Untimed && EndsAt > by)
+        {
+            EndsAt = by;
+            Version++;
+        }
+    }
+
     /// <summary>Gets whether the phase's clock has run out.</summary>
     /// <param name="tick">The tick now.</param>
     /// <returns><see langword="true"/> once the phase's end has come.</returns>

@@ -179,12 +179,14 @@ public sealed partial class GameHost
         state.LastConsoleMilliseconds = consoleNow;
 
         // A co-op line being typed takes the keyboard next, the same way.
+        UpdateNextMap();
         if (!state.Console.IsOpen)
         {
             UpdateCoopVoice();
             UpdateCoopTalk();
             UpdateScoreboard();
             UpdateBuyMenu();
+            UpdateMapVote();
         }
     }
 

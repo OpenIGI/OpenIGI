@@ -19,6 +19,8 @@ public sealed partial class HostedSession
 {
     // The mode played: the one asked for, or the one the operator put in since.
     private string _mode;
+    private bool _rotatesMaps;
+    private Func<int, string?, string?>? _changeMap;
 
     /// <summary>Gets or sets what says whether a player's key is banned, and why; set before the level is up.</summary>
     public Func<string, string?>? Banned { get; set; }
@@ -27,10 +29,35 @@ public sealed partial class HostedSession
     public Func<int, string, string, IReadOnlyList<string>>? Rcon { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the server goes on to other maps, so a decided match ends its map rather than playing again.</summary>
-    public bool RotatesMaps { get; set; }
+    public bool RotatesMaps
+    {
+        get => _rotatesMaps;
+        set
+        {
+            _rotatesMaps = value;
+            if (_session?.Mode is { } mode)
+            {
+                mode.PlaysAgain = !value;
+            }
+        }
+    }
+
+    /// <summary>Gets a value indicating whether the host's own player plays too: a listen server rather than a dedicated one.</summary>
+    public bool IncludesHost => _options.IncludesHost;
 
     /// <summary>Gets or sets what changes the map a players' vote carried (<see cref="ServerSession.ChangeMap"/>).</summary>
-    public Func<int, string?, string?>? ChangeMap { get; set; }
+    public Func<int, string?, string?>? ChangeMap
+    {
+        get => _changeMap;
+        set
+        {
+            _changeMap = value;
+            if (_session is { } session)
+            {
+                session.ChangeMap = value;
+            }
+        }
+    }
 
     /// <summary>Gets or sets how long a joined player may stand idle before it is put off, in seconds; 0 never.</summary>
     public double IdleKickSeconds { get; set; }
@@ -43,11 +70,11 @@ public sealed partial class HostedSession
 
     /// <summary>Offers the players the next map to vote for (<see cref="ServerSession.OfferMaps"/>).</summary>
     /// <param name="choices">The maps.</param>
-    public void OfferMaps(IReadOnlyList<(int Mission, string Mode)> choices) => _session?.OfferMaps(choices);
+    public void OfferMaps(IReadOnlyList<MapChoice> choices) => _session?.OfferMaps(choices);
 
     /// <summary>Takes the map the players picked (<see cref="ServerSession.TakeChosenMap"/>).</summary>
     /// <returns>The map, or <see langword="null"/>.</returns>
-    public (int Mission, string Mode)? TakeChosenMap() => _session?.TakeChosenMap();
+    public MapChoice? TakeChosenMap() => _session?.TakeChosenMap();
 
     /// <summary>Gets the map played.</summary>
     public string Map => _session?.Map ?? _options.Map;
@@ -99,6 +126,18 @@ public sealed partial class HostedSession
         _mode = mode.ToLowerInvariant();
         return true;
     }
+
+    /// <summary>Starts the match over on the map played, under the mode put in (<see cref="UseMode"/>), without loading it again.</summary>
+    public void PlayAgain()
+    {
+        if (_session is { } session && _world is { } world)
+        {
+            session.RestartMode(NewMode(world));
+        }
+    }
+
+    /// <summary>Decides the match now (<see cref="ServerSession.EndMatch"/>).</summary>
+    public void EndMatch() => _session?.EndMatch();
 
     /// <summary>Puts a player out, telling it why.</summary>
     /// <param name="slot">Its slot.</param>

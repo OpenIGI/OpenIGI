@@ -52,6 +52,11 @@ public interface IServerControl
     /// <returns>The entry gone on to, or <see langword="null"/> with no rotation.</returns>
     RotationEntry? NextMap();
 
+    /// <summary>Decides the match now on the scores as they stand: its card, and the vote for the next map.</summary>
+    void EndMatch()
+    {
+    }
+
     /// <summary>Puts a mode on from the next map.</summary>
     /// <param name="mode">The mode.</param>
     /// <returns><see langword="true"/> for a mode the server plays.</returns>
@@ -79,6 +84,7 @@ public sealed class ServerConsole(IServerControl server)
         "bans                           the bans in force",
         "map <mission> [mode]           go on to a mission now",
         "next                           go on to the rotation's next map",
+        "endmatch                       decide the match now; the players vote the next map",
         "mode <mode>                    play a mode from the next map",
         "rotation                       the maps played in turn",
         "demo_save [name]               save the session so far as a demo in demos/ (record_demos 1)",
@@ -107,6 +113,7 @@ public sealed class ServerConsole(IServerControl server)
             "unban" when words.Length > 1 => server.Bans.Remove(words[1]) is { } lifted ? [$"Lifted the ban on {lifted.Name} ({lifted.PlayerId})."] : [$"No ban on '{words[1]}'."],
             "bans" => Bans(),
             "map" when words.Length > 1 => Map(words),
+            "endmatch" => EndMatch(),
             "next" => server.NextMap() is { } next ? [$"Going on to mission {next.Mission} ({ModeOf(next)})."] : ["There is no rotation; use map <mission> [mode]."],
             "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}."],
             "rotation" => Rotation(),
@@ -245,6 +252,12 @@ public sealed class ServerConsole(IServerControl server)
         return rotation.Count == 0
             ? [$"No rotation: mission {server.Map} is played again."]
             : [.. rotation.Select((e, i) => string.Create(CultureInfo.InvariantCulture, $"  {i + 1}. mission {e.Mission}  {ModeOf(e)}"))];
+    }
+
+    private string[] EndMatch()
+    {
+        server.EndMatch();
+        return ["The match is decided; the players vote the next map."];
     }
 
     private string[] Quit()

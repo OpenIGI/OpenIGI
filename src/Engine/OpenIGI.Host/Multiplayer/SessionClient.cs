@@ -516,7 +516,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session?.MatchState is { } state
-            ? Game.Multiplayer.Modes.MatchHud.Of(
+            && Game.Multiplayer.Modes.MatchHud.Of(
                 state,
                 _clock.Elapsed.TotalSeconds - _session.MatchStateAt,
                 CurrentScoreboard,
@@ -525,7 +525,8 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
                 Layout,
                 _session.UseHeldSince is { } since
                     ? new Game.Multiplayer.Modes.LocalUse(true, _clock.Elapsed.TotalSeconds - since)
-                    : new Game.Multiplayer.Modes.LocalUse(false, 0))
+                    : new Game.Multiplayer.Modes.LocalUse(false, 0)) is { } hud
+            ? hud with { MapVote = hud.Phase == Game.Multiplayer.Modes.MatchPhase.Intermission ? _session.MapVote : null }
             : null;
 
     /// <inheritdoc/>

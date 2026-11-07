@@ -91,7 +91,7 @@ internal sealed partial class RemasteredHudRenderer
 
         if (hud.Result is { } result)
         {
-            ResultBand(painter, type, result, hud.Phase == MatchPhase.Intermission, centre, safe, Px);
+            ResultBand(painter, type, result, hud.Phase == MatchPhase.Intermission, centre, safe, Px, raised: hud.MapVote is not null);
         }
 
         if (warning is not null)
@@ -296,11 +296,12 @@ internal sealed partial class RemasteredHudRenderer
     }
 
     // A decided round's or match's card: a band across the screen in the outcome's colour, the result large on it.
-    private static void ResultBand(UiPainter painter, UiTheme type, ResultCard result, bool match, float centre, UiRect safe, Func<float, float> Px)
+    // Raised higher while the vote for the next map stands under it.
+    private static void ResultBand(UiPainter painter, UiTheme type, ResultCard result, bool match, float centre, UiRect safe, Func<float, float> Px, bool raised = false)
     {
         Bgra32 colour = result.Outcome > 0 ? (match ? Victory : Ally) : result.Outcome < 0 ? Enemy : UiPalette.TextSecondary;
         float bandHeight = Px(match ? 150f : 118f);
-        var band = new UiRect(safe.X, safe.Y + (safe.Height * 0.3f), safe.Width, bandHeight);
+        var band = new UiRect(safe.X, safe.Y + (safe.Height * (raised ? 0.2f : 0.3f)), safe.Width, bandHeight);
         Band(painter, band, Bgra32.FromRgba(6, 8, 11, 200));
         Band(painter, new UiRect(band.X, band.Y, band.Width, Px(2f)), colour.WithAlpha(230));
         Band(painter, new UiRect(band.X, band.Bottom - Px(2f), band.Width, Px(2f)), colour.WithAlpha(230));

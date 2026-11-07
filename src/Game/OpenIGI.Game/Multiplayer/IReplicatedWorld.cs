@@ -388,6 +388,10 @@ public enum SessionMessage : byte
     /// <summary>Server to client: the client's player was re-armed (a respawn), for its own copy to carry the same; whether
     /// from nothing, then each weapon's script id and the rounds of its ammunition.</summary>
     Kit = 20,
+
+    /// <summary>Server to client, reliable: the vote for the next map as that client sees it (<see cref="Modes.NextMapVote"/>), or
+    /// that it closed.</summary>
+    MapVote = 21,
 }
 
 /// <summary>A player the server re-armed: what it carries now, and whether it was armed from nothing.</summary>

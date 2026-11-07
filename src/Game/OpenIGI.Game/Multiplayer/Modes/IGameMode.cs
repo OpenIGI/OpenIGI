@@ -97,6 +97,14 @@ public interface IGameMode
     /// <returns>The report.</returns>
     ModeReport Report(long tick) => ModeReport.None;
 
+    /// <summary>Decides the match now, on the scores as they stand, and shows its card: a server operator's or a listen host's
+    /// <c>endmatch</c>. A mode with no match to decide (co-op) does nothing.</summary>
+    /// <param name="host">The session.</param>
+    /// <param name="tick">The tick now.</param>
+    void EndNow(IModeHost host, long tick)
+    {
+    }
+
     /// <summary>Gets a value indicating whether the match on this map is over and a server with a rotation goes on to the next.</summary>
     bool IsMapOver => false;
 

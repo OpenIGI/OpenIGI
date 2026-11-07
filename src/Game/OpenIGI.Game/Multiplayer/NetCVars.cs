@@ -20,6 +20,15 @@ public static class NetCVars
         CVarOptions.Archive,
         "Keeps a recording of every session this game hosts, from its start (up to 128 MB), so demo_save can save it. Off for a server short of memory.");
 
+    /// <summary>How long a deathmatch lasts, in minutes, on a server this game hosts; 0 for the mode's own (10).</summary>
+    public static readonly NumericCVar<float> TimeLimit = CVar.Float(
+        "mp_timelimit",
+        0f,
+        0f,
+        120f,
+        CVarOptions.None,
+        "How long a team deathmatch or free-for-all lasts on a server this game hosts, in minutes; 0 for the mode's own ten. Read when a match starts on a new map.");
+
     /// <summary>Whether a session joined is saved as a demo when it is left.</summary>
     public static readonly BoolCVar AutoRecord = CVar.Bool(
         "cl_autorecord",

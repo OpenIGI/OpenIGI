@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
 using Xunit;
 
@@ -477,7 +478,7 @@ public sealed class SessionLoopbackTests
     }
 
     [Fact]
-    public void A_decided_match_offers_the_next_maps_and_the_most_picked_one_is_taken()
+    public void A_decided_match_offers_the_next_maps_each_player_sees_the_count_and_its_pick_and_the_most_picked_one_is_taken()
     {
         double now = 0;
         LoopbackNetwork network = new();
@@ -496,14 +497,26 @@ public sealed class SessionLoopbackTests
         }
 
         float[] idle = new float[ToyWorld.Channels];
-        for (long tick = 0; tick < 4 * TickRate; tick++)
+        NextMapVote? seenByFirst = null;
+        NextMapVote? seenByLast = null;
+        MapChoice? taken = null;
+        MapChoice? takenAgain = null;
+        for (long tick = 0; tick < 5 * TickRate; tick++)
         {
             now = tick / (double)TickRate;
             server.Receive(now, tick);
             world.Step(tick);
             if (tick == 1 * TickRate)
             {
-                server.OfferMaps([(3, "sd"), (5, "tdm")]);
+                server.OfferMaps([new MapChoice(3, "sd", "Trainyard", Again: true), new MapChoice(5, "tdm", "Missile Trainyard")]);
+            }
+
+            if (tick == 3 * TickRate)
+            {
+                seenByFirst = clients[0].MapVote;
+                seenByLast = clients[2].MapVote;
+                taken = server.TakeChosenMap();
+                takenAgain = server.TakeChosenMap();
             }
 
             if (tick == 2 * TickRate)
@@ -522,8 +535,37 @@ public sealed class SessionLoopbackTests
             }
         }
 
-        Assert.Equal((5, "tdm"), server.TakeChosenMap());
-        Assert.Null(server.TakeChosenMap());
+        Assert.NotNull(seenByFirst);
+        Assert.Equal([1, 2], seenByFirst.Counts);
+        Assert.Equal(3, seenByFirst.Voters);
+        Assert.Equal(1, seenByFirst.OwnPick);
+        Assert.Equal(1, seenByFirst.Leading);
+        Assert.Equal("Trainyard", seenByFirst.Choices[0].Name);
+        Assert.True(seenByFirst.Choices[0].Again);
+        Assert.Equal(0, seenByLast!.OwnPick);
+        Assert.Equal(new MapChoice(5, "tdm", "Missile Trainyard"), taken);
+        Assert.Null(takenAgain);
+        Assert.All(clients, client => Assert.Null(client.MapVote));
+    }
+
+    [Fact]
+    public void A_vote_reads_back_as_it_was_written_and_none_reads_as_none()
+    {
+        NextMapVote vote = new([new MapChoice(1, "tdm", "Trainyard", Again: true), new MapChoice(7, "sd", "Military Airbase")], [0, 2], 5, 1);
+        BitWriter writer = new();
+        NextMapVote.Write(writer, vote);
+        NextMapVote.Write(writer, null);
+        BitReader reader = new(writer.AsSpan());
+        NextMapVote? back = NextMapVote.Read(ref reader);
+        NextMapVote? none = NextMapVote.Read(ref reader);
+
+        Assert.NotNull(back);
+        Assert.Equal(vote.Choices, back.Choices);
+        Assert.Equal(vote.Counts, back.Counts);
+        Assert.Equal(5, back.Voters);
+        Assert.Equal(1, back.OwnPick);
+        Assert.Null(none);
+        Assert.False(reader.IsOverflowed);
     }
 
     [Fact]

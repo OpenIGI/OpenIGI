@@ -166,7 +166,8 @@ using DedicatedServer dedicated = new(
     host.GoToMission,
     logger,
     heartbeat,
-    () => MasterHeartbeat.BodyOf(server, config, title.Id, version, room?.Code));
+    () => MasterHeartbeat.BodyOf(server, config, title.Id, version, room?.Code),
+    () => host.MissionList);
 logger.Information(
     LogCategory,
     $"{title.DisplayName} server '{config.Name}' on UDP {config.Port}, mission {map} ({mode}), up to {config.MaxPlayers} players, {(config.Public ? "listed" : "unlisted")}.");

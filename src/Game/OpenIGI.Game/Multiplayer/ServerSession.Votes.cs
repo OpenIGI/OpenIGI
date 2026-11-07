@@ -12,39 +12,6 @@ public sealed partial class ServerSession
 {
     private readonly MatchVote _vote = new();
 
-    // The maps a decided match offers for the next, and each player's pick of them.
-    private (int Mission, string Mode)[] _mapChoices = [];
-    private readonly Dictionary<int, int> _mapPicks = [];
-
-    /// <summary>Offers the players the next map to vote for, each by its number in chat (<c>/1</c>, <c>/2</c>...).</summary>
-    /// <param name="choices">The maps, as missions and their modes (empty to keep the one played).</param>
-    public void OfferMaps(IReadOnlyList<(int Mission, string Mode)> choices)
-    {
-        ArgumentNullException.ThrowIfNull(choices);
-        _mapChoices = [.. choices.Take(9)];
-        _mapPicks.Clear();
-        if (_mapChoices.Length == 0)
-        {
-            return;
-        }
-
-        IEnumerable<string> listed = _mapChoices.Select((c, i) => string.Create(
-            CultureInfo.InvariantCulture, $"/{i + 1} mission {c.Mission}{(c.Mode.Length > 0 ? " " + c.Mode.ToUpperInvariant() : string.Empty)}"));
-        Say($"Vote the next map: {string.Join("  ·  ", listed)}");
-    }
-
-    /// <summary>Takes the map the players picked most (the first offered on a tie), or <see langword="null"/> when none picked.</summary>
-    /// <returns>The mission and its mode.</returns>
-    public (int Mission, string Mode)? TakeChosenMap()
-    {
-        (int Mission, string Mode)? chosen = _mapPicks.Count == 0
-            ? null
-            : _mapChoices[_mapPicks.Values.GroupBy(static p => p).OrderByDescending(static g => g.Count()).ThenBy(static g => g.Key).First().Key];
-        _mapChoices = [];
-        _mapPicks.Clear();
-        return chosen;
-    }
-
     /// <summary>Gets or sets what changes the map a vote carried: the mission and mode (or <see langword="null"/> to keep it), and
     /// the reason it can't, or <see langword="null"/> once it is under way. Without it map votes are refused.</summary>
     public Func<int, string?, string?>? ChangeMap { get; set; }
@@ -84,16 +51,13 @@ public sealed partial class ServerSession
                 Tell(slot, _vote.Say(slot, yes: false) ? $"You voted no. {Tally()}" : "There is no vote to say no to.");
                 return true;
             case [>= '1' and <= '9'] pick when _mapChoices.Length > 0:
-                int index = pick[0] - '1';
-                if (index < _mapChoices.Length && Match.Players.ContainsKey(slot))
-                {
-                    _mapPicks[slot] = index;
-                    Tell(slot, string.Create(CultureInfo.InvariantCulture, $"You picked mission {_mapChoices[index].Mission}."));
-                }
-
+                PickMap(slot, pick[0] - '1');
                 return true;
             case "buy" or "b":
                 Tell(slot, Mode.Buy(this, slot, words.Length > 1 ? words[1] : string.Empty, _tick));
+                return true;
+            case "endmatch" when slot == HostSlot:
+                EndMatch();
                 return true;
             case "vote" or "callvote":
                 CallVote(slot, words[1..]);

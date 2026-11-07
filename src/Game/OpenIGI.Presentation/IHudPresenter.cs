@@ -278,6 +278,20 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
 
+    /// <summary>Draws the vote for the next map under a decided match's card: a card for each map offered, with its votes.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="vote">The vote, as the local player sees it.</param>
+    /// <param name="clock">The time left to vote, as <c>0:12</c>, or <see langword="null"/>.</param>
+    /// <param name="pointer">Where the pointer is, in pixels.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawMapVote(SpriteBatch batch, Game.Multiplayer.Modes.NextMapVote vote, string? clock, (float X, float Y) pointer, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Gets where the last vote drew each map's card, by its index, in pixels: what a click is tested against.</summary>
+    IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> MapVoteCards => [];
+
     /// <summary>Draws whom a dead player watches, low in the middle of the screen, and how to watch the next: its killer, for
     /// the kill cam's moment, named in red with how far off it stood.</summary>
     /// <param name="batch">The batch to draw into.</param>

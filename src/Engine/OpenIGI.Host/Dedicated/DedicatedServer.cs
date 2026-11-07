@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Host.Multiplayer;
 
 namespace OpenIGI.Host.Dedicated;
@@ -18,11 +19,9 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     private readonly MasterHeartbeat? _heartbeat;
     private readonly Func<HeartbeatBody>? _beat;
     private readonly HashSet<string> _greeted = new(StringComparer.Ordinal);
+    private readonly NextMapFlow _nextMap;
+    private readonly Func<IReadOnlyList<(int Id, string Name)>> _missionList;
     private int _rotationAt;
-    private bool _changing;
-
-    // Whether the decided match has offered its next maps yet.
-    private bool _offered;
 
     /// <summary>Initialises a new instance of the <see cref="DedicatedServer"/> class.</summary>
     /// <param name="session">The session.</param>
@@ -32,8 +31,16 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     /// <param name="logger">Where it tells what it does.</param>
     /// <param name="heartbeat">The master server's listing, or <see langword="null"/> for an unlisted server.</param>
     /// <param name="beat">What each beat says, with <paramref name="heartbeat"/>.</param>
+    /// <param name="missions">The missions there are, in campaign order with their names: what a server without a rotation offers.</param>
     public DedicatedServer(
-        HostedSession session, ServerConfig config, BanList bans, Func<int, bool> goToMission, IOpenIgiLogger logger, MasterHeartbeat? heartbeat = null, Func<HeartbeatBody>? beat = null)
+        HostedSession session,
+        ServerConfig config,
+        BanList bans,
+        Func<int, bool> goToMission,
+        IOpenIgiLogger logger,
+        MasterHeartbeat? heartbeat = null,
+        Func<HeartbeatBody>? beat = null,
+        Func<IReadOnlyList<(int Id, string Name)>>? missions = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _config = config ?? throw new ArgumentNullException(nameof(config));
@@ -45,7 +52,9 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         Console = new ServerConsole(this);
         session.Banned = bans.Check;
         session.Rcon = Remote;
-        session.RotatesMaps = config.Rotation.Count > 1;
+        _missionList = missions ?? (static () => []);
+        session.RotatesMaps = config.Rotation.Count > 1 || missions is not null;
+        _nextMap = new NextMapFlow(session, Offer, GoOn);
         session.ChangeMap = ChangeMap;
         session.IdleKickSeconds = config.IdleKickSeconds;
     }
@@ -84,37 +93,8 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     /// <param name="now">The clock, in seconds.</param>
     public void Tick(double now)
     {
-        // A decided match: the next few of the rotation offered to vote for while its card is up.
-        if (_session.IsMatchDecided && !_offered && _config.Rotation.Count > 1)
-        {
-            _offered = true;
-            _session.OfferMaps([.. Enumerable.Range(1, Math.Min(3, _config.Rotation.Count - 1))
-                .Select(step => _config.Rotation[(_rotationAt + step) % _config.Rotation.Count])
-                .Select(static r => (r.Mission, r.Mode))]);
-        }
-
-        // Then on to the map the players picked, or the rotation's next; once.
-        if (_session.IsMapOver && !_changing)
-        {
-            _changing = true;
-            if (_session.TakeChosenMap() is { } picked)
-            {
-                _rotationAt = Math.Max(0, _config.Rotation.ToList().FindIndex(r => r.Mission == picked.Mission && r.Mode == picked.Mode));
-                if (ChangeMap(picked.Mission, picked.Mode.Length > 0 ? picked.Mode : null) is { } problem)
-                {
-                    _logger.Warning(LogCategory, $"The picked mission {picked.Mission} cannot be played: {problem}");
-                }
-            }
-            else
-            {
-                _ = NextMap();
-            }
-        }
-        else if (!_session.IsMapOver)
-        {
-            _changing = false;
-            _offered = _session.IsMatchDecided && _offered;
-        }
+        // A decided match: the next maps offered to vote for while its card is up, then on to the one picked.
+        _nextMap.Tick();
 
         Greet();
         if (_heartbeat is not null && _beat is not null)
@@ -146,6 +126,54 @@ public sealed class DedicatedServer : IServerControl, IDisposable
         return null;
     }
 
+    // The missions there are, read when wanted: the host has them only once it has started.
+    private IReadOnlyList<(int Id, string Name)> Missions => _missionList();
+
+    // What a decided match offers: the next few of the rotation and this map again; without a rotation, the maps around this one.
+    private IReadOnlyList<MapChoice> Offer()
+    {
+        int mission = int.TryParse(_session.Map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id) ? id : 0;
+        if (_config.Rotation.Count <= 1)
+        {
+            return NextMapFlow.Around(Missions, mission, _session.Mode, Random.Shared);
+        }
+
+        string NameOf(int number) => Missions.FirstOrDefault(m => m.Id == number).Name ?? string.Empty;
+        List<MapChoice> choices = [.. Enumerable.Range(1, Math.Min(NextMapVote.MostChoices - 1, _config.Rotation.Count - 1))
+            .Select(step => _config.Rotation[(_rotationAt + step) % _config.Rotation.Count])
+            .Select(r => new MapChoice(r.Mission, r.Mode.Length > 0 ? r.Mode : _session.Mode, NameOf(r.Mission)))];
+        choices.Insert(0, new MapChoice(mission, _session.Mode, NameOf(mission), Again: true));
+        return choices;
+    }
+
+    // On to the map picked -- staying at this place in the rotation for this one again -- or, with no pick, the rotation's next
+    // (this map again without a rotation).
+    private void GoOn(MapChoice? picked)
+    {
+        if (picked is null && _config.Rotation.Count > 1)
+        {
+            _ = NextMap();
+            return;
+        }
+
+        int mission = picked?.Mission ?? (int.TryParse(_session.Map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id) ? id : 0);
+        string mode = picked?.Mode ?? _session.Mode;
+        if (picked is { Again: false } && _config.Rotation.ToList().FindIndex(r => r.Mission == picked.Mission && (r.Mode.Length == 0 || r.Mode == picked.Mode)) is >= 0 and var at)
+        {
+            _rotationAt = at;
+        }
+
+        if (mission.ToString(System.Globalization.CultureInfo.InvariantCulture) == _session.Map && (mode.Length == 0 || _session.UseMode(mode)))
+        {
+            _logger.Information(LogCategory, $"Playing mission {mission} again ({_session.Mode}).");
+            _session.PlayAgain();
+        }
+        else if (ChangeMap(mission, mode.Length > 0 ? mode : null) is { } problem)
+        {
+            _logger.Warning(LogCategory, $"The picked mission {mission} cannot be played: {problem}");
+        }
+    }
+
     /// <inheritdoc/>
     public RotationEntry? NextMap()
     {
@@ -166,6 +194,9 @@ public sealed class DedicatedServer : IServerControl, IDisposable
 
     /// <inheritdoc/>
     public bool UseMode(string mode) => _session.UseMode(mode);
+
+    /// <inheritdoc/>
+    public void EndMatch() => _session.EndMatch();
 
     /// <inheritdoc/>
     public void Quit() => QuitAsked = true;

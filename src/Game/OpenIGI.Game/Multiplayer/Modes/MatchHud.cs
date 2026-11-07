@@ -113,6 +113,9 @@ public sealed record MatchHud
     /// <summary>Gets a line under the strip explaining the phase (a warmup's), or <see langword="null"/>.</summary>
     public string? Notice { get; init; }
 
+    /// <summary>Gets the vote for the next map while a decided match's card is up, or <see langword="null"/>.</summary>
+    public NextMapVote? MapVote { get; init; }
+
     /// <summary>Gets a value indicating whether the mode plays teams.</summary>
     public bool HasTeams => Left is not null;
 

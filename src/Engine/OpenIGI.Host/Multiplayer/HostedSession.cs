@@ -327,7 +327,8 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session is { } session && _world is { } world
-            ? Game.Multiplayer.Modes.MatchHud.Of(session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout)
+            && Game.Multiplayer.Modes.MatchHud.Of(session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout) is { } hud
+            ? hud with { MapVote = hud.Phase == Game.Multiplayer.Modes.MatchPhase.Intermission ? session.MapVote : null }
             : null;
 
     /// <inheritdoc/>

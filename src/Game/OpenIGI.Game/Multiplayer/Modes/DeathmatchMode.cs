@@ -113,6 +113,17 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
         }
     }
 
+    /// <inheritdoc/>
+    public void EndNow(IModeHost host, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        if (Flow.Phase is MatchPhase.Live or MatchPhase.Warmup)
+        {
+            (int leader, _, bool tied) = teams ? LeadingTeam(host.Match) : LeadingPlayer(host.Match);
+            Flow.Enter(MatchPhase.Intermission, tick, Settings.IntermissionSeconds, tied ? -1 : leader);
+        }
+    }
+
     // The match from nothing: scores cleared, everyone put back at a spawn, the clock started.
     private void BeginLive(IModeHost host, long tick)
     {

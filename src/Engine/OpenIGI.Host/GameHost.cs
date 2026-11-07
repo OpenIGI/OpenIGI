@@ -670,7 +670,7 @@ public sealed partial class GameHost : IDisposable
 
             // The editor opening or closing, or loading a mission, at the same boundary: each swaps what is drawn.
             ApplyEditorRequests(state);
-            ApplyMissionAsked();
+            ApplyMissionAsked(state);
 
             // The frame's input and its world, in the order each one has to see the keys and the clock. While the
             // editor is open it owns the input -- the shell, the player and the game's own keys stand down -- and

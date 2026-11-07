@@ -211,6 +211,12 @@ public sealed partial class ServerSession
         _writer.WriteBits((uint)SessionMessage.MatchState, 8);
         Mode.Flow.Write(_writer, Mode.Id, tick, WinnerName(Mode.Flow.Winner), report);
         _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+
+        // A vote open goes with it, for a player who joined while the card was up.
+        if (_mapChoices.Length > 0)
+        {
+            TellMapVote();
+        }
     }
 
     // The report's key the clients were last told.

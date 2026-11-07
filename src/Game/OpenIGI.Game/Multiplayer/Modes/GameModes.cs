@@ -78,6 +78,15 @@ public static class GameModes
     /// </remarks>
     public static IGameMode For(string? id, IReplicatedWorld world, int tickRate)
     {
+        return Made(id, world, tickRate);
+    }
+
+    // A deathmatch's settings, its clock the server's mp_timelimit when one is set.
+    private static DeathmatchSettings Deathmatch() =>
+        NetCVars.TimeLimit.Value > 0 ? new DeathmatchSettings { TimeLimitMinutes = NetCVars.TimeLimit.Value } : new DeathmatchSettings();
+
+    private static IGameMode Made(string? id, IReplicatedWorld world, int tickRate)
+    {
         ArgumentNullException.ThrowIfNull(world);
         if (IsVersus(id) && world.TryPlayVersus(teams: HasTeams(id)))
         {
@@ -85,7 +94,7 @@ public static class GameModes
             {
                 Elimination => new EliminationMode(tickRate),
                 SearchAndDestroy => new SearchAndDestroyMode(tickRate),
-                _ => new DeathmatchMode(tickRate, teams: id == TeamDeathmatch),
+                _ => new DeathmatchMode(tickRate, teams: id == TeamDeathmatch, Deathmatch()),
             };
         }
 
@@ -96,8 +105,8 @@ public static class GameModes
 
         return id switch
         {
-            TeamDeathmatch => new DeathmatchMode(tickRate, teams: true),
-            FreeForAll => new DeathmatchMode(tickRate, teams: false),
+            TeamDeathmatch => new DeathmatchMode(tickRate, teams: true, Deathmatch()),
+            FreeForAll => new DeathmatchMode(tickRate, teams: false, Deathmatch()),
             _ => new ObjectiveMode(tickRate),
         };
     }

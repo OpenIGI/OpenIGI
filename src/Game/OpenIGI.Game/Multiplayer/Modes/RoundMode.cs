@@ -334,6 +334,18 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         Flow.Enter(MatchPhase.RoundOver, tick, Settings.RoundOverSeconds, winner);
     }
 
+    /// <inheritdoc/>
+    public void EndNow(IModeHost host, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        if (Flow.Phase is MatchPhase.Live or MatchPhase.RoundOver)
+        {
+            int good = host.Match.ScoreOf(TeamRoster.Good);
+            int bad = host.Match.ScoreOf(TeamRoster.Bad);
+            Flow.Enter(MatchPhase.Intermission, tick, Settings.IntermissionSeconds, good == bad ? -1 : good > bad ? TeamRoster.Good : TeamRoster.Bad);
+        }
+    }
+
     // The team that has won its rounds, once one has.
     private int? MatchWinner(IModeHost host)
     {
