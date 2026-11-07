@@ -58,6 +58,15 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// <summary>Gets the soldiers who let go of their gun before they died (<see cref="DropGun"/>), so their death drops no other. <b>Not retail.</b></summary>
     public HashSet<SoldierView> LetGoOfGun { get; } = [];
 
+    // Tells each mod listening of a round that struck (Struck), from whichever of the two round paths it came by.
+    private void TellStruck(SoldierStrike strike)
+    {
+        foreach (Action<SoldierStrike> told in Struck)
+        {
+            told(strike);
+        }
+    }
+
     /// <summary>Has a living soldier let go of his gun now, as a pickup that falls from his hand. <b>Not retail.</b></summary>
     /// <param name="view">The soldier.</param>
     /// <param name="position">Where it leaves his hand, in world units.</param>
@@ -311,11 +320,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
         if (Struck.Count > 0)
         {
-            SoldierStrike strike = new(struck, hit, origin, end, weapon, dealt, health.IsDead);
-            foreach (Action<SoldierStrike> told in Struck)
-            {
-                told(strike);
-            }
+            TellStruck(new SoldierStrike(struck, hit, origin, end, weapon.Category, dealt, health.IsDead));
         }
 
         SoldierSimulation.DamageTraced?.Invoke(struck.Soldier.Id, hit.Zone, hit.Bone, damageFactor, health.Damage, health.MaximumHealth);
@@ -377,6 +382,11 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
             float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
             round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
+            if (Struck.Count > 0)
+            {
+                TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));
+            }
+
             if (health.IsDead)
             {
                 // The brain hears of the round that kills it too: the event is posted to an AI that is not dead yet,
