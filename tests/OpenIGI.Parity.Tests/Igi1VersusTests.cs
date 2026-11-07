@@ -480,7 +480,7 @@ public sealed class Igi1VersusTests
         Assert.All(match.Players.Values, p => Assert.Equal(match.Rules.MoneyStart - 900, p.Money));
     }
 
-    [Fact]
+    [RequiresGameDataFact]
     public void A_player_killed_after_buying_starts_the_next_round_with_the_spawn_kit_and_the_survivor_keeps_its_gun()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
@@ -509,7 +509,7 @@ public sealed class Igi1VersusTests
         Assert.True(Carries(pair.Host.World.Player!, "WEAPON_ID_UZI"), "the surviving host lost its Uzi");
     }
 
-    [Fact]
+    [RequiresGameDataFact]
     public void A_joiner_on_a_slow_line_hits_a_host_running_across_where_its_own_game_shows_the_host()
     {
         using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
@@ -581,7 +581,7 @@ public sealed class Igi1VersusTests
         Assert.True(rounds - landed <= 1, $"the joiner's rounds passed by a host it drew running: {landed} of {rounds} landed");
     }
 
-    [Fact]
+    [RequiresGameDataFact]
     public void A_hosted_match_is_saved_as_a_demo_that_plays_back_with_both_players_in_it()
     {
         using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
