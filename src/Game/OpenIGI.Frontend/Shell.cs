@@ -54,7 +54,7 @@ public sealed class Shell
         Screen? screen = tab?.ToLowerInvariant() switch
         {
             "campaign" => new CampaignScreen(_context),
-            "coop" or "co-op" or "multiplayer" => new CoopScreen(_context),
+            "coop" or "co-op" or "multiplayer" or "mp" => new MultiplayerScreen(_context),
             "settings" => new SettingsScreen(_context),
             "profile" or "profiles" => new ProfilesScreen(_context),
             "extras" => new ExtrasScreen(_context),

@@ -77,7 +77,8 @@ public interface ICoopRooms
     /// <param name="missionId">The mission.</param>
     /// <param name="difficulty">The difficulty.</param>
     /// <param name="listed">Whether the room is listed publicly, rather than reached by its code alone.</param>
-    void Host(int missionId, int difficulty, bool listed);
+    /// <param name="mode">The mode it plays, as <c>coop</c> or <c>tdm</c>; a versus mode plays the mission's map as an arena.</param>
+    void Host(int missionId, int difficulty, bool listed, string mode = "coop");
 
     /// <summary>Joins a room by its code: loads the mission its host plays, then joins it.</summary>
     /// <param name="code">The code.</param>

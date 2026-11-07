@@ -10,7 +10,7 @@ namespace OpenIGI.Frontend.Screens;
 /// The party: friends who play together. Out of one, a button to make one and a box to join a friend's by its code; in one,
 /// its code, who leads and who is in it, where its leader plays, and the invite link to hand round.
 /// </content>
-public sealed partial class CoopScreen
+public sealed partial class MultiplayerScreen
 {
     private string _partyCode = string.Empty;
 
@@ -40,6 +40,7 @@ public sealed partial class CoopScreen
             line.ColumnDefinitions.Add(GridLength.Auto);
             line.ColumnDefinitions.Add(GridLength.Star);
             line.ColumnDefinitions.Add(GridLength.Auto);
+            line.Margin = new Thickness(0f, 0f, 0f, 4f);
             var create = new Button(theme, "NEW PARTY") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(22f, 12f), Tooltip = "Make a party you lead, and copy its invite link for friends." };
             create.Activated += _ =>
             {

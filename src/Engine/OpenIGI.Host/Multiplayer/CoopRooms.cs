@@ -99,12 +99,15 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     private string Protocol => MultiplayerProtocol.IdFor(_titleId()).ToString("x16", CultureInfo.InvariantCulture);
 
     /// <inheritdoc/>
-    public void Host(int missionId, int difficulty, bool listed)
+    public void Host(int missionId, int difficulty, bool listed, string mode = Game.Multiplayer.Modes.GameModes.Coop)
     {
         Leave();
+
+        // Co-op is a squad of four; a versus game hosted in a player's own game takes up to sixteen.
+        bool versus = Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode);
         SessionArguments arguments = new(
-            Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: $"{_playerName()}'s game", MaxPlayers: 3,
-            Password: string.Empty, Mode: "coop", Host: true, Public: listed);
+            Connect: null, Listen: false, Port: 0, PlayerName: _playerName(), ServerName: $"{_playerName()}'s game", MaxPlayers: versus ? 15 : 3,
+            Password: string.Empty, Mode: versus ? mode : Game.Multiplayer.Modes.GameModes.Coop, Host: true, Public: listed);
         Begin(RoomSessions.Start(arguments, _titleId(), missionId, _version, _peers, _logger, _content()));
         Shell?.StartMission(missionId, difficulty);
     }
