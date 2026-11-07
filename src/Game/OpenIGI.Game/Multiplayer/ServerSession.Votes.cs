@@ -54,7 +54,7 @@ public sealed partial class ServerSession
                 PickMap(slot, pick[0] - '1');
                 return true;
             case "buy" or "b":
-                Tell(slot, Mode.Buy(this, slot, words.Length > 1 ? words[1] : string.Empty, _tick));
+                Tell(slot, Mode.Buy(this, slot, string.Join(' ', words[1..]), _tick));
                 return true;
             case "endmatch" when slot == HostSlot:
                 EndMatch();

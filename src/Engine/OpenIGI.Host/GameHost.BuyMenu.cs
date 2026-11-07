@@ -19,8 +19,30 @@ public sealed partial class GameHost
     private static readonly KeyCode[] BuyNumberKeys =
         [KeyCode.D1, KeyCode.D2, KeyCode.D3, KeyCode.D4, KeyCode.D5, KeyCode.D6, KeyCode.D7, KeyCode.D8, KeyCode.D9];
 
-    // What the armoury sells in the title played.
-    private IReadOnlyList<ArmouryItem> BuyItems => Armoury.For(_titleRuntime.Title.Id);
+    // What the armoury sells in the title played: its guns, then -- where money is spent -- the ammunition of each gun this
+    // player carries, as I.G.I. 2's shop lists it, marked full when the pouch is.
+    private IReadOnlyList<ArmouryItem> BuyItems
+    {
+        get
+        {
+            IReadOnlyList<ArmouryItem> items = Armoury.For(_titleRuntime.Title.Id);
+            if (HostedPlayer?.Weapons is not { } weapons || CurrentMatchHud() is not { Money: not null, FreeLoadout: false })
+            {
+                return items;
+            }
+
+            List<ArmouryItem> rows = [.. items];
+            foreach (ArmouryItem gun in items)
+            {
+                if (gun.AmmoPrice > 0 && Armoury.AmmoRoom(weapons, gun.Weapon, gun.Rounds) is { } room)
+                {
+                    rows.Add(Armoury.AmmoRow(gun, room <= 0));
+                }
+            }
+
+            return rows;
+        }
+    }
 
     // Once a frame, before the game reads its input: the menu opened or shut, and an item asked for.
     private void UpdateBuyMenu()

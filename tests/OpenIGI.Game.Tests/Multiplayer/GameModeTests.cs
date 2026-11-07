@@ -52,7 +52,7 @@ public sealed class GameModeTests
 
         // Just spawned: the Uzi now, for nothing.
         Assert.Equal("Equipped Uzi.", mode.Buy(host, 0, "uzi", TickRate * 2));
-        Assert.Equal([(0, "WEAPON_ID_UZI", 160)], host.Given);
+        Assert.Equal([(0, "WEAPON_ID_UZI", 320)], host.Given);
         Assert.Equal(host.Match.Rules.MoneyStart, host.Match.Players[0].Money);
 
         // Long after: kept for the next spawn, not handed over in the fight; the next spawn brings it.
@@ -60,7 +60,7 @@ public sealed class GameModeTests
         Assert.Single(host.Given);
         mode.Tick(host, TickRate * 31, [new WorldDeath(Victim: 11, Killer: 10)]);
         mode.Tick(host, TickRate * 35, []);
-        Assert.Equal((1, "WEAPON_ID_UZI", 160), host.Given[^1]);
+        Assert.Equal((1, "WEAPON_ID_UZI", 320), host.Given[^1]);
     }
 
     [Fact]
@@ -413,7 +413,7 @@ public sealed class GameModeTests
 
         // An Uzi from the start money; a rifle it cannot pay for; then walked off, and later, nothing.
         Assert.StartsWith("Bought Uzi", mode.Buy(host, 0, "uzi", 1), StringComparison.Ordinal);
-        Assert.Equal([(0, "WEAPON_ID_UZI", 160)], host.Given);
+        Assert.Equal([(0, "WEAPON_ID_UZI", 320)], host.Given);
         Assert.Equal(host.Match.Rules.MoneyStart - 900, host.Match.Players[0].Money);
         Assert.Contains("costs", mode.Buy(host, 0, "ak47", 1), StringComparison.Ordinal);
         host.Positions[0] = new(40 * Metre, 0, 0);
@@ -422,6 +422,30 @@ public sealed class GameModeTests
         Assert.Equal("The buy time is over.", mode.Buy(host, 0, "colt", (TickRate * 21) + 1));
         Assert.Single(host.Given);
         Assert.StartsWith("Buy: 1 colt", mode.Buy(host, 0, "nothing", 1), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_carried_guns_ammunition_is_bought_as_igi2_sells_it_filled_back_up_and_not_while_full()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound();
+        int start = host.Match.Players[0].Money;
+
+        // Not carried: nothing to fill.
+        Assert.Equal("You carry no Uzi.", mode.Buy(host, 0, "ammo uzi", 1));
+
+        // Carried and full: not sold.
+        host.Room[(0, "WEAPON_ID_UZI")] = 0;
+        Assert.Equal("Your Uzi ammo is full.", mode.Buy(host, 0, "ammo uzi", 1));
+
+        // Some spent: sold at I.G.I. 2's clip price, the pouch filled back to what the gun comes with.
+        host.Room[(0, "WEAPON_ID_UZI")] = 120;
+        Assert.StartsWith("Bought Uzi ammo", mode.Buy(host, 0, "ammo uzi", 1), StringComparison.Ordinal);
+        Assert.Equal([(0, "WEAPON_ID_UZI", 320)], host.Given);
+        Assert.Equal(start - 60, host.Match.Players[0].Money);
+
+        // The menu's row for it.
+        ArmouryItem row = Armoury.AmmoRow(Armoury.Find(Armoury.Igi1, "uzi")!, full: true);
+        Assert.Equal(("ammo uzi", 60, true, true), (row.Id, row.Price, row.IsAmmo, row.Full));
     }
 
     [Fact]
@@ -532,6 +556,8 @@ public sealed class GameModeTests
 
         public List<(int Slot, string Weapon, int Rounds)> Given => _world.Given;
 
+        public Dictionary<(int Slot, string Weapon), int> Room => _world.Room;
+
         public bool Held => _world.Held;
 
         public IReplicatedWorld World => _world;
@@ -581,6 +607,10 @@ public sealed class GameModeTests
             Given.Add((slot, weapon, rounds));
             return true;
         }
+
+        public Dictionary<(int Slot, string Weapon), int> Room { get; } = [];
+
+        public int? AmmoRoom(int slot, string weapon, int upTo) => Room.TryGetValue((slot, weapon), out int room) ? room : null;
 
         public bool IsUsing(int slot) => Using.Contains(slot);
 

@@ -61,6 +61,14 @@ public static class HumanHitZoneTable
     /// </remarks>
     public const float LethalMultiplier = 100f;
 
+    /// <summary>What kills a player in a versus match: a soldier's body on normal, as the campaign's guards are built.</summary>
+    /// <remarks>
+    /// The campaign's player carries 3.0 and no head zone, tuned to outlast a level of guards; the guns are tuned to kill the
+    /// guards, whose rows give 0.3 / 0.5 / 0.8 by difficulty with a lethal head. Against each other, players take the normal
+    /// guard's body (<see cref="Soldier"/>'s zones, 0.5, unscaled): two rifle rounds to the body, one to the head.
+    /// </remarks>
+    public const float VersusMaximumHealth = 0.5f;
+
     /// <summary>The player's table, at <c>0x5389F8</c>, with the multipliers the script writes.</summary>
     /// <remarks>
     /// <para>

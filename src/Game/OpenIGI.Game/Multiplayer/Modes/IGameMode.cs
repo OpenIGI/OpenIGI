@@ -44,6 +44,16 @@ public interface IModeHost
     /// <returns><see langword="true"/> when it was handed over.</returns>
     bool Give(int slot, string weapon, int rounds) => World.Give(slot, weapon, rounds);
 
+    /// <summary>
+    /// Gets how many rounds of a weapon's ammunition a living player's pouch has room for, filled up to a number of rounds or
+    /// the type's carry limit, whichever is fewer: what buying its ammunition would add.
+    /// </summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="weapon">The title's weapon script id.</param>
+    /// <param name="upTo">The rounds it is filled to.</param>
+    /// <returns>The room, nought when full; <see langword="null"/> when it does not carry the weapon.</returns>
+    int? AmmoRoom(int slot, string weapon, int upTo) => World.AmmoRoom(slot, weapon, upTo);
+
     /// <summary>Gets the title played, as <c>igi1</c>: whose armoury a buy phase sells from.</summary>
     string Title => string.Empty;
 

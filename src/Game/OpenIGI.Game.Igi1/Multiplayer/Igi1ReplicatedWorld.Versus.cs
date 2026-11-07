@@ -270,6 +270,10 @@ public sealed partial class Igi1ReplicatedWorld
     public bool Give(int slot, string weapon, int rounds) =>
         LivingRig(slot) is { } rig && _game.PlayerSetup is { } setup && setup.Give(rig, weapon, rounds);
 
+    /// <inheritdoc/>
+    public int? AmmoRoom(int slot, string weapon, int upTo) =>
+        LivingRig(slot)?.Weapons is { } weapons ? Game.Multiplayer.Modes.Armoury.AmmoRoom(weapons, weapon, upTo) : null;
+
     // A player's rig while it lives: the host's own, or a joined player's.
     private PlayerCamera? LivingRig(int slot) =>
         slot == ServerSession.HostSlot
@@ -353,9 +357,25 @@ public sealed partial class Igi1ReplicatedWorld
         // A match's rounds put the level back, so a pickup taken keeps its task to come back to.
         _game.World.GunPickups?.KeepsTakenTasks = true;
         _game.World.GenericPickups?.KeepsTakenTasks = true;
+
+        // Players fight each other with a soldier's body, not the campaign hero's.
+        if (_game.World.Player is { } host)
+        {
+            UseVersusBody(host);
+        }
+
+        foreach (Igi1NetworkPlayer joined in _bySlot.Values)
+        {
+            UseVersusBody(joined.Player);
+        }
+
         PutHostInArena();
         return true;
     }
+
+    // A player of a versus match is built as a normal soldier: its zones (a lethal head), what kills one, no difficulty scale.
+    private static void UseVersusBody(PlayerCamera rig) =>
+        rig.Body.Health.UseBody(HumanHitZoneTable.Soldier, HumanHitZoneTable.VersusMaximumHealth, 1f);
 
     /// <inheritdoc/>
     public void MarkLevelStart() => _game.MarkLevelStart();

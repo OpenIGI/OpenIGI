@@ -53,7 +53,7 @@ internal sealed partial class RemasteredHudRenderer
         {
             ArmouryItem item = items[i];
             var rect = new UiRect(panel.X + Px(8f), y, panel.Width - Px(16f), row - Px(4f));
-            bool affordable = free || item.Price <= money;
+            bool affordable = !item.Full && (free || item.Price <= money);
             bool over = pointer.X >= rect.X && pointer.X <= rect.Right && pointer.Y >= rect.Y && pointer.Y <= rect.Bottom;
             if (over && affordable)
             {
@@ -66,7 +66,7 @@ internal sealed partial class RemasteredHudRenderer
             string number = i < 9 ? (i + 1).ToString(CultureInfo.InvariantCulture) : " ";
             painter.DrawLabel(type.Mono, number, new UiVec2(rect.X + Px(10f), textY), size, affordable ? Victory : UiPalette.TextMuted, 0f);
             painter.DrawLabel(type.Heading, item.Name.ToUpperInvariant(), new UiVec2(rect.X + Px(40f), textY), size, ink, 0.08f);
-            string price = free ? "FREE" : string.Create(CultureInfo.InvariantCulture, $"${item.Price:N0}");
+            string price = item.Full ? "FULL" : free ? "FREE" : string.Create(CultureInfo.InvariantCulture, $"${item.Price:N0}");
             painter.DrawLabel(type.Mono, price, new UiVec2(rect.Right - Px(10f) - UiPainter.MeasureLabel(type.Mono, price, size, 0f), textY), size, affordable ? Victory : Enemy.WithAlpha(200), 0f);
             _buyRows.Add((i, rect.X, rect.Y, rect.Width, rect.Height));
             y += row;

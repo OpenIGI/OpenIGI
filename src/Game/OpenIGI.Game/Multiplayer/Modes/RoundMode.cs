@@ -98,10 +98,16 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
             return "There is nothing to buy in this mode.";
         }
 
-        if (Armoury.Find(items, asked) is not { } item)
+        // "ammo ak47" asks for a carried gun's ammunition, as I.G.I. 2's shop sells it beside the gun.
+        string[] words = asked.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool ammo = words.Length == 2 && string.Equals(words[0], Armoury.AmmoWord, StringComparison.OrdinalIgnoreCase);
+        if (Armoury.Find(items, ammo ? words[1] : asked) is not { } item || (ammo && item.AmmoPrice <= 0))
         {
-            return $"Buy: {string.Join(", ", items.Select((i, n) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{n + 1} {i.Id} ${i.Price}")))}.";
+            return $"Buy: {string.Join(", ", items.Select((i, n) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{n + 1} {i.Id} ${i.Price}")))}; ammo <gun> for a gun's ammunition.";
         }
+
+        string name = ammo ? $"{item.Name} ammo" : item.Name;
+        int price = ammo ? item.AmmoPrice : item.Price;
 
         if (BuyLeft(tick) <= 0)
         {
@@ -118,18 +124,32 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
             return "Buy where your side starts.";
         }
 
-        if (!host.Match.TrySpend(slot, item.Price))
+        if (ammo)
         {
-            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{item.Name} costs ${item.Price}; you have ${player.Money}.");
+            if (host.AmmoRoom(slot, item.Weapon, item.Rounds) is not { } room)
+            {
+                return $"You carry no {item.Name}.";
+            }
+
+            if (room <= 0)
+            {
+                return $"Your {name} is full.";
+            }
         }
 
+        if (!host.Match.TrySpend(slot, price))
+        {
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{name} costs ${price}; you have ${player.Money}.");
+        }
+
+        // A gun comes with its rounds; ammunition fills the pouch back to them.
         if (!host.Give(slot, item.Weapon, item.Rounds))
         {
-            host.Match.Award(slot, item.Price);
-            return $"{item.Name} can't be handed over here.";
+            host.Match.Award(slot, price);
+            return $"{name} can't be handed over here.";
         }
 
-        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Bought {item.Name}. ${player.Money} left.");
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Bought {name}. ${player.Money} left.");
     }
 
     // The seconds the armoury still sells for this round: nought outside a round in play, or for a mode without one.

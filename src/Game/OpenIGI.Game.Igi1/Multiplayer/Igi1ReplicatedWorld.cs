@@ -581,6 +581,11 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     private void Record(PlayerCamera player, int entity)
     {
         player.CanDropWeapons = true;
+        if (IsVersus)
+        {
+            UseVersusBody(player);
+        }
+
         player.GunPickedUp += pickup => _takenBy[pickup] = entity;
         player.GenericPickedUp += pickup => _takenBy[pickup] = entity;
     }
