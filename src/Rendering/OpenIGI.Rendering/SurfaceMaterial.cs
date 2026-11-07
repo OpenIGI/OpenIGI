@@ -104,13 +104,6 @@ namespace OpenIGI.Rendering;
 /// copy of the lit scene through the streak; a backend without it draws the drop's glint alone.
 /// </para>
 /// </param>
-/// <param name="AuthoredDetail">
-/// Whether the texture's detail map came with the model rather than being derived from the texture: a model that ships
-/// its own normal, roughness and metal maps, packed by <see cref="OpenIGI.Core.Graphics.MaterialMapGenerator.PackAuthoredDetail"/>
-/// and paired with the texture by <see cref="IGraphicsDevice.SetTextureDetail"/>. Such a map is applied whole whatever the
-/// preset's detail strength, and its roughness and metalness replace the material's, texel by texel. Nothing in the
-/// game's own data sets it. <b>Not retail.</b>
-/// </param>
 public readonly record struct SurfaceMaterial(
     float Roughness = 0.6f,
     float Metallic = 0.0f,
@@ -119,9 +112,21 @@ public readonly record struct SurfaceMaterial(
     bool NoHistory = false,
     bool Glass = false,
     bool Matte = false,
-    bool Rain = false,
-    bool AuthoredDetail = false)
+    bool Rain = false)
 {
+    /// <summary>
+    /// Gets a value indicating whether the texture's detail map came with the model rather than being derived from the
+    /// texture: a model that ships its own normal, roughness and metal maps, packed by
+    /// <see cref="OpenIGI.Core.Graphics.MaterialMapGenerator.PackAuthoredDetail"/> and paired with the texture by
+    /// <see cref="IGraphicsDevice.SetTextureDetail"/>.
+    /// </summary>
+    /// <remarks>
+    /// Such a map is applied whole whatever the preset's detail strength, and its roughness and metalness replace the
+    /// material's, texel by texel. Nothing in the game's own data sets it. A property rather than a constructor parameter,
+    /// so the constructor a built mod calls is the one it was built against. <b>Not retail.</b>
+    /// </remarks>
+    public bool AuthoredDetail { get; init; }
+
     /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
     /// <remarks>
     /// <para>
