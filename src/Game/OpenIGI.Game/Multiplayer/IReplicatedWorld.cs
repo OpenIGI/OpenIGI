@@ -164,6 +164,10 @@ public interface IReplicatedWorld
     /// <returns>The room, nought when full; <see langword="null"/> when it does not carry the weapon.</returns>
     int? AmmoRoom(int slot, string weapon, int upTo) => null;
 
+    /// <summary>Gets what became of the players' rounds at one another since the last call, as lines for the server's log.</summary>
+    /// <returns>The lines; none for a world that keeps no count.</returns>
+    IReadOnlyList<string> TakeCombatReport() => [];
+
     /// <summary>
     /// Says a match begins -- the first on the map, or one played again on it -- just before its players are put back: each is
     /// armed from nothing at that spawn, as at a first one, rather than keeping what it carried through the last.

@@ -80,10 +80,14 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
         public void WeaponHit(in WeaponHit hit)
         {
             Igi1WeaponHit round = hit.Context as Igi1WeaponHit ?? Igi1WeaponHit.FromShared(hit, _met);
-            if (session.Hurts(round.Credit, player))
+            bool hurts = session.Hurts(round.Credit, player);
+            float before = player.Health.Damage;
+            if (hurts)
             {
                 game.World.PlayerEvents?.TakeRound(player, round);
             }
+
+            session.NoteRoundMet(round.Credit, hurts, player.Health.Damage - before);
         }
     }
 }

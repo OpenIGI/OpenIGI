@@ -77,13 +77,14 @@ internal sealed class Igi1CoopPair : IDisposable
     /// <param name="mission">The mission both play.</param>
     /// <param name="joinerMode">The mode the joiner believes it is joining, as a stale listing would say; the host's by default.</param>
     /// <param name="hostSkipsIntro">Whether the host skips the level's intro, as a capture does; a player's game plays it.</param>
-    public Igi1CoopPair(string mode, int mission, string? joinerMode = null, bool hostSkipsIntro = true)
-        : this(null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro, mode, joinerMode)
+    /// <param name="dedicated">Whether the server plays no part itself, as a dedicated server: its mission's player is nobody's.</param>
+    public Igi1CoopPair(string mode, int mission, string? joinerMode = null, bool hostSkipsIntro = true, bool dedicated = false)
+        : this(null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro, mode, joinerMode, dedicated)
     {
     }
 
     private Igi1CoopPair(
-        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null)
+        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null, bool dedicated = false)
     {
         _mode = mode;
         _joinerMode = joinerMode ?? mode;
@@ -93,7 +94,7 @@ internal sealed class Igi1CoopPair : IDisposable
         string[] skip = hostSkipsIntro ? ["-skipcutscene"] : [];
         _session = new HostedSession(
             _network.Open(26001),
-            new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
+            new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: !dedicated),
             "igi1",
             30,
             NullLogger.Instance);

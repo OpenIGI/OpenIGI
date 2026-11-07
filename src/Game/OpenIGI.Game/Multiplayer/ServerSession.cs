@@ -496,6 +496,7 @@ public sealed partial class ServerSession : IModeHost
             client.LevelMessages = 0;
         }
 
+        lines.AddRange(_world.TakeCombatReport());
         return lines;
     }
 
