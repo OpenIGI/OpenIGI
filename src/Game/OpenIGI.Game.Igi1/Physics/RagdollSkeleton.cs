@@ -245,7 +245,34 @@ public sealed class RagdollSkeleton
         BoneSkeleton skeleton,
         RagdollLimits? limits = null,
         MefModel? model = null,
+        RagdollProfile? profile = null) => Measure(skeleton, limits, model, profile, measured: null);
+
+    /// <summary>
+    /// Prepares a rig for a character that is not a <see cref="MefModel"/>, its shapes measured from points of its own skin. <b>Not retail.</b>
+    /// </summary>
+    /// <param name="skeleton">The skeleton.</param>
+    /// <param name="measured">Each point of its skin with the bone that carries it, in the rig's rest pose, in engine units.</param>
+    /// <param name="limits">The rig's limits; <see langword="null"/> for the defaults.</param>
+    /// <param name="profile">Which bones to simulate and how; <see langword="null"/> picks <see cref="RagdollProfile.For"/>.</param>
+    /// <returns>The prepared rig.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="skeleton"/> or <paramref name="measured"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The hierarchy cannot be resolved in one forward pass, or the profile does not fit it.</exception>
+    public static RagdollSkeleton Build(
+        BoneSkeleton skeleton,
+        IReadOnlyList<(int Bone, Vector3f At)> measured,
+        RagdollLimits? limits = null,
         RagdollProfile? profile = null)
+    {
+        ArgumentNullException.ThrowIfNull(measured);
+        return Measure(skeleton, limits, model: null, profile, measured);
+    }
+
+    private static RagdollSkeleton Measure(
+        BoneSkeleton skeleton,
+        RagdollLimits? limits,
+        MefModel? model,
+        RagdollProfile? profile,
+        IReadOnlyList<(int Bone, Vector3f At)>? measured)
     {
         ArgumentNullException.ThrowIfNull(skeleton);
         if (!skeleton.IsTopologicallySorted())
@@ -302,7 +329,7 @@ public sealed class RagdollSkeleton
         }
 
         Vector3f[] restAt = RestPositions(skeleton);
-        RagdollBone[] shapes = Shapes(skeleton, profile, bodyBone, bodyOfBone, restAt, model);
+        RagdollBone[] shapes = Shapes(skeleton, profile, bodyBone, bodyOfBone, restAt, model, measured);
 
         return new RagdollSkeleton(
             skeleton,
@@ -421,13 +448,24 @@ public sealed class RagdollSkeleton
         int[] bodyBone,
         int[] bodyOfBone,
         Vector3f[] restAt,
-        MefModel? model)
+        MefModel? model,
+        IReadOnlyList<(int Bone, Vector3f At)>? measured)
     {
         int bodies = bodyBone.Length;
         List<Vector3f>[] clouds = new List<Vector3f>[bodies];
         for (int body = 0; body < bodies; body++)
         {
             clouds[body] = [];
+        }
+
+        // A character of another format: the points of its skin it was measured by (Build's measured overload).
+        if (measured is not null)
+        {
+            foreach ((int bone, Vector3f at) in measured)
+            {
+                int body = bodyOfBone[bone];
+                clouds[body].Add(at - restAt[bodyBone[body]]);
+            }
         }
 
         if (model is not null && MefSkinner.IsSkinned(model) && model.BaseVertexCount > 0)

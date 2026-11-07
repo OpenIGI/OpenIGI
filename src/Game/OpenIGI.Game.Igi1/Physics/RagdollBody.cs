@@ -519,6 +519,16 @@ public sealed partial class RagdollBody
         _stillTicks = 0;
     }
 
+    /// <summary>Adds a velocity to one of the bodies alone: a limb going as fast as whatever handed it over to the solver had it going. <b>Not retail.</b></summary>
+    /// <param name="body">The body's index.</param>
+    /// <param name="velocityPerTick">The velocity to add, in engine units per tick.</param>
+    public void AddVelocityOf(int body, Vector3d velocityPerTick)
+    {
+        _velocity[body] += velocityPerTick;
+        IsAtRest = false;
+        _stillTicks = 0;
+    }
+
     /// <summary>Advances the body by one game tick.</summary>
     /// <param name="world">The geometry to collide against.</param>
     /// <param name="substeps">How many substeps to take; more is stiffer and more expensive.</param>
