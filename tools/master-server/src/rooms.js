@@ -148,6 +148,8 @@ export class Room {
       server.serializeAttachment({ role: "host" });
       room.hostConnected = true;
       room.hostAwaySince = null;
+      // A host that comes back after its socket drops says so; one that doesn't (older games) is gone with its socket.
+      room.hostReturns = url.searchParams.get("returns") === "1";
       await this.ctx.storage.put("room", room);
       await this.ctx.storage.setAlarm(Date.now() + PUBLISH_MS);
       await this.publish(room);
@@ -244,12 +246,18 @@ export class Room {
 
     // The host saying goodbye is the room gone: joiners still signaling are told, and the code is free again. A host whose
     // socket only dropped has a while to come back to it.
-    if (goodbye) {
+    if (goodbye || !(await this.hostReturns())) {
       await this.close("the host left");
       return;
     }
 
     await this.hostAway();
+  }
+
+  // Whether the room's host comes back to it after its socket drops.
+  async hostReturns() {
+    const room = await this.ctx.storage.get("room");
+    return room?.hostReturns === true;
   }
 
   // The host's socket gone without a goodbye: the room kept for its return, and closed by the alarm if it doesn't.
@@ -280,6 +288,11 @@ export class Room {
     // No host socket: away a while yet (a deploy drops sockets without telling the room, so its absence may be news to this
     // alarm), or away too long and the room closed.
     if (this.ctx.getWebSockets("host").length === 0) {
+      if (!room.hostReturns) {
+        await this.close("the host left");
+        return;
+      }
+
       if (!room.hostAwaySince) {
         await this.hostAway();
         return;

@@ -444,7 +444,7 @@ public sealed class RoomTransport : INetTransport
         _ice = ReadIce(made["ice"] as JsonArray);
         _code = code;
         string token = (string?)made["hostToken"] ?? string.Empty;
-        Uri signalling = new(_master, $"/v1/rooms/{code}/ws?role=host&token={Uri.EscapeDataString(token)}");
+        Uri signalling = new(_master, $"/v1/rooms/{code}/ws?role=host&token={Uri.EscapeDataString(token)}&returns=1");
 
         // The socket to the room drops -- the line blinks, the master is redeployed -- while the game runs on between the
         // players: the host goes back to its room, which waits for it, so new joiners can still arrive. Only the first
