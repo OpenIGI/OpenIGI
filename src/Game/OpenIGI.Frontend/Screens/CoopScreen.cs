@@ -16,7 +16,7 @@ namespace OpenIGI.Frontend.Screens;
 /// played, then HOST; and between the two, the look itself standing in the level, turned by dragging it round. The same on
 /// the desktop and in the browser, which play each other.
 /// </summary>
-public sealed class CoopScreen : ShellScreen
+public sealed partial class CoopScreen : ShellScreen
 {
     // The two columns' width, and the room the look stands in between them. Layout pixels.
     private const float ColumnWidth = 560f;
@@ -99,7 +99,11 @@ public sealed class CoopScreen : ShellScreen
     }
 
     /// <inheritdoc/>
-    protected override void OnExit() => Coop?.PreviewLook(null);
+    protected override void OnExit()
+    {
+        _copied = null;
+        Coop?.PreviewLook(null);
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -120,7 +124,7 @@ public sealed class CoopScreen : ShellScreen
             coop.RefreshListing();
         }
 
-        if (coop.Status != _shown || !ReferenceEquals(coop.Listing, _shownListing))
+        if (coop.Status != _shown || !ReferenceEquals(coop.Listing, _shownListing) || PartyKey != _shownParty)
         {
             Invalidate();
         }
@@ -134,6 +138,7 @@ public sealed class CoopScreen : ShellScreen
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
+        layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
 
         var heading = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
@@ -141,7 +146,12 @@ public sealed class CoopScreen : ShellScreen
         heading.AddChild(BuildStatus(theme, coop.Status));
         layout.Add(heading, 0, 0);
         layout.Add(BuildJoin(theme, coop), 1, 0);
-        layout.Add(BuildList(theme, coop), 2, 0);
+        if (Parties is { } parties)
+        {
+            layout.Add(BuildParty(theme, parties), 2, 0);
+        }
+
+        layout.Add(BuildList(theme, coop), 3, 0);
         return layout;
     }
 

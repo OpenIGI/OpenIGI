@@ -52,6 +52,11 @@ public sealed class Party : IDisposable
         _call = Send(HttpMethod.Post, path, new JsonObject { ["name"] = name });
     }
 
+    /// <summary>Gets the link a friend opens to join a party, in the browser or the game.</summary>
+    /// <param name="code">The party's code.</param>
+    /// <returns>The link.</returns>
+    public static string InviteLink(string code) => $"https://openigi.com/party/{Uri.EscapeDataString(code)}";
+
     /// <summary>Gets the party's code, once it is made or joined.</summary>
     public string? Code => State?.Code;
 

@@ -373,6 +373,63 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void Only_the_carrier_plants_and_a_carrier_who_falls_drops_the_bomb_for_another_attacker_to_take_up()
+    {
+        // Attackers in slots 0 and 1, a defender in 2; the first round's bomb goes to slot 0.
+        Host host = new(teams: [0, 0, 1]) { Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [100 * Metre, 0, 0], 5 * Metre)] } };
+        host.Positions[0] = new(10 * Metre, 0, 0);
+        host.Positions[1] = new(101 * Metre, 0, 0);
+        host.Positions[2] = new(-50 * Metre, 0, 0);
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundOverSeconds = 1 }, new BombSettings { PlantSeconds = 1 });
+        mode.Start(host, 0);
+        Assert.Equal(0, mode.Carrier);
+
+        // Slot 1 holds use at the site without the bomb: nothing.
+        host.Using.Add(1);
+        long tick = Run(mode, host, 1, TickRate * 2);
+        Assert.Null(mode.PlantedAt);
+
+        // The carrier falls 10 m out: the bomb lies there, not with anyone; the defender walking over it leaves it.
+        mode.Tick(host, tick++, [new WorldDeath(10, 12)]);
+        Assert.Equal(-1, mode.Carrier);
+        Assert.Equal(new OpenIGI.Core.Numerics.Vector3d(10 * Metre, 0, 0), mode.DroppedAt);
+        Assert.Equal(mode.DroppedAt, mode.Report(tick).DroppedAt);
+        host.Positions[2] = new(10.5 * Metre, 0, 0);
+        tick = Run(mode, host, tick, 2);
+        Assert.Equal(-1, mode.Carrier);
+
+        // Slot 1 takes it up, walks back to the site and plants.
+        host.Positions[1] = new(11 * Metre, 0, 0);
+        tick = Run(mode, host, tick, 1);
+        Assert.Equal(1, mode.Carrier);
+        Assert.Null(mode.DroppedAt);
+        host.Positions[1] = new(101 * Metre, 0, 0);
+        tick = Run(mode, host, tick, TickRate + 1);
+        Assert.Equal("A", mode.PlantedSite);
+        Assert.Equal(-1, mode.Carrier);
+        _ = tick;
+    }
+
+    [Fact]
+    public void Each_round_hands_the_bomb_to_the_next_attacker()
+    {
+        Host host = new(teams: [0, 0, 1]) { Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [100 * Metre, 0, 0], 5 * Metre)] } };
+        host.Positions[0] = new(0, 0, 0);
+        host.Positions[1] = new(0, 0, 0);
+        host.Positions[2] = new(-50 * Metre, 0, 0);
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundsToWin = 5, RoundSeconds = 1, RoundOverSeconds = 1, SwapSides = false });
+        mode.Start(host, 0);
+        Assert.Equal(0, mode.Carrier);
+
+        // The round runs out and the next begins: the bomb goes on to slot 1, then back to slot 0.
+        long tick = Run(mode, host, 1, (TickRate * 2) + 2);
+        Assert.Equal((1, MatchPhase.Live), (mode.RoundsPlayed, mode.Flow.Phase));
+        Assert.Equal(1, mode.Carrier);
+        _ = Run(mode, host, tick, (TickRate * 2) + 2);
+        Assert.Equal(0, mode.Carrier);
+    }
+
+    [Fact]
     public void A_round_pays_its_winners_and_losers_and_a_plant_pays_its_planter()
     {
         (Host host, SearchAndDestroyMode mode) = BombRound();

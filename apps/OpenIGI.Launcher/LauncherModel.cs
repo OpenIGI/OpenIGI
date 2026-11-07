@@ -437,6 +437,7 @@ internal sealed partial class LauncherModel : IDisposable
     public void Tick(float elapsedSeconds)
     {
         TickServers();
+        TickInvite(elapsedSeconds);
         while (_results.TryDequeue(out Action? result))
         {
             result();

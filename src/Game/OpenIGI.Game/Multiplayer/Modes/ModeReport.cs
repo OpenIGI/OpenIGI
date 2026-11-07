@@ -56,6 +56,12 @@ public sealed record ModeReport
     /// <summary>Gets where a planted bomb lies, in world units, or <see langword="null"/>.</summary>
     public Core.Numerics.Vector3d? BombAt { get; init; }
 
+    /// <summary>Gets the slot of the attacker carrying the bomb, or -1 while nobody does.</summary>
+    public int Carrier { get; init; } = -1;
+
+    /// <summary>Gets where a dropped bomb lies, in world units, or <see langword="null"/> while it is carried or planted.</summary>
+    public Core.Numerics.Vector3d? DroppedAt { get; init; }
+
     /// <summary>Gets the seconds left on a planted bomb's fuse.</summary>
     public double FuseLeft { get; init; }
 
@@ -74,7 +80,7 @@ public sealed record ModeReport
         get
         {
             StringBuilder key = new();
-            key.Append(CultureInfo.InvariantCulture, $"{Target}|{Attackers}|{Reason}|{Planted}|{BombAt is not null}|{FuseSeconds}|{BuyLeft > 0}");
+            key.Append(CultureInfo.InvariantCulture, $"{Target}|{Attackers}|{Reason}|{Planted}|{BombAt is not null}|{FuseSeconds}|{BuyLeft > 0}|{Carrier}|{DroppedAt}");
             foreach (ModeWork work in Working)
             {
                 // A hold begun or let go, not its progress: the clients run that on themselves from Seconds.
@@ -102,6 +108,15 @@ public sealed record ModeReport
             writer.WriteDouble(bomb.Z);
         }
 
+        writer.WriteRanged(Math.Clamp(Carrier, -1, 65535), -1, 65535);
+        writer.WriteBool(DroppedAt is not null);
+        if (DroppedAt is { } dropped)
+        {
+            writer.WriteDouble(dropped.X);
+            writer.WriteDouble(dropped.Y);
+            writer.WriteDouble(dropped.Z);
+        }
+
         writer.WriteRanged((int)Math.Clamp(Math.Ceiling(FuseLeft * 10), 0, 4095), 0, 4095);
         writer.WriteRanged((int)Math.Clamp(Math.Ceiling(FuseSeconds * 10), 0, 4095), 0, 4095);
         writer.WriteRanged((int)Math.Clamp(Math.Ceiling(BuyLeft * 10), 0, 4095), 0, 4095);
@@ -127,6 +142,8 @@ public sealed record ModeReport
         RoundEnd reason = (RoundEnd)reader.ReadBits(4);
         string planted = reader.ReadString(8);
         Core.Numerics.Vector3d? bombAt = reader.ReadBool() ? new Core.Numerics.Vector3d(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble()) : null;
+        int carrier = reader.ReadRanged(-1, 65535);
+        Core.Numerics.Vector3d? droppedAt = reader.ReadBool() ? new Core.Numerics.Vector3d(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble()) : null;
         double fuseLeft = reader.ReadRanged(0, 4095) / 10.0;
         double fuseSeconds = reader.ReadRanged(0, 4095) / 10.0;
         double buyLeft = reader.ReadRanged(0, 4095) / 10.0;
@@ -147,6 +164,8 @@ public sealed record ModeReport
             Reason = reason,
             Planted = planted,
             BombAt = bombAt,
+            Carrier = carrier,
+            DroppedAt = droppedAt,
             FuseLeft = fuseLeft,
             FuseSeconds = fuseSeconds,
             BuyLeft = buyLeft,

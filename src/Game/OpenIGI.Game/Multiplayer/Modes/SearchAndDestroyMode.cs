@@ -20,6 +20,9 @@ public sealed record BombSettings
 
     /// <summary>Gets how near the bomb a defender must stand, in metres.</summary>
     public double DefuseMetres { get; init; } = 2.5;
+
+    /// <summary>Gets how near a dropped bomb an attacker must walk to take it up, in metres.</summary>
+    public double PickUpMetres { get; init; } = 1.5;
 }
 
 /// <summary>
@@ -28,8 +31,10 @@ public sealed record BombSettings
 /// it is planted, or by holding out until the round's clock runs out.
 /// </summary>
 /// <remarks>
-/// Any attacker can plant (there is no bomb to carry); planting and defusing are holding the use key, standing still or not,
-/// for <see cref="BombSettings.PlantSeconds"/> and <see cref="BombSettings.DefuseSeconds"/> -- a hold let go starts again.
+/// One attacker carries the bomb, handed round the team a round at a time, and only the carrier plants; a carrier who falls
+/// or leaves drops it where it last stood, and the first attacker to walk over it takes it up. Planting and defusing are
+/// holding the use key, standing still or not, for <see cref="BombSettings.PlantSeconds"/> and
+/// <see cref="BombSettings.DefuseSeconds"/> -- a hold let go starts again.
 /// Once the bomb is down the round's clock no longer decides it: the fuse does, and the attackers falling no longer ends it
 /// (the defenders must still defuse), as in the tactical shooters. A map with no sites plays as elimination with the clock
 /// going to the defenders.
@@ -41,6 +46,12 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
 {
     // How long each player has held the use key at what it is working on, in ticks.
     private readonly Dictionary<int, int> _holding = [];
+
+    // Where the carrier last stood alive, which the bomb drops at when it falls or leaves.
+    private Vector3d? _carrierLast;
+
+    // The slot the bomb was last handed to at a round's start, which the next round hands it on from.
+    private int _handedTo = -1;
 
     /// <inheritdoc/>
     public override string Id => GameModes.SearchAndDestroy;
@@ -68,6 +79,12 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
 
     /// <summary>Gets the tick the planted bomb goes off on.</summary>
     public long BlowsAt { get; private set; }
+
+    /// <summary>Gets the slot of the attacker carrying the bomb, or -1 while nobody does (dropped, planted, or no attackers).</summary>
+    public int Carrier { get; private set; } = -1;
+
+    /// <summary>Gets where the dropped bomb lies, in world units, or <see langword="null"/> while it is carried or planted.</summary>
+    public Vector3d? DroppedAt { get; private set; }
 
     /// <summary>Gets a value indicating whether this round's bomb was defused.</summary>
     public bool Defused { get; private set; }
@@ -104,6 +121,8 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         Planted = PlantedAt is not null && !Exploded && !Defused ? PlantedSite ?? string.Empty : string.Empty,
         FuseLeft = PlantedAt is not null ? Math.Max(0, BlowsAt - tick) / (double)TickRate : 0,
         BombAt = PlantedAt is not null && !Exploded && !Defused ? PlantedAt : null,
+        Carrier = Carrier,
+        DroppedAt = DroppedAt,
         FuseSeconds = Bomb.FuseSeconds,
         Working = [.. _holding.Select(h => new ModeWork(
             h.Key, ProgressOf(h.Key) ?? 0f, PlantedAt is not null, (float)(PlantedAt is null ? Bomb.PlantSeconds : Bomb.DefuseSeconds)))],
@@ -126,6 +145,10 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         PlantedSite = null;
         Defused = false;
         Exploded = false;
+        DroppedAt = null;
+        Carrier = NextCarrier(host);
+        _handedTo = Carrier >= 0 ? Carrier : _handedTo;
+        _carrierLast = Carrier >= 0 ? host.World.PositionOf(Carrier) : null;
     }
 
     /// <inheritdoc/>
@@ -149,6 +172,7 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
             return;
         }
 
+        Carry(host);
         MpPoint[] sites = [.. (host.Layout?.Points ?? []).Where(p => p.Kind == MpPointKind.BombSite)];
         Work(
             host,
@@ -162,7 +186,10 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
                 PlantedSite = SiteAt(sites, at)?.Id ?? "?";
                 BlowsAt = tick + (long)Ticks(Bomb.FuseSeconds);
                 _holding.Clear();
-            });
+                Carrier = -1;
+                DroppedAt = null;
+            },
+            slot => slot == Carrier);
     }
 
     /// <inheritdoc/>
@@ -199,12 +226,70 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     /// <inheritdoc/>
     protected override int TimeoutWinner(IModeHost host) => Defenders;
 
+    // The bomb this tick: its carrier followed, dropped where a carrier that fell or left last stood, and taken up by the
+    // first attacker standing over it; handed out afresh when it is nowhere (a round begun with no attacker yet).
+    private void Carry(IModeHost host)
+    {
+        if (Carrier >= 0)
+        {
+            if (host.Match.Players.TryGetValue(Carrier, out MatchPlayer? carrier) && carrier.IsAlive && carrier.Team == Attackers)
+            {
+                _carrierLast = host.World.PositionOf(Carrier) ?? _carrierLast;
+                return;
+            }
+
+            Carrier = -1;
+            DroppedAt = _carrierLast;
+            _carrierLast = null;
+        }
+
+        if (DroppedAt is not { } dropped)
+        {
+            Carrier = NextCarrier(host);
+            _carrierLast = Carrier >= 0 ? host.World.PositionOf(Carrier) : null;
+            return;
+        }
+
+        double reach = Bomb.PickUpMetres * WorldUnits.PerMetre;
+        foreach ((int slot, MatchPlayer player) in host.Match.Players.OrderBy(p => p.Key))
+        {
+            if (player.Team == Attackers && player.IsAlive && host.World.PositionOf(slot) is { } where && Vector3d.Distance(where, dropped) <= reach)
+            {
+                Carrier = slot;
+                DroppedAt = null;
+                _carrierLast = where;
+                return;
+            }
+        }
+    }
+
+    // The attacker the bomb goes to next: the first standing after the one it went to last, round the team in slot order.
+    private int NextCarrier(IModeHost host)
+    {
+        int[] attackers = [.. host.Match.Players.Where(p => p.Value.Team == Attackers && p.Value.IsAlive).Select(p => p.Key).Order()];
+        if (attackers.Length == 0)
+        {
+            return -1;
+        }
+
+        foreach (int slot in attackers)
+        {
+            if (slot > _handedTo)
+            {
+                return slot;
+            }
+        }
+
+        return attackers[0];
+    }
+
     // The players of a team at what it works on, holding the use key, count on; one that lets go or steps off starts again.
-    private void Work(IModeHost host, int team, Func<Vector3d, bool> at, double seconds, Action<int, Vector3d> done)
+    // Only the players the filter allows work at all (the carrier alone plants).
+    private void Work(IModeHost host, int team, Func<Vector3d, bool> at, double seconds, Action<int, Vector3d> done, Func<int, bool>? may = null)
     {
         foreach ((int slot, MatchPlayer player) in host.Match.Players)
         {
-            if (player.Team != team || !player.IsAlive || !host.World.IsUsing(slot) || host.World.PositionOf(slot) is not { } where || !at(where))
+            if (player.Team != team || !player.IsAlive || (may is not null && !may(slot)) || !host.World.IsUsing(slot) || host.World.PositionOf(slot) is not { } where || !at(where))
             {
                 _holding.Remove(slot);
                 continue;

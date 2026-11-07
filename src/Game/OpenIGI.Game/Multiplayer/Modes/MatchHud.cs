@@ -95,6 +95,12 @@ public sealed record MatchHud
     /// <summary>Gets what the player can do where it stands, or <see langword="null"/>.</summary>
     public ModeHint? Hint { get; init; }
 
+    /// <summary>Gets who has the bomb, as an attacker is told it (<c>YOU CARRY THE BOMB</c>), or <see langword="null"/>.</summary>
+    public string? BombNote { get; init; }
+
+    /// <summary>Gets where the dropped bomb lies, in world units, for an attacker to find it; <see langword="null"/> otherwise.</summary>
+    public Vector3d? BombMarkAt { get; init; }
+
     /// <summary>Gets a decided round's or match's card, or <see langword="null"/> while one is played.</summary>
     public ResultCard? Result { get; init; }
 
@@ -189,8 +195,21 @@ public sealed record MatchHud
             };
         }
 
+        if (state.Phase == MatchPhase.Live && report.Attackers >= 0 && report.Planted.Length == 0 && own is { } attacker && attacker.Team == report.Attackers)
+        {
+            string? carrier = Array.FindIndex(lines, l => l.Slot == report.Carrier) is var held and >= 0 ? lines[held].Name : null;
+            hud = hud with
+            {
+                BombNote = report.Carrier == attacker.Slot ? "YOU CARRY THE BOMB"
+                    : report.DroppedAt is not null ? "THE BOMB IS DOWN  ·  WALK OVER IT TO TAKE IT"
+                    : carrier is { Length: > 0 } ? $"{carrier.ToUpperInvariant()} CARRIES THE BOMB"
+                    : null,
+                BombMarkAt = report.DroppedAt,
+            };
+        }
+
         ModeHint? could = state.Phase == MatchPhase.Live && own is { IsAlive: true } alive && ownPosition is { } where
-            ? HintFor(report, alive.Team, where, layout, false)
+            ? HintFor(report, alive, where, layout, false)
             : null;
         hud = Work(hud, report, lines, own, secondsSince, use, could is not null);
         if (hud.Progress is null)
@@ -262,15 +281,16 @@ public sealed record MatchHud
         return hud;
     }
 
-    // What the local player can do where it stands: plant at a site it is in, defuse a bomb it is beside.
-    private static ModeHint? HintFor(ModeReport report, int team, Vector3d where, MpLayout? layout, bool working)
+    // What the local player can do where it stands: plant at a site it is in, carrying the bomb; defuse a bomb it is beside.
+    private static ModeHint? HintFor(ModeReport report, ScoreboardLine own, Vector3d where, MpLayout? layout, bool working)
     {
+        int team = own.Team;
         if (working || report.Attackers < 0)
         {
             return null;
         }
 
-        if (report.Planted.Length == 0 && team == report.Attackers && layout is not null)
+        if (report.Planted.Length == 0 && team == report.Attackers && report.Carrier == own.Slot && layout is not null)
         {
             foreach (MpPoint site in layout.Points)
             {

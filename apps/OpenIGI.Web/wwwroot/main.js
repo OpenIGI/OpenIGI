@@ -25,8 +25,11 @@ const change = $('change');
 
 const query = new URLSearchParams(location.search);
 const args = (query.get('args') ?? '').split(' ').filter(Boolean);
-// A friend's link: ?join=CODE plays in their room, ?host opens one; ?name= is who you play as.
+// A friend's link: ?join=CODE plays in their room, ?host opens one, ?party=CODE joins their party (which then follows its
+// leader from room to room); ?name= is who you play as.
 if (query.get('join')) args.push('-join', query.get('join'));
+const party = (query.get('party') ?? '').replace(/[^A-Za-z0-9]/g, '');
+if (party) args.push('+party_join', party);
 if (query.has('host')) args.push('-host');
 if (query.get('name')) args.push('-name', query.get('name'));
 
@@ -330,7 +333,7 @@ async function start() {
   // In a room the game can't stop when its tab is hidden: a host that stopped would stop everyone's game, and a joiner
   // that stopped would be dropped. A hidden tab gets no animation frames and its timers are held to one a second, but a
   // worker's timers run on, so while hidden the next frame comes from a worker's tick instead.
-  const inRoom = args.includes('-host') || args.includes('-join');
+  const inRoom = args.includes('-host') || args.includes('-join') || args.includes('+party_join');
   let ticker = null;
   let pending = 0;
   const next = () => {

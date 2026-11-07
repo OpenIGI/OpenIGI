@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Frontend;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Net.Browsing;
 using OpenIGI.Net.Rooms;
@@ -7,8 +8,8 @@ using OpenIGI.Net.Rooms;
 namespace OpenIGI.Host;
 
 /// <content>
-/// Parties: friends who play together. One makes a party and hands its code round; whatever server or room its leader then
-/// joins, the others' games join too.
+/// Parties: friends who play together. One makes a party and hands its code or link round; whatever server or room its
+/// leader then joins, the others' games join too. The console's party commands and the menu's party panel both act here.
 /// </content>
 public sealed partial class GameHost
 {
@@ -17,6 +18,9 @@ public sealed partial class GameHost
     private readonly System.Diagnostics.Stopwatch _partyClock = System.Diagnostics.Stopwatch.StartNew();
 
     private Party? _party;
+
+    // Why the last party was lost, for the menu, until another is made or joined.
+    private string? _partyFailure;
 
     // What the party looked like when last reported, so only a change is told.
     private string _partyReported = string.Empty;
@@ -35,11 +39,10 @@ public sealed partial class GameHost
             });
         console.Commands.Add(
             "party_create",
-            "Makes a party you lead; its code is copied for friends to join with party_join. Wherever you play, they follow.",
+            "Makes a party you lead; its invite link is copied for friends. Wherever you play, they follow.",
             context =>
             {
-                LeaveParty();
-                _party = Party.Create(RoomTransport.DefaultMaster, PartyName());
+                CreateParty();
                 context.Print("Making a party...");
             });
         console.Commands.Add(
@@ -53,8 +56,7 @@ public sealed partial class GameHost
                     return;
                 }
 
-                LeaveParty();
-                _party = Party.Join(RoomTransport.DefaultMaster, context[0], PartyName());
+                JoinParty(context[0]);
                 context.Print($"Joining party {context[0].ToUpperInvariant()}...");
             },
             "<code>");
@@ -66,6 +68,46 @@ public sealed partial class GameHost
                 context.Print(_party is null ? "You are in no party." : "Left the party.");
                 LeaveParty();
             });
+        console.Commands.Add(
+            "party_invite",
+            "Copies a link to your party: a friend opens it to join, in the browser or the game.",
+            context =>
+            {
+                if (CopyPartyInvite() is { } link)
+                {
+                    context.Print($"Copied {link}");
+                }
+                else
+                {
+                    context.Error("You are in no party yet: party_create makes one.");
+                }
+            });
+    }
+
+    private void CreateParty()
+    {
+        LeaveParty();
+        _partyFailure = null;
+        _party = Party.Create(RoomTransport.DefaultMaster, PartyName());
+    }
+
+    private void JoinParty(string code)
+    {
+        LeaveParty();
+        _partyFailure = null;
+        _party = Party.Join(RoomTransport.DefaultMaster, code, PartyName());
+    }
+
+    private string? CopyPartyInvite()
+    {
+        if (_party?.Code is not { } code)
+        {
+            return null;
+        }
+
+        string link = Party.InviteLink(code);
+        _window.ClipboardText = link;
+        return link;
     }
 
     // Each frame: the party told where this game plays, and its leader followed.
@@ -81,6 +123,7 @@ public sealed partial class GameHost
         if (party.Failure is { } failure)
         {
             _logger.Warning(PartyCategory, $"The party is lost: {failure}.");
+            _partyFailure = failure;
             _party = null;
             _partyReported = string.Empty;
             party.Dispose();
@@ -120,10 +163,31 @@ public sealed partial class GameHost
         _partyReported = string.Empty;
     }
 
-    // Who leads, who is in, and where the party plays, logged when that changes; the code copied the moment a party is made.
+    // The party as the menu shows it.
+    private PartyView? PartyShown()
+    {
+        if (_party is not { } party)
+        {
+            return null;
+        }
+
+        if (party.State is not { } state)
+        {
+            return new PartyView(null, string.Empty, false, [], null);
+        }
+
+        string leader = state.Members.FirstOrDefault(m => m.Id == state.Leader)?.Name ?? string.Empty;
+        return new PartyView(state.Code, leader, party.IsLeader, [.. state.Members.Select(m => m.Name)], state.Target is { } target ? PlaceName(target) : null);
+    }
+
+    // A party's target as a player reads it: a room's code, or the server's address.
+    private static string PlaceName(string target) =>
+        target.StartsWith("udp:", StringComparison.OrdinalIgnoreCase) ? $"server {target[4..]}" : $"room {target}";
+
+    // Who leads, who is in, and where the party plays, logged when that changes; the link copied the moment a party is made.
     private void ReportParty(Party party)
     {
-        if (party.State is not { } state)
+        if (party.State is null)
         {
             return;
         }
@@ -136,7 +200,7 @@ public sealed partial class GameHost
 
         if (_partyReported.Length == 0 && party.IsLeader)
         {
-            _window.ClipboardText = state.Code;
+            _ = CopyPartyInvite();
         }
 
         _partyReported = now;
@@ -164,5 +228,28 @@ public sealed partial class GameHost
         yield return $"Party {state.Code} ({state.Members.Count}): led by {leader}{(party.IsLeader ? " (you)" : string.Empty)}.";
         yield return $"In it: {string.Join(", ", state.Members.Select(m => m.Name))}.";
         yield return state.Target is { } target ? $"Plays at {target}." : "Plays nowhere yet.";
+        yield return $"Invite: {Party.InviteLink(state.Code)}";
+    }
+
+    // The menu's party panel: the same party the console's commands act on.
+    private sealed class PartyPanel(GameHost host) : IPartyPanel
+    {
+        public PartyView? Party => host.PartyShown();
+
+        public string? Failure => host._partyFailure;
+
+        public void Create() => host.CreateParty();
+
+        public void Join(string code)
+        {
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                host.JoinParty(code);
+            }
+        }
+
+        public void Leave() => host.LeaveParty();
+
+        public string? CopyInvite() => host.CopyPartyInvite();
     }
 }

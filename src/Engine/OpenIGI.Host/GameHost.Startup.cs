@@ -746,6 +746,7 @@ public sealed partial class GameHost
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,
                 coop: _coop,
+                party: _coop is null ? null : new PartyPanel(this),
                 touchScreen: () => _window.Input.Touch.InUse,
                 openEditor: EditorFactory is null ? null : RequestEditor);
 

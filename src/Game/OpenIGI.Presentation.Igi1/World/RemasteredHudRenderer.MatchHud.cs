@@ -66,6 +66,11 @@ internal sealed partial class RemasteredHudRenderer
             y = Chip(painter, type, note, centre, y, Ally.WithAlpha(150), UiPalette.TextBright, Px);
         }
 
+        if (hud.BombNote is { } carried)
+        {
+            y = Chip(painter, type, carried, centre, y, hud.BombMarkAt is null ? StripFace : Enemy.WithAlpha(170), UiPalette.TextBright, Px);
+        }
+
         if (hud.Money is { } money)
         {
             string cash = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"${money:N0}");

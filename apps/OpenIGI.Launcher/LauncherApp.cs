@@ -110,9 +110,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         Bottom = 8,
     }
 
-    public LauncherApp()
+    /// <param name="args">The command line: an <c>openigi://</c> invite link, when an invite page opened the launcher.</param>
+    public LauncherApp(string[] args)
     {
         _model = new LauncherModel(_log);
+        Services.InviteLinks.Register(_log.Logger);
+        _model.TakeInvite(Services.InviteLinks.FromCommandLine(args ?? []));
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 

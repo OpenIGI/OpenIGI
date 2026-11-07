@@ -58,6 +58,11 @@ public sealed class SiteWriterTests : IDisposable
         const string launcher = "https://github.com/OpenIGI/OpenIGI/releases/download/launcher-v0.1.1/openigi-launcher-0.1.1-win-x64.exe";
         Assert.Equal(launcher + "\n", Read("download/win-x64/url"));
         Assert.Contains($"url={launcher}", Read("download/win-x64/index.html"), StringComparison.Ordinal);
+
+        // Invite links land on the page served for a missing path, which offers the browser and the installed game.
+        string invite = Read("404.html");
+        Assert.Contains("'/?' + (party ? 'party=' : 'join=') + code", invite, StringComparison.Ordinal);
+        Assert.Contains("'openigi://' + (party ? 'party/' : 'join/') + code", invite, StringComparison.Ordinal);
         Assert.StartsWith("ok 3 release(s)", Read("healthz"), StringComparison.Ordinal);
     }
 

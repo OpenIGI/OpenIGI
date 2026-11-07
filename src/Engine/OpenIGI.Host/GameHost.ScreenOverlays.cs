@@ -553,6 +553,12 @@ public sealed partial class GameHost
             return all;
         }
 
+        // Dropped: shown to the attackers, who must fetch it.
+        if (CurrentMatchHud()?.BombMarkAt is { } dropped)
+        {
+            all.Add(new HudMark((dropped / WorldScene.UnitsPerMetre) + new Vector3d(0, 0, 0.5), "BOMB", 1f));
+        }
+
         foreach (Game.Multiplayer.Modes.MpPoint point in layout.Points)
         {
             if (point.Kind == Game.Multiplayer.Modes.MpPointKind.BombSite)

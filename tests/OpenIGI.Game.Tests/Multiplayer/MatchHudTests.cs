@@ -36,6 +36,8 @@ public sealed class MatchHudTests
             FuseLeft = 31.5,
             FuseSeconds = 40,
             Working = [new ModeWork(1, 0.5f, true)],
+            Carrier = 3,
+            DroppedAt = new Vector3d(-5, 6, 7),
         };
         BitWriter writer = new(256);
         report.Write(writer);
@@ -44,6 +46,7 @@ public sealed class MatchHudTests
 
         Assert.Equal(report.Key, read.Key);
         Assert.Equal(report.BombAt, read.BombAt);
+        Assert.Equal((3, report.DroppedAt), (read.Carrier, read.DroppedAt));
         Assert.Equal(31.5, read.FuseLeft, 1);
         Assert.Equal(0.5f, read.Working[0].Progress, 2);
     }
@@ -68,7 +71,7 @@ public sealed class MatchHudTests
     public void An_attacker_standing_in_a_site_is_told_to_hold_use_and_one_planting_sees_its_progress()
     {
         MpLayout layout = new() { Points = [new MpPoint("A", MpPointKind.BombSite, [0, 0, 0], 5 * Metre)] };
-        ModeReport report = new() { Attackers = TeamRoster.Good };
+        ModeReport report = new() { Attackers = TeamRoster.Good, Carrier = 0 };
 
         MatchHud inSite = MatchHud.Of(Live(report), 0, Board(), 10, new Vector3d(2 * Metre, 0, 0), layout)!;
         Assert.Equal("TO PLANT THE BOMB AT A", inSite.Hint?.Action);
@@ -83,10 +86,36 @@ public sealed class MatchHudTests
     }
 
     [Fact]
+    public void Only_the_carrier_is_told_to_plant_and_an_attacker_is_told_who_has_the_bomb_or_where_it_lies()
+    {
+        MpLayout layout = new() { Points = [new MpPoint("A", MpPointKind.BombSite, [0, 0, 0], 5 * Metre)] };
+        Vector3d inSite = new(2 * Metre, 0, 0);
+
+        MatchHud carrying = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, Carrier = 0 }), 0, Board(), 10, inSite, layout)!;
+        Assert.Equal("YOU CARRY THE BOMB", carrying.BombNote);
+        Assert.NotNull(carrying.Hint);
+
+        // Another attacker has it (slot 5, not on this board, is nobody named): no hint, and no name to give.
+        MatchHud without = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, Carrier = 5 }), 0, Board(), 10, inSite, layout)!;
+        Assert.Null(without.Hint);
+        Assert.Null(without.BombNote);
+
+        Vector3d dropped = new(30 * Metre, 0, 0);
+        MatchHud down = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, DroppedAt = dropped }), 0, Board(), 10, inSite, layout)!;
+        Assert.Equal(dropped, down.BombMarkAt);
+        Assert.StartsWith("THE BOMB IS DOWN", down.BombNote, StringComparison.Ordinal);
+
+        // A defender is told nothing of the bomb's whereabouts.
+        MatchHud defender = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, DroppedAt = dropped }), 0, Board(), 11, inSite, layout)!;
+        Assert.Null(defender.BombMarkAt);
+        Assert.Null(defender.BombNote);
+    }
+
+    [Fact]
     public void A_clients_own_plant_starts_as_its_key_goes_down_runs_on_between_reports_and_ends_as_it_comes_up()
     {
         MpLayout layout = new() { Points = [new MpPoint("A", MpPointKind.BombSite, [0, 0, 0], 5 * Metre)] };
-        ModeReport report = new() { Attackers = TeamRoster.Good };
+        ModeReport report = new() { Attackers = TeamRoster.Good, Carrier = 0 };
         Vector3d inSite = new(2 * Metre, 0, 0);
 
         // Held for a second, and the server has not heard yet: the bar is already a third of the way.
