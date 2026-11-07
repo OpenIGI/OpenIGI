@@ -43,6 +43,17 @@ public interface IServerControl
     /// <returns>Why it could not, or <see langword="null"/>.</returns>
     string? ChangeMap(int mission, string? mode);
 
+    /// <summary>Lists every player: its team, where it stands, its health.</summary>
+    /// <returns>A line each.</returns>
+    IReadOnlyList<string> Where() => [];
+
+    /// <summary>Puts one player a few metres in front of another, facing it.</summary>
+    /// <param name="who">The player moved, by name.</param>
+    /// <param name="before">The player it is put before, by name.</param>
+    /// <param name="metres">How far in front.</param>
+    /// <returns>What happened.</returns>
+    string Teleport(string who, string before, double metres) => "This server can't move its players.";
+
     /// <summary>Saves the session so far as a demo.</summary>
     /// <param name="path">Where to.</param>
     /// <returns>Why it could not be, or <see langword="null"/> once saved.</returns>
@@ -79,6 +90,9 @@ public sealed class ServerConsole(IServerControl server)
         "status                         the server, its map and its players",
         "say <text>                     tell every player",
         "kick <player> [reason]         put a player out",
+        "where                          every player's team, place, health and gun",
+        "tp <player> <other> [metres]   put a player in front of another, facing it (5 m)",
+        "sv_shotlog 0|1                 log every round a player fires at the others (on)",
         "ban <player> [minutes] [reason] put a player out and keep its key out (0 or none: for ever)",
         "unban <name|id>                lift a ban",
         "bans                           the bans in force",
@@ -113,6 +127,12 @@ public sealed class ServerConsole(IServerControl server)
             "unban" when words.Length > 1 => server.Bans.Remove(words[1]) is { } lifted ? [$"Lifted the ban on {lifted.Name} ({lifted.PlayerId})."] : [$"No ban on '{words[1]}'."],
             "bans" => Bans(),
             "map" when words.Length > 1 => Map(words),
+            "where" => server.Where() is { Count: > 0 } where ? where : ["No one is playing."],
+            "tp" when words.Length > 2 => [server.Teleport(
+                words[1],
+                words[2],
+                words.Length > 3 && double.TryParse(words[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double metres) ? Math.Clamp(metres, 0.5, 100) : 5)],
+            "sv_shotlog" when words.Length > 1 => [Game.Multiplayer.NetCVars.ShotLog.TrySetText(words[1], out string? why) ? $"sv_shotlog is {Game.Multiplayer.NetCVars.ShotLog.Value}." : why ?? "No."],
             "endmatch" => EndMatch(),
             "next" => server.NextMap() is { } next ? [$"Going on to mission {next.Mission} ({ModeOf(next)})."] : ["There is no rotation; use map <mission> [mode]."],
             "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}."],

@@ -13,6 +13,13 @@ public static class NetCVars
         CVarOptions.Archive,
         "Shows the connection in a multiplayer session: round trip, jitter, loss, rates, snapshots, interpolation, corrections.");
 
+    /// <summary>Whether a hosted session logs every pass of every round a player fires at the others.</summary>
+    public static readonly BoolCVar ShotLog = CVar.Bool(
+        "sv_shotlog",
+        true,
+        CVarOptions.None,
+        "Logs every round a player fires: what it struck, and for each other player whether its body was cast, met or skipped, and how near the round passed its chest.");
+
     /// <summary>Whether a hosted session keeps a recording of itself, to be saved as a demo.</summary>
     public static readonly BoolCVar HostRecord = CVar.Bool(
         "sv_recorddemo",

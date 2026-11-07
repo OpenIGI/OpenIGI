@@ -110,6 +110,17 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     public void Say(string text) => _session.Announce(text);
 
     /// <inheritdoc/>
+    public IReadOnlyList<string> Where() => _session.Where();
+
+    /// <inheritdoc/>
+    public string Teleport(string who, string before, double metres)
+    {
+        string answer = _session.Teleport(who, before, metres);
+        _logger.Information(LogCategory, answer);
+        return answer;
+    }
+
+    /// <inheritdoc/>
     public string? ChangeMap(int mission, string? mode)
     {
         if (mode is not null && !_session.UseMode(mode))

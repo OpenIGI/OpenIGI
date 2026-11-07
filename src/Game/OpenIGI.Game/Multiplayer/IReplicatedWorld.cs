@@ -168,6 +168,18 @@ public interface IReplicatedWorld
     /// <returns>The lines; none for a world that keeps no count.</returns>
     IReadOnlyList<string> TakeCombatReport() => [];
 
+    /// <summary>Describes a player as an admin's <c>where</c> lists it: where it stands, its health, whether it is down.</summary>
+    /// <param name="slot">Its slot.</param>
+    /// <returns>The description, or <see langword="null"/> for no such player.</returns>
+    string? Describe(int slot) => null;
+
+    /// <summary>Puts a player a few metres in front of another, facing it, as an admin's <c>tp</c> asks.</summary>
+    /// <param name="slot">The player moved.</param>
+    /// <param name="toSlot">The player it is put before.</param>
+    /// <param name="metres">How far in front.</param>
+    /// <returns>Why it could not be, or <see langword="null"/>.</returns>
+    string? Teleport(int slot, int toSlot, double metres) => "this game can't move its players";
+
     /// <summary>
     /// Says a match begins -- the first on the map, or one played again on it -- just before its players are put back: each is
     /// armed from nothing at that spawn, as at a first one, rather than keeping what it carried through the last.

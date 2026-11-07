@@ -139,6 +139,17 @@ public sealed partial class HostedSession
     /// <summary>Decides the match now (<see cref="ServerSession.EndMatch"/>).</summary>
     public void EndMatch() => _session?.EndMatch();
 
+    /// <summary>Lists every player as an admin's <c>where</c> does.</summary>
+    /// <returns>A line each.</returns>
+    public IReadOnlyList<string> Where() => _session?.Where() ?? [];
+
+    /// <summary>Puts one player a few metres in front of another, facing it.</summary>
+    /// <param name="who">The player moved, by name.</param>
+    /// <param name="to">The player it is put before, by name.</param>
+    /// <param name="metres">How far in front.</param>
+    /// <returns>What happened.</returns>
+    public string Teleport(string who, string to, double metres) => _session?.Teleport(who, to, metres) ?? "No match is being played.";
+
     /// <summary>Puts a player out, telling it why.</summary>
     /// <param name="slot">Its slot.</param>
     /// <param name="reason">What it is told.</param>

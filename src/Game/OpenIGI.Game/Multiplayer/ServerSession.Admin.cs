@@ -5,6 +5,31 @@ namespace OpenIGI.Game.Multiplayer;
 /// <content>What a server's operator does to the session: bans kept beyond it, a player's key, a mode begun again.</content>
 public sealed partial class ServerSession
 {
+    /// <summary>Lists every player as an admin's <c>where</c> does: its team, where it stands, its health.</summary>
+    /// <returns>A line each.</returns>
+    public IReadOnlyList<string> Where() =>
+        [.. Match.Players.Values.Select(p => $"{p.Name} (slot {p.Slot}, {MatchState.TeamName(p.Team)}, {(p.IsAlive ? "alive" : "dead")}): {_world.Describe(p.Slot) ?? "not in the level"}")];
+
+    /// <summary>Puts one player a few metres in front of another, facing it, as an admin's <c>tp</c> asks.</summary>
+    /// <param name="who">The player moved, by name.</param>
+    /// <param name="to">The player it is put before, by name.</param>
+    /// <param name="metres">How far in front.</param>
+    /// <returns>What happened.</returns>
+    public string Teleport(string who, string to, double metres)
+    {
+        if (PlayerNamed(who) is not { } moved)
+        {
+            return $"No one is called '{who}'.";
+        }
+
+        if (PlayerNamed(to) is not { } before)
+        {
+            return $"No one is called '{to}'.";
+        }
+
+        return _world.Teleport(moved.Slot, before.Slot, metres) is { } problem ? problem : $"{moved.Name} stands {metres:0.#} m in front of {before.Name}.";
+    }
+
     /// <summary>Gets or sets what says whether a player's key is banned from the server, and why; <see langword="null"/> for no list.</summary>
     /// <remarks>Asked as a player joins, with its verified key's id: the reason it is told, or <see langword="null"/> to let it in.</remarks>
     public Func<string, string?>? Banned { get; set; }

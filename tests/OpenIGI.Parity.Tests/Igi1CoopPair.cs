@@ -311,7 +311,7 @@ internal sealed class Igi1CoopPair : IDisposable
 
     // Passes the ticks on to a session and keeps the level it runs on.
     // A client's watch follows its session where the server goes.
-    private sealed class FollowingWatch(SessionClient inner) : Watch(inner), ISessionFollower
+    internal sealed class FollowingWatch(SessionClient inner) : Watch(inner), ISessionFollower
     {
         public string? TakeTravel() => (Inner as SessionClient)?.TakeTravel();
 
@@ -333,7 +333,7 @@ internal sealed class Igi1CoopPair : IDisposable
     }
 
     // The session's talk passes through too, as the game finds it on the session itself.
-    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold, ISessionMode
+    internal class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold, ISessionMode
     {
         public IHostTickObserver Inner { get; set; } = inner;
 

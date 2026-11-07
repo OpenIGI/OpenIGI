@@ -20,9 +20,17 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
     // A round starts at its shooter's eye: a body standing over the origin closer than this is the shooter's own. Units.
     private const double OwnBodyReach = 2048;
 
+    // This pass's casts, for the shot log: each player's body offered, and what became of the cast.
+    private readonly List<(World.IHarmedPlayer Player, string Outcome)> _pass = [];
+    private string? _noBodies;
+
     /// <inheritdoc/>
     public IEnumerable<IShootableBody> Bodies()
     {
+        _noBodies = !session.PlayersMeetRounds ? "players' rounds meet no players"
+            : game.World.PlayerTask is null ? "no player task"
+            : game.World.Soldiers is null ? "no soldiers"
+            : null;
         if (!session.PlayersMeetRounds || game.World.PlayerTask is not { } task || game.World.Soldiers is not { } soldiers)
         {
             yield break;
@@ -32,18 +40,31 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
         {
             if (player.Rig is { } rig && !player.IsDead)
             {
-                yield return new Body(game, session, soldiers, task, player, rig);
+                yield return new Body(game, session, soldiers, task, player, rig, this);
             }
         }
     }
 
     /// <inheritdoc/>
+    public void RoundCast(Vector3d origin, Vector3d target, GameTask? shooter)
+    {
+        _pass.Clear();
+        _noBodies = null;
+    }
+
+    /// <inheritdoc/>
     public void RoundPassed(Vector3d origin, Vector3d target, GameTask? struck)
     {
+        if (Game.Multiplayer.NetCVars.ShotLog.Value)
+        {
+            session.NoteShotPass(origin, target, struck, _pass, _noBodies);
+        }
+
+        _pass.Clear();
     }
 
     private sealed class Body(
-        Igi1Gameplay game, Igi1ReplicatedWorld session, SoldierSimulation soldiers, GameTask task, World.IHarmedPlayer player, Player.PlayerCamera rig)
+        Igi1Gameplay game, Igi1ReplicatedWorld session, SoldierSimulation soldiers, GameTask task, World.IHarmedPlayer player, Player.PlayerCamera rig, CoopPlayerBodies owner)
         : IShootableBody, IWeaponHitTarget
     {
         private HumanHit _met;
@@ -56,6 +77,7 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
             Vector3d feet = rig.Body.Position;
             if (Math.Abs(origin.X - feet.X) < OwnBodyReach && Math.Abs(origin.Y - feet.Y) < OwnBodyReach)
             {
+                owner._pass.Add((player, "own body"));
                 return false;
             }
 
@@ -66,10 +88,12 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
                 : soldiers.TryCastPartnerBody(player, origin, target, feet, rig.Body.Yaw, out crossings);
             if (!cast || crossings.Count == 0)
             {
+                owner._pass.Add((player, cast ? "missed" : "no body to cast"));
                 return false;
             }
 
             HumanBodyCrossing first = crossings[0];
+            owner._pass.Add((player, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"met zone {first.Hit.Zone} at {first.Hit.Distance / 4096:F1} m")));
             hit = first.Hit with { Material = first.Material, IsExit = !first.Entering };
             _met = hit;
             return true;
