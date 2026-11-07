@@ -168,13 +168,34 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        Facing = Igi1AiGeometry.Wrap((float)(Facing + _bodyTurn.Step(turn)));
-        ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+        Vector3d world;
+        if (Behaviour is { } behaviour)
+        {
+            // A mod's behaviour shapes the step (IGuardBehaviour.ShapeStep): handed the turn and the move the game would take.
+            double turned = _bodyTurn.Step(turn);
+            GuardStep step = new()
+            {
+                Turn = turned,
+                Move = SoldierDeathFall.RotateAboutZ(
+                    new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Igi1AiGeometry.Wrap((float)(Facing + turned)) + RecoilYaw),
+                RootMotion = _rootMotionThisTick,
+                RootLateral = _rootLateralThisTick,
+            };
+            behaviour.ShapeStep(ref step);
+            Facing = Igi1AiGeometry.Wrap((float)(Facing + step.Turn));
+            ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+            world = step.Move;
+        }
+        else
+        {
+            Facing = Igi1AiGeometry.Wrap((float)(Facing + _bodyTurn.Step(turn)));
+            ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
 
-        // The clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked
-        // for: the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back.
-        Vector3d world = SoldierDeathFall.RotateAboutZ(
-            new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing + RecoilYaw);
+            // The clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked
+            // for: the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back.
+            world = SoldierDeathFall.RotateAboutZ(
+                new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing + RecoilYaw);
+        }
         double x = Position.X + world.X;
         double y = Position.Y + world.Y;
         if (world.X != 0.0 || world.Y != 0.0)

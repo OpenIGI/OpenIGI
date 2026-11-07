@@ -394,6 +394,11 @@ public sealed partial class Igi1HumanAi
     /// </remarks>
     private void EndCombat()
     {
+        if (_combatInstalled)
+        {
+            Behaviour?.CombatEnded();
+        }
+
         _combatInstalled = false;
         _combat?.Cancel();
         _gunnerCombat?.End();
@@ -505,6 +510,12 @@ public sealed partial class Igi1HumanAi
 
         bool mounted = false;
         if (_gunnerCombat is not null && RunGunnerMount(_gunnerCombat, enemy, out mounted))
+        {
+            return;
+        }
+
+        // A mod's fight in place of the game's, for a guard or a patrol (IGuardBehaviour.Fight); a gunner keeps his own.
+        if (Behaviour?.Fight(enemy) == true)
         {
             return;
         }

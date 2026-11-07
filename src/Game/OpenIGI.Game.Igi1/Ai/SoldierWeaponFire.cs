@@ -171,6 +171,12 @@ internal sealed class SoldierWeaponFire(SoldierContext context, SoldierGunShotRo
             return false;
         }
 
+        // A mod's behaviour may hold the round back this tick (IGuardBehaviour.MayFire). Not retail.
+        if (brain.Behaviour is { MayFire: false })
+        {
+            return false;
+        }
+
         if (mounted is not null)
         {
             if (!mounted.ConsumeRound())

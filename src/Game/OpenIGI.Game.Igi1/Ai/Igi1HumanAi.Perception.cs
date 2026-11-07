@@ -174,9 +174,15 @@ public sealed partial class Igi1HumanAi
     /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
     public bool HearGunshot(Vector3d shotPosition, double range, bool fromSameSide, int shooter)
     {
-        if (Activity == AiSoldierActivity.Dead || fromSameSide)
+        if (Activity == AiSoldierActivity.Dead)
         {
             return false;
+        }
+
+        // His own side's fire the game leaves unheard; a mod's behaviour may hear it (IGuardBehaviour.Stimulus).
+        if (fromSameSide)
+        {
+            return Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot, sameSide: true) ?? false;
         }
 
         range = Math.Max(0.0, range);
@@ -184,6 +190,11 @@ public sealed partial class Igi1HumanAi
         if (distance > range)
         {
             return false;
+        }
+
+        if (Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot) is { } answered)
+        {
+            return answered;
         }
 
         bool posted = Events.Post(
@@ -333,6 +344,11 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (Sensed(GuardStimulusKind.RoundMissed, ref closest, source, GunshotMissRadiusInUnits, AiEvent.GunshotMiss, from: shooterPosition) is { } answered)
+        {
+            return answered;
+        }
+
         // -1 is the renderer's player-originator sentinel. The event position is the actual nearest point
         // on the round, while BeginFallFlat resolves the source separately to the player's live position.
         if (!Events.Post(
@@ -369,6 +385,11 @@ public sealed partial class Igi1HumanAi
         if (distance > GunshotMissRadiusInUnits)
         {
             return false;
+        }
+
+        if (Sensed(GuardStimulusKind.RoundPassed, ref point, source, GunshotMissRadiusInUnits, AiEvent.GunshotMiss, from: shooterPosition) is { } answered)
+        {
+            return answered;
         }
 
         if (!Events.Post(
@@ -462,6 +483,11 @@ public sealed partial class Igi1HumanAi
         if (distance > radiusInUnits)
         {
             return false;
+        }
+
+        if (Sensed(GuardStimulusKind.Noise, ref position, AiDetectionCandidate.PlayerId, radiusInUnits, type) is { } answered)
+        {
+            return answered;
         }
 
         if (!Events.Post(
@@ -614,6 +640,11 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
+        if (Sensed(GuardStimulusKind.Damage, ref attackerPosition, attacker) is { } answered)
+        {
+            return answered;
+        }
+
         bool posted = Events.Post(
             new AiEventRecord(
                 AiEvent.TakingDamage,
@@ -656,7 +687,16 @@ public sealed partial class Igi1HumanAi
     /// The alerting soldier's own target — the record's subject (<c>0x48AB10</c> sends
     /// <c>{self, target}</c>).
     /// </param>
-    public bool ReceiveAlert(Vector3d alerterPosition, int source = 0, int target = AiDetectionCandidate.PlayerId)
+    public bool ReceiveAlert(Vector3d alerterPosition, int source = 0, int target = AiDetectionCandidate.PlayerId) =>
+        ReceiveAlert(alerterPosition, source, target, AlertPingRadiusInUnits);
+
+    /// <summary>An alert from another soldier that carries further than a ping: a mod's shout or radio. <b>Not retail</b> as a public call.</summary>
+    /// <param name="alerterPosition">Where the alerting soldier is, in world units.</param>
+    /// <param name="source">The alerting soldier's runtime id.</param>
+    /// <param name="target">The alerting soldier's target.</param>
+    /// <param name="radiusInUnits">How far it carries, in world units.</param>
+    /// <returns>Whether he took it.</returns>
+    public bool ReceiveAlert(Vector3d alerterPosition, int source, int target, double radiusInUnits)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -664,14 +704,19 @@ public sealed partial class Igi1HumanAi
         }
 
         double distance = Vector3d.Distance(Position, alerterPosition);
-        if (distance > AlertPingRadiusInUnits)
+        if (distance > radiusInUnits)
         {
             return false;
         }
 
+        if (Sensed(GuardStimulusKind.Alert, ref alerterPosition, source, radiusInUnits, AiEvent.Alert) is { } answered)
+        {
+            return answered;
+        }
+
         bool posted = Events.Post(
             new AiEventRecord(
-                AiEvent.Alert, -1, AiEventFilter.None, (float)AlertPingRadiusInUnits,
+                AiEvent.Alert, -1, AiEventFilter.None, (float)radiusInUnits,
                 alerterPosition, source, target),
             owner: 0,
             worldTests: null);
@@ -836,6 +881,15 @@ public sealed partial class Igi1HumanAi
         {
             Vector3d mark = human.Candidate.Mark;
             int looked = human.Candidate.Id;
+
+            // A mod's behaviour judges what counts as seen (IGuardBehaviour.Sighting). The sweep's cooldowns keep the visible
+            // flag between its tests, so it is handed back the sweep's own last verdict, not the judgement.
+            IGuardBehaviour? judge = Behaviour;
+            if (judge is not null)
+            {
+                human.Slot.IsVisible = human.SweepVisible;
+            }
+
             _schedule.Sweep(
                 human.Slot,
                 () => snapshot.IsVisible(mark),
@@ -845,6 +899,13 @@ public sealed partial class Igi1HumanAi
                     return _sight is null || _sight(eye, mark, looked);
                 },
                 Vector3d.Distance(eye, mark));
+
+            if (judge is not null)
+            {
+                human.SweepVisible = human.Slot.IsVisible;
+                bool rayRan = human.Slot.IsInCone && human.Slot.RayCooldown == _schedule.RayInterval;
+                human.Slot.IsVisible = judge.Sighting(new GuardSighting(human.Candidate, human.SweepVisible, human.Slot.IsInCone, rayRan, snapshot, tick));
+            }
         }
     }
 
@@ -894,10 +955,28 @@ public sealed partial class Igi1HumanAi
     /// IGI1 snapshots palette offsets 684/688/692, which resolve to bone 5's position. Headless tests and
     /// callers without a rig fall back to the separation cylinder's read half-height.
     /// </remarks>
-    public Vector3d EyePosition() => _eyePosition?.Invoke()
-        ?? new Vector3d(Position.X, Position.Y, Position.Z + HumanSeparationEyeHeight);
+    public Vector3d EyePosition()
+    {
+        Vector3d eye = _eyePosition?.Invoke() ?? new Vector3d(Position.X, Position.Y, Position.Z + HumanSeparationEyeHeight);
+        return Behaviour is { } behaviour ? eye + behaviour.EyeOffset : eye;
+    }
 
-    private Matrix3f EyeOrientation() => _eyeOrientation?.Invoke() ?? Orientation;
+    private Matrix3f EyeOrientation() => TurnedBy(Behaviour?.EyeTurn ?? 0f, _eyeOrientation?.Invoke() ?? Orientation);
+
+    // The eye turned about its own up by a mod's glance (IGuardBehaviour.EyeTurn): right and forward swung together.
+    private static Matrix3f TurnedBy(float turn, Matrix3f eye)
+    {
+        if (turn == 0f)
+        {
+            return eye;
+        }
+
+        (float sin, float cos) = MathF.SinCos(turn);
+        Vector3f r = eye.Column1, f = eye.Column2, u = eye.Column3;
+        Vector3f right = new((r.X * cos) - (f.X * sin), (r.Y * cos) - (f.Y * sin), (r.Z * cos) - (f.Z * sin));
+        Vector3f ahead = new((f.X * cos) + (r.X * sin), (f.Y * cos) + (r.Y * sin), (f.Z * cos) + (r.Z * sin));
+        return new Matrix3f(right.X, ahead.X, u.X, right.Y, ahead.Y, u.Y, right.Z, ahead.Z, u.Z);
+    }
 
     /// <summary>Diagnostics: the eye matrix a sweep run now would test against -- the bound eye, or the body's.</summary>
     public Matrix3f CurrentEyeOrientation => EyeOrientation();

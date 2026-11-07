@@ -74,4 +74,7 @@ internal sealed class Igi1AiTrackedHuman
 
     /// <summary>Reads the human now if it has not been read since it was offered, so what is read later in the frame is the same.</summary>
     public void Settle() => _ = Candidate;
+
+    /// <summary>Gets or sets what the sweep itself last said of him, while a mod's behaviour judges what counts as seen (IGuardBehaviour.Sighting).</summary>
+    public bool SweepVisible { get; set; }
 }

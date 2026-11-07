@@ -86,6 +86,8 @@ public sealed partial class Igi1HumanAi
                 FinishAction(node);
             }
         }
+
+        Behaviour?.ActionsApplied(_currentEventType, LastActions);
     }
 
     // The flag word is every AIAction_* native's last argument (0x44D0E0, 0x44D160, 0x44D6E0, ...).

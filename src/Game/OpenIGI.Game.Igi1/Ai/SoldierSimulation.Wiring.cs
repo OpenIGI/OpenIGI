@@ -145,6 +145,24 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierGunShotRounds.FileTracer"/>
     public void FileTracer(GunShotTracer tracer) => _rounds.FileTracer(tracer);
 
+    /// <summary>
+    /// Gets or sets what gives each guard a mod's behaviour (<see cref="IGuardBehaviour"/>): asked for every guard now and every one
+    /// made or respawned after, and returning <see langword="null"/> for one it leaves to the game. Setting it again asks every guard
+    /// again. <b>Not retail.</b>
+    /// </summary>
+    public Func<Igi1HumanAi, IGuardBehaviour?>? GuardBehaviours
+    {
+        get => _context.GuardBehaviours;
+        set
+        {
+            _context.GuardBehaviours = value;
+            foreach (Igi1HumanAi brain in Brains.Values)
+            {
+                brain.BehaviourFactory = value;
+            }
+        }
+    }
+
     /// <inheritdoc cref="SoldierDamage.BloodSpray"/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get => _damage.BloodSpray; set => _damage.BloodSpray = value; }
 

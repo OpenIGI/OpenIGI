@@ -663,7 +663,7 @@ public sealed partial class Igi1HumanAi
     // plus one tick, and the count stands still on a tick the AI does not run.
     private void TickIdleAnimation()
     {
-        if (_animationCountdown < 0 || _animationEntries.Count == 0)
+        if (_animationCountdown < 0 || _animationEntries.Count == 0 || Behaviour is { AllowsIdleAnimation: false })
         {
             return;
         }
