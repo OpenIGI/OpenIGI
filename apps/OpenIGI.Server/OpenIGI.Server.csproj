@@ -6,6 +6,8 @@
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- A bare VPS has no ICU; the server shows no culture's text, so it runs without one rather than failing to start. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
