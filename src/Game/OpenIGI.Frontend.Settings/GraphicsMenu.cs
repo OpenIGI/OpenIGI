@@ -408,8 +408,9 @@ public static class GraphicsMenu
                 new GraphicsSetting(
                     "r_frame_generation",
                     "Frame Generation",
-                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs an "
-                        + "RTX 40-series or newer, and turns NVIDIA Reflex on to keep the controls responsive."),
+                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs the "
+                        + "Direct3D 12 renderer and an RTX 40-series or newer, and turns NVIDIA Reflex on to keep "
+                        + "the controls responsive."),
                 new GraphicsSetting(
                     "r_low_latency",
                     "NVIDIA Reflex",

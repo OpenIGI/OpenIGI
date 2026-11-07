@@ -44,12 +44,15 @@ public sealed partial class GameHost
     /// <remarks>
     /// Frame generation requires Reflex: without it the generated frames queue up behind the rendered ones and
     /// the latency the multiplier costs is never paid back. It is raised rather than refused, as NVIDIA's own
-    /// integrations do, and the setting itself is left as the player set it.
+    /// integrations do, and the setting itself is left as the player set it. Not where frame generation cannot
+    /// run at all (Vulkan, a GPU without it): the setting is kept for another renderer and costs nothing here.
     /// </remarks>
-    private static LowLatencyMode EffectiveLowLatency()
+    private LowLatencyMode EffectiveLowLatency()
     {
         LowLatencyMode mode = ReconstructionCVars.LowLatency.Value;
-        return ReconstructionCVars.FrameGeneration.Value != FrameGenerationMode.Off && mode == LowLatencyMode.Off
+        return ReconstructionCVars.FrameGeneration.Value != FrameGenerationMode.Off
+            && mode == LowLatencyMode.Off
+            && _device.FrameGenerationUnavailable.Length == 0
             ? LowLatencyMode.On
             : mode;
     }
