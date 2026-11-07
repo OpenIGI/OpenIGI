@@ -30,8 +30,12 @@ public sealed partial class MultiplayerScreen : ShellScreen
     private float _sinceListed;
     private string _code = string.Empty;
 
-    // Browsing (0) or hosting (1).
+    // Browsing (0) or hosting (1); the strip that picks it and the two tabs' content, kept so a switch slides the strip's block
+    // and swaps the content without a rebuild.
     private int _tab;
+    private TabStrip? _tabs;
+    private UiElement? _browseTab;
+    private UiElement? _hostTab;
 
     /// <summary>Initializes a new instance of the <see cref="MultiplayerScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -75,7 +79,11 @@ public sealed partial class MultiplayerScreen : ShellScreen
         page.Add(BuildHeader(theme), 0, 0);
         page.Add(BuildModeBar(theme, coop), 1, 0);
         page.Add(BuildNotes(theme, coop), 2, 0);
-        page.Add(_tab == 0 ? BuildBrowseTab(theme, coop) : BuildHostTab(theme, coop), 3, 0);
+        _browseTab = BuildBrowseTab(theme, coop);
+        _hostTab = BuildHostTab(theme, coop);
+        page.Add(_browseTab, 3, 0);
+        page.Add(_hostTab, 3, 0);
+        ShowContent();
         return page;
     }
 
@@ -180,9 +188,11 @@ public sealed partial class MultiplayerScreen : ShellScreen
         tabs.SelectionChanged += index =>
         {
             _tab = index;
+            ShowContent();
+            Focus?.Validate();
             RefreshHints();
-            Invalidate();
         };
+        _tabs = tabs;
         bar.Add(tabs, 0, 0);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f, VerticalAlignment = VerticalAlignment.Center };
@@ -214,6 +224,25 @@ public sealed partial class MultiplayerScreen : ShellScreen
 
         bar.Add(actions, 0, 2);
         return bar;
+    }
+
+    // Shows the tab picked and hides the other.
+    private void ShowContent()
+    {
+        if (_browseTab is not null && _hostTab is not null)
+        {
+            _browseTab.Visibility = _tab == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _hostTab.Visibility = _tab == 1 ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    // Moves to a tab as its strip does, the block sliding across.
+    private void SwitchTab(int index)
+    {
+        if (_tabs is { } tabs)
+        {
+            tabs.SelectedIndex = index;
+        }
     }
 
     // Between the bar and the panels: where this player plays, when it does; the party member picked, when one is.

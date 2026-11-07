@@ -223,12 +223,7 @@ public sealed partial class MultiplayerScreen
         words.AddChild(new Label(theme.Body, "Host your own co-op or team game. Your party comes with you.", 15f, theme.TextSecondary));
         card.Add(words, 0, 0);
         var host = new Button(theme, "HOST A GAME  ›") { Accent = ButtonAccent.Outline, TextSize = 16f, Tracking = 0.3f, Padding = new Thickness(22f, 14f), Margin = new Thickness(0f, 0f, 24f, 0f), VerticalAlignment = VerticalAlignment.Center };
-        host.Activated += _ =>
-        {
-            _tab = 1;
-            RefreshHints();
-            Invalidate();
-        };
+        host.Activated += _ => SwitchTab(1);
         card.Add(host, 0, 1);
         var panel = new GlassPanel(theme) { Tint = Bgra32.FromRgba(0, 0, 0, 0), Border = UiPalette.White(0.12f), Blur = 0f };
         panel.AddChild(card);
