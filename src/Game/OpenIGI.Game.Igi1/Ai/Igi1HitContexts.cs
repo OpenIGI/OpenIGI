@@ -14,6 +14,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="Shooter">The soldier who fired it, or <see langword="null"/> for the player or a gun nobody holds.</param>
 /// <param name="FromPlayer">Whether the player fired it.</param>
 /// <param name="Credit">The tally of the player who fired it, of either game, which the struck soldier counts its hit and kill on.</param>
+/// <param name="Weapon">The script id of the player's gun that fired it, which a versus match's damage is read by; else <see langword="null"/>.</param>
 public sealed record Igi1WeaponHit(
     HumanHit Hit,
     Vector3d Origin,
@@ -22,7 +23,8 @@ public sealed record Igi1WeaponHit(
     WeaponCategory Category,
     SoldierView? Shooter,
     bool FromPlayer,
-    ShotTally? Credit = null)
+    ShotTally? Credit = null,
+    string? Weapon = null)
 {
     /// <summary>The hit as either game's targets read it.</summary>
     /// <returns>The shared hit, this as its context.</returns>

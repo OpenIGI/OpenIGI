@@ -1,30 +1,51 @@
+using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Player;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
 
-/// <summary>A versus match's players take a normal soldier's body, not the campaign hero's.</summary>
+/// <summary>A versus match's players take I.G.I. 2's multiplayer body and its damage for each gun, not the campaign hero's.</summary>
 public sealed class VersusBodyTests
 {
-    // I.G.I.'s rifle round (the AK-47's and M16's damage factor), and the zones it lands in.
-    private const float Rifle = 0.3f;
-    private const int Chest = 2;
+    // I.G.I.'s zones: a shin, a thigh, the trunk's side, its front, the head.
+    private const int Shin = 1;
+    private const int Thigh = 2;
+    private const int Trunk = 12;
+    private const int Chest = 13;
     private const int Head = 15;
 
     [Fact]
-    public void The_campaign_hero_takes_eleven_rifle_rounds_to_the_body_and_its_head_is_no_weaker()
+    public void The_campaign_hero_takes_eleven_of_its_own_rifle_rounds_and_its_head_is_no_weaker()
     {
-        HumanHealth hero = new(HumanHitZoneTable.Player, 3f);
-        Assert.Equal(11, RoundsToKill(hero, Chest));
-        Assert.Equal(11, RoundsToKill(new HumanHealth(HumanHitZoneTable.Player, 3f), Head));
+        Assert.Equal(11, RoundsToKill(new HumanHealth(HumanHitZoneTable.Player, 3f), Chest, 0.3f));
+        Assert.Equal(11, RoundsToKill(new HumanHealth(HumanHitZoneTable.Player, 3f), Head, 0.3f));
+    }
+
+    [Theory]
+    [InlineData("WEAPON_ID_AK47", 3, 4, 4, 5)]
+    [InlineData("WEAPON_ID_M16A2", 4, 4, 5, 5)]
+    [InlineData("WEAPON_ID_MINIMI", 4, 4, 5, 5)]
+    [InlineData("WEAPON_ID_MP5SD", 5, 5, 6, 7)]
+    [InlineData("WEAPON_ID_UZI", 5, 6, 7, 8)]
+    [InlineData("WEAPON_ID_COLT", 2, 2, 3, 3)]
+    [InlineData("WEAPON_ID_DRAGUNOV", 2, 2, 3, 3)]
+    public void A_versus_player_falls_to_igi2s_rounds_three_or_more_to_the_body_and_one_to_the_head(string gun, int chest, int trunk, int thigh, int shin)
+    {
+        float damage = Igi1VersusDamage.Of(gun, 0f);
+        Assert.Equal((chest, trunk, thigh, shin, 1), (RoundsToKill(Versus(), Chest, damage), RoundsToKill(Versus(), Trunk, damage), RoundsToKill(Versus(), Thigh, damage), RoundsToKill(Versus(), Shin, damage), RoundsToKill(Versus(), Head, damage)));
     }
 
     [Fact]
-    public void A_versus_player_falls_to_two_rifle_rounds_to_the_body_or_one_to_the_head()
+    public void Two_shotgun_pellets_to_the_chest_kill_so_a_blast_up_close_is_one()
     {
-        HumanHealth player = Versus();
-        Assert.Equal(2, RoundsToKill(player, Chest));
-        Assert.Equal(1, RoundsToKill(Versus(), Head));
+        Assert.Equal(2, RoundsToKill(Versus(), Chest, Igi1VersusDamage.Of("WEAPON_ID_SPAS12", 0f)));
+    }
+
+    [Fact]
+    public void A_gun_igi2_has_no_figure_for_keeps_its_own()
+    {
+        Assert.Equal(0.25f, Igi1VersusDamage.Of("WEAPON_ID_RPG18", 0.25f));
+        Assert.Equal(0.1f, Igi1VersusDamage.Of(null, 0.1f));
     }
 
     [Fact]
@@ -32,24 +53,24 @@ public sealed class VersusBodyTests
     {
         HumanHealth player = new(HumanHitZoneTable.Player, 3f) { DamageScale = HumanHealth.DifficultyDamageScale(2) };
         player.Apply(Chest, 1.5f);
-        player.UseBody(HumanHitZoneTable.Soldier, HumanHitZoneTable.VersusMaximumHealth, 1f);
-        Assert.Equal((0.5f, 1f), (player.MaximumHealth, player.DamageScale));
+        player.UseBody(HumanHitZoneTable.Versus, HumanHitZoneTable.VersusMaximumHealth, 1f);
+        Assert.Equal((1f, 1f), (player.MaximumHealth, player.DamageScale));
         Assert.Equal(1f - (1.5f * 1.25f / 3f), player.RemainingFraction, 4);
     }
 
     private static HumanHealth Versus()
     {
         HumanHealth health = new(HumanHitZoneTable.Player, 3f) { DamageScale = HumanHealth.DifficultyDamageScale(0) };
-        health.UseBody(HumanHitZoneTable.Soldier, HumanHitZoneTable.VersusMaximumHealth, 1f);
+        health.UseBody(HumanHitZoneTable.Versus, HumanHitZoneTable.VersusMaximumHealth, 1f);
         return health;
     }
 
-    private static int RoundsToKill(HumanHealth health, int zone)
+    private static int RoundsToKill(HumanHealth health, int zone, float damage)
     {
         int rounds = 0;
         while (!health.IsDead && rounds < 100)
         {
-            health.Apply(zone, Rifle);
+            health.Apply(zone, damage);
             rounds++;
         }
 

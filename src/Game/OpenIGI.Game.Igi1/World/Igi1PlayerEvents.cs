@@ -60,7 +60,10 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
 
         HumanHealth health = target.Health;
         HumanHit struck = round.Hit;
-        health.Apply(struck.Zone, round.DamageFactor);
+
+        // A versus match's player takes I.G.I. 2's damage for the gun that fired.
+        float damage = ReferenceEquals(health.Zones, HumanHitZoneTable.Versus) ? Multiplayer.Igi1VersusDamage.Of(round.Weapon, round.DamageFactor) : round.DamageFactor;
+        health.Apply(struck.Zone, damage);
         harm.RoundTaken?.Invoke(target, round.Credit);
         sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
 

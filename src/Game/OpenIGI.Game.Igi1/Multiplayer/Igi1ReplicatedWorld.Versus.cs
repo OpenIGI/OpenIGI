@@ -373,9 +373,10 @@ public sealed partial class Igi1ReplicatedWorld
         return true;
     }
 
-    // A player of a versus match is built as a normal soldier: its zones (a lethal head), what kills one, no difficulty scale.
+    // A player of a versus match takes I.G.I. 2's multiplayer body: its zones (the head lethal), what kills one, no difficulty
+    // scale; the rounds that meet it do I.G.I. 2's damage for their gun (Igi1VersusDamage).
     private static void UseVersusBody(PlayerCamera rig) =>
-        rig.Body.Health.UseBody(HumanHitZoneTable.Soldier, HumanHitZoneTable.VersusMaximumHealth, 1f);
+        rig.Body.Health.UseBody(HumanHitZoneTable.Versus, HumanHitZoneTable.VersusMaximumHealth, 1f);
 
     /// <inheritdoc/>
     public void MarkLevelStart() => _game.MarkLevelStart();

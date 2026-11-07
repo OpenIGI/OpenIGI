@@ -860,7 +860,7 @@ public sealed partial class Igi1PlayerSetup(
                 mission.PlayerTask,
                 stopDistance,
                 alreadyHeard,
-                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true, candidate.Shots).ToShared(),
+                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true, candidate.Shots, candidate.Weapons?.InHand?.Weapon.ScriptId).ToShared(),
                 out hit);
         candidate.HumanProbes = guards.Simulation.Probe();
         HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();
