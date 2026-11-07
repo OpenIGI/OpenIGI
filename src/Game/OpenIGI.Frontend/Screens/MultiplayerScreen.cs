@@ -1,5 +1,7 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Input;
 using OpenIGI.UI;
+using OpenIGI.UI.Focus;
 using OpenIGI.UI.Kit;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -8,17 +10,17 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// Multiplayer, every way of playing with others on one page. Down the left: the page's title and where this player is,
-/// a bar to join by a code, play the best open game or go back to the last, and the server browser -- every dedicated server,
-/// room, server on this network, saved and recent one, in columns, filtered and sorted. On the right: the party, and one
-/// panel hosting a game -- the mode first (co-op or a versus mode), the mission, where it runs (this game, or a dedicated
-/// server started here), then the rules of that mode. The same on the desktop and in the browser, which play each other.
+/// Multiplayer, every way of playing with others on one page. Across the top, the page's title and the party: a square for each
+/// member, the leader's underlined, open places to invite into, the party's code. Under them, BROWSE and HOST, with QUICK PLAY
+/// and RECONNECT beside. Browsing, the list of every server and room heard of fills the left -- filtered by kind and mode, in
+/// columns -- and the line picked shows on the right with JOIN. Hosting, the game's settings and its mode's rules stand in two
+/// panels, and the game as it will be hosted on the right with HOST. The same on the desktop and in the browser.
 /// </summary>
 public sealed partial class MultiplayerScreen : ShellScreen
 {
-    // The right column's width, and the room between the columns. Layout pixels.
-    private const float SideWidth = 540f;
-    private const float ColumnGap = 40f;
+    // The side panel's width, and the room between panels. Layout pixels.
+    private const float SideWidth = 520f;
+    private const float PanelGap = 24f;
 
     // How often the list is asked for again while the page is up and this player plays nowhere.
     private const float RelistSeconds = 5f;
@@ -27,6 +29,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
     private IReadOnlyList<CoopRoomInfo>? _shownListing;
     private float _sinceListed;
     private string _code = string.Empty;
+
+    // Browsing (0) or hosting (1).
+    private int _tab;
 
     /// <summary>Initializes a new instance of the <see cref="MultiplayerScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -37,6 +42,11 @@ public sealed partial class MultiplayerScreen : ShellScreen
 
     /// <inheritdoc/>
     protected override ShellTab Tab => ShellTab.Coop;
+
+    /// <inheritdoc/>
+    protected override IReadOnlyList<KeyHint> Hints => _tab == 0
+        ? [new("↑↓", "Select"), new("ENTER", "Join"), new("F", "Quick play"), new("ESC", "Back")]
+        : [new("←→", "Adjust"), new("ENTER", "Host"), new("ESC", "Back")];
 
     private ICoopRooms? Coop => Context.Host.Coop;
 
@@ -56,9 +66,16 @@ public sealed partial class MultiplayerScreen : ShellScreen
         _shownListing = coop.Listing;
         _shownParty = PartyKey;
 
-        var page = new Canvas();
-        page.Add(BuildBrowsing(theme, coop), new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(SideMargin, 40f, SideMargin + SideWidth + ColumnGap, 40f)));
-        page.Add(BuildSide(theme, coop), new Anchor(new UiVec2(1f, 0f), UiVec2.One, new Thickness(-(SideMargin + SideWidth), 40f, SideMargin, 40f)));
+        var page = new Grid { RowSpacing = 0f, Margin = new Thickness(SideMargin, 36f, SideMargin, 28f) };
+        page.ColumnDefinitions.Add(GridLength.Star);
+        page.RowDefinitions.Add(GridLength.Auto);
+        page.RowDefinitions.Add(GridLength.Auto);
+        page.RowDefinitions.Add(GridLength.Auto);
+        page.RowDefinitions.Add(GridLength.Star);
+        page.Add(BuildHeader(theme), 0, 0);
+        page.Add(BuildModeBar(theme, coop), 1, 0);
+        page.Add(BuildNotes(theme, coop), 2, 0);
+        page.Add(_tab == 0 ? BuildBrowseTab(theme, coop) : BuildHostTab(theme, coop), 3, 0);
         return page;
     }
 
@@ -70,7 +87,32 @@ public sealed partial class MultiplayerScreen : ShellScreen
     }
 
     /// <inheritdoc/>
-    protected override void OnExit() => _copied = null;
+    protected override void OnExit()
+    {
+        _copied = null;
+        _picked = null;
+    }
+
+    /// <inheritdoc/>
+    protected override bool HandleInput(UiNavigation nav, InputState input)
+    {
+        if (Coop is { } coop && Focus?.Focused is not TextBox && _tab == 0)
+        {
+            if (input.Keyboard.WasPressed(KeyCode.F))
+            {
+                coop.QuickPlay();
+                return false;
+            }
+
+            if (input.Keyboard.WasPressed(KeyCode.Return) && Focus?.Focused is ServerRow row && _rowCodes.TryGetValue(row, out string? code))
+            {
+                coop.Join(code);
+                return false;
+            }
+        }
+
+        return base.HandleInput(nav, input);
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -97,55 +139,105 @@ public sealed partial class MultiplayerScreen : ShellScreen
         }
     }
 
-    // The left: the title and where this player is, the bar to join, and the browser taking the rest.
-    private Grid BuildBrowsing(UiTheme theme, ICoopRooms coop)
+    // The title on the left, the party on the right.
+    private Grid BuildHeader(UiTheme theme)
     {
-        var layout = new Grid { RowSpacing = 22f };
-        layout.ColumnDefinitions.Add(GridLength.Star);
-        layout.RowDefinitions.Add(GridLength.Auto);
-        layout.RowDefinitions.Add(GridLength.Auto);
-        layout.RowDefinitions.Add(GridLength.Star);
-
-        var heading = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        heading.AddChild(new SectionTitle(theme, "Together", "Multiplayer") { HorizontalAlignment = HorizontalAlignment.Left });
-        heading.AddChild(BuildStatus(theme, coop.Status));
-        layout.Add(heading, 0, 0);
-        layout.Add(BuildJoinBar(theme, coop), 1, 0);
-        layout.Add(BuildBrowser(theme, coop), 2, 0);
-        return layout;
-    }
-
-    // The right: the party above, hosting below.
-    private Grid BuildSide(UiTheme theme, ICoopRooms coop)
-    {
-        var layout = new Grid { RowSpacing = 20f };
-        layout.ColumnDefinitions.Add(GridLength.Star);
-        layout.RowDefinitions.Add(GridLength.Auto);
-        layout.RowDefinitions.Add(GridLength.Star);
+        var header = new Grid();
+        header.RowDefinitions.Add(GridLength.Auto);
+        header.ColumnDefinitions.Add(GridLength.Auto);
+        header.ColumnDefinitions.Add(GridLength.Star);
+        header.Add(new SectionTitle(theme, "Together", "Multiplayer") { TitleSize = 56f, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom }, 0, 0);
         if (Parties is { } parties)
         {
-            layout.Add(BuildParty(theme, parties), 0, 0);
+            UiElement party = BuildPartyCluster(theme, parties);
+            party.HorizontalAlignment = HorizontalAlignment.Right;
+            party.VerticalAlignment = VerticalAlignment.Bottom;
+            header.Add(party, 0, 1);
         }
 
-        layout.Add(BuildHosting(theme, coop), 1, 0);
-        return layout;
+        return header;
     }
 
-    // Where this player is: what the page is for while it plays nowhere; once it does, the game -- a hosted room's code large --
-    // or why it couldn't, with the way out.
-    private UiElement BuildStatus(UiTheme theme, CoopStatus status)
+    // BROWSE and HOST on the left; QUICK PLAY and RECONNECT on the right.
+    private Grid BuildModeBar(UiTheme theme, ICoopRooms coop)
+    {
+        var bar = new Grid { Margin = new Thickness(0f, 30f, 0f, 0f) };
+        bar.RowDefinitions.Add(GridLength.Auto);
+        bar.ColumnDefinitions.Add(GridLength.Auto);
+        bar.ColumnDefinitions.Add(GridLength.Star);
+        bar.ColumnDefinitions.Add(GridLength.Auto);
+
+        int games = coop.Listing?.Count ?? 0;
+        var tabs = new TabStrip(theme, [string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Browse · {games}"), "Host"])
+        {
+            SegmentHeight = 52f,
+            TabPadding = 56f,
+            TextSize = 19f,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        tabs.SelectedIndex = _tab;
+        tabs.SelectionChanged += index =>
+        {
+            _tab = index;
+            RefreshHints();
+            Invalidate();
+        };
+        bar.Add(tabs, 0, 0);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f, VerticalAlignment = VerticalAlignment.Center };
+        var quick = new Button(theme, "QUICK PLAY  [F]")
+        {
+            Accent = ButtonAccent.Ghost,
+            TextSize = 17f,
+            Tracking = 0.3f,
+            Padding = new Thickness(26f, 16f),
+            Tooltip = "Join the best open game listed: near, with people in it, room for you.",
+        };
+        quick.Activated += _ => coop.QuickPlay();
+        actions.AddChild(quick);
+        if (coop.LastPlayed is { } last)
+        {
+            var reconnect = new Button(theme, "RECONNECT") { Accent = ButtonAccent.Ghost, TextSize = 17f, Tracking = 0.3f, Padding = new Thickness(24f, 16f), Tooltip = $"Join {last} again, where you last played." };
+            reconnect.Activated += _ => coop.Reconnect();
+            actions.AddChild(reconnect);
+        }
+
+        bar.Add(actions, 0, 2);
+        return bar;
+    }
+
+    // Between the bar and the panels: where this player plays, when it does; the party member picked, when one is.
+    private StackPanel BuildNotes(UiTheme theme, ICoopRooms coop)
+    {
+        var notes = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f, Margin = new Thickness(0f, 18f, 0f, 18f) };
+        if (BuildStatus(theme, coop.Status) is { } status)
+        {
+            notes.AddChild(status);
+        }
+
+        if (Parties is { } parties && BuildPartyNote(theme, parties) is { } party)
+        {
+            notes.AddChild(party);
+        }
+
+        return notes;
+    }
+
+    // Where this player is, once it plays: a hosted room's code large, the room or server joined, or why it couldn't, with
+    // the way out. Nothing while it plays nowhere.
+    private StackPanel? BuildStatus(UiTheme theme, CoopStatus status)
     {
         if (status.Phase == CoopPhase.None)
         {
-            return Body(theme, "Join a server or a friend's room, or host a game of your own: co-op against the mission, or one side against the other.", UiPalette.TextBody);
+            return null;
         }
 
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 18f };
         switch (status.Phase)
         {
             case CoopPhase.Playing when status.Hosting:
-                line.AddChild(new Label(theme.Body, "HOSTING ROOM", 15f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
-                line.AddChild(new Label(theme.Heading, status.Code ?? string.Empty, 34f, theme.Accent) { VerticalAlignment = VerticalAlignment.Center });
+                line.AddChild(new Label(theme.Mono, "HOSTING ROOM", 12f, theme.Accent) { VerticalAlignment = VerticalAlignment.Center });
+                line.AddChild(new Label(theme.Heading, status.Code ?? string.Empty, 30f, theme.TextBright) { VerticalAlignment = VerticalAlignment.Center });
                 line.AddChild(new Label(theme.Body, "Friends join with this code, on the desktop or at openigi.com.", 15f, theme.TextMuted) { VerticalAlignment = VerticalAlignment.Center });
                 break;
             case CoopPhase.Playing:
@@ -169,52 +261,25 @@ public sealed partial class MultiplayerScreen : ShellScreen
         return line;
     }
 
-    // One line: a code and JOIN, then QUICK PLAY and RECONNECT.
-    private Grid BuildJoinBar(UiTheme theme, ICoopRooms coop)
+    private static Label Body(UiTheme theme, string text, Bgra32 colour, float size = 16f) =>
+        new(theme.Body, text, size, colour) { Wrap = true, Margin = new Thickness(0f, 2f, 0f, 2f) };
+
+    // A panel of the page: the glass the design draws its groups on, the accent along its top when it is the side panel.
+    private static GlassPanel Panel(UiTheme theme, UiElement content, bool side = false, Thickness? padding = null)
     {
-        var line = new Grid { ColumnSpacing = 12f };
-        line.RowDefinitions.Add(GridLength.Auto);
-        line.ColumnDefinitions.Add(GridLength.Absolute(260f));
-        line.ColumnDefinitions.Add(GridLength.Auto);
-        line.ColumnDefinitions.Add(GridLength.Star);
-        line.ColumnDefinitions.Add(GridLength.Auto);
-        line.ColumnDefinitions.Add(GridLength.Auto);
-        var code = new TextBox(theme) { Id = "room-code", Placeholder = "ROOM CODE", MaxLength = 6, VerticalAlignment = VerticalAlignment.Center, Tooltip = "A friend's room code: six letters and digits." };
-        code.Text = _code;
-        code.TextChanged += text => _code = text;
-        var join = new Button(theme, "JOIN") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(30f, 13f) };
-        join.Activated += _ => coop.Join(_code);
-        var quick = new Button(theme, "QUICK PLAY")
+        var panel = new GlassPanel(theme)
         {
-            Accent = ButtonAccent.Ghost,
-            TextSize = 16f,
-            Tracking = 0.18f,
-            Padding = new Thickness(22f, 12f),
-            Tooltip = "Join the best open game listed: near, with people in it, room for you.",
+            Padding = padding ?? new Thickness(0f),
+            Tint = Bgra32.FromRgba(28, 28, 26, side ? (byte)230 : (byte)210),
+            TintBottom = Bgra32.FromRgba(22, 22, 20, side ? (byte)230 : (byte)210),
+            Border = side ? theme.Accent : UiPalette.White(0.07f),
+            BorderEdges = side ? UiEdges.Top : UiEdges.All,
+            VerticalAlignment = VerticalAlignment.Stretch,
         };
-        quick.Activated += _ => coop.QuickPlay();
-        line.Add(code, 0, 0);
-        line.Add(join, 0, 1);
-        line.Add(quick, 0, 3);
-        if (coop.LastPlayed is { } last)
-        {
-            var reconnect = new Button(theme, "RECONNECT") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.18f, Padding = new Thickness(22f, 12f), Tooltip = $"Join {last} again, where you last played." };
-            reconnect.Activated += _ => coop.Reconnect();
-            line.Add(reconnect, 0, 4);
-        }
-
-        return line;
-    }
-
-    private static Label Body(UiTheme theme, string text, Bgra32 colour) =>
-        new(theme.Body, text, 17f, colour) { Wrap = true, Margin = new Thickness(0f, 4f, 0f, 4f) };
-
-    private static (GlassPanel Panel, StackPanel Content) Group(UiTheme theme, string title)
-    {
-        var content = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        content.AddChild(new GroupHeader(theme, title));
-        var panel = new GlassPanel(theme) { Padding = new Thickness(24f, 20f, 24f, 16f), VerticalAlignment = VerticalAlignment.Top };
         panel.AddChild(content);
-        return (panel, content);
+        return panel;
     }
+
+    // A group's name inside a panel: small, in the accent, with a hairline running on after it.
+    private static GroupHeader GroupTitle(UiTheme theme, string title, Thickness margin) => new(theme, title) { Margin = margin };
 }
