@@ -120,8 +120,11 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
             rig.Missiles.Clear();
             rig.M203.Clear();
             rig.Marks.Clear();
+            rig.ControlTaken = false;
         }
 
+        // A round starts with the player's own eye and controls, whatever a mod had taken in the last one.
+        World.ViewTakeover = null;
         World.ShownProjectiles.Clear();
         World.VehicleMissiles.Clear();
         Impacts.Runtime.Clear();

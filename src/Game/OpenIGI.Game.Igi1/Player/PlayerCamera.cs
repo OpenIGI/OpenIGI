@@ -433,6 +433,30 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc/>
     public bool HeldStill { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether something else has the player's body for now (a mod's scripted move): unlike
+    /// <see cref="HeldStill"/> it takes nothing from the controls at all, and does not move, turn, look or fire. Off unless a
+    /// mod sets it. <b>Not retail.</b>
+    /// </summary>
+    public bool ControlTaken { get; set; }
+
+    /// <summary>
+    /// Stands the body exactly where it is told, with no search for ground: unlike <see cref="Place"/>, which settles it on
+    /// the floor under the point, for a mod that knows the floor already. <b>Not retail.</b>
+    /// </summary>
+    /// <param name="feet">Where its feet go, in world units.</param>
+    /// <param name="yaw">Its facing, as <see cref="Place"/> takes it.</param>
+    /// <param name="pitch">How far above level it looks, in radians.</param>
+    public void StandAt(Vector3d feet, float yaw, float pitch = 0f)
+    {
+        // A placement is a teleport, as Place's: the rig's tick pair is not interpolated across it.
+        _firstPerson.Pair.HasPair = false;
+        _firstPerson.ResetKicks();
+        _body.Position = feet;
+        _body.Yaw = yaw;
+        _body.Pitch = pitch;
+    }
+
     /// <inheritdoc cref="PlayerFirstPersonView.LookSettings"/>
     public MouseLookSettings LookSettings
     {

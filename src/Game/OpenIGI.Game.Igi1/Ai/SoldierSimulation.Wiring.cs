@@ -145,6 +145,9 @@ public sealed partial class SoldierSimulation
     /// <inheritdoc cref="SoldierGunShotRounds.FileTracer"/>
     public void FileTracer(GunShotTracer tracer) => _rounds.FileTracer(tracer);
 
+    /// <inheritdoc cref="SoldierDamage.SilentDeaths"/>
+    public HashSet<SoldierView> SilentDeaths => _damage.SilentDeaths;
+
     /// <inheritdoc cref="SoldierDamage.BloodSpray"/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get => _damage.BloodSpray; set => _damage.BloodSpray = value; }
 

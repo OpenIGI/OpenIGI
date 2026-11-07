@@ -53,6 +53,13 @@ public sealed partial class PlayerCamera
         }
 
         _input.Accept(taken);
+
+        // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them.
+        if (ControlTaken)
+        {
+            return;
+        }
+
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
 

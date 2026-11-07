@@ -57,7 +57,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool IsInteractionViewActive => _interaction.IsActive;
 
     /// <inheritdoc/>
-    public bool ShowsViewModel => _thirdPerson.ShowsViewModel && !_following;
+    public bool ShowsViewModel => _thirdPerson.ShowsViewModel && !_following && gameplay.World.ViewTakeover is not { HidesViewModel: true };
 
     /// <inheritdoc/>
     public bool ShowsBody => _thirdPerson.ShowsBody && !_following;
@@ -127,7 +127,8 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool HasPlayerHud => gameplay.World.Player is { View: not null, IsMountedStationaryGun: false };
 
     /// <inheritdoc/>
-    public bool HasFirstPersonHud => gameplay.World.Player is { IsOnLadder: false, IsInWorldInteraction: false };
+    public bool HasFirstPersonHud => gameplay.World.Player is { IsOnLadder: false, IsInWorldInteraction: false }
+        && gameplay.World.ViewTakeover is not { HidesHud: true };
 
     /// <inheritdoc/>
     public SightZoomFrame? SightZoom(float tickBlend) => gameplay.World.Player?.SmoothedSightZoom(tickBlend);
@@ -136,7 +137,11 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public float BinocularZoomIn(float tanX) => gameplay.World.Player?.BinocularZoomInFraction(tanX) ?? 0f;
 
     /// <inheritdoc/>
-    public InteractionPromptTarget? InteractionPrompt(float tickBlend) => gameplay.World.Player?.InteractionPrompt(tickBlend);
+    public InteractionPromptTarget? InteractionPrompt(float tickBlend) =>
+        gameplay.World.Player?.InteractionPrompt(tickBlend)
+        ?? (gameplay.World.OfferedPrompt is { } offer
+            ? new InteractionPromptTarget(-1, InteractionActivateType.None, null, offer.AnchorUnits, 0, false, false, null) { Title = offer.Title }
+            : null);
 
     /// <inheritdoc/>
     public Camera3D? WalkingEye(bool smooth, float tickBlend)
@@ -255,6 +260,22 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
             && mission.Player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
         {
             eye = mission.Player.SmoothedCamera(frame.TickBlend);
+        }
+
+        // A mod has taken the view (MissionWorld.ViewTakeover): its eye, whatever else would have had it, with no
+        // over-the-shoulder view and no aim taken from it. Not retail.
+        if (frame.PlayerMode && !mission.IsPlayerDead && mission.ViewTakeover is { } taken)
+        {
+            eye = taken.Eye(frame.Smooth ? frame.TickBlend : 1f);
+            bodyEye = eye;
+            _thirdPerson.Reset();
+            _thirdPersonMilliseconds = frame.NowMilliseconds;
+            if (mission.Player is not null)
+            {
+                mission.Player.AimConvergenceRay = null;
+            }
+
+            return eye;
         }
 
         // The body's own eye, before the over-the-shoulder view moves the camera off it: the

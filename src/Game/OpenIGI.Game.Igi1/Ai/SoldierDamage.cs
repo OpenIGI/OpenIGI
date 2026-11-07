@@ -49,6 +49,13 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// <summary>Gets or sets where a soldier's death cry is sounded, at the position the body fell from.</summary>
     public Action<Vector3d>? DeathSound { get; set; }
 
+    /// <summary>
+    /// Gets the soldiers who die without their death cry or the sounds of their own fall: a mod that kills one plays its own.
+    /// A soldier in it plays none of his animation's events at all, a melee strike's impact included, so a mod adds him as
+    /// it kills him. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    public HashSet<SoldierView> SilentDeaths { get; } = [];
+
     /// <summary>Gets or sets where a dead soldier's weapon is published as it becomes a world pickup.</summary>
     public Action<WeaponType, Vector3d, Matrix3f, Vector3d>? WeaponDrop { get; set; }
 
@@ -179,7 +186,10 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         }
 
         // And the death cry, once, on the alive-to-dead edge: the death state's entry (0x45C440 -> 0x4638A0).
-        DeathSound?.Invoke(view.Position);
+        if (!SilentDeaths.Contains(view))
+        {
+            DeathSound?.Invoke(view.Position);
+        }
         _footsteps.Forget(view);
 
         // Everything above is the original's, and it stays that way whatever follows: the body's

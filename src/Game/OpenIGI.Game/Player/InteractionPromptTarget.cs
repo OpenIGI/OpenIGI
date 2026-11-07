@@ -33,4 +33,12 @@ public readonly record struct InteractionPromptTarget(
     int DurationTicks,
     bool Locked,
     bool DoorOpen,
-    float? Progress);
+    float? Progress)
+{
+    /// <summary>
+    /// Gets what the prompt says in place of the title its type and sprite give it, or <see langword="null"/> for that title:
+    /// a mod's own prompt. A property rather than a parameter, so the constructor a built mod calls is the one it was built
+    /// against. <b>Not retail.</b>
+    /// </summary>
+    public string? Title { get; init; }
+}
