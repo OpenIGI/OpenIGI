@@ -399,10 +399,16 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     private bool _disposed;
 
     /// <inheritdoc/>
-    /// <remarks>The server's own once welcomed; until then the mode of the room or server joined as it was listed.</remarks>
+    /// <remarks>
+    /// The mode the server's match is being played in now -- which follows a change made while the session runs (a vote, or an
+    /// admin's <c>map 1 sd</c>) -- else the server's own as it welcomed this player, else the mode of the room or server joined
+    /// as it was listed.
+    /// </remarks>
     public string Mode
     {
-        get => _session?.ServerMode is { Length: > 0 } told ? told : _listedMode;
+        get => _session?.MatchState?.Mode is { Length: > 0 } playing ? playing
+            : _session?.ServerMode is { Length: > 0 } told ? told
+            : _listedMode;
         init => _listedMode = value ?? string.Empty;
     }
 

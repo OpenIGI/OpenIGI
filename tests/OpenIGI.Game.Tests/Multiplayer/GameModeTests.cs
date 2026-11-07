@@ -236,13 +236,22 @@ public sealed class GameModeTests
     }
 
     [Fact]
-    public void An_elimination_round_is_never_decided_with_one_team_empty()
+    public void A_round_with_one_team_empty_is_won_by_nobody_and_runs_out_as_a_draw_into_the_next()
     {
         Host host = new(teams: [0]);
-        EliminationMode mode = new(TickRate);
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { FreezeSeconds = 0, RoundSeconds = 2, RoundOverSeconds = 1 });
         mode.Start(host, 0);
-        mode.Tick(host, TickRate * 200, []);
+
+        // Nobody to beat: the round stays live through its time...
+        long tick = Run(mode, host, 1, TickRate);
         Assert.Equal(MatchPhase.Live, mode.Flow.Phase);
+
+        // ...and when it runs out is a draw scoring nothing, not a clock held at nought; the next round begins after it.
+        tick = Run(mode, host, tick, TickRate + 1);
+        Assert.Equal((MatchPhase.RoundOver, -1, RoundEnd.TimeRanOut), (mode.Flow.Phase, mode.Flow.Winner, mode.Report(tick).Reason));
+        Assert.Equal((0, 0), (host.Match.ScoreOf(TeamRoster.Good), host.Match.ScoreOf(TeamRoster.Bad)));
+        Run(mode, host, tick, TickRate + 1);
+        Assert.Equal((MatchPhase.Live, 1), (mode.Flow.Phase, mode.RoundsPlayed));
     }
 
     [Fact]

@@ -463,6 +463,23 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_match_switched_to_search_and_destroy_in_place_is_search_and_destroy_on_the_joiner_with_its_bomb_sites()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        Landed(pair);
+        Assert.Equal(GameModes.TeamDeathmatch, pair.Client.Mode);
+
+        // The same map under another mode, as an admin's "map 1 sd" or the vote asks: it starts over where it stands.
+        Assert.True(pair.Session.UseMode(GameModes.SearchAndDestroy));
+        pair.Session.PlayAgain();
+        Assert.True(pair.RunUntil(() => pair.Session.Mode == GameModes.SearchAndDestroy, 30 * 3) >= 0, "the server never played search and destroy");
+
+        // The joiner plays it too -- the mode its bomb sites are drawn for -- and has the sites to draw.
+        Assert.True(pair.RunUntil(() => pair.Client.Mode == GameModes.SearchAndDestroy, 30 * 5) >= 0, $"the joiner still plays {pair.Client.Mode}");
+        Assert.Contains(pair.Client.Layout!.Points, p => p.Kind == MpPointKind.BombSite);
+    }
+
+    [RequiresGameDataFact]
     public void In_the_buy_time_the_host_and_the_joiner_each_buy_a_gun_and_carry_it()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);

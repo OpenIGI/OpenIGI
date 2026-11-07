@@ -280,7 +280,14 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         ArgumentNullException.ThrowIfNull(host);
         if (PlayersOn(host, TeamRoster.Good) == 0 || PlayersOn(host, TeamRoster.Bad) == 0)
         {
-            return null;
+            // A side nobody plays on can't be beaten, so the round only runs out: a draw, scoring nothing, and the next begins.
+            if (!Flow.IsDue(tick))
+            {
+                return null;
+            }
+
+            EndReason = RoundEnd.TimeRanOut;
+            return -1;
         }
 
         int good = AliveOn(host, TeamRoster.Good);
