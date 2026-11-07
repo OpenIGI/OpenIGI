@@ -168,8 +168,9 @@ public sealed partial class MultiplayerScreen : ShellScreen
         bar.ColumnDefinitions.Add(GridLength.Auto);
 
         int games = coop.Listing?.Count ?? 0;
-        var tabs = new TabStrip(theme, [string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Browse · {games}"), "Host"])
+        var tabs = new TabStrip(theme, ["Browse", "Host"])
         {
+            Notes = [string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{games} {(games == 1 ? "GAME" : "GAMES")}"), "CREATE"],
             SegmentHeight = 52f,
             TabPadding = 56f,
             TextSize = 19f,
@@ -185,9 +186,10 @@ public sealed partial class MultiplayerScreen : ShellScreen
         bar.Add(tabs, 0, 0);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10f, VerticalAlignment = VerticalAlignment.Center };
-        var quick = new Button(theme, "QUICK PLAY  [F]")
+        var quick = new Button(theme, "QUICK PLAY")
         {
-            Accent = ButtonAccent.Ghost,
+            Accent = ButtonAccent.Outline,
+            Key = "F",
             TextSize = 17f,
             Tracking = 0.3f,
             Padding = new Thickness(26f, 16f),
@@ -197,7 +199,15 @@ public sealed partial class MultiplayerScreen : ShellScreen
         actions.AddChild(quick);
         if (coop.LastPlayed is { } last)
         {
-            var reconnect = new Button(theme, "RECONNECT") { Accent = ButtonAccent.Ghost, TextSize = 17f, Tracking = 0.3f, Padding = new Thickness(24f, 16f), Tooltip = $"Join {last} again, where you last played." };
+            var reconnect = new Button(theme, "RECONNECT")
+            {
+                Accent = ButtonAccent.Ghost,
+                TextSize = 17f,
+                Tracking = 0.3f,
+                Padding = new Thickness(24f, 12f),
+                SubCaption = coop.LastPlayedAt is { } at ? $"{last} · {Ago(at)}" : last,
+                Tooltip = $"Join {last} again, where you last played.",
+            };
             reconnect.Activated += _ => coop.Reconnect();
             actions.AddChild(reconnect);
         }
@@ -259,6 +269,16 @@ public sealed partial class MultiplayerScreen : ShellScreen
         }
 
         return line;
+    }
+
+    // How long ago, as the design's RECONNECT says it: "just now", "4m ago", "2h ago", "3d ago".
+    private static string Ago(DateTimeOffset at)
+    {
+        TimeSpan since = DateTimeOffset.UtcNow - at;
+        return since.TotalMinutes < 1 ? "just now"
+            : since.TotalHours < 1 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalMinutes}m ago")
+            : since.TotalDays < 1 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalHours}h ago")
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(int)since.TotalDays}d ago");
     }
 
     private static Label Body(UiTheme theme, string text, Bgra32 colour, float size = 16f) =>

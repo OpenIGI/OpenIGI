@@ -222,7 +222,7 @@ public sealed partial class MultiplayerScreen
         words.AddChild(new Label(theme.Heading, "NOTHING YOU LIKE?", 20f, theme.Text));
         words.AddChild(new Label(theme.Body, "Host your own co-op or team game. Your party comes with you.", 15f, theme.TextSecondary));
         card.Add(words, 0, 0);
-        var host = new Button(theme, "HOST A GAME  ›") { Accent = ButtonAccent.Ghost, TextSize = 16f, Tracking = 0.3f, Padding = new Thickness(22f, 14f), Margin = new Thickness(0f, 0f, 24f, 0f), VerticalAlignment = VerticalAlignment.Center };
+        var host = new Button(theme, "HOST A GAME  ›") { Accent = ButtonAccent.Outline, TextSize = 16f, Tracking = 0.3f, Padding = new Thickness(22f, 14f), Margin = new Thickness(0f, 0f, 24f, 0f), VerticalAlignment = VerticalAlignment.Center };
         host.Activated += _ =>
         {
             _tab = 1;

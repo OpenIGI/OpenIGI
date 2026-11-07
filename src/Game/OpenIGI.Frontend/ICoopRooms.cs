@@ -133,6 +133,9 @@ public interface ICoopRooms
     /// <summary>Gets the name of the server or room last played on, or <see langword="null"/> for none.</summary>
     string? LastPlayed => null;
 
+    /// <summary>Gets when the server or room last played on was joined, or <see langword="null"/> for none.</summary>
+    DateTimeOffset? LastPlayedAt => null;
+
     /// <summary>Joins the server or room last played on again.</summary>
     void Reconnect()
     {

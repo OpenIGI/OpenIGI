@@ -53,8 +53,9 @@ public static class KitDraw
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(theme);
         float px = context.Px(size);
+        float text = IsArrows(key) ? key.Length * ArrowWidth(px) : theme.Mono.MeasureWidth(key, px);
         return new UiVec2(
-            theme.Mono.MeasureWidth(key, px) + context.Px(14f),
+            text + context.Px(14f),
             theme.Mono.LineHeight(px) + context.Px(6f));
     }
 
@@ -75,13 +76,54 @@ public static class KitDraw
         var box = new UiRect(topLeft.X, topLeft.Y, extent.X, extent.Y);
         painter.StrokeRect(box, context.Px(1f), UiPalette.White(style == KeyCapStyle.Footer ? 0.22f : 0.18f));
         float px = context.Px(size);
+        Bgra32 ink = style == KeyCapStyle.Footer ? theme.Text : theme.TextMuted;
+        if (IsArrows(key))
+        {
+            // The game's fonts have no arrows, so an arrow key's cap draws them: a shaft with its head, one a key.
+            float step = ArrowWidth(px);
+            float x = box.X + context.Px(7f);
+            foreach (char arrow in key)
+            {
+                DrawArrow(painter, new UiRect(x, box.Y, step, box.Height), arrow, px, ink);
+                x += step;
+            }
+
+            return box;
+        }
+
         painter.DrawText(
             theme.Mono,
             key,
             new UiVec2(box.X + context.Px(7f), UiRowStyle.CenterY(theme.Mono, px, box)),
             px,
-            style == KeyCapStyle.Footer ? theme.Text : theme.TextMuted);
+            ink);
         return box;
+    }
+
+    // Whether a key's name is only arrows, which the fonts lack; and the room one arrow takes, at a text size in pixels.
+    private static bool IsArrows(string key) => key.Length > 0 && key.All(static c => c is '↑' or '↓' or '←' or '→');
+
+    private static float ArrowWidth(float px) => px * 0.9f;
+
+    private static void DrawArrow(UiPainter painter, UiRect cell, char arrow, float px, Bgra32 ink)
+    {
+        float half = px * 0.42f;
+        float head = px * 0.28f;
+        float thick = MathF.Max(1f, px * 0.11f);
+        UiVec2 c = cell.Center;
+        (UiVec2 dir, UiVec2 side) = arrow switch
+        {
+            '↑' => (new UiVec2(0f, -1f), new UiVec2(1f, 0f)),
+            '↓' => (new UiVec2(0f, 1f), new UiVec2(1f, 0f)),
+            '←' => (new UiVec2(-1f, 0f), new UiVec2(0f, 1f)),
+            _ => (new UiVec2(1f, 0f), new UiVec2(0f, 1f)),
+        };
+        var tip = new UiVec2(c.X + (dir.X * half), c.Y + (dir.Y * half));
+        var tail = new UiVec2(c.X - (dir.X * half), c.Y - (dir.Y * half));
+        painter.StrokeLine(tail, tip, thick, ink);
+        var back = new UiVec2(tip.X - (dir.X * head), tip.Y - (dir.Y * head));
+        painter.StrokeLine(tip, new UiVec2(back.X + (side.X * head), back.Y + (side.Y * head)), thick, ink);
+        painter.StrokeLine(tip, new UiVec2(back.X - (side.X * head), back.Y - (side.Y * head)), thick, ink);
     }
 
     /// <summary>Draws a row of progress segments: so many of a total filled in the accent.</summary>

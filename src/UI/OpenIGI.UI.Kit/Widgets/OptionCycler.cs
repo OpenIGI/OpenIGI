@@ -40,7 +40,8 @@ public class OptionCycler : Control
         : base(theme)
     {
         ArgumentNullException.ThrowIfNull(options);
-        Label = (label ?? string.Empty).ToUpperInvariant();
+        Caption = label ?? string.Empty;
+        Label = Caption.ToUpperInvariant();
         _options = [.. options];
         _shown = _options.ConvertAll(o => o.ToUpperInvariant());
         _selected = _options.Count == 0 ? 0 : Math.Clamp(selected, 0, _options.Count - 1);
@@ -53,8 +54,11 @@ public class OptionCycler : Control
     /// <summary>Raised when the value changes, with its new index.</summary>
     public event Action<int>? SelectionChanged;
 
-    /// <summary>Gets the caption.</summary>
+    /// <summary>Gets the caption, in capitals as a strip's cell shows it.</summary>
     public string Label { get; }
+
+    /// <summary>Gets the caption as given, as a row shows it.</summary>
+    public string Caption { get; }
 
     /// <summary>Gets the values.</summary>
     public IReadOnlyList<string> Options => _options;
@@ -238,17 +242,14 @@ public class OptionCycler : Control
             painter.FillRect(Bounds, UiPalette.White(0.03f * hot * appear));
         }
 
-        painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.06f * appear));
-
-        float labelSize = context.Px(14f);
+        float labelSize = context.Px(17f);
         Bgra32 label = Interpolate.Lerp(UiPalette.TextBody, Theme.Accent, Visual.Focus);
-        painter.DrawLabel(
-            Theme.Heading,
-            Label,
-            new UiVec2(Bounds.X + context.Px(InlinePad), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, Bounds)),
+        painter.DrawText(
+            Theme.Body,
+            Caption,
+            new UiVec2(Bounds.X + context.Px(InlinePad), UiRowStyle.CenterY(Theme.Body, labelSize, Bounds)),
             labelSize,
-            UiPalette.Fade(label, appear),
-            0.14f);
+            UiPalette.Fade(label, appear));
 
         float valueSize = context.Px(20f);
         float centre = (_down.Right + _up.X) * 0.5f;
@@ -283,7 +284,21 @@ public class OptionCycler : Control
     private void DrawArrow(UiPainter painter, UiRect box, UiDirection direction, float appear)
     {
         bool hot = IsPointerOver && box.Contains(_pointer);
-        Bgra32 color = Inline ? (hot ? Theme.TextBright : Theme.Accent) : hot ? Theme.Accent : Theme.TextDim;
+        if (Inline)
+        {
+            // A row's arrows are thin chevrons, grey until the pointer is on one.
+            float reach = painter.Context.Px(4f);
+            float thick = painter.Context.Px(1.5f);
+            float sign = direction == UiDirection.Left ? -1f : 1f;
+            UiVec2 c = box.Center;
+            Bgra32 ink = UiPalette.Fade(hot ? Theme.Accent : Theme.TextSecondary, appear);
+            var tip = new UiVec2(c.X + (sign * reach * 0.5f), c.Y);
+            painter.StrokeLine(new UiVec2(tip.X - (sign * reach), c.Y - reach), tip, thick, ink);
+            painter.StrokeLine(new UiVec2(tip.X - (sign * reach), c.Y + reach), tip, thick, ink);
+            return;
+        }
+
+        Bgra32 color = hot ? Theme.Accent : Theme.TextDim;
         float size = painter.Context.Px(9f);
         Span<UiVec2> triangle = stackalloc UiVec2[3];
         float angle = direction switch

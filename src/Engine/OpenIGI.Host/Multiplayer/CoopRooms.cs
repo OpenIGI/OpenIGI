@@ -247,6 +247,9 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     public string? LastPlayed => Browser().Book.History is [var last, ..] ? last.Name : null;
 
     /// <inheritdoc/>
+    public DateTimeOffset? LastPlayedAt => Browser().Book.History is [var last, ..] ? last.At : null;
+
+    /// <inheritdoc/>
     public void Reconnect()
     {
         if (Browser().Book.History is not [var last, ..])

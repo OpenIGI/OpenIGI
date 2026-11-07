@@ -238,14 +238,15 @@ public sealed partial class MultiplayerScreen
         about.AddChild(Body(theme, HostSummary(), theme.TextLabel, 16f));
         top.AddChild(about);
 
-        if (Parties?.Party is { Code: not null } party)
         {
+            int going = Parties?.Party is { Code: not null } party ? party.Members.Count : 1;
+            int most = HostingCoop ? 4 : Coop?.CanHostServer == true && _runsOn == 1 ? 32 : 16;
             var coming = new Grid { Margin = new Thickness(24f, 16f, 24f, 0f) };
             coming.RowDefinitions.Add(GridLength.Auto);
             coming.ColumnDefinitions.Add(GridLength.Star);
             coming.ColumnDefinitions.Add(GridLength.Auto);
             coming.Add(new Label(theme.Body, "Party joins automatically", 15f, theme.TextSecondary), 0, 0);
-            coming.Add(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{party.Members.Count}/{PartyPlaces}"), 15f, theme.Text), 0, 1);
+            coming.Add(new Label(theme.Mono, string.Create(CultureInfo.InvariantCulture, $"{going}/{most}"), 15f, theme.Text), 0, 1);
             top.AddChild(new Rule { Orientation = Orientation.Horizontal, Length = 0f, Color = UiPalette.White(0.07f), Margin = new Thickness(24f, 16f, 24f, 0f) });
             top.AddChild(coming);
         }
