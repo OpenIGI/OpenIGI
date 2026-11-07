@@ -273,6 +273,60 @@ public static class MaterialMapGenerator
     public static void PackDetail(Maps maps, Span<Bgra32> destination) =>
         MaterialMapPacking.PackDetail(maps, destination);
 
+    /// <summary>
+    /// Packs a model's OWN maps, as glTF defines them, into the detail map the G-buffer reads for a surface drawn with
+    /// <c>SurfaceMaterial.AuthoredDetail</c>.
+    /// </summary>
+    /// <param name="normal">
+    /// The tangent-space normal map, row by row from the top, or empty for none (the surface is drawn flat). glTF's
+    /// convention: red is +X, green is +Y up the image.
+    /// </param>
+    /// <param name="normalWidth">The normal map's width in pixels; ignored when it is empty.</param>
+    /// <param name="metallicRoughness">
+    /// The metal-roughness map, row by row from the top, or empty for none. glTF's channels: green is roughness, blue is
+    /// metalness, both linear.
+    /// </param>
+    /// <param name="metallicRoughnessWidth">The metal-roughness map's width in pixels; ignored when it is empty.</param>
+    /// <param name="metallicFactor">glTF's metallic factor: it scales the map, and stands for it where there is none.</param>
+    /// <param name="roughnessFactor">glTF's roughness factor: it scales the map, and stands for it where there is none.</param>
+    /// <param name="destination">Receives the packed map, row by row from the top.</param>
+    /// <param name="width">The packed map's width; each source is sampled to it, nearest texel.</param>
+    /// <param name="height">The packed map's height.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Not the layout <see cref="PackDetail"/> writes.</b> A derived map's roughness is a multiplier stored halved and
+    /// its alpha is occlusion; an authored one carries the roughness itself in blue and the metalness in alpha, and the
+    /// shader reads it that way only for a material that says so. Red and green hold the normal's x and y, as they do in
+    /// a derived map.
+    /// </para>
+    /// <para>
+    /// <b>Green is inverted.</b> The shader builds each pixel's tangent frame from the texture coordinates' own
+    /// derivatives, so its +Y runs the way V grows, which is DOWN the image. glTF's normal maps point +Y up it. Read
+    /// without the flip, every bump on a model is lit from the wrong side, which looks like dents rather than an error.
+    /// </para>
+    /// <para>
+    /// For a model to use it: build the mip chain with <see cref="LinearMipChain.Build"/> (the data is not colour),
+    /// upload it, pair it with the model's colour texture through <c>IGraphicsDevice.SetTextureDetail</c>, and draw
+    /// with <c>SurfaceMaterial.AuthoredDetail</c> set. Nothing in the game's own data does. <b>Not retail.</b>
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is not positive.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="destination"/> is too small, or a source's length is not a whole number of rows of its width.
+    /// </exception>
+    public static void PackAuthoredDetail(
+        ReadOnlySpan<Bgra32> normal,
+        int normalWidth,
+        ReadOnlySpan<Bgra32> metallicRoughness,
+        int metallicRoughnessWidth,
+        float metallicFactor,
+        float roughnessFactor,
+        Span<Bgra32> destination,
+        int width,
+        int height) =>
+        MaterialMapPacking.PackAuthoredDetail(
+            normal, normalWidth, metallicRoughness, metallicRoughnessWidth, metallicFactor, roughnessFactor, destination, width, height);
+
     /// <summary>Packs occlusion, roughness and metallic into the industry's usual three channels.</summary>
     /// <param name="maps">The derived maps.</param>
     /// <param name="destination">Receives the ORM texture: red occlusion, green roughness, blue metallic.</param>

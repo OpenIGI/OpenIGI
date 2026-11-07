@@ -113,6 +113,76 @@ internal static class MaterialMapPacking
         }
     }
 
+    /// <inheritdoc cref="MaterialMapGenerator.PackAuthoredDetail"/>
+    public static void PackAuthoredDetail(
+        ReadOnlySpan<Bgra32> normal,
+        int normalWidth,
+        ReadOnlySpan<Bgra32> metallicRoughness,
+        int metallicRoughnessWidth,
+        float metallicFactor,
+        float roughnessFactor,
+        Span<Bgra32> destination,
+        int width,
+        int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        if (destination.Length < width * height)
+        {
+            throw new ArgumentException(
+                $"A {width}x{height} map needs {width * height} pixels, got {destination.Length}.", nameof(destination));
+        }
+
+        int normalHeight = RowsOf(normal, normalWidth, nameof(normal));
+        int surfaceHeight = RowsOf(metallicRoughness, metallicRoughnessWidth, nameof(metallicRoughness));
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                // Flat where there is no normal map: the neutral pair.
+                byte red = 128, green = 128;
+                if (!normal.IsEmpty)
+                {
+                    Bgra32 n = normal[Nearest(x, y, width, height, normalWidth, normalHeight)];
+                    red = n.R;
+                    green = (byte)(255 - n.G);
+                }
+
+                float roughness = roughnessFactor, metalness = metallicFactor;
+                if (!metallicRoughness.IsEmpty)
+                {
+                    Bgra32 s = metallicRoughness[Nearest(x, y, width, height, metallicRoughnessWidth, surfaceHeight)];
+                    roughness *= s.G / 255f;
+                    metalness *= s.B / 255f;
+                }
+
+                // Named arguments: Bgra32's constructor takes its channels in memory order, blue first (see PackDetail).
+                destination[(y * width) + x] = new Bgra32(r: red, g: green, b: Quantise(roughness), a: Quantise(metalness));
+            }
+        }
+    }
+
+    // How many rows a source holds, or nought for none.
+    private static int RowsOf(ReadOnlySpan<Bgra32> image, int width, string name)
+    {
+        if (image.IsEmpty)
+        {
+            return 0;
+        }
+
+        if (width <= 0 || image.Length % width != 0)
+        {
+            throw new ArgumentException($"{image.Length} pixels are not a whole number of rows {width} wide.", name);
+        }
+
+        return image.Length / width;
+    }
+
+    // The source texel a texel of the packed map falls on.
+    private static int Nearest(int x, int y, int width, int height, int sourceWidth, int sourceHeight) =>
+        ((y * sourceHeight / height) * sourceWidth) + (x * sourceWidth / width);
+
     /// <summary>Quantises a unit value to a byte channel, rounding and clamping.</summary>
     internal static byte Quantise(float value) =>
         (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);

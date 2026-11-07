@@ -320,8 +320,14 @@ GBufferTargets fragmentMain(Varyings input)
 
     float3 normal = normalize(input.worldNormal);
 
+    // A surface whose detail map was AUTHORED with it rather than derived from its diffuse (a model that ships
+    // its own normal, roughness and metal maps, SurfaceMaterial.AuthoredDetail): the map is applied whole
+    // whatever the preset's strength, its third channel is the roughness itself and its fourth the metalness,
+    // texel by texel. Nothing in the game's own data sets it. Not retail.
+    bool authored = push.normal0.w < -1.5;
+
     // A body: cloth and skin, which do not shine. See the end of this stage for what it is given.
-    bool matte = push.normal0.w < -0.5;
+    bool matte = push.normal0.w < -0.5 && !authored;
 
     float roughness = push.material.x;
     float metallic = push.material.y;
@@ -345,7 +351,8 @@ GBufferTargets fragmentMain(Varyings input)
     // once, but only the BASE pass writes the normal and material attachments -- the additive ones
     // have their colour write mask cleared on every attachment but the albedo (see GBufferPipeline).
     // So this runs once per pixel, not once per pass, and the detail cannot accumulate.
-    if (frame.surface.x > 0.0)
+    float detailStrength = authored ? 1.0 : frame.surface.x;
+    if (detailStrength > 0.0)
     {
         float4 detail = uDetail.Sample(uDetailSampler, input.diffuseUv);
 
@@ -373,7 +380,7 @@ GBufferTargets fragmentMain(Varyings input)
         float3 mapped = (tangentAxis * tangentNormal.x)
             + (bitangentAxis * tangentNormal.y)
             + (normal * tangentNormal.z);
-        normal = normalize(lerp(normal, mapped, frame.surface.x));
+        normal = normalize(lerp(normal, mapped, detailStrength));
 
         // The map's roughness is a MULTIPLIER on whatever the material said, not a replacement for it:
         // materials.json knows that a given texture is glass and the derivation does not, so the
@@ -385,13 +392,20 @@ GBufferTargets fragmentMain(Varyings input)
         // floor came out at 0.36 -- under both reflection ceilings, and handed a full-strength reflection
         // at the 1.7 intensity. The two halves of one map now move together.
         float roughnessScale = lerp(1.0, detail.z * 2.0, saturate(frame.surface.x));
-        roughness = clamp(roughness * roughnessScale, 0.02, 1.0);
+        roughness = authored ? clamp(detail.z, 0.04, 1.0) : clamp(roughness * roughnessScale, 0.02, 1.0);
 
         // Alpha is OCCLUSION -- how much of its surroundings a texel can see, from the horizon search
         // the generator has always run and nothing has ever read. Metal moved to materials.json, where
         // it belongs: it is a property of a material and not of a texel, and no filter over a
         // photograph can tell painted grey from steel.
-        occlusion = detail.w;
+        if (authored)
+        {
+            metallic = detail.w;
+        }
+        else
+        {
+            occlusion = detail.w;
+        }
     }
 
     // Up-facing surfaces are smoothed towards the floor sheen so a floor takes a reflection while the
@@ -401,7 +415,7 @@ GBufferTargets fragmentMain(Varyings input)
     // because the roughness written here is what the screen-space reflections decide by as well -- a
     // floor glossy only to the light would be the one surface the setting exists for and still not
     // reflect.
-    if (frame.surface.y != 1.0 && !matte)
+    if (frame.surface.y != 1.0 && !matte && !authored)
     {
         float upFacing = clamp(normal.z, 0.0, 1.0);
         roughness = min(roughness * lerp(1.0, frame.surface.y, smoothstep(0.55, 0.85, upFacing)), 1.0);
