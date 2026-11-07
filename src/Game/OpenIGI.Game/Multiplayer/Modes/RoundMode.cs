@@ -429,6 +429,10 @@ public sealed class EliminationMode(int tickRate, RoundSettings? settings = null
     public override string Id => GameModes.Elimination;
 
     /// <inheritdoc/>
+    /// <remarks>Its rounds are bought for as search and destroy's are: the freeze time, the buy time, and the round's money.</remarks>
+    protected override bool HasArmoury => true;
+
+    /// <inheritdoc/>
     protected override int TimeoutWinner(IModeHost host)
     {
         int good = AliveOn(host, TeamRoster.Good);

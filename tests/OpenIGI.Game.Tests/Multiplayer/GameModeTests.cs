@@ -205,7 +205,7 @@ public sealed class GameModeTests
     public void An_elimination_round_goes_to_the_team_left_standing_and_the_dead_wait_for_the_next()
     {
         Host host = new(teams: [0, 0, 1]);
-        EliminationMode mode = new(TickRate, new RoundSettings { RoundsToWin = 2, RoundOverSeconds = 1 });
+        EliminationMode mode = new(TickRate, new RoundSettings { RoundsToWin = 2, RoundOverSeconds = 1, FreezeSeconds = 0 });
         mode.Start(host, 0);
         Assert.Equal([0, 1, 2], host.Respawned);
         host.Respawned.Clear();
@@ -233,6 +233,20 @@ public sealed class GameModeTests
         mode.Tick(host, 400 + (TickRate * 122) + 1, []);
         Assert.Equal(MatchPhase.Intermission, mode.Flow.Phase);
         Assert.Equal(0, mode.Flow.Winner);
+    }
+
+    [Fact]
+    public void An_elimination_round_opens_on_a_freeze_and_buy_time_as_search_and_destroys_does()
+    {
+        Host host = new(teams: [0, 1]);
+        host.Positions[0] = new(0, 0, 0);
+        host.Positions[1] = new(-50 * Metre, 0, 0);
+        EliminationMode mode = new(TickRate, new RoundSettings { FreezeSeconds = 10 });
+        mode.Start(host, 0);
+        long tick = Run(mode, host, 1, TickRate * 5);
+        Assert.True(host.Held);
+        Assert.Equal(25, mode.Report(tick).BuyLeft, 1);
+        Assert.StartsWith("Bought Uzi", mode.Buy(host, 1, "uzi", tick), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -309,7 +323,7 @@ public sealed class GameModeTests
         return (host, mode);
     }
 
-    private static long Run(SearchAndDestroyMode mode, Host host, long from, int ticks)
+    private static long Run(RoundMode mode, Host host, long from, int ticks)
     {
         for (int i = 0; i < ticks; i++)
         {

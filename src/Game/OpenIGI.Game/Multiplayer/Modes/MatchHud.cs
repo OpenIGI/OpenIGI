@@ -254,7 +254,7 @@ public sealed record MatchHud
         double buyLeft = Math.Max(0, report.BuyLeft - secondsSince);
         hud = hud with
         {
-            Money = state.Mode == GameModes.SearchAndDestroy ? own?.Money : null,
+            Money = rounds ? own?.Money : null,
             BuyClock = buyLeft > 0 && own is { IsAlive: true } ? MatchState.Clock(buyLeft) : null,
             FreeLoadout = state.Mode is GameModes.TeamDeathmatch or GameModes.FreeForAll
                 && state.Phase is MatchPhase.Live or MatchPhase.Warmup
