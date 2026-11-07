@@ -374,6 +374,9 @@ public sealed partial class Igi1HumanAi
             OfferCandidates(candidates);
         }
 
+        // Who was offered, for a mod's behaviour to read during the tick (OfferedHumans).
+        (_offeredByReference, _offeredCandidates) = (_offeredReferences is not null, candidates);
+
         Behaviour?.TickStarted(tick);
         _enemyAlive = TargetHuman?.Candidate.Alive ?? true;
 

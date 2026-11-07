@@ -76,6 +76,59 @@ public sealed partial class Igi1HumanAi
     /// <returns>Whether the line is clear; true when he has no way to tell.</returns>
     public bool CanSeeBetween(Vector3d from, Vector3d to) => _sight is null || _sight(from, to, null);
 
+    /// <summary>
+    /// Applies actions as his script's answer to an event at a point (<c>AIAction_MoveToEvent</c>, <c>AIAction_LookAtEvent</c> and the
+    /// like read where the event was): a mod's own reason to go somewhere or look at something. <b>Not retail</b> as a public call.
+    /// </summary>
+    /// <param name="eventPosition">Where the event was, in world units.</param>
+    /// <param name="actions">The actions, as <see cref="ApplyActions"/> takes them.</param>
+    public void ApplyActionsAt(Vector3d eventPosition, IReadOnlyList<AiProducedAction> actions)
+    {
+        Vector3d? before = _currentEventPosition;
+        _currentEventPosition = eventPosition;
+        try
+        {
+            ApplyActions(actions);
+        }
+        finally
+        {
+            _currentEventPosition = before;
+        }
+    }
+
+    /// <summary>Gets the point he is looking at, or <see langword="null"/> while he looks nowhere in particular. <b>Not retail</b> as a public call.</summary>
+    public Vector3d? LookingAt => _lookAtPoint;
+
+    /// <summary>Has him run, or walk, to an event's position, as a script's run flag does. <b>Not retail</b> as a public call.</summary>
+    /// <param name="run">Whether he runs.</param>
+    public void SetEventGait(bool run) => _scriptedRunGait = run;
+
+    /// <summary>Stands him idle where he is, with no animation asked for: a pause of a mod's own. <b>Not retail</b> as a public call.</summary>
+    public void HoldStill()
+    {
+        Activity = AiSoldierActivity.Idle;
+        RequestedAnimation = -1;
+    }
+
+    /// <summary>Gets the name of the action he is running, or <see langword="null"/>. <b>Not retail</b> as a public call.</summary>
+    public string? RunningActionName => _runningAction;
+
+    /// <summary>Gets the humans offered to his eyes this tick: who he could see, before his sweep. <b>Not retail</b> as a public call.</summary>
+    /// <remarks>Offered by reference, each is described as this reads it, so only a mod that asks pays for the reading.</remarks>
+    public IReadOnlyList<AiDetectionCandidate> OfferedHumans =>
+        _offeredByReference ? [.. _tracked.Values.Select(human => human.Candidate)] : _offeredCandidates;
+
+    // What the tick was offered: the humans themselves, or by reference (then read from what he tracks).
+    private IReadOnlyList<AiDetectionCandidate> _offeredCandidates = [];
+    private bool _offeredByReference;
+
+    /// <summary>Gets whether he could see from one point to another, looking for a given human, with nothing in between. <b>Not retail</b> as a public call.</summary>
+    /// <param name="from">From, in world units.</param>
+    /// <param name="to">To, in world units.</param>
+    /// <param name="seen">The human looked for, whom his line of sight steps past (his own cover, a gun he mans).</param>
+    /// <returns>Whether the line is clear; true when he has no way to tell.</returns>
+    public bool CanSeeBetween(Vector3d from, Vector3d to, int seen) => _sight is null || _sight(from, to, seen);
+
     /// <summary>Gets the nav graph he walks, read only, or <see langword="null"/>. <b>Not retail</b> as a public call.</summary>
     public GraphFile? Graph => _graph;
 
