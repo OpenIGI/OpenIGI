@@ -60,6 +60,8 @@ if [ "$COMPONENT" = "server" ]; then
   NAME="openigi-server-$VERSION-$RID"
   STAGE="$ROOT/artifacts/stage/server-$RID"
   rm -rf "$STAGE" && mkdir -p "$STAGE/$NAME" "$OUT"
+  # Absolute, as the zip below is made from inside the stage: the workflow passes a relative folder.
+  OUT="$(cd "$OUT" && pwd)"
   dotnet publish "$ROOT/apps/OpenIGI.Server/OpenIGI.Server.csproj" "${PUBLISH[@]}"     --runtime "$RID" --self-contained true -p:DataChannelRuntimeIdentifier="$RID" --output "$STAGE/$NAME"
   cp "$ROOT/tools/server/README.md" "$STAGE/$NAME/README.md"
   if [[ "$RID" == win-* ]]; then
