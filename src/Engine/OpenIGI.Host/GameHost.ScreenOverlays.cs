@@ -443,6 +443,11 @@ public sealed partial class GameHost
                     matchHud.DrawBuyMenu(
                         state.Batch, BuyItems, hud.FreeLoadout ? null : hud.Money, hud.BuyClock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
                 }
+
+                if (_teamMenuUp && hud.Teams is { } pick)
+                {
+                    matchHud.DrawTeamMenu(state.Batch, pick, hud.Title, TeamKeyName(), (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                }
             }
             else if (shown is Game.Multiplayer.Modes.MatchBanner banner)
             {

@@ -94,6 +94,24 @@ public sealed class MatchHudTests
     }
 
     [Fact]
+    public void The_team_menu_lists_each_sides_players_and_shuts_the_side_that_would_be_two_ahead()
+    {
+        MatchHud hud = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good }), 0, Board(), 10)!;
+        TeamPick pick = Assert.IsType<TeamPick>(hud.Teams);
+        Assert.Equal(Board().Lines.Count(l => l.Team == TeamRoster.Good), pick.Igi.Count);
+        Assert.Equal(Board().Lines.Count(l => l.Team == TeamRoster.Bad), pick.Conspiracy.Count);
+
+        // Two against one: the one may not join the two, either of the two may go over, and a side is always open to its own.
+        TeamPick uneven = new(TeamRoster.Bad, ["a", "b"], ["c"]);
+        Assert.False(uneven.Open(TeamRoster.Good));
+        Assert.True(uneven.Open(TeamRoster.Bad));
+        Assert.True(new TeamPick(TeamRoster.Good, ["a", "b"], ["c"]).Open(TeamRoster.Bad));
+        Assert.True(new TeamPick(-1, ["a"], ["c"]).Open(TeamRoster.Good));
+        Assert.False(new TeamPick(-1, ["a", "b"], ["c"]).Open(TeamRoster.Good));
+        Assert.Equal(["igi", "conspiracy", "auto"], TeamPick.Choices);
+    }
+
+    [Fact]
     public void Taking_the_bomb_up_from_the_ground_is_told_as_a_pickup_and_a_round_handing_it_out_is_not()
     {
         MatchHud handedOut = MatchHud.Of(Live(new ModeReport { Attackers = TeamRoster.Good, Carrier = 0 }), 0, Board(), 10)!;

@@ -53,6 +53,9 @@ public sealed partial class ServerSession
             case [>= '1' and <= '9'] pick when _mapChoices.Length > 0:
                 PickMap(slot, pick[0] - '1');
                 return true;
+            case "team" or "jointeam":
+                Tell(slot, ChooseTeam(slot, string.Join(' ', words[1..])));
+                return true;
             case "buy" or "b":
                 Tell(slot, Mode.Buy(this, slot, string.Join(' ', words[1..]), _tick));
                 return true;
@@ -185,6 +188,7 @@ public sealed partial class ServerSession
         for (int i = 0; i < slots.Length; i++)
         {
             Match.Players[slots[i]].Team = i % 2 == 0 ? TeamRoster.Good : TeamRoster.Bad;
+            Match.Players[slots[i]].NextTeam = null;
         }
     }
 

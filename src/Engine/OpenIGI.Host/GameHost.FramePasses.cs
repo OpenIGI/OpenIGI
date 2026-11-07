@@ -187,6 +187,7 @@ public sealed partial class GameHost
             UpdateCoopVoice();
             UpdateCoopTalk();
             UpdateScoreboard();
+            UpdateTeamMenu();
             UpdateBuyMenu();
             UpdateBombPickup();
             UpdateMapVote();

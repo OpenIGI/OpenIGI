@@ -102,6 +102,9 @@ public sealed record MatchHud
     /// <summary>Gets who has the bomb, as an attacker is told it (<c>YOU CARRY THE BOMB</c>), or <see langword="null"/>.</summary>
     public string? BombNote { get; init; }
 
+    /// <summary>Gets the sides as the team menu shows them, in a team mode; <see langword="null"/> otherwise.</summary>
+    public TeamPick? Teams { get; init; }
+
     /// <summary>Gets a value indicating whether this player carries the bomb.</summary>
     public bool CarriesBomb { get; init; }
 
@@ -195,6 +198,7 @@ public sealed record MatchHud
                 Left = Strip(first, board, lines, own, report),
                 Right = Strip(second, board, lines, own, report),
                 Role = report.Attackers >= 0 && ownTeam >= 0 ? (ownTeam == report.Attackers ? "ATTACK" : "DEFEND") : null,
+                Teams = TeamPick.Of(lines, ownTeam),
             };
         }
         else

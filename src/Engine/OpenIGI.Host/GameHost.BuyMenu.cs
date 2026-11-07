@@ -66,7 +66,7 @@ public sealed partial class GameHost
 
         if (!_buyMenuUp)
         {
-            if (pressed)
+            if (pressed && !_teamMenuUp)
             {
                 _buyMenuUp = true;
                 _window.CursorLocked = false;
@@ -109,7 +109,7 @@ public sealed partial class GameHost
 
     // Whether a match overlay has the pointer out over it -- the buy menu, the map vote, the scoreboard clicked into -- so the
     // look leaves the cursor free rather than locking it back in the middle every frame.
-    private bool OverlayHasPointer => _buyMenuUp || _mapVoteUp || _scoreboardPointer;
+    private bool OverlayHasPointer => _buyMenuUp || _teamMenuUp || _mapVoteUp || _scoreboardPointer;
 
     private void CloseBuyMenu()
     {

@@ -278,6 +278,28 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws a team match's team menu: a card for each side with its players, and one to be put on the fairer side.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="pick">The sides.</param>
+    /// <param name="modeTitle">The mode's name, as the menu heads it.</param>
+    /// <param name="key">The team menu's key's name, as its foot says to shut it.</param>
+    /// <param name="pointer">Where the pointer is, in pixels.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawTeamMenu(
+        SpriteBatch batch,
+        Game.Multiplayer.Modes.TeamPick pick,
+        string modeTitle,
+        string key,
+        (float X, float Y) pointer,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Gets where the last team menu drew each choice's card, by its index in <see cref="Game.Multiplayer.Modes.TeamPick.Choices"/>.</summary>
+    IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> TeamMenuCards => [];
+
     /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
     IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
 

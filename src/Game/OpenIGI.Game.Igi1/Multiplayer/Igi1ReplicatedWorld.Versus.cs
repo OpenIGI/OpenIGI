@@ -22,10 +22,14 @@ public sealed partial class Igi1ReplicatedWorld
         }
 
         // A player's first side, given just after it joins, is what its spawn kit is chosen by: armed with it now. A later
-        // change of sides (the half) keeps what it carries.
+        // change of sides (a player's choice, the half, a scramble) arms it afresh at its next spawn, with the new side's kit.
         if (first && _versus == Versus.Teams && LivingRig(slot) is { } rig)
         {
             Restock(rig, slot, fresh: true);
+        }
+        else if (changed)
+        {
+            _armedHere.Remove(slot);
         }
     }
 

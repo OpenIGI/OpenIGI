@@ -343,6 +343,16 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 
     private void BeginRound(IModeHost host, long tick)
     {
+        // Those who asked for the other side in the middle of the last round go over to it now.
+        foreach (MatchPlayer player in host.Match.Players.Values)
+        {
+            if (player.NextTeam is { } next)
+            {
+                player.Team = next;
+                player.NextTeam = null;
+            }
+        }
+
         host.ResetLevel();
         foreach (int slot in host.PlayerSlots)
         {

@@ -431,6 +431,70 @@ public sealed class SessionLoopbackTests
     }
 
     [Fact]
+    public void A_player_switches_side_in_chat_while_the_teams_stay_within_one_and_auto_keeps_them_even()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        server.Mode = GameModes.For("tdm", world, TickRate);
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        float[] idle = new float[ToyWorld.Channels];
+        List<string> heard = [];
+        MatchPlayer? mover = null;
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+
+            // Two on one side and one on the other: one of the two goes over, by the chat line the team menu sends.
+            if (tick == 2 * TickRate)
+            {
+                Assert.Equal(3, server.Match.Players.Count);
+                int bigger = server.Match.Players.Values.Count(p => p.Team == TeamRoster.Good) >= 2 ? TeamRoster.Good : TeamRoster.Bad;
+                mover = server.Match.Players.Values.First(p => p.Team == bigger);
+                int index = int.Parse(mover.Name[1..], System.Globalization.CultureInfo.InvariantCulture);
+                clients[index].Say(bigger == TeamRoster.Good ? "/team conspiracy" : "/team igi");
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                heard.AddRange(clients[i].TakeChat().Select(static l => l.Text));
+            }
+        }
+
+        // It is over, and told so; the sides are still one apart.
+        Assert.NotNull(mover);
+        Assert.Equal(1, Math.Abs(server.Match.Players.Values.Count(p => p.Team == TeamRoster.Good) - server.Match.Players.Values.Count(p => p.Team == TeamRoster.Bad)));
+        Assert.Contains(heard, l => l.StartsWith("You are on ", StringComparison.Ordinal));
+        Assert.DoesNotContain(heard, l => l.StartsWith("/team", StringComparison.Ordinal));
+
+        // The one now alone on its side may not go over to the two; auto leaves it where it is needed.
+        MatchPlayer alone = server.Match.Players.Values.Single(p => server.Match.Players.Values.Count(q => q.Team == p.Team) == 1);
+        int other = alone.Team == TeamRoster.Good ? TeamRoster.Bad : TeamRoster.Good;
+        Assert.EndsWith("has too many players.", server.ChooseTeam(alone.Slot, other == TeamRoster.Good ? "igi" : "conspiracy"), StringComparison.Ordinal);
+        Assert.StartsWith("You are on", server.ChooseTeam(alone.Slot, "auto"), StringComparison.Ordinal);
+        Assert.NotEqual(other, alone.Team);
+        Assert.Equal("Team: igi, conspiracy or auto.", server.ChooseTeam(alone.Slot, "blue"));
+    }
+
+    [Fact]
     public void A_team_line_is_heard_by_the_team_only_and_the_servers_word_by_all_as_nobodys()
     {
         double now = 0;

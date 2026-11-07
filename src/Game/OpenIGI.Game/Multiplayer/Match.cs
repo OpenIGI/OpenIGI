@@ -15,6 +15,9 @@ public sealed class MatchPlayer(int slot, string name, int team, int money)
     /// <summary>Gets or sets the player's team.</summary>
     public int Team { get; set; } = team;
 
+    /// <summary>Gets or sets the side it joins when the next round begins, having asked to change in the middle of one.</summary>
+    public int? NextTeam { get; set; }
+
     /// <summary>Gets or sets the player's money.</summary>
     public int Money { get; set; } = money;
 

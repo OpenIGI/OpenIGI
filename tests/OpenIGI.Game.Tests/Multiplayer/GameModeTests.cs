@@ -236,6 +236,23 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void A_side_asked_for_in_the_middle_of_a_round_is_taken_when_the_next_begins()
+    {
+        Host host = new(teams: [0, 0, 1]);
+        EliminationMode mode = new(TickRate, new RoundSettings { RoundsToWin = 3, RoundOverSeconds = 1 });
+        mode.Start(host, 0);
+        host.Match.Players[0].NextTeam = 1;
+
+        // Team 1 falls: the round ends with the mover still on team 0, and the next puts it on team 1.
+        mode.Tick(host, 400, [new WorldDeath(12, 10)]);
+        Assert.Equal(0, host.Match.Players[0].Team);
+        mode.Tick(host, 400 + TickRate, []);
+        Assert.Equal(2, mode.Flow.Round);
+        Assert.Equal(1, host.Match.Players[0].Team);
+        Assert.Null(host.Match.Players[0].NextTeam);
+    }
+
+    [Fact]
     public void A_round_with_one_team_empty_is_won_by_nobody_and_runs_out_as_a_draw_into_the_next()
     {
         Host host = new(teams: [0]);
