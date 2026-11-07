@@ -34,7 +34,6 @@ public static class Armoury
     [
         new("colt", "Colt Anaconda", "WEAPON_ID_COLT", 64, 300, 40),
         new("uzi", "Uzi", "WEAPON_ID_UZI", 320, 900, 60),
-        new("mp5", "MP5", "WEAPON_ID_MP5", 300, 1250, 60),
         new("mp5sd", "MP5 SD", "WEAPON_ID_MP5SD", 300, 1500, 60),
         new("spas", "SPAS-12", "WEAPON_ID_SPAS12", 100, 1700, 20),
         new("ak47", "AK-47", "WEAPON_ID_AK47", 300, 2500, 80),
