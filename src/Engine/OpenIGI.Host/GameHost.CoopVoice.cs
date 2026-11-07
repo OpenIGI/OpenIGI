@@ -261,7 +261,7 @@ public static class CoopVoiceCVars
 
     /// <summary>The key held to talk, by its bind name.</summary>
     public static readonly StringCVar Key = CVar.Text(
-        "coop_voice_key", "g", CVarOptions.Archive, "The key held to talk in co-op, by its bind name.");
+        "coop_voice_key", "v", CVarOptions.Archive, "The key held to talk in co-op, by its bind name: V, clear of the buy menu's G and the drop key's X.");
 
     /// <summary>How loud the others' voices are, in percent.</summary>
     public static readonly NumericCVar<int> Volume = CVar.Int(

@@ -100,6 +100,22 @@ public sealed class GunPickup
     /// <summary>Gets whether the pickup has already been consumed.</summary>
     public bool IsCollected { get; internal set; }
 
+    /// <summary>Gets the rounds its magazine holds, for one a player dropped; <see langword="null"/> for a full one.</summary>
+    public int? Rounds { get; internal set; }
+
+    // The inventory that dropped it, which does not take it back until it has stepped out of reach.
+    internal object? HeldOffFrom { get; set; }
+
+    /// <summary>Gets how a player threw it -- where it left the hand, how it was turned, and its speed in units a tick -- or
+    /// <see langword="null"/> for any other pickup: what another machine flies the same throw from.</summary>
+    public (Vector3d Position, Matrix3f Orientation, Vector3d Velocity)? Launch { get; internal set; }
+
+    /// <summary>Gets or sets whether walking over it takes it: off for a bomb mode's bomb, which the mode hands out by its own rule.</summary>
+    public bool WalkOverTakes { get; set; } = true;
+
+    /// <summary>Gets whether it is still in the air or sliding: a drop not yet come to rest.</summary>
+    public bool IsMoving => _motion is { IsResting: false };
+
     /// <summary>Gets whether this pickup is a physical runtime gun drop.</summary>
     public bool IsDynamic => _motion is not null;
 
@@ -336,7 +352,14 @@ public sealed class GunPickupRegistry : ILevelReset
         List<GunPickup>? collected = null;
         foreach (GunPickup pickup in _items)
         {
-            if (!pickup.IsCollected && PickupReach.IsWithinRange(position, pickup.Position) && CollectInto(pickup, inventory))
+            bool reached = PickupReach.IsWithinRange(position, pickup.Position);
+            if (ReferenceEquals(pickup.HeldOffFrom, inventory))
+            {
+                pickup.HeldOffFrom = reached ? inventory : null;
+                continue;
+            }
+
+            if (!pickup.IsCollected && pickup.WalkOverTakes && reached && CollectInto(pickup, inventory))
             {
                 (collected ??= []).Add(pickup);
             }
@@ -360,7 +383,7 @@ public sealed class GunPickupRegistry : ILevelReset
 
         // GunPickup::Update forwards its configured clip size. The human handler deliberately
         // leaves an existing weapon in place and turns the same payload into loose reserve ammo.
-        inventory.PickUp(pickup.Weapon, pickup.Ammo, pickup.Weapon.RoundsPerClip);
+        inventory.PickUp(pickup.Weapon, pickup.Ammo, pickup.Rounds ?? pickup.Weapon.RoundsPerClip);
         Take(pickup);
         return true;
     }
@@ -417,14 +440,43 @@ public sealed class GunPickupRegistry : ILevelReset
     /// <param name="orientation">The hand orientation.</param>
     /// <param name="weapon">The weapon.</param>
     /// <param name="velocity">What the gun leaves the hand with, units per tick.</param>
+    /// <param name="rounds">The rounds left in its magazine, or <see langword="null"/> for a full one.</param>
+    /// <param name="droppedBy">The inventory of the player who dropped it, which cannot take it back until it steps out of reach.</param>
     /// <returns>The pickup.</returns>
-    public GunPickup Spawn(Vector3d position, Matrix3f orientation, WeaponType weapon, Vector3d velocity = default)
+    public GunPickup Spawn(
+        Vector3d position, Matrix3f orientation, WeaponType weapon, Vector3d velocity = default, int? rounds = null, PlayerWeapons? droppedBy = null)
     {
         ArgumentNullException.ThrowIfNull(weapon);
 
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
+        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null) { Rounds = rounds, HeldOffFrom = droppedBy };
         pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
+        _items.Add(pickup);
+        Spawned?.Invoke(pickup);
+        return pickup;
+    }
+
+    /// <summary>Throws a gun a player lets go of, as I.G.I. 2's player throws its own: always flown as a body, whatever
+    /// <see cref="GameplayCVars.RealisticDrops"/> says of the guns the dead let fall, so the throw's speed carries it.</summary>
+    /// <param name="position">Where it leaves the hand, in world units.</param>
+    /// <param name="orientation">How it is turned.</param>
+    /// <param name="weapon">The weapon.</param>
+    /// <param name="velocity">Its speed, units a tick.</param>
+    /// <param name="rounds">The rounds left in its magazine, or <see langword="null"/> for a full one.</param>
+    /// <param name="droppedBy">The thrower's inventory, which cannot take it back until it steps out of reach; none on a
+    /// machine flying another's throw.</param>
+    /// <returns>The pickup.</returns>
+    public GunPickup Throw(Vector3d position, Matrix3f orientation, WeaponType weapon, Vector3d velocity, int? rounds, PlayerWeapons? droppedBy = null)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
+        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null)
+        {
+            Rounds = rounds,
+            HeldOffFrom = droppedBy,
+            Launch = (position, orientation, velocity),
+        };
+        pickup.StartFalling(realistic: true, velocity);
         _items.Add(pickup);
         Spawned?.Invoke(pickup);
         return pickup;
@@ -434,12 +486,13 @@ public sealed class GunPickupRegistry : ILevelReset
     /// <param name="position">Where it lies.</param>
     /// <param name="orientation">How it lies.</param>
     /// <param name="weapon">The weapon.</param>
+    /// <param name="rounds">The rounds left in its magazine, or <see langword="null"/> for a full one.</param>
     /// <returns>The pickup.</returns>
-    public GunPickup SpawnResting(Vector3d position, Matrix3f orientation, WeaponType weapon)
+    public GunPickup SpawnResting(Vector3d position, Matrix3f orientation, WeaponType weapon, int? rounds = null)
     {
         ArgumentNullException.ThrowIfNull(weapon);
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
-        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
+        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null) { Rounds = rounds };
         _items.Add(pickup);
         Spawned?.Invoke(pickup);
         return pickup;

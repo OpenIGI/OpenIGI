@@ -344,7 +344,8 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
         return _messages.ShowTransient(text, durationSeconds, portrait);
     }
 
-    /// <summary>Gets the messages on screen now, in the slot order the original draws them in.</summary>
+    /// <summary>Gets the messages on screen now, in the slot order the original draws them in; while <see cref="Silenced"/>, only
+    /// what the game itself says of an event (a weapon picked up), as a multiplayer arena shows it.</summary>
     /// <remarks>
     /// <para>
     /// Slot order, not send order, because that is what the player sees. <c>0x486650</c> puts a new
@@ -357,7 +358,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
     /// than a list rebuilt thirty times a second for a renderer that usually draws nothing.
     /// </para>
     /// </remarks>
-    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Silenced ? [] : _messages.DisplayedMessages;
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Silenced ? _messages.EventMessages : _messages.DisplayedMessages;
 
     /// <summary>Empties every message slot, as the <c>StatusMessageScreen_ClearMessages</c> native does.</summary>
     /// <remarks>

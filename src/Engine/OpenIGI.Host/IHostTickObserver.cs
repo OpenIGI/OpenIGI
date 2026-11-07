@@ -54,6 +54,11 @@ public interface ISessionScoreboard
     /// <returns>The feedback, or <see langword="null"/> for nothing to show.</returns>
     Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view) => null;
 
+    /// <summary>Gets where a player of the match stands as this end sees it.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns>Its feet, in world units, or <see langword="null"/> when this end has it nowhere.</returns>
+    Core.Numerics.Vector3d? PositionOfSlot(int slot) => null;
+
     /// <summary>Gets what the mode last said of itself (a bomb planted, and where), or <see langword="null"/>.</summary>
     Game.Multiplayer.Modes.ModeReport? ModeReport => null;
 

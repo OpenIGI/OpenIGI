@@ -208,6 +208,8 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="controls">The host's hand on the board -- the players it may remove, and the pointer -- or <see langword="null"/> for a board only read.</param>
     /// <param name="relayed">Whether this player's connection goes through the TURN relay.</param>
     /// <param name="mode">The mode played, a <see cref="Game.Multiplayer.Modes.GameModes"/> id; empty for co-op.</param>
+    /// <param name="besideVote">Whether it shares the screen with the vote for the next map, on its left, its rows fitted to the
+    /// room under the match's card; otherwise it stands alone in the middle.</param>
     void DrawScoreboard(
         SpriteBatch batch,
         Game.Multiplayer.Scoreboard board,
@@ -218,7 +220,8 @@ public interface IRemasteredHudPresenter : IDisposable
         int screenHeight,
         ScoreboardControls? controls = null,
         bool relayed = false,
-        string mode = "")
+        string mode = "",
+        bool besideVote = false)
     {
     }
 
@@ -259,16 +262,16 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <summary>Draws a match's buy menu: what the armoury sells, each with its price, those the player cannot afford dimmed.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="items">What it sells.</param>
-    /// <param name="money">The player's money.</param>
-    /// <param name="buyClock">The buy time left, as <c>0:14</c>.</param>
+    /// <param name="money">The player's money, or <see langword="null"/> for a free loadout (a deathmatch's).</param>
+    /// <param name="buyClock">The buy time left, as <c>0:14</c>, or <see langword="null"/> for a loadout picked at any time.</param>
     /// <param name="pointer">Where the pointer is, in pixels.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     void DrawBuyMenu(
         SpriteBatch batch,
         IReadOnlyList<Game.Multiplayer.Modes.ArmouryItem> items,
-        int money,
-        string buyClock,
+        int? money,
+        string? buyClock,
         (float X, float Y) pointer,
         int screenWidth,
         int screenHeight)
@@ -285,7 +288,10 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="pointer">Where the pointer is, in pixels.</param>
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
-    void DrawMapVote(SpriteBatch batch, Game.Multiplayer.Modes.NextMapVote vote, string? clock, (float X, float Y) pointer, int screenWidth, int screenHeight)
+    /// <param name="besideBoard">Whether it shares the screen with the scoreboard, on its right, the maps in two columns; otherwise
+    /// it stands alone across the middle.</param>
+    void DrawMapVote(
+        SpriteBatch batch, Game.Multiplayer.Modes.NextMapVote vote, string? clock, (float X, float Y) pointer, int screenWidth, int screenHeight, bool besideBoard = false)
     {
     }
 
@@ -350,7 +356,7 @@ public interface IRemasteredHudPresenter : IDisposable
 
     /// <summary>Draws co-op talk: the lines said, the one being typed, and the places marked, each with who and how far.</summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="chat">The lines still up, oldest first.</param>
+    /// <param name="chat">The lines to show, oldest first: those still up, or the whole history while a line is typed.</param>
     /// <param name="entry">The line being typed, or <see langword="null"/>.</param>
     /// <param name="warning">A word about this player's connection, or <see langword="null"/>.</param>
     /// <param name="talking">Who is talking now, by name.</param>
@@ -363,7 +369,7 @@ public interface IRemasteredHudPresenter : IDisposable
     void DrawCoopTalk(
         SpriteBatch batch,
         IReadOnlyList<HudChatLine> chat,
-        string? entry,
+        HudChatEntry? entry,
         string? warning,
         IReadOnlyList<string> talking,
         IReadOnlyList<HudMark> marks,

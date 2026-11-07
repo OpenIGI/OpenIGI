@@ -39,7 +39,7 @@ public sealed partial class GameHost
                 hosted,
                 () =>
                 {
-                    IReadOnlyList<MapChoice> offered = NextMapFlow.Around(MissionList, MissionOf(hosted), hosted.Mode, Random.Shared);
+                    IReadOnlyList<MapChoice> offered = NextMapFlow.Around(ArenaMissionList, MissionOf(hosted), hosted.Mode, Random.Shared);
                     _logger.Information("Coop", $"The match is decided; voting on the next map: {string.Join(", ", offered.Select(c => $"{c.Mission} {c.Mode}"))}.");
                     return offered;
                 },

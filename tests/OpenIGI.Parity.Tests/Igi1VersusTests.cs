@@ -211,20 +211,62 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
-    public void An_attacker_holding_use_at_a_site_plants_the_bomb_and_its_blast_wins_the_round()
+    public void An_attacker_with_the_bomb_in_hand_holding_use_at_a_site_plants_it_and_its_blast_wins_the_round()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
         ServerSession session = pair.Session.Session!;
         SearchAndDestroyMode mode = Assert.IsType<SearchAndDestroyMode>(session.Mode);
         Landed(pair);
 
+        // The round's freeze time first: everyone held where they start, nothing of the round run yet.
+        pair.RunUntil(() => false, FreezeTicks);
+
+        // The carrier's charge rides on its back on the other player's window: the host's own drawing of the joiner, or the
+        // joiner's of the host, from the snapshot's mark.
+        Assert.True(mode.Carrier >= 0, "nobody was handed the bomb");
+        Igi1Gameplay watcher = mode.Carrier == ServerSession.HostSlot ? pair.Joiner! : pair.Host!;
+        Assert.True(pair.RunUntil(() => watcher.World.PartnerBodies?.Invoke().Any(static b => b.CarriesBomb) == true, 30 * 2) >= 0,
+            "the carrier was never drawn with the bomb");
+
         // Whoever attacks: a site under its feet, and the use key held on its own game.
         bool hostAttacks = session.Match.Players[ServerSession.HostSlot].Team == SearchAndDestroyMode.Attackers;
         Core.Numerics.Vector3d feet = hostAttacks ? pair.Host!.World.Player!.Body.Position : Assert.Single(pair.Host!.World.NetworkPlayers).Player.Body.Position;
         session.Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [feet.X, feet.Y, feet.Z], 5 * 4096)] };
+        OpenIGI.Game.Igi1.Player.PlayerCamera planter = hostAttacks ? pair.Host!.World.Player! : Assert.Single(pair.Host!.World.NetworkPlayers).Player;
+        OpenIGI.Game.Igi1.Player.PlayerCamera own = hostAttacks ? pair.Host!.World.Player! : pair.Joiner!.World.Player!;
+        int bomb = OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Id;
+
+        // The bomb is a weapon the carrier carries, on its own game and the server's alike -- but not yet in hand, and with
+        // it out of hand the use key at a site plants nothing.
+        Assert.True(pair.RunUntil(() => own.Weapons?.HasWeapon(bomb) == true && planter.Weapons?.HasWeapon(bomb) == true, 30 * 2) >= 0,
+            "the carrier was never given the bomb to carry");
+        Assert.False(OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Holds(planter));
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, true);
+        pair.RunUntil(() => false, (int)(30 * new BombSettings().PlantSeconds) + 15);
+        Assert.Null(mode.PlantedAt);
+        Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, false);
+
+        // Picked off the weapon wheel on the carrier's own game, it comes up in hand there and -- the pick carried in its
+        // commands -- on the server; then the use key held plants it.
+        own.ChooseFromWheel(bomb.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.True(pair.RunUntil(() => OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Holds(own) && OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.Holds(planter), 30 * 3) >= 0,
+            "the bomb never came up in hand");
         Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, true);
 
-        Assert.True(pair.RunUntil(() => mode.PlantedAt is not null, 30 * 6) >= 0, "the bomb was never planted");
+        // The planter kneels over it -- the bomb's plant clip, on the server's body of it -- and stands once it is down.
+        bool knelt = false;
+        Assert.True(pair.RunUntil(() =>
+        {
+            knelt |= planter.ModeAnimation == OpenIGI.Game.Igi1.Multiplayer.Igi1BombAnimations.Plant && planter.BodyClip is not null;
+            return mode.PlantedAt is not null;
+        }, 30 * 6) >= 0, "the bomb was never planted");
+        Assert.True(knelt, "the planter never played the plant");
+        pair.RunUntil(() => false, 2);
+        Assert.Equal(-1, planter.ModeAnimation);
+        Assert.True(pair.RunUntil(() => watcher.World.PartnerBodies?.Invoke().Any(static b => b.CarriesBomb) == false, 30 * 2) >= 0,
+            "the planter still carried the bomb once it was down");
+        Assert.True(pair.RunUntil(() => own.Weapons?.HasWeapon(bomb) == false && planter.Weapons?.HasWeapon(bomb) == false, 30 * 2) >= 0,
+            "the bomb stayed in the planter's weapons once it was down");
         Igi1CoopPair.Hold(hostAttacks ? pair.HostInput : pair.JoinerInput, OpenIGI.Input.KeyCode.E, false);
         Assert.True(pair.RunUntil(() => pair.Client.Banner?.Headline?.StartsWith("BOMB PLANTED AT A", StringComparison.Ordinal) == true, 30 * 3) >= 0,
             "the joiner was never told of the plant");
@@ -284,6 +326,9 @@ public sealed class Igi1VersusTests
         Assert.True(apart < 4096, $"the joiner's own body is {apart / 4096:0.0} m from the server's");
     }
 
+    // A buying mode's round opens on its freeze time, the players held where they start: in ticks, and a few over.
+    private static readonly int FreezeTicks = (int)(30 * new RoundSettings().FreezeSeconds) + 15;
+
     // The host's feet once it has come down from the level's start.
     private static Core.Numerics.Vector3d Landed(Igi1CoopPair pair)
     {
@@ -304,7 +349,7 @@ public sealed class Igi1VersusTests
         // A player's game plays cutscenes; held in an arena, mission 1's intro must still count as over, or the level never
         // hands either player its controls (seen live, 2026-11-06).
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy, hostSkipsIntro: false);
-        pair.RunUntil(() => false, 90);
+        pair.RunUntil(() => false, 90 + FreezeTicks);
         Core.Numerics.Vector3d hostFrom = pair.Host!.World.Player!.Body.Position;
         Core.Numerics.Vector3d joinerFrom = pair.Joiner!.World.Player!.Body.Position;
         Igi1CoopPair.Hold(pair.HostInput, OpenIGI.Input.KeyCode.W, true);
@@ -317,6 +362,104 @@ public sealed class Igi1VersusTests
         double joinerWalked = Core.Numerics.Vector3d.Distance(joinerFrom, pair.Joiner.World.Player!.Body.Position);
         Assert.True(hostWalked > 4096, $"the host walked {hostWalked / 4096:0.00} m");
         Assert.True(joinerWalked > 4096, $"the joiner walked {joinerWalked / 4096:0.00} m");
+    }
+
+    [RequiresGameDataFact]
+    public void A_joiner_dropping_its_gun_throws_it_as_igi2_does_and_both_games_fly_it_to_the_same_rest()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.TeamDeathmatch);
+        Landed(pair);
+        Igi1NetworkPlayer joiner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        OpenIGI.Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Assert.True(pair.RunUntil(() => own.Weapons?.Carried.Any(c => OpenIGI.Game.Igi1.Player.PlayerCamera.IsDroppable(c.Weapon)) == true, 30 * 3) >= 0,
+            "the joiner was never given a gun");
+        own.ChooseFromWheel(own.Weapons!.Carried.First(c => OpenIGI.Game.Igi1.Player.PlayerCamera.IsDroppable(c.Weapon)).Weapon.WeaponId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.True(pair.RunUntil(() => own.Weapons?.InHand is { } held && OpenIGI.Game.Igi1.Player.PlayerCamera.IsDroppable(held.Weapon), 30 * 3) >= 0,
+            $"the joiner never had a gun in hand: {own.Weapons?.InHand?.Weapon.ScriptId} {own.Weapons?.InHand?.Weapon.Category}, carries {string.Join(",", own.Weapons?.Carried.Select(c => c.Weapon.ScriptId + ":" + c.Weapon.Category) ?? [])}");
+        int gun = own.Weapons!.InHand!.Value.Weapon.WeaponId;
+        GunPickupRegistry served = pair.Host.World.GunPickups!;
+        GunPickupRegistry shown = pair.Joiner.World.GunPickups!;
+        int before = served.Items.Count;
+
+        // The drop key, pressed and let go: the gun leaves the joiner's hand on both games, and the server throws it.
+        Igi1CoopPair.Hold(pair.JoinerInput, OpenIGI.Input.KeyCode.X, true);
+        pair.RunUntil(() => false, 3);
+        Igi1CoopPair.Hold(pair.JoinerInput, OpenIGI.Input.KeyCode.X, false);
+        Assert.True(pair.RunUntil(() => served.Items.Count > before, 30) >= 0, "the server never threw the gun");
+        GunPickup thrown = served.Items[^1];
+        Assert.Equal(gun, thrown.Weapon.WeaponId);
+        Assert.NotNull(thrown.Launch);
+        Vector3d speed = thrown.Launch!.Value.Velocity;
+        Assert.Equal(614.4, Math.Sqrt((speed.X * speed.X) + (speed.Y * speed.Y)), 1);
+        Assert.True(speed.Z > 270, $"it was thrown {speed.Z:0} up a tick, not I.G.I. 2's 273");
+        Assert.True(pair.RunUntil(() => !joiner.Player.Weapons!.HasWeapon(gun) && !own.Weapons.HasWeapon(gun), 30) >= 0,
+            "the gun stayed in the joiner's weapons");
+
+        // The joiner's game flies the throw itself -- in the air there, not laid at once -- and both come to rest together.
+        Assert.True(pair.RunUntil(() => shown.Items.Count > before, 30) >= 0, "the joiner's game never saw the throw");
+        GunPickup flown = shown.Items[before];
+        Assert.True(flown.IsMoving, "the joiner's game laid the gun down instead of flying it");
+        Assert.True(pair.RunUntil(() => !thrown.IsMoving && !flown.IsMoving, 30 * 6) >= 0, "the gun never came to rest");
+        pair.RunUntil(() => false, 30);
+        Assert.True(Vector3d.Distance(thrown.Position, flown.Position) < 64, $"the games laid it {Vector3d.Distance(thrown.Position, flown.Position):0} units apart");
+
+        // Standing by it, the one who threw it does not take it straight back.
+        Assert.False(thrown.IsCollected);
+        Assert.False(joiner.Player.Weapons!.HasWeapon(gun));
+
+        // What the game says of a pickup still shows in the arena, on both games, with the campaign's own messages kept off.
+        foreach (Igi1Gameplay game in new[] { pair.Host, pair.Joiner })
+        {
+            Assert.True(game.World.Objectives!.Silenced, "the arena showed the campaign's messages");
+            Assert.True(game.World.Objectives.ShowTransientMessage("PICKED UP A GUN"));
+            Assert.Contains(game.World.Objectives.DisplayedMessages, m => m.Text == "PICKED UP A GUN");
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void A_carrier_dropping_the_bomb_throws_it_as_a_gun_is_thrown_and_only_takes_it_back_once_away()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        SearchAndDestroyMode mode = Assert.IsType<SearchAndDestroyMode>(pair.Session.Session!.Mode);
+        Landed(pair);
+        pair.RunUntil(() => false, FreezeTicks);
+        Assert.True(mode.Carrier >= 0, "nobody was handed the bomb");
+        bool hostCarries = mode.Carrier == ServerSession.HostSlot;
+        OpenIGI.Game.Igi1.Player.PlayerCamera carrier = hostCarries ? pair.Host!.World.Player! : Assert.Single(pair.Host!.World.NetworkPlayers).Player;
+        OpenIGI.Game.Igi1.Player.PlayerCamera own = hostCarries ? pair.Host!.World.Player! : pair.Joiner!.World.Player!;
+        Input.InputState keys = hostCarries ? pair.HostInput : pair.JoinerInput;
+        int bomb = Igi1BombWeapon.Id;
+
+        // Out of hand, the drop key drops whatever gun is held instead: the bomb stays.
+        Assert.True(pair.RunUntil(() => own.Weapons?.HasWeapon(bomb) == true, 30 * 2) >= 0, "the carrier was never given the bomb");
+        own.ChooseFromWheel(bomb.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.True(pair.RunUntil(() => Igi1BombWeapon.Holds(own) && Igi1BombWeapon.Holds(carrier), 30 * 3) >= 0, "the bomb never came up in hand");
+
+        Igi1CoopPair.Hold(keys, OpenIGI.Input.KeyCode.X, true);
+        pair.RunUntil(() => false, 3);
+        Igi1CoopPair.Hold(keys, OpenIGI.Input.KeyCode.X, false);
+        Assert.True(pair.RunUntil(() => mode.DroppedAt is not null, 30) >= 0, "the bomb was never dropped");
+        Assert.Equal(-1, mode.Carrier);
+        Vector3d stood = carrier.Body.Position;
+        Assert.True(mode.BombFlies, "the bomb was laid down, not thrown");
+
+        // Thrown as a dropped gun is: both games fly it, and it comes to rest well ahead of the carrier.
+        GunPickup Bomb(Igi1Gameplay game) => Assert.Single(game.World.GunPickups!.Items, p => p.Weapon.WeaponId == bomb && !p.IsCollected);
+        Igi1Gameplay other = hostCarries ? pair.Joiner! : pair.Host!;
+        Assert.True(pair.RunUntil(() => other.World.GunPickups!.Items.Any(p => p.Weapon.WeaponId == bomb && !p.IsCollected), 30) >= 0,
+            "the other game never saw the bomb thrown");
+        Assert.True(Bomb(pair.Host!).IsMoving || Bomb(pair.Joiner!).IsMoving, "the bomb never flew");
+        Assert.True(pair.RunUntil(() => !Bomb(pair.Host!).IsMoving && !Bomb(pair.Joiner!).IsMoving, 30 * 6) >= 0, "the bomb never came to rest");
+        pair.RunUntil(() => false, 30);
+        Assert.True(Vector3d.Distance(Bomb(pair.Host!).Position, Bomb(pair.Joiner!).Position) < 64, "the games laid the bomb apart");
+        Assert.True(Vector3d.Distance(mode.DroppedAt!.Value, Bomb(pair.Host!).Position) < 1, "the mode lost track of the thrown bomb");
+        Assert.True(Vector3d.Distance(mode.DroppedAt!.Value, stood) > 0.5 * 4096, "the bomb landed at the carrier's feet");
+        Assert.True(pair.RunUntil(() => !own.Weapons!.HasWeapon(bomb) && !carrier.Weapons!.HasWeapon(bomb), 30 * 2) >= 0,
+            "the bomb stayed in the carrier's weapons");
+
+        // Standing over it, the one who dropped it does not take it straight back up.
+        pair.RunUntil(() => false, 30);
+        Assert.Equal(-1, mode.Carrier);
     }
 
     [RequiresGameDataFact]

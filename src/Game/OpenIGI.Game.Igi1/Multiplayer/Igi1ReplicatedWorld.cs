@@ -123,6 +123,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
                 Dead = e.p.IsDead,
                 Revive = e.p.IsDead && Game.Multiplayer.Modes.PlayerSides.Revivable(VersusMode) ? ReviveProgressOf(e.p.Entity) : null,
                 Model = PlayerSkins.Of(e.p.Skin).Model,
+                CarriesBomb = e.Slot == _bombCarrier,
             })];
     }
 
@@ -229,13 +230,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(OnLift(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerHealth, host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime)), host));
+            humans.Add(Carrying(OnLift(WithRevive(Replicate(
+                HostEntity, host, _game.World.PlayerHealth, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime))), host), ServerSession.HostSlot));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime)), other.Player));
+            humans.Add(Carrying(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime)), other.Player), slot));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -579,6 +580,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     // Who takes what: each player's pickups, as it walks over them.
     private void Record(PlayerCamera player, int entity)
     {
+        player.CanDropWeapons = true;
         player.GunPickedUp += pickup => _takenBy[pickup] = entity;
         player.GenericPickedUp += pickup => _takenBy[pickup] = entity;
     }
@@ -595,14 +597,22 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             if (gun.Task is null)
             {
                 writer.WriteVarUInt((uint)gun.Weapon.WeaponId);
-                Int3 at = Int3.From(gun.Position);
-                writer.WriteVarInt(at.X);
-                writer.WriteVarInt(at.Y);
-                writer.WriteVarInt(at.Z);
-                Matrix3f o = gun.Orientation;
-                foreach (float f in (ReadOnlySpan<float>)[o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33])
+                writer.WriteVarUInt(gun.Rounds is { } rounds ? (uint)Math.Max(0, rounds) + 1 : 0u);
+                writer.WriteBool(gun.Launch is not null);
+                if (gun.Launch is { } launch)
                 {
-                    writer.WriteSingle(f);
+                    WritePlace(writer, launch.Position, launch.Orientation);
+                    writer.WriteSingle((float)launch.Velocity.X);
+                    writer.WriteSingle((float)launch.Velocity.Y);
+                    writer.WriteSingle((float)launch.Velocity.Z);
+                }
+
+                // A throw in the air is left to each machine's flight, so the state does not change every tick it flies.
+                bool lies = gun.Launch is null || !gun.IsMoving;
+                writer.WriteBool(lies);
+                if (lies)
+                {
+                    WritePlace(writer, gun.Position, gun.Orientation);
                 }
             }
         }
@@ -612,6 +622,19 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         foreach (OpenIGI.Game.World.GenericPickup item in items)
         {
             writer.WriteBits(TakenBy(item, item.IsCollected), 8);
+        }
+    }
+
+    // A pickup's place: where, to the unit, and how it is turned.
+    private static void WritePlace(BitWriter writer, Vector3d position, Matrix3f o)
+    {
+        Int3 at = Int3.From(position);
+        writer.WriteVarInt(at.X);
+        writer.WriteVarInt(at.Y);
+        writer.WriteVarInt(at.Z);
+        foreach (float f in (ReadOnlySpan<float>)[o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33])
+        {
+            writer.WriteSingle(f);
         }
     }
 

@@ -309,6 +309,17 @@ public sealed class PlayerWeapons
         return gun;
     }
 
+    /// <summary>Takes one carried weapon away, as a mode's bomb leaves the player that planted or lost it.</summary>
+    /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>; one not carried changes nothing.</param>
+    /// <remarks>Taken from the hand, whatever the machine was doing with it ends and the cycle brings up the next weapon.</remarks>
+    public void Drop(int weaponId)
+    {
+        if (_selector.Remove(weaponId) && State != HumanWeaponState.Suspended)
+        {
+            _machine.Revive();
+        }
+    }
+
     /// <summary>Gets whether a weapon is carried.</summary>
     /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
     /// <returns><see langword="true"/> when it is carried.</returns>
@@ -446,6 +457,14 @@ public sealed class PlayerWeapons
         if (_cheats.NoReload && !_cheats.InfiniteAmmo)
         {
             InHand?.Gun.Reload(Ammunition);
+        }
+
+        // The weapon wheel's pick, one more than its weapon id, carried in the frame's scratch slot: so a server runs a client's
+        // pick on the very tick the client's own prediction did.
+        float wheel = input.Current[(int)PlayerInputSlot.SelectedWeaponScratch];
+        if (wheel >= 1f)
+        {
+            _selector.Pick((int)MathF.Round(wheel) - 1);
         }
 
         _selector.SelectBinoculars(input);

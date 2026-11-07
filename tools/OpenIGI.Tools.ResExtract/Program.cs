@@ -37,6 +37,7 @@ static int Run(ToolContext ctx)
             "COMPRESS" => Compress(ctx),
             "MAPS" => Maps(ctx),
             "SOUNDS" => Sounds(ctx),
+            "KIT" => KitExport.Run(ctx, ReadArchive),
             _ => ctx.Usage(UsageText, $"Unknown command '{args[0]}'."),
         };
     }
@@ -569,6 +570,7 @@ internal static partial class Program
           ResExtract pack    <png-dir> <overrides-dir> [--png] [--quality fast|balanced|best]
           ResExtract compress <overrides-dir> <new-overrides-dir> [--quality fast|balanced|best]
           ResExtract sounds  <archive|file|dir> <outdir>
+          ResExtract kit     <igi2-pc-dir> <outdir> [--models a,b] [--anims a,b] [--sounds a,b] [--sprites a,b]
 
         Reads ILFF archives (.res), model and font containers (.mef, .fnt) and the legacy
         "RESOURCE" flat archive. Extracted entries keep their layout below <outdir>, with the

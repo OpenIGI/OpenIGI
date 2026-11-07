@@ -122,6 +122,7 @@ public sealed partial class GameHost
             _logger)
         {
             OpenUdp = OpenUdp,
+            Arenas = HasArena,
             GamePath = () => _gamePath,
             BookPath = OpenUdp is null ? null : Core.Configuration.SettingsPaths.GetFilePath("servers.json"),
         }

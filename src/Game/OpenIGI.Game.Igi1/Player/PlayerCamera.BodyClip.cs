@@ -36,7 +36,84 @@ public sealed partial class PlayerCamera
         ? new PlayerBodyClip(LadderAnimation, LadderFeet, LadderFacing, Ladder: true)
         : PlaysInteractionClip
             ? new PlayerBodyClip(InteractionAnimation, InteractionFeet, InteractionFacing, Ladder: false)
-            : null;
+            : ModeAnimation >= 0
+                ? new PlayerBodyClip(ModeAnimation, Body.Position, -Body.Yaw, Ladder: false)
+                : null;
+
+    /// <summary>Gets the whole-body clip a multiplayer mode plays on the player (the bomb's plant or defuse), or -1 for none.</summary>
+    public int ModeAnimation { get; private set; } = -1;
+
+    /// <summary>Gets where the mode's clip is, in its own time (160 a tick).</summary>
+    public float ModeClipTime { get; private set; }
+
+    /// <summary>Gets where the body is in the clip it plays when it is the mode's, else <see langword="null"/>.</summary>
+    public float? ModeClipTimeShown => ModeAnimation >= 0 && LadderAnimation < 0 && !PlaysInteractionClip ? ModeClipTime : null;
+
+    /// <summary>Plays a mode's whole-body clip at a time, or stops it.</summary>
+    /// <param name="animation">The clip, in the human set, or -1 for none.</param>
+    /// <param name="time">Where in it, in its own time.</param>
+    public void PlayModeClip(int animation, float time)
+    {
+        ModeAnimation = animation;
+        ModeClipTime = animation >= 0 ? time : 0f;
+    }
+
+    // Whether the arms play the plant, so the weapon's own pose is put back on them when it ends.
+    private bool _armsPlanting;
+
+    /// <summary>Gets whether the player's hands are on the mode's bomb, planting or defusing it: its gun is put away.</summary>
+    public bool HandsOnBomb => ModeAnimation is Multiplayer.Igi1BombAnimations.Plant or Multiplayer.Igi1BombAnimations.Defuse;
+
+    /// <summary>Gets whether the bomb is the weapon in the player's hand.</summary>
+    public bool HoldsBomb => _weapons?.InHand?.Weapon.WeaponId == Multiplayer.Igi1BombWeapon.Id;
+
+    /// <summary>Gets the arms' clip and its time while they hold the bomb or plant it, for the charge they hold; else none.</summary>
+    public (int Animation, float Time)? FirstPersonBombClip =>
+        (HoldsBomb || _armsPlanting) && _firstPerson.Rig?.WeaponClip is { } clip ? (clip.Animation.Id, clip.Time) : null;
+
+    // The weapon machine, and what it plays on the arms -- unless the hands are on the bomb, when the machine runs blind (no
+    // clip of its own put on the arms) and the arms play the plant where the body's is.
+    private void TickWeapons()
+    {
+        if (_weapons is null)
+        {
+            return;
+        }
+
+        HumanView? rig = _firstPerson.Rig;
+        bool busy = HandsOnBomb && rig is not null;
+        if (_weaponActions.Tick(_weapons, _input, busy ? null : rig, _body, LocomotionState))
+        {
+            PoseChanged = true;
+        }
+
+        if (rig is null)
+        {
+            return;
+        }
+
+        if (busy && ModeAnimation == Multiplayer.Igi1BombAnimations.Plant)
+        {
+            if (!_armsPlanting && rig.PlayWeaponAnimation(Multiplayer.Igi1BombAnimations.FirstPersonPlant, loops: false, blendSeconds: 0.15f) is null)
+            {
+                return;
+            }
+
+            _armsPlanting = true;
+            rig.SkipTo(Multiplayer.Igi1BombAnimations.FirstPersonTime(ModeClipTime));
+            PoseChanged = true;
+        }
+        else if (_armsPlanting)
+        {
+            _armsPlanting = false;
+            if (_weapons.InHand?.Weapon is { } held)
+            {
+                _ = _weaponActions.Play(rig, held, OpenIGI.Game.Weapons.WeaponAction.Stand);
+            }
+
+            PoseChanged = true;
+        }
+    }
 
     /// <summary>Gets whether a clip is one of the ladder's three: the climb, the slide, the top.</summary>
     /// <param name="animation">The clip.</param>

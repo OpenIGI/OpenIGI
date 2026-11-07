@@ -196,6 +196,9 @@ public sealed class HumanView
         return clip;
     }
 
+    /// <summary>Gets the clip bone 0 plays -- the weapon's -- or <see langword="null"/> before one has been played.</summary>
+    public BoneClip? WeaponClip => _bones.SourceOf(0);
+
     /// <summary>Gets whether a weapon clip has ever been played on the rig, so it has a pose to draw.</summary>
     /// <remarks>
     /// <para>

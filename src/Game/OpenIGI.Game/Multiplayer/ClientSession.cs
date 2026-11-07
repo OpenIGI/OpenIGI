@@ -134,12 +134,13 @@ public sealed class ClientSession
         return heard;
     }
 
-    /// <summary>Says a line to every player.</summary>
+    /// <summary>Says a line to every player, or to this player's team only.</summary>
     /// <param name="text">The line.</param>
-    public void Say(string text)
+    /// <param name="team">Whether only the team hears it.</param>
+    public void Say(string text, bool team = false)
     {
         _writer.Reset();
-        SessionTalk.WriteChat(_writer, -1, text);
+        SessionTalk.WriteChat(_writer, -1, text, team ? ChatKind.Team : ChatKind.All);
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
@@ -206,10 +207,18 @@ public sealed class ClientSession
     /// <summary>Gets when the local player's use key went down, on the session's clock; <see langword="null"/> while it is up.</summary>
     public double? UseHeldSince { get; private set; }
 
+    /// <summary>Gets whether the local player holds the mode's bomb in hand, or <see langword="null"/> where its title never holds one.</summary>
+    public bool? BombInHand { get; private set; }
+
     /// <summary>Notes the local player's use key, as each command goes out.</summary>
     /// <param name="held">Whether it is down.</param>
     /// <param name="now">The session's clock.</param>
-    public void NoteUse(bool held, double now) => UseHeldSince = held ? UseHeldSince ?? now : null;
+    /// <param name="bombInHand">Whether the bomb is in its hand, or <see langword="null"/> where the title never holds one.</param>
+    public void NoteUse(bool held, double now, bool? bombInHand = null)
+    {
+        UseHeldSince = held ? UseHeldSince ?? now : null;
+        BombInHand = bombInHand;
+    }
 
     /// <summary>Sends a command to the server's remote console.</summary>
     /// <param name="password">The server's remote console password.</param>

@@ -354,16 +354,28 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // A session's scoreboard, while its key is held: over everything but the console.
+        // A session's scoreboard, while its key is held -- or, between matches, up for everyone beside the vote for the next map:
+        // over everything but the console.
+        bool voteBesideBoard = VoteBesideBoard();
         if (TickObserver is ISessionScoreboard session
             && session.CurrentScoreboard is { } board
             && _remasteredHud is { IsReady: true } boardHud
-            && _scoreboardUp)
+            && (_scoreboardUp || voteBesideBoard))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             boardHud.DrawScoreboard(
-                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board), session.Relayed, session.Mode);
+                state.Batch,
+                board,
+                session.LocalEntity,
+                session.RoomCode,
+                session.Place,
+                SafeWindowWidth,
+                SafeWindowHeight,
+                _scoreboardUp ? ScoreboardHand(board) : null,
+                session.Relayed,
+                session.Mode,
+                besideVote: voteBesideBoard);
             state.Batch.End();
         }
 
@@ -422,13 +434,14 @@ public sealed partial class GameHost
                 matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
                 if (hud.MapVote is { } vote)
                 {
-                    matchHud.DrawMapVote(state.Batch, vote, hud.Clock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                    matchHud.DrawMapVote(
+                        state.Batch, vote, hud.Clock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight, besideBoard: voteBesideBoard);
                 }
 
-                if (_buyMenuUp && hud is { BuyClock: { } buyClock, Money: { } money })
+                if (_buyMenuUp && (hud is { BuyClock: not null, Money: not null } || hud.FreeLoadout))
                 {
                     matchHud.DrawBuyMenu(
-                        state.Batch, BuyItems, money, buyClock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                        state.Batch, BuyItems, hud.FreeLoadout ? null : hud.Money, hud.BuyClock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
                 }
             }
             else if (shown is Game.Multiplayer.Modes.MatchBanner banner)
@@ -480,13 +493,13 @@ public sealed partial class GameHost
         string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
         Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
         string[] talking = [.. Talking().Select(e => e < 0 ? "You" : talkLines.FirstOrDefault(l => l.Entity == e).Name ?? "Teammate")];
-        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, talkMarks)
+        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, chatEntry, talkMarks)
             && ModePointMarks(talkMarks) is var marks
             && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null || talking.Length > 0))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, linkWarning, talking, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            talkHud.DrawCoopTalk(state.Batch, chat, chatEntry, linkWarning, talking, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 

@@ -69,7 +69,7 @@ public struct PlayerInputFrame : IEquatable<PlayerInputFrame>
     [UnscopedRef]
     public Span<float> AsSpan() => _slots;
 
-    /// <summary>Clears the slots a player on another machine must never drive: the developer chords and the scratch slot.</summary>
+    /// <summary>Clears the slots a player on another machine must never drive: the developer chords.</summary>
     /// <param name="slots">A frame's slots, as a client sent them.</param>
     /// <remarks>
     /// The developer chords fly the player (<see cref="PlayerInputSlot.DebugFlyPressed"/>) and work the numpad cheats; a server
@@ -80,8 +80,10 @@ public struct PlayerInputFrame : IEquatable<PlayerInputFrame>
         ReadOnlySpan<PlayerInputSlot> developer =
         [
             PlayerInputSlot.DebugNumpadPlusHeld, PlayerInputSlot.DebugNumpadMinusHeld, PlayerInputSlot.DebugNumpadEnterPressed,
-            PlayerInputSlot.DebugNumpadStarPressed, PlayerInputSlot.DebugFlyPressed, PlayerInputSlot.SelectedWeaponScratch,
+            PlayerInputSlot.DebugNumpadStarPressed, PlayerInputSlot.DebugFlyPressed,
         ];
+
+        // The scratch slot carries the weapon wheel's pick (PlayerWeapons.Tick), which only ever picks what the player carries.
         foreach (PlayerInputSlot slot in developer)
         {
             if ((int)slot < slots.Length)

@@ -1,8 +1,7 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Animation;
-using OpenIGI.Game.Igi2.World;
+using Fpu = OpenIGI.Core.Numerics.X87Single;
 
-namespace OpenIGI.Game.Igi2.ViewModel;
+namespace OpenIGI.Formats.Animation;
 
 /// <summary>A model a clip hangs on a posed body: where it stands and how it is turned, in the body's frame.</summary>
 /// <param name="Model">The model's name.</param>
@@ -142,13 +141,30 @@ public static class Igi2AttachedParts
         return (at, o);
     }
 
+    /// <summary>
+    /// How an attach record's matrix turns its object against what it hangs on: <c>ModelObj_CreateAttachObject</c>
+    /// (<c>igi2 0x56D0B0</c>) for a model's attachments and a clip's attach objects alike.
+    /// </summary>
+    /// <param name="record">The record's matrix, as the file stores it.</param>
+    /// <returns>The relative orientation: the record's first two columns as rows, the third row their cross product.</returns>
+    /// <remarks>The relative orientation then stands under the parent's (and its bone's) orientation: world = P · B · R.</remarks>
+    public static Matrix3f RelativeOrientation(Matrix3f record)
+    {
+        float xx = record.M11, xy = record.M21, xz = record.M31;
+        float yx = record.M12, yy = record.M22, yz = record.M32;
+        float zx = (((Fpu)yz * xy) - ((Fpu)yy * xz)).F;
+        float zy = (-(((Fpu)yz * xx) - ((Fpu)yx * xz))).F;
+        float zz = (((Fpu)yy * xx) - ((Fpu)yx * xy)).F;
+        return new Matrix3f(xx, xy, xz, yx, yy, yz, zx, zy, zz);
+    }
+
     /// <summary>An attach object's bone and relative placement after the re-links the clip has passed by a time.</summary>
     private static (int Bone, Vector3f Position, Matrix3f Orientation) Resolve(Igi2AnimationClip clip, int index, int time)
     {
         Igi2AnimationAttachObject attached = clip.AttachObjects[index];
         int bone = attached.Bone;
         Vector3f position = attached.Position;
-        Matrix3f orientation = Igi2Pose.RelativeOrientation(attached.Orientation);
+        Matrix3f orientation = RelativeOrientation(attached.Orientation);
         foreach (Igi2AnimationLink link in clip.Links)
         {
             if (link.Time > time)

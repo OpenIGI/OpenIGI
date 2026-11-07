@@ -444,6 +444,14 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     }
 
     /// <inheritdoc/>
+    public Core.Numerics.Vector3d? PositionOfSlot(int slot) =>
+        _session is { Latest: { } latest } session
+            && session.Scoreboard?.Lines.Where(l => l.Slot == slot).Select(static l => (int?)l.Entity).FirstOrDefault() is { } entity
+            && latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
+            ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
+            : null;
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick) =>
         _session is { EntityId: { } own, Latest: { } latest } session && Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode)
             ? Game.Multiplayer.Modes.Spectating.Pick(
@@ -525,7 +533,8 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
                 Layout,
                 _session.UseHeldSince is { } since
                     ? new Game.Multiplayer.Modes.LocalUse(true, _clock.Elapsed.TotalSeconds - since)
-                    : new Game.Multiplayer.Modes.LocalUse(false, 0)) is { } hud
+                    : new Game.Multiplayer.Modes.LocalUse(false, 0),
+                _session.BombInHand ?? true) is { } hud
             ? hud with { MapVote = hud.Phase == Game.Multiplayer.Modes.MatchPhase.Intermission ? _session.MapVote : null }
             : null;
 
@@ -578,7 +587,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     }
 
     /// <inheritdoc/>
-    public void Say(string text) => _session?.Say(text);
+    public void Say(string text, bool team = false) => _session?.Say(text, team);
 
     /// <inheritdoc/>
     public void Mark(Int3 position) => _session?.Mark(position);

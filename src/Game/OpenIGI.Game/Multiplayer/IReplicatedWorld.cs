@@ -73,6 +73,13 @@ public interface IReplicatedWorld
     /// <returns>The team, or -1.</returns>
     int TeamOf(int slot);
 
+    /// <summary>Holds every player where it stands, or lets them go: a round's freeze time, when they may look and buy but not
+    /// move, jump, fire or use.</summary>
+    /// <param name="held">Whether they are held.</param>
+    void HoldStill(bool held)
+    {
+    }
+
     /// <summary>Makes the world one where the players fight each other rather than the level together.</summary>
     /// <param name="teams">Whether in two teams (a team mate's rounds never hurt) or every player for itself.</param>
     /// <returns><see langword="false"/> when the world can't be played so: its mode stays its own.</returns>
@@ -82,6 +89,58 @@ public interface IReplicatedWorld
     /// <param name="slot">The player's slot.</param>
     /// <returns>Its feet, in world units.</returns>
     Core.Numerics.Vector3d? PositionOf(int slot) => null;
+
+    /// <summary>Gets the way a player faces, or <see langword="null"/> when it isn't in the world (or the world doesn't say).</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns>Its body's yaw, in radians.</returns>
+    float? YawOf(int slot) => null;
+
+    /// <summary>Shows a player at a mode's work -- kneeling to plant the bomb, or defusing it -- or back at its own moves.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="work">The work, or <see langword="null"/> for none.</param>
+    /// <param name="heldTicks">How many ticks it has held at it.</param>
+    /// <param name="totalTicks">How many the work takes.</param>
+    /// <remarks>Its body plays the work's clip, on the server and so on every window the snapshots reach.</remarks>
+    void ShowWork(int slot, Modes.ModeWorkKind? work, int heldTicks, int totalTicks)
+    {
+    }
+
+    /// <summary>Shows which player carries the mode's bomb, for every window to draw it on that player's back.</summary>
+    /// <param name="slot">The carrier's slot, or -1 when nobody carries it (dropped, planted, or none in play).</param>
+    void ShowCarrier(int slot)
+    {
+    }
+
+    /// <summary>Gets whether a living player is at a plant: the bomb in hand and its fire or use key held.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns><see langword="true"/> while it plants; a title with no bomb in hand plants on the use key alone.</returns>
+    bool IsPlanting(int slot) => IsUsing(slot);
+
+    /// <summary>Takes a player's request to drop the bomb it holds, made with the drop key since the last time it was taken.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns><see langword="true"/> once for each press with the bomb in hand.</returns>
+    bool TakeBombDrop(int slot) => false;
+
+    /// <summary>Throws the mode's bomb out of a player's hands into the world, as a dropped gun is thrown, for every machine to fly.</summary>
+    /// <param name="slot">The player who lets it go, or -1 for one no longer there.</param>
+    /// <param name="from">Where the player stood, in world units.</param>
+    /// <param name="yaw">The way it faced, in radians.</param>
+    /// <param name="far">Whether it is thrown on purpose (the long throw) or let fall by a body that went down (the short).</param>
+    /// <returns><see langword="false"/> when this world throws nothing, and the bomb is only laid where it stood.</returns>
+    bool ThrowBomb(int slot, Core.Numerics.Vector3d from, float yaw, bool far) => false;
+
+    /// <summary>Gets where the thrown bomb is now, in world units, or <see langword="null"/> while none is out.</summary>
+    Core.Numerics.Vector3d? ThrownBombAt => null;
+
+    /// <summary>Takes the thrown bomb out of the world: picked up, or the round over.</summary>
+    void TakeThrownBomb()
+    {
+    }
+
+    /// <summary>Gets whether a living player holds the mode's bomb in hand, which it must to plant it.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <returns><see langword="true"/> when it does, and for a title whose bomb is never held.</returns>
+    bool HoldsBomb(int slot) => true;
 
     /// <summary>Gets whether a living player is holding the use key: what plants and defuses a bomb.</summary>
     /// <param name="slot">The player's slot.</param>
@@ -298,6 +357,9 @@ public interface IReplicatedClientWorld
     void ApplyWorld(Snapshot snapshot, int? ownEntity, int ticksAhead, PredictionReconciler predictions)
     {
     }
+
+    /// <summary>Gets whether the client's own player holds the mode's bomb in hand, or <see langword="null"/> where the title never holds one.</summary>
+    bool? HoldsBomb => null;
 
     /// <summary>Gets the platform -- a lift -- the client's own player stands on now, and where this client's car stands.</summary>
     /// <remarks>

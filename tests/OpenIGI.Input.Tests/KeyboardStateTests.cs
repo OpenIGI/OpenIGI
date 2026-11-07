@@ -108,4 +108,16 @@ public sealed class KeyboardStateTests
 
         return state;
     }
+
+    [Fact]
+    public void A_line_a_keyboard_put_is_taken_once()
+    {
+        var keyboard = new KeyboardState();
+        Assert.False(keyboard.TryTakeLine(out _));
+        keyboard.ReplaceLine("hol");
+        keyboard.ReplaceLine("hold B");
+        Assert.True(keyboard.TryTakeLine(out string line));
+        Assert.Equal("hold B", line);
+        Assert.False(keyboard.TryTakeLine(out _));
+    }
 }

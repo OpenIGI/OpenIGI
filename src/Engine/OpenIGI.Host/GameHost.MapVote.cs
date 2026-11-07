@@ -17,6 +17,10 @@ public sealed partial class GameHost
     private static readonly KeyCode[] VoteNumberKeys = [KeyCode.D1, KeyCode.D2, KeyCode.D3, KeyCode.D4];
 
     // Once a frame, before the game reads its input.
+    // Whether the vote for the next map is open with a scoreboard to show beside it: then everyone sees the board, no key held.
+    private bool VoteBesideBoard() =>
+        !_menuFlow.MenuMode && CurrentMatchHud()?.MapVote is not null && TickObserver is ISessionScoreboard { CurrentScoreboard: not null };
+
     private void UpdateMapVote()
     {
         NextMapVote? vote = _menuFlow.MenuMode ? null : CurrentMatchHud()?.MapVote;

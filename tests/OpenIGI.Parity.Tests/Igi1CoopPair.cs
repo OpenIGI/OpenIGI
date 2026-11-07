@@ -368,7 +368,7 @@ internal sealed class Igi1CoopPair : IDisposable
 
         private ISessionTalk? Talk => Talks ? Inner as ISessionTalk : null;
 
-        public void Say(string text) => Talk?.Say(text);
+        public void Say(string text, bool team = false) => Talk?.Say(text, team);
 
         public void Mark(Int3 position) => Talk?.Mark(position);
 

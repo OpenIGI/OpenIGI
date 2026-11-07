@@ -84,7 +84,7 @@ public sealed partial class GameHost
                 // button lets the viewer walk the level itself again.
                 HostedPlayer?.HoldStill();
                 HostedPlayer?.ReleaseLook();
-                _window.CursorLocked = !state.CaptureMode;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
                 if (_window.Input.Mouse.WasPressed(Input.MouseButton.Left))
                 {
                     _demoFollow = (_demoFollow ?? 0) + 1;
@@ -100,7 +100,7 @@ public sealed partial class GameHost
                 // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                 // so the orbit keeps turning however far the mouse is moved.
                 Viewpoint?.ControlDeathView(rawX, rawY);
-                _window.CursorLocked = !state.CaptureMode;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
 
                 // In a match, fire watches the next living player of one's side.
                 if (_window.Input.Mouse.WasPressed(Input.MouseButton.Left))
@@ -123,7 +123,7 @@ public sealed partial class GameHost
                 // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
                 // you can look around while you climb rather than being locked behind the character.
                 Viewpoint?.ControlInteractionView(rawX, rawY);
-                _window.CursorLocked = !state.CaptureMode;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
                 HostedPlayer?.ReleaseLook();
             }
             else if (_computerOpen)
@@ -144,21 +144,21 @@ public sealed partial class GameHost
                 // The weapon wheel has the mouse: it steers the wheel, and the view holds where it was. The settling
                 // frame is re-armed so letting go does not throw the view with the travel the wheel took.
                 HostedPlayer?.HoldStill();
-                _window.CursorLocked = !state.CaptureMode;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
             }
             else if (_playerMode && TitlePlayer is not null)
             {
                 // A title's own player takes its look on the tick, as the original does; the frame only
                 // gathers what the mouse and the keys did since the last one.
                 GatherTitleInput();
-                _window.CursorLocked = !state.CaptureMode;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode;
             }
             else if (_playerMode && HostedPlayer is not null)
             {
                 // Looking is per frame so the view is as smooth as the display allows; the body itself
                 // moves on the fixed tick below, so it steps identically whatever the frame rate.
                 HostedPlayer.Look(_window.Input, elapsed);
-                _window.CursorLocked = !state.CaptureMode && HostedPlayer.IsCapturingMouse;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode && HostedPlayer.IsCapturingMouse;
             }
             else if (_sunGizmo.Active)
             {
@@ -173,7 +173,7 @@ public sealed partial class GameHost
 
                 // The cursor is locked away while a mouse button is held, the way a scene editor's is,
                 // so the view keeps turning however far the mouse is dragged. It comes back on release.
-                _window.CursorLocked = !state.CaptureMode && _camera.IsCapturingMouse;
+                _window.CursorLocked = !OverlayHasPointer && !state.CaptureMode && _camera.IsCapturingMouse;
             }
 
             FinishWeaponWheel(elapsed);

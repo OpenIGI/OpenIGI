@@ -113,7 +113,7 @@ public sealed partial class ServerSession
         }
 
         string caller = Match.Players[slot].Name;
-        Say(string.Create(CultureInfo.InvariantCulture, $"{caller} calls a vote to {call.Question}. /yes or /no -- {MatchVote.Seconds:0} s. {Tally()}"));
+        Announce(string.Create(CultureInfo.InvariantCulture, $"{caller} calls a vote to {call.Question}. /yes or /no -- {MatchVote.Seconds:0} s. {Tally()}"));
     }
 
     // Each tick: a vote carried or lost, and a player idle too long.
@@ -128,7 +128,7 @@ public sealed partial class ServerSession
                 VoteKind.Scramble => "the scramble",
                 _ => "the restart",
             };
-            Say(passed ? $"The vote for {question} passed." : $"The vote for {question} failed.");
+            Announce(passed ? $"The vote for {question} passed." : $"The vote for {question} failed.");
             if (passed)
             {
                 Carry(settled);
@@ -147,7 +147,7 @@ public sealed partial class ServerSession
                 string name = client.Name;
                 Remove(slot, "idle too long");
                 _barred.Remove(client.PlayerId);
-                Say($"{name} was put off for standing idle.");
+                Announce($"{name} was put off for standing idle.");
             }
         }
     }
@@ -162,7 +162,7 @@ public sealed partial class ServerSession
             case VoteKind.Map when ChangeMap is { } change:
                 if (change(vote.Mission, vote.Mode.Length > 0 ? vote.Mode : null) is { } problem)
                 {
-                    Say($"The map can't change: {problem}");
+                    Announce($"The map can't change: {problem}");
                 }
 
                 break;
@@ -207,10 +207,10 @@ public sealed partial class ServerSession
     private void Tell(int slot, string text)
     {
         _writer.Reset();
-        SessionTalk.WriteChat(_writer, HostEntity, text);
+        SessionTalk.WriteChat(_writer, -1, text, ChatKind.Server);
         if (slot == HostSlot)
         {
-            _heard.Add(new ChatLine(HostEntity, text));
+            _heard.Add(new ChatLine(-1, text, ChatKind.Server));
             return;
         }
 

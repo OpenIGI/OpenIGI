@@ -71,6 +71,11 @@ internal sealed partial class RemasteredHudRenderer
             y = Chip(painter, type, carried, centre, y, hud.BombMarkAt is null ? StripFace : Enemy.WithAlpha(170), UiPalette.TextBright, Px);
         }
 
+        if (hud.FreeLoadout && hud.Money is null)
+        {
+            _ = Chip(painter, type, $"{buyKey}  LOADOUT", centre, y, StripFace, Victory, Px);
+        }
+
         if (hud.Money is { } money)
         {
             string cash = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"${money:N0}");
@@ -278,30 +283,33 @@ internal sealed partial class RemasteredHudRenderer
     {
         float size = Px(15f);
         float verb = UiPainter.MeasureLabel(type.Heading, hint.Verb, size, 0.12f);
-        float keyText = UiPainter.MeasureLabel(type.Heading, key, size, 0f);
-        float keyWidth = Math.Max(Px(28f), keyText + Px(14f));
+        float keyText = hint.Keyed ? UiPainter.MeasureLabel(type.Heading, key, size, 0f) : 0f;
+        float keyWidth = hint.Keyed ? Math.Max(Px(28f), keyText + Px(14f)) : 0f;
         float action = UiPainter.MeasureLabel(type.Heading, hint.Action, size, 0.12f);
         float gap = Px(10f);
-        float whole = verb + gap + keyWidth + gap + action;
+        float whole = hint.Keyed ? verb + gap + keyWidth + gap + action : verb + gap + action;
         var plate = new UiRect(centre - (whole * 0.5f) - Px(16f), y - Px(8f), whole + Px(32f), Px(42f));
         painter.FillCutRect(plate, Px(9f), UiCorners.TopLeft | UiCorners.BottomRight, StripFace);
         float x = plate.X + Px(16f);
         painter.DrawLabel(type.Heading, hint.Verb, new UiVec2(x, y + Px(3f)), size, UiPalette.TextSecondary, 0.12f);
         x += verb + gap;
-        var badge = new UiRect(x, y - Px(1f), keyWidth, Px(26f));
-        painter.FillRoundedRect(badge, _surfaces?.Rounded ?? default, UiPalette.TextBright, Px(5f));
-        painter.DrawLabel(type.Heading, key, new UiVec2(badge.X + ((keyWidth - keyText) * 0.5f), y + Px(3f)), size, Bgra32.FromRgb(10, 12, 16), 0f);
-        x += keyWidth + gap;
+        if (hint.Keyed)
+        {
+            var badge = new UiRect(x, y - Px(1f), keyWidth, Px(26f));
+            painter.FillRoundedRect(badge, _surfaces?.Rounded ?? default, UiPalette.TextBright, Px(5f));
+            painter.DrawLabel(type.Heading, key, new UiVec2(badge.X + ((keyWidth - keyText) * 0.5f), y + Px(3f)), size, Bgra32.FromRgb(10, 12, 16), 0f);
+            x += keyWidth + gap;
+        }
         painter.DrawLabel(type.Heading, hint.Action, new UiVec2(x, y + Px(3f)), size, UiPalette.TextBright, 0.12f);
     }
 
     // A decided round's or match's card: a band across the screen in the outcome's colour, the result large on it.
-    // Raised higher while the vote for the next map stands under it.
+    // Raised to just under the score strip while the vote for the next map and the scoreboard share the screen under it.
     private static void ResultBand(UiPainter painter, UiTheme type, ResultCard result, bool match, float centre, UiRect safe, Func<float, float> Px, bool raised = false)
     {
         Bgra32 colour = result.Outcome > 0 ? (match ? Victory : Ally) : result.Outcome < 0 ? Enemy : UiPalette.TextSecondary;
-        float bandHeight = Px(match ? 150f : 118f);
-        var band = new UiRect(safe.X, safe.Y + (safe.Height * (raised ? 0.2f : 0.3f)), safe.Width, bandHeight);
+        float bandHeight = Px(match ? MatchCardHeight : 118f);
+        var band = new UiRect(safe.X, raised ? safe.Y + Px(IntermissionCardTop) : safe.Y + (safe.Height * 0.3f), safe.Width, bandHeight);
         Band(painter, band, Bgra32.FromRgba(6, 8, 11, 200));
         Band(painter, new UiRect(band.X, band.Y, band.Width, Px(2f)), colour.WithAlpha(230));
         Band(painter, new UiRect(band.X, band.Bottom - Px(2f), band.Width, Px(2f)), colour.WithAlpha(230));

@@ -8,6 +8,7 @@ using OpenIGI.Composition;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Engine.Configuration;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Titles;
@@ -167,7 +168,14 @@ using DedicatedServer dedicated = new(
     logger,
     heartbeat,
     () => MasterHeartbeat.BodyOf(server, config, title.Id, version, room?.Code),
-    () => host.MissionList);
+    () => host.MissionList)
+{
+    Arenas = host.HasArena,
+};
+if (GameModes.IsVersus(mode) && !host.HasArena(mission))
+{
+    logger.Warning(LogCategory, $"Mission {map} has no multiplayer layout, so {mode} plays it from the level's own start; the laid-out maps are {string.Join(", ", host.ArenaMissionList.Select(m => m.Id))}.");
+}
 logger.Information(
     LogCategory,
     $"{title.DisplayName} server '{config.Name}' on UDP {config.Port}, mission {map} ({mode}), up to {config.MaxPlayers} players, {(config.Public ? "listed" : "unlisted")}.");

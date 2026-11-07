@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\IGIModels.json" />
+    <!-- The bomb the bomb modes plant and defuse: I.G.I. 2's C4, models, textures, clips, sounds and icon (kit.json lists them). -->
+    <EmbeddedResource Include="Resources\Bomb\*" LogicalName="OpenIGI.Game.Bomb.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

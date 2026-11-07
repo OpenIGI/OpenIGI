@@ -20,7 +20,8 @@ public sealed record ResultCard(string Title, string Detail, int Outcome);
 /// <summary>An action the local player can take where it stands, as <c>HOLD [E] TO PLANT AT A</c>.</summary>
 /// <param name="Verb">The verb before the key, as <c>HOLD</c>.</param>
 /// <param name="Action">What it does, as <c>TO PLANT THE BOMB AT A</c>.</param>
-public sealed record ModeHint(string Verb, string Action);
+/// <param name="Keyed">Whether the use key is shown between the two, and holding it works; else the hint only says what to do.</param>
+public sealed record ModeHint(string Verb, string Action, bool Keyed = true);
 
 /// <summary>
 /// Everything a multiplayer mode's HUD draws, made each frame from where the match stands, the scoreboard and the local
@@ -49,6 +50,9 @@ public sealed record MatchHud
 
     /// <summary>Gets whether the clock is in its last seconds.</summary>
     public bool ClockUrgent { get; init; }
+
+    /// <summary>Gets a value indicating whether the round's freeze time runs: everyone held where they start, buying and planning.</summary>
+    public bool Frozen { get; init; }
 
     /// <summary>Gets the local player's team's side of the strip (or the first team's, for a player with none); <see langword="null"/> in a free-for-all.</summary>
     public TeamStrip? Left { get; init; }
@@ -110,6 +114,9 @@ public sealed record MatchHud
     /// <summary>Gets the buy time left, as <c>0:14</c>, while the armoury sells; <see langword="null"/> once it is shut.</summary>
     public string? BuyClock { get; init; }
 
+    /// <summary>Gets a value indicating whether the armoury is a free loadout to pick from now (a deathmatch's), rather than a shop.</summary>
+    public bool FreeLoadout { get; init; }
+
     /// <summary>Gets a line under the strip explaining the phase (a warmup's), or <see langword="null"/>.</summary>
     public string? Notice { get; init; }
 
@@ -130,9 +137,11 @@ public sealed record MatchHud
     /// The local player's use key on a client, which starts and ends its own plant or defuse bar without waiting on the server;
     /// <see langword="null"/> where the report is the mode's own (a listen host).
     /// </param>
+    /// <param name="bombInHand">Whether the local player holds the bomb in hand, which it must to plant it.</param>
     /// <returns>The HUD, or <see langword="null"/> for a match with none (co-op).</returns>
     public static MatchHud? Of(
-        MatchState state, double secondsSince, Scoreboard? board, int? localEntity, Vector3d? ownPosition = null, MpLayout? layout = null, LocalUse? use = null)
+        MatchState state, double secondsSince, Scoreboard? board, int? localEntity, Vector3d? ownPosition = null, MpLayout? layout = null, LocalUse? use = null,
+        bool bombInHand = true)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (state.Mode == GameModes.Coop || string.IsNullOrEmpty(state.Mode))
@@ -147,6 +156,13 @@ public sealed record MatchHud
         bool rounds = state.Mode is GameModes.Elimination or GameModes.SearchAndDestroy;
         double? left = state.SecondsLeft is { } s ? Math.Max(0, s - secondsSince) : null;
 
+        // The freeze time: its own countdown on the clock, and a word on what it is for.
+        double freeze = state.Phase == MatchPhase.Live ? Math.Max(0, report.FreezeLeft - secondsSince) : 0;
+        if (freeze > 0)
+        {
+            left = freeze;
+        }
+
         MatchHud hud = new()
         {
             Mode = state.Mode,
@@ -155,9 +171,12 @@ public sealed record MatchHud
             Round = rounds ? state.Round : 0,
             Target = report.Target,
             Clock = left is { } l ? MatchState.Clock(l) : null,
-            ClockUrgent = state.Phase == MatchPhase.Live && left is <= 10,
+            ClockUrgent = state.Phase == MatchPhase.Live && freeze <= 0 && left is <= 10,
+            Frozen = freeze > 0,
             Players = lines.Length,
-            Notice = state.Phase == MatchPhase.Warmup ? "WARMUP  ·  THE MATCH BEGINS WHEN THE CLOCK RUNS OUT" : null,
+            Notice = state.Phase == MatchPhase.Warmup ? "WARMUP  ·  THE MATCH BEGINS WHEN THE CLOCK RUNS OUT"
+                : freeze > 0 ? "STRATEGY TIME  ·  BUY AND PLAN  ·  THE ROUND BEGINS WHEN THE CLOCK RUNS OUT"
+                : null,
         };
 
         int ownTeam = own?.Team ?? -1;
@@ -212,9 +231,9 @@ public sealed record MatchHud
         }
 
         ModeHint? could = state.Phase == MatchPhase.Live && own is { IsAlive: true } alive && ownPosition is { } where
-            ? HintFor(report, alive, where, layout, false)
+            ? HintFor(report, alive, where, layout, false, bombInHand)
             : null;
-        hud = Work(hud, report, lines, own, secondsSince, use, could is not null);
+        hud = Work(hud, report, lines, own, secondsSince, use, could is { Keyed: true });
         if (hud.Progress is null)
         {
             hud = hud with { Hint = could };
@@ -225,6 +244,9 @@ public sealed record MatchHud
         {
             Money = state.Mode == GameModes.SearchAndDestroy ? own?.Money : null,
             BuyClock = buyLeft > 0 && own is { IsAlive: true } ? MatchState.Clock(buyLeft) : null,
+            FreeLoadout = state.Mode is GameModes.TeamDeathmatch or GameModes.FreeForAll
+                && state.Phase is MatchPhase.Live or MatchPhase.Warmup
+                && own is { IsAlive: true },
         };
 
         return hud with { Result = ResultOf(state, report, own, hud, left) };
@@ -285,7 +307,7 @@ public sealed record MatchHud
     }
 
     // What the local player can do where it stands: plant at a site it is in, carrying the bomb; defuse a bomb it is beside.
-    private static ModeHint? HintFor(ModeReport report, ScoreboardLine own, Vector3d where, MpLayout? layout, bool working)
+    private static ModeHint? HintFor(ModeReport report, ScoreboardLine own, Vector3d where, MpLayout? layout, bool working, bool bombInHand)
     {
         int team = own.Team;
         if (working || report.Attackers < 0)
@@ -300,7 +322,9 @@ public sealed record MatchHud
                 if (site.Kind == MpPointKind.BombSite
                     && Vector3d.Distance(new Vector3d(site.Position[0], site.Position[1], site.Position[2]), where) <= site.Radius)
                 {
-                    return new ModeHint("HOLD", $"TO PLANT THE BOMB AT {site.Id}");
+                    return bombInHand
+                        ? new ModeHint("HOLD", $"OR FIRE TO PLANT THE BOMB AT {site.Id}")
+                        : new ModeHint("SWITCH TO THE BOMB", $"TO PLANT IT AT {site.Id}", Keyed: false);
                 }
             }
         }

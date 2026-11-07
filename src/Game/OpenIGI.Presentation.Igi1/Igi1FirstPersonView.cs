@@ -1,6 +1,8 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
@@ -19,6 +21,9 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
     private readonly IGraphicsDevice _device = device;
     private readonly Igi1Gameplay _gameplay = gameplay;
     private readonly IOpenIgiLogger _logger = logger;
+
+    // What draws the charge in the planter's hand, made the first time one plants.
+    private BombRenderer? _charges;
 
     /// <inheritdoc/>
     public FirstPersonResult Draw(in Camera3D eye, in FirstPersonFrame frame)
@@ -71,7 +76,8 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
         }
         // Not before the rig has a clip: see HumanView.IsPosed. At spawn that is the whole lowering
         // half of the first weapon's change, so the weapon rises into an empty frame, as in retail.
-        if (frame.ShowViewModel && mission.Player is { View: { IsPosed: true } rig } && !binocularsOpen && !sniperScoped)
+        if (frame.ShowViewModel && mission.Player is { View: { IsPosed: true } rig } && !binocularsOpen && !sniperScoped
+            && mission.Player.ModeAnimation != Igi1BombAnimations.Defuse)
         {
             // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
             // than the frame.
@@ -169,6 +175,8 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
             }
 
             if (mission.Player.Weapons?.HideFirstPersonWeapon != true
+                && !mission.Player.HandsOnBomb
+                && !mission.Player.HoldsBomb
                 && weaponAttachment is { } attachment
                 && frame.Held is { IsReady: true })
             {
@@ -186,11 +194,33 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
                     movingPartAttachment);
             }
 
+            if (mission.Player.FirstPersonBombClip is { } bombClip)
+            {
+                DrawCharge(rig, bombClip.Animation, bombClip.Time, weaponAttachment, eye, viewModelProjection, frame.Sun);
+            }
+
             _device.SetFirstPersonGeometry(false);
             drewRig = true;
         }
 
         return new FirstPersonResult(drewRig, binocularRangeMetres);
+    }
+
+    // The charge the arms hold -- up, walking, or being set down -- where their clip hangs it on the hand, moved with the drawn
+    // weapon bone so it keeps to the hand between ticks as the arms do.
+    private void DrawCharge(HumanView rig, int animation, float time, BoneAttachment? drawnWeapon, in Camera3D eye, in Matrix4f projection, FixedFunctionSun? sun)
+    {
+        _charges ??= new BombRenderer(_device, _logger);
+        _charges.Sun = sun;
+        Vector3d shift = drawnWeapon is { } drawn ? drawn.Position - rig.HeldWeapon.Position : default;
+        foreach (Igi2AttachedPart part in Igi1BombAnimations.InHand(rig.Pose(), animation, time))
+        {
+            Vector3d at = new(
+                rig.Position.X + part.Position.X + shift.X,
+                rig.Position.Y + part.Position.Y + shift.Y,
+                rig.Position.Z + part.Position.Z + shift.Z);
+            _charges.DrawModel(part.Model, new BoneAttachment(at, part.Orientation), eye, projection);
+        }
     }
 
     /// <inheritdoc/>
@@ -205,7 +235,8 @@ internal sealed class Igi1FirstPersonView(IGraphicsDevice device, Igi1Gameplay g
 
         candidate.AcknowledgeWeaponChange();
 
-        if (candidate.HeldWeaponType is not { } weapon)
+        // The bomb has no gun model: its charge is drawn from the kit (DrawCharge).
+        if (candidate.HeldWeaponType is not { GunModel.Length: > 0 } weapon)
         {
             return;
         }

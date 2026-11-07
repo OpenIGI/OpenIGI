@@ -20,7 +20,6 @@ public sealed partial class GameHost
     private const double MarkReachMetres = 300;
     private const double MarkOpenMetres = 100;
 
-    private readonly List<(string Name, string Text, int At)> _coopChat = [];
     private readonly List<(string Name, Vector3d Metres, int At)> _coopMarks = [];
 
     // The line being typed, or null when nobody is typing; and whether the key that opened it is still in the queue.
@@ -109,15 +108,9 @@ public sealed partial class GameHost
 
         console.Commands.Add(
             "coop_chat",
-            "Opens a line to type to the others in the co-op room; Enter says it, Escape lets it go.",
-            _ =>
-            {
-                if (Talk is not null && _session.Mission is not null && !_menuFlow.MenuMode)
-                {
-                    _chatEntry = string.Empty;
-                    _chatJustOpened = true;
-                }
-            });
+            "Opens a line to type to everyone in the room, or with 'team' to the team only; Enter says it, Tab switches, Escape lets it go.",
+            context => OpenChat(string.Equals(context.Rest(0).Trim(), "team", StringComparison.OrdinalIgnoreCase)),
+            "[team]");
     }
 
     // Once a frame, before the game reads its input: the line being typed takes the keyboard, and what was said and marked
@@ -133,53 +126,13 @@ public sealed partial class GameHost
             return;
         }
 
-        if (_chatEntry is { } entry)
-        {
-            KeyboardState keys = _window.Input.Keyboard;
-
-            // The key that opened the line is in the queue as a character too; it is not part of what is said.
-            while (keys.TryDequeueCharacter(out char typed))
-            {
-                if (!_chatJustOpened && !char.IsControl(typed) && entry.Length < SessionTalk.MaxChatLength)
-                {
-                    entry += typed;
-                }
-            }
-
-            _chatJustOpened = false;
-            bool say = false;
-            bool cancel = _menuFlow.MenuMode;
-            while (keys.TryDequeuePress(out KeyCode key))
-            {
-                switch (key)
-                {
-                    case KeyCode.Return or KeyCode.NumpadEnter:
-                        say = true;
-                        break;
-                    case KeyCode.Escape:
-                        cancel = true;
-                        break;
-                    case KeyCode.Backspace when entry.Length > 0:
-                        entry = entry[..^1];
-                        break;
-                }
-            }
-
-            _chatEntry = say || cancel ? null : entry;
-            if (say && entry.Trim().Length > 0)
-            {
-                talk.Say(entry);
-            }
-
-            // The game and its binds see an idle keyboard while a line is typed, Escape included.
-            _window.Input.Captured = true;
-        }
+        UpdateChatEntry(talk);
 
         ScoreboardLine[] lines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
         string NameOf(int entity) => lines.FirstOrDefault(l => l.Entity == entity).Name is { Length: > 0 } name ? name : "Teammate";
         foreach (ChatLine line in talk.TakeChat())
         {
-            _coopChat.Add((NameOf(line.Entity), line.Text, now));
+            HearChat(line, lines);
         }
 
         foreach (WorldMark mark in talk.TakeMarks())
@@ -189,17 +142,17 @@ public sealed partial class GameHost
             _audioOut.Sounds?.PlayDefinition("pickup", priority: 180);
         }
 
-        _coopChat.RemoveAll(c => now - c.At > ChatLineMilliseconds);
         _coopMarks.RemoveAll(m => now - m.At > MarkMilliseconds);
     }
 
     // What the HUD shows of the talk: the lines still up, fading out at the end of their time, and the marks likewise.
-    private (IReadOnlyList<HudChatLine> Chat, IReadOnlyList<HudMark> Marks) CoopTalkShown()
+    private (IReadOnlyList<HudChatLine> Chat, HudChatEntry? Entry, IReadOnlyList<HudMark> Marks) CoopTalkShown()
     {
         int now = _loop.TimeSource.Milliseconds;
         static float Fade(int age, int life) => Math.Clamp((life - age) / 1500f, 0f, 1f);
         return (
-            [.. _coopChat.Select(c => new HudChatLine(c.Name, c.Text, Fade(now - c.At, ChatLineMilliseconds)))],
+            ChatShown(now),
+            ChatEntryShown(now),
             [.. _coopMarks.Select(m => new HudMark(m.Metres, m.Name, Fade(now - m.At, MarkMilliseconds)))]);
     }
 

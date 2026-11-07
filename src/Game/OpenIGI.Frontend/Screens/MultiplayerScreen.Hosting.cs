@@ -61,7 +61,7 @@ public sealed partial class MultiplayerScreen
         };
         column.AddChild(mode);
 
-        IReadOnlyList<MissionInfo> missions = Context.Missions;
+        List<MissionInfo> missions = HostMissions(coop);
         if (missions.Count > 0)
         {
             _mission = Math.Clamp(_mission, 0, missions.Count - 1);
@@ -210,7 +210,7 @@ public sealed partial class MultiplayerScreen
         body.RowDefinitions.Add(GridLength.Star);
         body.RowDefinitions.Add(GridLength.Auto);
 
-        IReadOnlyList<MissionInfo> missions = Context.Missions;
+        List<MissionInfo> missions = HostMissions(coop);
         MissionInfo? mission = missions.Count > 0 ? missions[Math.Clamp(_mission, 0, missions.Count - 1)] : null;
         string name = mission?.Name ?? "No missions";
         var top = new StackPanel { Orientation = Orientation.Vertical };
@@ -284,10 +284,14 @@ public sealed partial class MultiplayerScreen
         };
     }
 
+    // The missions the chosen mode can be hosted on: every one for co-op, only those laid out for multiplayer for the others.
+    private List<MissionInfo> HostMissions(ICoopRooms coop) =>
+        HostingCoop ? [.. Context.Missions] : [.. Context.Missions.Where(m => coop.HasArena(m.Id))];
+
     // HOST: the mode, mission and listing chosen, in this game or on a dedicated server.
     private void Host(ICoopRooms coop)
     {
-        IReadOnlyList<MissionInfo> missions = Context.Missions;
+        List<MissionInfo> missions = HostMissions(coop);
         if (missions.Count == 0)
         {
             return;

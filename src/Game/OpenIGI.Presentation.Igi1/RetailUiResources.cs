@@ -25,6 +25,9 @@ namespace OpenIGI.Presentation.Igi1;
 /// </remarks>
 internal sealed class RetailUiResources : IDisposable
 {
+    /// <summary>The prefix naming a sprite built into the game (<see cref="OpenIGI.Game.Multiplayer.Modes.BombKit"/>) rather than in an archive.</summary>
+    public const string BuiltInPrefix = "kit:";
+
     private readonly IGraphicsDevice _device;
     private readonly IOpenIgiLogger _logger;
     private readonly RetailUiResourceOptions _options;
@@ -141,21 +144,29 @@ internal sealed class RetailUiResources : IDisposable
             }
         }
 
+        // A built-in sprite, read from the game's own kit.
+        ReadOnlyMemory<byte>? data = entry?.Data;
+        if (entry is null && name.StartsWith(BuiltInPrefix, StringComparison.OrdinalIgnoreCase)
+            && OpenIGI.Game.Multiplayer.Modes.BombKit.Read(name[BuiltInPrefix.Length..]) is { } builtIn)
+        {
+            data = builtIn;
+        }
+
         SpriteResource? resource = null;
-        if (entry is not null)
+        if (data is { } bytes)
         {
             // The menus decode under the entry's own name, because the parameter that asked may have
             // named only the stem; the HUD and the computer decode under the name they asked for.
-            string decodeName = _options.MatchStem ? entry.Name : name;
+            string decodeName = _options.MatchStem && entry is not null ? entry.Name : name;
             if (_options.LogCategory is not { } category)
             {
-                resource = SpriteResource.Upload(_device, SpriteLoader.Load(entry.Data, decodeName));
+                resource = SpriteResource.Upload(_device, SpriteLoader.Load(bytes, decodeName));
             }
             else
             {
                 try
                 {
-                    SpriteAsset asset = SpriteLoader.Load(entry.Data, decodeName);
+                    SpriteAsset asset = SpriteLoader.Load(bytes, decodeName);
                     resource = SpriteResource.Upload(_device, asset);
                 }
                 catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)

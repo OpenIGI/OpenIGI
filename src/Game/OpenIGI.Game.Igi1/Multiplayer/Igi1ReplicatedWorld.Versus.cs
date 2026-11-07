@@ -125,10 +125,146 @@ public sealed partial class Igi1ReplicatedWorld
             : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) ? player.Player.Body.Position : null;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The plant plays once over the plant's time, the kneel coming down as the hold begins and the charge set as it ends; the
+    /// defuse loops at its own pace.
+    /// </remarks>
+    public void ShowWork(int slot, Game.Multiplayer.Modes.ModeWorkKind? work, int heldTicks, int totalTicks)
+    {
+        PlayerCamera? rig = slot == ServerSession.HostSlot
+            ? IncludesHost ? _game.World.Player : null
+            : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) ? player.Player : null;
+        if (rig is null)
+        {
+            return;
+        }
+
+        switch (work)
+        {
+            case Game.Multiplayer.Modes.ModeWorkKind.Plant:
+                rig.PlayModeClip(Igi1BombAnimations.Plant, Igi1BombAnimations.Duration(Igi1BombAnimations.Plant) * Math.Clamp(heldTicks / (float)Math.Max(1, totalTicks), 0f, 1f));
+                break;
+            case Game.Multiplayer.Modes.ModeWorkKind.Defuse:
+                rig.PlayModeClip(Igi1BombAnimations.Defuse, heldTicks * Formats.Animation.BoneAnimation.FrameStep);
+                break;
+            default:
+                if (rig.ModeAnimation >= 0)
+                {
+                    rig.PlayModeClip(-1, 0f);
+                }
+
+                break;
+        }
+    }
+
+    // The slot that carries the mode's bomb, or -1.
+    private int _bombCarrier = -1;
+
+    /// <inheritdoc/>
+    public void ShowCarrier(int slot)
+    {
+        // The carrier carries the bomb as a weapon, and nobody else does: given on the tick it is taken up, taken on the tick
+        // it is planted or lost -- and given again after a respawn's fresh kit.
+        _bombCarrier = slot;
+        if (IncludesHost && _game.World.Player is { } own)
+        {
+            Igi1BombWeapon.Keep(own, slot == ServerSession.HostSlot);
+        }
+
+        foreach ((int joined, Igi1NetworkPlayer player) in _bySlot)
+        {
+            Igi1BombWeapon.Keep(player.Player, joined == slot);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool HoldsBomb(int slot) => LivingRig(slot) is { } rig && Igi1BombWeapon.Holds(rig);
+
+    /// <inheritdoc/>
+    public bool TakeBombDrop(int slot) => LivingRig(slot)?.TakeBombDrop() == true;
+
+    // The bomb thrown into the world, while it lies there.
+    private OpenIGI.Game.World.GunPickup? _thrownBomb;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A pickup of the bomb's weapon, flown as a thrown gun is (<see cref="OpenIGI.Game.World.PickupThrow"/>) against the level with
+    /// the C4's own shape, and sent to the joiners as any throw; walking over it takes nothing -- the mode hands it to an attacker.
+    /// </remarks>
+    public bool ThrowBomb(int slot, Vector3d from, float yaw, bool far)
+    {
+        if (_game.World.GunPickups is not { Mirrored: false } guns)
+        {
+            return false;
+        }
+
+        TakeThrownBomb();
+        PlayerCamera? rig = slot >= 0 ? LivingRig(slot) : null;
+        double heading = OpenIGI.Game.World.PickupThrow.Heading(rig?.Body.Yaw ?? yaw, far, Random.Shared.NextDouble());
+        Vector3d root = rig?.Body.Origin ?? new Vector3d(from.X, from.Y, from.Z + BodyRootUnits);
+        Vector3d at = new(root.X, root.Y, root.Z + OpenIGI.Game.World.PickupThrow.AboveRoot);
+        _thrownBomb = guns.Throw(
+            at, Matrix3f.RotationZ(-(float)heading), Igi1BombWeapon.Type, OpenIGI.Game.World.PickupThrow.Velocity(heading, far), null, rig?.Weapons);
+        _thrownBomb.WalkOverTakes = false;
+        if (Igi1BombWeapon.Collider is { } shape)
+        {
+            _thrownBomb.UseCollider(shape);
+        }
+
+        return true;
+    }
+
+    // Where a body's root stands above its feet, for a throw from one no longer there: a metre.
+    private const double BodyRootUnits = WorldUnits.PerMetre;
+
+    /// <inheritdoc/>
+    public Vector3d? ThrownBombAt => _thrownBomb is { IsCollected: false } bomb ? bomb.Position : null;
+
+    /// <inheritdoc/>
+    public void TakeThrownBomb()
+    {
+        if (_thrownBomb is { IsCollected: false } bomb && _game.World.GunPickups is { } guns)
+        {
+            guns.Withdraw(bomb);
+        }
+
+        _thrownBomb = null;
+    }
+
+    /// <inheritdoc/>
+    public bool IsPlanting(int slot) =>
+        LivingRig(slot) is { } rig && Igi1BombWeapon.Holds(rig)
+        && (rig.LastFrame.IsSet(PlayerInputSlot.Activate) || rig.LastFrame.IsSet(PlayerInputSlot.Fire));
+
+    // A player as a snapshot carries it, marked when it carries the bomb.
+    private ReplicatedHuman Carrying(ReplicatedHuman human, int slot) =>
+        slot == _bombCarrier && _bombCarrier >= 0 ? human with { Flags = human.Flags | ReplicatedHumanCondition.CarriesBomb } : human;
+
+    /// <inheritdoc/>
+    public float? YawOf(int slot) =>
+        slot == ServerSession.HostSlot
+            ? IncludesHost && _game.World.Player is { } own ? own.Body.Yaw : null
+            : _bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player) ? player.Player.Body.Yaw : null;
+
+    /// <inheritdoc/>
     public void Blast(Vector3d at, double radius) => _game.Blasts.ModeBlast(at, radius);
 
     /// <inheritdoc/>
     public bool IsUsing(int slot) => LivingRig(slot) is { } rig && rig.LastFrame.IsSet(PlayerInputSlot.Activate);
+
+    /// <inheritdoc/>
+    public void HoldStill(bool held)
+    {
+        foreach (Igi1NetworkPlayer joined in _bySlot.Values)
+        {
+            joined.Player.HeldStill = held;
+        }
+
+        if (IncludesHost && _game.World.Player is { } own)
+        {
+            own.HeldStill = held;
+        }
+    }
 
     /// <inheritdoc/>
     public bool Give(int slot, string weapon, int rounds) =>

@@ -58,9 +58,44 @@ function lock() {
   }
 }
 
-// The field a touch screen's keyboard types into, and whether the game wants typing now.
+// The field a touch screen's keyboard types into, and whether the game wants typing now. In line mode (a line of chat) the
+// field keeps the whole line -- the keyboard's own autocorrect, suggestions and Backspace work on it -- and says it to the game
+// as it changes; otherwise each character goes as it is typed. Where on the canvas a touch raises the keyboard (the chat
+// button), in canvas pixels; and how much of the canvas the keyboard covers, last said.
 let textField = null;
+let textForm = null;
 let textWanted = false;
+let lineMode = false;
+let textTrigger = null;
+let insetSaid = 0;
+
+// Raises the keyboard: only ever from inside the player's own touch, the one kind of focus a phone's browser raises it for.
+function raiseKeyboard() {
+  if (textField && document.activeElement !== textField) textField.focus({ preventScroll: true });
+}
+
+// Whether a touch ended on the area that begins typing.
+function onTrigger(clientX, clientY) {
+  if (!textTrigger || !canvas) return false;
+  const box = canvas.getBoundingClientRect();
+  if (box.width <= 0 || box.height <= 0) return false;
+  const x = (clientX - box.left) * canvas.width / box.width;
+  const y = (clientY - box.top) * canvas.height / box.height;
+  return x >= textTrigger.x && x <= textTrigger.x + textTrigger.w && y >= textTrigger.y && y <= textTrigger.y + textTrigger.h;
+}
+
+// How much of the canvas's bottom the keyboard covers, in canvas pixels, said to the game when it changes.
+function sayInset() {
+  const viewport = window.visualViewport;
+  if (!viewport || !canvas) return;
+  const box = canvas.getBoundingClientRect();
+  const covered = Math.max(0, box.bottom - (viewport.offsetTop + viewport.height));
+  const inset = box.height > 0 ? Math.round(covered * canvas.height / box.height) : 0;
+  if (inset !== insetSaid) {
+    insetSaid = inset;
+    queue.push(`inset ${inset}`);
+  }
+}
 
 /**
  * Starts listening on the page.
@@ -77,25 +112,59 @@ export function install(target) {
   // A field nobody sees, for a touch screen's keyboard: a browser raises one only for a field that is focused, and only
   // when the focus comes from the player's own touch -- so while the game wants typing, a touch on the game focuses it.
   // What is typed into it goes to the game as characters; it is emptied as it goes.
+  // In a form, so the keyboard's return key (shown as Send) submits it: the game hears Enter, and the keyboard goes down.
+  // At the top of the page, so focusing it never scrolls the page up under the keyboard; 16px, so iOS doesn't zoom.
+  textForm = document.createElement('form');
+  textForm.setAttribute('action', '#');
   textField = document.createElement('input');
   Object.assign(textField, { type: 'text', autocomplete: 'off', autocapitalize: 'characters', spellcheck: false });
+  textField.setAttribute('enterkeyhint', 'send');
   textField.setAttribute('aria-hidden', 'true');
   Object.assign(textField.style, {
-    position: 'fixed', left: '0', bottom: '0', width: '1px', height: '1px', opacity: '0', fontSize: '16px', border: '0', padding: '0',
+    position: 'fixed', left: '0', top: '0', width: '1px', height: '1px', opacity: '0', fontSize: '16px', border: '0', padding: '0',
   });
-  document.body.appendChild(textField);
+  textForm.appendChild(textField);
+  document.body.appendChild(textForm);
   textField.addEventListener('input', () => {
+    if (lineMode) {
+      queue.push(`line ${textField.value}`);
+      return;
+    }
+
     for (const ch of textField.value) queue.push(`char ${ch}`);
     textField.value = '';
   }, { signal });
-  const raise = () => { if (textWanted && document.activeElement !== textField) textField.focus(); };
+  let sent = false;
+  textForm.addEventListener('submit', e => {
+    e.preventDefault();
+    sent = true;
+    queue.push('key Enter 1', 'key Enter 0');
+    textField.blur();
+  }, { signal });
+  textField.addEventListener('focus', () => { sent = false; }, { signal });
+  // The keyboard put away without sending (its own hide key, Android's back, a tap elsewhere): the line is let go, as Escape
+  // would -- unless a touch on the game gives the field back straight away.
+  textField.addEventListener('blur', () => {
+    if (!lineMode || sent) return;
+    setTimeout(() => {
+      if (textWanted && lineMode && document.activeElement !== textField) queue.push('key Escape 1', 'key Escape 0');
+    }, 300);
+  }, { signal });
+  const raise = e => {
+    const point = e.changedTouches?.[0] ?? e;
+    if (textWanted || onTrigger(point.clientX, point.clientY)) raiseKeyboard();
+  };
   canvas.addEventListener('touchend', raise, { signal });
-  canvas.addEventListener('pointerup', e => { if (e.pointerType === 'touch') raise(); }, { signal });
+  canvas.addEventListener('pointerup', e => { if (e.pointerType === 'touch') raise(e); }, { signal });
+  window.visualViewport?.addEventListener('resize', sayInset, { signal });
+  window.visualViewport?.addEventListener('scroll', sayInset, { signal });
 
   window.addEventListener('keydown', e => {
     if (PAGE_KEYS.has(e.code) || e.metaKey) return;
-    // A character typed into the field comes through its input; the keys that edit (Backspace, Enter, Escape) as keys.
+    // A character typed into the field comes through its input; the keys that edit (Backspace, Enter, Escape) as keys --
+    // except in line mode, where the field edits its own line and its Enter submits the form; only Escape is the game's.
     if (e.target === textField && e.key.length === 1) return;
+    if (e.target === textField && lineMode && e.key !== 'Escape') return;
     e.preventDefault();
     if (!e.repeat) queue.push(`key ${e.code} 1`);
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey) queue.push(`char ${e.key}`);
@@ -151,6 +220,9 @@ export function uninstall() {
   gyro.uninstall();
   touch.uninstall();
   listening?.abort();
+  textForm?.remove();
+  textForm = null;
+  textField = null;
   resizes?.disconnect();
   listening = null;
   resizes = null;
@@ -191,4 +263,13 @@ export const imports = {
     textWanted = wanted;
     if (!wanted && textField && document.activeElement === textField) textField.blur();
   },
+  setTextLine: (on, line) => {
+    lineMode = on;
+    if (!textField) return;
+    textField.value = on ? line : '';
+    Object.assign(textField, on
+      ? { autocapitalize: 'sentences', spellcheck: true, autocomplete: 'on' }
+      : { autocapitalize: 'characters', spellcheck: false, autocomplete: 'off' });
+  },
+  setTextTrigger: (x, y, w, h) => { textTrigger = w > 0 && h > 0 ? { x, y, w, h } : null; },
 };

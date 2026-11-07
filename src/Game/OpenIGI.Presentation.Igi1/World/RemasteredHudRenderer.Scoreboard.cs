@@ -20,6 +20,9 @@ internal sealed partial class RemasteredHudRenderer
     private const float BoardHeader = 92f;
     private const float BoardColumns = 46f;
     private const float BoardRow = 70f;
+
+    // The shortest a row is fitted to beside the vote, with many players.
+    private const float BoardRowCompact = 46f;
     private const float BoardRowGap = 7f;
     private const float BoardFooter = 52f;
     private const float BoardPad = 34f;
@@ -28,6 +31,9 @@ internal sealed partial class RemasteredHudRenderer
     private static Bgra32 BoardFace => Bgra32.FromRgba(13, 15, 18, 246);
     private static Bgra32 RowFace => Bgra32.FromRgba(255, 255, 255, 12);
     private static Bgra32 Hairline => Bgra32.FromRgba(255, 255, 255, 22);
+
+    // The board's face with the hairline laid over it, for the rounded edge drawn under the face.
+    private static Bgra32 BoardEdge => Bgra32.FromRgba(34, 36, 39, 246);
     private static Bgra32 Alive => Bgra32.FromRgb(74, 222, 128);
     private static Bgra32 Down => Bgra32.FromRgb(251, 176, 59);
     private static Bgra32 Bad => Bgra32.FromRgb(232, 92, 80);
@@ -65,7 +71,8 @@ internal sealed partial class RemasteredHudRenderer
         int screenHeight,
         ScoreboardControls? controls = null,
         bool relayed = false,
-        string mode = "")
+        string mode = "",
+        bool besideVote = false)
     {
         _removeButtons.Clear();
         ArgumentNullException.ThrowIfNull(batch);
@@ -81,25 +88,35 @@ internal sealed partial class RemasteredHudRenderer
 
         bool teamed = board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
         ScoreboardLine[] lines = [.. board.Lines.OrderBy(static l => l.Team).ThenByDescending(static l => l.Kills).ThenBy(static l => l.Deaths)];
-        float rows = lines.Length * Px(BoardRow + BoardRowGap);
-        float height = Px(BoardHeader) + Px(BoardColumns) + rows + Px(14f) + Px(BoardFooter);
-        float width = MathF.Min(Px(BoardWidth), context.SafeRect.Width * 0.94f);
-        float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
-        float top = context.SafeRect.Y + MathF.Max(Px(20f), (context.SafeRect.Height - height) * 0.35f);
+        // Beside the vote, the left-hand area under the match's card, each row as tall as the room lets it be (down to a compact
+        // line); alone, in the middle, every row full height.
+        float fixedHeight = Px(BoardHeader) + Px(BoardColumns) + Px(14f) + Px(BoardFooter);
+        UiRect? area = besideVote ? IntermissionAreas(context).Board : null;
+        float rowHeight = area is { } fit && lines.Length > 0
+            ? Math.Clamp(((fit.Height - fixedHeight) / lines.Length) - Px(BoardRowGap), Px(BoardRowCompact), Px(BoardRow))
+            : Px(BoardRow);
+        float rows = lines.Length * (rowHeight + Px(BoardRowGap));
+        float height = fixedHeight + rows;
+        float width = area?.Width ?? MathF.Min(Px(BoardWidth), context.SafeRect.Width * 0.94f);
+        float x = area?.X ?? context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
+        float top = area?.Y ?? context.SafeRect.Y + MathF.Max(Px(20f), (context.SafeRect.Height - height) * 0.35f);
         float pad = Px(BoardPad);
         float right = x + width - pad;
         var panel = new UiRect(x, top, width, height);
 
-        painter.DrawShadow(panel, _surfaces?.Shadow ?? default, Bgra32.FromRgba(0, 0, 0, 170), Px(32f), new UiVec2(0f, Px(8f)));
-        painter.FillRoundedRect(panel, _surfaces?.Rounded ?? default, BoardFace, Px(10f));
-        Outline(painter, panel, Hairline, MathF.Max(1f, Px(1f)));
+        // The hairline edge follows the corners: the panel in the edge's colour, the face a hair inside it. A square outline
+        // stood proud of the rounded corners and showed there as light ticks over the scene.
+        float hair = MathF.Max(1f, Px(1f));
+        painter.FillRoundedRect(panel, _surfaces?.Rounded ?? default, BoardEdge, Px(10f));
+        painter.FillRoundedRect(new UiRect(panel.X + hair, panel.Y + hair, panel.Width - (hair * 2f), panel.Height - (hair * 2f)), _surfaces?.Rounded ?? default, BoardFace, Px(10f) - hair);
 
         // The header: the mode, the room, and the numbers that matter on the right.
         var header = new UiRect(x, top, width, Px(BoardHeader));
         bool versus = Game.Multiplayer.Modes.GameModes.IsVersus(mode) || mode == Game.Multiplayer.Modes.GameModes.Objective;
         string tag = versus ? Game.Multiplayer.Modes.GameModes.Title(mode) : teamed ? "TEAM" : "CO-OP";
         float chipText = Px(LabelText + 2f);
-        float chipWidth = (type.Heading.MeasureWidth(tag, chipText) * 1.12f) + Px(24f);
+        // Measured as it is drawn, letterspaced, so a long mode's name ("TEAM DEATHMATCH") sits inside its chip.
+        float chipWidth = UiPainter.MeasureLabel(type.Heading, tag, chipText, 0.1f) + Px(24f);
         var chip = new UiRect(x + pad, header.Y + ((header.Height - Px(36f)) * 0.5f), chipWidth, Px(36f));
         painter.FillRect(chip, Accent);
         painter.DrawLabel(type.Heading, tag, new UiVec2(chip.X + Px(12f), UiRowStyle.CapsCenterY(type.Heading, chipText, chip)), chipText, Bgra32.FromRgb(20, 16, 10), 0.1f);
@@ -161,7 +178,7 @@ internal sealed partial class RemasteredHudRenderer
         float y = heads.Bottom + Px(4f);
         foreach (ScoreboardLine line in lines)
         {
-            var row = new UiRect(x + pad - Px(14f), y, width - (pad * 2f) + Px(28f), Px(BoardRow));
+            var row = new UiRect(x + pad - Px(14f), y, width - (pad * 2f) + Px(28f), rowHeight);
             bool own = localEntity is { } self && line.Entity == self;
             DrawPlayerCard(painter, type, context, row, line, own, teamed, killsRight, deathsRight, pingRight);
             if (controls is { } hand && hand.Removable.Contains(line.Entity))
@@ -169,7 +186,7 @@ internal sealed partial class RemasteredHudRenderer
                 DrawRemove(painter, type, context, row, killsRight - Px(110f), line.Entity, hand);
             }
 
-            y += Px(BoardRow + BoardRowGap);
+            y += rowHeight + Px(BoardRowGap);
         }
 
         // The footer: the game's name, and the key that keeps the board up.
@@ -179,6 +196,12 @@ internal sealed partial class RemasteredHudRenderer
         float footText = Px(LabelText);
         float footY = UiRowStyle.CapsCenterY(type.Heading, footText, footer);
         painter.DrawLabel(type.Heading, "OPENIGI", new UiVec2(x + pad, footY), footText, UiPalette.TextMuted, 0.14f);
+        if (besideVote && controls is null)
+        {
+            // Up by itself for the vote: no key holds it.
+            return;
+        }
+
         float capWidth = (type.Heading.MeasureWidth("TAB", footText) * 1.14f) + Px(22f);
         var cap = new UiRect(right - capWidth, footer.Y + ((footer.Height - Px(28f)) * 0.5f), capWidth, Px(28f));
         Outline(painter, cap, UiPalette.TextMuted.WithAlpha(160), MathF.Max(1f, Px(1.5f)));
@@ -386,7 +409,6 @@ internal sealed partial class RemasteredHudRenderer
         float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
         float y = context.SafeRect.Y + (context.SafeRect.Height * 0.62f);
         var panel = new UiRect(x, y, width, height);
-        painter.DrawShadow(panel, _surfaces?.Shadow ?? default, Bgra32.FromRgba(0, 0, 0, 160), Px(26f), new UiVec2(0f, Px(6f)));
         painter.FillRoundedRect(panel, _surfaces?.Rounded ?? default, BoardFace, Px(10f));
         painter.FillRect(new UiRect(x, y, width, MathF.Max(2f, Px(3f))), Bad);
 

@@ -64,6 +64,7 @@ public sealed partial class GameHost
         // the command already there.
         _lamps.RegisterCommands(state.Console.System);
         RegisterCoopTalk(state.Console.System);
+        RegisterMpMapShot(state.Console.System);
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);

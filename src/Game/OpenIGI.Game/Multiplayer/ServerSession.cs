@@ -644,9 +644,14 @@ public sealed partial class ServerSession : IModeHost
         _net.Disconnect(slot, "the host removed you from this room");
     }
 
-    /// <summary>Says a line to every player, as the listen server's own player.</summary>
+    /// <summary>Says a line to every player, or its team only, as the listen server's own player.</summary>
     /// <param name="text">The line.</param>
-    public void Say(string text) => Say(new ChatLine(HostEntity, text));
+    /// <param name="team">Whether only the host's team hears it.</param>
+    public void Say(string text, bool team = false) => Say(new ChatLine(HostEntity, text, team ? ChatKind.Team : ChatKind.All), HostSlot);
+
+    /// <summary>Tells every player something in the server's own word: nobody's line, shown as the server's.</summary>
+    /// <param name="text">What to tell.</param>
+    public void Announce(string text) => Say(new ChatLine(-1, text, ChatKind.Server), null);
 
     /// <summary>Marks a place for every player, as the listen server's own player.</summary>
     /// <param name="position">Where, in world units.</param>
@@ -702,12 +707,29 @@ public sealed partial class ServerSession : IModeHost
         return marked;
     }
 
-    private void Say(ChatLine line)
+    // A line to those it is for: a team line to the speaker's team only (everyone, where the mode plays no teams), any other
+    // to all. The listen host's own player hears what its team would.
+    private void Say(ChatLine line, int? speaker)
     {
-        _heard.Add(line);
+        int? team = line.Kind == ChatKind.Team && Mode.IsTeamMode && speaker is { } from && Match.Players.TryGetValue(from, out MatchPlayer? who)
+            ? who.Team
+            : null;
+        bool Hears(int slot) => team is not { } side || (Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.Team == side);
+
+        if (Hears(HostSlot) || speaker == HostSlot)
+        {
+            _heard.Add(line);
+        }
+
         _writer.Reset();
-        SessionTalk.WriteChat(_writer, line.Entity, line.Text);
-        _net.Broadcast(NetChannel.Reliable, _writer.AsSpan());
+        SessionTalk.WriteChat(_writer, line.Entity, line.Text, line.Kind);
+        foreach (int slot in _clients.Keys)
+        {
+            if (Hears(slot) || slot == speaker)
+            {
+                _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+            }
+        }
     }
 
     private void Mark(WorldMark mark)
@@ -847,7 +869,7 @@ public sealed partial class ServerSession : IModeHost
             case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
                 if (client.Chat.TrySpend(_now) && !TryCommand(slot, line.Text))
                 {
-                    Say(line with { Entity = client.Entity });
+                    Say(line with { Entity = client.Entity, Kind = line.Kind == ChatKind.Team ? ChatKind.Team : ChatKind.All }, slot);
                 }
 
                 return;

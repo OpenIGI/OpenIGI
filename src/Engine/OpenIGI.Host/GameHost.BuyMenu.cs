@@ -25,11 +25,17 @@ public sealed partial class GameHost
     // Once a frame, before the game reads its input: the menu opened or shut, and an item asked for.
     private void UpdateBuyMenu()
     {
+        // A round's freeze time holds this player where it stands, as the server holds it, so what it predicts is what is run.
+        if (HostedPlayer is { } own)
+        {
+            own.HeldStill = CurrentMatchHud() is { Frozen: true };
+        }
+
         bool keyDown = TickObserver is ISessionScoreboard && !_menuFlow.MenuMode && BuyKeyDown();
         bool pressed = keyDown && !_buyKeyWasDown;
         _buyKeyWasDown = keyDown;
 
-        bool open = !_menuFlow.MenuMode && CurrentMatchHud() is { BuyClock: not null } && BuyItems.Count > 0;
+        bool open = !_menuFlow.MenuMode && CurrentMatchHud() is { BuyClock: not null } or { FreeLoadout: true } && BuyItems.Count > 0;
         if (!open || (_buyMenuUp && (pressed || _window.Input.Keyboard.WasPressed(KeyCode.Escape))))
         {
             CloseBuyMenu();
@@ -78,6 +84,10 @@ public sealed partial class GameHost
         _window.CursorLocked = false;
         _window.Input.Captured = true;
     }
+
+    // Whether a match overlay has the pointer out over it -- the buy menu, the map vote, the scoreboard clicked into -- so the
+    // look leaves the cursor free rather than locking it back in the middle every frame.
+    private bool OverlayHasPointer => _buyMenuUp || _mapVoteUp || _scoreboardPointer;
 
     private void CloseBuyMenu()
     {

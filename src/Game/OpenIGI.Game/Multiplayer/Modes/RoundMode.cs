@@ -18,6 +18,10 @@ public sealed record RoundSettings
     /// <summary>Gets the seconds from a round's start a mode with a buy phase sells for.</summary>
     public double BuySeconds { get; init; } = 20;
 
+    /// <summary>Gets the seconds a round of a mode with a buy phase opens on, everyone held where they start to buy and plan
+    /// (Counter-Strike's freeze time); the buy time and the round's clock run from its end.</summary>
+    public double FreezeSeconds { get; init; } = 10;
+
     /// <summary>Gets how far from where it started the round a player may still buy, in metres, on a map without buy zones.</summary>
     public double BuyMetres { get; init; } = 15;
 
@@ -79,6 +83,10 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     private long _roundBegan;
     private readonly Dictionary<int, Core.Numerics.Vector3d> _startedAt = [];
 
+    // The seconds of the round's freeze time still to run: nought outside a round in play, or for a mode without one.
+    private double FreezeLeft(long tick) =>
+        HasArmoury && Flow.Phase == MatchPhase.Live ? Math.Max(0, Settings.FreezeSeconds - ((tick - _roundBegan) / (double)tickRate)) : 0;
+
     /// <inheritdoc/>
     public string Buy(IModeHost host, int slot, string asked, long tick)
     {
@@ -126,7 +134,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 
     // The seconds the armoury still sells for this round: nought outside a round in play, or for a mode without one.
     private double BuyLeft(long tick) =>
-        HasArmoury && Flow.Phase == MatchPhase.Live ? Math.Max(0, Settings.BuySeconds - ((tick - _roundBegan) / (double)tickRate)) : 0;
+        HasArmoury && Flow.Phase == MatchPhase.Live ? Math.Max(0, Settings.FreezeSeconds + Settings.BuySeconds - ((tick - _roundBegan) / (double)tickRate)) : 0;
 
     // A player may buy in one of its side's buy zones, or on a map without them near where it began the round.
     private bool InBuyZone(IModeHost host, int slot, int team)
@@ -158,6 +166,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         Target = Settings.RoundsToWin,
         Reason = Flow.Phase is MatchPhase.RoundOver or MatchPhase.Intermission ? EndReason : RoundEnd.None,
         BuyLeft = BuyLeft(tick),
+        FreezeLeft = FreezeLeft(tick),
     };
 
     /// <summary>Gets or sets why the round was decided, which <see cref="RoundWinner"/> says as it decides it.</summary>
@@ -180,7 +189,12 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
         GameModes.CountDeaths(host, tick, deaths);
         switch (Flow.Phase)
         {
+            case MatchPhase.Live when FreezeLeft(tick) > 0:
+                // The freeze time: held where they start, buying and planning; nothing of the round runs yet.
+                host.World.HoldStill(true);
+                break;
             case MatchPhase.Live:
+                host.World.HoldStill(false);
                 Bounds.Tick(host, tick);
                 TickRound(host, tick);
                 if (RoundWinner(host, tick) is { } winner)
@@ -190,6 +204,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
 
                 break;
             case MatchPhase.RoundOver when Flow.IsDue(tick):
+                host.World.HoldStill(false);
                 if (MatchWinner(host) is { } champion)
                 {
                     Flow.Enter(MatchPhase.Intermission, tick, Settings.IntermissionSeconds, champion);
@@ -303,7 +318,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
             }
         }
 
-        Flow.Enter(MatchPhase.Live, tick, Settings.RoundSeconds);
+        Flow.Enter(MatchPhase.Live, tick, Settings.RoundSeconds + (HasArmoury ? Settings.FreezeSeconds : 0));
         EndReason = RoundEnd.None;
         _roundBegan = tick;
         _startedAt.Clear();

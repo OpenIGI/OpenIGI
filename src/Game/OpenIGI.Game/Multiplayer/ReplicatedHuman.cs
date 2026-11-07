@@ -26,6 +26,9 @@ public enum ReplicatedHumanCondition : byte
 
     /// <summary>On a ladder: <see cref="ReplicatedHuman.State"/> is the climb's clip and <see cref="ReplicatedHuman.ClipTime"/> where it is.</summary>
     Climbing = 32,
+
+    /// <summary>It carries the bomb the bomb modes plant: every window draws the charge on its back.</summary>
+    CarriesBomb = 64,
 }
 
 /// <summary>One human as a snapshot carries it: everything a client needs to draw another player and hit-test it.</summary>

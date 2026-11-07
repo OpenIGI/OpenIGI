@@ -92,6 +92,15 @@ public sealed partial class GameHost
             }
         }
 
+        // One tap, one line of chat: opened as the finger comes down, the page raising the keyboard as it lifts.
+        bool chatHeld = mode == TouchControlMode.Play && _touchControls.Held.Contains(TouchButton.Chat);
+        if (chatHeld && !_touchChatHeld && _chatEntry is null)
+        {
+            OpenChat(team: false);
+        }
+
+        _touchChatHeld = chatHeld;
+
         if (mode == TouchControlMode.Play)
         {
             foreach (TouchButton button in _touchControls.Held)

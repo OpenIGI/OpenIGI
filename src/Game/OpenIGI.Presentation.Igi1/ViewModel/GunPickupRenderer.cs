@@ -23,6 +23,10 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
     private readonly MagicObjectRegistry _magic;
     private readonly IOpenIgiLogger _logger;
     private readonly List<Entry> _entries = [];
+
+    // A bomb mode's bomb thrown into the world, drawn with the bomb kit's charge as it flies and where it lands; and what draws it.
+    private readonly List<GunPickup> _bombs = [];
+    private BombRenderer? _bombDrawer;
     private bool _disposed;
 
     public GunPickupRenderer(
@@ -59,6 +63,11 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(pickup);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (pickup.Weapon.WeaponId == Game.Igi1.Multiplayer.Igi1BombWeapon.Id)
+        {
+            _bombs.Add(pickup);
+            return;
+        }
 
         HeldWeaponRenderer weapon = new(_device, _resources, _magic, _logger) { Materials = Materials };
         if (!weapon.Load(mission, pickup.Weapon.GunModel))
@@ -80,6 +89,7 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
     /// <param name="pickup">The gun.</param>
     public void Remove(GunPickup pickup)
     {
+        _bombs.Remove(pickup);
         int at = _entries.FindIndex(e => ReferenceEquals(e.Pickup, pickup));
         if (at >= 0)
         {
@@ -94,6 +104,11 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
         foreach (Entry entry in _entries)
         {
             entry.Pickup.Present(tickFraction, smooth);
+        }
+
+        foreach (GunPickup bomb in _bombs)
+        {
+            bomb.Present(tickFraction, smooth);
         }
     }
 
@@ -115,6 +130,16 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
                     shotSequence: 0);
             }
         }
+
+        foreach (GunPickup bomb in _bombs)
+        {
+            if (!bomb.IsCollected)
+            {
+                _bombDrawer ??= new BombRenderer(_device, _logger);
+                _bombDrawer.Sun = Sun;
+                _bombDrawer.DrawModel(Game.Multiplayer.Modes.BombKit.HeldModel, new BoneAttachment(bomb.DrawPosition, bomb.DrawOrientation), camera, projection);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -134,6 +159,9 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
         }
 
         _entries.Clear();
+        _bombs.Clear();
+        _bombDrawer?.Dispose();
+        _bombDrawer = null;
     }
 
     private sealed record Entry(GunPickup Pickup, HeldWeaponRenderer Renderer);

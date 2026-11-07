@@ -107,7 +107,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     public bool Remove(int slot, string reason) => _session.Remove(slot, reason);
 
     /// <inheritdoc/>
-    public void Say(string text) => _session.Say(text);
+    public void Say(string text) => _session.Announce(text);
 
     /// <inheritdoc/>
     public string? ChangeMap(int mission, string? mode)
@@ -129,18 +129,26 @@ public sealed class DedicatedServer : IServerControl, IDisposable
     // The missions there are, read when wanted: the host has them only once it has started.
     private IReadOnlyList<(int Id, string Name)> Missions => _missionList();
 
+    /// <summary>Gets which missions' maps can be played as arenas (laid out for multiplayer); every one when unset.</summary>
+    public Func<int, bool>? Arenas { get; init; }
+
+    // The missions a mode can be played on: every one for co-op, the laid-out ones for a versus mode.
+    private IReadOnlyList<(int Id, string Name)> MissionsFor(string mode) =>
+        GameModes.IsVersus(mode) && Arenas is { } arenas ? [.. Missions.Where(m => arenas(m.Id))] : Missions;
+
     // What a decided match offers: the next few of the rotation and this map again; without a rotation, the maps around this one.
     private IReadOnlyList<MapChoice> Offer()
     {
         int mission = int.TryParse(_session.Map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id) ? id : 0;
         if (_config.Rotation.Count <= 1)
         {
-            return NextMapFlow.Around(Missions, mission, _session.Mode, Random.Shared);
+            return NextMapFlow.Around(MissionsFor(_session.Mode), mission, _session.Mode, Random.Shared);
         }
 
         string NameOf(int number) => Missions.FirstOrDefault(m => m.Id == number).Name ?? string.Empty;
         List<MapChoice> choices = [.. Enumerable.Range(1, Math.Min(NextMapVote.MostChoices - 1, _config.Rotation.Count - 1))
             .Select(step => _config.Rotation[(_rotationAt + step) % _config.Rotation.Count])
+            .Where(r => !GameModes.IsVersus(r.Mode.Length > 0 ? r.Mode : _session.Mode) || Arenas?.Invoke(r.Mission) != false)
             .Select(r => new MapChoice(r.Mission, r.Mode.Length > 0 ? r.Mode : _session.Mode, NameOf(r.Mission)))];
         choices.Insert(0, new MapChoice(mission, _session.Mode, NameOf(mission), Again: true));
         return choices;
@@ -248,7 +256,7 @@ public sealed class DedicatedServer : IServerControl, IDisposable
             string key = player.PlayerId.Length > 0 ? player.PlayerId : player.Name;
             if (_greeted.Add(key) && _config.Motd.Length > 0)
             {
-                _session.Say($"Welcome, {player.Name}. {_config.Motd}");
+                _session.Announce($"Welcome, {player.Name}. {_config.Motd}");
             }
         }
 

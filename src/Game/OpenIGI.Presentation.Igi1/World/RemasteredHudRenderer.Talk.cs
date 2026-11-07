@@ -13,7 +13,7 @@ internal sealed partial class RemasteredHudRenderer
 {
     // The chat column's text size and where it stands: on the left, above the lower edge's readouts. Layout pixels.
     private const float ChatSize = 16f;
-    private const float ChatLeft = 40f;
+    private const float ChatLeft = 34f;
     private const float ChatBottom = 210f;
 
     // The connection warning's mark: amber, a caution rather than a failure.
@@ -25,14 +25,13 @@ internal sealed partial class RemasteredHudRenderer
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The lines run up the left from above the lower readouts, each speaker's name in the accent, on the same dark backing
-    /// the name tags have; the line being typed sits below them. A mark is a diamond where it was put, its marker and distance
+    /// Who is talking sits above the lower readouts at the left, and the chat above them (<see cref="DrawChat"/>). A mark is a diamond where it was put, its marker and distance
     /// beside it, and -- unlike a name tag -- it is kept on the edge of the screen when it is behind or beside the view.
     /// </remarks>
     public void DrawCoopTalk(
         SpriteBatch batch,
         IReadOnlyList<HudChatLine> chat,
-        string? entry,
+        HudChatEntry? entry,
         string? warning,
         IReadOnlyList<string> talking,
         IReadOnlyList<HudMark> marks,
@@ -87,29 +86,7 @@ internal sealed partial class RemasteredHudRenderer
             y -= lineHeight + context.Px(4f);
         }
 
-        if (entry is not null)
-        {
-            string typed = $"{entry}_";
-            float width = Math.Max(context.Px(320f), font.MeasureWidth(typed, size) + font.MeasureWidth("SAY  ", size) + (size * 1.6f));
-            var box = new UiRect(x, y - lineHeight, width, lineHeight);
-            painter.FillRoundedRect(box, rounded, UiPalette.InkAt(0.82f).WithAlpha(220), lineHeight * 0.22f);
-            UiVec2 pen = painter.DrawLabel(font, "SAY", new UiVec2(box.X + (size * 0.8f), UiRowStyle.CapsCenterY(font, size, box)), size, Accent, 0.08f);
-            painter.DrawLabel(font, typed, new UiVec2(pen.X + (size * 0.6f), UiRowStyle.CapsCenterY(font, size, box)), size, Text, 0.02f);
-            y -= lineHeight + context.Px(6f);
-        }
-
-        for (int i = chat.Count - 1; i >= 0; i--)
-        {
-            HudChatLine line = chat[i];
-            byte alpha = (byte)(255 * Math.Clamp(line.Opacity, 0f, 1f));
-            float nameWidth = font.MeasureWidth(line.Name, size);
-            float width = nameWidth + font.MeasureWidth(line.Text, size) + (size * 2.4f);
-            var row = new UiRect(x, y - lineHeight, width, lineHeight);
-            painter.FillRoundedRect(row, rounded, UiPalette.InkAt(0.82f).WithAlpha((byte)(170 * line.Opacity)), lineHeight * 0.22f);
-            painter.DrawLabel(font, line.Name, new UiVec2(row.X + (size * 0.7f), UiRowStyle.CapsCenterY(font, size, row)), size, Accent.WithAlpha(alpha), 0.02f);
-            painter.DrawLabel(font, line.Text, new UiVec2(row.X + (size * 1.7f) + nameWidth, UiRowStyle.CapsCenterY(font, size, row)), size, Text.WithAlpha(alpha), 0.02f);
-            y -= lineHeight + context.Px(4f);
-        }
+        DrawChat(painter, context, chat, entry, y, x);
     }
 
     private static void DrawMark(

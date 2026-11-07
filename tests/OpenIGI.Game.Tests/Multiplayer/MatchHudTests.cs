@@ -68,13 +68,21 @@ public sealed class MatchHudTests
     }
 
     [Fact]
-    public void An_attacker_standing_in_a_site_is_told_to_hold_use_and_one_planting_sees_its_progress()
+    public void An_attacker_standing_in_a_site_is_told_to_hold_use_or_fire_with_the_bomb_in_hand_and_one_planting_sees_its_progress()
     {
         MpLayout layout = new() { Points = [new MpPoint("A", MpPointKind.BombSite, [0, 0, 0], 5 * Metre)] };
         ModeReport report = new() { Attackers = TeamRoster.Good, Carrier = 0 };
 
         MatchHud inSite = MatchHud.Of(Live(report), 0, Board(), 10, new Vector3d(2 * Metre, 0, 0), layout)!;
-        Assert.Equal("TO PLANT THE BOMB AT A", inSite.Hint?.Action);
+        Assert.Equal("OR FIRE TO PLANT THE BOMB AT A", inSite.Hint?.Action);
+        Assert.True(inSite.Hint?.Keyed);
+
+        // Carried but not in hand: told to take it up, with no key -- and holding use there starts no bar.
+        MatchHud unarmed = MatchHud.Of(
+            Live(report), 0, Board(), 10, new Vector3d(2 * Metre, 0, 0), layout, new LocalUse(true, 1.0), bombInHand: false)!;
+        Assert.Equal("SWITCH TO THE BOMB", unarmed.Hint?.Verb);
+        Assert.False(unarmed.Hint?.Keyed);
+        Assert.Null(unarmed.Progress);
 
         MatchHud outside = MatchHud.Of(Live(report), 0, Board(), 10, new Vector3d(20 * Metre, 0, 0), layout)!;
         Assert.Null(outside.Hint);

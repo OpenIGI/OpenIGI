@@ -164,13 +164,17 @@ internal sealed class MissionStatusMessages
     }
 
     /// <summary>Gets the messages on screen now, in slot order; see <see cref="MissionObjectiveRuntime.DisplayedMessages"/>.</summary>
-    public IEnumerable<StatusMessageDisplay> DisplayedMessages
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Displayed(eventsOnly: false);
+
+    /// <summary>Gets the messages on screen now that no mission task sent -- a weapon picked up, ammunition taken -- in slot order.</summary>
+    public IEnumerable<StatusMessageDisplay> EventMessages => Displayed(eventsOnly: true);
+
+    private IEnumerable<StatusMessageDisplay> Displayed(bool eventsOnly)
     {
-        get
         {
             foreach (StatusMessage? slot in _messageSlots)
             {
-                if (slot is { IsDisplaying: true })
+                if (slot is { IsDisplaying: true } && (!eventsOnly || _transientMessages.Contains(slot)))
                 {
                     yield return new StatusMessageDisplay(
                         slot.DisplayText,

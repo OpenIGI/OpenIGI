@@ -46,6 +46,17 @@ public interface IHostedPlayer
     /// <summary>Gets a value indicating whether the look holds the cursor.</summary>
     bool IsCapturingMouse { get; }
 
+    /// <summary>Gets or sets whether the player is held where it stands (a round's freeze time): it looks, switches and reloads,
+    /// but its moves, jump, fire and use are let go of before its tick runs. The same on its own game and on the server, so
+    /// the one predicts what the other runs.</summary>
+    bool HeldStill
+    {
+        get => false;
+        set
+        {
+        }
+    }
+
     /// <summary>Gets a value indicating whether the player is on a ladder.</summary>
     bool IsOnLadder { get; }
 

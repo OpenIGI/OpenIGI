@@ -240,6 +240,17 @@ public static class TouchControlsRenderer
             case TouchButton.Talk:
                 KitIcons.Draw(painter, KitIcon.Microphone, c, size * 1.5f, ink);
                 break;
+            case TouchButton.Chat:
+                // A speech bubble, its tail at the lower left, three dots for the words.
+                ReadOnlySpan<UiVec2> bubble =
+                [
+                    P(-0.85f, -0.62f), P(0.85f, -0.62f), P(0.85f, 0.38f), P(-0.2f, 0.38f), P(-0.62f, 0.78f), P(-0.58f, 0.38f), P(-0.85f, 0.38f),
+                ];
+                painter.StrokePolygon(bubble, stroke, ink);
+                Dot(-0.4f, -0.12f, 0.11f);
+                Dot(0f, -0.12f, 0.11f);
+                Dot(0.4f, -0.12f, 0.11f);
+                break;
             case TouchButton.Binoculars:
                 Ring(-0.46f, 0.2f, 0.38f);
                 Ring(0.46f, 0.2f, 0.38f);

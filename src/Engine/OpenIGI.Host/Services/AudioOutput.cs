@@ -93,6 +93,12 @@ internal sealed class AudioOutput(
             Sounds.RegisterExternal(name, format, pcm);
         }
 
+        // And the bomb the bomb modes plant, built into the game: its plant, tick, warning and defuse.
+        foreach ((string name, AudioFormat format, byte[] pcm) in BombSounds.All(logger))
+        {
+            Sounds.RegisterExternal(name, format, pcm);
+        }
+
         MountMenuSounds();
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs to the

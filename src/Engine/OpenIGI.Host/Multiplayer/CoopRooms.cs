@@ -67,6 +67,12 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         _logger = logger;
     }
 
+    /// <summary>Gets which missions' maps can be played as arenas; every one when unset.</summary>
+    public Func<int, bool>? Arenas { get; init; }
+
+    /// <inheritdoc/>
+    public bool HasArena(int mission) => Arenas?.Invoke(mission) ?? true;
+
     /// <summary>Gets or sets the shell the missions are started through.</summary>
     public IShellHost? Shell { get; set; }
 

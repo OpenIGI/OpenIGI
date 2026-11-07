@@ -111,6 +111,11 @@ public interface ICoopRooms
     {
     }
 
+    /// <summary>Whether a mission's map can be played as an arena -- laid out for multiplayer -- so the versus modes offer it.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <returns>Whether it can; every mission can, where nothing says otherwise.</returns>
+    bool HasArena(int mission) => true;
+
     /// <summary>Gets a value indicating whether this build can start a dedicated server of its own (it ships one beside it).</summary>
     bool CanHostServer => false;
 

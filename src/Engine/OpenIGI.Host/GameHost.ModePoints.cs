@@ -10,6 +10,26 @@ public sealed partial class GameHost
     // The marks' renderer, made on the first frame that draws one.
     private ModePointRenderer? _modePoints;
 
+    // The bomb's renderer, made on the first frame a bomb lies anywhere, and the light it was last given.
+    private BombRenderer? _bombs;
+    private FixedFunctionSun? _bombSun;
+
+    // The bomb where it lies, planted at a site or dropped where its carrier fell, among the world's solid geometry -- unless it
+    // was thrown, when the world draws it as it flies and where it lands.
+    private void DrawBombs(in Camera3D eye, in Matrix4f projection)
+    {
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy }
+            || (TickObserver as ISessionScoreboard)?.ModeReport is not { } report
+            || (report.BombAt ?? (report.BombFlies ? null : report.DroppedAt)) is not { } at)
+        {
+            return;
+        }
+
+        _bombs ??= new BombRenderer(_device, _logger);
+        _bombs.Sun = _bombSun;
+        _bombs.Draw([(at, report.BombYaw)], eye, projection);
+    }
+
     // The session's mode points over the lit scene, after the tracers: a lettered ring on the ground and a low wall of light.
     private void DrawModePoints(in Camera3D eye, in Matrix4f projection)
     {
@@ -33,6 +53,8 @@ public sealed partial class GameHost
     {
         _modePoints?.Dispose();
         _modePoints = null;
+        _bombs?.Dispose();
+        _bombs = null;
     }
 
     // The match's HUD as the local player sees it, where it stands.

@@ -431,6 +431,78 @@ public sealed class SessionLoopbackTests
     }
 
     [Fact]
+    public void A_team_line_is_heard_by_the_team_only_and_the_servers_word_by_all_as_nobodys()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        server.Mode = GameModes.For("tdm", world, TickRate);
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        List<ChatLine>[] heard = [[], [], []];
+        float[] idle = new float[ToyWorld.Channels];
+        int speaker = -1;
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            if (tick == 2 * TickRate)
+            {
+                speaker = clients[0].EntityId!.Value;
+                clients[0].Say("hold B", team: true);
+                server.Announce("Round two.");
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                heard[i].AddRange(clients[i].TakeChat());
+            }
+        }
+
+        // Which of the other two shares the speaker's team, by the server's own count.
+        int[] teams = [.. Enumerable.Range(0, clients.Length).Select(i => server.Match.Players.Values.First(p => p.Name == $"p{i}").Team)];
+        int mate = teams[1] == teams[0] ? 1 : 2;
+        int other = 3 - mate;
+        Assert.NotEqual(teams[0], teams[other]);
+
+        ChatLine team = new(speaker, "hold B", ChatKind.Team);
+        ChatLine word = new(-1, "Round two.", ChatKind.Server);
+        Assert.Contains(team, heard[0]);
+        Assert.Contains(team, heard[mate]);
+        Assert.DoesNotContain(heard[other], l => l.Kind == ChatKind.Team);
+        Assert.All(heard, h => Assert.Contains(word, h));
+    }
+
+    [Theory]
+    [InlineData(ChatKind.All)]
+    [InlineData(ChatKind.Team)]
+    [InlineData(ChatKind.Server)]
+    public void A_line_of_chat_keeps_its_kind_on_the_wire(ChatKind kind)
+    {
+        BitWriter writer = new();
+        SessionTalk.WriteChat(writer, 7, "  on me  ", kind);
+        BitReader reader = new(writer.AsSpan().ToArray());
+        Assert.Equal((uint)SessionMessage.Chat, reader.ReadBits(8));
+        Assert.Equal(new ChatLine(7, "on me", kind), SessionTalk.ReadChat(ref reader));
+    }
+
+    [Fact]
     public void A_hit_is_told_to_the_shooter_and_the_one_hit_and_to_no_one_else()
     {
         double now = 0;

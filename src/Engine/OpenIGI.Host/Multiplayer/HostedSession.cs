@@ -280,6 +280,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
         _session is { } session && _world is { } world ? session.CurrentMatch(world.CurrentTick).Banner(0) : null;
 
     /// <inheritdoc/>
+    public Core.Numerics.Vector3d? PositionOfSlot(int slot) => _world?.PositionOf(slot);
+
+    /// <inheritdoc/>
     public Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick)
     {
         if (_world is not { } world || CurrentScoreboard is not { } board || LocalEntity is not { } own || !Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
@@ -327,7 +330,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     /// <inheritdoc/>
     public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
         _session is { } session && _world is { } world
-            && Game.Multiplayer.Modes.MatchHud.Of(session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout) is { } hud
+            && Game.Multiplayer.Modes.MatchHud.Of(
+                session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout,
+                bombInHand: world.HoldsBomb(Game.Multiplayer.ServerSession.HostSlot)) is { } hud
             ? hud with { MapVote = hud.Phase == Game.Multiplayer.Modes.MatchPhase.Intermission ? session.MapVote : null }
             : null;
 
@@ -372,14 +377,18 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     }
 
     /// <inheritdoc/>
-    public void Say(string text)
+    public void Say(string text, bool team = false)
     {
         // The host's own /vote, /yes and /no are its say in the room, not lines to it.
         if (_session is { } session && !session.TryHostCommand(text))
         {
-            session.Say(text);
+            session.Say(text, team);
         }
     }
+
+    /// <summary>Tells every player something in the server's own word, shown as the server's rather than anyone's.</summary>
+    /// <param name="text">What to tell.</param>
+    public void Announce(string text) => _session?.Announce(text);
 
     /// <inheritdoc/>
     public void Mark(Int3 position) => _session?.Mark(position);

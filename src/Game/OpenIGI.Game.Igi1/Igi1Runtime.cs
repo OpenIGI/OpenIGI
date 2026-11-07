@@ -10,6 +10,9 @@ namespace OpenIGI.Game.Igi1;
 /// <summary>Project I.G.I., as the engine runs it.</summary>
 public sealed class Igi1Runtime : IGameTitleRuntime
 {
+    /// <summary>Initializes a new instance of the <see cref="Igi1Runtime"/> class, the bomb's clips added to the human sets.</summary>
+    public Igi1Runtime() => Multiplayer.Igi1BombAnimations.Register();
+
     /// <inheritdoc/>
     public GameTitle Title => GameTitle.Igi1;
 

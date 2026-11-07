@@ -44,6 +44,26 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void A_deathmatch_loadout_is_free_handed_over_just_after_a_spawn_and_later_kept_for_the_next()
+    {
+        Host host = new(teams: [0, 1]);
+        DeathmatchMode mode = new(TickRate, teams: true, new DeathmatchSettings { RespawnSeconds = 3, LoadoutSeconds = 10 });
+        mode.Start(host, 0);
+
+        // Just spawned: the Uzi now, for nothing.
+        Assert.Equal("Equipped Uzi.", mode.Buy(host, 0, "uzi", TickRate * 2));
+        Assert.Equal([(0, "WEAPON_ID_UZI", 160)], host.Given);
+        Assert.Equal(host.Match.Rules.MoneyStart, host.Match.Players[0].Money);
+
+        // Long after: kept for the next spawn, not handed over in the fight; the next spawn brings it.
+        Assert.EndsWith("from your next spawn.", mode.Buy(host, 1, "uzi", TickRate * 30), StringComparison.Ordinal);
+        Assert.Single(host.Given);
+        mode.Tick(host, TickRate * 31, [new WorldDeath(Victim: 11, Killer: 10)]);
+        mode.Tick(host, TickRate * 35, []);
+        Assert.Equal((1, "WEAPON_ID_UZI", 160), host.Given[^1]);
+    }
+
+    [Fact]
     public void A_team_scores_its_kills_of_the_other_and_is_fined_for_its_own()
     {
         Host host = new(teams: [0, 0, 1]);
@@ -229,7 +249,7 @@ public sealed class GameModeTests
     public void At_the_half_the_teams_change_sides_and_take_their_scores_with_them()
     {
         Host host = new(teams: [0, 1]) { Layout = new MpLayout { Points = [new MpPoint("A", MpPointKind.BombSite, [100 * Metre, 0, 0], 5 * Metre)] } };
-        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundsToWin = 3, RoundSeconds = 1, RoundOverSeconds = 1 });
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { FreezeSeconds = 0, RoundsToWin = 3, RoundSeconds = 1, RoundOverSeconds = 1 });
         mode.Start(host, 0);
 
         // Two rounds run out on the clock, both the defenders'; the third begins with the sides changed.
@@ -243,7 +263,7 @@ public sealed class GameModeTests
     private const double Metre = OpenIGI.Core.Numerics.WorldUnits.PerMetre;
 
     // Attackers 0 (slot 0), defenders 1 (slot 1); site A at 100 m, B at 300 m.
-    private static (Host Host, SearchAndDestroyMode Mode) BombRound(BombSettings? bomb = null)
+    private static (Host Host, SearchAndDestroyMode Mode) BombRound(BombSettings? bomb = null, double freeze = 0)
     {
         Host host = new(teams: [0, 1])
         {
@@ -258,7 +278,7 @@ public sealed class GameModeTests
         };
         host.Positions[0] = new(0, 0, 0);
         host.Positions[1] = new(-50 * Metre, 0, 0);
-        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundOverSeconds = 1 }, bomb ?? new BombSettings { PlantSeconds = 1, DefuseSeconds = 2, FuseSeconds = 10 });
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { FreezeSeconds = freeze, RoundOverSeconds = 1 }, bomb ?? new BombSettings { PlantSeconds = 1, DefuseSeconds = 2, FuseSeconds = 10 });
         mode.Start(host, 0);
         return (host, mode);
     }
@@ -271,6 +291,29 @@ public sealed class GameModeTests
         }
 
         return from + ticks;
+    }
+
+    [Fact]
+    public void A_round_opens_on_its_freeze_time_everyone_held_and_buying_and_the_round_runs_from_its_end()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound(freeze: 10);
+
+        // Held, the clock on the freeze, the buy time running past it; a plant held down does nothing yet.
+        host.Using.Add(0);
+        host.Positions[0] = new(100 * Metre, 0, 0);
+        long tick = Run(mode, host, 1, TickRate * 5);
+        Assert.True(host.Held);
+        Assert.Equal(5, mode.Report(tick).FreezeLeft, 1);
+        Assert.Equal(25, mode.Report(tick).BuyLeft, 1);
+        Assert.StartsWith("Bought Uzi", mode.Buy(host, 1, "uzi", tick), StringComparison.Ordinal);
+        Assert.Null(mode.PlantedAt);
+
+        // Let go at its end; then the round is played, and the plant goes in.
+        tick = Run(mode, host, tick, (TickRate * 5) + 1);
+        Assert.False(host.Held);
+        Assert.Equal(0, mode.Report(tick).FreezeLeft);
+        tick = Run(mode, host, tick, TickRate + 1);
+        Assert.Equal("A", mode.PlantedSite);
     }
 
     [Fact]
@@ -380,7 +423,7 @@ public sealed class GameModeTests
         host.Positions[0] = new(10 * Metre, 0, 0);
         host.Positions[1] = new(101 * Metre, 0, 0);
         host.Positions[2] = new(-50 * Metre, 0, 0);
-        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundOverSeconds = 1 }, new BombSettings { PlantSeconds = 1 });
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { FreezeSeconds = 0, RoundOverSeconds = 1 }, new BombSettings { PlantSeconds = 1 });
         mode.Start(host, 0);
         Assert.Equal(0, mode.Carrier);
 
@@ -417,7 +460,7 @@ public sealed class GameModeTests
         host.Positions[0] = new(0, 0, 0);
         host.Positions[1] = new(0, 0, 0);
         host.Positions[2] = new(-50 * Metre, 0, 0);
-        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { RoundsToWin = 5, RoundSeconds = 1, RoundOverSeconds = 1, SwapSides = false });
+        SearchAndDestroyMode mode = new(TickRate, new RoundSettings { FreezeSeconds = 0, RoundsToWin = 5, RoundSeconds = 1, RoundOverSeconds = 1, SwapSides = false });
         mode.Start(host, 0);
         Assert.Equal(0, mode.Carrier);
 
@@ -480,6 +523,8 @@ public sealed class GameModeTests
 
         public List<(int Slot, string Weapon, int Rounds)> Given => _world.Given;
 
+        public bool Held => _world.Held;
+
         public IReplicatedWorld World => _world;
 
         public int TickRate => GameModeTests.TickRate;
@@ -517,6 +562,10 @@ public sealed class GameModeTests
         public List<OpenIGI.Core.Numerics.Vector3d> Blasts { get; } = [];
 
         public List<(int Slot, string Weapon, int Rounds)> Given { get; } = [];
+
+        public bool Held { get; private set; }
+
+        public void HoldStill(bool held) => Held = held;
 
         public bool Give(int slot, string weapon, int rounds)
         {

@@ -17,6 +17,9 @@ public sealed record DeathmatchSettings
 
     /// <summary>Gets the seconds the scores are shown once the match is decided.</summary>
     public double IntermissionSeconds { get; init; } = 15;
+
+    /// <summary>Gets the seconds after a spawn in which a loadout picked is handed over at once; later, it comes with the next.</summary>
+    public double LoadoutSeconds { get; init; } = 10;
 }
 
 /// <summary>Deathmatch: a point for each kill of an enemy, back again a few seconds after dying, until the limit or the clock.</summary>
@@ -56,6 +59,44 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
 
     /// <summary>Gets or sets a value indicating whether the same map is played again after the intermission, for a server with no rotation.</summary>
     public bool PlaysAgain { get; set; } = true;
+
+    // Each player's loadout, picked from the armoury for nothing, and the tick it last came back at a spawn.
+    private readonly Dictionary<int, ArmouryItem> _loadouts = [];
+    private readonly Dictionary<int, long> _spawnedAt = [];
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The armoury free: any of its guns, at any time. Picked within <see cref="DeathmatchSettings.LoadoutSeconds"/> of a spawn
+    /// it is handed over at once; later it waits for the next spawn, so a pick is never a refill in the middle of a fight.
+    /// Every spawn after hands it over again.
+    /// </remarks>
+    public string Buy(IModeHost host, int slot, string asked, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(asked);
+        IReadOnlyList<ArmouryItem> items = Armoury.For(host.Title);
+        if (items.Count == 0)
+        {
+            return "There are no loadouts on this map.";
+        }
+
+        if (Armoury.Find(items, asked) is not { } item)
+        {
+            return $"Loadouts: {string.Join(", ", items.Select((i, n) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{n + 1} {i.Id}")))}.";
+        }
+
+        if (!host.Match.Players.TryGetValue(slot, out MatchPlayer? player) || Flow.Phase is not (MatchPhase.Live or MatchPhase.Warmup))
+        {
+            return "Loadouts are picked while the match is played.";
+        }
+
+        _loadouts[slot] = item;
+        bool fresh = player.IsAlive
+            && (!_spawnedAt.TryGetValue(slot, out long at) || (tick - at) / (double)tickRate <= Settings.LoadoutSeconds);
+        return fresh && host.Give(slot, item.Weapon, item.Rounds)
+            ? $"Equipped {item.Name}."
+            : $"{item.Name} is yours from your next spawn.";
+    }
 
     /// <inheritdoc/>
     /// <remarks>With teams, the smaller team, as I.G.I. 2's <c>TeamManager_GetFairTeam</c> chooses; alone, everyone the same.</remarks>
@@ -133,7 +174,7 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
         {
             if (host.Match.Players.ContainsKey(slot))
             {
-                host.Respawn(slot);
+                Spawn(host, slot, tick);
             }
         }
 
@@ -168,8 +209,19 @@ public sealed class DeathmatchMode(int tickRate, bool teams, DeathmatchSettings?
         {
             if (host.Match.Players.TryGetValue(slot, out MatchPlayer? player) && player.DiedAt is { } died && seconds - died >= Settings.RespawnSeconds)
             {
-                host.Respawn(slot);
+                Spawn(host, slot, tick);
             }
+        }
+    }
+
+    // A player back at a spawn, with its loadout when it picked one.
+    private void Spawn(IModeHost host, int slot, long tick)
+    {
+        host.Respawn(slot);
+        _spawnedAt[slot] = tick;
+        if (_loadouts.TryGetValue(slot, out ArmouryItem? item))
+        {
+            host.Give(slot, item.Weapon, item.Rounds);
         }
     }
 

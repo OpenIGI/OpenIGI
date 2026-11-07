@@ -262,6 +262,7 @@ public sealed partial class GameHost
 
         _device.SetObjectMotion(true);
         _gunPickupRenderer?.Draw(eye, projection);
+        DrawBombs(eye, projection);
 
         // The grenades, rockets and launcher rounds in the air, solid geometry among the world's own.
         WorldView?.DrawProjectiles(_grenadeRenderer, _missileRenderer, eye, projection, smoothPresentation ? tickBlend : 1f);

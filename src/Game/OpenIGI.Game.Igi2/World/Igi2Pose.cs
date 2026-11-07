@@ -110,15 +110,7 @@ public sealed class Igi2Pose
     /// <param name="record">The record's matrix, as the file stores it.</param>
     /// <returns>The relative orientation: the record's first two columns as rows, the third row their cross product.</returns>
     /// <remarks>The relative orientation then stands under the parent's (and its bone's) orientation: world = P · B · R.</remarks>
-    public static Matrix3f RelativeOrientation(Matrix3f record)
-    {
-        float xx = record.M11, xy = record.M21, xz = record.M31;
-        float yx = record.M12, yy = record.M22, yz = record.M32;
-        float zx = (((Fpu)yz * xy) - ((Fpu)yy * xz)).F;
-        float zy = (-(((Fpu)yz * xx) - ((Fpu)yx * xz))).F;
-        float zz = (((Fpu)yy * xx) - ((Fpu)yx * xy)).F;
-        return new Matrix3f(xx, xy, xz, yx, yy, yz, zx, zy, zz);
-    }
+    public static Matrix3f RelativeOrientation(Matrix3f record) => Formats.Animation.Igi2AttachedParts.RelativeOrientation(record);
 
     /// <summary>
     /// The turn about the vertical an orientation stands at: the gamma of <c>Real32x9_GetAngles</c> (<c>igi2 0x562D60</c>).

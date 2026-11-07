@@ -71,8 +71,11 @@ public static class ClientReplication
         }
 
         ReadOnlySpan<float> frame = world.LocalFrame;
+        // The use key, or fire with the bomb in hand: what plants it.
         int use = (int)Player.PlayerInputSlot.Activate;
-        session.NoteUse(use < frame.Length && frame[use] > 0.5f, now);
+        int fire = (int)Player.PlayerInputSlot.Fire;
+        bool? bomb = world.HoldsBomb;
+        session.NoteUse((use < frame.Length && frame[use] > 0.5f) || (bomb == true && fire < frame.Length && frame[fire] > 0.5f), now, bomb);
         if (session.SendCommand(frame, now) is { } sent)
         {
             session.Reconciler.Record(sent, world.LocalPosition, world.LocalPlatform);

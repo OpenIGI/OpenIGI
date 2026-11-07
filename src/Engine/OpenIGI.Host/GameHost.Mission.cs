@@ -764,6 +764,7 @@ public sealed partial class GameHost
     /// <summary>Lights the pickups, grenades and missiles by the level's light, as the original lights any unbaked model.</summary>
     private void LightLooseModels(FixedFunctionSun? sun)
     {
+        _bombSun = sun;
         if (_gunPickupRenderer is { } pickups)
         {
             pickups.Sun = sun;

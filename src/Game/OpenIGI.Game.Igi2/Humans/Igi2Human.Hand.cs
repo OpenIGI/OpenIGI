@@ -13,10 +13,10 @@ public abstract partial class Igi2Human
     public (Vector3d Position, Matrix3f Orientation) WeaponPlacement()
     {
         if (BodyPose() is { AttachClip: { } clip } pose
-            && ViewModel.Igi2AttachedParts.TryFind(clip, pose.AttachTime, ViewModel.Igi2AttachedParts.WeaponAttachName, out int bone, out Vector3f relative, out Matrix3f relativeOrientation)
+            && Formats.Animation.Igi2AttachedParts.TryFind(clip, pose.AttachTime, Formats.Animation.Igi2AttachedParts.WeaponAttachName, out int bone, out Vector3f relative, out Matrix3f relativeOrientation)
             && (uint)bone < (uint)pose.Pose.BoneCount)
         {
-            return ViewModel.Igi2AttachedParts.Place(Position, Orientation, pose.Pose.Positions[bone], pose.Pose.Rotations[bone], relative, relativeOrientation);
+            return Formats.Animation.Igi2AttachedParts.Place(Position, Orientation, pose.Pose.Positions[bone], pose.Pose.Rotations[bone], relative, relativeOrientation);
         }
 
         return (new Vector3d(Position.X, Position.Y, ((Fpu)Position.Z + 4096.0).Value), Orientation);

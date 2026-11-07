@@ -108,6 +108,7 @@ public sealed partial class GameHost
         _window.SetTextEntry(
             _chatEntry is not null
             || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.TextBox));
+        TellPlatformAboutChat();
         UpdateLookPreview();
 
         // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.
@@ -180,6 +181,7 @@ public sealed partial class GameHost
 
         // A co-op line being typed takes the keyboard next, the same way.
         UpdateNextMap();
+        UpdateBombSounds();
         if (!state.Console.IsOpen)
         {
             UpdateCoopVoice();
@@ -678,6 +680,7 @@ public sealed partial class GameHost
         }
 
         AdvanceRendererSwitch();
+        AdvanceMapShot(state);
 
         if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
         {

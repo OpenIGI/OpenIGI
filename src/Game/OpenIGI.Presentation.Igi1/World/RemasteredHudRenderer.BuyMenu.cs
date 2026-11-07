@@ -18,7 +18,7 @@ internal sealed partial class RemasteredHudRenderer
 
     /// <inheritdoc/>
     public void DrawBuyMenu(
-        SpriteBatch batch, IReadOnlyList<ArmouryItem> items, int money, string buyClock, (float X, float Y) pointer, int screenWidth, int screenHeight)
+        SpriteBatch batch, IReadOnlyList<ArmouryItem> items, int? money, string? buyClock, (float X, float Y) pointer, int screenWidth, int screenHeight)
     {
         _buyRows.Clear();
         ArgumentNullException.ThrowIfNull(batch);
@@ -38,9 +38,13 @@ internal sealed partial class RemasteredHudRenderer
         var panel = new UiRect(safe.X + Px(24f), safe.Y + Math.Max(Px(90f), (safe.Height - header - (row * items.Count)) * 0.45f), width, header + (row * items.Count) + Px(12f));
         Band(painter, panel, StripFace);
 
-        string title = "ARMOURY";
+        // A free loadout (a deathmatch's) has no money and no clock: every gun is for nothing, and comes now or at the next spawn.
+        bool free = money is null;
+        string title = free ? "LOADOUT" : "ARMOURY";
         painter.DrawLabel(type.Heading, title, new UiVec2(panel.X + Px(18f), panel.Y + Px(14f)), Px(20f), UiPalette.TextBright, 0.12f);
-        string cash = string.Create(CultureInfo.InvariantCulture, $"${money:N0}   ·   {buyClock}");
+        string cash = free
+            ? "FREE   ·   NOW OR NEXT SPAWN"
+            : string.Create(CultureInfo.InvariantCulture, $"${money:N0}{(buyClock is { } clock ? $"   ·   {clock}" : string.Empty)}");
         float cashSize = Px(15f);
         painter.DrawLabel(type.Mono, cash, new UiVec2(panel.Right - Px(18f) - UiPainter.MeasureLabel(type.Mono, cash, cashSize, 0.06f), panel.Y + Px(18f)), cashSize, Victory, 0.06f);
 
@@ -49,7 +53,7 @@ internal sealed partial class RemasteredHudRenderer
         {
             ArmouryItem item = items[i];
             var rect = new UiRect(panel.X + Px(8f), y, panel.Width - Px(16f), row - Px(4f));
-            bool affordable = item.Price <= money;
+            bool affordable = free || item.Price <= money;
             bool over = pointer.X >= rect.X && pointer.X <= rect.Right && pointer.Y >= rect.Y && pointer.Y <= rect.Bottom;
             if (over && affordable)
             {
@@ -62,7 +66,7 @@ internal sealed partial class RemasteredHudRenderer
             string number = i < 9 ? (i + 1).ToString(CultureInfo.InvariantCulture) : " ";
             painter.DrawLabel(type.Mono, number, new UiVec2(rect.X + Px(10f), textY), size, affordable ? Victory : UiPalette.TextMuted, 0f);
             painter.DrawLabel(type.Heading, item.Name.ToUpperInvariant(), new UiVec2(rect.X + Px(40f), textY), size, ink, 0.08f);
-            string price = string.Create(CultureInfo.InvariantCulture, $"${item.Price:N0}");
+            string price = free ? "FREE" : string.Create(CultureInfo.InvariantCulture, $"${item.Price:N0}");
             painter.DrawLabel(type.Mono, price, new UiVec2(rect.Right - Px(10f) - UiPainter.MeasureLabel(type.Mono, price, size, 0f), textY), size, affordable ? Victory : Enemy.WithAlpha(200), 0f);
             _buyRows.Add((i, rect.X, rect.Y, rect.Width, rect.Height));
             y += row;

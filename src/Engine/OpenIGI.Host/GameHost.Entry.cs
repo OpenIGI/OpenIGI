@@ -84,7 +84,9 @@ public sealed partial class GameHost
         {
             if (Engine.Vfs.LocalFileDevice.ResolveExisting(_gamePath, $"common/anims/{name}") is { } found && File.Exists(found))
             {
-                return BoneAnimationSet.Read(File.ReadAllBytes(found));
+                // With the clips a title adds to the first game's sets (the bomb's hold, plant and defuse), as every set a
+                // pack loads has them.
+                return Game.World.AnimationSetExtensions.Read(Formats.AssetFormatProfile.Igi1, File.ReadAllBytes(found));
             }
 
             if (!required)

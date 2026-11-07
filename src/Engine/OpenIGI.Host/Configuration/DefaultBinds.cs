@@ -57,6 +57,7 @@ public static class DefaultBinds
         // Each does nothing outside a co-op room.
         ("t", "coop_mark"),
         ("y", "coop_chat"),
+        ("u", "coop_chat team"),
         ("f1", "coop_say Go, go, go!"),
         ("f2", "coop_say Hold position."),
         ("f3", "coop_say Enemy spotted."),
