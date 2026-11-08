@@ -317,10 +317,16 @@ public interface IReplicatedClientWorld
     {
     }
 
+    /// <summary>Gets whether the client's own player carries a weapon.</summary>
+    /// <param name="weapon">The title's weapon script id.</param>
+    /// <returns><see langword="true"/> when it is carried.</returns>
+    bool CarriesOwn(string weapon) => false;
+
     /// <summary>Hands the client's own player a weapon the server handed its copy (a buy).</summary>
     /// <param name="weapon">The title's weapon script id.</param>
     /// <param name="rounds">The rounds its ammunition is filled to.</param>
-    void GiveOwn(string weapon, int rounds)
+    /// <param name="equip">Whether the gun is new to the player, bought rather than its ammunition, and is taken in hand.</param>
+    void GiveOwn(string weapon, int rounds, bool equip)
     {
     }
 

@@ -324,6 +324,11 @@ public sealed partial class Igi1ReplicatedWorld
             return false;
         }
 
+        // The listen host's own player takes a gun it bought in hand; a joined player's game picks it and sends the pick.
+        bool bought = slot == ServerSession.HostSlot
+            && setup.Weapons is { } roster && roster.TryGetByScriptId(weapon, out Game.Weapons.WeaponType boughtType)
+            && rig.Weapons is { } carried && !carried.HasWeapon(boughtType.WeaponId);
+
         bool replaced = false;
         if (rig.Weapons is { LimitsCarry: true } weapons && setup.Weapons is { } types && types.TryGetByScriptId(weapon, out Game.Weapons.WeaponType type)
             && Game.Weapons.CarrySlots.InTheWay(weapons, type) is { } inTheWay)
@@ -344,6 +349,11 @@ public sealed partial class Igi1ReplicatedWorld
         if (!setup.Give(rig, weapon, rounds))
         {
             return false;
+        }
+
+        if (bought)
+        {
+            Igi1PlayerSetup.TakeInHand(rig, setup, weapon);
         }
 
         if (replaced && slot != ServerSession.HostSlot)

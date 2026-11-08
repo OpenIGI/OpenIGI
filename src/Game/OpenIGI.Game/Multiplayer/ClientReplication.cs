@@ -32,15 +32,19 @@ public static class ClientReplication
         }
 
         // What the server re-armed this client's player with at a respawn, then what it handed it -- a buy -- its own copy
-        // carries too, in that order, as the server did them.
+        // carries too, in that order, as the server did them. A gun bought that the player did not carry is taken in hand, as
+        // the buyer's pick goes to the server in its next command; asked before the kit, which already holds a gun bought in
+        // place of another.
+        IReadOnlyList<(string Weapon, int Rounds)> given = session.TakeGiven();
+        bool[] bought = [.. given.Select(g => !world.CarriesOwn(g.Weapon))];
         foreach ((bool fresh, IReadOnlyList<(string Weapon, int Rounds)> kit) in session.TakeKits())
         {
             world.ArmOwn(kit, fresh);
         }
 
-        foreach ((string weapon, int rounds) in session.TakeGiven())
+        for (int i = 0; i < given.Count; i++)
         {
-            world.GiveOwn(weapon, rounds);
+            world.GiveOwn(given[i].Weapon, given[i].Rounds, bought[i]);
         }
 
         // The rest of the server's world first -- its lifts, its doors, and what it did to this client's player that the

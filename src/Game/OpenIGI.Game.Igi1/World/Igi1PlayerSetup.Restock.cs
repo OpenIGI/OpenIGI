@@ -59,6 +59,24 @@ public sealed partial class Igi1PlayerSetup
         return rig.Weapons is { } weapons && Weapons is not null && Ammunition is not null && Hand(rig, weapons, scriptId, rounds);
     }
 
+    /// <summary>
+    /// Takes a bought gun in hand on the next tick, as the weapon wheel picks one; the thrown and used things, bought by the count,
+    /// stay where they are put away.
+    /// </summary>
+    /// <param name="rig">The player's rig.</param>
+    /// <param name="setup">The player's setup, whose roster names the gun.</param>
+    /// <param name="scriptId">The gun's script id.</param>
+    public static void TakeInHand(PlayerCamera rig, Igi1PlayerSetup setup, string scriptId)
+    {
+        ArgumentNullException.ThrowIfNull(rig);
+        ArgumentNullException.ThrowIfNull(setup);
+        if (setup.Weapons is { } types && types.TryGetByScriptId(scriptId, out WeaponType weapon)
+            && CarrySlots.Of(weapon) is CarrySlot.Primary or CarrySlot.Secondary or CarrySlot.Knife)
+        {
+            rig.ChooseFromWheel(weapon.WeaponId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
     /// <summary>Takes every weapon and round a player carries away: one who died in a match keeps nothing it had.</summary>
     /// <param name="rig">The player's rig.</param>
     public static void Disarm(PlayerCamera rig)

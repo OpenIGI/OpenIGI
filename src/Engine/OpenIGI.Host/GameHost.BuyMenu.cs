@@ -7,13 +7,21 @@ namespace OpenIGI.Host;
 
 /// <content>
 /// A match's buy menu: opened on its key while the buy time runs, the pointer free over it; a click on an item, or its number,
-/// asks the server for it (<c>/buy</c>), and the menu shuts with the buy time, on its key again, or on Escape.
+/// asks the server for it (<c>/buy</c>), and the menu shuts once the buy goes through, with the buy time, on its key again, or on
+/// Escape.
 /// </content>
 public sealed partial class GameHost
 {
     // Whether the menu is up, and whether its key was down last frame (the menu opens on the press, not the hold).
     private bool _buyMenuUp;
     private bool _buyKeyWasDown;
+
+    // A buy asked for and not yet answered: what the player had as it asked, and when. The menu shuts as what it has changes --
+    // money spent, a gun or rounds taken -- and stays up for another pick when the server refused it (too dear, nothing to fill).
+    private (string Had, long At)? _buyAsked;
+
+    // The longest a buy is waited on to go through before the menu stops waiting: a refusal never changes anything.
+    private const long BuyAnswerMilliseconds = 2000;
 
     // The number keys, in the order the menu numbers its items.
     private static readonly KeyCode[] BuyNumberKeys =
@@ -101,9 +109,25 @@ public sealed partial class GameHost
             }
         }
 
+        // The buy asked for last went through: the shop is put away, the gun in hand.
+        if (_buyAsked is { } waiting)
+        {
+            if (BuyHoldings() != waiting.Had)
+            {
+                CloseBuyMenu();
+                return;
+            }
+
+            if (_loop.TimeSource.Milliseconds - waiting.At > BuyAnswerMilliseconds)
+            {
+                _buyAsked = null;
+            }
+        }
+
         if (asked is { } item && item < BuyItems.Count && TickObserver is ISessionTalk talk)
         {
             talk.Say($"/buy {BuyItems[item].Id}");
+            _buyAsked = (BuyHoldings(), _loop.TimeSource.Milliseconds);
         }
 
         _window.CursorLocked = false;
@@ -114,8 +138,30 @@ public sealed partial class GameHost
     // look leaves the cursor free rather than locking it back in the middle every frame.
     private bool OverlayHasPointer => _buyMenuUp || _teamMenuUp || _mapVoteUp || _scoreboardPointer;
 
+    // What a buy changes, as one string: the player's money, each weapon carried, and the rounds in each pouch.
+    private string BuyHoldings()
+    {
+        System.Text.StringBuilder had = new();
+        had.Append(CurrentMatchHud()?.Money ?? -1);
+        if (HostedPlayer?.Weapons is { } weapons)
+        {
+            foreach (Game.Player.CarriedWeapon carried in weapons.Carried)
+            {
+                had.Append(System.Globalization.CultureInfo.InvariantCulture, $";w{carried.Weapon.WeaponId}");
+            }
+
+            foreach ((int ammo, int rounds) in weapons.Ammunition.Contents.OrderBy(static c => c.Key))
+            {
+                had.Append(System.Globalization.CultureInfo.InvariantCulture, $";a{ammo}={rounds}");
+            }
+        }
+
+        return had.ToString();
+    }
+
     private void CloseBuyMenu()
     {
+        _buyAsked = null;
         if (_buyMenuUp)
         {
             _buyMenuUp = false;

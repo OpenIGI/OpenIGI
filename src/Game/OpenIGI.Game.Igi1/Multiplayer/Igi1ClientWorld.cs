@@ -25,11 +25,19 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     }
 
     /// <inheritdoc/>
-    public void GiveOwn(string weapon, int rounds)
+    public bool CarriesOwn(string weapon) =>
+        _game.World.Player?.Weapons is { } weapons
+        && _game.PlayerSetup?.Weapons is { } types
+        && types.TryGetByScriptId(weapon, out Game.Weapons.WeaponType type)
+        && weapons.HasWeapon(type.WeaponId);
+
+    /// <inheritdoc/>
+    /// <remarks>A gun taken in hand is picked as the weapon wheel picks, so the server is sent the pick and runs it too.</remarks>
+    public void GiveOwn(string weapon, int rounds, bool equip)
     {
-        if (_game.World.Player is { } own && _game.PlayerSetup is { } setup)
+        if (_game.World.Player is { } own && _game.PlayerSetup is { } setup && setup.Give(own, weapon, rounds) && equip)
         {
-            _ = setup.Give(own, weapon, rounds);
+            Igi1PlayerSetup.TakeInHand(own, setup, weapon);
         }
     }
 
