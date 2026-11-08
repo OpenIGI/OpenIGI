@@ -185,13 +185,15 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 return false;
             }
 
+            // The template's gun, which the dead guard let fall: the replacement carries a fresh one.
             SoldierHeldWeapon? weapon = null;
-            if (dead.WeaponType is { } weaponType)
+            if (fresh.CarriedWeaponType is { } weaponType)
             {
                 _armoury.TryGetHeldWeapon(weaponType.GunModel, out weapon);
             }
 
             member.Weapon = weapon;
+            member.CarriedWeapon = weapon;
             group.AddDrawn(member);
             Count++;
             return true;

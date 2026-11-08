@@ -164,7 +164,8 @@ public sealed class AiParityCaptureScenarios : IDisposable
         using RecordingGraphicsDevice device = new();
         // OPENIGI_PATROL_CAPTURE_DIFFICULTY: the difficulty the probe's profile played at (the probe logs it at START).
         // A dropped gun falls the original's way: the realistic body lands, and draws its clatter, on other ticks.
-        List<string> captureArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000", "+g_realistic_drops", "0"];
+        // And the dead leave the world as the original's do once out of sight.
+        List<string> captureArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000", "+g_realistic_drops", "0", "+g_bodies_stay", "0"];
         if (Environment.GetEnvironmentVariable("OPENIGI_PATROL_CAPTURE_DIFFICULTY") is { Length: > 0 } captureDifficulty)
         {
             captureArgs.AddRange(["-difficulty", captureDifficulty]);

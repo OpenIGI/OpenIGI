@@ -4,6 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi1.Ai;
@@ -221,11 +222,16 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
             deadAgent.Position.Z * WorldScene.UnitsPerMetre);
         freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
 
+        // The clone is made from the template (0x488000), whose Weapon child is the gun the authored guard carried -- not
+        // whatever he held when he died, a stationary gun he had mounted among them. It is the gun his death drops
+        // (Gun_Drop): left out, a replacement's gun went with his body and could not be picked up.
+        WeaponType? carried = deadAgent.CarriedWeaponType;
         SoldierAgent freshAgent = new(freshView, deadAgent.Position)
         {
             IsCutsceneActor = false,
-            WeaponType = deadAgent.WeaponType,
-            AmmoInClip = deadAgent.WeaponType?.RoundsPerClip ?? 0,
+            WeaponType = carried,
+            CarriedWeaponType = carried,
+            AmmoInClip = carried?.RoundsPerClip ?? 0,
         };
         if (SpawnedBody is { } drawing && !drawing(generator, group, freshAgent, deadAgent))
         {

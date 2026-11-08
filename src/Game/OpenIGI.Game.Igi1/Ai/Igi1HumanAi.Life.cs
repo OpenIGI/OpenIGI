@@ -134,6 +134,9 @@ public sealed partial class Igi1HumanAi
     /// (stamp −1) counts as not drawn.
     /// </param>
     /// <param name="generated">Whether the soldier is a <c>GuardGenerator</c>'s, whose body leaves in sight or not.</param>
+    /// <param name="bodiesStay">
+    /// Whether a body that is not a generator's stays for good (<c>g_bodies_stay</c>) rather than leaving once it is out of sight.
+    /// </param>
     /// <returns>Whether the body leaves the world on this tick (<c>0x4609A0</c>).</returns>
     /// <remarks>
     /// HumanAI+0x3E10 starts at 300 (<c>0x44F060</c>, its only writer besides the countdown) and runs down one a tick
@@ -141,7 +144,7 @@ public sealed partial class Igi1HumanAi
     /// from E+302 the body leaves on the first tick the last render did not draw it -- a corpse in view stays, one out
     /// of view goes. Every soldier's body does this, not only a generator's; a generator's goes on E+302 regardless.
     /// </remarks>
-    public bool TickDeadAi(bool drawnLastRender, bool generated)
+    public bool TickDeadAi(bool drawnLastRender, bool generated, bool bodiesStay = false)
     {
         if (Activity != AiSoldierActivity.Dead || !_deathClipEnded || HasLeftWorld)
         {
@@ -161,7 +164,7 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        if (generated || !drawnLastRender)
+        if (generated || (!drawnLastRender && !bodiesStay))
         {
             HasLeftWorld = true;
             return true;

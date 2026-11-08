@@ -212,6 +212,7 @@ public sealed class SoldierRendererCorpseTests
 
         SoldierMember replacementMember = MemberFor(scenario.Renderer, replacement);
         Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(replacementMember.Agent.WeaponType).ScriptId);
+        Assert.Equal("WEAPON_ID_AK47", Assert.IsType<WeaponType>(replacementMember.Agent.CarriedWeaponType).ScriptId);
         SoldierHeldWeapon? replacementWeaponValue = replacementMember.Weapon;
         Assert.NotNull(replacementWeaponValue);
         MeshHandle replacementWeaponMesh = replacementWeaponValue.Mesh;
@@ -233,7 +234,10 @@ public sealed class SoldierRendererCorpseTests
             scenario.Device.MeshDraws,
             draw => draw.Mesh == replacementWeaponMesh && draw.ModelView == replacementWeaponTransform);
 
-        // The replacement is a real life of its own: shot, it dies where it stands, and the cap still counts.
+        // The replacement is a real life of its own: shot, it dies where it stands, drops its gun for the player, and the cap
+        // still counts.
+        List<WeaponType> dropped = [];
+        scenario.Renderer.Simulation.SetWeaponDropSink((weapon, _, _, _) => dropped.Add(weapon));
         for (int shot = 0; shot < maxHitsToKill && !replacement.IsDead; shot++)
         {
             MeshHitRay replacementRay = FindAnyMeshHitRay(
@@ -247,6 +251,7 @@ public sealed class SoldierRendererCorpseTests
                 out _));
         }
         Assert.True(replacement.IsDead);
+        Assert.Equal("WEAPON_ID_AK47", Assert.Single(dropped).ScriptId);
     }
 
     [RequiresGameDataTheory]
