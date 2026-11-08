@@ -77,6 +77,9 @@ public sealed partial class GameHost
                 if (x >= cx && x <= cx + width && y >= cy && y <= cy + height)
                 {
                     asked = index;
+
+                    // A click on a card is the menu's, not a shot or a stab, however long the button stays down after it shuts.
+                    _window.Input.Mouse.TakePress(MouseButton.Left);
                 }
             }
         }
@@ -89,6 +92,9 @@ public sealed partial class GameHost
             {
                 talk.Say($"/team {TeamPick.Choices[choice]}");
                 CloseTeamMenu();
+
+                // The click chose a side (its press taken above); nor does the rest of this frame reach the game.
+                _window.Input.Captured = true;
                 return;
             }
         }

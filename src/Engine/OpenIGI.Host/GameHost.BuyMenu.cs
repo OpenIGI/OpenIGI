@@ -94,6 +94,9 @@ public sealed partial class GameHost
                 if (x >= rx && x <= rx + width && y >= ry && y <= ry + height)
                 {
                     asked = index;
+
+                    // A click on a row is the shop's: never a shot once the menu is shut with the button still down.
+                    _window.Input.Mouse.TakePress(MouseButton.Left);
                 }
             }
         }

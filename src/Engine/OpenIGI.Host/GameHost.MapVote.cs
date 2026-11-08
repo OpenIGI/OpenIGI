@@ -61,6 +61,9 @@ public sealed partial class GameHost
                 if (x >= cx && x <= cx + width && y >= cy && y <= cy + height)
                 {
                     picked = index;
+
+                    // A click on a card is the vote's: never a shot when the next map comes up with the button still down.
+                    _window.Input.Mouse.TakePress(MouseButton.Left);
                 }
             }
         }
