@@ -78,6 +78,8 @@ public sealed record MpPoint(string Id, MpPointKind Kind, double[] Position, dou
 /// <remarks>
 /// One file per map, <c>multiplayer/&lt;title&gt;/&lt;map&gt;.json</c> in the game's content or a mod's. Positions are in the
 /// title's world units. A level played this way runs without its mission's soldiers and scripts unless it says otherwise.
+/// The properties have setters, not <c>init</c>: the source-generated reader sets every <c>init</c> property in one object
+/// initializer, so a key the file leaves out would overwrite its default with null or nought.
 /// </remarks>
 public sealed record MpLayout
 {
@@ -91,43 +93,43 @@ public sealed record MpLayout
     public const int CurrentFormat = 1;
 
     /// <summary>Gets the layout format.</summary>
-    public int Format { get; init; } = CurrentFormat;
+    public int Format { get; set; } = CurrentFormat;
 
     /// <summary>Gets the game the map is for, as <c>igi1</c>.</summary>
-    public string Title { get; init; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
 
     /// <summary>Gets the level it plays, as the session names maps (a mission number, or a level's name).</summary>
-    public string Map { get; init; } = string.Empty;
+    public string Map { get; set; } = string.Empty;
 
     /// <summary>Gets the map's name as the server list shows it.</summary>
-    public string Name { get; init; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
 
     /// <summary>Gets the modes it is laid out for; empty for any its points allow.</summary>
-    public string[] Modes { get; init; } = [];
+    public string[] Modes { get; set; } = [];
 
     /// <summary>Gets the boxes the match is played in; outside every one is out of bounds. Empty for the whole level.</summary>
-    public MpBox[] Bounds { get; init; } = [];
+    public MpBox[] Bounds { get; set; } = [];
 
     /// <summary>Gets the seconds a player may stay out of bounds before it dies.</summary>
-    public double OutOfBoundsSeconds { get; init; } = 5;
+    public double OutOfBoundsSeconds { get; set; } = 5;
 
     /// <summary>Gets the places players start at.</summary>
-    public MpSpawn[] Spawns { get; init; } = [];
+    public MpSpawn[] Spawns { get; set; } = [];
 
     /// <summary>Gets the points the modes play for.</summary>
-    public MpPoint[] Points { get; init; } = [];
+    public MpPoint[] Points { get; set; } = [];
 
     /// <summary>
     /// Gets what a player is handed each time it is put back, beside what the mission gives its own player: weapons by their
     /// script id, each with the rounds its ammunition is filled to.
     /// </summary>
-    public MpLoadout[] Loadout { get; init; } = [];
+    public MpLoadout[] Loadout { get; set; } = [];
 
     /// <summary>Gets a value indicating whether the level's own soldiers are kept (a horde map); otherwise none are made.</summary>
-    public bool KeepsSoldiers { get; init; }
+    public bool KeepsSoldiers { get; set; }
 
     /// <summary>Gets a value indicating whether the mission's scripts run; otherwise its objectives and scenes are off.</summary>
-    public bool KeepsScripts { get; init; }
+    public bool KeepsScripts { get; set; }
 
     /// <summary>Gets whether a place is in bounds.</summary>
     /// <param name="position">The place.</param>
