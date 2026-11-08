@@ -570,7 +570,14 @@ public sealed partial class GameHost
         else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
         {
             // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
-            retailWeather.Draw(new WeatherFrame(eye, projection, _window.Height, _mission.EffectWalls, _loop.Clock.TickCount));
+            // Smooth motion draws each drop partway through its last tick's fall, as everything else between ticks is drawn.
+            retailWeather.Draw(new WeatherFrame(
+                eye,
+                projection,
+                _window.Height,
+                _mission.EffectWalls,
+                _loop.Clock.TickCount,
+                smoothPresentation ? tickBlend : 1f));
         }
         else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
         {
