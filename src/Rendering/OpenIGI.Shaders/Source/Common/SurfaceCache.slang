@@ -19,6 +19,15 @@ static const int kVectorsPerPage = 10;
 static const float kCardSkin = 0.25;
 static const float kCardSettled = 0.02;
 
+// How squarely a card must have faced a surface to have photographed it: the cosine between the card's
+// view and the surface's normal, here about 84 degrees. A card that looked at the surface edge-on holds none
+// of its texels, yet a facing test of more-than-nought let it in on the sign of a rounding error: the ground
+// at a building's foot is edge-on to the building's own side cards, and as the camera turned the last bit of
+// the ground's face normal flipped sign, a side card came and went, and its all-but-nothing weight was
+// divided back up to the whole answer. Every ray from the wall's base read the side card's light on one
+// frame and the fallback's on the next, and under ray reconstruction the base flashed dark and bright.
+static const float kCardMinFacing = 0.1;
+
 // Which bucket a cell is filed under. Teschner's three primes, one per axis; must match
 // SurfaceCacheLookup.Bucket exactly, or a page is filed where no lookup will look for it.
 //
@@ -319,9 +328,9 @@ bool SampleCardsAndAlbedoWithin(
                 cardPage);
 
             // Only a card that looked at the surface's front can have photographed it, and the more
-            // squarely it looked the more its texels are worth.
+            // squarely it looked the more its texels are worth. Edge-on is not looking: see kCardMinFacing.
             float towards = dot(facing, normalLocal);
-            if (towards <= 0.0)
+            if (towards < kCardMinFacing)
             {
                 continue;
             }

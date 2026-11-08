@@ -1044,7 +1044,7 @@ fn SampleCardsAndAlbedoWithin_0( world_9 : vec3<f32>,  normalW_0 : vec3<f32>,  b
             var cardPage_2 : vec4<f32>;
             ProjectOntoCard_1(page_2, world_9, normalW_0, &(across_2), &(halfSize_2), &(behind_2), &(depth_7), &(facing_3), &(normalLocal_0), &(litRect_2), &(cardPage_2));
             var towards_0 : f32 = dot(facing_3, normalLocal_0);
-            if(towards_0 <= 0.0f)
+            if(towards_0 < 0.10000000149011612f)
             {
                 slot_0 = slot_0 + i32(1);
                 continue;
