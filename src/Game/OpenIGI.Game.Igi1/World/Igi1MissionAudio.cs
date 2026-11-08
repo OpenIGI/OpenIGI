@@ -264,23 +264,6 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         }
     }
 
-    /// <summary>Plays the medipack's authored cue when its sustained syringe action starts.</summary>
-    /// <remarks>
-    /// IGI.EXE's medipack execution state consumes a charge and applies one heal after its damage and
-    /// ammo checks, while the state keeps one syringe clip looping. The cue belongs to that action
-    /// edge, not to every cooldown-eligible dose, so a fifty-charge pack cannot spam a sound each tick.
-    /// </remarks>
-    private void PlayMedipackSound()
-    {
-        if (mission.Player?.Weapons is { MedipackStartedThisTick: true } weapons)
-        {
-            // A medipack is an injection action, not a gun shot. Some weapon records carry a
-            // legacy firearm FireSound field (which produces the shotgun/pistol report); the
-            // retail medipack cue is the standalone syringe sound and is always used here.
-            host.SoundOutput?.PlayDefinition("syringe", priority: 180);
-        }
-    }
-
     /// <summary>Plays one of the computer's sounds, unplaced, as <c>0x4E7200(name, 1, {1, 1, 0})</c> does.</summary>
     /// <param name="name">The definition.</param>
     public void PlayComputerSound(string name) => host.SoundOutput?.PlayDefinition(name, priority: 180);
@@ -784,11 +767,16 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// <param name="at">Where, in world units.</param>
     public void PlayGrenadeBounce(Vector3d at) => host.SoundOutput?.PlayDefinition("grenade_bnc_1", at, priority: 120);
 
-    /// <summary>The sounds of the player's update: the binoculars' zoom and the medipack.</summary>
+    /// <summary>The sounds of the player's update: the binoculars' zoom.</summary>
+    /// <remarks>
+    /// The medipack has no cue of its own here: its entry clip (78 in <c>common/anims/005.iff</c>) carries
+    /// event 1050 at frame 35 of 37, where the needle meets the hand, and <c>animtrigger.qvm</c> maps 1050
+    /// to <c>syringe</c>. That event plays through <see cref="PlayPlayerAnimationSounds"/>, as
+    /// <c>HumanView_UpdateBody</c> (0x464BD0) fires every view-rig event.
+    /// </remarks>
     public void SoundPlayerUpdate()
     {
         PlayBinocularTransitionSound();
-        PlayMedipackSound();
     }
 
     /// <summary>The sounds of the player's weapon and body this tick: the report, the launcher, the cook, the reload and the jump.</summary>
@@ -832,13 +820,9 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         // Reloads and a few other weapon actions name their sounds through BOED animation
         // events rather than through the weapon record. The rig advanced inside Player.Tick,
         // so its crossed-event interval is ready to dispatch here.
-        // The native medipack callbacks dispatch their own clips and do not enter the
-        // generic firearm BOED trigger path. Suppress those generic triggers while the
-        // medipack is held, otherwise a shared animation event can sound like reload/fire.
-        if (player.HeldWeaponType?.Category != WeaponCategory.Medipack)
-        {
-            PlayPlayerAnimationSounds();
-        }
+        // 0x464BD0 fires every view-rig event, the medipack's included: its syringe cue is
+        // event 1050 on the entry clip, so it sounds when the needle goes in.
+        PlayPlayerAnimationSounds();
 
         // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
         if (player.Body.TookOffThisTick)
