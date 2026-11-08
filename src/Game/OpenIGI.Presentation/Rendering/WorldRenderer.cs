@@ -551,11 +551,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
 
             WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, displayed);
 
-            // A building's room is culled while the eye is outside the building, whatever r_world_cull says: its walls face the
-            // shell's from the other side of one plane, and drawn two-sided they show through it (IPlacementVisibility.EnclosesEye).
-            // The original culls it in every look, the vanilla one included.
-            bool culled = (cullBackFaces && model.CanCullBackFaces)
-                || (model.CanCullFromOutside && _frameState.Visibility is { } visibility && !visibility.EnclosesEye(entry.Displayed!));
+            // Every model wound to the original's front is culled, rooms included, as the original culls every model in every
+            // look (CCW: Direct3DRender_SetLitState 0x49D480, Direct3DRender_SetUnlitState 0x49D810). A building's shell and its
+            // room share the plane of each door and window from opposite sides; drawn two-sided, the two fight over every pixel of
+            // it. Only a mesh without normals, which nothing could wind, stays two-sided.
+            bool culled = cullBackFaces && model.CanCull;
             CullMode cull = culled ? CullMode.CounterClockwise : CullMode.None;
             if (cull != appliedCull)
             {
