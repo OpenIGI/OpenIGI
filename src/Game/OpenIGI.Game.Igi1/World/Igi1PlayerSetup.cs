@@ -800,6 +800,14 @@ public sealed partial class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(ammunition);
 
+        // The M16A2's launcher fires whatever AMMO_ID_M203 the player has (0x40F4A0 looks the record up in its ammo list each
+        // press), not only rounds its loadout declared: an M16A2 or grenades picked up in the level -- mission 2's barracks --
+        // fire too. So the record is known from the start, whatever the loadout says.
+        if (ammunition.Types.FirstOrDefault(a => string.Equals(a.ScriptId, "AMMO_ID_M203", StringComparison.Ordinal)) is { } m203)
+        {
+            candidate.Weapons?.SetM203Ammunition(m203);
+        }
+
         if (candidate.View is null || loadout.Weapons.Count == 0)
         {
             return false;
@@ -827,10 +835,6 @@ public sealed partial class Igi1PlayerSetup(
             if (pool is not null)
             {
                 candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
-                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
-                {
-                    candidate.Weapons?.SetM203Ammunition(pool);
-                }
             }
         }
 
