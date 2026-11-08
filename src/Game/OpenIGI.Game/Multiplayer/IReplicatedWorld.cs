@@ -488,6 +488,18 @@ public enum SessionMessage : byte
     /// <summary>Server to client, reliable: the vote for the next map as that client sees it (<see cref="Modes.NextMapVote"/>), or
     /// that it closed.</summary>
     MapVote = 21,
+
+    /// <summary>
+    /// Server to client, reliable: the files the server plays a map from (<see cref="SessionFileList"/>), which the client's own
+    /// must match; a differing one it asks for.
+    /// </summary>
+    Files = 22,
+
+    /// <summary>Client to server, reliable: the files of a list it was sent that it lacks, by place in the list.</summary>
+    FileWant = 23,
+
+    /// <summary>Server to client, reliable: a piece of a file asked for.</summary>
+    FilePart = 24,
 }
 
 /// <summary>A player the server re-armed: what it carries now, and whether it was armed from nothing.</summary>

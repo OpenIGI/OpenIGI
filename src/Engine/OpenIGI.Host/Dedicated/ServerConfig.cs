@@ -40,6 +40,10 @@ public sealed record ServerConfig
     /// <summary>Gets the most players at once.</summary>
     public int MaxPlayers { get; init; } = 16;
 
+    /// <summary>Gets the most players from one internet address at once, 0 for any (<c>maxperaddress</c>).</summary>
+    /// <remarks>Raised for a LAN event or players behind a carrier's shared address; it is what stops one machine filling the server.</remarks>
+    public int MaxPerAddress { get; init; } = 4;
+
     /// <summary>Gets the password players give, or empty for none.</summary>
     public string Password { get; init; } = string.Empty;
 
@@ -124,6 +128,10 @@ public sealed record ServerConfig
                 case "maxplayers":
                     ok = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int players) && players is >= 1 and <= 32;
                     config = ok ? config with { MaxPlayers = players } : config;
+                    break;
+                case "maxperaddress":
+                    ok = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int perAddress) && perAddress is >= 0 and <= 32;
+                    config = ok ? config with { MaxPerAddress = perAddress } : config;
                     break;
                 case "password":
                     config = config with { Password = value };

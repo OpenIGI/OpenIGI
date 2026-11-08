@@ -75,6 +75,13 @@ public sealed class VirtualFileSystem
     /// </remarks>
     public IFileOverlay? Overlay { get; set; }
 
+    /// <summary>
+    /// Gets or sets the files read in place of the installation's own, whole, archives too: a multiplayer server's, where they
+    /// differ from this game's. A path -- relative to the installation, lower case, forward slashes -- to the file read for it.
+    /// </summary>
+    /// <remarks>Above the content layers and the installation alike, and for the <c>LOCAL</c> device only.</remarks>
+    public IReadOnlyDictionary<string, string>? Pins { get; set; }
+
     /// <summary>Finds a registered device by name.</summary>
     /// <param name="name">The device name, with or without its trailing colon.</param>
     /// <param name="device">Receives the device, or <see langword="null"/> when none is registered.</param>
@@ -204,7 +211,7 @@ public sealed class VirtualFileSystem
         foreach (string candidate in ResolveCandidates(name))
         {
             IFileDevice device = RequireDevice(candidate, out string devicePath);
-            if (OverlaySupplies(candidate) || device.Exists(devicePath) || Overlay?.HasFile(OverridePath.For(candidate)) == true)
+            if (IsPinned(device, devicePath) || OverlaySupplies(candidate) || device.Exists(devicePath) || Overlay?.HasFile(OverridePath.For(candidate)) == true)
             {
                 resolved = candidate;
                 return true;
@@ -231,6 +238,12 @@ public sealed class VirtualFileSystem
         foreach (string candidate in ResolveCandidates(name))
         {
             IFileDevice device = RequireDevice(candidate, out string devicePath);
+            if (TryReadPin(device, devicePath, out byte[]? pinned))
+            {
+                stream = new MemoryStream(pinned, writable: false);
+                return true;
+            }
+
             if (Overlay is { } overlay && !IsArchive(candidate) && overlay.TryRead(OverridePath.For(candidate), out ReadOnlyMemory<byte> replaced))
             {
                 stream = new MemoryStream(replaced.ToArray(), writable: false);
@@ -386,6 +399,38 @@ public sealed class VirtualFileSystem
 
         devicePath = path[(deviceName.Length + 1)..];
         return device;
+    }
+
+    // Whether the session pins a file at a path: one the installation may not have at all.
+    private bool IsPinned(IFileDevice device, string devicePath) =>
+        Pins is { Count: > 0 } pins
+        && string.Equals(device.Name, LocalFileDevice.DeviceName, StringComparison.Ordinal)
+        && pins.ContainsKey(PinKey(devicePath));
+
+    // A pin's key: the path lower case, with forward slashes and no leading one.
+    private static string PinKey(string devicePath) => devicePath.Replace('\\', '/').TrimStart('/').ToLowerInvariant();
+
+    // The session's own file for a path, when it pins one.
+    private bool TryReadPin(IFileDevice device, string devicePath, [NotNullWhen(true)] out byte[]? data)
+    {
+        data = null;
+        if (Pins is not { Count: > 0 } pins
+            || !string.Equals(device.Name, LocalFileDevice.DeviceName, StringComparison.Ordinal)
+            || !pins.TryGetValue(PinKey(devicePath), out string? file))
+        {
+            return false;
+        }
+
+        try
+        {
+            data = File.ReadAllBytes(file);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning("Files", $"The session's copy of {devicePath} could not be read ({ex.Message}); the game's own is read.");
+            return false;
+        }
     }
 
     // An archive is never stood in for whole: its entries are, one by one.

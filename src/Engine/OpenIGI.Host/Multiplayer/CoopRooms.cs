@@ -73,6 +73,45 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <inheritdoc/>
     public bool HasArena(int mission) => Arenas?.Invoke(mission) ?? true;
 
+    /// <summary>Gets or sets what reads the game's tables again, for a server's shared files put in place before the join.</summary>
+    public Action? ReloadTables { get; set; }
+
+    // A joined server's mission, started once the server's files are in: the mission and difficulty, and whether the tables
+    // have been asked to be read again for it.
+    private (int Mission, int Difficulty, bool Reloaded)? _startWhenReady;
+
+    // A client's mission started once its files are in, the game's tables read again first when the server's shared ones
+    // went in: a frame for the reload to happen at the frame boundary, then the mission.
+    private void StartWhenFilesReady()
+    {
+        if (_startWhenReady is not { } start || _session is not SessionClient client)
+        {
+            _startWhenReady = null;
+            return;
+        }
+
+        if (client.Ended is not null || !client.FilesReady)
+        {
+            if (client.Ended is not null)
+            {
+                _startWhenReady = null;
+            }
+
+            return;
+        }
+
+        if (!start.Reloaded && client.Files?.TakeChanges() is { Shared: true } && ReloadTables is { } reload)
+        {
+            _logger.Information(LogCategory, "The server's shared files are in; the game's tables are read again before the mission.");
+            _startWhenReady = start with { Reloaded = true };
+            reload();
+            return;
+        }
+
+        _startWhenReady = null;
+        Shell?.StartMission(start.Mission, start.Difficulty);
+    }
+
     /// <summary>Gets or sets the shell the missions are started through.</summary>
     public IShellHost? Shell { get; set; }
 
@@ -82,6 +121,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         HostedSession hosted when hosted.RoomCode is { } code => new CoopStatus(CoopPhase.Playing, code, Hosting: true),
         HostedSession => new CoopStatus(CoopPhase.Connecting, Hosting: true),
         SessionClient { Ended: { } ended } client => new CoopStatus(CoopPhase.Failed, client.RoomCode, Error: ended),
+        SessionClient { FilesReady: false } client => new CoopStatus(CoopPhase.Connecting, client.RoomCode),
         SessionClient { IsRejoining: true } client => new CoopStatus(CoopPhase.Connecting, client.RoomCode),
         SessionClient { Room: null } => new CoopStatus(CoopPhase.Playing),
         SessionClient client when client.Room is { } room => room.Status switch
@@ -183,7 +223,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         JoinRequest request = new(_playerName(), _version, string.Empty, _content(), PlayerSkins.Of(PlayerSkins.Chosen.Value).Id);
         Begin(new SessionClient(open(0), address, request, _titleId(), _logger, reopen: () => open(0)) { Mode = line.Info.Mode });
         _logger.Information(LogCategory, $"Joining {line.Info.Name} at {address} on mission {mission} ({line.Info.Mode}).");
-        Shell?.StartMission(mission, _difficulty());
+        _startWhenReady = (mission, _difficulty(), false);
     }
 
     /// <summary>
@@ -209,6 +249,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
         _finding = null;
         _findingCode = null;
         _failure = null;
+        _startWhenReady = null;
         if (_session is not null)
         {
             _observe(null);
@@ -402,6 +443,8 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
     /// <summary>Acts on what the master server answered since the last frame.</summary>
     public void Update()
     {
+        StartWhenFilesReady();
+
         if (_waitingFor is { } waiting && _browser is { } asked)
         {
             if (asked.Servers.FirstOrDefault(s => s.Key == waiting.Key) is { Answered: true, Address: { } at } heard && OpenUdp is { } udp)
@@ -471,7 +514,7 @@ internal sealed class CoopRooms : ICoopRooms, IDisposable
                     Password: string.Empty, Mode: room.Mode, Join: code);
                 Begin(RoomSessions.Start(arguments, _titleId(), mission, _version, _peers, _logger, _content()));
                 _logger.Information(LogCategory, $"Joining room {code} on mission {mission}.");
-                Shell?.StartMission(mission, _difficulty());
+                _startWhenReady = (mission, _difficulty(), false);
             }
         }
     }

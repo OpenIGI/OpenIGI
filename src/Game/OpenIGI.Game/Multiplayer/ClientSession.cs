@@ -244,6 +244,47 @@ public sealed class ClientSession
     // The remote console's answers, waiting to be taken.
     private readonly List<string> _rconAnswers = [];
 
+    // The server's newest list of files, and the pieces of files that came, until taken.
+    private SessionFileList? _fileList;
+    private readonly List<FilePiece> _filePieces = [];
+
+    /// <summary>Takes the list of files the server last sent, if one came since the last call.</summary>
+    /// <returns>The list, or <see langword="null"/>.</returns>
+    public SessionFileList? TakeFileList()
+    {
+        SessionFileList? list = _fileList;
+        _fileList = null;
+        return list;
+    }
+
+    /// <summary>Takes the pieces of files that came since the last call.</summary>
+    /// <returns>The pieces, in the order they came.</returns>
+    public IReadOnlyList<FilePiece> TakeFilePieces()
+    {
+        FilePiece[] pieces = [.. _filePieces];
+        _filePieces.Clear();
+        return pieces;
+    }
+
+    /// <summary>Asks the server for files of a list it sent.</summary>
+    /// <param name="map">The list's map.</param>
+    /// <param name="indices">The files, by place in the list.</param>
+    public void WantFiles(string map, IReadOnlyCollection<int> indices)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        ArgumentNullException.ThrowIfNull(indices);
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.FileWant, 8);
+        _writer.WriteString(map, 64);
+        _writer.WriteVarUInt((uint)indices.Count);
+        foreach (int index in indices)
+        {
+            _writer.WriteVarUInt((uint)index);
+        }
+
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
     /// <summary>Marks a place for every player.</summary>
     /// <param name="position">Where, in world units.</param>
     public void Mark(Int3 position)
@@ -668,6 +709,20 @@ public sealed class ClientSession
                 if (_combat.Count > 64)
                 {
                     _combat.RemoveAt(0);
+                }
+
+                break;
+            case SessionMessage.Files when SessionFileList.Read(ref reader) is { } list:
+                _fileList = list;
+                break;
+            case SessionMessage.FilePart:
+                string pieceMap = reader.ReadString(64);
+                int pieceIndex = (int)reader.ReadVarUInt();
+                long pieceOffset = reader.ReadVarUInt();
+                byte[] pieceData = reader.ReadBytes(ServerSession.FilePieceSize);
+                if (!reader.IsOverflowed && _filePieces.Count < 4096)
+                {
+                    _filePieces.Add(new FilePiece(pieceMap, pieceIndex, pieceOffset, pieceData));
                 }
 
                 break;

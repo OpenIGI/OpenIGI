@@ -133,6 +133,16 @@ public sealed class ResourceOverrides : IFileOverlay
     /// </remarks>
     public bool Bypassed { get; set; }
 
+    /// <summary>Gets or sets the paths no layer may stand in for while it is set, or <see langword="null"/> for none.</summary>
+    /// <remarks>
+    /// A multiplayer session's: the files a level plays from are the server's for every player, so a layer's own copy of
+    /// one is passed over while the session lasts, and what only changes the look -- a texture pack -- still comes through.
+    /// Asked with the path as <see cref="OverridePath"/> makes it, an archived entry's by its archive's folder.
+    /// </remarks>
+    public Func<string, bool>? Withheld { get; set; }
+
+    private bool IsWithheld(string relativePath) => Withheld is { } withheld && withheld(relativePath);
+
     /// <summary>Gets a value indicating whether any override is present and in use.</summary>
     public bool IsActive => !Bypassed && Count > 0;
 
@@ -374,7 +384,7 @@ public sealed class ResourceOverrides : IFileOverlay
     /// <remarks>Unlike <see cref="Has"/>, it answers for the layers in force: none while bypassed, only the enabled ones.</remarks>
     public bool Supplies(string relativePath)
     {
-        if (Bypassed || relativePath.Length == 0)
+        if (Bypassed || relativePath.Length == 0 || IsWithheld(relativePath))
         {
             return false;
         }
@@ -411,7 +421,7 @@ public sealed class ResourceOverrides : IFileOverlay
 
     /// <inheritdoc/>
     public IEnumerable<string> EnumerateFiles(string relativeDirectory, string searchPattern) =>
-        LayerEntries(relativeDirectory, directory => Directory.EnumerateFiles(directory, searchPattern));
+        LayerEntries(relativeDirectory, directory => Directory.EnumerateFiles(directory, searchPattern)).Where(path => !IsWithheld(path));
 
     /// <inheritdoc/>
     public IEnumerable<string> EnumerateDirectories(string relativeDirectory) =>
@@ -443,7 +453,7 @@ public sealed class ResourceOverrides : IFileOverlay
         data = default;
         stamp = string.Empty;
 
-        if (Bypassed || relativePath.Length == 0)
+        if (Bypassed || relativePath.Length == 0 || IsWithheld(relativePath))
         {
             return false;
         }
@@ -521,7 +531,7 @@ public sealed class ResourceOverrides : IFileOverlay
     // The highest layer in force's file at exactly a path, or null.
     private string? LayerFile(string relativePath)
     {
-        if (relativePath.Length == 0)
+        if (relativePath.Length == 0 || IsWithheld(relativePath))
         {
             return null;
         }

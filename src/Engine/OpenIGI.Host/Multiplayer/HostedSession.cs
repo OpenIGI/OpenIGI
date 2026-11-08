@@ -19,8 +19,9 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="HostName">The name the host's own player plays under, when it plays.</param>
 /// <param name="HostSkin">The host's own player's look, a <see cref="PlayerSkins"/> id.</param>
 /// <param name="Content">The host's <see cref="JoinRequest.Content"/> fingerprint, or empty to take any.</param>
+/// <param name="MaxPerAddress">The most players from one internet address at once (0 for any), as <see cref="NetServerOptions.MaxClientsPerAddress"/>.</param>
 public sealed record HostedSessionOptions(
-    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "", string HostSkin = "");
+    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "", string HostSkin = "", int MaxPerAddress = 4);
 
 /// <summary>A server's session run inside the host: a dedicated server's, or a listen server's beside the host's own player.</summary>
 /// <remarks>
@@ -45,6 +46,22 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     // The level the session was last bound to.
     private object? _level;
     private ServerSession? _session;
+
+    /// <summary>Gets or sets where the server's files are read, for the list of each map it sends and the files it gives.</summary>
+    public ISessionFileSource? Files
+    {
+        get => _files;
+        set
+        {
+            _files = value;
+            if (_session is not null)
+            {
+                _session.Files = value;
+            }
+        }
+    }
+
+    private ISessionFileSource? _files;
     private readonly INetTransport _transport;
 
     // The readout's last write, and the host's ticks since: a host that ticks slowly reads its players' packets late.
@@ -75,6 +92,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             MaxClients = options.MaxPlayers + (Records ? 1 : 0),
             Admit = Admit,
             Info = _ => Info().Encode(),
+            MaxClientsPerAddress = options.MaxPerAddress,
         });
     }
 
@@ -179,6 +197,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
                 _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
             _session.Title = _titleId;
+            _session.Files = Files;
             _session.Banned = Banned;
             _session.Rcon = Rcon;
             _session.ChangeMap = ChangeMap;

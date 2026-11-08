@@ -5,6 +5,7 @@
 name "My OpenIGI server"      # shown in the server browser
 port 26001                    # UDP; open it in your firewall for desktop players
 maxplayers 16                 # 1-32
+maxperaddress 4               # most players from one internet address; raise for a LAN event, 0 for any
 password ""                   # empty: anyone may join
 motd "Welcome! Be nice."      # told to each player as they join
 afk_kick 180                  # seconds a player may stand idle before being put off; 0 never

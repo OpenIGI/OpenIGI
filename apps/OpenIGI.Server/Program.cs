@@ -147,7 +147,7 @@ else if (config.Room)
 OpenIGI.Game.Multiplayer.NetCVars.HostRecord.Value = config.RecordDemos;
 using HostedSession server = new(
     transport,
-    new HostedSessionOptions(config.Name, config.MaxPlayers, config.Password, mode, map, version, IncludesHost: false),
+    new HostedSessionOptions(config.Name, config.MaxPlayers, config.Password, mode, map, version, IncludesHost: false, MaxPerAddress: config.MaxPerAddress),
     title.Id,
     GameClock.DefaultTickRate,
     logger);

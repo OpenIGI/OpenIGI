@@ -248,6 +248,12 @@ public sealed partial class GameHost
 
         _resources.Overrides = _overrides;
 
+        // A session's shield on the files a level plays from outlives the layers it covers: a game read again keeps it.
+        if (_tickObserver is not null)
+        {
+            _overrides.Withheld = WithheldInSession;
+        }
+
         // Scanned here, because the archives mounted below consult it. Reported by the caller, once the
         // console has started and the player's log verbosity is in force.
         _overrideScan = _overrides.Rescan();

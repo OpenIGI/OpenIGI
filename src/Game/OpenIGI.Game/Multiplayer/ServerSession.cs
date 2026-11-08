@@ -170,18 +170,36 @@ public sealed partial class ServerSession : IModeHost
             {
                 case NetEventKind.Connected:
                     JoinRequest? request = JoinRequest.Decode(e.Payload ?? []);
+                    if (TryBeginSync(e.Peer, request))
+                    {
+                        break;
+                    }
+
                     BeginJoin(e.Peer, request?.PlayerName ?? "player", request?.Skin ?? string.Empty);
                     NoteWatch(e.Peer, request);
                     ApplyRates(e.Peer, request);
                     break;
+                case NetEventKind.Disconnected when _syncing.ContainsKey(e.Peer):
+                    ForgetFiles(e.Peer);
+                    break;
                 case NetEventKind.Disconnected when _pending.Remove(e.Peer):
                     _watching.Remove(e.Peer);
+                    ForgetFiles(e.Peer);
                     break;
                 case NetEventKind.Disconnected:
+                    ForgetFiles(e.Peer);
                     if (_clients.Remove(e.Peer, out ClientState? gone) && !gone.Watching)
                     {
                         // Kept aside a while, in case the line dropped rather than the player leaving.
                         Park(e.Peer, gone.PlayerId, now);
+                    }
+
+                    break;
+                case NetEventKind.Message when e.Message.Data.Length > 0 && _syncing.ContainsKey(e.Peer):
+                    BitReader syncReader = new(e.Message.Data);
+                    if ((SessionMessage)syncReader.ReadBits(8) == SessionMessage.FileWant)
+                    {
+                        ReadFileWant(e.Peer, ref syncReader);
                     }
 
                     break;
@@ -326,6 +344,7 @@ public sealed partial class ServerSession : IModeHost
         }
 
         _tick = tick;
+        PumpFiles(now);
         Mode.Tick(this, tick, _world.TakeDeaths());
         TellKits();
         TellCombat();
@@ -764,6 +783,12 @@ public sealed partial class ServerSession : IModeHost
             client.ReadyFor = null;
             _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
         }
+
+        // With the files the new map plays from, which a client whose own differ fetches before it says it is ready.
+        foreach (int slot in _clients.Keys)
+        {
+            SendFileList(slot, map);
+        }
     }
 
     /// <summary>Gets whether every player has loaded the level last announced: the server's to begin when it is.</summary>
@@ -771,7 +796,11 @@ public sealed partial class ServerSession : IModeHost
 
     /// <summary>Sends what is waiting to go without capturing the level: for while the level is held, not run.</summary>
     /// <param name="now">The clock, in seconds.</param>
-    public void Flush(double now) => _net.Flush(now);
+    public void Flush(double now)
+    {
+        PumpFiles(now);
+        _net.Flush(now);
+    }
 
     /// <summary>Goes on to another level with every player: the next mission, or the same one again.</summary>
     /// <param name="world">The new level's world.</param>
@@ -894,6 +923,9 @@ public sealed partial class ServerSession : IModeHost
                 return;
             case SessionMessage.Rcon:
                 ReadRcon(slot, client, ref reader);
+                return;
+            case SessionMessage.FileWant:
+                ReadFileWant(slot, ref reader);
                 return;
             case SessionMessage.Ready:
                 byte ready = (byte)reader.ReadBits(8);

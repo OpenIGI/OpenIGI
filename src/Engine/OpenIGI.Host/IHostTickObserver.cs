@@ -112,6 +112,7 @@ public sealed partial class GameHost
         {
             bool was = _tickObserver is not null;
             _tickObserver = value;
+            AttachSessionFiles(value);
             if (value is not null && !was)
             {
                 Game.Player.PlayerCheatLock.Hold();

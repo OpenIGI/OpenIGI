@@ -45,5 +45,8 @@ public sealed partial class ServerSession
         _writer.WriteBits(_epoch, 8);
         _writer.WriteString(Mode.Id, 16);
         _net.Send(slot, NetChannel.Reliable, _writer.AsSpan());
+
+        // And the files the map plays from: a client that synced before it joined finds them its own already.
+        SendFileList(slot, Map);
     }
 }

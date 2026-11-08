@@ -13,7 +13,7 @@ namespace OpenIGI.Game.Multiplayer;
 public static class MultiplayerProtocol
 {
     /// <summary>The protocol version; raised whenever any message changes shape.</summary>
-    public const int Version = 16;
+    public const int Version = 17;
 
     /// <summary>A fingerprint of what a game plays with beyond the game itself: its title and the mods that change play.</summary>
     /// <param name="titleId">The game's id.</param>
@@ -46,8 +46,12 @@ public static class MultiplayerProtocol
 /// <param name="UpdateRate">The snapshots a second it wants (<c>cl_updaterate</c>); 0 for every tick the server allows.</param>
 /// <param name="Rate">The bytes a second its line takes (<c>rate</c>); 0 for the server's default.</param>
 /// <param name="Watch">Whether it only watches: given everything a player is, but no player of its own (a recorder, a spectator).</param>
+/// <param name="Sync">
+/// Whether it comes only for the server's files, before it joins: sent the list of the map's and given what differs, and
+/// nothing else -- no player, no snapshots -- until it leaves.
+/// </param>
 public sealed record JoinRequest(
-    string PlayerName, string Version, string Password, string Content = "", string Skin = "", int UpdateRate = 0, int Rate = 0, bool Watch = false)
+    string PlayerName, string Version, string Password, string Content = "", string Skin = "", int UpdateRate = 0, int Rate = 0, bool Watch = false, bool Sync = false)
 {
     /// <summary>The longest player name kept.</summary>
     public const int MaxNameBytes = 32;
@@ -66,6 +70,7 @@ public sealed record JoinRequest(
         writer.WriteRanged(Math.Clamp(UpdateRate, 0, 255), 0, 255);
         writer.WriteRanged(Math.Clamp(Rate / 1024, 0, 4095), 0, 4095);
         writer.WriteBool(Watch);
+        writer.WriteBool(Sync);
         return writer.ToArray();
     }
 
@@ -85,6 +90,7 @@ public sealed record JoinRequest(
             UpdateRate = reader.ReadRanged(0, 255),
             Rate = reader.ReadRanged(0, 4095) * 1024,
             Watch = reader.ReadBool(),
+            Sync = reader.ReadBool(),
         };
         return reader.IsOverflowed ? null : request;
     }

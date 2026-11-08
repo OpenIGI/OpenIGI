@@ -26,6 +26,30 @@ public sealed class NetServerOptions
 
     /// <summary>Gets or sets what the server tells a browser that asks about it, or <see langword="null"/> to stay quiet.</summary>
     public Func<NetAddress, byte[]?>? Info { get; set; }
+
+    /// <summary>Gets or sets the most packets one <see cref="NetServer.Update"/> reads; the rest wait for the next.</summary>
+    /// <remarks>A flood fills the socket's buffer, not the server's tick: the game goes on, and the excess is the system's to drop.</remarks>
+    public int MaxPacketsPerUpdate { get; set; } = 4096;
+
+    /// <summary>Gets or sets the requests a second a machine not yet connected may make: to join, to answer a challenge, to ask about the server.</summary>
+    public double RequestsPerSecond { get; set; } = 8;
+
+    /// <summary>Gets or sets the requests such a machine may make at once.</summary>
+    public double RequestBurst { get; set; } = 16;
+
+    /// <summary>Gets or sets the bytes a second the server sends, all told, to machines that are not its clients.</summary>
+    /// <remarks>
+    /// Its answers to the unconnected -- challenges, refusals, what it tells the server list -- are what a forged request
+    /// could turn on a third party, so they share this one budget, and the server is never much use to such an attack.
+    /// </remarks>
+    public int UnconnectedBytesPerSecond { get; set; } = 256 * 1024;
+
+    /// <summary>Gets or sets the most clients one machine on the internet may have connected at once; 0 for no limit.</summary>
+    /// <remarks>A household behind one address plays from a few machines; one address cannot fill a server.</remarks>
+    public int MaxClientsPerAddress { get; set; } = 4;
+
+    /// <summary>Gets or sets the packets a second a connected client may send before the rest are dropped unread.</summary>
+    public double ClientPacketsPerSecond { get; set; } = 1000;
 }
 
 /// <summary>The listening end: admits clients through a challenge, keeps a connection per client, reports what arrives.</summary>
@@ -53,6 +77,9 @@ public sealed class NetServer : IDisposable
     private readonly List<NetMessage> _messages = [];
     private readonly byte[] _receiveBuffer;
     private readonly byte[] _sendBuffer = new byte[NetConstants.MaxPacketSize];
+    private readonly FloodGuard _requests;
+    private readonly FloodGuard _clientPackets;
+    private readonly TokenBucket _unconnectedBytes;
     private readonly ulong _key0;
     private readonly ulong _key1;
 
@@ -70,6 +97,9 @@ public sealed class NetServer : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxClients, 1);
         _peers = new Peer?[options.MaxClients];
         _receiveBuffer = new byte[Math.Max(transport.MaxDatagramSize, NetConstants.MaxPacketSize)];
+        _requests = new FloodGuard(options.RequestsPerSecond, options.RequestBurst);
+        _clientPackets = new FloodGuard(options.ClientPacketsPerSecond, options.ClientPacketsPerSecond * 2, Math.Max(64, options.MaxClients * 2));
+        _unconnectedBytes = new TokenBucket(options.UnconnectedBytesPerSecond, Math.Max(NetConstants.MaxPacketSize * 8, options.UnconnectedBytesPerSecond / 4));
         Span<byte> key = stackalloc byte[16];
         RandomNumberGenerator.Fill(key);
         _key0 = BinaryPrimitives.ReadUInt64LittleEndian(key);
@@ -90,6 +120,15 @@ public sealed class NetServer : IDisposable
     /// <summary>Gets the most clients connected at once.</summary>
     public int MaxClients => _peers.Length;
 
+    /// <summary>Gets how many requests from machines not yet connected were dropped for coming too fast.</summary>
+    public long RequestsRefused => _requests.Refused;
+
+    /// <summary>Gets how many answers to such machines were not sent, the server's budget for them spent.</summary>
+    public long AnswersWithheld { get; private set; }
+
+    /// <summary>Gets how many packets from connected clients were dropped for coming too fast.</summary>
+    public long ClientPacketsDropped => _clientPackets.Refused;
+
     /// <summary>Gets whether a slot holds a client.</summary>
     /// <param name="peer">The slot.</param>
     /// <returns><see langword="true"/> when connected.</returns>
@@ -104,7 +143,8 @@ public sealed class NetServer : IDisposable
     /// <param name="now">The current time in seconds.</param>
     public void Update(double now)
     {
-        while (_transport.TryReceive(_receiveBuffer, out NetAddress source, out int length))
+        int read = 0;
+        while (read++ < _options.MaxPacketsPerUpdate && _transport.TryReceive(_receiveBuffer, out NetAddress source, out int length))
         {
             ReadOnlySpan<byte> packet = _receiveBuffer.AsSpan(0, length);
             if (PacketCodec.TryOpen(packet, _options.ProtocolId, out PacketKind kind))
@@ -189,6 +229,20 @@ public sealed class NetServer : IDisposable
     private void Handle(PacketKind kind, NetAddress source, ReadOnlySpan<byte> packet, double now)
     {
         int prefix = NetConstants.PacketPrefixSize;
+
+        // Anyone not connected is answered only as fast as its rate allows; a client's own packets, only as fast as a game sends.
+        if (kind is PacketKind.ConnectionRequest or PacketKind.ChallengeResponse or PacketKind.InfoRequest
+            && FindPeer(source) is null
+            && !_requests.TrySpend(source, now))
+        {
+            return;
+        }
+
+        if (kind == PacketKind.Payload && FindPeer(source) is not null && !_clientPackets.TrySpend(source, now))
+        {
+            return;
+        }
+
         switch (kind)
         {
             case PacketKind.ConnectionRequest when packet.Length >= NetConstants.ConnectionRequestSize:
@@ -206,7 +260,8 @@ public sealed class NetServer : IDisposable
                 {
                     SendRejected(source, nonce, string.Create(
                         System.Globalization.CultureInfo.InvariantCulture,
-                        $"version mismatch: the server plays protocol {_options.ProtocolVersion}, this game {version}"));
+                        $"version mismatch: the server plays protocol {_options.ProtocolVersion}, this game {version}"),
+                        now);
                     return;
                 }
 
@@ -222,7 +277,7 @@ public sealed class NetServer : IDisposable
                     _sealPublic.CopyTo(challenge[(prefix + 24)..]);
                 }
 
-                SendOutOfBand(source, PacketKind.Challenge, challenge);
+                SendUnconnected(source, PacketKind.Challenge, challenge, now);
                 return;
             }
 
@@ -277,7 +332,7 @@ public sealed class NetServer : IDisposable
                 Span<byte> response = _sendBuffer.AsSpan(0, prefix + 8 + blob.Length);
                 packet.Slice(prefix, 8).CopyTo(response[prefix..]);
                 blob.CopyTo(response[(prefix + 8)..]);
-                SendOutOfBand(source, PacketKind.InfoResponse, response);
+                SendUnconnected(source, PacketKind.InfoResponse, response, now);
                 return;
             }
         }
@@ -345,15 +400,25 @@ public sealed class NetServer : IDisposable
         if (slot < 0)
         {
             cipher?.Dispose();
-            SendRejected(source, nonce, "server is full");
+            SendRejected(source, nonce, "server is full", now);
+            return;
+        }
+
+        if (_options.MaxClientsPerAddress > 0 && source.Kind == NetAddressKind.Ip
+            && _byAddress.Keys.Count(a => a.Kind == NetAddressKind.Ip && a.Host == source.Host) >= _options.MaxClientsPerAddress)
+        {
+            cipher?.Dispose();
+            SendRejected(source, nonce, "too many players from your address", now);
             return;
         }
 
         NetAdmission admission = _options.Admit?.Invoke(new NetConnectRequest(source, payload, slot)) ?? NetAdmission.Accept();
         if (!admission.IsAccepted)
         {
+            // A refusal costs the asker its next few tries, so a password can't be guessed at speed.
             cipher?.Dispose();
-            SendRejected(source, nonce, admission.Reason);
+            _requests.Charge(source, now, _options.RequestBurst);
+            SendRejected(source, nonce, admission.Reason, now);
             return;
         }
 
@@ -382,12 +447,24 @@ public sealed class NetServer : IDisposable
         SendOutOfBand(peer.Connection.RemoteAddress, PacketKind.Accepted, packet);
     }
 
-    private void SendRejected(NetAddress destination, ulong nonce, string reason)
+    private void SendRejected(NetAddress destination, ulong nonce, string reason, double now)
     {
         int prefix = NetConstants.PacketPrefixSize;
         BinaryPrimitives.WriteUInt64LittleEndian(_sendBuffer.AsSpan(prefix), nonce);
         int length = prefix + 8 + PacketCodec.WriteString(_sendBuffer.AsSpan(prefix + 8), reason);
-        SendOutOfBand(destination, PacketKind.Rejected, _sendBuffer.AsSpan(0, length));
+        SendUnconnected(destination, PacketKind.Rejected, _sendBuffer.AsSpan(0, length), now);
+    }
+
+    // An answer to a machine that isn't a client, sent while the budget for such answers lasts.
+    private void SendUnconnected(NetAddress destination, PacketKind kind, Span<byte> packet, double now)
+    {
+        if (!_unconnectedBytes.TrySpend(now, packet.Length))
+        {
+            AnswersWithheld++;
+            return;
+        }
+
+        SendOutOfBand(destination, kind, packet);
     }
 
     private void Drop(int slot, string reason, bool notify)

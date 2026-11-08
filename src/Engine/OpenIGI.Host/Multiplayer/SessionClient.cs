@@ -12,7 +12,7 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
+public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -209,6 +209,12 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     // up here, and each later level followed. False while there is no session to run yet.
     private bool Attach(object? title, double now)
     {
+        // The server's files first: the join waits for them, on a connection of their own.
+        if (_session is null && !FilesReady)
+        {
+            return false;
+        }
+
         // Through a room, the handshake waits for the channel to the host: until it opens there is nowhere to send it.
         if (_session is null && _transport is RoomTransport { Status: not RoomStatus.Open } room)
         {
@@ -305,7 +311,26 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     }
 
     /// <inheritdoc/>
-    public string? TakeTravel() => _session?.TakeTravel();
+    /// <remarks>
+    /// Held while the files of the map gone to are still coming, so it loads from the server's; and a level loaded before the
+    /// server's files were in -- one the command line started -- is gone to again once they are.
+    /// </remarks>
+    public string? TakeTravel()
+    {
+        if (_reloadAfterSync is { } map)
+        {
+            _reloadAfterSync = null;
+            return map;
+        }
+
+        return FilesBusy ? null : _session?.TakeTravel();
+    }
+
+    // A map to load again because the files came after it was loaded, until taken.
+    private string? _reloadAfterSync;
+
+    // Whether a level has been up here, while there was no session yet.
+    private bool _levelSeen;
 
     /// <inheritdoc/>
     public string OwnSkin => _request.Skin;
@@ -338,6 +363,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         if (title is IReplicatedTitle { Level: not null })
         {
             _heldSince ??= now;
+            _levelSeen = true;
         }
 
         if (!Attach(title, now) || _session is not { } session)
@@ -346,6 +372,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         session.Receive(now);
+        SyncWhilePlaying(session);
         _pumpsSinceDiagnosed++;
 
         // The server's level state, taken while the level is held, so its first tick is already the server's: nothing of a
@@ -427,6 +454,14 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public void Poll()
     {
+        bool before = FilesReady;
+        SyncBeforeJoin(_clock.Elapsed.TotalSeconds);
+        if (!before && _synced && _levelSeen && Files is { } files && files.TakeChanges().Changed && files.Map is { } map)
+        {
+            // The command line's level came up before the files were in: loaded again, from the server's.
+            _reloadAfterSync = map;
+        }
+
         _session?.Poll(_clock.Elapsed.TotalSeconds);
         foreach (string line in _session?.TakeRconAnswers() ?? [])
         {
@@ -633,6 +668,8 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         _disposed = true;
+        _syncNet?.Disconnect("client closed", 0);
+        Files?.Clear();
         if (_netClient is { } client)
         {
             client.Dispose();
