@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.UI.Widgets;
 
@@ -50,6 +50,7 @@ public static class CVarBinding
     /// What an enum's choices are called on screen, keyed by the stored value; a choice not named here shows
     /// as it is stored.
     /// </param>
+    /// <param name="step">A numeric row's step, or <see langword="null"/> for a twentieth of its range.</param>
     /// <returns>The bound control, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     public static Control? CreateControl(
@@ -57,7 +58,8 @@ public static class CVarBinding
         ICVar cvar,
         string? label = null,
         ICollection<IDisposable>? lifetime = null,
-        IReadOnlyDictionary<string, string>? choiceCaptions = null)
+        IReadOnlyDictionary<string, string>? choiceCaptions = null,
+        float? step = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(cvar);
@@ -87,7 +89,7 @@ public static class CVarBinding
         }
         else if (TryParseBounds(cvar.RangeText, out float min, out float max))
         {
-            binding = BindNumeric(theme, caption, cvar, min, max);
+            binding = BindNumeric(theme, caption, cvar, min, max, step);
         }
         else
         {
@@ -211,11 +213,11 @@ public static class CVarBinding
         });
     }
 
-    private static Binding BindNumeric(UiTheme theme, string caption, ICVar cvar, float min, float max)
+    private static Binding BindNumeric(UiTheme theme, string caption, ICVar cvar, float min, float max, float? requestedStep = null)
     {
         bool isInteger = cvar.ValueType == typeof(int) || cvar.ValueType == typeof(long)
             || cvar.ValueType == typeof(short) || cvar.ValueType == typeof(byte);
-        float step = isInteger ? 1f : MathF.Max(0.01f, (max - min) / 20f);
+        float step = requestedStep ?? (isInteger ? 1f : MathF.Max(0.01f, (max - min) / 20f));
         float value = ParseFloat(cvar.ValueText, min);
         var gate = new BindingGate();
         var slider = new Slider(theme, caption, min, max, value, step)

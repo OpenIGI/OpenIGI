@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.UI.Widgets;
 
@@ -94,7 +94,7 @@ internal sealed class SettingsRowBuilder
                 continue;
             }
 
-            if (CVarBinding.CreateControl(theme, cvar, setting.Caption, _bindings, setting.Choices) is not { } control)
+            if (CVarBinding.CreateControl(theme, cvar, setting.Caption, _bindings, setting.Choices, setting.Step) is not { } control)
             {
                 continue;
             }
