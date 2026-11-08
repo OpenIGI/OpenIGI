@@ -138,12 +138,18 @@ internal sealed class SoldierPlayerBody
             return false;
         }
 
-        view.PlaceAt(playerFeetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, playerYaw));
+        view.PlaceAt(playerFeetUnits, BodyFacing(playerYaw));
         Matrix3f m = view.Orientation;
         Vector3f facing = new(m.M12, m.M22, m.M32);
         return HumanHitTest.TryCastMesh(
             origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z, out hit);
     }
+
+    // The body turned as it is drawn: a body's heading is a gamma and the look a yaw, and they run opposite ways
+    // (Igi1MissionTick.FollowPlayerBody, PartnerBody.Of). Turned by the yaw itself, the body rounds are scored on was the
+    // drawn one mirrored: the trunk on the centre line still met, the head -- forward and to one side over the gun --
+    // some 30 cm from where it was drawn, so a round through the drawn head met nothing.
+    private static Matrix3f BodyFacing(float playerYaw) => Matrix3f.FromEngineEulerAngles(0f, 0f, -playerYaw);
 
     /// <summary>Every face of the player's own body a round's line crosses, nearest first.</summary>
     /// <param name="origin">Where the round starts, in world units.</param>
@@ -169,7 +175,7 @@ internal sealed class SoldierPlayerBody
             return false;
         }
 
-        view.PlaceAt(playerFeetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, playerYaw));
+        view.PlaceAt(playerFeetUnits, BodyFacing(playerYaw));
         Matrix3f m = view.Orientation;
         Vector3f facing = new(m.M12, m.M22, m.M32);
         crossings = HumanHitTest.CastMeshCrossings(

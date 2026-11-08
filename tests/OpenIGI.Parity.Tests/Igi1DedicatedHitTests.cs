@@ -64,6 +64,53 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     }
 
     [RequiresGameDataFact]
+    public void A_dedicated_server_meets_a_players_head_where_its_body_is_drawn_whichever_way_it_faces()
+    {
+        // The head stands forward of the look over the gun. Turned by the yaw rather than the gamma it is drawn with, the
+        // body rounds were scored on was the drawn one mirrored: met in the trunk, never in the head the shooter aimed at.
+        using Igi1DedicatedTrio trio = new(GameModes.SearchAndDestroy, 1, 0.10, 0.10);
+        Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
+        Settle(trio);
+        Igi1DedicatedTrio.Player target = trio.Players[1];
+        Igi1NetworkPlayer there = trio.OnServer(target);
+        Game.Igi1.Ai.SoldierSimulation soldiers = trio.Server!.World.Soldiers!;
+        List<string> failures = [];
+        foreach (double yaw in new[] { 0.0, Math.PI / 2, Math.PI, -Math.PI / 2, Math.PI / 4, -3 * Math.PI / 4 })
+        {
+            target.Own.Body.Yaw = there.Player.Body.Yaw = (float)yaw;
+            trio.RunUntil(() => false, 20);
+            float facing = there.Player.Body.Yaw;
+            Vector3d forward = new(Math.Sin(facing), Math.Cos(facing), 0);
+            Vector3d side = new(forward.Y, -forward.X, 0);
+            Vector3d feet = there.Player.Body.Position;
+
+            // Rays across the body at head height, stepped from behind it to in front: where they meet the head.
+            List<double> heads = [];
+            for (double ahead = -0.4; ahead <= 0.401; ahead += 0.05)
+            {
+                for (double height = 1.55; height <= 1.801; height += 0.05)
+                {
+                    Vector3d at = feet + (forward * ahead * 4096) + new Vector3d(0, 0, height * 4096);
+                    if (soldiers.TryCastPartnerBody(there, at - (side * 3 * 4096), at + (side * 3 * 4096), feet, facing, out IReadOnlyList<Game.Player.HumanBodyCrossing> crossings)
+                        && crossings.Any(c => c.Hit.Zone == 16))
+                    {
+                        heads.Add(ahead);
+                    }
+                }
+            }
+
+            string line = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"yaw {facing:F2}: head met on {heads.Count} ray(s), {(heads.Count > 0 ? heads.Average() : double.NaN):F2} m ahead of the feet");
+            output.WriteLine(line);
+            if (heads.Count == 0 || heads.Average() <= 0.05)
+            {
+                failures.Add(line);
+            }
+        }
+
+        Assert.True(failures.Count == 0, "the head was not met where it is drawn:\n" + string.Join("\n", failures));
+    }
+
+    [RequiresGameDataFact]
     public void The_server_console_lists_the_players_and_puts_one_in_front_of_another_where_its_own_game_follows()
     {
         using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.17, 0.10);
