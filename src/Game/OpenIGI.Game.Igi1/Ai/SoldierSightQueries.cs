@@ -66,6 +66,10 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     // What CandidatesFor hands back, refilled on every call; see there.
     private readonly List<AiDetectionCandidate> _candidates = [];
 
+    // Each soldier as the scans refer to it, and the one list of references a soldier's offer is refilled into.
+    private readonly Dictionary<SoldierView, AiHumanSource> _sources = new(ReferenceEqualityComparer.Instance);
+    private readonly List<AiHumanReference> _references = [];
+
     /// <summary>Gets or sets the world trace the level's sight lines are tested with, kept for the scenario runs.</summary>
     public WorldTraceCast? SightTraceForTesting { get; set; }
 
@@ -405,6 +409,85 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
         }
 
         return humans;
+    }
+
+    /// <summary>
+    /// The humans the detection scan offers one soldier this tick, by reference -- the list <see cref="CandidatesFor"/> describes,
+    /// in the same order, each soldier described only when the scan reads it (see <see cref="Igi1AiTrackedHuman"/>).
+    /// </summary>
+    /// <remarks>
+    /// <c>0x489750</c> walks the global human list on the detector's phase tick and keeps a reference to each task it files;
+    /// what the soldier later reads of a human -- where it stands, whether it lives -- it reads through that reference. The list
+    /// is this query's own and is refilled by the next call. Each offered soldier's damage state is made here, as describing it
+    /// made it, so the first hit finds the same health it always did.
+    /// </remarks>
+    public List<AiHumanReference> HumansFor(
+        SoldierView self,
+        Igi1HumanAi brain,
+        Vector3d playerFeet,
+        Vector3d playerMark,
+        bool playerAlive,
+        bool playerCrouching)
+    {
+        List<AiHumanReference> humans = _references;
+        humans.Clear();
+        humans.Add(new AiHumanReference(new AiDetectionCandidate(AiDetectionCandidate.PlayerId, brain.PlayerIsEnemy, playerAlive,
+            playerMark, playerFeet, playerCrouching, _context.PlayerTarget)));
+        foreach ((SoldierView view, Igi1HumanAi other) in _context.Brains)
+        {
+            if (ReferenceEquals(view, self) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (!_sources.TryGetValue(view, out AiHumanSource? source))
+            {
+                source = new AiHumanSource(view, other);
+                _sources[view] = source;
+            }
+            else if (!ReferenceEquals(source.Brain, other))
+            {
+                source.Brain = other;
+            }
+
+            source.Health = _context.HealthOf(view);
+
+            humans.Add(new AiHumanReference(this, source, view.Soldier.Team != self.Soldier.Team));
+        }
+
+        return humans;
+    }
+
+    /// <summary>Whether a soldier lives, as its description says: body, brain and damage all alive.</summary>
+    /// <param name="source">The soldier.</param>
+    /// <returns><see langword="true"/> while it lives.</returns>
+    internal static bool IsAlive(AiHumanSource source) =>
+        !source.View.IsDead && source.Brain.Activity != AiSoldierActivity.Dead && !source.Health.IsDead;
+
+    /// <summary>One soldier as another's scan reads it: <see cref="CandidatesFor"/>'s description of it, as it is now.</summary>
+    /// <param name="source">The soldier.</param>
+    /// <param name="otherSide">Whether it is on the other side from the soldier looking.</param>
+    /// <returns>The description.</returns>
+    internal AiDetectionCandidate Describe(AiHumanSource source, bool otherSide)
+    {
+        SoldierView view = source.View;
+        Igi1HumanAi other = source.Brain;
+        Vector3d soldierFeet = new(
+            view.Position.X,
+            view.Position.Y,
+            _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
+        Vector3d soldierMark = SoldierContext.ViewPosition(view, other);
+        AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
+            ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
+        return new AiDetectionCandidate(
+            view.Soldier.Id,
+            otherSide,
+            IsAlive(source),
+            soldierMark,
+            soldierFeet,
+            Crouching: other.Body.CrouchByte,
+            record,
+            SoldierContext.OccupantOrigin(view));
     }
 
     /// <summary>

@@ -158,6 +158,7 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
         }
 
         _attachments.Remove(task);
+        PlacementClaims.Changed();
         return true;
     }
 
@@ -277,6 +278,7 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
             state.Position,
             state.Orientation);
         _attachments[task] = attachment;
+        PlacementClaims.Changed();
         if (task is DeclaredTask attached
             && _context.VehiclePhysics?.TryGetRotor(
                 TextOrEmpty(attached, WorldScene.ModelParameter), out RotorPhysicsDefinition rotor) == true)

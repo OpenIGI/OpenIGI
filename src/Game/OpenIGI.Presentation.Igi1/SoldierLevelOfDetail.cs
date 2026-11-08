@@ -83,26 +83,83 @@ internal static class SoldierLevelOfDetail
         {
             if (level != member.Level || !member.LevelMesh.IsValid)
             {
-                // A new level starts with both of its streams the pair the full mesh holds.
+                // A new level starts with both of its streams the pair the full mesh holds: created in the older pose,
+                // then given the newer -- skinned, as the whole body is, only when something first draws it.
                 Drop(device, member);
                 Vertex3D[] scratch = new Vertex3D[lower.Geometry.Vertices.Length];
                 lower.Geometry.Vertices.CopyTo(scratch, 0);
-                Skin(lower.Model, member.PreviousSkinnedPose ?? current, scratch);
                 member.LevelMesh = device.CreateAnimatedMesh(scratch, lower.Geometry.Indices);
                 member.LevelScratch = scratch;
                 member.Level = level;
+                Queue(member, member.PreviousSkinnedPose ?? current);
                 posed = true;
             }
 
-            if (posed && member.LevelScratch is { } skinned)
+            if (posed)
             {
-                Skin(lower.Model, current, skinned);
+                Queue(member, current);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+        {
+            Drop(device, member);
+        }
+    }
+
+    /// <summary>Puts the poses the ticks queued on the soldier's lower-level mesh, oldest first.</summary>
+    /// <param name="device">The device the mesh lives on.</param>
+    /// <param name="group">The soldier's group, which holds its levels.</param>
+    /// <param name="member">The soldier.</param>
+    /// <remarks>
+    /// Called before a pass draws the lower level. The mesh keeps two streams and each upload pushes the current one into
+    /// the previous, so only the last two poses can be on it when it is drawn -- the two kept -- and a far guard nobody
+    /// sees is never skinned at all.
+    /// </remarks>
+    public static void Flush(IGraphicsDevice device, SoldierGroup group, SoldierMember member)
+    {
+        int waiting = member.LevelDeferredPoseCount;
+        if (waiting == 0)
+        {
+            return;
+        }
+
+        member.LevelDeferredPoseCount = 0;
+        if (member.Level <= 0 || member.Level > group.Lower.Count || member.LevelScratch is not { } skinned)
+        {
+            member.LevelDeferredPoses[0] = null;
+            member.LevelDeferredPoses[1] = null;
+            return;
+        }
+
+        SoldierLevel lower = group.Lower[member.Level - 1];
+        try
+        {
+            for (int i = 0; i < waiting; i++)
+            {
+                BonePose pose = member.LevelDeferredPoses[i]!;
+                member.LevelDeferredPoses[i] = null;
+                Skin(lower.Model, pose, skinned);
                 device.UpdateAnimatedMesh(member.LevelMesh, skinned);
             }
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
         {
             Drop(device, member);
+        }
+    }
+
+    // Takes a tick's pose for the lower level, keeping only the last two.
+    private static void Queue(SoldierMember member, BonePose pose)
+    {
+        BonePose?[] queue = member.LevelDeferredPoses;
+        if (member.LevelDeferredPoseCount == queue.Length)
+        {
+            queue[0] = queue[1];
+            queue[1] = pose;
+        }
+        else
+        {
+            queue[member.LevelDeferredPoseCount++] = pose;
         }
     }
 
@@ -119,6 +176,9 @@ internal static class SoldierLevelOfDetail
         member.LevelMesh = default;
         member.LevelScratch = null;
         member.Level = 0;
+        member.LevelDeferredPoseCount = 0;
+        member.LevelDeferredPoses[0] = null;
+        member.LevelDeferredPoses[1] = null;
     }
 
     private static void Skin(MefModel model, BonePose pose, Vertex3D[] into) =>

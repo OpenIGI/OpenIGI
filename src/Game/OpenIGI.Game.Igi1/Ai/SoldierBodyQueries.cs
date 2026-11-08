@@ -137,22 +137,41 @@ internal sealed class SoldierBodyQueries(SoldierContext context)
                 continue;
             }
 
-            Vector3d feet = new(
-                view.Position.X,
-                view.Position.Y,
-                _context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
+            if (!_cameraMarks.TryGetValue(view, out SoldierCameraMark? mark))
+            {
+                mark = new SoldierCameraMark(_context, view);
+                _cameraMarks[view] = mark;
+            }
+
             bool dead = view.IsDead
                 || brain.Activity == AiSoldierActivity.Dead
                 || (_context.Health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
             subjects.Add(new SecurityCameraSubject(
                 view,
-                new Vector3d(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false)),
+                default,
                 CamerasSide: view.Soldier.Team == 1,
                 Alive: !dead,
-                view.Soldier));
+                view.Soldier,
+                mark));
         }
 
         return subjects;
+    }
+
+    // Each soldier's mark as a lens reads it, by body.
+    private readonly Dictionary<SoldierView, SoldierCameraMark> _cameraMarks = new(ReferenceEqualityComparer.Instance);
+
+    // A soldier's mark: its feet set on the ground beneath them, raised to a standing human's detection mark.
+    private sealed class SoldierCameraMark(SoldierContext context, SoldierView view) : ISecurityCameraMark
+    {
+        public Vector3d CameraMark()
+        {
+            Vector3d feet = new(
+                view.Position.X,
+                view.Position.Y,
+                context.SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
+            return new Vector3d(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouching: false));
+        }
     }
 
     /// <summary>

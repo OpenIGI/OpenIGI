@@ -72,7 +72,7 @@ public sealed partial class Igi1HumanAi
             Enumerable.Range(0, 24).Select(i => (AiEvent)i).Where(t => Events.PendingCount(t) > 0).Select(t => $"{t}x{Events.PendingCount(t)}"));
         string enemies = string.Join(
             ",",
-            _enemies.Select(e => $"{e.Candidate.Id}{(e.Slot.IsInCone ? "c" : "")}{(e.Slot.IsVisible ? "v" : "")}"));
+            _enemies.Select(e => $"{e.Id}{(e.Slot.IsInCone ? "c" : "")}{(e.Slot.IsVisible ? "v" : "")}"));
         string patrol = Route is { } walking ? $"path {walking.Path.Id} cmd {walking.Current?.Kind}({walking.Current?.Operand})" : "-";
         return $"act={Activity} run={_runningAction?.Replace("AIAction_", "", StringComparison.Ordinal) ?? "-"} stack=[{stack}] patrol=[{patrol}] alarm={AlarmTriggerId}/{AlarmControlId}/{AlarmAccess}:{(AlarmTriggerId != -1 ? GetAlarmTriggerDistance() / 4096.0 : -1):0.0}m last=[{string.Join(";", LastActions.Select(a => $"{a.Name.Replace("AIAction_", "", StringComparison.Ordinal)}({string.Join(",", a.Arguments)})"))}] " +
             $"evt={LastDispatchedEvent?.ToString() ?? "-"} pend=[{pending}] tgt={_targetId} reg={TargetSlot.IsRegistered} " +

@@ -215,6 +215,17 @@ internal sealed class CutsceneVehicleDraw(
         return true;
     }
 
+    /// <summary>
+    /// Whether a cut-scene drives, carries or attaches a placement's task, or it is a vehicle's gun or plane part: anything
+    /// <see cref="TryGetPlacementDrawTransform(WorldPlacement, out Vector3d, out Matrix3f)"/> and
+    /// <see cref="TryGetRotorDrawState"/> could place (see <see cref="PlacementClaims"/>).
+    /// </summary>
+    public bool Claims(WorldPlacement placement) =>
+        _context.TaskTransforms.ContainsKey(placement.Owner)
+        || _attachments.TryGet(placement.Owner, out _)
+        || _armament.ClaimsGun(placement)
+        || _parts.ClaimsPart(placement);
+
     /// <summary>Builds the repeated orientations emitted by retail <c>RotorPrimitive::Draw</c>.</summary>
     public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw)
     {

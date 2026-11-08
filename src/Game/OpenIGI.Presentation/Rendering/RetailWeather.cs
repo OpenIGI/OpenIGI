@@ -139,7 +139,7 @@ public sealed class RetailWeather : IWeatherPresenter
         }
 
         _tick = now;
-        _renderer.Draw(Precipitation, frame.Camera, frame.Projection, frame.ViewportHeight, frame.Ground);
+        _renderer.Draw(Precipitation, frame.Camera, frame.Projection, frame.ViewportHeight, frame.Ground, frame.Blend);
     }
 
     /// <inheritdoc/>

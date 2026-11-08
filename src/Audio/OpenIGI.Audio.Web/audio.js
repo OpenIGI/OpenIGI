@@ -241,7 +241,10 @@ export const imports = {
 
   setBusGain: (category, gain) => {
     const bus = buses[category];
-    if (bus) bus.gain.setTargetAtTime(gain, context.currentTime, GAIN_SMOOTHING_SECONDS);
+    // Only a change is ramped to; see setVoice for why a repeated write is not free.
+    if (!bus || bus.level === gain) return;
+    bus.level = gain;
+    bus.gain.setTargetAtTime(gain, context.currentTime, GAIN_SMOOTHING_SECONDS);
   },
 
   /**
@@ -278,17 +281,28 @@ export const imports = {
       voice.bus = category;
     }
 
+    // Every parameter is written only when it changes. The game sets every voice every frame, and each
+    // ramp is an event on the gain's automation timeline -- a timeline only a running audio thread
+    // trims, so before the first gesture it grew without end and every later call cost more.
     const level = voice.gain.gain;
     if (voice.sources.length === 0) {
       // Nothing is sounding, so the level can step to where the next sound starts.
-      level.cancelScheduledValues(now);
-      level.value = gain;
-    } else {
+      if (voice.level !== gain || voice.ramping) {
+        level.cancelScheduledValues(now);
+        level.value = gain;
+        voice.level = gain;
+        voice.ramping = false;
+      }
+    } else if (voice.level !== gain) {
       level.setTargetAtTime(gain, now, GAIN_SMOOTHING_SECONDS);
+      voice.level = gain;
+      voice.ramping = true;
     }
 
-    voice.rate = rate;
-    for (const source of voice.sources) source.playbackRate.value = rate;
+    if (voice.rate !== rate) {
+      voice.rate = rate;
+      for (const source of voice.sources) source.playbackRate.value = rate;
+    }
 
     const input = positional ? voice.panner : voice.stereo;
     if (input !== voice.input) {
@@ -310,10 +324,11 @@ export const imports = {
       }
       // The linear model divides by (max - reference), so the two must never be equal.
       const reference = Math.max(0.0001, minimumDistance);
-      panner.refDistance = reference;
-      panner.maxDistance = Math.max(maximumDistance, reference * 1.0001);
+      const farthest = Math.max(maximumDistance, reference * 1.0001);
+      if (panner.refDistance !== reference) panner.refDistance = reference;
+      if (panner.maxDistance !== farthest) panner.maxDistance = farthest;
     } else {
-      voice.stereo.pan.value = Math.max(-1, Math.min(1, pan));
+      setParam(voice.stereo.pan, Math.max(-1, Math.min(1, pan)));
     }
   },
 

@@ -60,6 +60,9 @@ internal sealed class TerrainChunkEntry(TerrainChunk chunk, TerrainChunkGeometry
 
     public MeshHandle DirectMesh { get; set; }
 
+    /// <summary>Gets or sets the chunk's slot in the device's terrain arena, or -1 while it has none.</summary>
+    public int ArenaSlot { get; set; } = -1;
+
     public TerrainBatchPage OcclusionPage { get; set; } = null!;
 
     public long LastUsedFrame { get; set; }

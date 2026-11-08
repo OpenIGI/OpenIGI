@@ -187,7 +187,7 @@ public sealed class SmokeSpriteRenderer : IDisposable
                 _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumPuffs));
             }
 
-            _device.UpdateAnimatedMesh(_mesh, _vertices);
+            _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, used));
             _device.ClearPoseInterpolation();
             _device.DrawMesh(
                 _mesh,

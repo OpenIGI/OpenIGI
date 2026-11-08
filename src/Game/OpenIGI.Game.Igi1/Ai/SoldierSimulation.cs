@@ -250,7 +250,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         brain.HumanDead = _context.HealthOf(view).IsDead;
         brain.TickAmong(
             TickCount - 1,
-            _sight.CandidatesFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
+            _sight.HumansFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
             travel,
             alarmOn,
             alarmWasOn,

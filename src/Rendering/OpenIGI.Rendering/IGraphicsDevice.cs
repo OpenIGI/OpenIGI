@@ -44,13 +44,18 @@ public interface IGraphicsDevice :
     IFrameGenerationDevice,
     IShadowDevice,
     IPostPassDevice,
+    ITerrainArenaDevice,
     IDisposable
 {
     /// <summary>Replaces an animated mesh's vertices; the ones replaced become its previous pose.</summary>
     /// <param name="mesh">A mesh from <see cref="IMeshDevice.CreateAnimatedMesh"/>.</param>
-    /// <param name="vertices">The new pose. Must be exactly as many vertices as the mesh was created with.</param>
+    /// <param name="vertices">
+    /// The new pose: at most as many vertices as the mesh was created with. Fewer replaces only that many
+    /// leading vertices, and the rest hold whatever an older pose left there, so a streamed effect that
+    /// filled a prefix of its buffer uploads the prefix alone and draws only within it.
+    /// </param>
     /// <exception cref="ArgumentException">
-    /// The handle is unknown, was not created animated, or the count differs.
+    /// The handle is unknown, was not created animated, or there are more vertices than it holds.
     /// </exception>
     void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices);
 

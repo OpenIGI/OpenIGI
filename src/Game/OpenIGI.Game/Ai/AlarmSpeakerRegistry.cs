@@ -255,6 +255,20 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset
         }
     }
 
+    /// <summary>Whether a placement is an alarm light's turning reflector (see <see cref="PlacementClaims"/>).</summary>
+    public bool ClaimsReflector(WorldPlacement placement)
+    {
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            if (ReferenceEquals(reflector.Placement, placement))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>The orientation a reflector is drawn with this frame, turned as its light has turned it.</summary>
     /// <param name="placement">The placement.</param>
     /// <param name="alpha">How far the frame is between the last two ticks.</param>
@@ -326,6 +340,7 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset
     {
         ArgumentNullException.ThrowIfNull(placements);
         _reflectors.Clear();
+        PlacementClaims.Changed();
         _lightOrientations.Clear();
 
         foreach (WorldPlacement placement in placements)

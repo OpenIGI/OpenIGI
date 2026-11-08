@@ -29,4 +29,24 @@
     [[vk::push_constant]] ConstantBuffer<type> name
 #endif
 
+// The per-instance form, for a module whose pipeline layout says PushDataPerInstance. Without push
+// constants the frame's blocks sit packed in one storage array in that same group, and a draw's
+// first instance is its block's index: the backend then binds the array once rather than a slice
+// per draw, and folds consecutive draws of one range into one instanced draw. Each entry point
+// loads its block first, with OPENIGI_LOAD_INSTANCED_PUSH, from the instance index -- the vertex
+// stage's own, and the fragment stage's as a flat varying the vertex stage hands down -- and reads
+// it by name exactly as it would the ordinary block. With push constants all of it is the ordinary
+// block and the load is nothing.
+#ifdef OPENIGI_NO_PUSH_CONSTANTS
+#define OPENIGI_INSTANCED_PUSH 1
+#define OPENIGI_INSTANCED_PUSH_CONSTANT(type, name) \
+    [[vk::binding(0, OPENIGI_PUSH_CONSTANT_GROUP)]] StructuredBuffer<type> name##Blocks; \
+    static type name
+#define OPENIGI_LOAD_INSTANCED_PUSH(name, index) name = name##Blocks[index]
+#else
+#define OPENIGI_INSTANCED_PUSH 0
+#define OPENIGI_INSTANCED_PUSH_CONSTANT(type, name) OPENIGI_PUSH_CONSTANT(type, name)
+#define OPENIGI_LOAD_INSTANCED_PUSH(name, index)
+#endif
+
 #endif

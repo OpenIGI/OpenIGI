@@ -61,6 +61,21 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     private int _lastPushLength = -1;
     private WebGpuPushSlice _lastSlice;
 
+    // A pipeline whose layout reads its push block per instance (WebGpuInstancePushRing): its pushes go to that
+    // ring, the chunk's group stays bound, and each draw names its block by its first instance. The slot is the
+    // block the last push landed in, or -1 when the bytes in _lastPush have not been written there yet.
+    private WebGpuInstancePushRing? _instanceRing;
+    private long _instanceSlot = -1;
+
+    // The indexed draw being held back so that the next one, if it repeats it with the block in the next slot,
+    // can be folded into it as one more instance. Anything else recorded in between sends it first.
+    private bool _held;
+    private uint _heldIndexCount;
+    private uint _heldFirstIndex;
+    private int _heldBaseVertex;
+    private uint _heldFirstSlot;
+    private uint _heldInstances;
+
     private WGPUBuffer _indexBuffer;
     private WGPUIndexFormat _indexFormat;
     private ulong _indexOffset;
@@ -99,8 +114,28 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
             return;
         }
 
+        SendHeld();
         _pipeline = handle;
         WebGpuHotCalls.wgpuRenderPassEncoderSetPipeline(_handle.Handle, handle.Handle);
+
+        WebGpuInstancePushRing? ring = pipeline.Layout is WebGpuPipelineLayout { PushDataPerInstance: true } layout
+            ? layout.InstanceRing ??= _device.InstancePushRing(layout.PushDataBytes)
+            : null;
+
+        if (ring == _instanceRing)
+        {
+            return;
+        }
+
+        _instanceRing = ring;
+        _instanceSlot = -1;
+
+        // A caller that pushes the same bytes again under the new pipeline is told they are already bound, so
+        // they are put where this pipeline reads them now rather than left where the last one did.
+        if (_lastPushLength >= 0)
+        {
+            Push(_lastPush.AsSpan(0, _lastPushLength));
+        }
     }
 
     /// <inheritdoc/>
@@ -123,9 +158,16 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
                 return;
             }
 
+            SendHeld();
+
             _groups[index] = handle;
             _groupHasOffset[index] = hasOffset;
             _groupOffsets[index] = offset;
+        }
+
+        else
+        {
+            SendHeld();
         }
 
         fixed (uint* offsets = dynamicOffsets)
@@ -162,16 +204,40 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
             return;
         }
 
+        Push(data);
+    }
+
+    // Writes a push where the bound pipeline reads it, binds it there, and remembers it.
+    private void Push(ReadOnlySpan<byte> data)
+    {
+        if (_instanceRing is { } ring)
+        {
+            WebGpuInstancePush placed = ring.Write(data);
+            SetBindGroup(_pushGroup, placed.Group);
+            _instanceSlot = placed.Slot;
+            Remember(data, default);
+            return;
+        }
+
         // The write AND the binding, because nothing above this knows any of the three things the
         // binding takes: the ring, the group index, and where the write landed in it. A pass that only
         // wrote would record a draw whose layout has an unbound group, which is refused outright.
         WebGpuPushSlice landed = _pushes.Write(data);
         LastPushOffset = landed.Offset;
         SetPushGroup(landed.Group, landed.Offset);
+        Remember(data, landed);
+    }
 
+    private void Remember(ReadOnlySpan<byte> data, WebGpuPushSlice landed)
+    {
         if (data.Length <= _lastPush.Length)
         {
-            data.CopyTo(_lastPush);
+            // Copied through a temporary when it is the remembered push itself, re-placed for a new pipeline.
+            if (!data.Overlaps(_lastPush))
+            {
+                data.CopyTo(_lastPush);
+            }
+
             _lastPushLength = data.Length;
             _lastSlice = landed;
         }
@@ -203,6 +269,8 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
             _vertexOffsets[slot] = offset;
         }
 
+        SendHeld();
+
         WebGpuHotCalls.wgpuRenderPassEncoderSetVertexBuffer(
             _handle.Handle,
             (uint)slot,
@@ -225,6 +293,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
             return;
         }
 
+        SendHeld();
         _indexBuffer = handle;
         _indexFormat = translated;
         _indexOffset = offset;
@@ -241,6 +310,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void SetViewport(float x, float y, float width, float height, float minDepth = 0f, float maxDepth = 1f)
     {
         ThrowIfEnded();
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderSetViewport(_handle, x, y, width, height, minDepth, maxDepth);
     }
 
@@ -248,6 +318,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void SetScissor(int x, int y, int width, int height)
     {
         ThrowIfEnded();
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderSetScissorRect(_handle, (uint)x, (uint)y, (uint)width, (uint)height);
     }
 
@@ -256,6 +327,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     {
         ThrowIfEnded();
 
+        SendHeld();
         WGPUColor value = new() { r = color.R, g = color.G, b = color.B, a = color.A };
         Wgpu.wgpuRenderPassEncoderSetBlendConstant(_handle, &value);
     }
@@ -264,8 +336,9 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void Draw(int vertexCount, int instanceCount = 1, int firstVertex = 0, int firstInstance = 0)
     {
         ThrowIfEnded();
+        SendHeld();
         WebGpuHotCalls.wgpuRenderPassEncoderDraw(
-            _handle.Handle, (uint)vertexCount, (uint)instanceCount, (uint)firstVertex, (uint)firstInstance);
+            _handle.Handle, (uint)vertexCount, (uint)instanceCount, (uint)firstVertex, InstanceFor(instanceCount, firstInstance));
     }
 
     /// <inheritdoc/>
@@ -277,8 +350,76 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         int firstInstance = 0)
     {
         ThrowIfEnded();
+
+        if (_instanceRing is null)
+        {
+            WebGpuHotCalls.wgpuRenderPassEncoderDrawIndexed(
+                _handle.Handle, (uint)indexCount, (uint)instanceCount, (uint)firstIndex, baseVertex, (uint)firstInstance);
+            return;
+        }
+
+        uint slot = InstanceFor(instanceCount, firstInstance);
+
+        // The same range again with its block in the next slot is the held draw's next instance: one draw
+        // instead of two, and instances are drawn in order, which is the order the draws were issued in.
+        if (_held
+            && _heldIndexCount == (uint)indexCount
+            && _heldFirstIndex == (uint)firstIndex
+            && _heldBaseVertex == baseVertex
+            && _heldFirstSlot + _heldInstances == slot)
+        {
+            _heldInstances++;
+            return;
+        }
+
+        SendHeld();
+        _held = true;
+        _heldIndexCount = (uint)indexCount;
+        _heldFirstIndex = (uint)firstIndex;
+        _heldBaseVertex = baseVertex;
+        _heldFirstSlot = slot;
+        _heldInstances = 1;
+    }
+
+    /// <summary>Gets how many draws were folded into the instanced draw before them; for tests and diagnostics.</summary>
+    public int FoldedDraws { get; private set; }
+
+    // The draw's first instance under a per-instance pipeline is its block's slot, so such a draw is one
+    // instance from zero; any other pipeline's is the caller's own.
+    private uint InstanceFor(int instanceCount, int firstInstance)
+    {
+        if (_instanceRing is null)
+        {
+            return (uint)firstInstance;
+        }
+
+        if (instanceCount != 1 || firstInstance != 0)
+        {
+            throw new NotSupportedException(
+                "A pipeline that reads its push block per instance draws one instance from zero; its first "
+                + "instance is where the block landed.");
+        }
+
+        if (_instanceSlot < 0)
+        {
+            throw new InvalidOperationException("A pipeline that reads push data drew before any was pushed.");
+        }
+
+        return (uint)_instanceSlot;
+    }
+
+    // Records the held draw, if there is one, before anything that would change what it draws with.
+    private void SendHeld()
+    {
+        if (!_held)
+        {
+            return;
+        }
+
+        _held = false;
+        FoldedDraws += (int)_heldInstances - 1;
         WebGpuHotCalls.wgpuRenderPassEncoderDrawIndexed(
-            _handle.Handle, (uint)indexCount, (uint)instanceCount, (uint)firstIndex, baseVertex, (uint)firstInstance);
+            _handle.Handle, _heldIndexCount, _heldInstances, _heldFirstIndex, _heldBaseVertex, _heldFirstSlot);
     }
 
     /// <inheritdoc/>
@@ -287,6 +428,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(arguments);
         ThrowIfEnded();
 
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderDrawIndirect(_handle, ((WebGpuBuffer)arguments).Handle, offset);
     }
 
@@ -296,6 +438,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(arguments);
         ThrowIfEnded();
 
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderDrawIndexedIndirect(_handle, ((WebGpuBuffer)arguments).Handle, offset);
     }
 
@@ -303,6 +446,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void BeginOcclusionQuery(int queryIndex)
     {
         ThrowIfEnded();
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderBeginOcclusionQuery(_handle, (uint)queryIndex);
     }
 
@@ -310,6 +454,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void EndOcclusionQuery()
     {
         ThrowIfEnded();
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderEndOcclusionQuery(_handle);
     }
 
@@ -317,6 +462,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void PushDebugGroup(string label)
     {
         ThrowIfEnded();
+        SendHeld();
         using WebGpuString name = new(label);
         Wgpu.wgpuRenderPassEncoderPushDebugGroup(_handle, name.View);
     }
@@ -325,6 +471,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void PopDebugGroup()
     {
         ThrowIfEnded();
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderPopDebugGroup(_handle);
     }
 
@@ -332,6 +479,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void EndPass()
     {
         ThrowIfEnded();
+        SendHeld();
         Wgpu.wgpuRenderPassEncoderEnd(_handle);
         _ended = true;
     }
@@ -348,6 +496,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
 
         if (!_ended && _handle.IsValid)
         {
+            SendHeld();
             Wgpu.wgpuRenderPassEncoderEnd(_handle);
             _ended = true;
         }
@@ -361,13 +510,24 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
 
     // Whether these bytes are the last push and its slice is what the push group still has bound; a
     // caller binding some other group there in between must not be answered with a stale slice.
-    private bool IsBound(ReadOnlySpan<byte> data) =>
-        _lastPushLength == data.Length
-        && (uint)_pushGroup < MaxGroups
-        && _groups[_pushGroup] == ((WebGpuBindGroup)_lastSlice.Group).Handle
-        && _groupHasOffset[_pushGroup]
-        && _groupOffsets[_pushGroup] == _lastSlice.Offset
-        && data.SequenceEqual(_lastPush.AsSpan(0, _lastPushLength));
+    private bool IsBound(ReadOnlySpan<byte> data)
+    {
+        if (_lastPushLength != data.Length || (uint)_pushGroup >= MaxGroups)
+        {
+            return false;
+        }
+
+        // Per instance the chunk's group is what stays bound and the slot is the draw's to name, so a push that
+        // repeats the last needs only that the last was placed and no offset group bound over its chunk since.
+        bool placed = _instanceRing is not null
+            ? _instanceSlot >= 0 && !_groupHasOffset[_pushGroup]
+            : _lastSlice.Group is WebGpuBindGroup slice
+                && _groups[_pushGroup] == slice.Handle
+                && _groupHasOffset[_pushGroup]
+                && _groupOffsets[_pushGroup] == _lastSlice.Offset;
+
+        return placed && data.SequenceEqual(_lastPush.AsSpan(0, _lastPushLength));
+    }
 
     private void ThrowIfEnded()
     {

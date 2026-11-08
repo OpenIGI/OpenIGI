@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -248,12 +249,32 @@ internal sealed class WorldFrameState
             // never change the model, so they are applied over the displayed placement cached above.
             entry.Displayed = _transforms.ApplyLiveTransforms(authored, entry.Displayed!);
 
-            _transforms.ResolveDrawTransform(
-                entry.Displayed!,
-                out entry.Position,
-                out entry.Orientation,
-                out entry.Rotor,
-                out entry.HasRotor);
+            // What nothing claims is drawn where it stands, as the original draws an object from its own matrix (0x49DF60):
+            // asked once, and again only when a claim is made or let go.
+            int epoch = PlacementClaims.Epoch;
+            if (entry.ClaimEpoch != epoch || !ReferenceEquals(entry.ClaimFor, entry.Displayed))
+            {
+                entry.Unclaimed = !_transforms.IsClaimed(entry.Displayed!);
+                entry.ClaimEpoch = epoch;
+                entry.ClaimFor = entry.Displayed;
+            }
+
+            if (entry.Unclaimed)
+            {
+                entry.Position = entry.Displayed!.Position;
+                entry.Orientation = entry.Displayed.Orientation;
+                entry.Rotor = default;
+                entry.HasRotor = false;
+            }
+            else
+            {
+                _transforms.ResolveDrawTransform(
+                    entry.Displayed!,
+                    out entry.Position,
+                    out entry.Orientation,
+                    out entry.Rotor,
+                    out entry.HasRotor);
+            }
 
             // The title's own culling decides what the EYE draws, not what stands in the world: a room the portal walk did not
             // reach is still a wall between the sun and the room the eye is in, so the light passes and the traced world keep it.

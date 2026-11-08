@@ -58,6 +58,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     {
         _items.Add(item);
         _hasPlacedTasks |= item.PlacedTaskId >= 0;
+        PlacementClaims.Changed();
     }
 
     /// <summary>Adds a collected generator.</summary>
@@ -336,6 +337,23 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     /// <returns>Whether the round broke it.</returns>
     public bool WeaponHit(GameTask? task) =>
         task is not null && TryGet(task, out WorldInteraction? item) && item!.WeaponHit();
+
+    /// <summary>Whether a task is something a plant can put down somewhere else (see <see cref="PlacementClaims"/>).</summary>
+    public bool ClaimsPlaced(GameTask task)
+    {
+        if (_hasPlacedTasks)
+        {
+            foreach (WorldInteraction item in _items)
+            {
+                if (item.PlacedTaskId == task.Id)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Where a plant moved the task a PlaceExplosiveTBA places, if one has.</summary>
     /// <param name="task">The placed task (a charge model's EditRigidObj).</param>

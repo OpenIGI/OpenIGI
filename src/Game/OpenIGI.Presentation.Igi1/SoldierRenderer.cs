@@ -285,6 +285,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                     return false;
                 }
 
+                SoldierSkinning.Flush(_device, member, group.Geometry, group.Body.Model);
                 _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
                 _device.DrawOutline(
                     member.Mesh,
@@ -349,6 +350,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                     continue;
                 }
 
+                SoldierSkinning.Flush(_device, member, group.Geometry, group.Body.Model);
                 _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
                 BinocularMarking.Draw(
                     _device,
@@ -923,8 +925,10 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
 
                 // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
                 // upload to settle both interpolation streams, then no more skinning or driver traffic.
+                // Queued rather than skinned: the mesh takes it when a pass first draws the body, so a
+                // guard nobody sees costs nothing (see SoldierSkinning.Defer).
                 bool posed = member.PoseUploads.ShouldUpload(drawn)
-                    && SoldierSkinning.Upload(_device, member, group.Geometry, group.Body.Model, drawn);
+                    && SoldierSkinning.Defer(member, group.Body.Model, drawn);
                 if (!posed)
                 {
                     FollowLevel(group, member, posed: false);

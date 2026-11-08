@@ -119,6 +119,7 @@ public sealed class SkyExposureProbe
     private readonly double _reachMetres;
 
     private int _cursor;
+    private float _sweepCredit;
     private float _roofNearness;
 
     /// <summary>Initializes a new instance of the <see cref="SkyExposureProbe"/> class.</summary>
@@ -168,6 +169,15 @@ public sealed class SkyExposureProbe
     /// </remarks>
     public int RaysPerUpdate { get; set; }
 
+    /// <summary>Gets or sets how long one sweep of the whole sphere takes, or zero for one slice a call.</summary>
+    /// <remarks>
+    /// When set, a call recasts only as many rays as its share of the sweep -- the rays times the frame's
+    /// length over this, the fraction carried to the next call -- and never more than
+    /// <see cref="RaysPerUpdate"/>. Without it the cost is per frame, so the faster the game runs the more
+    /// it casts: sixteen traces every frame, for readings that are smoothed over a third of a second.
+    /// </remarks>
+    public float SweepSeconds { get; set; }
+
     /// <summary>Gets or sets how long a change takes to travel most of the way into the readings.</summary>
     /// <remarks>
     /// Zero makes every reading immediate, for tests and for the first measurement of a mission. In
@@ -203,6 +213,7 @@ public sealed class SkyExposureProbe
         Array.Clear(_open);
         Array.Clear(_directional);
         _cursor = 0;
+        _sweepCredit = 0f;
         Exposure = 0f;
         _roofNearness = 0f;
     }
@@ -242,6 +253,14 @@ public sealed class SkyExposureProbe
         }
 
         int rays = Math.Clamp(RaysPerUpdate, 1, _rays.Length);
+        if (SweepSeconds > 0f && deltaSeconds > 0f)
+        {
+            _sweepCredit += _rays.Length * deltaSeconds / SweepSeconds;
+            int due = (int)_sweepCredit;
+            _sweepCredit -= due;
+            rays = Math.Min(rays, due);
+        }
+
         for (int i = 0; i < rays; i++)
         {
             int ray = _cursor;

@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 
@@ -15,13 +16,25 @@ namespace OpenIGI.Presentation.Rendering;
 internal sealed class WorldPlacementTransforms
 {
     /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
-    internal DoorRegistry? Doors { get; set; }
+    internal DoorRegistry? Doors
+    {
+        get => _doors;
+        set => (_doors, _) = (value, Claimed());
+    }
 
     /// <summary>Gets or sets the live elevator transforms applied to lift placements.</summary>
-    internal ElevatorRegistry? Elevators { get; set; }
+    internal ElevatorRegistry? Elevators
+    {
+        get => _elevators;
+        set => (_elevators, _) = (value, Claimed());
+    }
 
     /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
-    internal AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
+    internal AlarmSpeakerRegistry? AlarmSpeakers
+    {
+        get => _alarmSpeakers;
+        set => (_alarmSpeakers, _) = (value, Claimed());
+    }
 
     /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
     internal DestructibleObjectRegistry? Destructibles { get; set; }
@@ -42,13 +55,32 @@ internal sealed class WorldPlacementTransforms
     internal IPlacementVariant? Variants { get; set; }
 
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
-    internal CutsceneRuntime? Cutscenes { get; set; }
+    internal CutsceneRuntime? Cutscenes
+    {
+        get => _cutscenes;
+        set => (_cutscenes, _) = (value, Claimed());
+    }
 
     /// <summary>Gets or sets the level's interactions: turning gun stands and the charges a plant has moved.</summary>
-    internal WorldInteractionRegistry? Interactions { get; set; }
+    internal WorldInteractionRegistry? Interactions
+    {
+        get => _interactions;
+        set => (_interactions, _) = (value, Claimed());
+    }
 
     /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
-    internal RotatingObjectRegistry? RotatingObjects { get; set; }
+    internal RotatingObjectRegistry? RotatingObjects
+    {
+        get => _rotatingObjects;
+        set => (_rotatingObjects, _) = (value, Claimed());
+    }
+
+    private DoorRegistry? _doors;
+    private ElevatorRegistry? _elevators;
+    private AlarmSpeakerRegistry? _alarmSpeakers;
+    private CutsceneRuntime? _cutscenes;
+    private WorldInteractionRegistry? _interactions;
+    private RotatingObjectRegistry? _rotatingObjects;
 
     /// <summary>Gets or sets the frame's position between the last two ticks, 0–1.</summary>
     internal float FrameAlpha { get; set; } = 1f;
@@ -151,6 +183,30 @@ internal sealed class WorldPlacementTransforms
         && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
             || Destructibles?.IsDestroyed(placement) == true
             || Destruction?.IsDestroyed(placement) == true);
+
+    /// <summary>
+    /// Whether anything that moves placements claims this one: a door, a lift or what rides it, a cut-scene, a vehicle's gun or
+    /// plane part, an alarm light's reflector, something turning, a charge a plant can move. What none claims is drawn where the
+    /// level put it, as <see cref="ResolveDrawTransform"/> would find after asking each of them; the answer holds until
+    /// <see cref="PlacementClaims.Epoch"/> moves.
+    /// </summary>
+    internal bool IsClaimed(WorldPlacement placement)
+    {
+        GameTask owner = placement.Owner;
+        return _doors?.Claims(owner) == true
+            || _elevators?.Claims(owner) == true
+            || _cutscenes?.Claims(placement) == true
+            || _alarmSpeakers?.ClaimsReflector(placement) == true
+            || _rotatingObjects?.Claims(placement) == true
+            || _interactions?.ClaimsPlaced(owner) == true;
+    }
+
+    // A registry swapped in or out is a claim made or let go.
+    private static bool Claimed()
+    {
+        PlacementClaims.Changed();
+        return true;
+    }
 
     /// <summary>
     /// Works out where a placement is drawn this frame, after everything that can move it has moved it.

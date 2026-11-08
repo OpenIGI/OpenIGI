@@ -87,7 +87,7 @@ public sealed unsafe partial class WebGpuRhiDevice
         {
             // Nothing is presented and nothing waits on a display; the work is already submitted.
             _frameIndex++;
-            _pushes?.Reset();
+            ResetPushes();
             return true;
         }
 
@@ -116,7 +116,7 @@ public sealed unsafe partial class WebGpuRhiDevice
 
         // The ring is spent for the frame just recorded and free for the next, which is only true
         // because a frame is presented before the next one is begun.
-        _pushes?.Reset();
+        ResetPushes();
 
         return presented && !NeedsReconfigure;
     }

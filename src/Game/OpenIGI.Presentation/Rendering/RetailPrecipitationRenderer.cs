@@ -69,6 +69,7 @@ public sealed class RetailPrecipitationRenderer : IDisposable
     private readonly List<int>[] _groups = [[], [], [], []];
     private readonly List<float>[] _groupHeights = [[], [], [], []];
     private readonly List<(double Depth, int I, int J)> _blocks = [];
+    private readonly WeatherDrop[] _placed = new WeatherDrop[RetailPrecipitation.MaximumDrops];
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumQuads * 4];
     private readonly ushort[] _indices = QuadIndices.Build(MaximumQuads);
     private Vector3f[] _offsets = [Vector3f.Zero];
@@ -119,7 +120,14 @@ public sealed class RetailPrecipitationRenderer : IDisposable
     /// <param name="projection">The projection the frame is drawn with.</param>
     /// <param name="viewportHeight">The picture's height in pixels, which a line is one of.</param>
     /// <param name="ground">What a tile's drop falls onto: the terrain and what stands on it.</param>
-    public void Draw(RetailPrecipitation weather, in Camera3D camera, in Matrix4f projection, int viewportHeight, WorldRayCast? ground)
+    /// <param name="blend">How far the frame is from the previous tick to the weather's last, nought to one; one draws the tick itself.</param>
+    public void Draw(
+        RetailPrecipitation weather,
+        in Camera3D camera,
+        in Matrix4f projection,
+        int viewportHeight,
+        WorldRayCast? ground,
+        float blend = 1f)
     {
         ArgumentNullException.ThrowIfNull(weather);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -133,7 +141,8 @@ public sealed class RetailPrecipitationRenderer : IDisposable
 
         Vector3d eye = camera.Position * WorldScene.UnitsPerMetre;
         (int seamX, int seamY) = UpdateRing(eye, ground);
-        BuildGroups(weather);
+        ReadOnlySpan<WeatherDrop> drops = Placed(weather, blend);
+        BuildGroups(drops);
 
         double floor = Math.Floor(((eye.Z - LayerOrigin) / RetailPrecipitation.LayerUnits) + 0.5) * RetailPrecipitation.LayerUnits;
         Matrix3f view = camera.Orientation;
@@ -165,6 +174,7 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         // One pixel at a metre's depth, in metres: what a line is widened to either side by half of.
         float pixel = 2f / Math.Max(viewportHeight, 1) / MathF.Max(MathF.Abs(projection.M22), 1e-6f);
         int quads = 0;
+        bool lines = _style == PrecipitationStyle.Igi1 && !weather.IsSnow;
         foreach ((_, int i, int j) in _blocks)
         {
             ref Cell corner = ref At(i, j);
@@ -177,9 +187,15 @@ public sealed class RetailPrecipitationRenderer : IDisposable
                 double layerFloor = floor + Top - (layer * RetailPrecipitation.LayerUnits);
                 double standing = above + (layer * RetailPrecipitation.LayerUnits);
                 int count = Showing(group, standing);
+                if (lines)
+                {
+                    quads = EmitLines(weather, group, count, corner.X, corner.Y, layerFloor, eye, quads, forward, pixel);
+                    continue;
+                }
+
                 for (int n = 0; n < count && quads < MaximumQuads; n++)
                 {
-                    WeatherDrop drop = weather.Drops[_groups[group][n]];
+                    WeatherDrop drop = drops[_groups[group][n]];
                     Vector3d at = new(corner.X + drop.X, corner.Y + drop.Y, layerFloor + drop.Z);
                     quads = Emit(weather, at - eye, quads, right, up, forward, pixel);
                 }
@@ -196,7 +212,7 @@ public sealed class RetailPrecipitationRenderer : IDisposable
             _mesh = _device.CreateAnimatedMesh(_vertices, _indices);
         }
 
-        _device.UpdateAnimatedMesh(_mesh, _vertices);
+        _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, quads * 4));
         _device.ClearPoseInterpolation();
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
@@ -271,11 +287,62 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         return (seamX, seamY);
     }
 
+    // The drops where the frame sees them: on their last tick at a blend of one, and otherwise moved back towards the tick before it.
+    private ReadOnlySpan<WeatherDrop> Placed(RetailPrecipitation weather, float blend)
+    {
+        Span<WeatherDrop> placed = _placed.AsSpan(0, weather.Count);
+        Interpolate(weather.Drops, weather.IsSnow, weather.FallUnits, blend, placed);
+        return placed;
+    }
+
+    /// <summary>Places each drop between the tick before the weather's last and that last tick.</summary>
+    /// <param name="drops">The drops as the last tick left them.</param>
+    /// <param name="snow">Whether they are flakes, which also drift.</param>
+    /// <param name="fall">How far they fall each tick, in world units.</param>
+    /// <param name="blend">How far from the previous tick to the last, nought to one.</param>
+    /// <param name="into">Where the placed drops go, as long as <paramref name="drops"/>.</param>
+    /// <remarks>
+    /// <para>
+    /// The weather is ticked as the original ticks it and only the drawing moves, so a blend of one draws exactly the original's picture.
+    /// Without this a drop holds still for every frame of a tick and then jumps a whole streak, which at a high frame rate is the rain
+    /// stepping down the screen while the eye glides through it.
+    /// </para>
+    /// <para>
+    /// Every drop fell one tick's fall on the last tick, so it stood that much higher before it; one that came round the bottom of its layer
+    /// on that tick goes back round, which leaves it at the foot of the layer it fell out of. A flake also drifted its own drift, before
+    /// any crossing into the next tile: taken back without that crossing it lies just over its own tile's edge, which is the very place in
+    /// the neighbouring tile it drifted out of.
+    /// </para>
+    /// </remarks>
+    internal static void Interpolate(ReadOnlySpan<WeatherDrop> drops, bool snow, float fall, float blend, Span<WeatherDrop> into)
+    {
+        float back = 1f - Math.Clamp(blend, 0f, 1f);
+        for (int i = 0; i < drops.Length; i++)
+        {
+            WeatherDrop drop = drops[i];
+            if (back > 0f)
+            {
+                drop.Z += fall * back;
+                if (drop.Z > RetailPrecipitation.LayerUnits)
+                {
+                    drop.Z -= RetailPrecipitation.LayerUnits;
+                }
+
+                if (snow)
+                {
+                    drop.X -= drop.DriftX * back;
+                    drop.Y -= drop.DriftY * back;
+                }
+            }
+
+            into[i] = drop;
+        }
+    }
+
     // Rain_FillVB's order: from the highest drop back through the list, each into its group, which keeps the height of the drop that
     // follows it -- what the layer cut compares against.
-    private void BuildGroups(RetailPrecipitation weather)
+    private void BuildGroups(ReadOnlySpan<WeatherDrop> drops)
     {
-        ReadOnlySpan<WeatherDrop> drops = weather.Drops;
         int top = 0;
         for (int i = 1; i < drops.Length; i++)
         {
@@ -322,6 +389,66 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         }
 
         return n;
+    }
+
+    // Project I.G.I.'s rain for one layer of one tile: what Emit makes of each drop, worked out in place. The same sums in the same
+    // order, so the same vertices to the bit -- a drop costs no calls and no vectors built and taken apart, which was most of the
+    // weather's time in a browser, where the frame's heaviest rain is ten thousand drops.
+    private int EmitLines(
+        RetailPrecipitation weather,
+        int group,
+        int count,
+        double cornerX,
+        double cornerY,
+        double layerFloor,
+        Vector3d eye,
+        int quads,
+        Vector3f forward,
+        float pixel)
+    {
+        float length = weather.Fade * StreakUnits / (float)WorldScene.UnitsPerMetre;
+        float halfPixel = 0.5f * pixel;
+        Bgra32 foot = Colour;
+        Bgra32 clear = new(foot.B, foot.G, foot.R, 0);
+        Vector3f normal = Vector3f.UnitZ;
+        ReadOnlySpan<WeatherDrop> drops = weather.Drops;
+        List<int> members = _groups[group];
+        Vertex3D[] vertices = _vertices;
+        for (int n = 0; n < count && quads < MaximumQuads; n++)
+        {
+            WeatherDrop drop = drops[members[n]];
+            float cx = (float)(((cornerX + drop.X) - eye.X) / WorldScene.UnitsPerMetre);
+            float cy = (float)(((cornerY + drop.Y) - eye.Y) / WorldScene.UnitsPerMetre);
+            float cz = (float)(((layerFloor + drop.Z) - eye.Z) / WorldScene.UnitsPerMetre);
+            float topZ = cz + length;
+            float depth = MathF.Max((cx * forward.X) + (cy * forward.Y) + (cz * forward.Z), 0.05f);
+
+            // Cross(UnitZ, centre), then NormalizedOrSelf, then scaled.
+            float ax = (0f * cz) - (1f * cy);
+            float ay = (1f * cx) - (0f * cz);
+            float az = (0f * cy) - (0f * cx);
+            float size = MathF.Sqrt((ax * ax) + (ay * ay) + (az * az));
+            if (size > 0f)
+            {
+                ax /= size;
+                ay /= size;
+                az /= size;
+            }
+
+            float scale = halfPixel * depth;
+            ax *= scale;
+            ay *= scale;
+            az *= scale;
+
+            int v = quads * 4;
+            vertices[v] = new Vertex3D(new Vector3f(cx - ax, cy - ay, cz - az), normal, 0f, 1f, colour: foot);
+            vertices[v + 1] = new Vertex3D(new Vector3f(cx + ax, cy + ay, cz + az), normal, 1f, 1f, colour: foot);
+            vertices[v + 2] = new Vertex3D(new Vector3f((cx + 0f) + ax, (cy + 0f) + ay, topZ + az), normal, 1f, 0f, colour: clear);
+            vertices[v + 3] = new Vertex3D(new Vector3f((cx + 0f) - ax, (cy + 0f) - ay, topZ - az), normal, 0f, 0f, colour: clear);
+            quads++;
+        }
+
+        return quads;
     }
 
     // One drop's quad, camera-relative, in metres.

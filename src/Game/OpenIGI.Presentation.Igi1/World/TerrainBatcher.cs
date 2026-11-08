@@ -331,6 +331,13 @@ internal sealed class TerrainBatcher
             {
                 _device.DestroyMesh(entry.DirectMesh);
             }
+
+            if (entry.ArenaSlot >= 0)
+            {
+                _device.RemoveTerrainChunk(entry.ArenaSlot);
+                entry.ArenaSlot = -1;
+            }
+
             _cache.Remove(key);
             entry.Evicted = true;
 

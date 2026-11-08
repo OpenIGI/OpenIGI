@@ -832,6 +832,9 @@ public sealed partial class CutsceneRuntime
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetWheelDraw"/>
     public bool TryGetWheelDraw(WorldPlacement placement, out Matrix3f rotation) => _draw.TryGetWheelDraw(placement, out rotation);
 
+    /// <inheritdoc cref="CutsceneVehicleDraw.Claims"/>
+    public bool Claims(WorldPlacement placement) => _draw.Claims(placement);
+
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetRotorDrawState"/>
     public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw) => _draw.TryGetRotorDrawState(placement, out draw);
 

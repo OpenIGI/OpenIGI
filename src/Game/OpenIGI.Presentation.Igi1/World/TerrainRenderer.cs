@@ -453,7 +453,14 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
 
         if (!batching)
         {
-            DrawDirect(camera, result, fadeOffset, fadeSlope);
+            // The original's own way where the device can: a draw per texture per pass. Otherwise, and for a second
+            // view in one frame, chunk by chunk.
+            if (!DrawArena(camera, fadeOffset, fadeSlope))
+            {
+                DrawDirect(camera, result, fadeOffset, fadeSlope);
+            }
+
+            LastVisitedCount = result.Visited;
 
             // Put back like the batched path below does. Missing here, the vanilla preset -- the only one
             // that draws unbatched -- left every later cut-out untested: the forest after the ground in
@@ -611,6 +618,166 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
         _batcher.Trim(_frame, CacheLimit);
     }
 
+    // The buckets the arena files a chunk's layers under: the pass in the top bits -- base, overlay, lightmap page --
+    // then whether a material layer is the sparse scale, then its tile or the page.
+    private const int ArenaPassShift = 28;
+    private const int ArenaDetailBit = 1 << 27;
+    private const int ArenaBase = 0;
+    private const int ArenaOverlay = 1;
+    private const int ArenaLight = 2;
+
+    private readonly List<TerrainArenaPart> _arenaParts = [];
+    private readonly HashSet<int> _arenaBucketsUsed = [];
+    private readonly List<int> _arenaBucketOrder = [];
+    private readonly List<TerrainChunk> _arenaRefused = [];
+
+    private static int ArenaBucket(in TerrainChunkLayer layer) =>
+        ((layer.IsBase ? ArenaBase : ArenaOverlay) << ArenaPassShift) | (layer.IsDetail ? ArenaDetailBit : 0) | layer.TileIndex;
+
+    private static int ArenaLightBucket(int page) => (ArenaLight << ArenaPassShift) | page;
+
+    /// <summary>The original's ground the original's way: every base layer, then every overlay, then every lightmap page.</summary>
+    /// <returns><see langword="false"/> when the device's arena does not draw now, and the caller draws chunk by chunk.</returns>
+    /// <remarks>
+    /// <para>
+    /// TerrainMesh_DrawD3D (0x512C30) sorts the frame's triangles into chunks of one texture in one pass and draws them pass
+    /// by pass, so its ground is a draw per texture per pass. The chunks keep their own transforms and their own place on
+    /// the level-of-detail ramp -- each is placed with what its own draw would have pushed -- so what changes is only that
+    /// a chunk's overlays now follow every chunk's base rather than its own: the order the original draws them in.
+    /// </para>
+    /// <para>A chunk the arena does not take is drawn on its own afterwards, as every chunk used to be.</para>
+    /// </remarks>
+    private bool DrawArena(in Camera3D camera, float fadeOffset, float fadeSlope)
+    {
+        if (!GeometryCVars.TerrainArena.Value || !_device.TerrainArenaReady || !_device.BeginTerrainArena())
+        {
+            return false;
+        }
+
+        _arenaBucketsUsed.Clear();
+        _arenaBucketOrder.Clear();
+        _arenaRefused.Clear();
+
+        int chunks = 0;
+        int triangles = 0;
+        int passes = 0;
+        foreach (TerrainChunk chunk in _chunks)
+        {
+            if (!TryGetEntry(chunk, out TerrainChunkEntry? entry))
+            {
+                continue;
+            }
+
+            if (entry.ArenaSlot < 0 && !AddToArena(entry))
+            {
+                _arenaRefused.Add(chunk);
+                continue;
+            }
+
+            Matrix4f modelView = camera.CreateModelView(new Vector3d(
+                chunk.Position.X / WorldScene.UnitsPerMetre,
+                chunk.Position.Y / WorldScene.UnitsPerMetre,
+                chunk.Position.Z / WorldScene.UnitsPerMetre));
+
+            // The chunk's own place on the ramp, as its own draws set it; the mode is the bucket's, below.
+            _device.SetDetailFade(
+                (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
+                fadeOffset,
+                fadeSlope,
+                false);
+            _device.PlaceTerrainChunk(entry.ArenaSlot, modelView);
+
+            foreach (TerrainChunkLayer layer in entry.Geometry.Layers)
+            {
+                UseArenaBucket(ArenaBucket(layer));
+                triangles += layer.TriangleCount;
+                passes++;
+            }
+
+            if (entry.Geometry.Light is { } light && LightPage(light.Page).IsValid)
+            {
+                UseArenaBucket(ArenaLightBucket(light.Page));
+                triangles += light.TriangleCount;
+                passes++;
+            }
+
+            chunks++;
+        }
+
+        // Pass by pass, as the original empties its chunk pool: the bases, the overlays, the light.
+        _arenaBucketOrder.Sort();
+        foreach (int bucket in _arenaBucketOrder)
+        {
+            int pass = bucket >> ArenaPassShift;
+            int index = bucket & (ArenaDetailBit - 1);
+            if (pass == ArenaLight)
+            {
+                _device.SetDetailFadeUnweighted(1f, fadeOffset, fadeSlope);
+                _device.SetDepthState(DepthState.TestOnly);
+                _device.SetFogTarget(FogTarget.White);
+                _device.DrawTerrainBucket(bucket, LightPage(index), BlendMode.Modulate);
+                _device.SetFogTarget(FogTarget.Scene);
+                continue;
+            }
+
+            bool isBase = pass == ArenaBase;
+            _device.SetDetailFade(1f, fadeOffset, fadeSlope, (bucket & ArenaDetailBit) != 0);
+            _device.SetDepthState(isBase ? DepthState.TestAndWrite : DepthState.TestOnly);
+            _device.DrawTerrainBucket(bucket, _tiles[index], isBase ? BlendMode.Opaque : BlendMode.Additive);
+        }
+
+        foreach (TerrainChunk chunk in _arenaRefused)
+        {
+            if (TryGetEntry(chunk, out TerrainChunkEntry? entry) && EnsureDirectMesh(entry))
+            {
+                passes += DrawChunkDirect(camera, chunk, entry, fadeOffset, fadeSlope, ref triangles);
+                chunks++;
+            }
+        }
+
+        if (passes > 0)
+        {
+            _device.ClearDetailFade();
+        }
+
+        LastChunkCount = chunks;
+        LastPassCount = passes;
+        LastBatchCount = _arenaBucketOrder.Count;
+        LastOcclusionQueryCount = 0;
+        LastOccludedChunkCount = 0;
+        LastTriangleCount = triangles;
+        return true;
+    }
+
+    private void UseArenaBucket(int bucket)
+    {
+        if (_arenaBucketsUsed.Add(bucket))
+        {
+            _arenaBucketOrder.Add(bucket);
+        }
+    }
+
+    // Files a chunk's layers, and its lightmap where it has one, under their buckets.
+    private bool AddToArena(TerrainChunkEntry entry)
+    {
+        _arenaParts.Clear();
+        foreach (TerrainChunkLayer layer in entry.Geometry.Layers)
+        {
+            _arenaParts.Add(new TerrainArenaPart(ArenaBucket(layer), layer.IndexOffset, layer.IndexCount));
+        }
+
+        if (entry.Geometry.Light is { } light)
+        {
+            _arenaParts.Add(new TerrainArenaPart(ArenaLightBucket(light.Page), light.IndexOffset, light.IndexCount));
+        }
+
+        entry.ArenaSlot = _device.AddTerrainChunk(
+            entry.Geometry.Vertices,
+            entry.Geometry.Indices,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_arenaParts));
+        return entry.ArenaSlot >= 0;
+    }
+
     /// <summary>Keeps Vanilla's original chunk-local transforms and submission order byte-identical.</summary>
     private void DrawDirect(
         in Camera3D camera,
@@ -628,57 +795,7 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
                 continue;
             }
 
-            Matrix4f modelView = camera.CreateModelView(new Vector3d(
-                chunk.Position.X / WorldScene.UnitsPerMetre,
-                chunk.Position.Y / WorldScene.UnitsPerMetre,
-                chunk.Position.Z / WorldScene.UnitsPerMetre));
-            foreach (TerrainChunkLayer layer in entry.Geometry.Layers)
-            {
-                _device.SetDetailFade(
-                    (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
-                    fadeOffset,
-                    fadeSlope,
-                    layer.IsDetail);
-                _device.SetDepthState(layer.IsBase ? DepthState.TestAndWrite : DepthState.TestOnly);
-                _device.DrawMesh(
-                    entry.DirectMesh,
-                    layer.IndexOffset,
-                    layer.IndexCount,
-                    modelView,
-                    _tiles[layer.TileIndex],
-                    TextureHandle.None,
-                    // The original's ONE, ONE: every pass after the first adds its weighted share of
-                    // the ground (see TerrainChunkMesh), and the shares sum to one.
-                    layer.IsBase ? BlendMode.Opaque : BlendMode.Additive);
-                triangles += layer.TriangleCount;
-                passes++;
-            }
-
-            // The ground's light, after its material passes (sub_5144E0 mode 2): the page multiplies the
-            // frame -- ZERO, SRCCOLOR -- tested against the depth the base pass wrote and writing none,
-            // and fogs towards white, so that at full fog it leaves the fogged ground as it found it. A
-            // chunk no cell encloses has none and keeps its tiles' own colour, as in the original.
-            if (entry.Geometry.Light is { } light && LightPage(light.Page) is { IsValid: true } page)
-            {
-                _device.SetDetailFadeUnweighted(
-                    (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
-                    fadeOffset,
-                    fadeSlope);
-                _device.SetDepthState(DepthState.TestOnly);
-                _device.SetFogTarget(FogTarget.White);
-                _device.DrawMesh(
-                    entry.DirectMesh,
-                    light.IndexOffset,
-                    light.IndexCount,
-                    modelView,
-                    page,
-                    TextureHandle.None,
-                    BlendMode.Modulate);
-                _device.SetFogTarget(FogTarget.Scene);
-                triangles += light.TriangleCount;
-                passes++;
-            }
-
+            passes += DrawChunkDirect(camera, chunk, entry, fadeOffset, fadeSlope, ref triangles);
             chunks++;
         }
 
@@ -694,6 +811,70 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
         LastOccludedChunkCount = 0;
         LastTriangleCount = triangles;
         LastVisitedCount = result.Visited;
+    }
+
+    // One chunk's passes on their own: its layers, then its light. Returns how many it drew.
+    private int DrawChunkDirect(
+        in Camera3D camera,
+        in TerrainChunk chunk,
+        TerrainChunkEntry entry,
+        float fadeOffset,
+        float fadeSlope,
+        ref int triangles)
+    {
+        int passes = 0;
+        Matrix4f modelView = camera.CreateModelView(new Vector3d(
+            chunk.Position.X / WorldScene.UnitsPerMetre,
+            chunk.Position.Y / WorldScene.UnitsPerMetre,
+            chunk.Position.Z / WorldScene.UnitsPerMetre));
+        foreach (TerrainChunkLayer layer in entry.Geometry.Layers)
+        {
+            _device.SetDetailFade(
+                (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
+                fadeOffset,
+                fadeSlope,
+                layer.IsDetail);
+            _device.SetDepthState(layer.IsBase ? DepthState.TestAndWrite : DepthState.TestOnly);
+            _device.DrawMesh(
+                entry.DirectMesh,
+                layer.IndexOffset,
+                layer.IndexCount,
+                modelView,
+                _tiles[layer.TileIndex],
+                TextureHandle.None,
+                // The original's ONE, ONE: every pass after the first adds its weighted share of
+                // the ground (see TerrainChunkMesh), and the shares sum to one.
+                layer.IsBase ? BlendMode.Opaque : BlendMode.Additive);
+            triangles += layer.TriangleCount;
+            passes++;
+        }
+
+        // The ground's light, after its material passes (sub_5144E0 mode 2): the page multiplies the
+        // frame -- ZERO, SRCCOLOR -- tested against the depth the base pass wrote and writing none,
+        // and fogs towards white, so that at full fog it leaves the fogged ground as it found it. A
+        // chunk no cell encloses has none and keeps its tiles' own colour, as in the original.
+        if (entry.Geometry.Light is { } light && LightPage(light.Page) is { IsValid: true } page)
+        {
+            _device.SetDetailFadeUnweighted(
+                (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
+                fadeOffset,
+                fadeSlope);
+            _device.SetDepthState(DepthState.TestOnly);
+            _device.SetFogTarget(FogTarget.White);
+            _device.DrawMesh(
+                entry.DirectMesh,
+                light.IndexOffset,
+                light.IndexCount,
+                modelView,
+                page,
+                TextureHandle.None,
+                BlendMode.Modulate);
+            _device.SetFogTarget(FogTarget.Scene);
+            triangles += light.TriangleCount;
+            passes++;
+        }
+
+        return passes;
     }
 
     /// <summary>Gets a terrain lightmap page as a texture, uploading it through the level's ramp on first use.</summary>
@@ -816,6 +997,12 @@ public sealed partial class TerrainRenderer : ITerrainPresenter
             if (entry.DirectMesh.IsValid)
             {
                 _device.DestroyMesh(entry.DirectMesh);
+            }
+
+            if (entry.ArenaSlot >= 0)
+            {
+                _device.RemoveTerrainChunk(entry.ArenaSlot);
+                entry.ArenaSlot = -1;
             }
         }
 

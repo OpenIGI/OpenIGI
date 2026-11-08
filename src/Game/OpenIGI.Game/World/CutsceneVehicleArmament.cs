@@ -26,7 +26,8 @@ internal sealed class CutsceneVehicleArmament(
     private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
     private readonly Dictionary<GameTask, VehicleVision> _visions = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, VehicleDeathZoneState> _deathZones = [];
-    private readonly Dictionary<WorldPlacement, (GameTask Vehicle, int Index)> _gunPlacements = [];
+    // By reference: a placement is a record, and its own equality hashes every field on each lookup.
+    private readonly Dictionary<WorldPlacement, (GameTask Vehicle, int Index)> _gunPlacements = new(ReferenceEqualityComparer.Instance);
     private readonly Random _gunRandom = new(0x46F390);
     private int _visionCounter;
 
@@ -557,6 +558,7 @@ internal sealed class CutsceneVehicleArmament(
     {
         ArgumentNullException.ThrowIfNull(scene);
         _gunPlacements.Clear();
+        PlacementClaims.Changed();
         Dictionary<GameTask, int> next = [];
         foreach (WorldPlacement placement in scene.Placements)
         {
@@ -724,6 +726,9 @@ internal sealed class CutsceneVehicleArmament(
         (position, orientation) = PoseVehicleGunWeapon(armament.Guns[index], mountPosition, mountOrientation, state.Orientation);
         return true;
     }
+
+    /// <summary>Whether a placement is a vehicle's gun, which follows its mount.</summary>
+    public bool ClaimsGun(WorldPlacement placement) => _gunPlacements.ContainsKey(placement);
 
     /// <summary>Poses a drawn gun-mount placement on the gun that turns it, when it is bound to one.</summary>
     public bool TryGetGunMountDraw(WorldPlacement placement, out Vector3d position, out Matrix3f orientation)

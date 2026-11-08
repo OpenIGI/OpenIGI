@@ -97,7 +97,9 @@ internal sealed class RainAmbience : IDisposable
 
     private readonly SoundSystem _sounds;
     private readonly IOpenIgiLogger _logger;
-    private readonly SkyExposureProbe _probe = new();
+    // A whole sphere every quarter second, whatever the frame rate: quicker than the readings' own
+    // smoothing, and a quarter of the traces a 60 Hz frame used to pay.
+    private readonly SkyExposureProbe _probe = new() { SweepSeconds = 0.25f };
     private readonly AudioVoiceHandle[] _voices;
     private readonly FilteredLoopSource?[] _taps;
     private readonly float[] _gains;

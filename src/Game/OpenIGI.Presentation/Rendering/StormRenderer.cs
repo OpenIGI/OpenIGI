@@ -376,7 +376,7 @@ public sealed class StormRenderer : IDisposable
                 _mesh = _device.CreateAnimatedMesh(_vertices, _indices);
             }
 
-            _device.UpdateAnimatedMesh(_mesh, _vertices);
+            _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, quads * 4));
 
             // Regenerated in world space every frame; a prior skinned or particle draw must not
             // interpolate this stream toward an unrelated previous pose or the streaks shear.
