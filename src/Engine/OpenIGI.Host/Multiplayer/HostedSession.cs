@@ -325,6 +325,16 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
         return _combat.Shown(now, eye, view, session.CurrentMatch(world.CurrentTick));
     }
 
+    /// <inheritdoc/>
+    public void CreditHits(Game.Player.ShotTally? own)
+    {
+        _combat.Credit = own;
+        if (_session is { } session && _world is not null)
+        {
+            _combat.Take(session.TakeHostCombat(), ServerSession.HostEntity, _clock.Elapsed.TotalSeconds);
+        }
+    }
+
     private readonly Game.Multiplayer.Modes.CombatFeedback _combat = new();
 
     /// <inheritdoc/>

@@ -63,6 +63,32 @@ public sealed class CommandTrustTests
     }
 
     [Fact]
+    public void A_client_that_stalled_and_sent_two_seconds_at_once_is_not_run_that_late_ever_after()
+    {
+        // A tester's client froze for two seconds and then sent the sixty commands it made: the queue kept them all, the
+        // credit allowed two a tick for a third of a second only, and every command after ran 1.8 s late for the session.
+        UserCommandBuffer queue = new(Channels);
+        float[] frame = new float[Channels];
+        long next = 1;
+        for (int tick = 0; tick < 300; tick++)
+        {
+            int arriving = tick == 100 ? 60 : tick is > 40 and < 100 ? 0 : 1;
+            for (int i = 0; i < arriving; i++)
+            {
+                queue.Push(Command(next++));
+            }
+
+            for (int due = queue.Due(); due > 0 && queue.TryTake(frame); due--)
+            {
+            }
+        }
+
+        Assert.True(queue.Buffered <= queue.MaxDepth, $"still {queue.Buffered} queued, {queue.Buffered / 30.0:F1} s behind");
+        Assert.True(queue.Dropped > 0);
+        Assert.Equal(next - 1 - queue.Buffered, queue.LastTakenTick);
+    }
+
+    [Fact]
     public void A_value_that_is_no_number_never_reaches_the_player()
     {
         UserCommandBuffer queue = new(Channels) { TargetDepth = 1 };

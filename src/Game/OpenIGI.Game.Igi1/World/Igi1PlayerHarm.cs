@@ -27,7 +27,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
 {
     /// <summary>Gets or sets what is told of every round that hurts a player, with the tally of the player who fired it (none for a guard's).</summary>
     /// <remarks>A session credits the death that follows to that player: a kill in a match.</remarks>
-    public Action<IHarmedPlayer, OpenIGI.Game.Player.ShotTally?>? RoundTaken { get; set; }
+    public Action<IHarmedPlayer, OpenIGI.Game.Player.ShotTally?, bool>? RoundTaken { get; set; }
 
     // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
     private const int PlayerBluntFrontZone = 13;

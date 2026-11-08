@@ -111,6 +111,221 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
     }
 
     [RequiresGameDataFact]
+    public void Players_on_a_dedicated_server_cannot_walk_through_each_other()
+    {
+        // 0x462BA0: a human's move that would end within 0.55 m of another living one, and nearer it, is refused.
+        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
+        Settle(trio);
+        Igi1DedicatedTrio.Player walker = trio.Players[0];
+        Igi1DedicatedTrio.Player standing = trio.Players[1];
+        Igi1NetworkPlayer walkerThere = trio.OnServer(walker);
+        Igi1NetworkPlayer standingThere = trio.OnServer(standing);
+        Vector3d feet = walkerThere.Player.Body.Position;
+        Vector3d along = ClearAhead(trio, feet) ?? throw new Xunit.Sdk.XunitException("no clear lane");
+        Vector3d spot = feet + (along * 1.2 * 4096);
+        walker.Own.Body.Position = walkerThere.Player.Body.Position = feet;
+        standing.Own.Body.Position = standingThere.Player.Body.Position = spot;
+        trio.RunUntil(() => false, 45);
+
+        // Facing the other, 1.2 m off, walking at it for six seconds: without the pass it ends inside the other's body.
+        double nearestThere = double.MaxValue, nearestOwn = double.MaxValue;
+        trio.RunUntil(
+            () =>
+            {
+                Vector3d toward = standingThere.Player.Body.Position - walker.Own.Body.Position;
+                walker.Own.Body.Yaw = (float)Math.Atan2(toward.X, toward.Y);
+                walker.Input.Keyboard.SetKey(KeyCode.W, true);
+                nearestThere = Math.Min(nearestThere, Flat(walkerThere.Player.Body.Position, standingThere.Player.Body.Position));
+                nearestOwn = Math.Min(nearestOwn, Flat(walker.Own.Body.Position, standingThere.Player.Body.Position));
+                return false;
+            },
+            30 * 6);
+        walker.Input.Keyboard.SetKey(KeyCode.W, false);
+        trio.RunUntil(() => false, 15);
+        double walked = Flat(feet, walkerThere.Player.Body.Position);
+        output.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"walked {walked:F2} m; nearest on the server {nearestThere:F2} m, in the walker's own game {nearestOwn:F2} m"));
+        Assert.True(walked > 0.3, "the walker never walked up to the other");
+        Assert.InRange(nearestThere, 0.45, 2.5);
+        Assert.InRange(nearestOwn, 0.45, 2.5);
+    }
+
+    private static double Flat(Vector3d a, Vector3d b) => Math.Sqrt(((a.X - b.X) * (a.X - b.X)) + ((a.Y - b.Y) * (a.Y - b.Y))) / 4096;
+
+    [RequiresGameDataFact]
+    public void A_knife_in_a_players_back_kills_it_from_every_side_of_its_back_and_one_from_the_front_does_not()
+    {
+        // A tester stood at another's back, as near as the bodies allow, and stabbed: at some angles nothing was met. The
+        // stabber's own body was told by a 1 m square about the blade's start, which on a diagonal held the other's body too.
+        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
+        Igi1DedicatedTrio.Player stabber = trio.Players[0];
+        Igi1DedicatedTrio.Player stabbed = trio.Players[1];
+        List<string> failures = [];
+        foreach ((double degrees, bool back) in new[] { (0.0, true), (30.0, true), (45.0, true), (-45.0, true), (-30.0, true), (180.0, false) })
+        {
+            Settle(trio);
+            Igi1NetworkPlayer stabberThere = trio.OnServer(stabber);
+            Igi1NetworkPlayer stabbedThere = trio.OnServer(stabbed);
+            Vector3d feet = stabberThere.Player.Body.Position;
+            Vector3d along = ClearAhead(trio, feet) ?? throw new Xunit.Sdk.XunitException("no clear lane");
+
+            // The stabbed looks down the lane; the stabber stands 65 cm from it, the given angle round from its back.
+            Vector3d spot = feet + (along * 1.0 * 4096);
+            float facing = (float)Math.Atan2(along.X, along.Y);
+            double round = facing + Math.PI + (degrees * Math.PI / 180);
+            Vector3d at = spot + (new Vector3d(Math.Sin(round), Math.Cos(round), 0) * 0.65 * 4096);
+            stabber.Own.Body.Position = stabberThere.Player.Body.Position = at;
+            stabbed.Own.Body.Position = stabbedThere.Player.Body.Position = spot;
+            trio.RunUntil(
+                () =>
+                {
+                    stabbed.Own.Body.Yaw = facing;
+                    return false;
+                },
+                30);
+
+            // The knife in hand.
+            foreach (KeyCode key in new[] { KeyCode.D1, KeyCode.D2, KeyCode.D3, KeyCode.D4, KeyCode.D5 })
+            {
+                if (stabberThere.Player.Weapons?.InHand?.Weapon.Category == Game.Weapons.WeaponCategory.Knife)
+                {
+                    break;
+                }
+
+                stabber.Input.Keyboard.SetKey(key, true);
+                trio.RunUntil(() => false, 3);
+                stabber.Input.Keyboard.SetKey(key, false);
+                trio.RunUntil(() => false, 45);
+            }
+
+            Assert.Equal(Game.Weapons.WeaponCategory.Knife, stabberThere.Player.Weapons?.InHand?.Weapon.Category);
+            float before = stabbedThere.Health.Damage;
+            int frame = 0;
+            trio.RunUntil(
+                () =>
+                {
+                    stabbed.Own.Body.Yaw = facing;
+                    Vector3d toward = stabbedThere.Player.Body.Position + new Vector3d(0, 0, 1.2 * 4096) - stabber.Own.Body.Eye;
+                    stabber.Own.Body.Yaw = (float)Math.Atan2(toward.X, toward.Y);
+                    stabber.Own.Body.Pitch = (float)Math.Atan2(toward.Z, Math.Sqrt((toward.X * toward.X) + (toward.Y * toward.Y)));
+                    stabber.Input.Mouse.SetButton(MouseButton.Left, frame++ < 3);
+                    return stabbedThere.Health.Damage != before;
+                },
+                45);
+            stabber.Input.Mouse.SetButton(MouseButton.Left, false);
+            trio.RunUntil(() => false, 30);
+            string line = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{degrees:F0} deg from the back: damage {before:F2} -> {stabbedThere.Health.Damage:F2}, dead {stabbedThere.IsDead}");
+            output.WriteLine(line);
+            if (stabbedThere.Health.Damage == before || stabbedThere.IsDead != back)
+            {
+                failures.Add(line);
+            }
+
+            // Back on its feet for the next.
+            if (stabbedThere.IsDead)
+            {
+                trio.RunUntil(() => !stabbedThere.IsDead, 30 * 20);
+            }
+        }
+
+        Assert.True(failures.Count == 0, "the knife did not do what it should:\n" + string.Join("\n", failures));
+    }
+
+    [RequiresGameDataFact]
+    public void A_pistol_shot_plays_once_on_the_shooters_body_in_the_other_players_game()
+    {
+        // A tester saw another's pistol shot repeat on its body: the server holds the torso on the shot's clip until the gun
+        // is ready, and the other game looped every torso clip it was sent.
+        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
+        Settle(trio);
+        Igi1DedicatedTrio.Player shooter = trio.Players[0];
+        Igi1DedicatedTrio.Player watcher = trio.Players[1];
+        foreach (KeyCode key in new[] { KeyCode.D2, KeyCode.D3 })
+        {
+            if (shooter.Own.Weapons?.InHand?.Weapon.Category == Game.Weapons.WeaponCategory.Pistol)
+            {
+                break;
+            }
+
+            shooter.Input.Keyboard.SetKey(key, true);
+            trio.RunUntil(() => false, 3);
+            shooter.Input.Keyboard.SetKey(key, false);
+            trio.RunUntil(() => false, 45);
+        }
+
+        Assert.Equal(Game.Weapons.WeaponCategory.Pistol, shooter.Own.Weapons?.InHand?.Weapon.Category);
+        int fireClip = shooter.Own.Weapons!.InHand!.Value.Weapon.UpperBodyFireAnimation;
+        bool? seen = null;
+        int frame = 0;
+        trio.RunUntil(
+            () =>
+            {
+                shooter.Input.Mouse.SetButton(MouseButton.Left, frame++ < 2);
+                if (watcher.Level!.World.PartnerBodies?.Invoke() is { } bodies)
+                {
+                    foreach (Game.Igi1.Ai.PartnerBody body in bodies)
+                    {
+                        if (body.Pose.UpperBodyAnimation == fireClip)
+                        {
+                            seen = body.Pose.UpperBodyLoops;
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            },
+            30 * 3);
+        shooter.Input.Mouse.SetButton(MouseButton.Left, false);
+        Assert.True(seen is not null, "the shot's torso clip never reached the other game");
+        Assert.False(seen!.Value, "the other game loops the shot's torso clip");
+    }
+
+    [RequiresGameDataFact]
+    public void A_hit_and_a_kill_on_another_player_mark_the_shooters_own_crosshair_and_sound_in_either_display()
+    {
+        // The crosshair's marks and the hit sounds read the player's own tally, which only the soldiers counted into: a hit on
+        // a player, settled by the server, marked nothing in either display.
+        using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.10, 0.10);
+        Assert.True(trio.RunUntil(() => trio.AllIn, 3000) >= 0, "the players never both came in");
+        Settle(trio);
+        Igi1DedicatedTrio.Player shooter = trio.Players[0];
+        Igi1DedicatedTrio.Player target = trio.Players[1];
+        // A session marks and sounds every hit whatever the settings, and leaves them as they were.
+        Rendering.HudCVars.HitMarkers.Value = false;
+        Rendering.HudCVars.HitSounds.Value = false;
+        Assert.True(Rendering.HudCVars.ShowsHitMarkers, "a session's hits went unmarked with the setting off");
+        Assert.True(Rendering.HudCVars.SoundsHits, "a session's hits went unsounded with the setting off");
+        Assert.False(Rendering.HudCVars.HitMarkers.Value);
+        Game.Player.ShotTally tally = shooter.Own.Shots;
+        int hitsBefore = tally.Hits;
+        int killsBefore = tally.Kills;
+        (int fired, int landed, string note) = Duel(trio, shooter, target);
+        trio.RunUntil(() => false, 30);
+        output.WriteLine($"fired {fired}, landed {landed} {note}; tally hits {hitsBefore}->{tally.Hits}, kills {killsBefore}->{tally.Kills}, soldier hits {tally.SoldierHits}");
+        Assert.True(landed > 0, "no round landed");
+        Assert.True(tally.Hits - hitsBefore >= landed, "the shooter's own tally missed its hits on the other player");
+        Assert.Equal(0, tally.SoldierHits);
+
+        // And a kill.
+        Igi1NetworkPlayer targetThere = trio.OnServer(target);
+        Settle(trio);
+        (_, _, _) = Duel(trio, shooter, target);
+        trio.RunUntil(() => targetThere.IsDead, 30 * 10);
+        for (int i = 0; i < 6 && !targetThere.IsDead; i++)
+        {
+            Settle(trio);
+            (_, _, _) = Duel(trio, shooter, target);
+        }
+
+        trio.RunUntil(() => false, 30);
+        output.WriteLine($"target dead {targetThere.IsDead}; tally kills {killsBefore}->{tally.Kills}");
+        Assert.True(tally.Kills > killsBefore, "the shooter's own tally missed its kill of the other player");
+    }
+
+    [RequiresGameDataFact]
     public void The_server_console_lists_the_players_and_puts_one_in_front_of_another_where_its_own_game_follows()
     {
         using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.17, 0.10);

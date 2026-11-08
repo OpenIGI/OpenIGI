@@ -330,6 +330,25 @@ public interface IRemasteredHudPresenter : IDisposable
     {
     }
 
+    /// <summary>Draws the small reminder of the key held for the controls panel, where it keeps out of play's way.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="holdKey">The key, as its cap shows it.</param>
+    /// <param name="opacity">How strongly: full as a match starts, faint once the player has had time to read it.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawControlsHint(SpriteBatch batch, string holdKey, float opacity, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the controls panel: what every key does, in columns, as the player has the keys bound.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="help">What to show.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawControls(SpriteBatch batch, Hud.ControlsHelp help, int screenWidth, int screenHeight)
+    {
+    }
+
     /// <summary>Draws the net graph: a few lines on the connection, on a plate at the right of the screen.</summary>
     /// <param name="batch">The batch to draw into.</param>
     /// <param name="lines">The lines.</param>

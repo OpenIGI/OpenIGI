@@ -31,8 +31,8 @@ public static class HumanSeparation
     /// <param name="end">Where it wants to be.</param>
     /// <param name="other">The other human's position.</param>
     /// <returns>
-    /// <paramref name="end"/> when the move is allowed, or <paramref name="start"/> when the other
-    /// human blocks it.
+    /// <paramref name="end"/> when the move is allowed, or <paramref name="start"/>'s X and Y at
+    /// <paramref name="end"/>'s height when the other human blocks it.
     /// </returns>
     /// <remarks>
     /// Only the horizontal distance decides "closer": the original recomputes the 2D length at the
@@ -54,7 +54,9 @@ public static class HumanSeparation
 
         // Inside the cylinder. The move is only refused when it closes the gap, so a human already
         // overlapping can still walk out — without that, two bodies that spawn touching would lock.
-        return Horizontal(start, other) > endDistance ? start : end;
+        // A refusal puts back the start's X and Y only: 0x462BA0 copies the first two doubles, so the
+        // height the ground pass settled stays.
+        return Horizontal(start, other) > endDistance ? new Vector3d(start.X, start.Y, end.Z) : end;
     }
 
     /// <summary>Resolves a move against every other human.</summary>

@@ -104,10 +104,34 @@ public static class HudCrosshair
                 break;
         }
 
-        if (HudCVars.HitMarkers.Value)
+        if (HudCVars.ShowsHitMarkers)
         {
             Marks(painter, c, u, width, state);
         }
+    }
+
+    /// <summary>Draws the hit and kill marks alone, at the screen's centre, for a display whose crosshair is another's.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="width">The screen's width, in pixels.</param>
+    /// <param name="height">The screen's height, in pixels.</param>
+    /// <param name="designPixel">One design pixel, in screen pixels.</param>
+    /// <param name="state">The crosshair's state, which times the marks.</param>
+    /// <remarks>
+    /// The same marks the remastered crosshair draws (<see cref="HudCVars.ShowsHitMarkers"/>): the original's crosshair, and the
+    /// remastered display's plain one, mark a hit and a kill as it does.
+    /// </remarks>
+    public static void DrawMarks(UiPainter painter, float width, float height, float designPixel, HudCrosshairState state)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(state);
+        if (!HudCVars.ShowsHitMarkers)
+        {
+            return;
+        }
+
+        UiVec2 c = new(MathF.Round(width * 0.5f) + 0.5f, MathF.Round(height * 0.5f) + 0.5f);
+        float u = MathF.Max(0.75f, designPixel);
+        Marks(painter, c, u, MathF.Max(1.1f, 1.25f * u), state);
     }
 
     // A kill's red cross, held and punched on a repeat; else a hit's small white one, blinking off.

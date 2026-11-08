@@ -17,8 +17,11 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 /// <param name="session">The session's world, which says whether the players' rounds meet each other and whose hurt.</param>
 internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld session) : IShootableBodies
 {
-    // A round starts at its shooter's eye: a body standing over the origin closer than this is the shooter's own. Units.
-    private const double OwnBodyReach = 2048;
+    // A round starts at its shooter's eye, straight over its feet: a body whose feet are this near under the origin is the
+    // shooter's own. Units: 25 cm, well inside the 55 cm two players' bodies keep apart (HumanSeparation). It was a 1 m square
+    // about the origin, which took a player stood at another's back on a diagonal for the stabber's own body, and the knife
+    // met nothing.
+    private const double OwnBodyReach = 1024;
 
     // This pass's casts, for the shot log: each player's body offered, and what became of the cast.
     private readonly List<(World.IHarmedPlayer Player, string Outcome)> _pass = [];
@@ -75,7 +78,9 @@ internal sealed class CoopPlayerBodies(Igi1Gameplay game, Igi1ReplicatedWorld se
         {
             hit = default;
             Vector3d feet = rig.Body.Position;
-            if (Math.Abs(origin.X - feet.X) < OwnBodyReach && Math.Abs(origin.Y - feet.Y) < OwnBodyReach)
+            double dx = origin.X - feet.X;
+            double dy = origin.Y - feet.Y;
+            if ((dx * dx) + (dy * dy) < OwnBodyReach * OwnBodyReach)
             {
                 owner._pass.Add((player, "own body"));
                 return false;

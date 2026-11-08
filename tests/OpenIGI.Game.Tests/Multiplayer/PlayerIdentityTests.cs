@@ -87,6 +87,34 @@ public sealed class PlayerIdentityTests
     }
 
     [Fact]
+    public void Two_games_on_one_key_that_both_leave_and_come_back_leave_nobody_behind_on_the_scoreboard()
+    {
+        // Two copies of the game on one machine share its key. Both gone, the second kept aside overwrote the first, which
+        // stayed in the match for good: a player with no line on the board at nought ping, alive.
+        using Room room = new();
+        room.World.KeepsTheAway = true;
+        using EcdsaPlayerIdentity machine = EcdsaPlayerIdentity.CreateEphemeral();
+        Room.Player jones = room.Join("Jones", machine);
+        room.Run(2);
+        Room.Player anya = room.Join("Anya", machine);
+        room.Run(2);
+        jones.Drop();
+        room.Run(1);
+        anya.Drop();
+        room.Run(1);
+
+        // While both are away the board shows nobody: a player kept for its return is not in the game.
+        Assert.Empty(room.Server.CurrentScoreboard().Lines);
+
+        room.Join("Jones", machine);
+        room.Run(2);
+        room.Join("Anya", machine);
+        room.Run(2);
+        Assert.Equal(2, room.Server.CurrentScoreboard().Lines.Length);
+        Assert.Equal(2, room.Server.Match.Players.Count);
+    }
+
+    [Fact]
     public void A_player_put_out_stays_out_but_another_of_its_name_comes_in()
     {
         using Room room = new();

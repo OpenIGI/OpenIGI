@@ -120,12 +120,16 @@ public sealed partial class GameHost
     private int _heardKills;
 
     /// <summary>
-    /// Ticks for the player's hits and kills since the last frame, the remastered crosshair's sounds: the title's player's tally,
-    /// else the mission's. A kill sounds alone; a tally newly in hand sounds nothing.
+    /// Ticks for the player's hits and kills since the last frame, the crosshair's sounds in either display: the title's player's
+    /// tally, else the mission's. A kill sounds alone; a tally newly in hand sounds nothing.
     /// </summary>
     private void PlayHitSounds()
     {
         ShotTally? tally = (TitlePlayer as IShotTallySource)?.PlayerShots ?? (_hosted as IShotTallySource)?.PlayerShots;
+
+        // A session's hits on its other players come from its server: counted into the same tally, so they mark and sound as a
+        // soldier's do, in either display.
+        (TickObserver as ISessionScoreboard)?.CreditHits(tally);
         if (tally is null)
         {
             _heardTally = null;
@@ -140,7 +144,7 @@ public sealed partial class GameHost
             return;
         }
 
-        if (HudCVars.HitSounds.Value && HudCVars.Crosshair.Value)
+        if (HudCVars.SoundsHits)
         {
             PlayHitPools(HitSounds.Current, tally);
         }

@@ -40,4 +40,29 @@ public static class Igi1VersusDamage
     /// <returns>The damage factor.</returns>
     public static float Of(string? weapon, float own) =>
         weapon is not null && ByWeapon.TryGetValue(weapon, out float factor) ? factor : own;
+
+    /// <summary>The widest the stabber may stand from straight behind the stabbed player and still be at its back: 60 degrees.</summary>
+    public const double BackstabCosine = 0.5;
+
+    /// <summary>Whether a knife's stab took a versus player in the back, which kills it.</summary>
+    /// <param name="category">What struck.</param>
+    /// <param name="toward">From where the stab started to the stabbed player's feet: where the stabber stood, not which of
+    /// the knife's fanned lines met, which turn up to 15 degrees off the look.</param>
+    /// <param name="yaw">The way the stabbed player looks.</param>
+    /// <returns><see langword="true"/> for a knife from behind the player, within <see cref="BackstabCosine"/> of the way it faces.</returns>
+    /// <remarks>
+    /// I.G.I. kills a guard with one stab while it has no fight on (<c>0x46DFB0</c>: the factor becomes 1000); a player has no
+    /// mind to be unaware with, and neither I.G.I. nor I.G.I. 2 stabs one dead. A versus player is killed the guard's way from
+    /// behind instead: the stab that reaches it is one it cannot see coming.
+    /// </remarks>
+    public static bool IsBackstab(Game.Weapons.WeaponCategory category, Core.Numerics.Vector3d toward, float yaw)
+    {
+        if (category != Game.Weapons.WeaponCategory.Knife)
+        {
+            return false;
+        }
+
+        double length = Math.Sqrt((toward.X * toward.X) + (toward.Y * toward.Y));
+        return length > 0 && ((toward.X * Math.Sin(yaw)) + (toward.Y * Math.Cos(yaw))) / length >= BackstabCosine;
+    }
 }

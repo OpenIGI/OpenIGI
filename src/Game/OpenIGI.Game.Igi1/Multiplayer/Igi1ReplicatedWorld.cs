@@ -108,6 +108,9 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         if (_game.World.Player is { } own)
         {
             Record(own, HostEntity);
+
+            // A listen host walks into its players as they walk into it.
+            SessionHumans.Meet(_game.World, own, () => IncludesHost);
         }
 
         // With friendly fire on, a player's round meets the other players as it meets the guards.
@@ -160,6 +163,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 
         Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name, Entity = slot + 1, BeforeCommand = RewindSoldiers, AfterCommand = RestoreSoldiers };
         Record(made.Player, slot + 1);
+        SessionHumans.Meet(_game.World, made.Player, () => IncludesHost);
         Stand(player, slot);
         _bySlot[slot] = player;
 
@@ -353,8 +357,8 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         return deaths;
     }
 
-    // A round from a player's gun hurt a player: noted against the one it hurt, if a player fired it.
-    private void NoteHurt(IHarmedPlayer hurt, ShotTally? by)
+    // A round from a player's gun hurt a player: noted against the one it hurt, if a player fired it, and whether in the head.
+    private void NoteHurt(IHarmedPlayer hurt, ShotTally? by, bool head)
     {
         if (EntityOf(hurt.Rig) is not { } entity)
         {
@@ -367,7 +371,7 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
             _lastHurtBy[entity] = (by, CurrentTick);
         }
 
-        NoteCombat(hurt, entity, attacker == entity ? null : attacker);
+        NoteCombat(hurt, entity, attacker == entity ? null : attacker, head);
     }
 
     // The player who killed one that just died: the last whose round hurt it, lately enough; -1 for the level (a guard, a fall).
@@ -496,6 +500,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         if (player.Weapons?.FiredThisTick == true)
         {
             condition |= ReplicatedHumanCondition.Firing;
+        }
+
+        // A shot's or a reload's torso clip is played once: the torso holds it until the gun is ready again, a pistol's for
+        // two thirds of a second, so a window that looped it showed the shot five times over.
+        if (!player.UpperBodyAnimationLoops)
+        {
+            condition |= ReplicatedHumanCondition.UpperBodyOnce;
         }
 
         // Standing: a client its own correction puts back on this floor stops any fall it made alone.

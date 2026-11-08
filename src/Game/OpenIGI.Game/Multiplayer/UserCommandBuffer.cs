@@ -22,6 +22,12 @@ namespace OpenIGI.Game.Multiplayer;
 /// clock, and what it sends beyond that waits until the queue is full and is then refused. This is Source's
 /// <c>sv_maxusrcmdprocessticks</c>.
 /// </para>
+/// <para>
+/// A backlog the credit cannot pay off is dropped, oldest first, down to <see cref="TargetDepth"/>: a client that stalled for
+/// a second or two (its window held, its line stopped) and then sent everything it made meanwhile would otherwise have its
+/// every later command run that much late for the rest of the session, two catch-up runs a tick being all the credit
+/// ever allows. What is dropped is stale already; the client's prediction is corrected once to where its player stands.
+/// </para>
 /// </remarks>
 public sealed class UserCommandBuffer
 {
@@ -52,6 +58,15 @@ public sealed class UserCommandBuffer
 
     /// <summary>Gets or sets the most commands' runs a client may save up to catch up with: a third of a second at the original's tick.</summary>
     public int MaxCredit { get; set; } = 10;
+
+    /// <summary>Gets or sets how many ticks running a backlog over <see cref="MaxDepth"/> the credit cannot pay off waits before it is dropped: half a second.</summary>
+    public int StaleBacklogTicks { get; set; } = 15;
+
+    /// <summary>Gets the commands dropped as a backlog too stale to run.</summary>
+    public long Dropped { get; private set; }
+
+    // How many ticks in a row the queue has been over its depth with too little credit to give two.
+    private int _backlogTicks;
 
     /// <summary>Gets the ticks the queue would have given two but the client had not earned them: a client sending faster than time.</summary>
     public long Throttled { get; private set; }
@@ -166,6 +181,19 @@ public sealed class UserCommandBuffer
             return 0;
         }
 
+        // A backlog the credit cannot pay off, held half a second: dropped to the depth the queue keeps, oldest first.
+        if (_pending.Count > MaxDepth && _credit < 2)
+        {
+            if (++_backlogTicks >= StaleBacklogTicks)
+            {
+                DropBacklog();
+            }
+        }
+        else
+        {
+            _backlogTicks = 0;
+        }
+
         int wanted = _pending.Count > MaxDepth ? 2 : 1;
         int due = Math.Min(wanted, (int)Math.Floor(_credit));
         if (due < wanted)
@@ -175,6 +203,21 @@ public sealed class UserCommandBuffer
 
         _credit -= due;
         return due;
+    }
+
+    // Drops the oldest waiting commands until the queue's own depth is left. Each counts as run, so its repeats in later
+    // packets are not taken again, and what it held down is what is held down after it.
+    private void DropBacklog()
+    {
+        _backlogTicks = 0;
+        while (_pending.Count > TargetDepth)
+        {
+            KeyValuePair<long, (float[] Channels, long ViewTick, float ViewFraction)> oldest = _pending.First();
+            _pending.Remove(oldest.Key);
+            oldest.Value.Channels.CopyTo(_last, 0);
+            LastTakenTick = oldest.Key;
+            Dropped++;
+        }
     }
 
     /// <summary>Takes the next command in the client's order.</summary>

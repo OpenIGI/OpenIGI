@@ -525,6 +525,16 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         return _combat.Shown(now, eye, view, session.MatchState);
     }
 
+    /// <inheritdoc/>
+    public void CreditHits(Game.Player.ShotTally? own)
+    {
+        _combat.Credit = own;
+        if (_session is { } session)
+        {
+            _combat.Take(session.TakeCombat(), session.EntityId ?? -1, _clock.Elapsed.TotalSeconds);
+        }
+    }
+
     private readonly Game.Multiplayer.Modes.CombatFeedback _combat = new();
 
     /// <inheritdoc/>

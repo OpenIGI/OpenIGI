@@ -333,9 +333,18 @@ internal sealed class Igi1CoopPair : IDisposable
     }
 
     // The session's talk passes through too, as the game finds it on the session itself.
-    internal class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold, ISessionMode
+    internal class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold, ISessionMode, ISessionScoreboard
     {
         public IHostTickObserver Inner { get; set; } = inner;
+
+        // The host's frame reaches the session's fight through this, as it does the session itself in the game.
+        public Game.Multiplayer.Scoreboard? CurrentScoreboard => (Inner as ISessionScoreboard)?.CurrentScoreboard;
+
+        public int? LocalEntity => (Inner as ISessionScoreboard)?.LocalEntity;
+
+        public string Title => (Inner as ISessionScoreboard)?.Title ?? string.Empty;
+
+        public void CreditHits(Game.Player.ShotTally? own) => (Inner as ISessionScoreboard)?.CreditHits(own);
 
         public string Mode => (Inner as ISessionMode)?.Mode ?? string.Empty;
 

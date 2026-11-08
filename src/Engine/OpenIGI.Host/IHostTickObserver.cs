@@ -54,6 +54,13 @@ public interface ISessionScoreboard
     /// <returns>The feedback, or <see langword="null"/> for nothing to show.</returns>
     Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view) => null;
 
+    /// <summary>Takes in what the session told of the local player's fight, crediting its own tally with its hits on players.</summary>
+    /// <param name="own">The local player's tally, or <see langword="null"/> while there is no player.</param>
+    /// <remarks>Called every frame, whatever display is up: the crosshair's marks and sounds are not the remastered HUD's alone.</remarks>
+    void CreditHits(Game.Player.ShotTally? own)
+    {
+    }
+
     /// <summary>Gets where a player of the match stands as this end sees it.</summary>
     /// <param name="slot">The player's slot.</param>
     /// <returns>Its feet, in world units, or <see langword="null"/> when this end has it nowhere.</returns>
@@ -96,7 +103,7 @@ public sealed partial class GameHost
     /// <remarks>
     /// One set is a multiplayer session, and while it is set every cheat is held off (<see cref="Game.Player.PlayerCheatLock"/>)
     /// and the free camera is not offered: the session switches cheats off as it begins, and nothing turns them on until it
-    /// ends.
+    /// ends. Every hit is marked and sounded while it runs, whatever the settings (<see cref="OpenIGI.Rendering.HudCVars.InSession"/>).
     /// </remarks>
     public IHostTickObserver? TickObserver
     {
@@ -109,11 +116,13 @@ public sealed partial class GameHost
             {
                 Game.Player.PlayerCheatLock.Hold();
                 Game.Player.PlayerCheatCVars.CheatsEnabled.Value = false;
+                OpenIGI.Rendering.HudCVars.InSession = true;
                 _logger.Information("Coop", "Cheats and the free camera are off for the session.");
             }
             else if (value is null && was)
             {
                 Game.Player.PlayerCheatLock.Release();
+                OpenIGI.Rendering.HudCVars.InSession = false;
             }
         }
     }

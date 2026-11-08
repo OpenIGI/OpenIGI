@@ -269,6 +269,35 @@ public static class TouchControlsRenderer
                 Line(-0.6f, -0.6f, 0.6f, 0.6f);
                 Line(-0.6f, 0.6f, 0.6f, -0.6f);
                 break;
+            case TouchButton.Scoreboard:
+                // A board's rows: a mark and a line each.
+                for (int row = -1; row <= 1; row++)
+                {
+                    float at = row * 0.5f;
+                    Dot(-0.62f, at, 0.12f);
+                    Line(-0.3f, at, 0.72f, at);
+                }
+
+                break;
+            case TouchButton.Buy:
+                // A bag of goods: its body and its handle.
+                ReadOnlySpan<UiVec2> bag = [P(-0.7f, -0.25f), P(0.7f, -0.25f), P(0.58f, 0.85f), P(-0.58f, 0.85f)];
+                painter.StrokePolygon(bag, stroke, ink);
+                painter.FillArc(P(0f, -0.25f), size * 0.36f, (size * 0.36f) + stroke, MathF.PI, MathF.Tau, ink);
+                break;
+            case TouchButton.Team:
+                // Two figures, shoulder to shoulder.
+                Dot(-0.38f, -0.42f, 0.22f);
+                Dot(0.38f, -0.42f, 0.22f);
+                painter.FillArc(P(-0.38f, 0.55f), size * 0.18f, size * 0.42f, MathF.PI, MathF.Tau, ink);
+                painter.FillArc(P(0.38f, 0.55f), size * 0.18f, size * 0.42f, MathF.PI, MathF.Tau, ink);
+                break;
+            case TouchButton.Drop:
+                // Down, onto the ground.
+                Line(0f, -0.85f, 0f, 0.3f);
+                painter.DrawChevron(P(0f, 0.18f), size * 0.5f, UiDirection.Down, stroke, ink);
+                Line(-0.75f, 0.82f, 0.75f, 0.82f);
+                break;
         }
     }
 }

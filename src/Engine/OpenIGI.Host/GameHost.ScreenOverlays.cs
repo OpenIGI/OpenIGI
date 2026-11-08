@@ -369,7 +369,7 @@ public sealed partial class GameHost
                 board,
                 session.LocalEntity,
                 session.RoomCode,
-                session.Place,
+                MissionPlaceName(session.Place),
                 SafeWindowWidth,
                 SafeWindowHeight,
                 _scoreboardUp ? ScoreboardHand(board) : null,
@@ -456,6 +456,9 @@ public sealed partial class GameHost
 
             state.Batch.End();
         }
+
+        // What every key does, while its key is held; else the corner's reminder of that key.
+        DrawControlsHelp(state);
 
         // Dead in a match, watching a living player.
         if (Spectated() is { } watched && _remasteredHud is { IsReady: true } spectateHud)

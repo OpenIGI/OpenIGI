@@ -61,10 +61,14 @@ public sealed class Igi1PlayerEvents(MissionWorld mission, Igi1PlayerHarm harm, 
         HumanHealth health = target.Health;
         HumanHit struck = round.Hit;
 
-        // A versus match's player takes I.G.I. 2's damage for the gun that fired.
-        float damage = ReferenceEquals(health.Zones, HumanHitZoneTable.Versus) ? Multiplayer.Igi1VersusDamage.Of(round.Weapon, round.DamageFactor) : round.DamageFactor;
+        // A versus match's player takes I.G.I. 2's damage for the gun that fired, and a knife in its back kills it as an unaware
+        // guard's does.
+        bool versus = ReferenceEquals(health.Zones, HumanHitZoneTable.Versus);
+        float damage = !versus ? round.DamageFactor
+            : Multiplayer.Igi1VersusDamage.IsBackstab(round.Category, rig.Body.Position - round.Origin, rig.Body.Yaw) ? Ai.SoldierSimulation.KnifeUnawareDamageFactor
+            : Multiplayer.Igi1VersusDamage.Of(round.Weapon, round.DamageFactor);
         health.Apply(struck.Zone, damage);
-        harm.RoundTaken?.Invoke(target, round.Credit);
+        harm.RoundTaken?.Invoke(target, round.Credit, struck.Zone == Game.Player.HumanDamage.NeckZone);
         sounds.PlayBulletImpact(struck.Position, struckHuman: true, surfaceMaterial: 0);
 
         // 0x412440's order: the grunt, then the shake, then the flash from the corners the round came in through, each on

@@ -128,7 +128,7 @@ public static class HudCVars
             "r_hit_markers",
             true,
             CVarOptions.Archive,
-            "With the remastered crosshair, a mark when a round hits and a red cross when it kills."),
+            "On the crosshair, either display's, a mark when a round hits and a red cross when it kills: soldiers and other players."),
         vanilla: "0",
         enhanced: "1",
         high: "1",
@@ -140,11 +140,25 @@ public static class HudCVars
             "r_hit_sounds",
             true,
             CVarOptions.Archive,
-            "With the remastered crosshair, a short tick when a round hits and a deeper one when it kills."),
+            "A short tick when a round hits and a deeper one when it kills, in either display: soldiers and other players."),
         vanilla: "0",
         enhanced: "1",
         high: "1",
         ultra: "1");
+
+    /// <summary>Gets or sets whether a multiplayer session is being played, which marks and sounds every hit whatever the settings.</summary>
+    /// <remarks>
+    /// A player fighting players needs to know its rounds landed: the session shows <see cref="HitMarkers"/> and sounds
+    /// <see cref="HitSounds"/> however they are set, in either display, and leaves the settings themselves as they were for the
+    /// game played alone. The host sets it while a session runs.
+    /// </remarks>
+    public static bool InSession { get; set; }
+
+    /// <summary>Gets whether a hit and a kill are marked on the crosshair now: by the setting, or always in a session.</summary>
+    public static bool ShowsHitMarkers => InSession || HitMarkers.Value;
+
+    /// <summary>Gets whether a hit and a kill sound now: by the setting, or always in a session.</summary>
+    public static bool SoundsHits => InSession || HitSounds.Value;
 
     /// <summary>Whether a sniper aiming at the player shows the glint of his scope.</summary>
     public static readonly BoolCVar ScopeGlint = Presets.Define(

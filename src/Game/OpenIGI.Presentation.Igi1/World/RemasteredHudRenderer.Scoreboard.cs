@@ -24,6 +24,9 @@ internal sealed partial class RemasteredHudRenderer
     // The shortest a row is fitted to beside the vote, with many players.
     private const float BoardRowCompact = 46f;
     private const float BoardRowGap = 7f;
+
+    // A team's bar in a team match: its name, its score, who is up, and its totals under the columns.
+    private const float TeamBar = 44f;
     private const float BoardFooter = 52f;
     private const float BoardPad = 34f;
     private const float LabelText = 14f;
@@ -86,11 +89,18 @@ internal sealed partial class RemasteredHudRenderer
         var painter = UiPainter.Create(batch, context);
         float Px(float units) => context.Px(units);
 
-        bool teamed = board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
+        // A team mode is split by team, as a tactical shooter's board is, even while a team stands empty; a co-op squad that has
+        // players on both sides (a host's test) is split too.
+        bool teamed = (Game.Multiplayer.Modes.GameModes.IsVersus(mode) && Game.Multiplayer.Modes.GameModes.HasTeams(mode))
+            || board.Lines.Select(static l => l.Team).Distinct().Count() > 1;
         ScoreboardLine[] lines = [.. board.Lines.OrderBy(static l => l.Team).ThenByDescending(static l => l.Kills).ThenBy(static l => l.Deaths)];
+        int[] sides = teamed ? [.. new[] { TeamRoster.Good, TeamRoster.Bad }.Union(lines.Select(static l => l.Team))] : [];
+        int empties = sides.Count(side => !lines.Any(l => l.Team == side));
+
         // Beside the vote, the left-hand area under the match's card, each row as tall as the room lets it be (down to a compact
         // line); alone, in the middle, every row full height.
-        float fixedHeight = Px(BoardHeader) + Px(BoardColumns) + Px(14f) + Px(BoardFooter);
+        float sections = (sides.Length * (Px(TeamBar) + Px(BoardRowGap))) + (empties * (Px(BoardRowCompact) + Px(BoardRowGap)));
+        float fixedHeight = Px(BoardHeader) + Px(BoardColumns) + Px(14f) + Px(BoardFooter) + sections;
         UiRect? area = besideVote ? IntermissionAreas(context).Board : null;
         float rowHeight = area is { } fit && lines.Length > 0
             ? Math.Clamp(((fit.Height - fixedHeight) / lines.Length) - Px(BoardRowGap), Px(BoardRowCompact), Px(BoardRow))
@@ -176,17 +186,45 @@ internal sealed partial class RemasteredHudRenderer
         RightLabel(painter, type.Heading, "PING", pingRight, headY, headText, UiPalette.TextMuted);
 
         float y = heads.Bottom + Px(4f);
-        foreach (ScoreboardLine line in lines)
+        float rowX = x + pad - Px(14f);
+        float rowWidth = width - (pad * 2f) + Px(28f);
+        void Rows(IEnumerable<ScoreboardLine> players)
         {
-            var row = new UiRect(x + pad - Px(14f), y, width - (pad * 2f) + Px(28f), rowHeight);
-            bool own = localEntity is { } self && line.Entity == self;
-            DrawPlayerCard(painter, type, context, row, line, own, teamed, killsRight, deathsRight, pingRight);
-            if (controls is { } hand && hand.Removable.Contains(line.Entity))
+            foreach (ScoreboardLine line in players)
             {
-                DrawRemove(painter, type, context, row, killsRight - Px(110f), line.Entity, hand);
+                var row = new UiRect(rowX, y, rowWidth, rowHeight);
+                bool own = localEntity is { } self && line.Entity == self;
+                DrawPlayerCard(painter, type, context, row, line, own, teamed, killsRight, deathsRight, pingRight);
+                if (controls is { } hand && hand.Removable.Contains(line.Entity))
+                {
+                    DrawRemove(painter, type, context, row, killsRight - Px(110f), line.Entity, hand);
+                }
+
+                y += rowHeight + Px(BoardRowGap);
+            }
+        }
+
+        if (!teamed)
+        {
+            Rows(lines);
+        }
+
+        foreach (int side in sides)
+        {
+            ScoreboardLine[] team = [.. lines.Where(l => l.Team == side)];
+            int score = side == TeamRoster.Good ? board.GoodScore : side == TeamRoster.Bad ? board.BadScore : 0;
+            DrawTeamBar(painter, type, context, new UiRect(rowX, y, rowWidth, Px(TeamBar)), side, team, score, killsRight, deathsRight, pingRight);
+            y += Px(TeamBar) + Px(BoardRowGap);
+            if (team.Length == 0)
+            {
+                var none = new UiRect(rowX, y, rowWidth, Px(BoardRowCompact));
+                painter.FillRoundedRect(none, _surfaces?.Rounded ?? default, RowFace.WithAlpha(6), Px(6f));
+                float noneSize = Px(LabelText);
+                painter.DrawLabel(type.Heading, "NO PLAYERS", new UiVec2(none.X + Px(18f), UiRowStyle.CapsCenterY(type.Heading, noneSize, none)), noneSize, UiPalette.TextMuted, 0.12f);
+                y += Px(BoardRowCompact) + Px(BoardRowGap);
             }
 
-            y += rowHeight + Px(BoardRowGap);
+            Rows(team);
         }
 
         // The footer: the game's name, and the key that keeps the board up.
@@ -339,6 +377,62 @@ internal sealed partial class RemasteredHudRenderer
         float pingSize = Px(22f);
         string ping = host ? "-" : string.Create(CultureInfo.InvariantCulture, $"{line.Ping}ms");
         RightLabel(painter, type.Heading, ping, pingRight - barsWidth - Px(10f), UiRowStyle.CapsCenterY(type.Heading, pingSize, row), pingSize, pingColour);
+    }
+
+    // A team's bar: its colour down the left edge and washed across, its name and score, how many of it are up, and its kills
+    // and deaths summed under the columns.
+    private void DrawTeamBar(
+        UiPainter painter,
+        UiTheme type,
+        LayoutContext context,
+        UiRect bar,
+        int side,
+        ScoreboardLine[] team,
+        int score,
+        float killsRight,
+        float deathsRight,
+        float pingRight)
+    {
+        float Px(float units) => context.Px(units);
+        Bgra32 colour = side == TeamRoster.Good ? UiPalette.Info : side == TeamRoster.Bad ? Accent : UiPalette.TextMuted;
+        painter.FillRoundedRect(bar, _surfaces?.Rounded ?? default, colour.WithAlpha(30), Px(6f));
+        painter.FillRect(new UiRect(bar.X, bar.Y + Px(2f), MathF.Max(2f, Px(4f)), bar.Height - Px(4f)), colour);
+
+        string name = side is TeamRoster.Good or TeamRoster.Bad
+            ? Game.Multiplayer.Modes.MatchState.TeamName(side).ToUpperInvariant()
+            : "UNASSIGNED";
+        float nameSize = Px(20f);
+        float nameX = bar.X + Px(18f);
+        painter.DrawLabel(type.Heading, name, new UiVec2(nameX, UiRowStyle.CapsCenterY(type.Heading, nameSize, bar)), nameSize, colour, 0.08f);
+        float after = nameX + (type.Heading.MeasureWidth(name, nameSize) * 1.08f) + Px(18f);
+
+        // The round score in a block of the team's colour, then who of it is still up.
+        if (side is TeamRoster.Good or TeamRoster.Bad)
+        {
+            string points = score.ToString(CultureInfo.InvariantCulture);
+            float pointSize = Px(20f);
+            float pointWidth = type.Heading.MeasureWidth(points, pointSize);
+            float blockWidth = MathF.Max(Px(34f), pointWidth + Px(18f));
+            var block = new UiRect(after, bar.Y + Px(8f), blockWidth, bar.Height - Px(16f));
+            painter.FillRect(block, colour);
+            painter.DrawLabel(type.Heading, points, new UiVec2(block.X + ((block.Width - pointWidth) * 0.5f), UiRowStyle.CapsCenterY(type.Heading, pointSize, block)), pointSize, Bgra32.FromRgb(14, 16, 20), 0f);
+            after = block.Right + Px(18f);
+        }
+
+        int up = team.Count(static l => l.IsAlive);
+        float stateSize = Px(LabelText);
+        string state = string.Create(CultureInfo.InvariantCulture, $"{up}/{team.Length} ALIVE");
+        painter.DrawLabel(type.Heading, state, new UiVec2(after, UiRowStyle.CapsCenterY(type.Heading, stateSize, bar)), stateSize, team.Length > 0 && up == 0 ? Bad : UiPalette.TextMuted, 0.12f);
+
+        float totalSize = Px(22f);
+        float totalY = UiRowStyle.CapsCenterY(type.Heading, totalSize, bar);
+        RightLabel(painter, type.Heading, team.Sum(static l => l.Kills).ToString(CultureInfo.InvariantCulture), killsRight, totalY, totalSize, colour);
+        RightLabel(painter, type.Heading, team.Sum(static l => l.Deaths).ToString(CultureInfo.InvariantCulture), deathsRight, totalY, totalSize, UiPalette.TextMuted);
+        if (team.Any(static l => l.Slot != ServerSession.HostSlot))
+        {
+            int ping = (int)Math.Round(team.Where(static l => l.Slot != ServerSession.HostSlot).Average(static l => (double)l.Ping));
+            RightLabel(painter, type.Heading, string.Create(CultureInfo.InvariantCulture, $"AVG {ping}MS"), pingRight, UiRowStyle.CapsCenterY(type.Heading, stateSize, bar), stateSize, UiPalette.TextMuted);
+        }
     }
 
     // A small word in a box beside a name: HOST outlined in the accent, YOU filled.

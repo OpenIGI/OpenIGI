@@ -181,16 +181,7 @@ public sealed partial class ServerSession : IModeHost
                     if (_clients.Remove(e.Peer, out ClientState? gone) && !gone.Watching)
                     {
                         // Kept aside a while, in case the line dropped rather than the player leaving.
-                        int parked = _nextParked--;
-                        if (_world.ParkPlayer(e.Peer, parked))
-                        {
-                            Match.Move(e.Peer, parked);
-                            _away[gone.PlayerId] = (parked, now);
-                        }
-                        else
-                        {
-                            Match.Leave(e.Peer);
-                        }
+                        Park(e.Peer, gone.PlayerId, now);
                     }
 
                     break;
@@ -514,6 +505,29 @@ public sealed partial class ServerSession : IModeHost
     private int EntityOfSlot(int slot) =>
         slot == HostSlot ? HostEntity : _clients.TryGetValue(slot, out ClientState? client) ? client.Entity : -1;
 
+    // A player whose line went, kept aside under its key to be given back if it comes back. One key keeps one: a player
+    // already kept under it (two copies of the game on one machine, both gone) is let go, rather than left in the match
+    // under a slot nothing names any more -- a player with no line, standing on the scoreboard for good.
+    private void Park(int slot, string playerId, double now)
+    {
+        if (_away.Remove(playerId, out (int Parked, double Since) earlier))
+        {
+            _world.ForgetPlayer(earlier.Parked);
+            Match.Leave(earlier.Parked);
+        }
+
+        int parked = _nextParked--;
+        if (_world.ParkPlayer(slot, parked))
+        {
+            Match.Move(slot, parked);
+            _away[playerId] = (parked, now);
+        }
+        else
+        {
+            Match.Leave(slot);
+        }
+    }
+
     // How long a line must have been silent for a new line under its key to be taken for its player coming back.
     private const double QuietLineSeconds = 1.0;
 
@@ -530,17 +544,7 @@ public sealed partial class ServerSession : IModeHost
             }
 
             _clients.Remove(old);
-            int parked = _nextParked--;
-            if (_world.ParkPlayer(old, parked))
-            {
-                Match.Move(old, parked);
-                _away[playerId] = (parked, _now);
-            }
-            else
-            {
-                Match.Leave(old);
-            }
-
+            Park(old, playerId, _now);
             _net.Disconnect(old, "you joined again on another line");
             return;
         }

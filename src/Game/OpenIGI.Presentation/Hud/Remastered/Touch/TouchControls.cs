@@ -73,6 +73,38 @@ public enum TouchButton
 
     /// <summary>Tapped to type a line of chat; the tap itself raises the screen's keyboard.</summary>
     Chat,
+
+    /// <summary>Held to show a match's scoreboard.</summary>
+    Scoreboard,
+
+    /// <summary>Opens a match's shop, or its loadout, while it is open.</summary>
+    Buy,
+
+    /// <summary>Opens a team match's team menu, to switch sides.</summary>
+    Team,
+
+    /// <summary>Drops what is in hand for others to pick up: a gun, or a bomb mode's bomb.</summary>
+    Drop,
+}
+
+/// <summary>The match's own buttons a multiplayer session offers, each only where it has something to do.</summary>
+[Flags]
+public enum TouchMatchButtons
+{
+    /// <summary>None: not in a match.</summary>
+    None = 0,
+
+    /// <summary>The scoreboard.</summary>
+    Scoreboard = 1,
+
+    /// <summary>The shop or loadout, while it is open.</summary>
+    Buy = 2,
+
+    /// <summary>The team menu, in a team match.</summary>
+    Team = 4,
+
+    /// <summary>Drop the weapon in hand, in a versus match.</summary>
+    Drop = 8,
 }
 
 /// <summary>The finger that is the pointer: where it is, how far it moved this frame, and whether it came down this frame.</summary>
@@ -162,6 +194,22 @@ public sealed class TouchControls
             }
         }
     }
+
+    /// <summary>Gets or sets the match's own buttons offered: the scoreboard, the shop, the team menu, the drop.</summary>
+    public TouchMatchButtons MatchButtons
+    {
+        get => _matchButtons;
+        set
+        {
+            if (_matchButtons != value)
+            {
+                _matchButtons = value;
+                _laidOutFor = default;
+            }
+        }
+    }
+
+    private TouchMatchButtons _matchButtons;
 
     /// <summary>Gets or sets whether the button tapped to type a line of chat is offered: in a multiplayer room.</summary>
     public bool ChatShown
@@ -393,6 +441,29 @@ public sealed class TouchControls
         float cardRadius = Px(52f);
         _layout.Add(new TouchButtonSpot(TouchButton.Weapon, new UiVec2(safe.X + (safe.Width * 0.5f), safe.Bottom - Px(90f)), cardRadius, Card: true));
         _layout.Add(new TouchButtonSpot(TouchButton.Use, new UiVec2(safe.X + (safe.Width * 0.5f), safe.Bottom - Px(250f)), Px(SmallRadius)));
+
+        // A match's own, as a phone shooter lays them out: the board, the shop and the sides along the top left, out of a thumb's
+        // way in a fight; the drop small beside the reload, where a thumb rolls to it.
+        float matchY = safe.Y + Px(80f);
+        float matchX = safe.X + Px(80f);
+        foreach ((TouchMatchButtons flag, TouchButton button) in new[]
+        {
+            (TouchMatchButtons.Scoreboard, TouchButton.Scoreboard),
+            (TouchMatchButtons.Buy, TouchButton.Buy),
+            (TouchMatchButtons.Team, TouchButton.Team),
+        })
+        {
+            if ((_matchButtons & flag) != 0)
+            {
+                _layout.Add(new TouchButtonSpot(button, new UiVec2(matchX, matchY), Px(CornerRadius + 4f)));
+                matchX += Px((CornerRadius + 4f) * 2.6f);
+            }
+        }
+
+        if ((_matchButtons & TouchMatchButtons.Drop) != 0)
+        {
+            Round(TouchButton.Drop, 660f, 330f, SmallRadius);
+        }
 
         // The computer's way out, where a window's close button is.
         _computerLayout.Clear();

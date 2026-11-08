@@ -56,6 +56,13 @@ public sealed class CombatFeedback
     /// before anyone has, or when the level did.</summary>
     public (int Entity, double At)? KilledBy { get; private set; }
 
+    /// <summary>
+    /// Gets or sets the local player's own tally, which its hits on the session's other players are counted into as the
+    /// session tells of them: the crosshair's hit and kill marks and their sounds read it, in either display.
+    /// </summary>
+    /// <remarks>A hit on a soldier (a note's victim below nought) is the soldiers' to count, where they are struck.</remarks>
+    public Player.ShotTally? Credit { get; set; }
+
     /// <summary>Takes in the notes the session told of.</summary>
     /// <param name="notes">The notes.</param>
     /// <param name="own">The local player's entity.</param>
@@ -65,6 +72,15 @@ public sealed class CombatFeedback
         ArgumentNullException.ThrowIfNull(notes);
         foreach (CombatNote note in notes)
         {
+            if (note.Attacker == own && note.Victim != own && note.Victim >= 0 && Credit is { } credit)
+            {
+                credit.HitPlayer(note.Head);
+                if (note.Killed)
+                {
+                    credit.KilledPlayer(note.Head);
+                }
+            }
+
             if (note.Attacker == own && note.Victim != own)
             {
                 _hit = (now, note.Killed || (_hit is { } last && now - last.At < MarkerSeconds && last.Killed), note.Head);

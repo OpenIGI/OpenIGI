@@ -126,7 +126,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
                     : null;
             bodies.Add(new Ai.PartnerBody(
                 h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(h.Action - 1, true, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
+                new Ai.PlayerBodyPose(h.Action - 1, (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
                 gun,
                 h.Shots,
                 fired,
@@ -512,6 +512,12 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         ArgumentNullException.ThrowIfNull(predictions);
         ArgumentNullException.ThrowIfNull(snapshot);
         ApplyLifts(snapshot, ticksAhead);
+
+        // The others block this client's player where it is shown them, as the server's bodies block it there.
+        if (_game.World.Player is { OtherHumans: null } own)
+        {
+            SessionHumans.Meet(_game.World, own, static () => false);
+        }
 
         // Where the others' rounds landed, once each; this client's own it showed as it fired them.
         if (snapshot.Tick > _impactsShown)

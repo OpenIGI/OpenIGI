@@ -228,6 +228,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerShotResolver.Humans"/>
     public HumanShot? Humans { get => _shots.Humans; set => _shots.Humans = value; }
 
+    /// <inheritdoc cref="PlayerBody.OtherHumans"/>
+    public Func<IEnumerable<Vector3d>>? OtherHumans { get => _body.OtherHumans; set => _body.OtherHumans = value; }
+
     /// <summary>Gets or sets a non-mutating human intersection used by launcher missiles.</summary>
     public HumanRayCast? HumanProbes { get => _shots.HumanProbes; set => _shots.HumanProbes = value; }
 
