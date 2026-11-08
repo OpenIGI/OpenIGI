@@ -209,6 +209,6 @@ r_wetness	1	archive
 r_white_point	1.1	archive
 r_widescreen_fov	1	archive
 r_window_mode	borderless	archive
-r_world_cull	0	archive
+r_world_cull	1	-
 r_world_objective	1	archive
 r_world_occlusion	1	archive
