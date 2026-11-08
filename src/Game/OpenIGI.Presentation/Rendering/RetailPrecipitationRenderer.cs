@@ -323,7 +323,10 @@ public sealed class RetailPrecipitationRenderer : IDisposable
             if (back > 0f)
             {
                 drop.Z += fall * back;
-                if (drop.Z > RetailPrecipitation.LayerUnits)
+
+                // The tick wraps a drop that falls below nought, so one that stood at exactly nought came round too: the
+                // layer's heights run from nought up to, not including, its top.
+                if (drop.Z >= RetailPrecipitation.LayerUnits)
                 {
                     drop.Z -= RetailPrecipitation.LayerUnits;
                 }

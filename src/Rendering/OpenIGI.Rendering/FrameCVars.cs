@@ -68,15 +68,21 @@ public static class FrameCVars
     /// One is the original at its highest detail. The original's own distances coarsen and drop scenery the player can plainly see,
     /// so the levels are moved out: near models stay whole and only far ones, mostly in the fog, give detail up. Three, measured
     /// on missions 1 and 3: mission 1's base keeps every building, tank and crate whole, and mission 3 in the browser went from
-    /// 104 frames a second drawing every model to 129 (139 at two, 145 at the original's one).
+    /// 104 frames a second drawing every model to 129 (139 at two, 145 at the original's one). The Vanilla preset keeps the
+    /// original's own distances.
     /// </remarks>
-    public static readonly NumericCVar<float> ModelLodReach = CVar.Float(
-        "r_model_lod_reach",
-        3f,
-        1f,
-        16f,
-        CVarOptions.Archive,
-        "How many times as far as the original models keep their detail and are drawn at all (1 = the original's best).");
+    public static readonly NumericCVar<float> ModelLodReach = GraphicsPresetRegistry.Default.Define(
+        CVar.Float(
+            "r_model_lod_reach",
+            3f,
+            1f,
+            16f,
+            CVarOptions.Archive,
+            "How many times as far as the original models keep their detail and are drawn at all (1 = the original's best)."),
+        vanilla: "1",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
 
     /// <summary>Whether the level behind the menu is drawn without the expensive parts of the preset.</summary>
     /// <remarks>
