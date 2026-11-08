@@ -29,6 +29,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private readonly WebGpuSurfaceSupport _support;
     private readonly IWorkScheduler _finishing;
     private WebGpuPushRing? _pushes;
+    private readonly Dictionary<int, WebGpuInstancePushRing> _instancePushes = [];
 
     private bool _disposed;
 
@@ -162,12 +163,37 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// </remarks>
     public WebGpuPushRing PushRing => _pushes ??= new WebGpuPushRing(this);
 
+    /// <summary>Gets the ring per-instance push blocks of one size are packed into, made on first use.</summary>
+    /// <param name="blockBytes">The block's size, which is also the array stride the shaders read it at.</param>
+    /// <returns>The ring for blocks of that size.</returns>
+    /// <remarks>See <see cref="WebGpuInstancePushRing"/>. One ring a size, because a slot is an array index.</remarks>
+    public WebGpuInstancePushRing InstancePushRing(int blockBytes)
+    {
+        if (!_instancePushes.TryGetValue(blockBytes, out WebGpuInstancePushRing? ring))
+        {
+            ring = new WebGpuInstancePushRing(this, blockBytes);
+            _instancePushes.Add(blockBytes, ring);
+        }
+
+        return ring;
+    }
+
     /// <summary>Gets every texture whose format had to be widened, as sentences.</summary>
     /// <remarks>
     /// Read at start-up and logged. A texture silently costing four times what it was asked for is the
     /// kind of thing that is only ever noticed by somebody measuring something else.
     /// </remarks>
     public IReadOnlyList<string> WidenedFormats => _widened;
+
+    /// <summary>Starts every push ring over, once the frame that read them has been presented.</summary>
+    private void ResetPushes()
+    {
+        _pushes?.Reset();
+        foreach (WebGpuInstancePushRing ring in _instancePushes.Values)
+        {
+            ring.Reset();
+        }
+    }
 
     /// <inheritdoc/>
     public void Submit(ReadOnlySpan<IRhiCommandBuffer> commands)
@@ -181,6 +207,10 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         // The pushes this submission's draws read, uploaded ahead of it in one write a chunk.
         _pushes?.Flush();
+        foreach (WebGpuInstancePushRing ring in _instancePushes.Values)
+        {
+            ring.Flush();
+        }
 
         WGPUCommandBuffer[] handles = new WGPUCommandBuffer[commands.Length];
         for (int i = 0; i < commands.Length; i++)
@@ -263,6 +293,12 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         ReleaseOffscreen();
         _pushes?.Dispose();
+        foreach (WebGpuInstancePushRing ring in _instancePushes.Values)
+        {
+            ring.Dispose();
+        }
+
+        _instancePushes.Clear();
         _surface?.Dispose();
 
         if (_ownsContext)

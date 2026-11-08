@@ -328,7 +328,7 @@ public sealed partial class GameHost
                     _detailMaps,
                     () => _world?.Shading.Sun,
                     // The original's levels of detail only when asked for, as the world's models give theirs up.
-                    () => OpenIGI.Rendering.FrameCVars.ModelLod.Value ? _modelLod : null));
+                    () => ActiveModelLod()));
             _mission.AdoptSoldiers(_soldiers);
             _soldiers?.Load(
                 loaded,

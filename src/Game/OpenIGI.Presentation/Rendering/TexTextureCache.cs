@@ -110,9 +110,13 @@ public sealed class TexTextureCache : IDisposable
         return handle;
     }
 
+    /// <summary>Gets how many times the cache has been cleared, so a caller keeping its handles knows when they went.</summary>
+    public int Generation { get; private set; }
+
     /// <summary>Destroys every texture loaded so far and forgets them all.</summary>
     public void Clear()
     {
+        Generation++;
         foreach (TextureHandle texture in _textures.Values)
         {
             if (texture.IsValid)

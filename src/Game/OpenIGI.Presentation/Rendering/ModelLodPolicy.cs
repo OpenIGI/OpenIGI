@@ -45,6 +45,14 @@ public sealed class ModelLodPolicy
     /// <summary>Gets the detail scale.</summary>
     public float Scale { get; }
 
+    /// <summary>Gets or sets how many times as far as the original a model keeps each level and is drawn at all.</summary>
+    /// <remarks>
+    /// One is the original at its best (<c>gLodScale</c> 1, which Profile_ApplyPerformance 0x406390 only ever raises, to 1.5 and
+    /// 2, for less detail). Above one the view is taken as nearer than it is: every switch and the cutoff move out by the factor,
+    /// so what stands near the player keeps its whole model and only what is far gives detail up.
+    /// </remarks>
+    public float Reach { get; set; } = 1f;
+
     /// <summary>Gets the title's way of picking.</summary>
     public ModelLodRules Rules { get; }
 
@@ -85,7 +93,7 @@ public sealed class ModelLodPolicy
         Matrix3f o = camera.Orientation;
         double depth = (o.M31 * (at.X - eye.X + centre.X)) + (o.M32 * (at.Y - eye.Y + centre.Y)) + (o.M33 * (at.Z - eye.Z + centre.Z));
         float[] distances = _distances.TryGetValue(name, out float[]? own) ? own : [];
-        int level = ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0, Math.Min(fieldOfView, Rules.FieldOfViewCeiling), _bones, triangles, distances);
+        int level = ModelLodSelector.Select(depth, first.NativeMarkerBound, 1.0 / Reach, Math.Min(fieldOfView, Rules.FieldOfViewCeiling), _bones, triangles, distances);
         return level < 0 ? Math.Max(0, triangles.Length - 1) : level;
     }
 
@@ -115,12 +123,12 @@ public sealed class ModelLodPolicy
             double z = (m.M13 * offset.X) + (m.M23 * offset.Y) + (m.M33 * offset.Z) + centre.Z;
             float bias = first.Format == MefMeshFormat.Lightmapped ? 1f : Rules.BiasSquared;
             return ModelLodSelector.SelectByDistance(
-                (float)((x * x) + (y * y) + (z * z)), 1f, fieldOfView, bias, first.RenderSphereRadius, _settings.Cull, chain.Triangles.Length, chain.Distances);
+                (float)((x * x) + (y * y) + (z * z)), Reach, fieldOfView, bias, first.RenderSphereRadius, _settings.Cull, chain.Triangles.Length, chain.Distances);
         }
 
         Matrix3f o = camera.Orientation;
         double depth = (o.M31 * (at.X - eye.X + centre.X)) + (o.M32 * (at.Y - eye.Y + centre.Y)) + (o.M33 * (at.Z - eye.Z + centre.Z));
-        return ModelLodSelector.Select(depth, first.RenderSphereRadius, Scale, fieldOfView, _settings, chain.Triangles, chain.Distances);
+        return ModelLodSelector.Select(depth, first.RenderSphereRadius, Scale / Reach, fieldOfView, _settings, chain.Triangles, chain.Distances);
     }
 
     /// <summary>Gets the placement that draws a placement at one of its levels.</summary>

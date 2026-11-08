@@ -375,26 +375,17 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
 
             _device.SetDepthState(part.IsGunFlame ? DepthState.TestOnly : DepthState.TestAndWrite);
 
-            foreach (MeshSubset subset in part.Geometry.Subsets)
+            (TextureHandle[] textures, SurfaceMaterial[] materials) = Resolve(part);
+            for (int s = 0; s < part.Geometry.Subsets.Length; s++)
             {
+                MeshSubset subset = part.Geometry.Subsets[s];
                 if (subset.IndexCount == 0)
                 {
                     continue;
                 }
 
-                TextureHandle diffuse = TextureHandle.None;
-                SurfaceMaterial material = part.IsGunFlame ? GunFlameMaterial : _materials.Default;
-                if (subset.HasMaterial
-                    && part.Pack.TryGetTextureName(part.Instance, subset.MaterialSlot, out string texture))
-                {
-                    diffuse = Textures.Get(texture);
-                    if (!part.IsGunFlame)
-                    {
-                        material = _materials.For(texture);
-                    }
-                }
-
-                _device.SetMaterialOverride(material);
+                TextureHandle diffuse = textures[s];
+                _device.SetMaterialOverride(materials[s]);
                 _device.DrawMesh(
                     part.Mesh,
                     subset.IndexOffset,
@@ -409,6 +400,47 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
         _device.SetDepthState(DepthState.TestAndWrite);
         _device.SetMaterialOverride(SurfaceMaterial.Default);
         _device.SetVertexSun(Vector3f.Zero);
+    }
+
+    // Each subset's texture and material, by name once: a lookup by string per subset per draw was a measurable share of a
+    // browser frame with a squad in view.
+    private (TextureHandle[] Textures, SurfaceMaterial[] Materials) Resolve(Part part)
+    {
+        TexTextureCache cache = Textures;
+        if (part.SubsetTextures is { } known
+            && part.SubsetMaterials is { } knownMaterials
+            && ReferenceEquals(part.ResolvedFrom, cache)
+            && ReferenceEquals(part.ResolvedMaterials, _materials)
+            && part.ResolvedGeneration == cache.Generation)
+        {
+            return (known, knownMaterials);
+        }
+
+        int count = part.Geometry.Subsets.Length;
+        var textures = new TextureHandle[count];
+        var materials = new SurfaceMaterial[count];
+        for (int s = 0; s < count; s++)
+        {
+            MeshSubset subset = part.Geometry.Subsets[s];
+            textures[s] = TextureHandle.None;
+            materials[s] = part.IsGunFlame ? GunFlameMaterial : _materials.Default;
+            if (subset.HasMaterial
+                && part.Pack.TryGetTextureName(part.Instance, subset.MaterialSlot, out string texture))
+            {
+                textures[s] = cache.Get(texture);
+                if (!part.IsGunFlame)
+                {
+                    materials[s] = _materials.For(texture);
+                }
+            }
+        }
+
+        part.SubsetTextures = textures;
+        part.SubsetMaterials = materials;
+        part.ResolvedFrom = cache;
+        part.ResolvedMaterials = _materials;
+        part.ResolvedGeneration = cache.Generation;
+        return (textures, materials);
     }
 
     /// <inheritdoc/>
@@ -573,6 +605,14 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
 
         public MeshHandle Mesh { get; set; } = MeshHandle.None;
         public float FlameStrength { get; set; } = 1f;
+
+        // What each subset is drawn with, resolved once rather than looked up by name per draw: valid while the cache and
+        // the library they came from are the ones in use and the cache has not been cleared since.
+        public TextureHandle[]? SubsetTextures { get; set; }
+        public SurfaceMaterial[]? SubsetMaterials { get; set; }
+        public TexTextureCache? ResolvedFrom { get; set; }
+        public MaterialLibrary? ResolvedMaterials { get; set; }
+        public int ResolvedGeneration { get; set; }
     }
 
     // A copy of the vertices with the colour scaled down. The additive draw multiplies the texture

@@ -39,6 +39,12 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     // The view depths of the sphere of the object being drawn, which fog it linearly; equal for the exponential.
     private float _objectFogNear;
     private float _objectFogFar;
+
+    // The scene's half of the forward block, built once and kept until a setter feeding it runs: a frame issues
+    // thousands of forward draws between a handful of state changes, and building this for each was a twentieth
+    // of a browser's main thread. Every setter of a field it reads marks it stale.
+    private ForwardDrawState _forwardState;
+    private bool _forwardStateStale = true;
     private Vector3f _sceneSunAmbient;
     private Vector3f _sceneSunColour;
     private bool _firstPerson;
@@ -290,6 +296,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     {
         _unjitteredProjection = projection;
         _projection = _firstPerson && RigJittered ? RigJitter() * projection : projection;
+        _forwardStateStale = true;
     }
 
     /// <summary>The projection last handed over, before the device jittered it for the rig.</summary>
@@ -317,18 +324,21 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public void SetFog(in SceneFog fog)
     {
         _fog = fog;
+        _forwardStateStale = true;
         _pipelines.SetFog(fog.Colour, fog.DensityPerMetre);
         _forwardPipelines?.SetFog(fog.Colour, fog.DensityPerMetre);
+        _terrainPipelines?.SetFog(fog.Colour, fog.DensityPerMetre);
     }
 
     /// <inheritdoc/>
-    public void SetFogTarget(FogTarget target) => _fogTarget = target;
+    public void SetFogTarget(FogTarget target) => (_fogTarget, _forwardStateStale) = (target, true);
 
     /// <inheritdoc/>
-    public void SetModelAmbient(Vector3f ambient) => _modelAmbient = ambient;
+    public void SetModelAmbient(Vector3f ambient) => (_modelAmbient, _forwardStateStale) = (ambient, true);
 
     /// <inheritdoc/>
-    public void SetObjectFogRange(float nearDepth, float farDepth) => (_objectFogNear, _objectFogFar) = (nearDepth, farDepth);
+    public void SetObjectFogRange(float nearDepth, float farDepth) =>
+        (_objectFogNear, _objectFogFar, _forwardStateStale) = (nearDepth, farDepth, true);
 
     /// <inheritdoc/>
     public void SetSceneSun(Vector3f ambient, Vector3f colour)
@@ -337,24 +347,25 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         _sceneSunColour = colour;
         _pipelines.SetSun(ambient, colour);
         _forwardPipelines?.SetSun(ambient, colour);
+        _terrainPipelines?.SetSun(ambient, colour);
     }
 
     /// <inheritdoc/>
-    public void SetVertexSun(Vector3f towardsSun) => _vertexSun = towardsSun;
+    public void SetVertexSun(Vector3f towardsSun) => (_vertexSun, _forwardStateStale) = (towardsSun, true);
 
     /// <inheritdoc/>
     public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha) =>
-        _detailFade = new DetailFade(scale, offset, slope, fadeAlpha ? 2f : 1f);
+        (_detailFade, _forwardStateStale) = (new DetailFade(scale, offset, slope, fadeAlpha ? 2f : 1f), true);
 
     /// <inheritdoc/>
     public void SetDetailFadeUnweighted(float scale, float offset, float slope) =>
-        _detailFade = new DetailFade(scale, offset, slope, 3f);
+        (_detailFade, _forwardStateStale) = (new DetailFade(scale, offset, slope, 3f), true);
 
     /// <inheritdoc/>
-    public void ClearDetailFade() => _detailFade = DetailFade.None;
+    public void ClearDetailFade() => (_detailFade, _forwardStateStale) = (DetailFade.None, true);
 
     /// <inheritdoc/>
-    public void SetLightmapScale(float scale) => _lightmapScale = scale;
+    public void SetLightmapScale(float scale) => (_lightmapScale, _forwardStateStale) = (scale, true);
 
     /// <inheritdoc/>
     public void SetAlphaReference(byte reference) => _alphaReference = reference;
@@ -371,10 +382,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         }
 
         _firstPerson = firstPerson;
+        _forwardStateStale = true;
     }
 
     /// <inheritdoc/>
-    public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
+    public void SetLighting(in SceneLighting lighting) => (_lighting, _forwardStateStale) = (lighting, true);
 
     /// <inheritdoc/>
     public void DrawMesh(
@@ -558,31 +570,42 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     private void WriteForward(
         Span<float> push, in Matrix4f modelView, BlendMode blend, bool hasLightmap, float exposure, bool linearScene = false)
     {
-        ForwardDrawState state = new(
-            _projection,
-            _lighting,
-            _fog,
-            _fogTarget,
-            _detailFade,
-            _modelAmbient,
-            _vertexSun,
-            _lightmapScale,
-            _poseBlend,
+        if (_forwardStateStale || _forwardState.Exposure != exposure || _forwardState.LinearScene != linearScene)
+        {
+            _forwardState = new ForwardDrawState(
+                _projection,
+                _lighting,
+                _fog,
+                _fogTarget,
+                _detailFade,
+                _modelAmbient,
+                _vertexSun,
+                _lightmapScale,
+                _poseBlend,
+                exposure,
+                LampLight: Vector3f.Zero,
+                _firstPerson,
+                linearScene,
+                _objectFogNear,
+                _objectFogFar);
+            _forwardStateStale = false;
+        }
 
-            exposure,
+        // Only the lit rig reads the lamps, so they are summed only for its draws. The flashlight's share is the
+        // host's: the reflector's leak onto the hand holding it and the beam thrown back off whatever it is
+        // pointed at, which only the host knows the distance to.
+        if (ForwardDrawMarker.IsStudioRig(ForwardDrawMarker.For(blend, _firstPerson, _lighting.Model)))
+        {
+            ForwardDrawState lit = _forwardState with
+            {
+                LampLight = LampFill.AtEye(LocalLights) + (_flashlight.IsOn ? _flashlight.RigFill : Vector3f.Zero),
+            };
 
-            // Only the lit rig reads it, so the lamps are summed only for its draws. The flashlight's share
-            // is the host's: the reflector's leak onto the hand holding it and the beam thrown back off
-            // whatever it is pointed at, which only the host knows the distance to.
-            LampLight: ForwardDrawMarker.IsStudioRig(ForwardDrawMarker.For(blend, _firstPerson, _lighting.Model))
-                ? LampFill.AtEye(LocalLights) + (_flashlight.IsOn ? _flashlight.RigFill : Vector3f.Zero)
-                : Vector3f.Zero,
-            _firstPerson,
-            linearScene,
-            _objectFogNear,
-            _objectFogFar);
+            ForwardPushBlock.Write(push, lit, modelView, blend, hasLightmap);
+            return;
+        }
 
-        ForwardPushBlock.Write(push, state, modelView, blend, hasLightmap);
+        ForwardPushBlock.Write(push, _forwardState, modelView, blend, hasLightmap);
     }
 
     /// <summary>The 2D projection the sprite path divides by, which follows the mode unless set.</summary>

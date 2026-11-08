@@ -320,12 +320,19 @@ public sealed unsafe class WebGpuPipelineLayout : WebGpuResource<WGPUPipelineLay
         : base(handle, descriptor.Label)
     {
         PushDataBytes = descriptor.PushDataBytes;
+        PushDataPerInstance = descriptor.PushDataBytes > 0 && descriptor.PushDataPerInstance;
         GroupCount = descriptor.BindGroupLayouts.Count;
         _owned = owned ?? [];
     }
 
     /// <summary>Gets how many bytes of push data it takes.</summary>
     public int PushDataBytes { get; }
+
+    /// <summary>Gets whether its push blocks are read per instance; see <see cref="WebGpuInstancePushRing"/>.</summary>
+    public bool PushDataPerInstance { get; }
+
+    /// <summary>Gets or sets the ring its per-instance blocks go to, kept here so a pipeline switch does not look it up.</summary>
+    internal WebGpuInstancePushRing? InstanceRing { get; set; }
 
     /// <summary>Gets how many bind groups it takes.</summary>
     public int GroupCount { get; }

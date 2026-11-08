@@ -140,8 +140,17 @@ public sealed record RhiBindGroupDescriptor(
 /// </param>
 /// <param name="PushDataVisibility">Which stages read the push data.</param>
 /// <param name="Label">A name for captures and diagnostics.</param>
+/// <param name="PushDataPerInstance">
+/// Whether the pipelines' shader reads its push block per instance on a backend without push constants: an
+/// array of blocks indexed by the instance index, which lets that backend address a draw's block with the
+/// draw's first instance instead of rebinding a group for every draw, and fold consecutive draws of one range
+/// into a single instanced one. A backend with real push constants ignores it. It has to agree with the
+/// module: see <c>OPENIGI_INSTANCED_PUSH</c> in the shader library's PushConstants.slang. A caller of such a
+/// pipeline draws one instance at a time from instance zero and leaves the addressing to the backend.
+/// </param>
 public sealed record RhiPipelineLayoutDescriptor(
     IReadOnlyList<IRhiBindGroupLayout> BindGroupLayouts,
     int PushDataBytes = 0,
     RhiShaderStages PushDataVisibility = RhiShaderStages.All,
-    string Label = "");
+    string Label = "",
+    bool PushDataPerInstance = false);

@@ -550,7 +550,12 @@ public sealed class RotatingObjectRegistry : ILevelReset
         _byPlacement[obj.Placement] = obj;
         _byOwnerAndModel[(obj.Owner, obj.Placement.Instance.Name)] = obj;
         _byTask.TryAdd(obj.Owner, obj);
+        PlacementClaims.Changed();
     }
+
+    /// <summary>Whether a placement, or its owner, turns (see <see cref="PlacementClaims"/>).</summary>
+    public bool Claims(WorldPlacement placement) =>
+        _byPlacement.ContainsKey(placement) || _byTask.ContainsKey(placement.Owner);
 
     /// <summary>Hands a round's <c>WeaponHit</c> to the rotating object it struck, if it struck one.</summary>
     /// <param name="owner">The task the round struck.</param>
@@ -633,8 +638,12 @@ public sealed class RotatingObjectRegistry : ILevelReset
     {
         ArgumentNullException.ThrowIfNull(placement);
 
+        // Every placement in the level asks this every frame and nearly all of them own nothing that
+        // turns, so the owner is tested first: the owner-and-model key hashes a string, and on the web
+        // its tuple lookup ran in the interpreter. Every owner registered is in _byTask.
         if (_byPlacement.TryGetValue(placement, out PlacedRotatingObject? obj)
-            || _byOwnerAndModel.TryGetValue((placement.Owner, placement.Instance.Name), out obj))
+            || (_byTask.ContainsKey(placement.Owner)
+                && _byOwnerAndModel.TryGetValue((placement.Owner, placement.Instance.Name), out obj)))
         {
             position = obj.Position;
             orientation = obj.PresentedOrientation(tickFraction, smooth);

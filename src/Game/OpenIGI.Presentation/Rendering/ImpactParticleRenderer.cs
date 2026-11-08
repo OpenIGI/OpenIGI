@@ -453,7 +453,7 @@ public sealed class ImpactParticleRenderer : IDisposable
                 _mesh = _device.CreateAnimatedMesh(_quads.Vertices, QuadIndices.Build(MaximumParticles));
             }
 
-            _device.UpdateAnimatedMesh(_mesh, _quads.Vertices);
+            _device.UpdateAnimatedMesh(_mesh, _quads.Vertices.AsSpan(0, _quads.Used));
             _device.ClearPoseInterpolation();
 
             if (dustCount > 0)

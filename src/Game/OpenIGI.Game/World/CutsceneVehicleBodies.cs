@@ -49,7 +49,8 @@ internal sealed class CutsceneVehicleBodies(
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit = vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased = vehicleObstacleReleased;
     private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
-    private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
+    // By reference: a placement is a record, and its own equality hashes every field on each lookup.
+    private readonly Dictionary<WorldPlacement, int> _carWheelIndices = new(ReferenceEqualityComparer.Instance);
     private readonly List<RetailRayModel> _retailVehicleModels = [];
     private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
     private IRetailCarWorld? _retailCarWorld;

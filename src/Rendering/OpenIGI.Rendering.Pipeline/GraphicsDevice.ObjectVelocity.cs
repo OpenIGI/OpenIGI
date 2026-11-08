@@ -56,6 +56,7 @@ public sealed partial class GraphicsDevice
     public void SetPoseInterpolation(float currentBlend, float previousBlend)
     {
         _poseBlend = Math.Clamp(currentBlend, 0f, 1f);
+        _forwardStateStale = true;
         _previousPoseBlend = Math.Clamp(previousBlend, 0f, 1f);
     }
 
@@ -63,6 +64,7 @@ public sealed partial class GraphicsDevice
     public void ClearPoseInterpolation()
     {
         _poseBlend = 0f;
+        _forwardStateStale = true;
         _previousPoseBlend = 0f;
     }
 

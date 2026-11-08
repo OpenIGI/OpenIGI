@@ -165,6 +165,7 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         // One pixel at a metre's depth, in metres: what a line is widened to either side by half of.
         float pixel = 2f / Math.Max(viewportHeight, 1) / MathF.Max(MathF.Abs(projection.M22), 1e-6f);
         int quads = 0;
+        bool lines = _style == PrecipitationStyle.Igi1 && !weather.IsSnow;
         foreach ((_, int i, int j) in _blocks)
         {
             ref Cell corner = ref At(i, j);
@@ -177,6 +178,12 @@ public sealed class RetailPrecipitationRenderer : IDisposable
                 double layerFloor = floor + Top - (layer * RetailPrecipitation.LayerUnits);
                 double standing = above + (layer * RetailPrecipitation.LayerUnits);
                 int count = Showing(group, standing);
+                if (lines)
+                {
+                    quads = EmitLines(weather, group, count, corner.X, corner.Y, layerFloor, eye, quads, forward, pixel);
+                    continue;
+                }
+
                 for (int n = 0; n < count && quads < MaximumQuads; n++)
                 {
                     WeatherDrop drop = weather.Drops[_groups[group][n]];
@@ -196,7 +203,7 @@ public sealed class RetailPrecipitationRenderer : IDisposable
             _mesh = _device.CreateAnimatedMesh(_vertices, _indices);
         }
 
-        _device.UpdateAnimatedMesh(_mesh, _vertices);
+        _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, quads * 4));
         _device.ClearPoseInterpolation();
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
@@ -322,6 +329,66 @@ public sealed class RetailPrecipitationRenderer : IDisposable
         }
 
         return n;
+    }
+
+    // Project I.G.I.'s rain for one layer of one tile: what Emit makes of each drop, worked out in place. The same sums in the same
+    // order, so the same vertices to the bit -- a drop costs no calls and no vectors built and taken apart, which was most of the
+    // weather's time in a browser, where the frame's heaviest rain is ten thousand drops.
+    private int EmitLines(
+        RetailPrecipitation weather,
+        int group,
+        int count,
+        double cornerX,
+        double cornerY,
+        double layerFloor,
+        Vector3d eye,
+        int quads,
+        Vector3f forward,
+        float pixel)
+    {
+        float length = weather.Fade * StreakUnits / (float)WorldScene.UnitsPerMetre;
+        float halfPixel = 0.5f * pixel;
+        Bgra32 foot = Colour;
+        Bgra32 clear = new(foot.B, foot.G, foot.R, 0);
+        Vector3f normal = Vector3f.UnitZ;
+        ReadOnlySpan<WeatherDrop> drops = weather.Drops;
+        List<int> members = _groups[group];
+        Vertex3D[] vertices = _vertices;
+        for (int n = 0; n < count && quads < MaximumQuads; n++)
+        {
+            WeatherDrop drop = drops[members[n]];
+            float cx = (float)(((cornerX + drop.X) - eye.X) / WorldScene.UnitsPerMetre);
+            float cy = (float)(((cornerY + drop.Y) - eye.Y) / WorldScene.UnitsPerMetre);
+            float cz = (float)(((layerFloor + drop.Z) - eye.Z) / WorldScene.UnitsPerMetre);
+            float topZ = cz + length;
+            float depth = MathF.Max((cx * forward.X) + (cy * forward.Y) + (cz * forward.Z), 0.05f);
+
+            // Cross(UnitZ, centre), then NormalizedOrSelf, then scaled.
+            float ax = (0f * cz) - (1f * cy);
+            float ay = (1f * cx) - (0f * cz);
+            float az = (0f * cy) - (0f * cx);
+            float size = MathF.Sqrt((ax * ax) + (ay * ay) + (az * az));
+            if (size > 0f)
+            {
+                ax /= size;
+                ay /= size;
+                az /= size;
+            }
+
+            float scale = halfPixel * depth;
+            ax *= scale;
+            ay *= scale;
+            az *= scale;
+
+            int v = quads * 4;
+            vertices[v] = new Vertex3D(new Vector3f(cx - ax, cy - ay, cz - az), normal, 0f, 1f, colour: foot);
+            vertices[v + 1] = new Vertex3D(new Vector3f(cx + ax, cy + ay, cz + az), normal, 1f, 1f, colour: foot);
+            vertices[v + 2] = new Vertex3D(new Vector3f((cx + 0f) + ax, (cy + 0f) + ay, topZ + az), normal, 1f, 0f, colour: clear);
+            vertices[v + 3] = new Vertex3D(new Vector3f((cx + 0f) - ax, (cy + 0f) - ay, topZ - az), normal, 0f, 0f, colour: clear);
+            quads++;
+        }
+
+        return quads;
     }
 
     // One drop's quad, camera-relative, in metres.

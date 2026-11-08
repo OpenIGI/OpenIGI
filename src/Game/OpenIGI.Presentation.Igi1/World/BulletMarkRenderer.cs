@@ -167,7 +167,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
                 _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumMarks));
             }
 
-            _device.UpdateAnimatedMesh(_mesh, _vertices);
+            _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, _used));
 
             // The animated mesh carries a previous-pose stream a decal has no use for; a stale
             // soldier interpolation would drag every quad toward last frame's buffer.

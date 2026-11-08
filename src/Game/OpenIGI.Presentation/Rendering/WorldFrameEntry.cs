@@ -26,6 +26,11 @@ internal struct WorldFrameEntry
     public ViewClip? Clip;
     public ResolvedWorldModel? Model;
     public WorldPlacement? Displayed;
+
+    // Whether nothing claims Displayed, as of PlacementClaims.Epoch ClaimEpoch, for Displayed as it was then (ClaimFor).
+    public bool Unclaimed;
+    public int ClaimEpoch;
+    public WorldPlacement? ClaimFor;
     public Vector3d Position;
     public Matrix3f Orientation;
     public RotorDrawState Rotor;

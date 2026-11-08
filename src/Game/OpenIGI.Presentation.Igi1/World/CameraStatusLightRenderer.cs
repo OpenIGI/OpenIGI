@@ -201,7 +201,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
                 batch.Mesh = _device.CreateAnimatedMesh(batch.Vertices, BuildIndices());
             }
 
-            _device.UpdateAnimatedMesh(batch.Mesh, batch.Vertices);
+            _device.UpdateAnimatedMesh(batch.Mesh, batch.Vertices.AsSpan(0, used));
             _device.ClearPoseInterpolation();
             _device.DrawMesh(
                 batch.Mesh,

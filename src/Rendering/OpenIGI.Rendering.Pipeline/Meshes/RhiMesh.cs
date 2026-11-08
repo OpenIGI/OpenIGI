@@ -212,9 +212,9 @@ public sealed class RhiMesh : IDisposable
     }
 
     /// <summary>Replaces an animated mesh's vertices.</summary>
-    /// <param name="vertices">The new pose. Must be as many vertices as the mesh was created with.</param>
+    /// <param name="vertices">The new pose, or a prefix of it: at most as many vertices as the mesh was created with.</param>
     /// <param name="frameCounter">The frame counter, which decides the ring slot.</param>
-    /// <exception cref="GraphicsDeviceException">The mesh is not animated or the count differs.</exception>
+    /// <exception cref="GraphicsDeviceException">The mesh is not animated or the pose is larger than it.</exception>
     /// <remarks>
     /// Into a slot no unretired frame can still be fetching, then the ring moves forward: what was drawn
     /// as the current pose becomes the previous-pose stream without a copy, which is what gives the
@@ -227,10 +227,17 @@ public sealed class RhiMesh : IDisposable
             throw new GraphicsDeviceException("Only an animated mesh can have its vertices replaced.");
         }
 
-        if (vertices.Length != VertexCapacity)
+        if (vertices.Length > VertexCapacity)
         {
             throw new GraphicsDeviceException(
-                $"An animated mesh takes exactly {VertexCapacity} vertices but got {vertices.Length}.");
+                $"An animated mesh holds {VertexCapacity} vertices but got {vertices.Length}.");
+        }
+
+        // A streamed effect fills a prefix of its buffer and draws only that; writing the whole capacity
+        // anyway was megabytes a frame for the rain alone, and on the web every byte crosses into the page.
+        if (vertices.IsEmpty)
+        {
+            return;
         }
 
         int chosen = ChoosePoseSlot(frameCounter);

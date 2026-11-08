@@ -68,20 +68,24 @@ internal sealed class CutsceneVehicleParts(CutsceneContext context, CutsceneVehi
                     int leg = legs.GetValueOrDefault(placement.Owner);
                     legs[placement.Owner] = leg + 1;
                     _planeParts[placement] = (PlanePartKind.Gear, leg);
+                    PlacementClaims.Changed();
                 }
                 else if (placement.MagicTaskTypeName == "TASKTYPE_HATCH")
                 {
                     _planeParts[placement] = (PlanePartKind.Hatch, 0);
+                    PlacementClaims.Changed();
                 }
                 else if (placement.MagicTaskTypeName == "TASKTYPE_RUDDER")
                 {
                     int surface = surfaces.GetValueOrDefault(placement.Owner);
                     surfaces[placement.Owner] = surface + 1;
                     _planeParts[placement] = (PlanePartKind.Rudder, surface);
+                    PlacementClaims.Changed();
                 }
                 else if (placement.MagicTaskTypeName == "TASKTYPE_COCKPITSHIELD")
                 {
                     _planeParts[placement] = (PlanePartKind.Canopy, 0);
+                    PlacementClaims.Changed();
                 }
 
                 continue;
@@ -229,6 +233,9 @@ internal sealed class CutsceneVehicleParts(CutsceneContext context, CutsceneVehi
         slide = default;
         return false;
     }
+
+    /// <summary>Whether a placement is a plane's moving part.</summary>
+    public bool ClaimsPart(WorldPlacement placement) => _planeParts.ContainsKey(placement);
 
     /// <summary>Poses a drawn leg, hatch, canopy or control-surface placement of a plane where its body last placed the part.</summary>
     /// <param name="placement">The candidate placement.</param>

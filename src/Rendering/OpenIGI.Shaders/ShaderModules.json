@@ -601,6 +601,10 @@
     {
       "id": "ModePoint",
       "source": "World/ModePoint.slang"
+    },
+    {
+      "id": "TerrainArena",
+      "source": "World/TerrainArena.slang"
     }
   ]
 }

@@ -441,7 +441,7 @@ public sealed partial class GameHost
         if (_titleFeatures?.WorldModels is { } owned && TitleWorldModelPresenter is { } models)
         {
             // The original's levels of detail only when asked for, as the world's models give theirs up.
-            models.Lod = FrameCVars.ModelLod.Value ? _modelLod : null;
+            models.Lod = ActiveModelLod();
             models.LodBiasHeld = TitlePlayer?.IsCutscenePlaying == true;
             models.DrawWorld(owned.WorldModels, eye, projection, _titlePresentationBlend);
             models.DrawWorldSprites(owned.WorldSprites, eye, projection);

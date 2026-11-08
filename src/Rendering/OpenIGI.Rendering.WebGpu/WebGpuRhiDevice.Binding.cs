@@ -19,6 +19,14 @@ public sealed unsafe partial class WebGpuRhiDevice
         [RhiBindGroupEntry.Of(WebGpuPushBlocks.Binding, buffer, 0, (ulong)sliceBytes)],
         "push"));
 
+    /// <summary>Makes the group per-instance push blocks are read through over one chunk of their ring.</summary>
+    /// <param name="buffer">The chunk's buffer, bound whole.</param>
+    /// <returns>One read-only storage binding over the chunk.</returns>
+    internal IRhiBindGroup CreateInstancePushGroup(IRhiBuffer buffer) => CreateBindGroup(new RhiBindGroupDescriptor(
+        InstancePushGroupLayout(),
+        [RhiBindGroupEntry.Of(WebGpuPushBlocks.Binding, buffer, 0, buffer.SizeInBytes)],
+        "push.instances"));
+
     /// <inheritdoc/>
     public IRhiBindGroupLayout CreateBindGroupLayout(RhiBindGroupLayoutDescriptor descriptor)
     {
@@ -130,7 +138,7 @@ public sealed unsafe partial class WebGpuRhiDevice
             }
 
             WebGpuBindGroupLayout made = i == push
-                ? (WebGpuBindGroupLayout)PushGroupLayout()
+                ? (WebGpuBindGroupLayout)(descriptor.PushDataPerInstance ? InstancePushGroupLayout() : PushGroupLayout())
                 : (WebGpuBindGroupLayout)CreateBindGroupLayout(
                     new RhiBindGroupLayoutDescriptor([], $"{descriptor.Label}-empty{i}"));
 
@@ -170,6 +178,18 @@ public sealed unsafe partial class WebGpuRhiDevice
                 HasDynamicOffset: true),
         ],
         "push"));
+
+    /// <summary>The layout of the group per-instance push blocks are read through.</summary>
+    /// <returns>One read-only storage binding: the chunk's blocks as an array the instance index picks from.</returns>
+    /// <remarks>No dynamic offset: the draw's first instance says which block is its own, so the binding stays put.</remarks>
+    private IRhiBindGroupLayout InstancePushGroupLayout() => CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
+        [
+            new RhiBindGroupLayoutEntry(
+                WebGpuPushBlocks.Binding,
+                RhiBindingType.ReadOnlyStorageBuffer,
+                RhiShaderStages.Vertex | RhiShaderStages.Fragment),
+        ],
+        "push.instances"));
 
     /// <summary>One layout entry in WebGPU's terms, which is four unions in a trench coat.</summary>
     /// <remarks>

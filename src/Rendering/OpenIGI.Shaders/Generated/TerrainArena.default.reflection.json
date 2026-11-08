@@ -1,0 +1,225 @@
+{
+  "module": "TerrainArena",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "vertexMain",
+      "stage": "Vertex",
+      "workgroupSize": null
+    },
+    {
+      "name": "fragmentMain",
+      "stage": "Fragment",
+      "workgroupSize": null
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDiffuse",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 2,
+        "space": 0
+      }
+    },
+    {
+      "name": "uDiffuseSampler",
+      "group": 0,
+      "binding": 1,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 0,
+        "space": 0
+      }
+    },
+    {
+      "name": "uLightmap",
+      "group": 0,
+      "binding": 2,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 3,
+        "space": 0
+      }
+    },
+    {
+      "name": "uLightmapSampler",
+      "group": 0,
+      "binding": 3,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 1,
+        "space": 0
+      }
+    },
+    {
+      "name": "uEnvironment",
+      "group": 1,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 4,
+        "space": 0
+      }
+    },
+    {
+      "name": "uEnvironmentSampler",
+      "group": 1,
+      "binding": 1,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "hlsl": {
+        "class": "Sampler",
+        "register": 2,
+        "space": 0
+      }
+    },
+    {
+      "name": "uTerrainChunkRecord",
+      "group": 2,
+      "binding": 0,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 0,
+        "space": 0,
+        "stride": 4
+      }
+    },
+    {
+      "name": "uTerrainChunks",
+      "group": 2,
+      "binding": 1,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly",
+      "hlsl": {
+        "class": "ShaderResource",
+        "register": 1,
+        "space": 0,
+        "stride": 16
+      }
+    }
+  ],
+  "pushBlock": {
+    "name": "pushBlock",
+    "size": 128,
+    "group": 3,
+    "binding": 0,
+    "hlsl": {
+      "class": "ConstantBuffer",
+      "register": 1,
+      "space": 0
+    }
+  },
+  "specializationConstants": [
+    {
+      "name": "cAlphaReference",
+      "id": 0,
+      "default": 1056997505,
+      "hlslOffset": 8
+    },
+    {
+      "name": "cReflective",
+      "id": 1,
+      "default": 0,
+      "hlslOffset": 12
+    },
+    {
+      "name": "cSunAmbientRed",
+      "id": 6,
+      "default": 0,
+      "hlslOffset": 16
+    },
+    {
+      "name": "cSunAmbientGreen",
+      "id": 7,
+      "default": 0,
+      "hlslOffset": 20
+    },
+    {
+      "name": "cSunAmbientBlue",
+      "id": 8,
+      "default": 0,
+      "hlslOffset": 24
+    },
+    {
+      "name": "cSunRed",
+      "id": 9,
+      "default": 0,
+      "hlslOffset": 28
+    },
+    {
+      "name": "cSunGreen",
+      "id": 10,
+      "default": 0,
+      "hlslOffset": 32
+    },
+    {
+      "name": "cSunBlue",
+      "id": 11,
+      "default": 0,
+      "hlslOffset": 36
+    },
+    {
+      "name": "cLinearScene",
+      "id": 12,
+      "default": 0,
+      "hlslOffset": 40
+    },
+    {
+      "name": "cClipYDown",
+      "id": 64,
+      "default": 1,
+      "hlslOffset": 0
+    },
+    {
+      "name": "cSamplerDecodes",
+      "id": 66,
+      "default": 0,
+      "hlslOffset": 4
+    }
+  ],
+  "globals": null,
+  "hlslConstants": {
+    "class": "ConstantBuffer",
+    "register": 0,
+    "space": 0
+  }
+}

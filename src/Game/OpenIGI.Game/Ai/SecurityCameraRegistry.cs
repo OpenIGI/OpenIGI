@@ -32,19 +32,37 @@ public enum SecurityCameraBeep
 /// a human through <c>0x45FE30</c> or another camera through <c>0x442A30</c>.
 /// </summary>
 /// <param name="Key">Who it is; a camera restarts its confirmation whenever this changes.</param>
-/// <param name="Mark">The point the cone and the sight ray test, in engine units.</param>
+/// <param name="Point">The point the cone and the sight ray test, in engine units, when no <paramref name="MarkSource"/> gives it.</param>
 /// <param name="CamerasSide">
 /// Whether it is on team 1, the side every lens scans for (<c>0x4415C0</c> passes team 1): soldiers and
 /// cameras are, the player is not.
 /// </param>
 /// <param name="Alive">Whether it is alive — for a camera, not yet exploded.</param>
 /// <param name="Task">Its task, which the sight ray does not collide with, or <see langword="null"/>.</param>
+/// <param name="MarkSource">
+/// What gives the point when a lens asks for it, as the original's slot reads its human through the task it refers to: a lens tests
+/// the point only of what it registers -- its own side's dead, the other side's living -- so a guard on the cameras' side is
+/// never placed at all.
+/// </param>
 public readonly record struct SecurityCameraSubject(
     object Key,
-    Vector3d Mark,
+    Vector3d Point,
     bool CamerasSide,
     bool Alive,
-    GameTask? Task = null);
+    GameTask? Task = null,
+    ISecurityCameraMark? MarkSource = null)
+{
+    /// <summary>Gets the point the cone and the sight ray test, in engine units.</summary>
+    public Vector3d Mark => MarkSource?.CameraMark() ?? Point;
+}
+
+/// <summary>Where a lens tests a subject, worked out when the lens asks.</summary>
+public interface ISecurityCameraMark
+{
+    /// <summary>The point the cone and the sight ray test, in engine units, as the subject stands now.</summary>
+    /// <returns>The point.</returns>
+    Vector3d CameraMark();
+}
 
 /// <summary>What a lens's scan is offered besides the cameras themselves, as it stands when the lens updates.</summary>
 /// <param name="TargetFeet">The player's feet, in engine units.</param>

@@ -302,6 +302,38 @@ public sealed partial class Igi1HumanAi
     // The id the one-candidate form gives an offered soldier.
     private const int OfferedSoldierId = int.MaxValue;
 
+    /// <summary>Runs one 30 Hz tick against the humans the scan offers by reference (see <see cref="Igi1AiTrackedHuman"/>).</summary>
+    /// <param name="tick">The engine tick counter, which the detection phase gate keys off.</param>
+    /// <param name="humans">Every human the scan offers this tick, in the global human list's order.</param>
+    /// <param name="rootMotionThisTick">The clip's root motion along the body's forward axis, signed, in units.</param>
+    /// <param name="alarmOn">Whether an alarm the soldier watches is sounding.</param>
+    /// <param name="alarmWasOn">Whether that alarm sounded on the preceding tick, for the falling-edge event.</param>
+    /// <param name="rootMotionLateral">The clip's root motion along the body's own right axis, in engine units.</param>
+    /// <remarks>
+    /// What the tick read of its target stays as it was read: the simulation aims and fires at it once the brain has run, and a
+    /// human read then for the first time could already have taken its own tick.
+    /// </remarks>
+    internal void TickAmong(
+        int tick,
+        List<AiHumanReference> humans,
+        double rootMotionThisTick,
+        bool alarmOn = false,
+        bool alarmWasOn = false,
+        double rootMotionLateral = 0.0)
+    {
+        _offeredReferences = humans;
+        try
+        {
+            TickAmong(tick, Array.Empty<AiDetectionCandidate>(), rootMotionThisTick, alarmOn, alarmWasOn, rootMotionLateral);
+        }
+        finally
+        {
+            _offeredReferences = null;
+        }
+
+        TargetHuman?.Settle();
+    }
+
     /// <summary>Runs one 30 Hz tick against every human the scan offers.</summary>
     /// <param name="tick">The engine tick counter, which the detection phase gate keys off.</param>
     /// <param name="candidates">
@@ -329,7 +361,15 @@ public sealed partial class Igi1HumanAi
         _lastTick = tick;
         _rootMotionThisTick = rootMotionThisTick;
         _rootLateralThisTick = rootMotionLateral;
-        OfferCandidates(candidates);
+        if (_offeredReferences is { } references)
+        {
+            OfferReferences(references);
+        }
+        else
+        {
+            OfferCandidates(candidates);
+        }
+
         _enemyAlive = TargetHuman?.Candidate.Alive ?? true;
 
         // 0x44F410 zeroes the whole input-channel block (+15476, 0xA0 bytes) before anything runs: only the
@@ -432,7 +472,7 @@ public sealed partial class Igi1HumanAi
         // the one whose detection event the pump will hand the script first.
         if (!_combatInstalled && _enemies.Find(human => human.Slot.IsVisible) is { } seen)
         {
-            _targetId = seen.Candidate.Id;
+            _targetId = seen.Id;
         }
 
         if (TargetSlot.IsVisible)

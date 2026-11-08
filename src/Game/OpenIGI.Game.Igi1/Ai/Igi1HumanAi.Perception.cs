@@ -745,10 +745,43 @@ public sealed partial class Igi1HumanAi
         return (Vector3d.Distance(Position, enemyEye), inCone, clear, Alerted, TargetSlot.IsVisible);
     }
 
+    // The humans offered by reference this tick, while TickAmong runs on them.
+    private List<AiHumanReference>? _offeredReferences;
+
+    /// <summary>Takes this tick's humans by reference: each is read when first asked, and anyone gone from the list is dropped.</summary>
+    private void OfferReferences(List<AiHumanReference> humans)
+    {
+        HashSet<int> offered = _offeredScratch;
+        offered.Clear();
+        foreach (AiHumanReference reference in humans)
+        {
+            offered.Add(reference.Id);
+            if (_tracked.TryGetValue(reference.Id, out Igi1AiTrackedHuman? human))
+            {
+                human.Offer(reference);
+            }
+            else
+            {
+                _tracked[reference.Id] = new Igi1AiTrackedHuman(reference);
+            }
+        }
+
+        DropDeparted(offered);
+
+        // With nobody yet in mind, the soldier's attention rests on the first human on offer.
+        if (!_tracked.ContainsKey(_targetId) && humans.Count > 0)
+        {
+            _targetId = humans[0].Id;
+        }
+    }
+
     /// <summary>Takes this tick's humans: their descriptions update, and anyone gone from the list is dropped.</summary>
     private void OfferCandidates(IReadOnlyList<AiDetectionCandidate> candidates)
     {
-        HashSet<int> offered = [];
+        // Scratch kept between ticks: every soldier runs this every tick, and on the web the LINQ that
+        // found the departed ran in the interpreter.
+        HashSet<int> offered = _offeredScratch;
+        offered.Clear();
         foreach (AiDetectionCandidate candidate in candidates)
         {
             offered.Add(candidate.Id);
@@ -762,16 +795,32 @@ public sealed partial class Igi1HumanAi
             }
         }
 
-        foreach (int gone in _tracked.Keys.Where(id => !offered.Contains(id)).ToArray())
-        {
-            Unregister(_tracked[gone]);
-            _tracked.Remove(gone);
-        }
+        DropDeparted(offered);
 
         // With nobody yet in mind, the soldier's attention rests on the first human on offer.
         if (!_tracked.ContainsKey(_targetId) && candidates.Count > 0)
         {
             _targetId = candidates[0].Id;
+        }
+    }
+
+    // Anyone tracked who was not offered this tick leaves the lists.
+    private void DropDeparted(HashSet<int> offered)
+    {
+        List<int> departed = _departedScratch;
+        departed.Clear();
+        foreach (int id in _tracked.Keys)
+        {
+            if (!offered.Contains(id))
+            {
+                departed.Add(id);
+            }
+        }
+
+        foreach (int gone in departed)
+        {
+            Unregister(_tracked[gone]);
+            _tracked.Remove(gone);
         }
     }
 
@@ -805,9 +854,11 @@ public sealed partial class Igi1HumanAi
     {
         foreach (Igi1AiTrackedHuman human in _tracked.Values)
         {
-            AiDetectionCandidate candidate = human.Candidate;
-            List<Igi1AiTrackedHuman>? list = candidate.OtherSide && candidate.Alive ? _enemies
-                : !candidate.OtherSide && !candidate.Alive ? _fallenFriends
+            // Side and life only, as 0x45FE30 answers the scan: where the human stands is read when something asks.
+            bool otherSide = human.OtherSide;
+            bool alive = human.Alive;
+            List<Igi1AiTrackedHuman>? list = otherSide && alive ? _enemies
+                : !otherSide && !alive ? _fallenFriends
                 : null;
             if (list is null)
             {

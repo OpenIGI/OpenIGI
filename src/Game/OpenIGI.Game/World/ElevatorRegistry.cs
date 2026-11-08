@@ -70,6 +70,7 @@ public sealed class ElevatorRegistry : ILevelReset
     {
         ArgumentNullException.ThrowIfNull(elevators);
         _elevators.AddRange(elevators);
+        PlacementClaims.Changed();
     }
 
     public IReadOnlyList<PlacedElevator> Elevators => _elevators;
@@ -466,6 +467,22 @@ public sealed class ElevatorRegistry : ILevelReset
         return false;
     }
 
+    /// <summary>Whether a task is a lift's or rides in one, so this registry may move its placement (see <see cref="PlacementClaims"/>).</summary>
+    /// <param name="task">The placement's owner.</param>
+    /// <returns><see langword="true"/> for a lift's task or one of its descendants.</returns>
+    public bool Claims(GameTask task)
+    {
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            if (ReferenceEquals(elevator.Task, task) || IsDescendantOf(task, elevator.Task))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Gets the world transform for an elevator-owned task.</summary>
     public bool TryGetDrawTransform(
         GameTask task,
@@ -485,8 +502,15 @@ public sealed class ElevatorRegistry : ILevelReset
                 return true;
             }
 
+            // The ancestry first: every placement in the level asks this every frame, and the few riding
+            // a lift are the only ones whose displacement matters.
+            if (!IsDescendantOf(task, elevator.Task))
+            {
+                continue;
+            }
+
             Vector3d displacement = GetDisplacement(elevator, tickFraction, smooth);
-            if (IsDescendantOf(task, elevator.Task) && displacement != Vector3d.Zero)
+            if (displacement != Vector3d.Zero)
             {
                 position = authoredPosition + displacement;
                 orientation = authoredOrientation;
@@ -614,6 +638,7 @@ public sealed class ElevatorRegistry : ILevelReset
                     TextOrEmpty(declared, "Move sound"),
                     ElevatorSplineFrame.For(declared, spline));
                 registry._elevators.Add(elevator);
+                PlacementClaims.Changed();
                 List<string> wantedExpressions = Enumerable.Range(0, 10)
                     .Select(i => TextOrEmpty(declared, $"Wanted floor {i}"))
                     .ToList();

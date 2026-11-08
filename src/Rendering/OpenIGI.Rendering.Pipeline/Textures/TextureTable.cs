@@ -24,7 +24,8 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
 {
     private readonly IRhiDevice _device;
     private readonly RetiredResources? _retired;
-    private readonly Dictionary<uint, Entry> _textures = [];
+    // Indexed by handle: every draw resolves its textures here, and handles are the table's own sequence.
+    private readonly EntryMap _textures = new();
     private readonly Dictionary<RhiSamplerDescriptor, IRhiSampler> _samplers = [];
     private uint _next = 1;
     private bool _disposed;
@@ -443,4 +444,100 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     }
 
     private readonly record struct Entry(IRhiTexture Texture, IRhiSampler Sampler, TextureDescription Description);
+
+    /// <summary>The loaded textures by handle, in an array the handle indexes.</summary>
+    /// <remarks>
+    /// Handles come from one counter, so they are dense and a lookup is a bounds test and a load. A dictionary did the
+    /// same job, but a draw resolves several textures and the hashing was a measurable share of a browser frame.
+    /// </remarks>
+    private sealed class EntryMap
+    {
+        private Entry[] _entries = new Entry[256];
+        private bool[] _present = new bool[256];
+
+        public int Count { get; private set; }
+
+        public IEnumerable<Entry> Values
+        {
+            get
+            {
+                for (int i = 0; i < _entries.Length; i++)
+                {
+                    if (_present[i])
+                    {
+                        yield return _entries[i];
+                    }
+                }
+            }
+        }
+
+        public Entry this[uint id]
+        {
+            get => TryGetValue(id, out Entry entry) ? entry : throw new KeyNotFoundException($"No texture {id}.");
+            set
+            {
+                if (id >= (uint)_entries.Length)
+                {
+                    int size = Math.Max((int)id + 1, _entries.Length * 2);
+                    Array.Resize(ref _entries, size);
+                    Array.Resize(ref _present, size);
+                }
+
+                if (!_present[id])
+                {
+                    _present[id] = true;
+                    Count++;
+                }
+
+                _entries[id] = value;
+            }
+        }
+
+        public bool TryGetValue(uint id, out Entry entry)
+        {
+            if (id < (uint)_present.Length && _present[id])
+            {
+                entry = _entries[id];
+                return true;
+            }
+
+            entry = default;
+            return false;
+        }
+
+        public bool Remove(uint id, out Entry entry)
+        {
+            if (!TryGetValue(id, out entry))
+            {
+                return false;
+            }
+
+            _present[id] = false;
+            _entries[id] = default;
+            Count--;
+            return true;
+        }
+
+        public KeyValuePair<uint, Entry>[] ToArray()
+        {
+            var all = new KeyValuePair<uint, Entry>[Count];
+            int at = 0;
+            for (int i = 0; i < _entries.Length; i++)
+            {
+                if (_present[i])
+                {
+                    all[at++] = new KeyValuePair<uint, Entry>((uint)i, _entries[i]);
+                }
+            }
+
+            return all;
+        }
+
+        public void Clear()
+        {
+            Array.Clear(_entries);
+            Array.Clear(_present);
+            Count = 0;
+        }
+    }
 }

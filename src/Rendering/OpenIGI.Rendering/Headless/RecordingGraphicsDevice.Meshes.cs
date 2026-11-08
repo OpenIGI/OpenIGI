@@ -117,16 +117,19 @@ public sealed partial class RecordingGraphicsDevice
             throw new ArgumentException($"{mesh} was not created with {nameof(CreateAnimatedMesh)}.", nameof(mesh));
         }
 
-        if (vertices.Length != entry.Vertices.Length)
+        if (vertices.Length > entry.Vertices.Length)
         {
             throw new ArgumentException(
-                $"An animated mesh's vertex count is fixed: created with {entry.Vertices.Length}, got {vertices.Length}.",
+                $"An animated mesh holds {entry.Vertices.Length} vertices, got {vertices.Length}.",
                 nameof(vertices));
         }
 
-        // Exactly the backend's contract: what was current becomes the previous-pose stream.
+        // Exactly the backend's contract: what was current becomes the previous-pose stream, and a
+        // shorter pose replaces only its prefix.
+        Vertex3D[] pose = (Vertex3D[])entry.Vertices.Clone();
+        vertices.CopyTo(pose);
         PreviousPoseStreams[mesh.Id] = entry.Vertices;
-        Meshes[mesh.Id] = (vertices.ToArray(), entry.Indices);
+        Meshes[mesh.Id] = (pose, entry.Indices);
         AnimatedMeshUpdates[mesh.Id]++;
     }
 

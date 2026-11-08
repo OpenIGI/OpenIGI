@@ -189,6 +189,18 @@ public static class GeometryCVars
         high: "0",
         ultra: "1");
 
+    /// <summary>Whether the original's ground is drawn a texture and a pass at a time, as the original draws it.</summary>
+    /// <remarks>
+    /// The direct path's ground: a draw per texture per pass over an arena of chunks (<see cref="ITerrainArenaDevice"/>) rather
+    /// than one per chunk per layer -- a few dozen draws for thousands. Off draws it chunk by chunk, for comparing the two.
+    /// Not archived: it is a diagnostic, not a preference.
+    /// </remarks>
+    public static readonly BoolCVar TerrainArena = CVar.Bool(
+        "r_terrain_arena",
+        true,
+        CVarOptions.None,
+        "Draw the original's ground a texture and a pass at a time, as the original does. Off draws it chunk by chunk.");
+
     /// <summary>Whether placed world objects use asynchronous visibility queries in the geometry pass.</summary>
     /// <remarks>
     /// The frustum keeps most of a level's objects while the camera stands indoors — a wall hides

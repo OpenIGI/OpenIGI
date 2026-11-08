@@ -730,8 +730,10 @@ public static class GraphicsMenu
         // slider that did nothing until the next launch would be worse than no slider.
         "r_reflection_texture",
 
-        // The original's levels of detail, for comparing with it: every preset draws models whole.
+        // The original's levels of detail and how far out they are moved: on under every preset, a comparison switch and a
+        // distance a player has no way to judge by looking.
         "r_model_lod",
+        "r_model_lod_reach",
 
         // What enters the traced world, which is a correctness control rather than a quality dial: the
         // defaults are what make a reflection the same in two sessions, and a player has no way to judge

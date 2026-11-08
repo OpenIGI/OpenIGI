@@ -159,7 +159,7 @@ public sealed class Particle2DRenderer : IDisposable
                 _mesh = _device.CreateAnimatedMesh(_vertices, QuadIndices.Build(MaximumQuads));
             }
 
-            _device.UpdateAnimatedMesh(_mesh, _vertices);
+            _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, _used));
             _device.ClearPoseInterpolation();
             foreach (Batch batch in _batches)
             {
