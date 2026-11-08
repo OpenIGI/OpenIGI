@@ -705,6 +705,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerInteractionDriver.TakeWireDragSound"/>
     public string? TakeWireDragSound() => _interaction.TakeWireDragSound();
 
+    /// <inheritdoc cref="PlayerInteractionDriver.TakeCompletedActionState"/>
+    public int TakeCompletedActionState() => _interaction.TakeCompletedActionState();
+
     /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
     public bool InteractionAnimationLoops => _interaction.AnimationLoops;
 

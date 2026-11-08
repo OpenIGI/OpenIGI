@@ -49,6 +49,9 @@ internal sealed class PlayerInteractionDriver
     private int _wireDragSound;
     private string? _pendingWireSound;
 
+    // The timed action that just finished, its sound not yet heard: a lock picked or a computer hacked.
+    private int _completedActionState = -1;
+
     /// <summary>Initializes the driver for one player.</summary>
     /// <param name="host">The player the interactions belong to.</param>
     /// <param name="body">The body the states place.</param>
@@ -577,6 +580,15 @@ internal sealed class PlayerInteractionDriver
     internal int WireDragDirection => _wireDragDirection;
 
     /// <summary>Takes the drag sound the last tick started, if it started one.</summary>
+    /// <summary>Takes the state of a timed action that just completed, so its end sound is played once.</summary>
+    /// <returns><see cref="HumanInteractionDispatch.PickLockState"/> or <see cref="HumanInteractionDispatch.ComputerState"/>, else -1.</returns>
+    internal int TakeCompletedActionState()
+    {
+        int state = _completedActionState;
+        _completedActionState = -1;
+        return state;
+    }
+
     internal string? TakeWireDragSound()
     {
         string? sound = _pendingWireSound;
@@ -668,6 +680,12 @@ internal sealed class PlayerInteractionDriver
         WorldInteraction interaction = _activeInteraction!;
         if (completed)
         {
+            // 0x40C160 and 0x40C870 play pickloop_end / typecomp_end on the tick the action completes, never on a cancel.
+            if (LocomotionState is HumanInteractionDispatch.PickLockState or HumanInteractionDispatch.ComputerState)
+            {
+                _completedActionState = LocomotionState;
+            }
+
             interaction.CompleteUse();
             if (interaction.Door is not null)
             {

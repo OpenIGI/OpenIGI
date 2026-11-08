@@ -236,6 +236,11 @@ public sealed partial class SoldierSimulation
     /// <summary>Gets where the player's climbing body is in its ladder clip, or <see langword="null"/> off a ladder.</summary>
     public float? PlayerLadderClipTime => _playerBody.Climbing ? _playerBody.View?.LadderClipTime : null;
 
+    /// <summary>Gets whether the player's drawn body's clip crossed an authored event on its last advance.</summary>
+    /// <param name="eventId">The event, as an animation trigger names it.</param>
+    /// <returns><see langword="true"/> when it was crossed.</returns>
+    public bool PlayerBodyCrossedEvent(int eventId) => _playerBody.View?.CrossedEvent(eventId) == true;
+
     /// <inheritdoc cref="SoldierPlayerBody.Model"/>
     internal SoldierBodyModel? PlayerBodyModel { get => _playerBody.Model; set => _playerBody.Model = value; }
 

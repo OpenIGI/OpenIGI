@@ -37,12 +37,35 @@ public sealed record PlacedAmbientArea(
     /// <summary>Gets the ticks left before the bed may start again.</summary>
     public int Countdown { get; internal set; }
 
-    /// <summary>Gets the sound the area wants started this tick, or an empty string.</summary>
-    /// <remarks>Consumed by whoever plays it; cleared on the next tick.</remarks>
+    /// <summary>Gets the sound the area wants started, or an empty string.</summary>
+    /// <remarks>
+    /// Held until whoever plays it takes it (<see cref="TakePendingSound"/>). The area updates in the level walk, which runs
+    /// on ticks the speakers are not served -- the intro, a cutscene, the ticks of an intro skip -- and a start that lapsed
+    /// on the next update left a looped bed held but never heard: the area counted its voice as playing for as long as the
+    /// player stayed inside, which for a level-wide wind is the whole mission.
+    /// </remarks>
     public string PendingSound { get; internal set; } = string.Empty;
 
-    /// <summary>Gets whether whatever is playing for this area should be stopped.</summary>
+    /// <summary>Gets whether whatever is playing for this area should be stopped; held until taken (<see cref="TakeStop"/>).</summary>
     public bool WantsStop { get; internal set; }
+
+    /// <summary>Takes the sound the area wants started, so it is started once.</summary>
+    /// <returns>The definition, or an empty string when none is wanted.</returns>
+    public string TakePendingSound()
+    {
+        string sound = PendingSound;
+        PendingSound = string.Empty;
+        return sound;
+    }
+
+    /// <summary>Takes the area's request to stop its voice, so it is stopped once.</summary>
+    /// <returns><see langword="true"/> when its voice should be stopped.</returns>
+    public bool TakeStop()
+    {
+        bool stop = WantsStop;
+        WantsStop = false;
+        return stop;
+    }
 
     /// <summary>Gets or sets whether a voice is currently running for this area.</summary>
     public bool IsSounding { get; set; }
@@ -193,14 +216,13 @@ public sealed class AmbientAreaRegistry
     //   * the gap counts down.
     private void Step(PlacedAmbientArea area, Vector3d? listener, Func<string, bool> canStart, Func<string, double>? voiceSeconds)
     {
-        area.PendingSound = string.Empty;
-        area.WantsStop = false;
         bool held = area.HasVoice;
 
         // Deleted by the task that made it: its voice stops, and it plays nothing more.
         if (area.IsRetired)
         {
-            area.WantsStop = area.HasVoice || area.IsSounding;
+            area.WantsStop |= area.IsSounding || (area.HasVoice && area.PendingSound.Length == 0);
+            area.PendingSound = string.Empty;
             area.HasVoice = false;
             return;
         }
@@ -212,7 +234,10 @@ public sealed class AmbientAreaRegistry
         if (area.Fade == 0.0 || area.VoiceGone)
         {
             area.Countdown = DrawGap(area);
-            area.WantsStop = area.HasVoice;
+
+            // A start nobody took yet is simply dropped: there is no voice to stop.
+            area.WantsStop |= area.IsSounding || (area.HasVoice && area.PendingSound.Length == 0);
+            area.PendingSound = string.Empty;
             area.HasVoice = false;
             area.VoiceGone = false;
         }

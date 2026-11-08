@@ -86,6 +86,7 @@ internal sealed class LocalPlayerSenses(MissionWorld mission, Igi1HumanSounds so
     {
         audio.StopBinocularTransitionSound();
         audio.StopLadderSlideSound();
+        audio.StopTimedActionSound();
 
         // The player receives no further simulation ticks after death, so the weapon sound player cannot observe a quiet
         // tick and retire an automatic loop on its own.

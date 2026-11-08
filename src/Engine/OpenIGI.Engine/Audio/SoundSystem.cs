@@ -309,6 +309,28 @@ public sealed class SoundSystem : IDisposable
             looping));
     }
 
+    /// <summary>Sets a flat definition-backed voice's further gain, keeping the definition's own volume.</summary>
+    /// <param name="name">The definition the voice was started from.</param>
+    /// <param name="voice">The voice.</param>
+    /// <param name="gain">The gain on top of the definition's own, as <see cref="PlayDefinition"/> takes it.</param>
+    /// <param name="priority">Its importance when the voice pool is full.</param>
+    /// <remarks>
+    /// The original's instance has two volumes, the definition's and a second its owner sets (<c>0x4E8B20</c>), multiplied at
+    /// every update (<c>0x4E8DC0</c>): an ambient area fades its bed through the second and the first is never touched.
+    /// </remarks>
+    public void SetDefinitionVoiceGain(string name, AudioVoiceHandle voice, float gain, int priority = 0)
+    {
+        if (Definitions is null
+            || !Definitions.TryResolve(name, out SoundDefinition? definition)
+            || definition is null
+            || !definition.IsPlayable)
+        {
+            return;
+        }
+
+        SetVoiceParameters(voice, DefinitionParameters(definition, null, gain, priority, 1f, null));
+    }
+
     private static VoiceParameters DefinitionParameters(
         SoundDefinition definition,
         Vector3d? positionInUnits,
