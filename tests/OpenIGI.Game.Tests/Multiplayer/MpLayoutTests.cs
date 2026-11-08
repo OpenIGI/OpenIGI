@@ -43,6 +43,31 @@ public sealed class MpLayoutTests
     }
 
     [Fact]
+    public void Deathmatch_spawns_play_ffa_and_tdm_alone_and_round_modes_keep_the_team_starts()
+    {
+        MpLayout layout = MpLayout.Parse("""
+            {
+              "spawns": [
+                { "position": [0, 0, 0], "team": 0 },
+                { "position": [1, 0, 0], "team": 1 },
+                { "position": [2, 0, 0], "modes": ["ffa", "tdm"] },
+                { "position": [3, 0, 0], "modes": ["ffa", "tdm"] },
+              ],
+            }
+            """, out _)!;
+
+        Assert.All(layout.ForMode(GameModes.TeamDeathmatch).Spawns, s => Assert.True(s.Position[0] >= 2));
+        Assert.Equal(2, layout.ForMode(GameModes.FreeForAll).Spawns.Length);
+        Assert.Equal(2, layout.ForMode(GameModes.TeamDeathmatch).SpawnsFor(1).Count());
+        Assert.All(layout.ForMode(GameModes.SearchAndDestroy).Spawns, s => Assert.Null(s.Modes));
+        Assert.Equal(2, layout.ForMode(GameModes.Elimination).Spawns.Length);
+
+        // A map that names no mode on its spawns plays every mode on all of them, as before.
+        MpLayout plain = MpLayout.Parse(Arena, out _)!;
+        Assert.Same(plain, plain.ForMode(GameModes.TeamDeathmatch));
+    }
+
+    [Fact]
     public void A_layout_saved_reads_back_the_same()
     {
         MpLayout layout = MpLayout.Parse(Arena, out _)!;

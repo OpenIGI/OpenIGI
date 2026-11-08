@@ -184,7 +184,7 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
             _session.ChangeMap = ChangeMap;
             _session.IdleKickSeconds = IdleKickSeconds;
             _session.Mode = NewMode(_world);
-            if (Layout is { } layout)
+            if (Layout?.ForMode(_session.Mode.Id) is { } layout)
             {
                 _world.UseLayout(layout);
                 _session.Layout = layout;
@@ -207,8 +207,8 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
 
             // The new level's match, under the mode now asked for, on its own layout.
             _session.RestartMode(NewMode(_world));
-            _session.Layout = Layout;
-            if (Layout is { } layout)
+            _session.Layout = Layout?.ForMode(_session.Mode.Id);
+            if (_session.Layout is { } layout)
             {
                 _world.UseLayout(layout);
             }

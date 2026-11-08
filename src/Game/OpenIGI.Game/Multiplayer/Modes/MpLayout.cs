@@ -45,7 +45,18 @@ public sealed record MpBox(double[] Min, double[] Max)
 /// <param name="Position">Where, in world units.</param>
 /// <param name="Yaw">Which way it faces, in degrees.</param>
 /// <param name="Team">The team that starts there, or -1 for anyone (free for all).</param>
-public sealed record MpSpawn(double[] Position, float Yaw = 0, int Team = -1);
+/// <param name="Modes">
+/// The modes it is for, as <c>ffa</c> and <c>tdm</c>; <see langword="null"/> or empty for any. A mode some spawns name plays on
+/// those alone, so a map keeps deathmatch spawns apart from the team starts of its round modes.
+/// </param>
+public sealed record MpSpawn(double[] Position, float Yaw = 0, int Team = -1,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Modes = null)
+{
+    /// <summary>Gets whether the spawn names a mode.</summary>
+    /// <param name="mode">The mode's id.</param>
+    /// <returns><see langword="true"/> when it lists the mode.</returns>
+    public bool Names(string mode) => Modes is { } modes && modes.Contains(mode, StringComparer.OrdinalIgnoreCase);
+}
 
 /// <summary>A weapon a map hands its players, and the rounds of its ammunition they are filled to.</summary>
 /// <param name="Weapon">The weapon's script id (<c>WEAPON_ID_AK47</c>).</param>
@@ -132,6 +143,22 @@ public sealed record MpLayout
     /// <param name="team">The team, or -1 for a player of no team.</param>
     /// <returns>The spawns.</returns>
     public IEnumerable<MpSpawn> SpawnsFor(int team) => Spawns.Where(spawn => spawn.Team < 0 || team < 0 || spawn.Team == team);
+
+    /// <summary>Gets the layout as a mode plays it: the spawns that name the mode when any do, else those that name none.</summary>
+    /// <param name="mode">The mode's id.</param>
+    /// <returns>The layout, itself when no spawn names a mode; with no spawns left, itself too.</returns>
+    public MpLayout ForMode(string mode)
+    {
+        ArgumentNullException.ThrowIfNull(mode);
+        if (!Spawns.Any(spawn => spawn.Modes is { Length: > 0 }))
+        {
+            return this;
+        }
+
+        MpSpawn[] named = [.. Spawns.Where(spawn => spawn.Names(mode))];
+        MpSpawn[] spawns = named.Length > 0 ? named : [.. Spawns.Where(spawn => spawn.Modes is not { Length: > 0 })];
+        return spawns.Length == 0 ? this : this with { Spawns = spawns };
+    }
 
     /// <summary>Reads a layout.</summary>
     /// <param name="json">Its text.</param>
