@@ -551,8 +551,13 @@ public sealed partial class GameHost
                     // falls out of focus under the card, the promotion runs, and the shot opens over the
                     // start. The backdrop is gone over a played mission, so this cannot fire from the pause
                     // menu. -lockstep is excluded: the sequence runs on wall-clock time, and a reference
-                    // capture has to land on the same frame every run.
-                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep)
+                    // capture has to land on the same frame every run. So is a versus match -- a server joined
+                    // from the menu comes in here: its arena makes switches on its gates' far sides, which a
+                    // level already walked for the menu cannot take, and the server and every other player
+                    // have them.
+                    bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var sessionMode }
+                        && Game.Multiplayer.Modes.ArenaLevel.IsVersus(sessionMode);
+                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep && !arena)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
 
