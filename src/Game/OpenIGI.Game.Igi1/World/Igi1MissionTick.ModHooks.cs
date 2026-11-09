@@ -6,7 +6,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <content>
 /// Where mods take part in the tick: what they run before the player's update and at the tick's end, and the prompts they
 /// offer. With no mod adding to <see cref="MissionWorld.BeforePlayerUpdate"/>, <see cref="MissionWorld.PromptOffers"/> or
-/// <see cref="MissionWorld.TickEnded"/>, none of this reads the controls or changes anything. <b>Not retail.</b>
+/// <see cref="MissionWorld.TickEnded"/>, none of this changes anything: it only follows the use key. <b>Not retail.</b>
 /// </content>
 public sealed partial class Igi1MissionTick
 {
@@ -36,14 +36,16 @@ public sealed partial class Igi1MissionTick
     private void OfferModPrompt(PlayerCamera player)
     {
         mission.OfferedPrompt = null;
+
+        // The key is followed every tick, offers or none, so a key already held as a prompt appears doesn't act on it.
+        bool down = PlayerInputSampler.SampleFrame(host.ViewInput, player.InputProfile)[(int)PlayerInputSlot.Activate] != 0f;
+        bool pressed = down && !_promptUseWasDown;
+        _promptUseWasDown = down;
         if (mission.PromptOffers.Count == 0)
         {
             return;
         }
 
-        bool down = PlayerInputSampler.SampleFrame(host.ViewInput, player.InputProfile)[(int)PlayerInputSlot.Activate] != 0f;
-        bool pressed = down && !_promptUseWasDown;
-        _promptUseWasDown = down;
         if (player is not { IsOnLadder: false, IsInWorldInteraction: false, ControlTaken: false } || player.InteractionPrompt(1f) is not null)
         {
             return;

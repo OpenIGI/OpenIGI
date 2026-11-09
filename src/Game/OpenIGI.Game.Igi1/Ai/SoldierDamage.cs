@@ -51,8 +51,9 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
 
     /// <summary>
     /// Gets the soldiers who die without their death cry or the sounds of their own fall: a mod that kills one plays its own.
-    /// A soldier in it plays none of his animation's events at all, a melee strike's impact included, so a mod adds him as
-    /// it kills him. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// A soldier in it plays none of his animation's sound triggers, the melee whoosh included. Only sounds: the clip's
+    /// gameplay events still happen, so a melee blow still lands and a grenade still leaves his hand. A mod adds him as it
+    /// kills him. Empty unless a mod adds to it. <b>Not retail.</b>
     /// </summary>
     public HashSet<SoldierView> SilentDeaths { get; } = [];
 

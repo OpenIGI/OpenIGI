@@ -54,9 +54,12 @@ public sealed partial class PlayerCamera
 
         _input.Accept(taken);
 
-        // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them.
+        // A mod has the body (ControlTaken): it reads the controls, so its edges stay true, and does nothing with them. The
+        // level's switches and fences still pulse, and what the player threw before still flies and goes off.
         if (ControlTaken)
         {
+            _interactions?.Tick();
+            TickProjectilesAlone();
             return;
         }
 
