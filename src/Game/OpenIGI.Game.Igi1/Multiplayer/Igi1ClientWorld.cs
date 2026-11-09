@@ -439,7 +439,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     public void Skin(int entity, string skin) => _skins[entity] = skin;
 
     /// <inheritdoc/>
-    public void Sides(string mode, Func<int, int?> teamOf, int? ownTeam) => (_mode, _teamOf, _ownTeam) = (mode, teamOf, ownTeam);
+    public void Sides(string mode, Func<int, int?> teamOf, int? ownTeam)
+    {
+        (_mode, _teamOf, _ownTeam) = (mode, teamOf, ownTeam);
+
+        // A versus match shows no scene, and a joiner's own copy of the level must not say the intro's lines either.
+        if (Game.Multiplayer.Modes.GameModes.IsVersus(mode) && _game.World.Cutscenes is { Held: false } scenes)
+        {
+            scenes.Held = true;
+        }
+    }
 
     private string _mode = Game.Multiplayer.Modes.GameModes.Coop;
     private Func<int, int?> _teamOf = static _ => null;

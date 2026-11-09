@@ -213,11 +213,18 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     {
         ArgumentNullException.ThrowIfNull(host);
         GameModes.CountDeaths(host, tick, deaths);
+        if (Flow.Phase == MatchPhase.RoundOver)
+        {
+            TickRoundOver(host, tick);
+        }
+
         switch (Flow.Phase)
         {
             case MatchPhase.Live when FreezeLeft(tick) > 0:
-                // The freeze time: held where they start, buying and planning; nothing of the round runs yet.
+                // The freeze time: held where they start, buying and planning; nothing of the round runs yet but what a mode
+                // keeps going through it (the bomb in its carrier's hands).
                 host.World.HoldStill(true);
+                TickFrozen(host, tick);
                 break;
             case MatchPhase.Live:
                 host.World.HoldStill(false);
@@ -283,6 +290,20 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     {
         ArgumentNullException.ThrowIfNull(host);
         return host.Match.Players.Values.Count(p => p.Team == team);
+    }
+
+    /// <summary>A tick of the freeze time: what a mode keeps going while the players are held at their starts; nothing by default.</summary>
+    /// <param name="host">The session.</param>
+    /// <param name="tick">The tick.</param>
+    protected virtual void TickFrozen(IModeHost host, long tick)
+    {
+    }
+
+    /// <summary>Runs what a round leaves going once it is decided (a bomb's blast wave still sweeping out); nothing by default.</summary>
+    /// <param name="host">The match.</param>
+    /// <param name="tick">The server tick.</param>
+    protected virtual void TickRoundOver(IModeHost host, long tick)
+    {
     }
 
     /// <summary>Runs the mode's own part of a round in play (a bomb's plant, its fuse); nothing by default.</summary>

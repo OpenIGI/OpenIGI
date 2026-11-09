@@ -262,6 +262,24 @@ public interface IGraphicsDevice :
     {
     }
 
+    /// <summary>
+    /// Draws one bomb blast through the blast volume shader: its fireball and smoke column marched as a volume over the lit
+    /// image, and its shock front bending the picture behind it.
+    /// </summary>
+    /// <param name="mesh">A box about the blast, in the blast's own frame: everything it can touch lies inside it.</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw.</param>
+    /// <param name="modelView">The box's transform into view space.</param>
+    /// <param name="look">The blast at this frame.</param>
+    /// <remarks>
+    /// Only into a scene capture's forward pass, which has the depth and lit image it reads; the box's inside faces are
+    /// drawn with no depth test, so it runs whether the eye is in the box or not. A device without the shader draws
+    /// nothing, and the blast is the original's rocket fire alone.
+    /// </remarks>
+    void DrawBlastVolume(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, in BlastVolumeLook look)
+    {
+    }
+
     /// <summary>Draws part of a sheet of I.G.I. 2's water, as its own vertex shader lights it.</summary>
     /// <param name="mesh">The sheet's mesh: a position and a normal a vertex, with how shallow the water is there in the diffuse U.</param>
     /// <param name="indexOffset">The first index to draw.</param>

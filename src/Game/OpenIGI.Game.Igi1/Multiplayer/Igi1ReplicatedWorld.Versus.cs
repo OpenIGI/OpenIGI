@@ -296,6 +296,40 @@ public sealed partial class Igi1ReplicatedWorld
     public void Blast(Vector3d at, double radius) => _game.Blasts.ModeBlast(at, radius);
 
     /// <inheritdoc/>
+    public IReadOnlyList<(int Id, Vector3d At)> GlassNear(Vector3d at, double reach) => _game.Blasts.GlassNear(at, reach);
+
+    /// <inheritdoc/>
+    public void ShatterGlass(int id, Vector3d from) => _game.Blasts.ShatterGlass(id, from);
+
+    /// <inheritdoc/>
+    public void BlastSparingPlayers(Vector3d at, double radius) => _game.Blasts.ModeBlast(at, radius, sparePlayers: true);
+
+    /// <inheritdoc/>
+    public Game.World.WorldRayCast? Collision => _game.World.Soldiers?.RagdollWorldForCorpses().Cast;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Through the blast's own share of a player (its shove, shake and flash, <see cref="Igi1Blasts.BlastPlayer"/>'s), then the
+    /// health it takes in whole-health terms, unscaled by difficulty: a match's bomb is the same for everyone.
+    /// </remarks>
+    public void BlastPlayer(int slot, float healthShare, Vector3d from)
+    {
+        PlayerCamera? rig = slot == ServerSession.HostSlot ? _game.World.Player : _bySlot.GetValueOrDefault(slot)?.Player;
+        if (rig is null || _game.Harm.Players.FirstOrDefault(p => ReferenceEquals(p.Rig, rig)) is not { IsDead: false } target)
+        {
+            return;
+        }
+
+        target.Health.ApplyDirect(Game.Weapons.ExplosionDamage.Zone, healthShare * target.Health.MaximumHealth);
+        target.Senses.HitShake();
+        target.Senses.FlashCorners();
+        if (target.Health.IsDead)
+        {
+            _game.Harm.BeginPlayerDeath(target, from, Game.Weapons.ExplosionDamage.Zone, bone: -1, Game.Weapons.WeaponCategory.Grenade);
+        }
+    }
+
+    /// <inheritdoc/>
     public bool IsUsing(int slot) => LivingRig(slot) is { } rig && rig.LastFrame.IsSet(PlayerInputSlot.Activate);
 
     /// <inheritdoc/>

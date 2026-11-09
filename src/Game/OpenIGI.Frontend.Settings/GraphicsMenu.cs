@@ -590,6 +590,21 @@ public static class GraphicsMenu
             "Impact Effects",
             "Sparks, dust and debris where rounds land, chosen to suit the surface that was hit."),
         new GraphicsSetting(
+            "r_blast_quality",
+            "Bomb Blast",
+            "How search and destroy's bomb goes off. Original is the original's rocket explosion; Enhanced adds its light, "
+                + "shockwave, shake, and the props and walls it shatters; Full adds the fireball and the smoke column.",
+            new Dictionary<string, string>
+            {
+                ["0"] = "Original",
+                ["1"] = "Enhanced",
+                ["2"] = "Full",
+            }),
+        new GraphicsSetting(
+            "r_blast_shake",
+            "Blast Shake",
+            "How hard the bomb's blast shakes the view. The original's own explosion shake is unaffected."),
+        new GraphicsSetting(
             "r_bulletmarks",
             "Bullet Marks",
             "Leaves the marks rounds make on walls and floors."),

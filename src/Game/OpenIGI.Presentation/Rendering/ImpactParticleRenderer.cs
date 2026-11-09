@@ -27,10 +27,10 @@ namespace OpenIGI.Presentation.Rendering;
 /// with.
 /// </para>
 /// </remarks>
-public sealed class ImpactParticleRenderer : IDisposable
+public sealed partial class ImpactParticleRenderer : IDisposable
 {
     /// <summary>The most live particles; a burst that would pass it is trimmed, oldest spared.</summary>
-    public const int MaximumParticles = 1024;
+    public const int MaximumParticles = 2048;
 
     /// <summary>Inside this distance from the eye a particle is not drawn, in metres.</summary>
     public const float NearCullMetres = 0.6f;
@@ -273,7 +273,7 @@ public sealed class ImpactParticleRenderer : IDisposable
         }
 
         // FUN_0044a670 caps the shard records at 999. Keep that retail cap instead of the old
-        // presentation-only 48-face shortcut; the renderer's 1024-particle pool still bounds the
+        // presentation-only 48-face shortcut; the renderer's 2048-particle pool still bounds the
         // worst case without changing the native selection order.
         // The native routine stops appending at 999; it does not sort the records after recursive
         // subdivision. Preserve that creation order so the same early-out faces survive the cap.
@@ -679,16 +679,19 @@ public sealed class ImpactParticleRenderer : IDisposable
 
     // A direction biased along the surface normal, opened by the spread. A zero normal -- a hit on a
     // body, whose facing nobody recorded -- degrades to a uniform scatter.
-    private Vector3f ScatterAround(Vector3f normal, float spread)
+    private Vector3f ScatterAround(Vector3f normal, float spread) => ScatterAround(_random, normal, spread);
+
+    // The same, drawn from a stream of the caller's: a blast's own seed, so every machine throws it alike.
+    private static Vector3f ScatterAround(IgiRandom stream, Vector3f normal, float spread)
     {
         Vector3f random;
         float lengthSquared;
         do
         {
             random = new Vector3f(
-                ((float)_random.NextDouble() * 2f) - 1f,
-                ((float)_random.NextDouble() * 2f) - 1f,
-                ((float)_random.NextDouble() * 2f) - 1f);
+                ((float)stream.NextDouble() * 2f) - 1f,
+                ((float)stream.NextDouble() * 2f) - 1f,
+                ((float)stream.NextDouble() * 2f) - 1f);
             lengthSquared = (random.X * random.X) + (random.Y * random.Y) + (random.Z * random.Z);
         }
         while (!(lengthSquared > 1e-6f) || lengthSquared > 1f);

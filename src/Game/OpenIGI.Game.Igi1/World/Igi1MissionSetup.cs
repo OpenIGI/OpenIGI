@@ -132,6 +132,10 @@ public sealed class Igi1MissionSetup(
             vehicleObstacleReleased: obstacle =>
                 mission.Doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true,
             walker: walker);
+
+        // A match holds the scenes; whatever the intro had already started saying stops with it.
+        mission.Cutscenes.SoundsHeld += host.StopCutsceneSounds;
+
         bool collectDiagnostics = host.Logger.IsEnabled(LogLevel.Information);
         if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
         {

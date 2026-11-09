@@ -636,6 +636,29 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
             fill.U1,
             fill.V1);
         batch.Draw(foreground.Textures[fill.TextureIndex], destination, source, neutral);
+
+        // A planted bomb's share of the bar, as the remaster adds it: the part it would take, over itself in a pulsing red.
+        (float riskFrom, float riskTo) = OpenIGI.Presentation.Hud.HudBlastRisk.Span(healthFraction);
+        if (riskTo > riskFrom)
+        {
+            float pulse = OpenIGI.Presentation.Hud.HudBlastRisk.Pulse(
+                Environment.TickCount64 / 1000.0, OpenIGI.Presentation.Hud.HudBlastRisk.IsLethal(healthFraction));
+            float top = 1f - riskTo;
+            float bottom = 1f - riskFrom;
+            RectF risk = new(
+                cursorX + (fill.OffsetX * scale),
+                cursorY + (fill.OffsetY * scale) + (fill.Height * scale * top),
+                fill.Width * scale,
+                fill.Height * scale * (bottom - top));
+            RectF riskSource = RectF.FromEdges(
+                fill.U0,
+                fill.V0 + ((fill.V1 - fill.V0) * top),
+                fill.U1,
+                fill.V0 + ((fill.V1 - fill.V0) * bottom));
+            Bgra32 red = new(40, 50, 255, (byte)(255f * pulse));
+            batch.Draw(foreground.Textures[fill.TextureIndex], risk, riskSource, red);
+            batch.Draw(foreground.Textures[fill.TextureIndex], risk, riskSource, red);
+        }
     }
 
     private static void DrawInteractionProgress(

@@ -90,6 +90,47 @@ public static class CombatEffectCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>How much of the remastered bomb blast search and destroy's bomb goes off with.</summary>
+    /// <remarks>
+    /// <para>
+    /// The bomb always goes off with the LAW rocket's fire, smoke and report, which is what the original would have drawn
+    /// for an explosion of that size. Above nought the remaster's blast is laid over it: <b>1</b> adds the blast light,
+    /// the shockwave, the shake, the dust ring, the embers and the props and walls it shatters for the round's last
+    /// seconds; <b>2</b> adds the raymarched fireball and smoke column and the pall it leaves in the fog.
+    /// </para>
+    /// <para>Presentation only: what the bomb kills and breaks for good is the same at every setting.</para>
+    /// </remarks>
+    public static readonly NumericCVar<int> BlastQuality = Presets.Define(
+        CVar.Int(
+            "r_blast_quality",
+            2,
+            0,
+            2,
+            CVarOptions.Archive,
+            "The search and destroy bomb's blast: 0 the original's rocket fire, 1 adds light, shockwave, shake and debris, 2 the volumetric fireball."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "2",
+        ultra: "2");
+
+    /// <summary>How hard the remastered bomb blast shakes the view, as a fraction of its full shake.</summary>
+    /// <remarks>
+    /// The original's own blast shake (the explosion message's, <c>0x412990</c>) is not touched by this; it scales only the
+    /// remaster's trauma shake on top, so somebody who finds it too much can turn it down or off.
+    /// </remarks>
+    public static readonly NumericCVar<float> BlastShake = Presets.Define(
+        CVar.Float(
+            "r_blast_shake",
+            1f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How hard the bomb's blast shakes the view, 0 to 1. The original's own explosion shake is unaffected."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

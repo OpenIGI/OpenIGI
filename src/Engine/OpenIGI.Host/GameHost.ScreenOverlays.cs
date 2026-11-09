@@ -220,6 +220,9 @@ public sealed partial class GameHost
         float horizontalTangent = view.HorizontalTangent;
         float aspectRatio = view.AspectRatio;
 
+        // What a planted bomb would take from the player where it stands, for whichever health bar is drawn to flash.
+        OpenIGI.Presentation.Hud.HudBlastRisk.Share = CurrentMatchHud()?.BlastRisk ?? 0f;
+
         // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
         // the menus and the console are authored in display colours and must never be tone mapped.
         // Unconditional, and outside the player-mode block on purpose -- a free-camera frame draws

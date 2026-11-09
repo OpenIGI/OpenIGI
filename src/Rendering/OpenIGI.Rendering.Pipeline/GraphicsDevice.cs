@@ -471,6 +471,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeDeferred();
         DisposeTracers();
         DisposeModePoints();
+        DisposeBlastVolume();
         DisposeCompute();
         _ownedTracedWorld?.Dispose();
         _profiler.Dispose();

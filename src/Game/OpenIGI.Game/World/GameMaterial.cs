@@ -90,6 +90,15 @@ public sealed class GameMaterial
     public static bool IsSightTransparent(int globalMaterial) =>
         globalMaterial is 2 or 14 or 18 or 22 or 23;
 
+    /// <summary>Whether a blast wave passes through this global material row.</summary>
+    /// <param name="globalMaterial">A row of the retail material table.</param>
+    /// <returns>
+    /// <see langword="true"/> for what a bomb's wave goes through rather than round: Glass (14), which it shatters, and
+    /// the open-work Fence (18), MetalLadder (22) and MetalFence (23). Water stops it, as a wall does.
+    /// </returns>
+    public static bool IsBlastTransparent(int globalMaterial) =>
+        globalMaterial is 14 or 18 or 22 or 23;
+
     /// <summary>Gets the row this material occupies, which is what a collision face names.</summary>
     public int Index { get; init; }
 

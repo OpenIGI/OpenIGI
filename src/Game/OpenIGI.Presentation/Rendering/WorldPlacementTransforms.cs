@@ -51,6 +51,9 @@ internal sealed class WorldPlacementTransforms
     /// <summary>Gets or sets the title's destroyed placements.</summary>
     internal IPlacementDestruction? Destruction { get; set; }
 
+    /// <summary>Gets the placements a bomb's blast has shattered into flying pieces, which leave the frame until the level is put back.</summary>
+    internal HashSet<WorldPlacement> Shattered { get; } = new(ReferenceEqualityComparer.Instance);
+
     /// <summary>Gets or sets which variant each placement wears.</summary>
     internal IPlacementVariant? Variants { get; set; }
 

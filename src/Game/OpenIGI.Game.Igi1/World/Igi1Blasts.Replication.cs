@@ -14,6 +14,9 @@ namespace OpenIGI.Game.Igi1.World;
 /// </summary>
 public sealed partial class Igi1Blasts
 {
+    // How much of the bomb's killing radius its scorch spans, either way from its centre.
+    private const float BombScorchShare = 0.3f;
+
     // A flashbang (0x476AC0's type-1 branch): only the flash (0x47E9A0) and explo_flash (0x47E820) -- no fireball and no
     // explo_02_m -- the same burn1.tex, 2048 wide, on what the grenade's line found 2048 below, and the player handler's
     // whiteout (0x413090) measured from this game's own player's eye, with no wall trace. A distant flash writes nothing,
@@ -60,11 +63,30 @@ public sealed partial class Igi1Blasts
     /// </summary>
     /// <param name="at">Its centre, in units.</param>
     /// <param name="radiusUnits">How far it reaches, in units.</param>
-    public void ModeBlast(Vector3d at, double radiusUnits)
+    public void ModeBlast(Vector3d at, double radiusUnits) => ModeBlast(at, radiusUnits, sparePlayers: false);
+
+    /// <summary>A mode's blast, optionally leaving the players to the mode's own damage.</summary>
+    /// <param name="at">Where, in world units.</param>
+    /// <param name="radiusUnits">How far it reaches.</param>
+    /// <param name="sparePlayers">Whether the players are left out: a bomb whose wave the mode sweeps over them itself.</param>
+    public void ModeBlast(Vector3d at, double radiusUnits, bool sparePlayers)
     {
         float radius = (float)radiusUnits;
-        ShowMissile(at, 1f, () => Explode(at, radius * 0.5f, radius * 0.5f, 1f, WeaponCategory.Grenade));
-        Record(ReplicatedBlastKind.Missile, at, default, radius * 0.5f, radius * 0.5f);
+        ShowMissile(at, 1f, sparePlayers
+            ? () => ExplodeSparingPlayers(at, radius * 0.5f, radius * 0.5f, 1f)
+            : () => Explode(at, radius * 0.5f, radius * 0.5f, 1f, WeaponCategory.Grenade));
+        ShowBomb(at, radius);
+        Record(ReplicatedBlastKind.Bomb, at, default, radius * 0.5f, radius * 0.5f);
+    }
+
+    // The bomb over the rocket's fire it is drawn with: the remastered blast, which is the host's to show, and with it a
+    // scorch the size of its blast on what lies under it. Where the remaster's blast is off, the rocket's alone.
+    private void ShowBomb(Vector3d at, float radiusUnits)
+    {
+        if (host.BombBlast(at, radiusUnits, mission.Soldiers?.RagdollWorldForCorpses()))
+        {
+            impacts.ScorchBelow(at, MissileScorchDropInUnits, radiusUnits * BombScorchShare);
+        }
     }
 
     private void ShowMissile(Vector3d at, float damage, Action? harm)
@@ -124,6 +146,11 @@ public sealed partial class Igi1Blasts
                 break;
             case ReplicatedBlastKind.Missile:
                 ShowMissile(at, 1f, harm: null);
+                break;
+            case ReplicatedBlastKind.Bomb:
+                // Recorded with half its reach as radius and half as falloff (ModeBlast), the whole of it shown.
+                ShowMissile(at, 1f, harm: null);
+                ShowBomb(at, radius + falloff);
                 break;
             case ReplicatedBlastKind.M203:
                 ShowM203(at, impact.Direction, radius, falloff, 1f, harm: null);

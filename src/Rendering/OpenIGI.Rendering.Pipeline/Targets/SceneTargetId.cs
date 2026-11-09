@@ -129,6 +129,13 @@ public enum SceneTargetId
     /// </remarks>
     RainBackdrop,
 
+    /// <summary>The scene's depth as it stood before the bomb's blast was drawn, which its volume stops each ray at.</summary>
+    /// <remarks>
+    /// Copied from the depth once a blast is drawn: the forward pass holds the depth as its attachment, and a pass cannot
+    /// read the image it is attached to.
+    /// </remarks>
+    BlastDepth,
+
     /// <summary>The exposure the tone mapper will multiply the scene by, one texel.</summary>
     /// <remarks>
     /// Written on the GPU every frame from the adapted exposure, so an NVIDIA reconstruction sees the image

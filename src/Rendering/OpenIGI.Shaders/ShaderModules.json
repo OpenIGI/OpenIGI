@@ -605,6 +605,10 @@
     {
       "id": "TerrainArena",
       "source": "World/TerrainArena.slang"
+    },
+    {
+      "id": "BlastVolume",
+      "source": "World/BlastVolume.slang"
     }
   ]
 }

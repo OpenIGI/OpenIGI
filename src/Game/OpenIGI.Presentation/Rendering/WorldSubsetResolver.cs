@@ -43,6 +43,9 @@ internal sealed class WorldSubsetResolver
     /// <summary>The lower levels of detail, each placement the level-of-detail policy made for one.</summary>
     private readonly Dictionary<WorldPlacement, ResolvedWorldModel?> _resolvedLevels = new(ReferenceEqualityComparer.Instance);
 
+    // The placements a bomb has blown holes through, each with its holed mesh, until the level is put back.
+    private readonly Dictionary<WorldPlacement, ResolvedWorldModel> _breached = new(ReferenceEqualityComparer.Instance);
+
     /// <summary>Initializes the resolver over the renderer's device and its texture and lightmap caches.</summary>
     /// <param name="device">The device meshes upload to.</param>
     /// <param name="logger">Where to report upload problems.</param>
@@ -136,6 +139,14 @@ internal sealed class WorldSubsetResolver
     internal ResolvedWorldModel? SelectModel(WorldPlacement authored, ref WorldFrameEntry entry, bool destroyed, int variant)
     {
         ResolvedWorldModel? model;
+
+        // A wall a bomb has blown a hole through draws its holed mesh until the level is put back.
+        if (_breached.Count > 0 && _breached.TryGetValue(authored, out ResolvedWorldModel? holed))
+        {
+            entry.Displayed ??= _transforms.DisplayedPlacement(authored);
+            return holed;
+        }
+
         if (variant >= 0)
         {
             // A placement wearing one of its variants: each resolved once, the displayed one refreshed as it changes.
@@ -175,6 +186,7 @@ internal sealed class WorldSubsetResolver
     /// <summary>Drops every placement's resolved state, returning its occlusion queries to the device.</summary>
     internal void ForgetResolved()
     {
+        MendBreaches();
         DestroyResolvedQueries();
         _resolved.Clear();
         _resolvedDestroyed.Clear();
@@ -196,9 +208,58 @@ internal sealed class WorldSubsetResolver
         return model;
     }
 
+    /// <summary>Draws a placement as a holed mesh in place of its own, until <see cref="MendBreaches"/>.</summary>
+    /// <param name="authored">The placement as authored.</param>
+    /// <param name="holed">Its mesh with the hole cut through it, in the model's own space.</param>
+    /// <returns>Whether it uploaded.</returns>
+    internal bool Breach(WorldPlacement authored, MeshGeometry holed)
+    {
+        MeshHandle mesh = _device.CreateMesh(holed.Vertices, holed.Indices);
+        if (!mesh.IsValid)
+        {
+            return false;
+        }
+
+        if (_breached.Remove(authored, out ResolvedWorldModel? earlier))
+        {
+            Release(earlier);
+        }
+
+        _breached[authored] = new ResolvedWorldModel(holed, mesh);
+        return true;
+    }
+
+    /// <summary>Gets a value indicating whether a placement is drawn holed.</summary>
+    /// <param name="authored">The placement as authored.</param>
+    /// <returns>Whether it is.</returns>
+    internal bool IsBreached(WorldPlacement authored) => _breached.ContainsKey(authored);
+
+    /// <summary>Puts every holed placement back as it was, letting its holed mesh go.</summary>
+    internal void MendBreaches()
+    {
+        foreach (ResolvedWorldModel model in _breached.Values)
+        {
+            Release(model);
+        }
+
+        _breached.Clear();
+    }
+
+    private void Release(ResolvedWorldModel model)
+    {
+        if (model.Query.IsValid)
+        {
+            _device.DestroyOcclusionQuery(model.Query);
+            model.Query = OcclusionQueryHandle.None;
+        }
+
+        _device.DestroyMesh(model.Mesh);
+    }
+
     /// <summary>Destroys every uploaded model mesh, as disposing the renderer does.</summary>
     internal void DestroyMeshes()
     {
+        MendBreaches();
         foreach (MeshHandle mesh in _meshes.Values)
         {
             _device.DestroyMesh(mesh);

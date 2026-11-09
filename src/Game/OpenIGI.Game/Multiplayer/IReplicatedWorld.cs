@@ -199,6 +199,39 @@ public interface IReplicatedWorld
     {
     }
 
+    /// <summary>Gets the level's collision, which a bomb's blast wave is spread through; none where the game has none.</summary>
+    Game.World.WorldRayCast? Collision => null;
+
+    /// <summary>A bomb's blast wave reaching a player: a share of its health taken, and the flash, the shake and the death.</summary>
+    /// <param name="slot">The player.</param>
+    /// <param name="healthShare">How much of a whole health it takes; one or more kills.</param>
+    /// <param name="from">Where the blast was, in world units.</param>
+    void BlastPlayer(int slot, float healthShare, Core.Numerics.Vector3d from)
+    {
+        if (healthShare >= 1f)
+        {
+            KillPlayer(slot);
+        }
+    }
+
+    /// <summary>The unbroken glass near a point: what a bomb's wave may shatter.</summary>
+    /// <param name="at">The point, world units.</param>
+    /// <param name="reach">How far from it, world units.</param>
+    /// <returns>Each pane's handle and centre.</returns>
+    IReadOnlyList<(int Id, Core.Numerics.Vector3d At)> GlassNear(Core.Numerics.Vector3d at, double reach) => [];
+
+    /// <summary>Shatters a pane as a blast does, its shards thrown from where the blast was.</summary>
+    /// <param name="id">The pane, as <see cref="GlassNear"/> named it.</param>
+    /// <param name="from">The blast's centre, world units.</param>
+    void ShatterGlass(int id, Core.Numerics.Vector3d from)
+    {
+    }
+
+    /// <summary>Sets off a mode's blast that leaves the players to the mode: it breaks and burns, and hurts nobody playing.</summary>
+    /// <param name="at">Where, in world units.</param>
+    /// <param name="radius">How far it reaches, in world units.</param>
+    void BlastSparingPlayers(Core.Numerics.Vector3d at, double radius) => Blast(at, radius);
+
     /// <summary>Kills a player outright, as the world kills one that strayed out of play.</summary>
     /// <param name="slot">The player's slot.</param>
     void KillPlayer(int slot)
