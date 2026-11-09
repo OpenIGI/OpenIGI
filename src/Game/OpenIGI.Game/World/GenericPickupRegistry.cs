@@ -128,6 +128,29 @@ public sealed class GenericPickupRegistry : ILevelReset
 
     // Which were taken as the match began.
     private bool[] _startCollected = [];
+    private bool _levelCleared;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the level's own pickups are all gone, for good: a versus match, where nothing
+    /// lies about to heal or arm a player but what the players drop and buy. Every round put back keeps them gone.
+    /// </summary>
+    public bool LevelCleared
+    {
+        get => _levelCleared;
+        set
+        {
+            // Only as it first goes: what lies about by then is the level's own; a gun dropped after is a player's.
+            bool clearing = value && !_levelCleared;
+            _levelCleared = value;
+            if (clearing)
+            {
+                foreach (GenericPickup pickup in _items)
+                {
+                    pickup.IsCollected = true;
+                }
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public void MarkLevelStart() => _startCollected = [.. _items.Select(static p => p.IsCollected)];
@@ -138,7 +161,7 @@ public sealed class GenericPickupRegistry : ILevelReset
     {
         for (int i = 0; i < _items.Count; i++)
         {
-            _items[i].IsCollected = i < _startCollected.Length && _startCollected[i];
+            _items[i].IsCollected = _levelCleared || (i < _startCollected.Length && _startCollected[i]);
         }
     }
 

@@ -486,6 +486,11 @@ public sealed partial class Igi1ReplicatedWorld
         _game.World.GunPickups?.KeepsTakenTasks = true;
         _game.World.GenericPickups?.KeepsTakenTasks = true;
 
+        // Nothing the level lays about -- medipacks, ammunition, guns -- in a versus match: a player heals and arms only
+        // as the match allows, by the armoury and what others drop.
+        _game.World.GunPickups?.LevelCleared = true;
+        _game.World.GenericPickups?.LevelCleared = true;
+
         // Players fight each other with a soldier's body, not the campaign hero's.
         if (_game.World.Player is { } host)
         {
