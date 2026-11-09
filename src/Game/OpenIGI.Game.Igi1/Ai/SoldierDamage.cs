@@ -53,9 +53,10 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     public Action<WeaponType, Vector3d, Matrix3f, Vector3d>? WeaponDrop { get; set; }
 
     /// <summary>
-    /// Gets what mods are told of each round that strikes a living soldier, an invulnerable one too (with no damage). It is
-    /// told after the game has applied and reacted to the round, by either path: <see cref="SoldierStrike.Killed"/> means
-    /// he dies of it, though his body may not be down until his next update. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// Gets what mods are told of each round that strikes a living soldier. By either path it is told once the round's
+    /// damage is applied and before his body turns to the round or falls, so a listener reads him as he stood when it struck:
+    /// <see cref="SoldierStrike.Killed"/> means he dies of it, though he is not down yet. Empty unless a mod adds to it.
+    /// <b>Not retail.</b>
     /// </summary>
     public List<Action<SoldierStrike>> Struck { get; } = [];
 
@@ -375,8 +376,6 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         float damageFactor = round.Category == WeaponCategory.Knife && brain is { HasCombatRecord: false }
             ? SoldierSimulation.KnifeUnawareDamageFactor
             : round.DamageFactor;
-        bool wasAlive = !health.IsDead;
-        float dealt = 0f;
         if (!invulnerable)
         {
             if (BloodSpray is { } bleed)
@@ -400,8 +399,15 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                 return;
             }
 
-            dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
             round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
+
+            // Told before he turns to the round or falls, as the marched path tells it before his death is taken.
+            if (Struck.Count > 0)
+            {
+                TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));
+            }
+
             if (health.IsDead)
             {
                 // The brain hears of the round that kills it too: the event is posted to an AI that is not dead yet,
@@ -423,12 +429,6 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         if (!health.IsDead || invulnerable)
         {
             brain?.ReceiveDamage(round.Origin, round.Shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
-        }
-
-        // Told after the game has applied and reacted to the round, as the marched path tells it.
-        if (wasAlive && Struck.Count > 0)
-        {
-            TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));
         }
 
         // Deliberately the same shape as the probe's [dmg] line from the retail game (probes.cpp
