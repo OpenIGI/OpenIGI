@@ -231,5 +231,8 @@ public sealed partial class GameHost
 
         public void GlassShatter(WorldPlacement placement, Vector3d atUnits) =>
             host._effects.Particles?.SpawnGlassShatter(placement, atUnits);
+
+        public bool BombBlast(Vector3d atUnits, float radiusUnits, OpenIGI.Game.Physics.RagdollWorld? debrisWorld) =>
+            host._effects.StartBomb(atUnits, radiusUnits, host._earCamera?.Position, host._scene, host._world as IShatterableWorld, debrisWorld);
     }
 }

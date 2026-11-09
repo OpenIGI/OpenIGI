@@ -135,6 +135,12 @@ public sealed record MatchHud
     /// <summary>Gets a value indicating whether the mode plays teams.</summary>
     public bool HasTeams => Left is not null;
 
+    /// <summary>
+    /// Gets how much of the local player's health the planted bomb would take where it stands, as a share of a whole health
+    /// (one or more is death); nought with no bomb planted. Every health bar shows it, flashing that much of itself.
+    /// </summary>
+    public float BlastRisk { get; init; }
+
     /// <summary>Makes the HUD of a match.</summary>
     /// <param name="state">Where the match stood when the server last said.</param>
     /// <param name="secondsSince">The seconds since, which its clocks have run down by.</param>
@@ -224,6 +230,7 @@ public sealed record MatchHud
                 Planted = report.Planted,
                 Fuse = MatchState.Clock(fuse),
                 FuseFraction = report.FuseSeconds > 0 ? (float)Math.Clamp(fuse / report.FuseSeconds, 0, 1) : 0f,
+                BlastRisk = own is { } exposed && report.Risks.FirstOrDefault(r => r.Slot == exposed.Slot) is { Share: > 0f } risk ? risk.Share : 0f,
             };
         }
 

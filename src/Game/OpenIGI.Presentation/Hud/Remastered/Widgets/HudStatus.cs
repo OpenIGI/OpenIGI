@@ -92,12 +92,18 @@ public static class HudStatus
         float segment = (rect.Height - (gap * (Segments - 1))) / Segments;
         Bgra32 lit = palette.Health(health);
         float breathe = health < 0.25f ? 0.65f + (0.35f * MathF.Sin(context.Seconds * 6f)) : 1f;
+
+        // A planted bomb's share of the bar: the segments it would take flash, the whole lit bar where it would kill.
+        (float riskFrom, float riskTo) = Hud.HudBlastRisk.Span(health);
+        float riskPulse = Hud.HudBlastRisk.Pulse(context.Seconds, Hud.HudBlastRisk.IsLethal(health));
         for (int i = 0; i < Segments; i++)
         {
             float from = (float)i / Segments;
             float y = rect.Bottom - ((i + 1) * segment) - (i * gap);
             UiRect cell = new(rect.X, y, rect.Width, segment);
-            Bgra32 colour = from < health ? HudDrawContext.Fade(lit, breathe)
+            float middle = from + (0.5f / Segments);
+            Bgra32 colour = riskTo > riskFrom && middle >= riskFrom && from < riskTo ? HudDrawContext.Fade(palette.Danger, riskPulse)
+                : from < health ? HudDrawContext.Fade(lit, breathe)
                 : from < trail ? HudDrawContext.Fade(palette.Danger, 0.85f)
                 : HudDrawContext.Fade(palette.Dim, 0.55f);
             context.Painter.FillRect(cell, colour);

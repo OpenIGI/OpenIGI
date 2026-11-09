@@ -543,6 +543,19 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
         float barWidth = width - context.Px(92f);
         DrawMeter(painter, new UiRect(barX, barY, barWidth, context.Px(4f)), fraction, healthColour);
 
+        // A planted bomb's share of the bar flashes over it, and the label says what it would take.
+        (float riskFrom, float riskTo) = OpenIGI.Presentation.Hud.HudBlastRisk.Span(fraction);
+        if (riskTo > riskFrom)
+        {
+            bool lethal = OpenIGI.Presentation.Hud.HudBlastRisk.IsLethal(fraction);
+            float pulse = OpenIGI.Presentation.Hud.HudBlastRisk.Pulse(Environment.TickCount64 / 1000.0, lethal);
+            painter.FillRect(
+                new UiRect(barX + (barWidth * riskFrom), barY - context.Px(1f), barWidth * (riskTo - riskFrom), context.Px(6f)),
+                BlastRed.WithAlpha((byte)(255f * pulse)));
+            string said = lethal ? "BOMB  ·  LETHAL" : $"BOMB  ·  -{(int)MathF.Round((riskTo - riskFrom) * 100f)}";
+            painter.DrawLabel(type.Mono, said, new UiVec2(barX, y), context.Px(11f), BlastRed.WithAlpha((byte)(140f + (115f * pulse))), 0.28f);
+        }
+
         // One segment per tenth, the design's progress marks, under the bar.
         KitDraw.Segments(painter, new UiVec2(barX, barY + context.Px(9f)), (int)MathF.Ceiling(fraction * 10f), 10, (326f - 92f - 36f) / 10f, 2f, 4f, UiPalette.Fade(healthColour, 0.7f));
     }
@@ -664,6 +677,8 @@ internal sealed partial class RemasteredHudRenderer : IRemasteredHudPresenter
 
     /// <summary>The badge's face. Opaque, so each layer drawn over it composites predictably.</summary>
     private static Bgra32 BadgeFace => Bgra32.FromRgb(13, 16, 21);
+
+    private static Bgra32 BlastRed => Bgra32.FromRgb(255, 72, 48);
 
     private static Bgra32 Text => UiPalette.Text;
     private static Bgra32 Muted => UiPalette.TextSecondary;

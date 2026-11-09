@@ -7,6 +7,8 @@ using OpenIGI.Game.World;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Services;
 using OpenIGI.Presentation;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Rendering.Blast;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -14,6 +16,15 @@ namespace OpenIGI.Host;
 
 public sealed partial class GameHost
 {
+    // This frame's shake from the bomb's blast, sampled with the lens (whose field it punches) and applied to the eye.
+    private ShakeSample _blastShake;
+
+    // This frame's blend between ticks, for the bomb's light and what else of the blast is drawn after the lens.
+    private float _blastBlend;
+
+    // How stunned the eye is by the bomb's shock front this frame, which muffles what it hears.
+    private float _blastStun;
+
     /// <summary>What one frame of the world is drawn from, settled a step at a time by <see cref="RenderWorld"/>.</summary>
     /// <remarks>
     /// A value on the frame's own stack rather than fields on the host: each step reads what the steps before it settled
@@ -167,6 +178,11 @@ public sealed partial class GameHost
 
         ApplyEditorLens(ref aspectRatio, ref verticalFieldOfView);
 
+        // The bomb's blast punches the lens a little wider as its front reaches the eye.
+        _blastBlend = tickBlend;
+        _blastShake = _effects.Bomb.SampleShake(tickBlend);
+        verticalFieldOfView = MathF.Min(verticalFieldOfView * (1f + _blastShake.Punch), 2.6f);
+
         view.SmoothPresentation = smoothPresentation;
         view.TickBlend = tickBlend;
         view.Sight = sight;
@@ -242,13 +258,20 @@ public sealed partial class GameHost
         // A little extra edge fringing while the optics are up, on top of the ordinary value, so
         // the lens carries chromatic aberration that ramps in with the glass.
         float binocularAberration = binocularDisplay.Amount * 2f;
+
+        // The bomb's concussion, measured at last frame's eye: the flash whites the picture out, the stun after it drains its
+        // colour, closes its edges in and splits it.
+        BlastConcussion concussion = _earCamera is { } concussed
+            ? _effects.Bomb.Concussion(concussed.Position, view.TickBlend)
+            : default;
+        _blastStun = concussion.Stun;
         PostProcessSettings postProcess = new(
             ExposureCVars.ToneMap.Value,
 
             // The player's brightness less whatever the night is taking off it; see
             // ExposureCVars.EffectiveExposure. Never r_exposure directly -- the night must not be
             // able to edit, and then have to put back, the setting the player chose.
-            ExposureCVars.EffectiveExposure,
+            ExposureCVars.EffectiveExposure * (1f + (concussion.Flash * 3f)),
             PostCVars.Bloom.Value,
             PostCVars.BloomThreshold.Value,
             ExposureCVars.WhitePoint.Value,
@@ -257,11 +280,11 @@ public sealed partial class GameHost
             // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
             // display-encoded and has to be decoded before the tone map.
             SceneIsDisplayEncoded: _gi.EffectiveLighting != LightingModel.Dynamic,
-            Contrast: PostCVars.Contrast.Value,
-            Saturation: PostCVars.Saturation.Value,
-            Vignette: PostCVars.Vignette.Value,
+            Contrast: PostCVars.Contrast.Value * (1f - (concussion.Stun * 0.18f)),
+            Saturation: PostCVars.Saturation.Value * (1f - (concussion.Stun * 0.75f)),
+            Vignette: PostCVars.Vignette.Value + (concussion.Stun * 0.9f),
             Grain: PostCVars.Grain.Value,
-            ChromaticAberration: MathF.Max(PostCVars.ChromaticAberration.Value, binocularAberration),
+            ChromaticAberration: MathF.Max(PostCVars.ChromaticAberration.Value, binocularAberration) + (concussion.Stun * 2.5f),
             Sharpen: PostCVars.Sharpen.Value,
             MotionBlur: MathF.Max(PostCVars.MotionBlur.Value, computerFlightBlur),
             SpatialAa: PostCVars.SpatialAa.Value,
@@ -521,6 +544,13 @@ public sealed partial class GameHost
         else if (CutsceneFrameShown is { } cutsceneView)
         {
             eye = cutsceneView.Camera;
+        }
+
+        // The bomb's blast shakes whatever eye the frame is drawn from in play -- the walking eye, the camera over a dead
+        // body, a spectator's -- but not the menu's orbit, the entry shot or a cut-scene, which own the frame outright.
+        if (!_menuFlow.OverShowcase && mapScene is null && !_entry.IsCameraActive && CutsceneFrameShown is null)
+        {
+            eye = TraumaShake.Apply(eye, _blastShake);
         }
 
         // The eye has settled by here -- every camera that could have claimed the frame has

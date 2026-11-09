@@ -37,6 +37,7 @@ public sealed partial class CutsceneRuntime
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
+    private bool _held;
     private readonly LevelUpdateWalker _walker;
     private readonly Dictionary<GameTask, int> _lastVehicleTick = [];
     private readonly CutsceneAttachments _attachments;
@@ -456,7 +457,29 @@ public sealed partial class CutsceneRuntime
     /// round's counters would start again. A held scene that would start is finished at once instead, so what waits on its
     /// end still happens.
     /// </summary>
-    public bool Held { get; set; }
+    /// <remarks>
+    /// Holding also silences them: whatever a scene already began playing is stopped (<see cref="SoundsHeld"/>) -- the intro
+    /// starts on the level's first tick, before a match is made -- and a ConditionalSound whose condition reads a scene
+    /// does not start while held, since a simple one is fire-and-forget and nothing would ever stop it.
+    /// </remarks>
+    public bool Held
+    {
+        get => _held;
+        set
+        {
+            if (value && !_held)
+            {
+                _held = true;
+                SoundsHeld?.Invoke();
+                return;
+            }
+
+            _held = value;
+        }
+    }
+
+    /// <summary>Raised as the scenes are held, for the host to stop every voice they had started.</summary>
+    public event Action? SoundsHeld;
 
     /// <summary>Writes which scenes are running and which have finished, for a co-op server's clients.</summary>
     /// <param name="writer">Where to.</param>
@@ -699,6 +722,15 @@ public sealed partial class CutsceneRuntime
         _walker.RunChildren(sound.Task);
     }
 
+    // A sound that belongs to the level's scenes: one whose condition reads a scene, or a one-shot whose condition is always
+    // true -- mission 1's intro voiceover ("Cutscene voiceover", condition "1") says its lines on the level's first tick.
+    private static bool IsSceneSound(CutsceneSoundState sound)
+    {
+        string condition = sound.Condition.Trim();
+        return condition.Contains("CutScene", StringComparison.OrdinalIgnoreCase)
+            || (sound.Simple && condition is "1" or "TRUE" or "true");
+    }
+
     private void SetSoundRun(CutsceneSoundState sound, bool run)
     {
         if (run == sound.IsRun)
@@ -709,6 +741,13 @@ public sealed partial class CutsceneRuntime
         sound.IsRun = run;
         if (run)
         {
+            // Held, a scene's own sound stays quiet: the scene it belongs to is not shown.
+            if (_held && IsSceneSound(sound))
+            {
+                sound.HasPlayed = true;
+                return;
+            }
+
             if (!sound.OneShot || !sound.HasPlayed)
             {
                 sound.HasPlayed = true;

@@ -29,9 +29,6 @@ namespace OpenIGI.Presentation.Cameras;
 /// </remarks>
 public sealed class HandheldShake
 {
-    /// <summary>How many noise samples the table holds; a power of two so the index masks.</summary>
-    private const int TableSize = 64;
-
     /// <summary>The base rate of each axis, in cycles per second.</summary>
     private const float YawFrequency = 0.55f;
     private const float PitchFrequency = 0.47f;
@@ -42,11 +39,7 @@ public sealed class HandheldShake
     private const float PitchAmplitude = 0.0035f;  // about 0.20 degrees
     private const float RollAmplitude = 0.0030f;   // about 0.17 degrees
 
-    /// <summary>The second octave's rate relative to the first, and how much of it is mixed in.</summary>
-    private const float OctaveRatio = 2.37f;
-    private const float OctaveWeight = 0.35f;
-
-    private readonly float[] _noise = new float[TableSize];
+    private readonly SmoothValueNoise _noise;
 
     /// <summary>Initializes a new instance of the <see cref="HandheldShake"/> class.</summary>
     /// <param name="seed">The seed for the noise table.</param>
@@ -54,14 +47,7 @@ public sealed class HandheldShake
     /// Seeded rather than time-seeded, through the engine's own generator, so a capture of the same
     /// sequence is reproducible.
     /// </remarks>
-    public HandheldShake(uint seed = 0x16114D)
-    {
-        var random = new IgiRandom(seed);
-        for (int i = 0; i < _noise.Length; i++)
-        {
-            _noise[i] = (random.NextSingle() * 2f) - 1f;
-        }
-    }
+    public HandheldShake(uint seed = 0x16114D) => _noise = new SmoothValueNoise(seed);
 
     /// <summary>Gets the widest the yaw wanders, in radians.</summary>
     public static float MaximumYaw => YawAmplitude;
@@ -93,9 +79,9 @@ public sealed class HandheldShake
         }
 
         float scale = Math.Clamp(weight, 0f, 1f);
-        yaw = Channel(seconds, YawFrequency, 0f) * YawAmplitude * scale;
-        pitch = Channel(seconds, PitchFrequency, 17.3f) * PitchAmplitude * scale;
-        roll = Channel(seconds, RollFrequency, 41.7f) * RollAmplitude * scale;
+        yaw = _noise.Channel(seconds, YawFrequency, 0f) * YawAmplitude * scale;
+        pitch = _noise.Channel(seconds, PitchFrequency, 17.3f) * PitchAmplitude * scale;
+        roll = _noise.Channel(seconds, RollFrequency, 41.7f) * RollAmplitude * scale;
     }
 
     /// <summary>Rolls an orientation about the direction it is already looking.</summary>
@@ -130,27 +116,5 @@ public sealed class HandheldShake
             new Vector3f((right.X * c) + (up.X * s), (right.Y * c) + (up.Y * s), (right.Z * c) + (up.Z * s)),
             new Vector3f((up.X * c) - (right.X * s), (up.Y * c) - (right.Y * s), (up.Z * c) - (right.Z * s)),
             look.Row3);
-    }
-
-    /// <summary>One axis: two octaves of smoothed value noise, normalised back to roughly [-1, 1].</summary>
-    private float Channel(float seconds, float frequency, float phase) =>
-        (Octave(seconds, frequency, phase)
-            + (OctaveWeight * Octave(seconds, frequency * OctaveRatio, phase + 11f)))
-        / (1f + OctaveWeight);
-
-    private float Octave(float seconds, float frequency, float phase)
-    {
-        float x = (seconds * frequency) + phase;
-        float floor = MathF.Floor(x);
-        int i = (int)floor;
-        float u = x - floor;
-
-        float a = _noise[((i % TableSize) + TableSize) % TableSize];
-        float b = _noise[(((i + 1) % TableSize) + TableSize) % TableSize];
-
-        // Smoothstep the interpolant, not the values: this is what removes the slope discontinuity at
-        // each lattice point that makes plain linear value noise read as mechanical.
-        float w = u * u * (3f - (2f * u));
-        return a + ((b - a) * w);
     }
 }

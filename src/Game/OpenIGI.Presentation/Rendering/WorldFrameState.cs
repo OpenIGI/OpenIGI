@@ -193,6 +193,7 @@ internal sealed class WorldFrameState
             // asked for again and would keep the old scene's geometry alive — and their occlusion
             // queries are device objects, so they are handed back rather than dropped.
             _subsets.ForgetResolved();
+            _transforms.Shattered.Clear();
             _occlusionSettle.Forget();
         }
 
@@ -218,9 +219,11 @@ internal sealed class WorldFrameState
 
             // Blown up with nothing authored to stand in its place: there is no rubble model to
             // swap to, so the placement leaves the frame entirely rather than drawing intact.
-            if ((_transforms.Destructibles?.IsDestroyed(authored) == true || _transforms.Destruction?.IsDestroyed(authored) == true
+            // A placement a bomb shattered has left as its pieces, whatever it would otherwise have been drawn as.
+            if (((_transforms.Destructibles?.IsDestroyed(authored) == true || _transforms.Destruction?.IsDestroyed(authored) == true
                     || _transforms.AlarmSpeakers?.IsLightGone(authored.Owner) == true)
                 && authored.DestroyedReplacement is null)
+                || (_transforms.Shattered.Count > 0 && _transforms.Shattered.Contains(authored)))
             {
                 NoteGone(wasSkipped, wasModel, wasPosition);
                 entry.Skip = true;

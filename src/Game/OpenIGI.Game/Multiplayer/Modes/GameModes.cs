@@ -58,7 +58,8 @@ public static class GameModes
         TeamRoster roster = new((uint)slot);
         foreach ((int other, MatchPlayer player) in host.Match.Players)
         {
-            if (other != slot)
+            // A player kept for its return (a negative slot) is not playing, so it does not make its side the bigger.
+            if (other != slot && other >= 0)
             {
                 roster.Assign(other, player.Team);
             }

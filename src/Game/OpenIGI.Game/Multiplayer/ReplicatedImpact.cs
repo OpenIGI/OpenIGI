@@ -39,6 +39,12 @@ public enum ReplicatedBlastKind : byte
 
     /// <summary>A launcher round.</summary>
     M203,
+
+    /// <summary>
+    /// Search and destroy's bomb: a rocket's fire, smoke and report, and on top of them the remastered blast -- its shockwave,
+    /// its fireball and column, its light, and what it shatters for the round's last seconds.
+    /// </summary>
+    Bomb,
 }
 
 /// <summary>One round landing, as the server sends it for every client to show: a hit on a wall, or a wound.</summary>

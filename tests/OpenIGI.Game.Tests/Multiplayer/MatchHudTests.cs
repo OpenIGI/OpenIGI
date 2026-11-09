@@ -38,6 +38,7 @@ public sealed class MatchHudTests
             Working = [new ModeWork(1, 0.5f, true)],
             Carrier = 3,
             DroppedAt = new Vector3d(-5, 6, 7),
+            Risks = [new ModeRisk(3, 0.42f), new ModeRisk(7, 2.5f)],
         };
         BitWriter writer = new(256);
         report.Write(writer);
@@ -49,6 +50,9 @@ public sealed class MatchHudTests
         Assert.Equal((3, report.DroppedAt), (read.Carrier, read.DroppedAt));
         Assert.Equal(31.5, read.FuseLeft, 1);
         Assert.Equal(0.5f, read.Working[0].Progress, 2);
+        Assert.Equal([3, 7], read.Risks.Select(r => r.Slot));
+        Assert.Equal(0.42f, read.Risks[0].Share, 2);
+        Assert.True(read.Risks[1].Share >= 1f, "a lethal risk reads back as lethal");
     }
 
     [Fact]

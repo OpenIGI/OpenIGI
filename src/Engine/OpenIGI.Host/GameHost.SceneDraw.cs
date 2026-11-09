@@ -176,6 +176,9 @@ public sealed partial class GameHost
         _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: GeometryCVars.WorldOcclusion.Value, FromEye: true));
         EndStageIfSlow("the sky and the world's objects");
 
+        // The pieces a bomb threw, solid and lit with the world they broke off.
+        _effects.DrawSolids(eye, projection, smoothPresentation ? tickBlend : 1f);
+
         if (captured)
         {
             // The world leaves its last sub-mesh's surface material in force; the terrain

@@ -182,6 +182,57 @@ public sealed partial class Igi1Blasts(
         Explosion0(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, killedBy), source, sourceWeaponId);
     }
 
+    /// <summary>The unbroken panes near a point, by their place in the level's destructibles.</summary>
+    /// <param name="at">The point, in units.</param>
+    /// <param name="reach">How far from it, in units.</param>
+    /// <returns>Each pane's index and centre.</returns>
+    public IReadOnlyList<(int Id, Vector3d At)> GlassNear(Vector3d at, double reach)
+    {
+        List<(int, Vector3d)> panes = [];
+        if (mission.Destructibles is not { } registry)
+        {
+            return panes;
+        }
+
+        for (int i = 0; i < registry.Objects.Count; i++)
+        {
+            DestructibleObject item = registry.Objects[i];
+            if (item.Kind == DestructibleObjectKind.Glass && !item.IsDestroyed
+                && ConditionalContainerGate.IsTaskActive(item.Owner)
+                && (item.PositionUnits - at).Length <= reach)
+            {
+                panes.Add((i, item.PositionUnits));
+            }
+        }
+
+        return panes;
+    }
+
+    /// <summary>Shatters one pane as a blast's contact does (any blast breaks the glass it reaches), shards from the blast.</summary>
+    /// <param name="id">The pane's index among the level's destructibles.</param>
+    /// <param name="from">The blast's centre, in units.</param>
+    public void ShatterGlass(int id, Vector3d from)
+    {
+        if (mission.Destructibles is not { } registry || id < 0 || id >= registry.Objects.Count)
+        {
+            return;
+        }
+
+        DestructibleObject item = registry.Objects[id];
+        if (item.Kind == DestructibleObjectKind.Glass && !item.IsDestroyed && DestructibleObjectRegistry.Strike(item) is { } broken)
+        {
+            HandleDestructibleImpact(broken, from);
+        }
+    }
+
+    /// <summary>A blast that reaches everything but the players: what a match's bomb does to the world, its own wave hurting them.</summary>
+    /// <param name="position">The blast's centre, in units.</param>
+    /// <param name="radiusUnits">The full-damage radius.</param>
+    /// <param name="falloffUnits">The falloff beyond it.</param>
+    /// <param name="damageFactor">Its damage.</param>
+    public void ExplodeSparingPlayers(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor) =>
+        Explosion0(new Igi1ExplosionHit(position, radiusUnits, falloffUnits, damageFactor, WeaponCategory.Grenade, SparesPlayers: true), null, 0);
+
     /// <summary>
     /// <c>Explosion0</c>'s message (<c>0x47F200</c>): with any damage at all, <c>ExplosionHit</c> to every member of the
     /// explosion list in the order they joined it.
@@ -225,7 +276,7 @@ public sealed partial class Igi1Blasts(
         {
             foreach (GameTask task in root.DescendantsAndSelf())
             {
-                if (task is IExplosionHitTarget target)
+                if (task is IExplosionHitTarget target && !(blast.SparesPlayers && task is HumanPlayerTask))
                 {
                     IExplosionHitTarget member = target;
                     Join(task, () => member.ExplosionHit(shared));
@@ -259,7 +310,7 @@ public sealed partial class Igi1Blasts(
             }
         }
 
-        if (mission.PlayerTask is null && mission.Player is not null)
+        if (mission.PlayerTask is null && mission.Player is not null && !blast.SparesPlayers)
         {
             // A level that declares no HumanPlayer still has the player the opening camera stood.
             members.Add((long.MaxValue, members.Count, () => SendPlayerTheBlast(blast)));
@@ -267,7 +318,7 @@ public sealed partial class Igi1Blasts(
 
         // A co-op session's other players are humans the blast reaches as it reaches the player, through the player's
         // handler; they hold no task in the level, so they come last, after it.
-        foreach (Multiplayer.Igi1NetworkPlayer partner in mission.NetworkPlayers)
+        foreach (Multiplayer.Igi1NetworkPlayer partner in blast.SparesPlayers ? [] : mission.NetworkPlayers)
         {
             Multiplayer.Igi1NetworkPlayer member = partner;
             members.Add((long.MaxValue, members.Count, () => BlastPlayer(

@@ -187,10 +187,14 @@ public sealed partial class GameHost
                     fixture.HasRect ? fixture.HalfWidth : 0f);
             }
 
+            // The bomb's blast lights the level with the lamps, after them so their shadow maps keep their slots; the fog's
+            // froxels read every local light, so the air round the fireball glows with it.
+            int blastCount = _effects.Bomb.WriteLights(eye, _blastBlend, _localLightScratch.AsSpan(localCount));
+
             // Both backends, through the seam: a windowless interior needs its lamps whichever
             // renderer is drawing it, and the ultra preset -- the one that discards the shipped
             // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
-            _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+            _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount + blastCount));
             _lampMaps.Assign(localCount, unjitteredProjection, _localLightScratch, _lamps.NearestOrder, _gi.LightFixtures);
             _lampMaps.AssignCoarse(localCount, _lamps.NearestOrder);
             _stormLampCount = localCount;

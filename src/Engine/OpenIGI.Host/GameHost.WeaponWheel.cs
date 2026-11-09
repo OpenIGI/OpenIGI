@@ -109,8 +109,9 @@ public sealed partial class GameHost
         _wheelTimeCarry = openness > 0f ? stretch - whole : 0f;
         _loop.Clock.TimeAdjustMilliseconds = whole;
 
-        // And the world is heard slowed: every voice and the music pitched down and muffled as the wheel opens.
-        _audioOut.Device.SetTimeWarp(1f - ((1f - WheelAudioPitch) * openness), openness);
+        // And the world is heard slowed: every voice and the music pitched down and muffled as the wheel opens. The bomb's
+        // concussion muffles it too, through the same filter, as the shock front stuns whoever it reaches.
+        _audioOut.Device.SetTimeWarp(1f - ((1f - WheelAudioPitch) * openness), MathF.Max(openness, _blastStun * 0.85f));
     }
 
     private void PlayWheelSound(string name, float gain) => _audioOut.Sounds?.PlayExternal(name, gain: gain, priority: 180);

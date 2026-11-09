@@ -334,6 +334,25 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void The_bomb_is_in_an_attackers_hands_through_the_freeze_time_and_passes_on_if_its_carrier_leaves()
+    {
+        (Host host, SearchAndDestroyMode mode) = BombRound(freeze: 10);
+        long tick = Run(mode, host, 1, TickRate);
+        Assert.Equal(0, mode.Carrier);
+        Assert.Equal(0, mode.Report(tick).Carrier);
+
+        // Gone over to the defence before the round runs, the carrier's bomb goes to no one on the floor: there is no other
+        // attacker, so nobody has it, and it is handed out as soon as there is one.
+        host.Match.Players[0].Team = SearchAndDestroyMode.Defenders;
+        tick = Run(mode, host, tick, 1);
+        Assert.Equal(-1, mode.Carrier);
+        Assert.Null(mode.DroppedAt);
+        host.Match.Players[0].Team = SearchAndDestroyMode.Attackers;
+        tick = Run(mode, host, tick, 1);
+        Assert.Equal(0, mode.Carrier);
+    }
+
+    [Fact]
     public void A_round_opens_on_its_freeze_time_everyone_held_and_buying_and_the_round_runs_from_its_end()
     {
         (Host host, SearchAndDestroyMode mode) = BombRound(freeze: 10);

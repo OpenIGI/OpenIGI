@@ -40,6 +40,11 @@ public enum ModeWorkKind
 /// <param name="Seconds">How long the whole hold takes, so a client runs the bar on between reports; 0 when it is not known.</param>
 public readonly record struct ModeWork(int Slot, float Progress, bool Defusing, float Seconds = 0);
 
+/// <summary>How much of a player's health the planted bomb would take where it stands.</summary>
+/// <param name="Slot">The player.</param>
+/// <param name="Share">The share of a whole health; one or more is death.</param>
+public readonly record struct ModeRisk(int Slot, float Share);
+
 /// <summary>The local player's use key as its own machine sees it, which the HUD starts a plant or defuse from at once.</summary>
 /// <param name="Held">Whether it is down.</param>
 /// <param name="Seconds">How long it has been down.</param>
@@ -93,6 +98,9 @@ public sealed record ModeReport
     /// <summary>Gets the players at work on the objective now.</summary>
     public IReadOnlyList<ModeWork> Working { get; init; } = [];
 
+    /// <summary>Gets what the planted bomb would take from each living player, for their health bars to show.</summary>
+    public IReadOnlyList<ModeRisk> Risks { get; init; } = [];
+
     /// <summary>Gets a key that changes when anything the clients must be told at once changes (the fuse running down is not).</summary>
     public string Key
     {
@@ -104,6 +112,12 @@ public sealed record ModeReport
             {
                 // A hold begun or let go, not its progress: the clients run that on themselves from Seconds.
                 key.Append(CultureInfo.InvariantCulture, $"|{work.Slot}:{work.Defusing}");
+            }
+
+            // A risk told again once it has moved a twentieth of a health: walking out of the blast shows as it happens.
+            foreach (ModeRisk risk in Risks)
+            {
+                key.Append(CultureInfo.InvariantCulture, $"|r{risk.Slot}:{RiskStep(risk.Share)}");
             }
 
             return key.ToString();
@@ -152,7 +166,20 @@ public sealed record ModeReport
             writer.WriteBool(work.Defusing);
             writer.WriteRanged((int)Math.Clamp(Math.Round(work.Seconds * 10), 0, 1023), 0, 1023);
         }
+
+        int risks = Math.Min(Risks.Count, 31);
+        writer.WriteBits((uint)risks, 5);
+        for (int i = 0; i < risks; i++)
+        {
+            writer.WriteRanged(Math.Clamp(Risks[i].Slot, 0, 65535), 0, 65535);
+            writer.WriteRanged(RiskByte(Risks[i].Share), 0, 255);
+        }
     }
+
+    // A share as a byte: a two-hundredth of a health a step, everything past one and a quarter healths as death.
+    private static int RiskByte(float share) => (int)Math.Round(Math.Clamp(share, 0f, 1.275f) * 200f);
+
+    private static int RiskStep(float share) => (int)Math.Round(Math.Clamp(share, 0f, 1.05f) * 20f);
 
     /// <summary>Reads one a server wrote.</summary>
     /// <param name="reader">What arrived.</param>
@@ -182,6 +209,14 @@ public sealed record ModeReport
             working[i] = new ModeWork(slot, progress, defusing, reader.ReadRanged(0, 1023) / 10f);
         }
 
+        int riskCount = (int)reader.ReadBits(5);
+        ModeRisk[] risks = new ModeRisk[riskCount];
+        for (int i = 0; i < riskCount; i++)
+        {
+            int slot = reader.ReadRanged(0, 65535);
+            risks[i] = new ModeRisk(slot, reader.ReadRanged(0, 255) / 200f);
+        }
+
         return new ModeReport
         {
             Target = target,
@@ -198,6 +233,7 @@ public sealed record ModeReport
             BuyLeft = buyLeft,
             FreezeLeft = freezeLeft,
             Working = working,
+            Risks = risks,
         };
     }
 }

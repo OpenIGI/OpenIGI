@@ -1,12 +1,15 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation.Rendering.Blast;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.Services;
@@ -30,13 +33,19 @@ internal interface IWorldEffectsHost
 /// <param name="logger">Where load problems and the test commands report.</param>
 /// <param name="random">The stream the puffs' drift and life draw from, shared with the rest of the frame's effects.</param>
 /// <param name="host">The title's own mission, whose impact effects are drawn among the rest.</param>
-internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger, IgiRandom random, IWorldEffectsHost host) : IHostService
+/// <param name="work">Where the bomb's breaks are worked out, beside the frame.</param>
+internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger, IgiRandom random, IWorldEffectsHost host, IWorkScheduler work) : IHostService
 {
     /// <summary>Gets the bursts where rounds land, and the procedural explosions a mission without the fireball falls back to.</summary>
     public ImpactParticleRenderer? Particles { get; private set; }
 
+    /// <summary>Gets search and destroy's bomb as the remaster shows it: its shake, light, shockwave, fireball and debris.</summary>
+    public BombBlastEffects Bomb { get; } = new();
+
     private IMissionImpactView? _retailImpacts;
     private ExplosionEffectRenderer? _explosions;
+    private BlastVolumeRenderer? _blastVolume;
+    private BlastDebris? _blastDebris;
     private SmokeSpriteRenderer? _smoke;
 
     /// <inheritdoc/>
@@ -86,6 +95,14 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // The retail smoke2.spr trail behind rockets and the grey column a blast leaves.
         _smoke?.Dispose();
         _smoke = new SmokeSpriteRenderer(device, fileSystem, MissionLoader.CommonSpritesArchive, logger);
+
+        // The bomb's fireball, column and shock front, drawn through a shader of their own.
+        _blastVolume?.Dispose();
+        _blastVolume = new BlastVolumeRenderer(device);
+
+        // What the bomb shatters and holes, and the pieces it throws.
+        _blastDebris?.Dispose();
+        _blastDebris = new BlastDebris(device, work);
     }
 
     /// <summary>Frees a mission's effects, as it goes.</summary>
@@ -100,6 +117,11 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _explosions = null;
         _smoke?.Dispose();
         _smoke = null;
+        _blastVolume?.Dispose();
+        _blastVolume = null;
+        _blastDebris?.Dispose();
+        _blastDebris = null;
+        Bomb.Clear();
     }
 
     /// <summary>Forgets the effects without freeing them, at a session's start.</summary>
@@ -109,6 +131,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         Particles?.Clear();
         _explosions?.Clear();
         _smoke?.Clear();
+        Bomb.Clear();
+        _blastDebris?.Clear();
     }
 
     public void Forget()
@@ -118,6 +142,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         host.ResetTitleImpacts(1);
         _explosions = null;
         _smoke = null;
+        _blastVolume = null;
+        _blastDebris = null;
     }
 
     /// <summary>Steps the bursts, the fireballs and the smoke one tick.</summary>
@@ -126,6 +152,8 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         Particles?.Tick();
         _explosions?.Tick();
         _smoke?.Tick();
+        Bomb.Tick();
+        _blastDebris?.Tick();
     }
 
     /// <summary>Draws the effects over the lit scene, in the order they composite.</summary>
@@ -148,7 +176,37 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
 
         // The rocket nozzle's glow, over the scene as light.
         _explosions?.Draw(eye, projection, blend);
+
+        // The bomb's fireball, column and shock front last, over everything: the volume writes the scene behind it whole.
+        _blastVolume?.Draw(Bomb.Blasts, eye, projection, blend);
     }
+
+    /// <summary>Sets search and destroy's bomb off as the remaster shows it: its shake, light and fireball, and its ground.</summary>
+    /// <param name="atUnits">Where it went off, in world units.</param>
+    /// <param name="radiusUnits">How far it kills, in world units.</param>
+    /// <param name="listenerMetres">Where the view is now, in world metres, which the shake is measured from.</param>
+    /// <param name="scene">The level, whose props and walls it breaks.</param>
+    /// <param name="world">The world those are drawn by.</param>
+    /// <param name="debrisWorld">What the pieces land on.</param>
+    /// <returns>Whether the remastered blast is shown.</returns>
+    public bool StartBomb(
+        Vector3d atUnits, float radiusUnits, Vector3d? listenerMetres, WorldScene? scene, IShatterableWorld? world, RagdollWorld? debrisWorld)
+    {
+        if (Bomb.Start(atUnits, radiusUnits, listenerMetres) is not { } blast)
+        {
+            return false;
+        }
+
+        Particles?.SpawnBombBlast(atUnits, blast.RadiusMetres, blast.Seed, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
+        _blastDebris?.Begin(blast, scene, world, debrisWorld, BombBlastEffects.Quality);
+        return true;
+    }
+
+    /// <summary>Draws the effects that are solid -- the pieces a bomb threw -- into the frame's geometry, lit as the world is.</summary>
+    /// <param name="eye">The camera.</param>
+    /// <param name="projection">The world's projection.</param>
+    /// <param name="blend">How far the frame is between the last two ticks.</param>
+    public void DrawSolids(in Camera3D eye, in Matrix4f projection, float blend) => _blastDebris?.Draw(eye, projection, blend);
 
     /// <summary>Lays the exhaust glow and smoke trail for every rocket still in the air.</summary>
     /// <param name="simulations">The rockets: the player's launcher's and the vehicles'.</param>

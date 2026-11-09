@@ -77,6 +77,9 @@ public sealed class SceneTargetSet : IDisposable
         // The scene behind the rain, copied from the lit image for the drops to refract.
         new(SceneTargetId.RainBackdrop, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination),
 
+        // The depth before the bomb's blast, copied from the depth for its volume to stop its rays at.
+        new(SceneTargetId.BlastDepth, RhiTextureFormat.Depth32Float, SceneTargetScale.Full, RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination),
+
         // What an NVIDIA reconstruction is told beside the colour: the exposure the tone mapper will apply,
         // and where the history is not to be trusted.
         new(SceneTargetId.Exposure, RhiTextureFormat.R32Float, SceneTargetScale.Unit, Compute),
@@ -93,8 +96,9 @@ public sealed class SceneTargetSet : IDisposable
     private const RhiTextureUsage Attachment =
         RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled | RhiTextureUsage.CopySource;
 
+    // Copyable, for the bomb's blast, which reads a copy of the depth during the pass that holds the depth itself.
     private const RhiTextureUsage DepthAttachment =
-        RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled;
+        RhiTextureUsage.RenderTarget | RhiTextureUsage.Sampled | RhiTextureUsage.CopySource;
 
     private const RhiTextureUsage Compute =
         RhiTextureUsage.Storage | RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination;

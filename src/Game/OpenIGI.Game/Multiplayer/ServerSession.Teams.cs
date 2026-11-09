@@ -41,8 +41,10 @@ public sealed partial class ServerSession
             return "Team: igi, conspiracy or auto.";
         }
 
-        // The others' sides as they will stand, a pending move counted where it goes.
-        int Count(int team) => Match.Players.Values.Count(p => p.Slot != slot && (p.NextTeam ?? p.Team) == team);
+        // The others' sides as they will stand, a pending move counted where it goes. A player kept for its return (a
+        // negative slot) is not playing and is not counted, as the scoreboard and the team menu leave it out: counted, a
+        // side two of whose players dropped stayed "full" with one player on it.
+        int Count(int team) => Match.Players.Values.Count(p => p.Slot >= 0 && p.Slot != slot && (p.NextTeam ?? p.Team) == team);
         int now = player.NextTeam ?? player.Team;
         if (wanted < 0)
         {

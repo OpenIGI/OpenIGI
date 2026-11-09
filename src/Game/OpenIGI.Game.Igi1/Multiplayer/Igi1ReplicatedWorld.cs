@@ -238,6 +238,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     /// <inheritdoc/>
     public Snapshot Capture(long tick)
     {
+        // A match keeps the level's scenes held every tick, not only once it began: a level up after the match was made
+        // (or put back between rounds) has its scenes, and their voices, start otherwise.
+        if (IsVersus && _game.World.Cutscenes is { Held: false } scenes)
+        {
+            scenes.Held = true;
+        }
+
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
