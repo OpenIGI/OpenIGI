@@ -245,11 +245,13 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
     /// </remarks>
     public bool FiredThisTick { get; private set; }
 
-    // The weapon its client had chosen once the same tick ran there, taken here when this copy chose another. The switches
-    // themselves come as keys -- next, previous, a category, the wheel -- each a step from what is in hand; once the two
-    // copies' carried lists differ (the bomb given here a moment before the client hears of it, a buy, a pickup), every step
-    // lands on another weapon and they never meet again: a live S&D bomb carrier held the bomb on its own game and the knife
-    // here, and could plant only with the knife out. The binoculars are left to their own key, which toggles them.
+    // The weapon its client had chosen once the same tick ran there, taken here when this copy chose another -- the choice
+    // as a value, as Source's command carries the weapon to select. The switches themselves come as keys -- next, previous, a
+    // category, the wheel -- each a step from what is in hand, and the server changes this copy's weapons on its own tick
+    // while the client hears of it a round trip of its commands later: a respawn's fresh kit, the bomb given or taken, a buy
+    // throwing a gun down. A key between the two lands on the new kit here and the old one there, and every step after it
+    // kept the two a weapon apart for the round: a live S&D bomb carrier held the bomb on its own game and the knife here, and
+    // could plant only with the knife out. The binoculars are left to their own key, which toggles them.
     private void KeepChosenWeapon(int? chosen)
     {
         if (chosen is not { } wanted
