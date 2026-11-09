@@ -249,12 +249,12 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         if (IncludesHost && _game.World.Player is { } host)
         {
             humans.Add(Carrying(OnLift(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerHealth, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime))), host), ServerSession.HostSlot));
+                HostEntity, host, _game.World.PlayerHealth, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime), _game.World.IsPlayerDead)), host), ServerSession.HostSlot));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(Carrying(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime)), other.Player), slot));
+            humans.Add(Carrying(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime, other.IsDead)), other.Player), slot));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -490,10 +490,13 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
     /// <param name="health">Its health, or <see langword="null"/>.</param>
     /// <returns>Its replicated state.</returns>
     /// <param name="ladderTime">Where its climbing body is in its ladder clip, or <see langword="null"/>.</param>
-    public static ReplicatedHuman Replicate(int id, PlayerCamera player, HumanHealth? health, float? ladderTime = null)
+    /// <param name="down">Whether the death handler put it down whatever its health: a kill for leaving the match's bounds, or
+    /// at a team change, runs the death without spending the health, and a player sent as alive then never fell on its own
+    /// game -- it played on there, its switches and moves running on a body the server held dead.</param>
+    public static ReplicatedHuman Replicate(int id, PlayerCamera player, HumanHealth? health, float? ladderTime = null, bool down = false)
     {
         ArgumentNullException.ThrowIfNull(player);
-        bool dead = health?.IsDead == true;
+        bool dead = down || health?.IsDead == true;
         ReplicatedHumanCondition condition = dead ? ReplicatedHumanCondition.None : ReplicatedHumanCondition.Alive;
 
         // A ladder's clip, or a world interaction's -- a computer, a wire -- played on the same climbing body: its clip held
