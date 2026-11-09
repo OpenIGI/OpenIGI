@@ -12,7 +12,12 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 for rid in "$@"; do
   destination="$ROOT/third-party/libdatachannel/$rid"
   mkdir -p "$destination"
-  curl -fsSL "https://github.com/$REPOSITORY/releases/download/natives-libdatachannel-$VERSION/libdatachannel-$rid.tar.gz" \
-    | tar -xz -C "$destination"
+  # GitHub's download servers can answer 504 for minutes at a time; later tries often reach a working one.
+  # Downloaded to a file first, so a try that fails halfway never feeds tar a broken stream.
+  archive=$(mktemp)
+  curl -fsSL --retry 10 --retry-all-errors --retry-delay 20 -o "$archive" \
+    "https://github.com/$REPOSITORY/releases/download/natives-libdatachannel-$VERSION/libdatachannel-$rid.tar.gz"
+  tar -xzf "$archive" -C "$destination"
+  rm -f "$archive"
   echo "libdatachannel $VERSION -> $destination"
 done
