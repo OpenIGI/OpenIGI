@@ -23,8 +23,17 @@ public sealed partial class GameHost
     private readonly InputState _stillInput = new();
 
     /// <summary>Gets the input the player and the free camera are steered by this frame.</summary>
-    private InputState ViewInput => ScriptedViewInput
-        ?? (_switch.IsHolding || WheelHoldsInput ? _stillInput : _window.Input);
+    /// <remarks>Still while the pause menu is up over a multiplayer game, which plays on under it (<see cref="MenuPausesGame"/>).</remarks>
+    private InputState ViewInput => _menuFlow.PauseMenu && !MenuPausesGame
+        ? _stillInput
+        : ScriptedViewInput ?? (_switch.IsHolding || WheelHoldsInput ? _stillInput : _window.Input);
+
+    /// <summary>
+    /// Gets whether the pause menu stops the game: alone, it does, as the original's does; in a multiplayer session -- hosting
+    /// or joined -- it does not. The match goes on for everyone else, and a listen server that stopped ticking froze it for
+    /// all of them; a joined game that stopped fell behind its server. The player only lets go of the controls.
+    /// </summary>
+    private bool MenuPausesGame => _menuFlow.PauseMenu && TickObserver is null;
 
     /// <summary>
     /// Gets or sets input a harness steers the player with in place of the window's, or <see langword="null"/>.

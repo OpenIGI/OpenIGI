@@ -108,7 +108,7 @@ public sealed partial class GameHost
         // camera and its parent vehicle stay on the current record makes a seated actor sweep
         // backwards after every tick, then glide forwards again. Retail presents the cinematic
         // transform set atomically, so keep the actor on that same current tick as its plane/train.
-        bool smoothPresentation = !_menuFlow.PauseMenu
+        bool smoothPresentation = !MenuPausesGame
             && _mission.Cutscenes?.IsPlaying != true
             && (!_options.Lockstep || _options.CaptureRate > _loop.Clock.TickRate)
             && FrameCVars.SmoothPresentation.Value;

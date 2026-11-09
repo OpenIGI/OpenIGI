@@ -794,6 +794,37 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void The_hosts_pause_menu_does_not_stop_the_game_for_everyone_and_holds_only_the_hosts_own_player()
+    {
+        // Live: Escape over a multiplayer game paused it as it pauses a mission alone -- a listen server stopped ticking, the
+        // match stood still for every player, and a joined game fell behind its server.
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera host = pair.Host!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        pair.RunUntil(() => false, 30);
+
+        // The host's menu up (as Escape brings it up), the host still holding forward.
+        object flow = pair.HostGame.GetType().GetField("_menuFlow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.HostGame)!;
+        System.Reflection.PropertyInfo pause = flow.GetType().GetProperty("PauseMenu")!;
+        pause.SetValue(flow, true);
+        Igi1CoopPair.Hold(pair.HostInput, KeyCode.W, true);
+        Vector3d hostFrom = host.Body.Position;
+        Vector3d partnerFrom = partner.Player.Body.Position;
+
+        // The joiner walks on, and the server runs it.
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 60);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        Igi1CoopPair.Hold(pair.HostInput, KeyCode.W, false);
+        pause.SetValue(flow, false);
+
+        double walked = Vector3d.Distance(partnerFrom, partner.Player.Body.Position);
+        double hostMoved = Vector3d.Distance(hostFrom, host.Body.Position);
+        Assert.True(walked > 2048, $"the joiner walked only {walked:0} units on the server while the host's menu was up");
+        Assert.True(hostMoved < 256, $"the host's own player moved {hostMoved:0} units under its menu");
+    }
+
+    [RequiresGameDataFact]
     public void The_server_holds_the_weapon_the_joiner_chose_even_when_their_carried_lists_differ()
     {
         // Live S&D: the server's copy of the bomb carrier held the knife while the carrier's own game held the bomb, so it
