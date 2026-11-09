@@ -82,7 +82,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         }
     }
 
-    /// <summary>Has a living soldier let go of his gun now, as a pickup that falls from his hand. <b>Not retail.</b></summary>
+    /// <summary>Has a living soldier let go of his gun now, as a pickup that falls from his hand; he fires it no more. <b>Not retail.</b></summary>
     /// <param name="view">The soldier.</param>
     /// <param name="position">Where it leaves his hand, in world units.</param>
     /// <param name="away">Which way it goes.</param>
