@@ -34,6 +34,14 @@ OpenIGI.Modding.InstalledMod.Directory.init -> void
 OpenIGI.Modding.InstalledMod.InstalledMod(OpenIGI.Core.Content.ModManifest! Manifest, string! Directory, OpenIGI.Modding.IOpenIgiMod? Code) -> void
 OpenIGI.Modding.InstalledMod.Manifest.get -> OpenIGI.Core.Content.ModManifest!
 OpenIGI.Modding.InstalledMod.Manifest.init -> void
+OpenIGI.Modding.InstalledMod.<Clone>$() -> OpenIGI.Modding.InstalledMod!
+OpenIGI.Modding.InstalledMod.Deconstruct(out OpenIGI.Core.Content.ModManifest! Manifest, out string! Directory, out OpenIGI.Modding.IOpenIgiMod? Code) -> void
+OpenIGI.Modding.InstalledMod.Equals(OpenIGI.Modding.InstalledMod? other) -> bool
+override OpenIGI.Modding.InstalledMod.Equals(object? obj) -> bool
+override OpenIGI.Modding.InstalledMod.GetHashCode() -> int
+override OpenIGI.Modding.InstalledMod.ToString() -> string!
+static OpenIGI.Modding.InstalledMod.operator !=(OpenIGI.Modding.InstalledMod? left, OpenIGI.Modding.InstalledMod? right) -> bool
+static OpenIGI.Modding.InstalledMod.operator ==(OpenIGI.Modding.InstalledMod? left, OpenIGI.Modding.InstalledMod? right) -> bool
 OpenIGI.Modding.IOpenIgiMod
 OpenIGI.Modding.IOpenIgiMod.Configure(OpenIGI.Modding.IModBuilder! builder) -> void
 OpenIGI.Modding.ModApi

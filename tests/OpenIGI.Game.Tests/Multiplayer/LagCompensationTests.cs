@@ -27,6 +27,8 @@ public sealed class LagCompensationTests
         // Stamped 6 ticks ahead of what the client drew (its lead plus the delay): the view tick is what it saw.
         LagCompensation lag = new(new SnapshotInterpolator(), 30) { InterpolationDelay = 0.1, MaxUnlag = 1.0 };
         Assert.Equal(94, lag.AimedAt(100, 94));
+        Assert.Equal(94.25, lag.AimedAt(100, 94, 0.25f), 6);
+        Assert.Equal(100, lag.AimedAt(100, 100, 0.9f));
         Assert.Equal(100, lag.AimedAt(100, 120));
         Assert.Equal(70, lag.AimedAt(100, 10));
         Assert.Equal(97, lag.AimedAt(100, long.MinValue));

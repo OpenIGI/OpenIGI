@@ -25,6 +25,9 @@ public sealed partial class GameHost
     // The mission being played: which, its level tree, and how far it has got to being decided.
     private readonly MissionSession _session;
 
+    /// <summary>Gets whether the mission-failed page is up: what a versus test checks never opens.</summary>
+    internal bool ShowsMissionFailed => _session.FailedMenu;
+
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -188,6 +191,21 @@ public sealed partial class GameHost
     private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
     {
         BeginStage();
+
+        // A versus match's gates, before anything reads the level: each switch works its gate both ways, and a gate switched
+        // from one side only gets a switch on the other -- on the server and every player alike, so the new one is a switch of
+        // the level everywhere. A level already walked for the menu cannot take a new one.
+        if (TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode))
+        {
+            Game.Multiplayer.Modes.ArenaGates.Report gates = Game.Multiplayer.Modes.ArenaGates.Prepare(levelRoot, mirror: !promoted);
+            _logger.Information(
+                "Session",
+                $"An arena's gates: {gates.Toggles} door(s) now shut to their switches; "
+                    + $"{gates.Mirrored.Count} switch(es) made on a gate's far side"
+                    + string.Concat(gates.Mirrored.Select(m => $" ({m.Of} -> {m.Made})"))
+                    + (promoted ? "; none made, the level was already walked." : "."));
+        }
+
         LevelUpdateWalker walker = new(levelRoot);
         MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
@@ -588,6 +606,7 @@ public sealed partial class GameHost
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
+        DisposeModePoints();
         _menuBackdrop.ReleaseSoldiers();
         _heldWeapon?.Dispose();
         _gunPickupRenderer?.Dispose();
@@ -713,6 +732,7 @@ public sealed partial class GameHost
         if (observed)
         {
             TickObserver!.AfterTitleTick(_hosted);
+            FollowInDemo();
         }
     }
 
@@ -759,6 +779,7 @@ public sealed partial class GameHost
     /// <summary>Lights the pickups, grenades and missiles by the level's light, as the original lights any unbaked model.</summary>
     private void LightLooseModels(FixedFunctionSun? sun)
     {
+        _bombSun = sun;
         if (_gunPickupRenderer is { } pickups)
         {
             pickups.Sun = sun;

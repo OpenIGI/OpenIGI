@@ -38,17 +38,32 @@ public sealed partial class Igi1MissionTick
         }
     }
 
-    // One shot's tracer from the eye along the aim to whatever it meets.
+    // Each shooter's shots left before its next tracer, as a soldier's gun counts them (GunShotMarch: one in eleven).
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, System.Runtime.CompilerServices.StrongBox<int>> _tracerCountdowns = [];
+
+    // One shot's tracer from the eye along the aim to whatever it meets -- drawn as the campaign's soldiers' are, on one shot in
+    // eleven of each shooter's (the gun's countdown of GunShotBallistics.TracerInterval) and only for ammunition that draws one,
+    // rather than on every shot.
     private void ShowShot(object shooter, WeaponType? held, Vector3d feet, double yaw, double pitch)
     {
         if (held is not { } weapon
             || weapon.Category is WeaponCategory.Knife or WeaponCategory.Grenade
             || mission.Soldiers is not { } soldiers
             || mission.AmmoTypes is not { } ammunition
-            || !ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo))
+            || !ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo)
+            || !ammo.DrawsTracer)
         {
             return;
         }
+
+        System.Runtime.CompilerServices.StrongBox<int> countdown = _tracerCountdowns.GetValue(shooter, static _ => new(GunShotBallistics.TracerInterval));
+        if (countdown.Value > 0)
+        {
+            countdown.Value--;
+            return;
+        }
+
+        countdown.Value = GunShotBallistics.TracerInterval;
 
         Vector3d aim = new(Math.Sin(yaw) * Math.Cos(pitch), Math.Cos(yaw) * Math.Cos(pitch), Math.Sin(pitch));
         Vector3d eye = feet + new Vector3d(0, 0, PlayerBody.StandingEyeHeight);

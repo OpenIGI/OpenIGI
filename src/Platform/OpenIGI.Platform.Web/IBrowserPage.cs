@@ -54,6 +54,21 @@ public interface IBrowserPage
     {
     }
 
+    /// <summary>Puts the page's typing field into line mode with this line, or back to characters with <see langword="null"/>.</summary>
+    /// <param name="line">The line, or <see langword="null"/>.</param>
+    void SetTextLine(string? line)
+    {
+    }
+
+    /// <summary>Says where on the canvas a touch raises the keyboard; a zero width for nowhere.</summary>
+    /// <param name="x">Its left, in canvas pixels.</param>
+    /// <param name="y">Its top.</param>
+    /// <param name="width">Its width.</param>
+    /// <param name="height">Its height.</param>
+    void SetTextTrigger(float x, float y, float width, float height)
+    {
+    }
+
     /// <summary>Says whether the page should report the device's turning, as <c>gyro</c> events.</summary>
     /// <param name="wanted">Whether it should. Where the browser asks the player's leave, it is asked on the next tap.</param>
     void SetGyro(bool wanted)

@@ -22,6 +22,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <param name="Dead">Whether it has fallen: it lies where it fell until a teammate revives it.</param>
 /// <param name="Revive">How far its revival has gone, in <c>[0,1]</c>, while it lies there.</param>
 /// <param name="Model">The model its look is built from, or <see langword="null"/> for the level's own player's.</param>
+/// <param name="CarriesBomb">Whether it carries the bomb the bomb modes plant, drawn on its back.</param>
 public readonly record struct PartnerBody(
     object Key,
     Vector3d Feet,
@@ -36,7 +37,8 @@ public readonly record struct PartnerBody(
     string? Name = null,
     bool Dead = false,
     float? Revive = null,
-    string? Model = null)
+    string? Model = null,
+    bool CarriesBomb = false)
 {
     /// <summary>Gets a partner's body from its rig, followed as the mission's own player's is.</summary>
     /// <param name="key">What the body follows.</param>

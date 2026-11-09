@@ -35,6 +35,16 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
 
     /// <summary>The bed each sounding ambient area is playing.</summary>
     private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
+
+    // The timed action's held loop (Human+actionSound) and the state it was started for.
+    private AudioVoiceHandle _actionVoice;
+    private int _actionVoiceState = -1;
+
+    /// <summary>The definition each sounding ambient area started, which its gain is set through.</summary>
+    private readonly Dictionary<PlacedAmbientArea, string> _ambientSounds = [];
+
+    /// <summary>The voice-pool priority of an ambient bed.</summary>
+    private const int AmbiencePriority = 60;
     private readonly Dictionary<GameTask, AudioVoiceHandle> _taskLoops = [];
     private readonly Dictionary<GameTask, PlacedAmbientArea> _taskAreas = [];
 
@@ -135,6 +145,30 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             {
                 // The player's view rig is at the listener, so this is deliberately non-positional.
                 host.SoundOutput.PlayDefinition(trigger.Resource, priority: 180);
+            }
+        }
+    }
+
+    /// <summary>Plays the animation triggers a body's clip crossed, where the body stands.</summary>
+    /// <param name="body">The body playing a world interaction's clip.</param>
+    /// <param name="feet">Where it stands, in world units.</param>
+    /// <remarks>
+    /// <c>Human_FireAnimTrigger</c> (0x4613D0) fires the body clip's events every update, at the body; the view rig's go
+    /// through <see cref="PlayPlayerAnimationSounds"/>. A fence vault's four <c>walk_fence</c> steps are authored this way.
+    /// </remarks>
+    public void PlayBodyClipSounds(ILadderBody body, Vector3d feet)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        if (host.SoundOutput is null || mission.AnimationTriggers is null)
+        {
+            return;
+        }
+
+        foreach (AnimTriggerDefinition trigger in mission.AnimationTriggers.Definitions.Values)
+        {
+            if (body.CrossedEvent(trigger.EventId))
+            {
+                host.SoundOutput.PlayDefinition(trigger.Resource, feet, priority: 180);
             }
         }
     }
@@ -264,20 +298,59 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         }
     }
 
-    /// <summary>Plays the medipack's authored cue when its sustained syringe action starts.</summary>
-    /// <remarks>
-    /// IGI.EXE's medipack execution state consumes a charge and applies one heal after its damage and
-    /// ammo checks, while the state keeps one syringe clip looping. The cue belongs to that action
-    /// edge, not to every cooldown-eligible dose, so a fifty-charge pack cannot spam a sound each tick.
-    /// </remarks>
-    private void PlayMedipackSound()
+    /// <summary>Stops the timed action's loop: the lock pick's or the keyboard's.</summary>
+    public void StopTimedActionSound()
     {
-        if (mission.Player?.Weapons is { MedipackStartedThisTick: true } weapons)
+        if (_actionVoice.IsValidHandle)
         {
-            // A medipack is an injection action, not a gun shot. Some weapon records carry a
-            // legacy firearm FireSound field (which produces the shotgun/pistol report); the
-            // retail medipack cue is the standalone syringe sound and is always used here.
-            host.SoundOutput?.PlayDefinition("syringe", priority: 180);
+            host.SoundOutput?.Stop(_actionVoice);
+            _actionVoice = AudioVoiceHandle.None;
+        }
+
+        _actionVoiceState = -1;
+    }
+
+    /// <summary>Holds the timed action's loop while the player picks a lock or hacks a computer, and plays its end.</summary>
+    /// <param name="player">The player.</param>
+    /// <remarks>
+    /// The lock pick's entry (0x40BED0) starts <c>picklock_loop</c> and the computer's (0x40C670) <c>typecomp_loop</c>, each
+    /// a child of the human, kept until the action is done or let go (0x40C0xx's Action_Done stops it). Completed, the pick
+    /// plays <c>pickloop_end</c> (0x40C160) and the hack <c>typecomp_end</c> (0x40C870) where the human stands.
+    /// </remarks>
+    private void SoundTimedAction(PlayerCamera player)
+    {
+        int state = player.InteractionLocomotionState;
+        string? loop = state switch
+        {
+            HumanInteractionDispatch.PickLockState => "picklock_loop",
+            HumanInteractionDispatch.ComputerState => "typecomp_loop",
+            _ => null,
+        };
+
+        if (state != _actionVoiceState)
+        {
+            StopTimedActionSound();
+            if (loop is not null && host.SoundOutput is { } output)
+            {
+                _actionVoice = output.PlayDefinition(loop, player.Body.Position, priority: 200);
+                _actionVoiceState = state;
+            }
+        }
+        else if (_actionVoice.IsValidHandle && host.SoundOutput is { } output)
+        {
+            output.SetDefinitionVoicePosition(loop!, _actionVoice, player.Body.Position, priority: 200);
+        }
+
+        string? end = player.TakeCompletedActionState() switch
+        {
+            HumanInteractionDispatch.PickLockState => "pickloop_end",
+            HumanInteractionDispatch.ComputerState => "typecomp_end",
+            _ => null,
+        };
+
+        if (end is not null)
+        {
+            host.SoundOutput?.PlayDefinition(end, player.Body.Position, priority: 200);
         }
     }
 
@@ -327,25 +400,26 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
 
         foreach (PlacedAmbientArea area in ambience.Areas)
         {
-            if (area.WantsStop)
+            // Stop first, then start: an area can let one instance go and draw the next before the speakers are served.
+            if (area.TakeStop())
             {
                 if (_ambientVoices.Remove(area, out AudioVoiceHandle running))
                 {
                     host.SoundOutput.Stop(running);
                 }
 
+                _ambientSounds.Remove(area);
+
                 area.IsSounding = false;
-                continue;
             }
 
-            if (area.PendingSound.Length > 0)
+            if (area.TakePendingSound() is { Length: > 0 } sound)
             {
-                AudioVoiceHandle started = host.SoundOutput.PlayDefinition(
-                    area.PendingSound, gain: (float)area.Fade, priority: 60);
-
+                AudioVoiceHandle started = host.SoundOutput.PlayDefinition(sound, gain: (float)area.Fade, priority: AmbiencePriority);
                 if (started != AudioVoiceHandle.None)
                 {
                     _ambientVoices[area] = started;
+                    _ambientSounds[area] = sound;
                     area.IsSounding = true;
                 }
             }
@@ -353,13 +427,16 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             {
                 if (host.SoundOutput.IsPlaying(voice))
                 {
-                    host.SoundOutput.SetVoiceParameters(voice, VoiceParameters.Default with { Gain = (float)area.Fade });
+                    // The fade is the instance's second volume (0x4E8B20 sets volume2 and leaves the definition's alone), so
+                    // the bed is heard at the definition's volume times the fade, and keeps its place in the voice pool.
+                    host.SoundOutput.SetDefinitionVoiceGain(_ambientSounds[area], voice, (float)area.Fade, AmbiencePriority);
                 }
                 else
                 {
                     // A one-shot bed that has run out: the speakers let it go. The area lets its instance go on its own
                     // clock (AmbientAreaRegistry), as the original's deletes itself at the sample's length.
                     _ambientVoices.Remove(area);
+                    _ambientSounds.Remove(area);
                     area.IsSounding = false;
                 }
             }
@@ -784,17 +861,23 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// <param name="at">Where, in world units.</param>
     public void PlayGrenadeBounce(Vector3d at) => host.SoundOutput?.PlayDefinition("grenade_bnc_1", at, priority: 120);
 
-    /// <summary>The sounds of the player's update: the binoculars' zoom and the medipack.</summary>
+    /// <summary>The sounds of the player's update: the binoculars' zoom.</summary>
+    /// <remarks>
+    /// The medipack has no cue of its own here: its entry clip (78 in <c>common/anims/005.iff</c>) carries
+    /// event 1050 at frame 35 of 37, where the needle meets the hand, and <c>animtrigger.qvm</c> maps 1050
+    /// to <c>syringe</c>. That event plays through <see cref="PlayPlayerAnimationSounds"/>, as
+    /// <c>HumanView_UpdateBody</c> (0x464BD0) fires every view-rig event.
+    /// </remarks>
     public void SoundPlayerUpdate()
     {
         PlayBinocularTransitionSound();
-        PlayMedipackSound();
     }
 
     /// <summary>The sounds of the player's weapon and body this tick: the report, the launcher, the cook, the reload and the jump.</summary>
     public void SoundPlayerWeaponAndBody()
     {
         PlayerCamera player = mission.Player!;
+        SoundTimedAction(player);
 
         // And the sound of it. Driven every tick rather than only on the ones that fire,
         // because an automatic's loop has to be told when the trigger was RELEASED as much
@@ -807,10 +890,17 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
             ? null
             : player.HeldWeaponType;
         bool m203Launched = player.M203LaunchedThisTick;
+
+        // On a stationary gun the hand's trigger is not the one pulled: the gun's own weapon fires (0x474360 hands it the
+        // fire button), so its report runs on the rounds it fires, as a soldier's does. Read from the hand, an automatic
+        // mounted gun's loop never opened and the gun fired in silence.
+        bool? triggerHeld = player.IsMountedStationaryGun
+            ? null
+            : !m203Launched && weaponForSound is not null && player.Weapons?.TriggerHeldThisTick == true;
         _weaponSounds?.Tick(
             player.FiredThisTick && !m203Launched && weaponForSound is not null,
             weaponForSound,
-            triggerHeld: !m203Launched && weaponForSound is not null && player.Weapons?.TriggerHeldThisTick == true);
+            triggerHeld: triggerHeld);
         if (m203Launched)
         {
             // GunM16A2's native callback (0x473510) plays this launch report itself; it is
@@ -832,13 +922,9 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
         // Reloads and a few other weapon actions name their sounds through BOED animation
         // events rather than through the weapon record. The rig advanced inside Player.Tick,
         // so its crossed-event interval is ready to dispatch here.
-        // The native medipack callbacks dispatch their own clips and do not enter the
-        // generic firearm BOED trigger path. Suppress those generic triggers while the
-        // medipack is held, otherwise a shared animation event can sound like reload/fire.
-        if (player.HeldWeaponType?.Category != WeaponCategory.Medipack)
-        {
-            PlayPlayerAnimationSounds();
-        }
+        // 0x464BD0 fires every view-rig event, the medipack's included: its syringe cue is
+        // event 1050 on the entry clip, so it sounds when the needle goes in.
+        PlayPlayerAnimationSounds();
 
         // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
         if (player.Body.TookOffThisTick)
@@ -902,6 +988,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     {
         StopBinocularTransitionSound();
         StopLadderSlideSound();
+        StopTimedActionSound();
         StopGrenadeCook();
         StopMissileSounds();
         _weaponSounds?.Reset();
@@ -920,6 +1007,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public void ForgetAmbience()
     {
         _ambientVoices.Clear();
+        _ambientSounds.Clear();
         _taskAreas.Clear();
         _taskLoops.Clear();
     }

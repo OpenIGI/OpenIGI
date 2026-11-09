@@ -470,6 +470,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeBackdrop();
         DisposeDeferred();
         DisposeTracers();
+        DisposeModePoints();
         DisposeCompute();
         _ownedTracedWorld?.Dispose();
         _profiler.Dispose();
@@ -482,6 +483,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _cubeSampler.Dispose();
         _sprites.Dispose();
         DisposeWater();
+        DisposeTerrainArena();
         _pipelines.Dispose();
         _materials.Dispose();
         _cubeLayout.Dispose();

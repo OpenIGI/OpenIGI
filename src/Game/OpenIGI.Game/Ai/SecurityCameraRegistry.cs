@@ -32,19 +32,37 @@ public enum SecurityCameraBeep
 /// a human through <c>0x45FE30</c> or another camera through <c>0x442A30</c>.
 /// </summary>
 /// <param name="Key">Who it is; a camera restarts its confirmation whenever this changes.</param>
-/// <param name="Mark">The point the cone and the sight ray test, in engine units.</param>
+/// <param name="Point">The point the cone and the sight ray test, in engine units, when no <paramref name="MarkSource"/> gives it.</param>
 /// <param name="CamerasSide">
 /// Whether it is on team 1, the side every lens scans for (<c>0x4415C0</c> passes team 1): soldiers and
 /// cameras are, the player is not.
 /// </param>
 /// <param name="Alive">Whether it is alive — for a camera, not yet exploded.</param>
 /// <param name="Task">Its task, which the sight ray does not collide with, or <see langword="null"/>.</param>
+/// <param name="MarkSource">
+/// What gives the point when a lens asks for it, as the original's slot reads its human through the task it refers to: a lens tests
+/// the point only of what it registers -- its own side's dead, the other side's living -- so a guard on the cameras' side is
+/// never placed at all.
+/// </param>
 public readonly record struct SecurityCameraSubject(
     object Key,
-    Vector3d Mark,
+    Vector3d Point,
     bool CamerasSide,
     bool Alive,
-    GameTask? Task = null);
+    GameTask? Task = null,
+    ISecurityCameraMark? MarkSource = null)
+{
+    /// <summary>Gets the point the cone and the sight ray test, in engine units.</summary>
+    public Vector3d Mark => MarkSource?.CameraMark() ?? Point;
+}
+
+/// <summary>Where a lens tests a subject, worked out when the lens asks.</summary>
+public interface ISecurityCameraMark
+{
+    /// <summary>The point the cone and the sight ray test, in engine units, as the subject stands now.</summary>
+    /// <returns>The point.</returns>
+    Vector3d CameraMark();
+}
 
 /// <summary>What a lens's scan is offered besides the cameras themselves, as it stands when the lens updates.</summary>
 /// <param name="TargetFeet">The player's feet, in engine units.</param>
@@ -274,6 +292,64 @@ public sealed class SecurityCamera
         }
         RefreshTransform();
     }
+
+    // The camera as the match began, which a round puts back: its scan, its lamp, whether it was shot out or saw anyone.
+    private Start _start;
+
+    internal void MarkLevelStart() => _start = new Start(
+        _targetGamma, _lampPulseCountdown, _scanDirection, _endDelay, _resumeScanDelay, _targetKey, _lampPulseLarge,
+        IsPowered, HeadPositionUnits, CurrentAlpha, CurrentGamma, IsActive, IsDetection, IsLastDetection, DetectionTime,
+        IsExploded, Beep, IsMoving, HolderPositionUnits, IsBodyTarget);
+
+    internal void ResetToLevelStart()
+    {
+        Start s = _start;
+        _targetGamma = s.TargetGamma;
+        _lampPulseCountdown = s.LampPulseCountdown;
+        _scanDirection = s.ScanDirection;
+        _endDelay = s.EndDelay;
+        _resumeScanDelay = s.ResumeScanDelay;
+        _targetKey = s.TargetKey;
+        _lampPulseLarge = s.LampPulseLarge;
+        IsPowered = s.IsPowered;
+        HeadPositionUnits = s.HeadPositionUnits;
+        CurrentAlpha = s.CurrentAlpha;
+        CurrentGamma = s.CurrentGamma;
+        _previousAlpha = s.CurrentAlpha;
+        _previousGamma = s.CurrentGamma;
+        IsActive = s.IsActive;
+        IsDetection = s.IsDetection;
+        IsLastDetection = s.IsLastDetection;
+        DetectionTime = s.DetectionTime;
+        IsExploded = s.IsExploded;
+        Beep = s.Beep;
+        IsMoving = s.IsMoving;
+        HolderPositionUnits = s.HolderPositionUnits;
+        IsBodyTarget = s.IsBodyTarget;
+        RefreshTransform();
+    }
+
+    private readonly record struct Start(
+        float TargetGamma,
+        int LampPulseCountdown,
+        int ScanDirection,
+        int EndDelay,
+        int ResumeScanDelay,
+        object? TargetKey,
+        bool LampPulseLarge,
+        bool IsPowered,
+        Vector3d HeadPositionUnits,
+        float CurrentAlpha,
+        float CurrentGamma,
+        bool IsActive,
+        bool IsDetection,
+        bool IsLastDetection,
+        int DetectionTime,
+        bool IsExploded,
+        SecurityCameraBeep Beep,
+        bool IsMoving,
+        Vector3d HolderPositionUnits,
+        bool IsBodyTarget);
 
     internal void Destroy()
     {
@@ -571,7 +647,7 @@ public sealed class SecurityCamera
 }
 
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
-public sealed class SecurityCameraRegistry
+public sealed class SecurityCameraRegistry : World.ILevelReset
 {
     private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded)
     {
@@ -608,6 +684,12 @@ public sealed class SecurityCameraRegistry
     /// </summary>
     public bool Mirrored { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether every camera and camera control is held off, whatever its expressions say: a
+    /// versus match's arena, where a camera would only sound an alarm nobody plays against. The models stay, dark and still.
+    /// </summary>
+    public bool SwitchedOff { get; set; }
+
     /// <summary>Raised on a client when the server's word is that an intact lens here was destroyed, before it is marked so.</summary>
     public Action<SecurityCamera>? MirroredDestruction { get; set; }
 
@@ -632,6 +714,37 @@ public sealed class SecurityCameraRegistry
     /// <summary>Takes the server's cameras, as the newest snapshot has them, for each lens's next update to be posed by.</summary>
     /// <param name="states">Their states, in the level's own order.</param>
     public void Mirror(ReplicatedCamera[]? states) => _mirror = states;
+
+    // Each control's detection as the match began.
+    private bool[] _controlsAtStart = [];
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (SecurityCamera camera in _cameras)
+        {
+            camera.MarkLevelStart();
+        }
+
+        _controlsAtStart = [.. _controls.Select(static c => c.IsDetection)];
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every camera whole, posed and scanning as the match began; a client's mirror waits for the server's next word.</remarks>
+    public void ResetToLevelStart(World.ObjectCollisionIndex? solids)
+    {
+        foreach (SecurityCamera camera in _cameras)
+        {
+            camera.ResetToLevelStart();
+        }
+
+        for (int i = 0; i < _controls.Count && i < _controlsAtStart.Length; i++)
+        {
+            _controls[i].IsDetection = _controlsAtStart[i];
+        }
+
+        _mirror = null;
+    }
 
     /// <summary>Collects cameras, exports their retail script variables and prepares their controllers.</summary>
     public static SecurityCameraRegistry Build(
@@ -786,7 +899,7 @@ public sealed class SecurityCameraRegistry
             return;
         }
 
-        if (camera.IsExploded)
+        if (camera.IsExploded || SwitchedOff)
         {
             camera.IsPowered = false;
         }
@@ -800,7 +913,7 @@ public sealed class SecurityCameraRegistry
     // Expression when it has one.
     private void UpdateDetection(Control control)
     {
-        if (control.IsExploded())
+        if (control.IsExploded() || SwitchedOff)
         {
             control.IsDetection = false;
         }

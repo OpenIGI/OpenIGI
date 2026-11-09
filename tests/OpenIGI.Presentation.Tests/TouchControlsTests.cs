@@ -79,4 +79,41 @@ public sealed class TouchControlsTests
         controls.Update(touch, TouchControlMode.Play, Phone);
         Assert.Empty(controls.Held);
     }
+
+    [Fact]
+    public void A_matchs_buttons_are_laid_out_only_where_the_match_offers_them_and_none_lands_on_another()
+    {
+        TouchState touch = new();
+        TouchControls controls = new() { MatchButtons = TouchMatchButtons.None };
+        controls.Update(touch, TouchControlMode.Play, Phone);
+        TouchButton[] match = [TouchButton.Scoreboard, TouchButton.Buy, TouchButton.Team, TouchButton.Drop];
+        Assert.DoesNotContain(controls.Layout, s => match.Contains(s.Button));
+
+        controls.MatchButtons = TouchMatchButtons.Scoreboard | TouchMatchButtons.Buy | TouchMatchButtons.Team | TouchMatchButtons.Drop;
+        controls.Update(touch, TouchControlMode.Play, Phone);
+        foreach (TouchButton button in match)
+        {
+            Assert.Contains(controls.Layout, s => s.Button == button);
+        }
+
+        // No two buttons overlap, so a thumb on one never presses another.
+        TouchButtonSpot[] round = [.. controls.Layout.Where(static s => !s.Card)];
+        for (int a = 0; a < round.Length; a++)
+        {
+            for (int b = a + 1; b < round.Length; b++)
+            {
+                float dx = round[a].Centre.X - round[b].Centre.X, dy = round[a].Centre.Y - round[b].Centre.Y;
+                Assert.True(
+                    MathF.Sqrt((dx * dx) + (dy * dy)) >= round[a].Radius + round[b].Radius,
+                    $"{round[a].Button} overlaps {round[b].Button}");
+            }
+        }
+
+        // A tap on the shop presses it.
+        TouchButtonSpot buy = Spot(controls, TouchButton.Buy);
+        touch.BeginFrame();
+        touch.Down(3, buy.Centre.X, buy.Centre.Y);
+        controls.Update(touch, TouchControlMode.Play, Phone);
+        Assert.Contains(TouchButton.Buy, controls.Held);
+    }
 }

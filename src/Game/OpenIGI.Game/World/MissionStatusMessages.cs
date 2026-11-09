@@ -43,6 +43,38 @@ internal sealed class MissionStatusMessages
     /// <summary>Plays a message's <c>Sound</c> as it goes up; see <see cref="MissionObjectiveRuntime.MessageSound"/>.</summary>
     public Action<string>? MessageSound { get; set; }
 
+    // As the match began: the transient messages, the slots and the log.
+    private (StatusMessage[] Transient, StatusMessage?[] Slots, MissionComputerLogEntry[] Log, StatusMessage[] Walked) _start = ([], [], [], []);
+
+    /// <summary>Records every message as it stands, for <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart()
+    {
+        foreach (StatusMessage message in _statusMessages)
+        {
+            message.MarkLevelStart();
+        }
+
+        _start = ([.. _transientMessages], [.. _messageSlots], [.. _log], [.. _walkedMessages]);
+    }
+
+    /// <summary>Puts every message, slot and log line back as <see cref="MarkLevelStart"/> found them.</summary>
+    public void ResetToLevelStart()
+    {
+        foreach (StatusMessage message in _statusMessages)
+        {
+            message.ResetToLevelStart();
+        }
+
+        _transientMessages.Clear();
+        _transientMessages.AddRange(_start.Transient);
+        Array.Clear(_messageSlots);
+        _start.Slots.CopyTo(_messageSlots, 0);
+        _log.Clear();
+        _log.AddRange(_start.Log);
+        _walkedMessages.Clear();
+        _walkedMessages.UnionWith(_start.Walked);
+    }
+
     /// <summary>Gets the authored, non-cutscene messages recorded by the map-computer log.</summary>
     public IReadOnlyList<MissionComputerLogEntry> Log => _log;
 
@@ -132,13 +164,17 @@ internal sealed class MissionStatusMessages
     }
 
     /// <summary>Gets the messages on screen now, in slot order; see <see cref="MissionObjectiveRuntime.DisplayedMessages"/>.</summary>
-    public IEnumerable<StatusMessageDisplay> DisplayedMessages
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Displayed(eventsOnly: false);
+
+    /// <summary>Gets the messages on screen now that no mission task sent -- a weapon picked up, ammunition taken -- in slot order.</summary>
+    public IEnumerable<StatusMessageDisplay> EventMessages => Displayed(eventsOnly: true);
+
+    private IEnumerable<StatusMessageDisplay> Displayed(bool eventsOnly)
     {
-        get
         {
             foreach (StatusMessage? slot in _messageSlots)
             {
-                if (slot is { IsDisplaying: true })
+                if (slot is { IsDisplaying: true } && (!eventsOnly || _transientMessages.Contains(slot)))
                 {
                     yield return new StatusMessageDisplay(
                         slot.DisplayText,

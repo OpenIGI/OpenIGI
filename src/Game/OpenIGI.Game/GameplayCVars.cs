@@ -100,6 +100,33 @@ public static class GameplayCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether Project I.G.I.'s dead soldiers stay where they fell, or leave the world once out of sight as the original's do.</summary>
+    /// <remarks>
+    /// <para>
+    /// The original's HumanAI (<c>0x44F410</c>) lets a body lie 300 ticks and then takes it out of the world on the first tick the
+    /// last render did not draw it, so a corpse the player turns away from or walks past is gone when he comes back. On, every body
+    /// stays for the rest of the mission.
+    /// </para>
+    /// <para>
+    /// A <c>GuardGenerator</c>'s guard is the exception either way: the generator clones its replacement only once the body is out
+    /// of the world (<c>0x487EE0</c>), so his body goes when its stay runs out, as the original's does, and his gun stays behind.
+    /// </para>
+    /// <para>
+    /// A fourth exception to the rule above: a body in the world is game logic (a mine still meets it). The Vanilla preset forces
+    /// it off, as with <see cref="RealisticDrops"/>.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar BodiesStay = Core.Configuration.Presets.GraphicsPresetRegistry.Default.Define(
+        CVar.Bool(
+            "g_bodies_stay",
+            true,
+            CVarOptions.Archive,
+            "Dead soldiers stay where they fell. Off takes a body away once it is out of sight, as the original does."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>How hard a round throws a body it kills.</summary>
     /// <remarks>
     /// <para>

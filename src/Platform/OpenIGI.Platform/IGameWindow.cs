@@ -128,6 +128,26 @@ public interface IGameWindow : IDisposable
     {
     }
 
+    /// <summary>
+    /// Says the line being typed where the platform's keyboard keeps the line itself (a touch screen's browser): what it starts
+    /// from as typing begins, after which the platform says the line back as the player edits it
+    /// (<see cref="Input.KeyboardState.TryTakeLine"/>). <see langword="null"/> for character-by-character typing.
+    /// </summary>
+    /// <param name="line">The line, or <see langword="null"/>.</param>
+    void SetTextLine(string? line)
+    {
+    }
+
+    /// <summary>Says where on the window a touch begins typing (the chat button), for a touch screen's keyboard to be raised by
+    /// that very touch -- the only kind of touch some browsers raise one for. <see langword="null"/> for nowhere.</summary>
+    /// <param name="area">The area, in window pixels.</param>
+    void SetTextTrigger((float X, float Y, float Width, float Height)? area)
+    {
+    }
+
+    /// <summary>Gets how much of the window's bottom a touch screen's keyboard covers now, in window pixels; 0 with none up.</summary>
+    float TextEntryInset => 0f;
+
     /// <summary>Makes the window visible.</summary>
     void Show();
 

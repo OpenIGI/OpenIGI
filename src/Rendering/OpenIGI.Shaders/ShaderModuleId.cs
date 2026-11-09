@@ -229,6 +229,12 @@ public enum ShaderModuleId
     /// <summary>Post: what the binoculars marked, a fill inside a soft outline laid over the finished picture (<c>Post/Silhouette.slang</c>).</summary>
     Silhouette,
 
+    /// <summary>World: a place a multiplayer mode plays for -- a bomb site -- as a ring and letter on the ground and a column of light (<c>World/ModePoint.slang</c>).</summary>
+    ModePoint,
+
+    /// <summary>World: the original's ground, a draw per texture per pass over an arena of chunks (<c>World/TerrainArena.slang</c>).</summary>
+    TerrainArena,
+
     /// <summary>
     /// A module from outside the library: a mod's, compiled by the same tool from a manifest of its own. Its reflection is
     /// labelled so; the catalogue gives each one an id of its own as it is registered (<see cref="ShaderCatalog.Register"/>).

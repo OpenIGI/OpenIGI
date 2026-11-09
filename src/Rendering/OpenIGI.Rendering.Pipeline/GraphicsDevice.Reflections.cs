@@ -175,8 +175,6 @@ public sealed partial class GraphicsDevice
             traces,
             traces ? TracedWorld!.HitRecordHandle : 0UL);
 
-        reflect.Bind("uLit", scene.View(SceneTargetId.Lit), _reflectSampler!);
-        reflect.Bind("uSceneDepth", scene.View(SceneTargetId.Depth), _reflectSampler!);
         reflect.Bind("uGlass", scene.View(SceneTargetId.GlassLayer), _reflectSampler!);
         reflect.Bind("uSkyView", sky.SkyViewTable, _reflectSampler!);
         reflect.Bind("uOut", scene.View(SceneTargetId.Reflection));

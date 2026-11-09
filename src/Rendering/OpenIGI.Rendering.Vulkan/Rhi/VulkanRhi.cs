@@ -33,13 +33,14 @@ public sealed class VulkanRhi : IDisposable
     /// All of them at once, because what <c>slInit</c> is told to load decides what Streamline's own
     /// <c>vkCreateDevice</c> adds to the device — Reflex's <c>VK_NV_low_latency2</c>, frame generation's
     /// extra queues — and the device cannot be changed afterwards. Which of them then runs is the
-    /// renderer's choice, frame by frame.
+    /// renderer's choice, frame by frame. Frame generation is left out: on Vulkan its swapchain hook could
+    /// not find the game's window on some machines, and the failed swapchain ended the game on every
+    /// launch while the setting stayed on. It runs on Direct3D 12 only.
     /// </remarks>
     private static readonly uint[] StreamlineFeatures =
     [
         SlFeature.Dlss,
         SlFeature.DlssRr,
-        SlFeature.DlssG,
         SlFeature.Reflex,
         SlFeature.Pcl,
     ];
@@ -172,15 +173,6 @@ public sealed class VulkanRhi : IDisposable
             VulkanDevice device = new(instance, selection, log);
             VulkanAllocator allocator = new(device);
             VulkanCommands commands = new(instance.Vk, device);
-
-            // Frame generation's plugin is unloaded before the first swapchain unless it was asked for:
-            // while loaded, the host renders off-screen and pays a copy every frame even with it off.
-            if (runtime is not null
-                && streamline is { FrameGeneration: false }
-                && runtime.IsFeatureSupported(SlFeature.DlssG, SlAdapterInfo.ForVulkan(selection.Device.Handle)) == SlResult.Ok)
-            {
-                _ = runtime.SetFeatureLoaded(SlFeature.DlssG, false);
-            }
 
             // Unsigned-normalised. The renderer's resolve writes for either kind, but its interface
             // composites at the display encoding and blends there, as the original did; over an sRGB

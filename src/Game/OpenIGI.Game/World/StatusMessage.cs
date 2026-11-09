@@ -49,6 +49,17 @@ internal sealed class StatusMessage(
     private int CharactersRemaining { get; set; }
     private int HoldTicks { get; set; }
 
+    // As the match began: whether and when it was sent, and how far its display had got.
+    private (bool Sent, int Count, int SentTick, bool Finished, int FinishedTick, int SinceFinished, bool Displaying, string Text, int Frame, int Remaining, int Hold) _start;
+
+    internal void MarkLevelStart() => _start = (
+        IsSent, SendCount, SentTick, IsFinishedDisplay, FinishedDisplayTick, TicksSinceFinishedDisplay, IsDisplaying, DisplayText,
+        DisplayFrame, CharactersRemaining, HoldTicks);
+
+    internal void ResetToLevelStart() =>
+        (IsSent, SendCount, SentTick, IsFinishedDisplay, FinishedDisplayTick, TicksSinceFinishedDisplay, IsDisplaying, DisplayText,
+            DisplayFrame, CharactersRemaining, HoldTicks) = _start;
+
     public void BeginDisplay(string text)
     {
         IsDisplaying = true;

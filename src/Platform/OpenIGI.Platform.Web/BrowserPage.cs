@@ -44,6 +44,12 @@ public sealed partial class BrowserPage : IBrowserPage
     /// <inheritdoc/>
     public void SetTextEntry(bool wanted) => SetPageTextEntry(wanted);
 
+    /// <inheritdoc/>
+    public void SetTextLine(string? line) => SetPageTextLine(line is not null, line ?? string.Empty);
+
+    /// <inheritdoc/>
+    public void SetTextTrigger(float x, float y, float width, float height) => SetPageTextTrigger(x, y, width, height);
+
     [JSImport("canvasWidth", ModuleName)]
     private static partial int CanvasWidth();
 
@@ -73,6 +79,12 @@ public sealed partial class BrowserPage : IBrowserPage
 
     [JSImport("setTextEntry", ModuleName)]
     private static partial void SetPageTextEntry(bool wanted);
+
+    [JSImport("setTextLine", ModuleName)]
+    private static partial void SetPageTextLine(bool lineMode, string line);
+
+    [JSImport("setTextTrigger", ModuleName)]
+    private static partial void SetPageTextTrigger(float x, float y, float width, float height);
 
     [JSImport("setGyro", ModuleName)]
     private static partial void SetPageGyro(bool wanted);

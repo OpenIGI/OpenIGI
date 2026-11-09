@@ -25,6 +25,28 @@ public static class ClientReplication
             return;
         }
 
+        // A new round's level, put back here as the server's was, before anything it sent after is taken.
+        if (session.TakeLevelReset())
+        {
+            world.ResetToLevelStart();
+        }
+
+        // What the server re-armed this client's player with at a respawn, then what it handed it -- a buy -- its own copy
+        // carries too, in that order, as the server did them. A gun bought that the player did not carry is taken in hand, as
+        // the buyer's pick goes to the server in its next command; asked before the kit, which already holds a gun bought in
+        // place of another.
+        IReadOnlyList<(string Weapon, int Rounds)> given = session.TakeGiven();
+        bool[] bought = [.. given.Select(g => !world.CarriesOwn(g.Weapon))];
+        foreach ((bool fresh, IReadOnlyList<(string Weapon, int Rounds)> kit) in session.TakeKits())
+        {
+            world.ArmOwn(kit, fresh);
+        }
+
+        for (int i = 0; i < given.Count; i++)
+        {
+            world.GiveOwn(given[i].Weapon, given[i].Rounds, bought[i]);
+        }
+
         // The rest of the server's world first -- its lifts, its doors, and what it did to this client's player that the
         // client learns of only now, a knock among them -- so the server's word on the player below is weighed against a
         // prediction that has taken them. The snapshot's world stands after the server ran this client's command for
@@ -52,7 +74,13 @@ public static class ClientReplication
             world.ApplyOwn(own);
         }
 
-        if (session.SendCommand(world.LocalFrame, now) is { } sent)
+        ReadOnlySpan<float> frame = world.LocalFrame;
+        // The use key, or fire with the bomb in hand: what plants it.
+        int use = (int)Player.PlayerInputSlot.Activate;
+        int fire = (int)Player.PlayerInputSlot.Fire;
+        bool? bomb = world.HoldsBomb;
+        session.NoteUse((use < frame.Length && frame[use] > 0.5f) || (bomb == true && fire < frame.Length && frame[fire] > 0.5f), now, bomb);
+        if (session.SendCommand(frame, now) is { } sent)
         {
             session.Reconciler.Record(sent, world.LocalPosition, world.LocalPlatform);
         }
@@ -68,6 +96,10 @@ public static class ClientReplication
                     world.Skin(line.Entity, line.Skin);
                 }
             }
+
+            // The sides, which say whose names and revive marks this player is shown: the server's mode, the board's teams.
+            int? ownTeam = session.EntityId is { } ownEntity ? TeamOf(board, ownEntity) : null;
+            world.Sides(session.MatchState?.Mode ?? Modes.GameModes.Coop, entity => TeamOf(board, entity), ownTeam);
         }
 
         // The server level's running state, taken each time a new one comes.
@@ -82,6 +114,7 @@ public static class ClientReplication
         }
 
         double moment = clock.InterpolationTick(now);
+        session.DrawnTick = moment;
         HashSet<int> present = [];
         foreach (ReplicatedHuman human in latest.Humans)
         {
@@ -110,5 +143,18 @@ public static class ClientReplication
         {
             world.Hide(id);
         }
+    }
+
+    private static int? TeamOf(Scoreboard board, int entity)
+    {
+        foreach (ScoreboardLine line in board.Lines)
+        {
+            if (line.Entity == entity)
+            {
+                return line.Team;
+            }
+        }
+
+        return null;
     }
 }

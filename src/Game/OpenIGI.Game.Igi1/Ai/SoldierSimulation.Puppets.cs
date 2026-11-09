@@ -109,6 +109,14 @@ public sealed partial class SoldierSimulation
     {
         ArgumentNullException.ThrowIfNull(view);
         _puppets[view] = puppet;
+
+        // Stood there now, not at its next tick: the frame drawn after the snapshot is read shows it where the snapshot has
+        // it, at the moment the client says it drew (ClientSession.DrawnTick), which its shots are rewound to -- a tick late,
+        // a running soldier was shown a tick behind where the server rewound it.
+        if (puppet.Alive && !view.IsDead)
+        {
+            view.PlaceAt(puppet.Position, Matrix3f.RotationZ(puppet.Facing));
+        }
     }
 
     // A puppeted soldier's tick: its pose taken from the server's, its rig stepped, its mind left alone.

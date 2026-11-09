@@ -143,6 +143,22 @@ public interface IMissionViewpoint
     /// <param name="pitch">Its pitch, up positive.</param>
     void FollowTeammateView(Vector3d eye, float yaw, float pitch);
 
+    /// <summary>
+    /// Watches another player over its shoulder while the player's own body is left aside, as a demo is watched: held each
+    /// tick it is given, until <see cref="StopFollowingPlayer"/>.
+    /// </summary>
+    /// <param name="feet">The watched player's feet, in world units.</param>
+    /// <param name="yaw">Its heading.</param>
+    /// <param name="pitch">Its pitch, up positive.</param>
+    void FollowPlayerView(Vector3d feet, float yaw, float pitch)
+    {
+    }
+
+    /// <summary>Gives the view back to the player's own body.</summary>
+    void StopFollowingPlayer()
+    {
+    }
+
     /// <summary>Puts the death camera away, as a new mission starts.</summary>
     void ResetDeathView();
 

@@ -16,6 +16,9 @@ namespace OpenIGI.Game.Igi1.World;
 /// </summary>
 public sealed class MissionWorld : MissionState
 {
+    /// <summary>Initializes a new instance of the <see cref="MissionWorld"/> class.</summary>
+    public MissionWorld() => _mineWaits = new MineFieldWaits(this);
+
     /// <summary>Gets or sets the level's authored ambience boxes.</summary>
     public AmbientAreaRegistry? Ambience { get; set; }
 
@@ -42,6 +45,28 @@ public sealed class MissionWorld : MissionState
 
     /// <summary>Gets or sets the level's minefields.</summary>
     public IReadOnlyList<Igi1MineField> MineFields { get; set; } = [];
+
+    /// <inheritdoc/>
+    /// <remarks>The shared parts, then the panes of glass the cars meet and the level's own minefields' waits.</remarks>
+    protected override IEnumerable<ILevelReset?> LevelParts => [.. base.LevelParts, RetailWorld as ILevelReset, _mineWaits];
+
+    private readonly MineFieldWaits _mineWaits;
+
+    // Each minefield's wait between its blasts, as the match began.
+    private sealed class MineFieldWaits(MissionWorld world) : ILevelReset
+    {
+        private int[] _start = [];
+
+        public void MarkLevelStart() => _start = [.. world.MineFields.Select(static f => f.Pause.Ticks)];
+
+        public void ResetToLevelStart(ObjectCollisionIndex? solids)
+        {
+            for (int i = 0; i < world.MineFields.Count && i < _start.Length; i++)
+            {
+                world.MineFields[i].Pause.Ticks = _start[i];
+            }
+        }
+    }
 
     /// <summary>Gets or sets what the minefields' conditions are read through.</summary>
     public LevelExpressionRuntime? MineFieldExpressions { get; set; }

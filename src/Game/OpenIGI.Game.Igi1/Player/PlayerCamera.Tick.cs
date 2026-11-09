@@ -45,7 +45,14 @@ public sealed partial class PlayerCamera
         FrameYaw = _body.Yaw;
         FramePitch = _body.Pitch;
         FrameAim = _shots.AimConvergenceRay is { } aim ? (aim.OriginUnits - _body.Eye, aim.Direction) : null;
-        _input.Accept(frame);
+        PlayerInputFrame taken = HeldStill ? Held(frame) : frame;
+        if (_wheelChoice >= 0)
+        {
+            taken[(int)PlayerInputSlot.SelectedWeaponScratch] = _wheelChoice + 1;
+            _wheelChoice = -1;
+        }
+
+        _input.Accept(taken);
         _locomotion.TakeToggle(_input);
         _interactions?.Tick();
 
@@ -89,6 +96,7 @@ public sealed partial class PlayerCamera
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in
         // HumanPlayer_Update ahead of 0x464800, so its clip-end flag is last tick's.
         TickWeapons();
+        TickDrop();
 
         _locomotion.Move(command, terrain);
 
@@ -132,5 +140,23 @@ public sealed partial class PlayerCamera
         // actually shows.
         CaptureViewTickState();
         ViewError.Tick();
+    }
+
+    // A round's freeze time: the moves, the jump, the fire and the use let go of, the look, the switch and the reload kept.
+    private static PlayerInputFrame Held(in PlayerInputFrame frame)
+    {
+        PlayerInputFrame kept = frame;
+        Span<float> slots = kept.AsSpan();
+        ReadOnlySpan<PlayerInputSlot> let =
+        [
+            PlayerInputSlot.MoveLeft, PlayerInputSlot.MoveRight, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown,
+            PlayerInputSlot.Fire, PlayerInputSlot.AlternateFire, PlayerInputSlot.Activate, PlayerInputSlot.Jump, PlayerInputSlot.Peek,
+        ];
+        foreach (PlayerInputSlot slot in let)
+        {
+            slots[(int)slot] = 0f;
+        }
+
+        return kept;
     }
 }

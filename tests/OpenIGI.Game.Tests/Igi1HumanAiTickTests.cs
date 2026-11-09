@@ -64,6 +64,33 @@ public sealed class Igi1HumanAiTickTests
         Assert.True(brain.TickDeadAi(drawnLastRender: true, generated: true));
     }
 
+    /// <summary>With <c>g_bodies_stay</c> a body out of sight stays for good, while a generator's still goes for its replacement.</summary>
+    [Fact]
+    public void StayingBodiesOutlastSightButNotTheirGenerator()
+    {
+        Igi1HumanAi body = Brain();
+        Igi1HumanAi generated = Brain();
+        foreach (Igi1HumanAi brain in (Igi1HumanAi[])[body, generated])
+        {
+            brain.Kill();
+            brain.TickDeadBody(default, deathClipEnded: true);
+        }
+
+        for (int tick = 0; tick < Igi1HumanAi.BodyStayTicks * 4; tick++)
+        {
+            Assert.False(body.TickDeadAi(drawnLastRender: false, generated: false, bodiesStay: true));
+        }
+
+        Assert.False(body.HasLeftWorld);
+
+        for (int tick = 1; tick <= Igi1HumanAi.BodyStayTicks + 1; tick++)
+        {
+            Assert.False(generated.TickDeadAi(drawnLastRender: false, generated: true, bodiesStay: true));
+        }
+
+        Assert.True(generated.TickDeadAi(drawnLastRender: false, generated: true, bodiesStay: true));
+    }
+
     /// <summary>The stay does not start before the death clip has run (Human+828).</summary>
     [Fact]
     public void BodyStayWaitsForTheDeathClip()

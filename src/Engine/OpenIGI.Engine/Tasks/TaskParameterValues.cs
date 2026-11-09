@@ -75,6 +75,28 @@ public sealed class TaskParameterValues
     }
 
     /// <summary>Reads one value per parameter from a level script's argument list, consuming exactly what each type takes.</summary>
+    /// <summary>Makes a copy whose values can be changed apart from these.</summary>
+    /// <returns>The copy.</returns>
+    internal TaskParameterValues Copy() => new(Parameters, (object?[])_values.Clone());
+
+    /// <summary>Changes a value by its parameter's name.</summary>
+    /// <param name="name">The parameter name as level data declares it.</param>
+    /// <param name="value">The value, of the type the parameter is read as.</param>
+    /// <returns><see langword="true"/> when the type declares a parameter with that name.</returns>
+    internal bool TrySet(string name, object? value)
+    {
+        for (int i = 0; i < Parameters.Count && i < _values.Length; i++)
+        {
+            if (string.Equals(Parameters[i].Name, name, StringComparison.Ordinal))
+            {
+                _values[i] = value;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     internal static TaskParameterValues Read(ScriptArgumentReader reader, IReadOnlyList<TaskParameter> parameters)
     {
         ArgumentNullException.ThrowIfNull(reader);

@@ -68,7 +68,11 @@ public sealed partial class Igi1MissionTick
 
         if (mission.Player is { IsInWorldInteraction: true } interacting)
         {
-            _ownInteraction.Tick(interacting, soldiers is null ? null : new PresentedLadderBody(soldiers), audio.PlayLadderStepSound);
+            _ownInteraction.Tick(
+                interacting,
+                soldiers is null ? null : new PresentedLadderBody(soldiers),
+                audio.PlayLadderStepSound,
+                audio.PlayBodyClipSounds);
             if (interacting.IsMountedStationaryGun)
             {
                 // The gun's sight sits just in front of the gunner's own chest, and retail draws

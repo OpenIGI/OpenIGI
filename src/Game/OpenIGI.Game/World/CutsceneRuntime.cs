@@ -450,6 +450,14 @@ public sealed partial class CutsceneRuntime
     /// <summary>Gets or sets whether the scenes run when a co-op server's do, rather than when their own expressions hold.</summary>
     public bool Mirrored { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether no scene runs, whatever its expressions say: a versus match's arena, where a
+    /// scene would take the players' views and bodies from them mid-round -- the level's intro among them, and one a new
+    /// round's counters would start again. A held scene that would start is finished at once instead, so what waits on its
+    /// end still happens.
+    /// </summary>
+    public bool Held { get; set; }
+
     /// <summary>Writes which scenes are running and which have finished, for a co-op server's clients.</summary>
     /// <param name="writer">Where to.</param>
     public void WriteRuns(BitWriter writer)
@@ -624,9 +632,18 @@ public sealed partial class CutsceneRuntime
         }
         else
         {
-            scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
+            bool wants = string.IsNullOrWhiteSpace(scene.Run)
                 ? scene.InitialRun && !scene.IsFinished
                 : _context.Expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+
+            // Held, a scene that would start is over at once instead, as if played to its end unseen: the level's scripts
+            // waiting on it (mission 1 hands the player its controls once the intro is finished) carry on as they would.
+            if (Held && (wants || wasRun))
+            {
+                scene.IsFinished = true;
+            }
+
+            scene.IsRun = !Held && wants;
         }
 
         if (!wasRun && scene.IsRun)
@@ -814,6 +831,9 @@ public sealed partial class CutsceneRuntime
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetWheelDraw"/>
     public bool TryGetWheelDraw(WorldPlacement placement, out Matrix3f rotation) => _draw.TryGetWheelDraw(placement, out rotation);
+
+    /// <inheritdoc cref="CutsceneVehicleDraw.Claims"/>
+    public bool Claims(WorldPlacement placement) => _draw.Claims(placement);
 
     /// <inheritdoc cref="CutsceneVehicleDraw.TryGetRotorDrawState"/>
     public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw) => _draw.TryGetRotorDrawState(placement, out draw);

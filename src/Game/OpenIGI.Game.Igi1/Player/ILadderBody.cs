@@ -36,6 +36,11 @@ public interface ILadderBody
     /// <param name="ended">Whether the clip ended this tick.</param>
     void AdvanceLadderClip(float facing, out Vector3d rootDelta, out float? eventTime, out bool ended);
 
+    /// <summary>Gets whether the clip crossed an authored event on its last advance, as an animation trigger names it.</summary>
+    /// <param name="eventId">The event.</param>
+    /// <returns><see langword="true"/> when it was crossed.</returns>
+    bool CrossedEvent(int eventId);
+
     /// <summary>Stands the body on the ladder where the climb has it.</summary>
     /// <param name="feet">The climber's feet, in world units.</param>
     /// <param name="facing">The ladder's facing.</param>
@@ -61,6 +66,9 @@ public sealed class PresentedLadderBody(ISoldierPresenter soldiers) : ILadderBod
     /// <inheritdoc/>
     public void AdvanceLadderClip(float facing, out Vector3d rootDelta, out float? eventTime, out bool ended) =>
         _soldiers.AdvancePlayerLadderAnimation(facing, out rootDelta, out eventTime, out ended);
+
+    /// <inheritdoc/>
+    public bool CrossedEvent(int eventId) => _soldiers.Simulation.PlayerBodyCrossedEvent(eventId);
 
     /// <inheritdoc/>
     public void PlaceClimbing(Vector3d feet, float facing) => _soldiers.PlacePlayerBodyClimbing(feet, facing);
@@ -112,6 +120,9 @@ public sealed class SimulatedLadderBody : ILadderBody
         eventTime = _view.LadderBoundaryTime;
         ended = _view.ClipEndedThisTick;
     }
+
+    /// <inheritdoc/>
+    public bool CrossedEvent(int eventId) => _view.CrossedEvent(eventId);
 
     /// <inheritdoc/>
     public void PlaceClimbing(Vector3d feet, float facing) => _view.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));

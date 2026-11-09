@@ -81,6 +81,8 @@ internal static class SiteWriter
             }
         }
 
+        // Invite links (/join/CODE, /party/CODE) land on the page the host serves for a path it has no file for.
+        Text(output, "404.html", JoinPage.Html);
         Text(output, "healthz", $"ok {releases.Count} release(s) {content.Count} content version(s)\n");
     }
 

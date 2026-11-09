@@ -230,8 +230,8 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public Vector3d EyePosition => Level?.CutsceneView is { } cut
         ? cut.Position
         : IsMapShown && ComputerDisplay?.Map is { } map ? map.Position
-        : Human.CameraMode is 3 or 5 ? _movementCamera.Position
-        : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position;
+        : (Human.CameraMode is 3 or 5 ? _movementCamera.Position
+        : Human.View.IsOverride ? Human.View.OverridePosition : Human.View.Position) + ViewError.Offset(0f);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -556,6 +556,7 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     /// <inheritdoc/>
     public void Tick(in TitlePlayerInput input)
     {
+        ViewError.Tick();
         Igi2PlayerAction held = Map(input.Held) | (Igi2PlayerAction)(input.TitleHeld | input.TitlePressed);
         Igi2PlayerAction pressed = Map(input.Pressed) | (Igi2PlayerAction)input.TitlePressed;
         _reader.MouseSensitivity = input.MouseSensitivity;

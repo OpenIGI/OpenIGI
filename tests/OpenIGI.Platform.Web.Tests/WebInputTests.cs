@@ -53,6 +53,15 @@ public sealed class WebInputTests
         Assert.Equal("a", WebInputEvent.Parse("char a").Code);
     }
 
+    /// <summary>A touch keyboard's whole line is everything after the word, spaces and all, and may be empty.</summary>
+    [Fact]
+    public void A_keyboards_line_is_kept_whole_and_its_inset_read()
+    {
+        Assert.Equal(new WebInputEvent(WebInputEventKind.Line, "  hold  B "), WebInputEvent.Parse("line   hold  B "));
+        Assert.Equal(new WebInputEvent(WebInputEventKind.Line, string.Empty), WebInputEvent.Parse("line"));
+        Assert.Equal(new WebInputEvent(WebInputEventKind.Inset, X: 412), WebInputEvent.Parse("inset 412"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("key KeyW")]

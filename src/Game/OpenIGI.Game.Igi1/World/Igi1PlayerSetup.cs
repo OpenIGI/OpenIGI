@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="audio">The pickups' cues.</param>
 /// <param name="sounds">The clatter of a dropped gun landing.</param>
 /// <param name="host">What shows and plays it.</param>
-public sealed class Igi1PlayerSetup(
+public sealed partial class Igi1PlayerSetup(
     MissionWorld mission, Igi1PlayerHarm harm, Igi1MissionAudio audio, Igi1HumanSounds sounds, IPlayerSetupHost host) : IPlayerBringUp
 {
     /// <summary>Gets the weapon table, once <see cref="Begin"/> has read it.</summary>
@@ -278,6 +278,7 @@ public sealed class Igi1PlayerSetup(
 
             // Every drop is drawn, a soldier's here or a co-op server's laid down on a client.
             gunPickups.Spawned += pickup => host.WeaponDropped(loaded, pickup);
+            gunPickups.Removed += host.WeaponRemoved;
             mission.Soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) => gunPickups.Spawn(position, orientation, weapon, velocity));
 
             // What a dropped gun lands on: the same solids and terrain a round strikes, as triangles
@@ -799,6 +800,14 @@ public sealed class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(ammunition);
 
+        // The M16A2's launcher fires whatever AMMO_ID_M203 the player has (0x40F4A0 looks the record up in its ammo list each
+        // press), not only rounds its loadout declared: an M16A2 or grenades picked up in the level -- mission 2's barracks --
+        // fire too. So the record is known from the start, whatever the loadout says.
+        if (ammunition.Types.FirstOrDefault(a => string.Equals(a.ScriptId, "AMMO_ID_M203", StringComparison.Ordinal)) is { } m203)
+        {
+            candidate.Weapons?.SetM203Ammunition(m203);
+        }
+
         if (candidate.View is null || loadout.Weapons.Count == 0)
         {
             return false;
@@ -826,10 +835,6 @@ public sealed class Igi1PlayerSetup(
             if (pool is not null)
             {
                 candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
-                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
-                {
-                    candidate.Weapons?.SetM203Ammunition(pool);
-                }
             }
         }
 
@@ -859,7 +864,7 @@ public sealed class Igi1PlayerSetup(
                 mission.PlayerTask,
                 stopDistance,
                 alreadyHeard,
-                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true, candidate.Shots).ToShared(),
+                struck => new Igi1WeaponHit(struck, origin, end, damageFactor, category, Shooter: null, FromPlayer: true, candidate.Shots, candidate.Weapons?.InHand?.Weapon.ScriptId).ToShared(),
                 out hit);
         candidate.HumanProbes = guards.Simulation.Probe();
         HumanProximityCast soldierProximity = guards.Simulation.ProximityProbe();

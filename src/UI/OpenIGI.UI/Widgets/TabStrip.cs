@@ -47,6 +47,12 @@ public class TabStrip : Control
     /// <summary>Gets or sets the gap between segments, and between the segments and the tray, in design units.</summary>
     public float Spacing { get; set; } = 4f;
 
+    /// <summary>
+    /// Gets or sets a small monospaced note after each tab's caption -- a count, or what the tab is for -- by index; an
+    /// empty or missing entry shows none.
+    /// </summary>
+    public IReadOnlyList<string>? Notes { get; set; }
+
     /// <summary>Gets or sets the horizontal padding either side of each segment's caption, in design units.</summary>
     public float TabPadding { get; set; } = 28f;
 
@@ -171,9 +177,9 @@ public class TabStrip : Control
         float gap = context.Px(Spacing);
         float pad = context.Px(TabPadding);
         float width = gap;
-        foreach (string tab in _tabs)
+        for (int i = 0; i < _tabs.Count; i++)
         {
-            width += UiPainter.MeasureLabel(Theme.Heading, Upper(tab), sizePx, Theme.LabelTracking) + (pad * 2f) + gap;
+            width += UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, Theme.LabelTracking) + NoteWidth(context, i) + (pad * 2f) + gap;
         }
 
         return new UiVec2(width, context.Px(SegmentHeight) + (gap * 2f));
@@ -194,7 +200,7 @@ public class TabStrip : Control
         float x = contentRect.X + gap;
         for (int i = 0; i < _tabs.Count; i++)
         {
-            float w = UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, Theme.LabelTracking);
+            float w = UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, Theme.LabelTracking) + NoteWidth(context, i);
             _tabWidths[i] = w;
             _tabRects[i] = new UiRect(x, contentRect.Y + gap, w + (pad * 2f), height);
             _tabCenters[i] = _tabRects[i].Center.X;
@@ -243,17 +249,32 @@ public class TabStrip : Control
             Bgra32 color = Interpolate.Lerp(rest, Theme.OnAccent, covered);
 
             string caption = Upper(_tabs[i]);
-            painter.DrawLabel(
+            UiVec2 end = painter.DrawLabel(
                 Theme.Heading,
                 caption,
                 new UiVec2(rect.X + ((rect.Width - _tabWidths[i]) * 0.5f), UiRowStyle.CapsCenterY(Theme.Heading, sizePx, rect)),
                 sizePx,
                 UiPalette.Fade(color, appear),
                 Theme.LabelTracking);
+            if (NoteOf(i) is { } note)
+            {
+                float notePx = context.Px(NoteSize);
+                Bgra32 noteColor = Interpolate.Lerp(UiPalette.TextTertiary, Theme.OnAccent, covered);
+                painter.DrawLabel(Theme.Mono, note, new UiVec2(end.X + context.Px(NoteGap), UiRowStyle.CapsCenterY(Theme.Mono, notePx, rect)), notePx, UiPalette.Fade(noteColor, appear * 0.85f), 0.12f);
+            }
         }
     }
 
     private float CaptionSize => TextSize > 0f ? TextSize : Theme.LabelTextSize;
+
+    // A note's size and its gap from the caption. Design units.
+    private const float NoteSize = 11f;
+    private const float NoteGap = 12f;
+
+    private string? NoteOf(int index) => Notes is { } notes && index < notes.Count && notes[index].Length > 0 ? notes[index] : null;
+
+    private float NoteWidth(LayoutContext context, int index) =>
+        NoteOf(index) is { } note ? context.Px(NoteGap) + UiPainter.MeasureLabel(Theme.Mono, note, context.Px(NoteSize), 0.12f) : 0f;
 
     private string Upper(string caption)
     {

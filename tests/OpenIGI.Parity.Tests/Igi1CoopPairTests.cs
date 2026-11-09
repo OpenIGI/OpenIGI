@@ -287,6 +287,26 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void A_joiner_whose_line_goes_quiet_joins_again_by_itself_as_its_own_player()
+    {
+        using Igi1CoopPair pair = Joined();
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+
+        // The line goes dead both ways, past the client's timeout: it opens a new one and joins again by itself.
+        pair.JoinerLink.Send.Loss = 1;
+        pair.JoinerLink.Receive.Loss = 1;
+        Assert.True(pair.RunUntil(() => pair.Client.IsRejoining, 200_000) >= 0, "the joiner never noticed its line went quiet");
+        Assert.True(
+            pair.RunUntil(() => !pair.Client.IsRejoining && pair.Client.LocalEntity is not null, 200_000) >= 0,
+            $"the joiner never came back: {pair.Client.Ended}");
+
+        // As its own player, the only one, and its session never ended.
+        Assert.Null(pair.Client.Ended);
+        Assert.True(pair.RunUntil(() => pair.Host.World.NetworkPlayers.Count == 1, 600) >= 0);
+        Assert.Same(partner, Assert.Single(pair.Host.World.NetworkPlayers));
+    }
+
+    [RequiresGameDataFact]
     public void The_host_closing_the_room_ends_the_joiners_session_with_a_reason()
     {
         using Igi1CoopPair pair = Joined();
@@ -625,7 +645,7 @@ public sealed class Igi1CoopPairTests
         // Where the server has the guard now, the round passes through empty air; put back where the client drew it, it is met.
         float whole = soldiers.HealthOf(guard).Damage;
         Assert.False(Shoot(), "a round met the guard where its client had never drawn it");
-        partner.BeforeCommand!(seenAt + 2, seenAt);
+        partner.BeforeCommand!(partner, seenAt + 2, seenAt, 0f);
         try
         {
             Assert.True(Vector3d.Distance(guard.Position, stood) < 64, $"the guard was put back {Vector3d.Distance(guard.Position, stood)} units from where the client drew it");
@@ -677,6 +697,60 @@ public sealed class Igi1CoopPairTests
         Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
         ClientSession session = pair.Client.Session!;
 
+        // A way the knock carries clear: the ground beside the spawn has edges a knock stops against, as the host's game has
+        // them too, so the host stands a metre behind the partner along each way in turn until two rounds carry it well on.
+        Vector3d home = partner.Player.Body.Position;
+        void Stand(Vector3d away)
+        {
+            partner.Player.Body.Position = home;
+            pair.Host.World.Player!.Body.Position = home - (away * 4096);
+            pair.RunUntil(() => false, 30);
+        }
+
+        void Knock(int rounds, Action between)
+        {
+            for (int round = 0; round < rounds; round++)
+            {
+                Vector3d eye = pair.Host.World.Player!.Body.Eye;
+                Vector3d chest = partner.Player.Body.Position + new Vector3d(0, 0, 1.3 * 4096);
+                Vector3d beyond = eye + ((chest - eye) * 2);
+                Assert.True(
+                    pair.Host.World.Bodies.Shoot(
+                        eye,
+                        beyond,
+                        pair.Host.World.PlayerTask,
+                        hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 0.02f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
+                        out _),
+                    "the round missed the partner");
+                between();
+            }
+        }
+
+        Vector3d? clear = null;
+        Game.Multiplayer.CoopCVars.FriendlyFire.Value = true;
+        try
+        {
+            foreach (Vector3d away in new[] { new Vector3d(1, 0, 0), new Vector3d(-1, 0, 0), new Vector3d(0, 1, 0), new Vector3d(0, -1, 0) })
+            {
+                Stand(away);
+                Knock(2, () => pair.RunUntil(() => false, 4));
+                pair.RunUntil(() => false, 20);
+                if (Vector3d.Distance(home, partner.Player.Body.Position) > 1200)
+                {
+                    clear = away;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            Game.Multiplayer.CoopCVars.FriendlyFire.Value = false;
+        }
+
+        Assert.True(clear is not null, "no way from the spawn carries a knock clear");
+        Stand(clear!.Value);
+        pair.RunUntil(() => false, 60);
+
         // Rounds a few ticks apart, each knocking the partner along the floor on the host: the host's own, with friendly fire
         // on, through the same handler a guard's goes through.
         long correctionsBefore = session.Reconciler.Corrections;
@@ -700,21 +774,7 @@ public sealed class Igi1CoopPairTests
         try
         {
             Game.Multiplayer.CoopCVars.FriendlyFire.Value = true;
-            for (int round = 0; round < 5; round++)
-            {
-                Vector3d eye = pair.Host.World.Player!.Body.Eye;
-                Vector3d chest = partner.Player.Body.Position + new Vector3d(0, 0, 1.3 * 4096);
-                Vector3d beyond = eye + ((chest - eye) * 2);
-                Assert.True(
-                    pair.Host.World.Bodies.Shoot(
-                        eye,
-                        beyond,
-                        pair.Host.World.PlayerTask,
-                        hit => new Game.Igi1.Ai.Igi1WeaponHit(hit, eye, beyond, 0.02f, Game.Weapons.WeaponCategory.Gun, Shooter: null, FromPlayer: true).ToShared(),
-                        out _),
-                    "the round missed the partner");
-                Watch(4);
-            }
+            Knock(5, () => Watch(4));
         }
         finally
         {

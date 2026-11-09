@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Input;
 using OpenIGI.Net;
@@ -15,7 +15,7 @@ namespace OpenIGI.Game.World;
 /// level may contain several objective definitions and switch between them with <c>Objectives Valid</c>.
 /// The last valid definition in task-update order is the one the original publishes globally.
 /// </remarks>
-public sealed class MissionObjectiveRuntime : IComputerObjectives
+public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
 {
     /// <summary>The maximum number of objective rows in one IGI1 definition.</summary>
     public const int ObjectiveSlotCount = 6;
@@ -179,7 +179,19 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     }
 
     /// <summary>Gets the currently selected six-row definition, with empty rows omitted.</summary>
-    public IReadOnlyList<MissionObjective> Objectives { get; private set; }
+    public IReadOnlyList<MissionObjective> Objectives
+    {
+        get => Silenced ? [] : _objectives;
+        private set => _objectives = value;
+    }
+
+    private IReadOnlyList<MissionObjective> _objectives = [];
+
+    /// <summary>
+    /// Gets or sets whether the mission's objectives and messages are kept off the screen while it still runs them: a level
+    /// played as a multiplayer arena, whose campaign's objectives are nobody's.
+    /// </summary>
+    public bool Silenced { get; set; }
 
     /// <summary>Gets or sets extra seconds every status message is held on screen for.</summary>
     /// <remarks>
@@ -207,6 +219,42 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     {
         get => _messages.Mirrored;
         set => _messages.Mirrored = value;
+    }
+
+    // As the match began: each edit variable's value, each level flow's verdict and clock, each area's count.
+    private (int[] Edits, (sbyte Complete, sbyte Failed, int Tick)[] Flows, int Tick) _start = ([], [], 0);
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        _start = ([.. _editVariables.Select(static e => e.Value)], [.. _levelFlows.Select(static f => (f.Complete, f.Failed, f.Tick))], _tick);
+        _messages.MarkLevelStart();
+        _areas.MarkLevelStart();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every counter, message and verdict as the match began, so a level's own expressions read what they read then.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        // A co-op client's counters, verdicts and messages are its server's, which sends them as they went back.
+        if (Mirrored)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _editVariables.Count && i < _start.Edits.Length; i++)
+        {
+            _editVariables[i].Value = _start.Edits[i];
+        }
+
+        for (int i = 0; i < _levelFlows.Count && i < _start.Flows.Length; i++)
+        {
+            (_levelFlows[i].Complete, _levelFlows[i].Failed, _levelFlows[i].Tick) = _start.Flows[i];
+        }
+
+        _tick = _start.Tick;
+        _messages.ResetToLevelStart();
+        _areas.ResetToLevelStart();
     }
 
     /// <summary>Writes the level's running state, for a co-op server's clients: counters, messages sent, result.</summary>
@@ -296,7 +344,8 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
         return _messages.ShowTransient(text, durationSeconds, portrait);
     }
 
-    /// <summary>Gets the messages on screen now, in the slot order the original draws them in.</summary>
+    /// <summary>Gets the messages on screen now, in the slot order the original draws them in; while <see cref="Silenced"/>, only
+    /// what the game itself says of an event (a weapon picked up), as a multiplayer arena shows it.</summary>
     /// <remarks>
     /// <para>
     /// Slot order, not send order, because that is what the player sees. <c>0x486650</c> puts a new
@@ -309,7 +358,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives
     /// than a list rebuilt thirty times a second for a renderer that usually draws nothing.
     /// </para>
     /// </remarks>
-    public IEnumerable<StatusMessageDisplay> DisplayedMessages => _messages.DisplayedMessages;
+    public IEnumerable<StatusMessageDisplay> DisplayedMessages => Silenced ? _messages.EventMessages : _messages.DisplayedMessages;
 
     /// <summary>Empties every message slot, as the <c>StatusMessageScreen_ClearMessages</c> native does.</summary>
     /// <remarks>

@@ -236,6 +236,11 @@ public sealed partial class SoldierSimulation
     /// <summary>Gets where the player's climbing body is in its ladder clip, or <see langword="null"/> off a ladder.</summary>
     public float? PlayerLadderClipTime => _playerBody.Climbing ? _playerBody.View?.LadderClipTime : null;
 
+    /// <summary>Gets whether the player's drawn body's clip crossed an authored event on its last advance.</summary>
+    /// <param name="eventId">The event, as an animation trigger names it.</param>
+    /// <returns><see langword="true"/> when it was crossed.</returns>
+    public bool PlayerBodyCrossedEvent(int eventId) => _playerBody.View?.CrossedEvent(eventId) == true;
+
     /// <inheritdoc cref="SoldierPlayerBody.Model"/>
     internal SoldierBodyModel? PlayerBodyModel { get => _playerBody.Model; set => _playerBody.Model = value; }
 
@@ -597,6 +602,46 @@ public sealed partial class SoldierSimulation
         float playerYaw,
         out IReadOnlyList<HumanBodyCrossing> crossings) =>
         _playerBody.TryCastPlayerBody(origin, end, playerFeetUnits, playerYaw, out crossings);
+
+    /// <summary>Casts a round through one of a session's other players, in the pose its own body is drawn in.</summary>
+    /// <param name="partner">The player, as its body is followed (<see cref="PartnerBody.Key"/>).</param>
+    /// <param name="origin">Where the round starts.</param>
+    /// <param name="end">Where it ends.</param>
+    /// <param name="playerFeetUnits">The player's feet, where the cast stands its body.</param>
+    /// <param name="playerYaw">The player's yaw.</param>
+    /// <param name="crossings">Where the round crosses the body.</param>
+    /// <returns><see langword="false"/> when no body could be cast.</returns>
+    /// <remarks>
+    /// Each player is met in its own stance -- standing, crouched, prone, fallen -- not the mission player's: the mission
+    /// player's body stands in only for one whose own has not been drawn yet.
+    /// </remarks>
+    public bool TryCastPartnerBody(
+        object partner,
+        Vector3d origin,
+        Vector3d end,
+        Vector3d playerFeetUnits,
+        float playerYaw,
+        out IReadOnlyList<HumanBodyCrossing> crossings) =>
+        (_partnerBodies.TryGetValue(partner, out SoldierPlayerBody? own) && own is { View: not null, Model: not null } ? own : _playerBody)
+            .TryCastPlayerBody(origin, end, playerFeetUnits, playerYaw, out crossings);
+
+    /// <summary>Gives a session's other player the body its rounds are met on: the one it is drawn with.</summary>
+    /// <param name="partner">The player, as its body is followed.</param>
+    /// <param name="body">Its body, or <see langword="null"/> to forget it.</param>
+    internal void UsePartnerBody(object partner, SoldierPlayerBody? body)
+    {
+        if (body is null)
+        {
+            _partnerBodies.Remove(partner);
+        }
+        else
+        {
+            _partnerBodies[partner] = body;
+        }
+    }
+
+    // The session's other players' bodies, by their keys.
+    private readonly Dictionary<object, SoldierPlayerBody> _partnerBodies = [];
 
     /// <inheritdoc cref="SoldierSightQueries.HasLineOfSight(WorldRayCast, Vector3d, Vector3d)"/>
     internal static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to) =>

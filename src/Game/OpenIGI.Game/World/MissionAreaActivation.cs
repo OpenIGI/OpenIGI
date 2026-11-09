@@ -24,6 +24,24 @@ internal sealed class MissionAreaActivation
     private Vector3d? _stateExtraPlayer;
     private Func<IEnumerable<VehicleOccupant>>? _vehicleSource;
     private Func<IEnumerable<HumanOccupant>>? _soldierSource;
+
+    // As the match began: each area's count, and who stood where.
+    private (int[] Counts, bool Alive, Vector3d? Player, int Team, Vector3d? Extra) _start = ([], true, null, 0, null);
+
+    internal void MarkLevelStart() =>
+        _start = ([.. _areaActivations.Select(static a => a.ActiveCount)], _playerAlive, _statePlayer, _stateTeam, _stateExtraPlayer);
+
+    internal void ResetToLevelStart()
+    {
+        for (int i = 0; i < _areaActivations.Count && i < _start.Counts.Length; i++)
+        {
+            _areaActivations[i].ActiveCount = _start.Counts[i];
+        }
+
+        (_playerAlive, _statePlayer, _stateTeam, _stateExtraPlayer) = (_start.Alive, _start.Player, _start.Team, _start.Extra);
+        _soldierOccupants.Clear();
+        _vehicleOccupants.Clear();
+    }
     private Func<AreaPlayer>? _playerSource;
 
     /// <summary>Gets or sets what reads the level's other players -- a co-op session's -- each counted as the player is.</summary>

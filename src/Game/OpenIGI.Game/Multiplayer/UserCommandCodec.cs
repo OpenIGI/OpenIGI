@@ -71,6 +71,11 @@ public sealed class UserCommandCodec
             writer.WriteVarUInt(command.ViewTick == long.MinValue
                 ? 0u
                 : (uint)Math.Clamp(command.Tick - command.ViewTick + 1, 1, MaxViewLag + 1));
+            if (command.ViewTick != long.MinValue)
+            {
+                // The fraction of a tick past it, in 256ths: a sixth of a centimetre at a run.
+                writer.WriteBits((uint)Math.Clamp((int)MathF.Round(command.ViewFraction * FractionSteps), 0, FractionSteps - 1), 8);
+            }
 
             for (int c = 0; c < ChannelCount; c++)
             {
@@ -102,6 +107,9 @@ public sealed class UserCommandCodec
         }
     }
 
+    // The steps a view tick's fraction is sent in.
+    private const int FractionSteps = 256;
+
     /// <summary>Reads what <see cref="Write"/> wrote.</summary>
     /// <param name="reader">Where from.</param>
     /// <param name="commands">Where the commands go, oldest first.</param>
@@ -128,6 +136,7 @@ public sealed class UserCommandCodec
             }
 
             long viewTick = viewLag == 0 ? long.MinValue : tick - (viewLag - 1);
+            float viewFraction = viewLag == 0 ? 0f : reader.ReadBits(8) / (float)FractionSteps;
             float[] channels = previous is null ? new float[ChannelCount] : (float[])previous.Clone();
             for (int c = 0; c < ChannelCount; c++)
             {
@@ -155,7 +164,7 @@ public sealed class UserCommandCodec
                 return false;
             }
 
-            read[i] = new UserCommand(tick, channels, viewTick);
+            read[i] = new UserCommand(tick, channels, viewTick, viewFraction);
             previous = channels;
         }
 

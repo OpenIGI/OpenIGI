@@ -304,6 +304,10 @@ public interface IGunPickupPresenter : IDisposable
     /// <param name="pickup">The pickup to add.</param>
     void Add(LoadedMission mission, GunPickup pickup);
 
+    /// <summary>Stops drawing a pickup and lets go of its model: a round put the level back without it.</summary>
+    /// <param name="pickup">The pickup to remove.</param>
+    void Remove(GunPickup pickup);
+
     /// <summary>Prepares the frame, interpolating any pickup still settling between ticks.</summary>
     /// <param name="tickFraction">How far the frame sits between the previous tick and the next.</param>
     /// <param name="smooth">Whether to interpolate at all.</param>

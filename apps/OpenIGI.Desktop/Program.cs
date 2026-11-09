@@ -13,6 +13,7 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Multiplayer;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Net.Identity;
 using OpenIGI.Net.Udp;
 using OpenIGI.Net.WebRtc;
 using OpenIGI.Host;
@@ -60,6 +61,23 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
     }
 
     JoinRequest join = new(session.PlayerName, version, session.Password);
+    if (session.Demo is { } demo)
+    {
+        try
+        {
+            using FileStream file = File.OpenRead(demo);
+            (DemoHeader header, IReadOnlyList<DemoMessage> messages) = DemoFile.Read(file);
+            DemoPlayback playback = new(header, messages);
+            logger.Information("Session", $"Playing {demo}: {header.Player}'s {header.Mode} on map {header.Map}, {playback.Length:0} s.");
+            return new SessionClient(playback, playback.Server, join, title.Id, logger) { Mode = header.Mode };
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            logger.Warning("Session", $"Cannot play {demo}: {e.Message}.");
+            return null;
+        }
+    }
+
     if (session.Connect is { } target)
     {
         if (UdpTransport.Parse(target, SessionArguments.DefaultPort) is not { } server)
@@ -68,7 +86,10 @@ static IDisposable? StartSession(SessionArguments session, GameTitle title, Host
             return null;
         }
 
-        return new SessionClient(UdpTransport.Open(0), server, join, title.Id, logger);
+        return new SessionClient(UdpTransport.Open(0), server, join, title.Id, logger, reopen: () => UdpTransport.Open(0))
+        {
+            Mode = session.Mode,
+        };
     }
 
     if (session.Listen)
@@ -319,7 +340,49 @@ using (window)
         backend = RendererBackend.D3D12;
     }
 
+    // A demo brings up the map it was recorded on, played its way.
+    if (session.Demo is { } demoPath && File.Exists(demoPath))
+    {
+        try
+        {
+            using FileStream file = File.OpenRead(demoPath);
+            (DemoHeader header, _) = DemoFile.Read(file);
+            session = session with { Mode = header.Mode };
+            if (int.TryParse(header.Map, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int demoMission))
+            {
+                options = options with { StartMission = demoMission };
+            }
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException)
+        {
+            logger.Warning("Session", $"Cannot read {demoPath}: {e.Message}.");
+        }
+    }
+
+    // A server joined is asked first what it plays, so its level is brought up once, its way: the right map, an arena's or a
+    // mission's. One that does not answer is joined on the command line's word, and followed to its map once welcomed.
+    if (session.Connect is { } connect && UdpTransport.Parse(connect, SessionArguments.DefaultPort) is { } asked)
+    {
+        if (ServerProbe.Ask(UdpTransport.Open(0), asked, title.Id) is { } info)
+        {
+            logger.Information("Session", $"{connect} plays {info.Mode} on map {info.Map}.");
+            session = session with { Mode = info.Mode };
+            if (ServerProbe.MissionOf(info) is { } mission)
+            {
+                options = options with { StartMission = mission };
+            }
+        }
+        else
+        {
+            logger.Warning("Session", $"{connect} did not answer before its level was loaded; joining on the command line's word.");
+        }
+    }
+
     HostOptions runOptions = options;
+
+    // Who this player is to every server: a key kept beside the settings, made on first play.
+    using EcdsaPlayerIdentity identity = EcdsaPlayerIdentity.LoadOrCreate(SettingsPaths.GetFilePath("identity.key"));
+    PlayerIdentities.Default = identity;
 
     // A session joined (-connect) or hosted (-listen) runs either side of the title's ticks, and outlives a renderer switch.
     using IDisposable? multiplayer = StartSession(session, title, options, logger);
@@ -380,6 +443,14 @@ using (window)
 
     int RunOnce(ref RendererBackend backend, HostOptions runOptions, out RendererSwitch? switched)
     {
+        // WebGPU where asked for: a window it cannot present to, or a wgpu-native that will not start, says why and draws
+        // over the native API instead of ending the game.
+        using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu ? TryCreateWebGpu() : null;
+        if (backend == RendererBackend.WebGpu && webGpu is null)
+        {
+            backend = RendererBackend.Vulkan;
+        }
+
         if (backend == RendererBackend.Vulkan && window.VkSurface is null)
         {
             backend = RendererBackend.D3D12;
@@ -402,10 +473,6 @@ using (window)
                 logger,
                 vulkanValidation,
                 streamline)
-            : null;
-
-        using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu
-            ? WebGpuWindow.Create(window, width, height, vsync: true)
             : null;
 
         IRhiDevice rhiDevice = d3d12?.Device ?? vulkan?.Device ?? webGpu!;
@@ -434,9 +501,23 @@ using (window)
         nint owner = window.NativeHandles is { System: DesktopWindowSystem.Win32 } owning ? owning.Window : 0;
         game.EditorFactory = new OpenIGI.Editor.EditorFactory { PickFolder = (title, initial) => FolderPicker.PickAsync(title, initial, owner) };
         game.RoomPeers = DataChannelPeerFactory.IsAvailable() ? new DataChannelPeerFactory(logger) : null;
+        game.OpenUdp = port => UdpTransport.Open(port);
         int code = game.Run();
         switched = game.RendererSwitchRequest;
         return code;
+    }
+
+    WebGpuRhiDevice? TryCreateWebGpu()
+    {
+        try
+        {
+            return WebGpuWindow.Create(window, width, height, vsync: true);
+        }
+        catch (Exception ex) when (ex is PlatformException or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            logger.Warning("Renderer", $"WebGPU is not available here ({ex.Message}); drawing over the native renderer.");
+            return null;
+        }
     }
 
     D3D12Rhi? TryCreateD3D12()

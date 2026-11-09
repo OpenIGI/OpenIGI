@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Platform.Desktop.Logging;
 
 namespace OpenIGI.Launcher.Services;
 

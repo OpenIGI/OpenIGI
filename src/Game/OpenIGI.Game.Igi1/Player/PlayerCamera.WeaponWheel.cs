@@ -9,6 +9,9 @@ public sealed partial class PlayerCamera
 {
     private readonly List<string> _wheelChoices = [];
 
+    // The weapon the wheel chose, put in the next tick's frame (its scratch slot) so a server is sent the pick; -1 for none.
+    private int _wheelChoice = -1;
+
     /// <inheritdoc/>
     public WeaponWheel Wheel { get; } = new();
 
@@ -41,9 +44,9 @@ public sealed partial class PlayerCamera
     /// <inheritdoc/>
     public void ChooseFromWheel(string choice)
     {
-        if (_weapons is { } weapons && int.TryParse(choice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int weaponId))
+        if (_weapons is not null && int.TryParse(choice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int weaponId))
         {
-            weapons.RequestWeapon(weaponId);
+            _wheelChoice = weaponId;
         }
     }
 }

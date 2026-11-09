@@ -4,6 +4,7 @@ using OpenIGI.Game.Multiplayer;
 using OpenIGI.Game.Player;
 using OpenIGI.Net;
 using OpenIGI.Net.Rooms;
+using OpenIGI.Net.Browsing;
 
 namespace OpenIGI.Host.Multiplayer;
 
@@ -18,8 +19,9 @@ namespace OpenIGI.Host.Multiplayer;
 /// <param name="HostName">The name the host's own player plays under, when it plays.</param>
 /// <param name="HostSkin">The host's own player's look, a <see cref="PlayerSkins"/> id.</param>
 /// <param name="Content">The host's <see cref="JoinRequest.Content"/> fingerprint, or empty to take any.</param>
+/// <param name="MaxPerAddress">The most players from one internet address at once (0 for any), as <see cref="NetServerOptions.MaxClientsPerAddress"/>.</param>
 public sealed record HostedSessionOptions(
-    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "", string HostSkin = "");
+    string Name, int MaxPlayers, string Password, string Mode, string Map, string Version, bool IncludesHost, string HostName = "Jones", string Content = "", string HostSkin = "", int MaxPerAddress = 4);
 
 /// <summary>A server's session run inside the host: a dedicated server's, or a listen server's beside the host's own player.</summary>
 /// <remarks>
@@ -27,7 +29,7 @@ public sealed record HostedSessionOptions(
 /// each tick and sends after it. A client trying to join while the level still loads keeps retrying its handshake until the
 /// session starts reading.
 /// </remarks>
-public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, IDisposable
+public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboard, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
@@ -44,6 +46,22 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     // The level the session was last bound to.
     private object? _level;
     private ServerSession? _session;
+
+    /// <summary>Gets or sets where the server's files are read, for the list of each map it sends and the files it gives.</summary>
+    public ISessionFileSource? Files
+    {
+        get => _files;
+        set
+        {
+            _files = value;
+            if (_session is not null)
+            {
+                _session.Files = value;
+            }
+        }
+    }
+
+    private ISessionFileSource? _files;
     private readonly INetTransport _transport;
 
     // The readout's last write, and the host's ticks since: a host that ticks slowly reads its players' packets late.
@@ -62,14 +80,19 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         _titleId = titleId ?? throw new ArgumentNullException(nameof(titleId));
         _tickRate = tickRate;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _room = transport as RoomTransport;
+        _room = transport as RoomTransport ?? (transport as MultiTransport)?.Part<RoomTransport>();
         _transport = transport;
-        _net = new NetServer(transport, new NetServerOptions
+        _mode = options.Mode;
+        _net = new NetServer(WithRecorder(transport), new NetServerOptions
         {
             ProtocolId = MultiplayerProtocol.IdFor(titleId),
-            MaxClients = options.MaxPlayers,
+            ProtocolVersion = MultiplayerProtocol.Version,
+
+            // The recorder's line is one more than the players'.
+            MaxClients = options.MaxPlayers + (Records ? 1 : 0),
             Admit = Admit,
             Info = _ => Info().Encode(),
+            MaxClientsPerAddress = options.MaxPerAddress,
         });
     }
 
@@ -97,8 +120,22 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public bool Relayed => _room?.Relayed == true;
 
+    /// <summary>Ends the host's own player in a versus game, as the <c>kill</c> command does.</summary>
+    /// <returns><see langword="true"/> when there was one to end.</returns>
+    public bool KillOwn()
+    {
+        if (!_options.IncludesHost || _world is not { } world || !Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
+        {
+            return false;
+        }
+
+        world.KillPlayer(ServerSession.HostSlot);
+        return true;
+    }
+
     /// <inheritdoc/>
-    public float? OwnRevive => _options.IncludesHost ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
+    public float? OwnRevive =>
+        _options.IncludesHost && Game.Multiplayer.Modes.PlayerSides.Revivable(Mode) ? _world?.ReviveProgressOf(ServerSession.HostEntity) : null;
 
     /// <summary>A map as a player reads it: a mission by its number, anything else as it is.</summary>
     /// <param name="map">The map.</param>
@@ -140,6 +177,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             session.Receive(_clock.Elapsed.TotalSeconds, _world.CurrentTick);
             ReportJoinsAndDepartures();
             session.Flush(_clock.Elapsed.TotalSeconds);
+            PumpRecorder();
         }
     }
 
@@ -155,7 +193,23 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
 
             _world = replicated.CreateReplicatedWorld(_options.IncludesHost);
             _level = replicated.Level;
-            _session = new ServerSession(_net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin);
+            _session = new ServerSession(
+                _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
+                protocolId: MultiplayerProtocol.IdFor(_titleId));
+            _session.Title = _titleId;
+            _session.Files = Files;
+            _session.Banned = Banned;
+            _session.Rcon = Rcon;
+            _session.ChangeMap = ChangeMap;
+            _session.IdleKickSeconds = IdleKickSeconds;
+            _session.Mode = NewMode(_world);
+            if (Layout?.ForMode(_session.Mode.Id) is { } layout)
+            {
+                _world.UseLayout(layout);
+                _session.Layout = layout;
+            }
+            _logger.Information(LogCategory, $"Playing {_session.Mode.Id} (asked for {_mode}).");
+            StartRecorder();
             _logger.Information(
                 LogCategory,
                 _room is null ? $"The level is up; players may join on port {_net.LocalAddress.Port}." : "The level is up; players may join through the room.");
@@ -169,6 +223,14 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
             _level = next.Level;
             string map = next.Map.Length > 0 ? next.Map : _session.Map;
             _session.Travel(_world, map);
+
+            // The new level's match, under the mode now asked for, on its own layout.
+            _session.RestartMode(NewMode(_world));
+            _session.Layout = Layout?.ForMode(_session.Mode.Id);
+            if (_session.Layout is { } layout)
+            {
+                _world.UseLayout(layout);
+            }
 
             // Begun: whoever loaded it is held no longer, and whoever didn't follows as it can.
             _goingSince = null;
@@ -190,6 +252,7 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     public void AfterTitleTick(object title)
     {
         _session?.Send(_clock.Elapsed.TotalSeconds, _world!.CurrentTick - 1);
+        PumpRecorder();
         Diagnose();
     }
 
@@ -219,11 +282,108 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     /// <summary>Gets the server list's line for this server now.</summary>
     /// <returns>The line.</returns>
     public ServerInfo Info() =>
-        new(_titleId, _options.Name, _options.Map, _options.Mode, _known.Count + (_options.IncludesHost ? 1 : 0),
-            _options.MaxPlayers, _options.Password.Length > 0, _options.Version);
+        new(_titleId, _options.Name, _session?.Map ?? _options.Map, _mode, _known.Count + (_options.IncludesHost ? 1 : 0),
+            _options.MaxPlayers, _options.Password.Length > 0, _options.Version)
+        {
+            Protocol = MultiplayerProtocol.Version,
+        };
 
     /// <inheritdoc/>
-    public void Dispose() => _net.Dispose();
+    public string Mode => _mode;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchBanner? Banner =>
+        _session is { } session && _world is { } world ? session.CurrentMatch(world.CurrentTick).Banner(0) : null;
+
+    /// <inheritdoc/>
+    public Core.Numerics.Vector3d? PositionOfSlot(int slot) => _world?.PositionOf(slot);
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick)
+    {
+        if (_world is not { } world || CurrentScoreboard is not { } board || LocalEntity is not { } own || !Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
+        {
+            return null;
+        }
+
+        double now = _clock.Elapsed.TotalSeconds;
+        return Game.Multiplayer.Modes.Spectating.Pick(
+            board,
+            own,
+            Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+            entity => board.Lines.Where(l => l.Entity == entity).Select(static l => (int?)l.Slot).FirstOrDefault() is { } slot ? world.PositionOf(slot) : null,
+            pick,
+            _combat.KilledBy is { } killer ? (killer.Entity, now - killer.At) : null,
+            world.PositionOf(ServerSession.HostSlot));
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> NetGraph =>
+        _session is { } session
+            ?
+            [
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"HOSTING {session.Clients.Count()} {(session.Clients.Count() == 1 ? "PLAYER" : "PLAYERS")}   {_tickRate} TICKS/S"),
+                .. session.Clients.Select(slot => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture, $"{session.NameOf(slot) ?? "?",-16}  {session.PingOf(slot)} ms")),
+            ]
+            : [];
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view)
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        if (_session is not { } session || _world is not { } world)
+        {
+            return null;
+        }
+
+        _combat.Take(session.TakeHostCombat(), ServerSession.HostEntity, now);
+        return _combat.Shown(now, eye, view, session.CurrentMatch(world.CurrentTick));
+    }
+
+    /// <inheritdoc/>
+    public void CreditHits(Game.Player.ShotTally? own)
+    {
+        _combat.Credit = own;
+        if (_session is { } session && _world is not null)
+        {
+            _combat.Take(session.TakeHostCombat(), ServerSession.HostEntity, _clock.Elapsed.TotalSeconds);
+        }
+    }
+
+    private readonly Game.Multiplayer.Modes.CombatFeedback _combat = new();
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
+        _session is { } session && _world is { } world
+            && Game.Multiplayer.Modes.MatchHud.Of(
+                session.CurrentMatch(world.CurrentTick), 0, CurrentScoreboard, LocalEntity, ownPosition, Layout,
+                bombInHand: world.HoldsBomb(Game.Multiplayer.ServerSession.HostSlot)) is { } hud
+            ? hud with { MapVote = hud.Phase == Game.Multiplayer.Modes.MatchPhase.Intermission ? session.MapVote : null }
+            : null;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.ModeReport? ModeReport => _session is { } session && _world is { } world ? session.Mode.Report(world.CurrentTick) : null;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        // Ended once: by leaving the mission, and again by the program that made it as it closes.
+        if (!_disposed)
+        {
+            _disposed = true;
+            _net.Dispose();
+            _recorderLine?.Dispose();
+        }
+    }
+
+    private bool _disposed;
 
     /// <summary>Gets the names of the players who joined, the host's own not among them.</summary>
     public IReadOnlyList<string> Players => _session is { } session ? [.. session.Clients.Select(session.NameOf).OfType<string>()] : [];
@@ -246,7 +406,18 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
     }
 
     /// <inheritdoc/>
-    public void Say(string text) => _session?.Say(text);
+    public void Say(string text, bool team = false)
+    {
+        // The host's own /vote, /yes and /no are its say in the room, not lines to it.
+        if (_session is { } session && !session.TryHostCommand(text))
+        {
+            session.Say(text, team);
+        }
+    }
+
+    /// <summary>Tells every player something in the server's own word, shown as the server's rather than anyone's.</summary>
+    /// <param name="text">What to tell.</param>
+    public void Announce(string text) => _session?.Announce(text);
 
     /// <inheritdoc/>
     public void Mark(Int3 position) => _session?.Mark(position);
@@ -298,11 +469,6 @@ public sealed class HostedSession : IHostTickObserver, ISessionScoreboard, ISess
         if (_options.Content.Length > 0 && join.Content.Length > 0 && !string.Equals(join.Content, _options.Content, StringComparison.Ordinal))
         {
             return NetAdmission.Reject("your game plays with different mods from the host's");
-        }
-
-        if (_session?.IsBarred(join.PlayerName) == true)
-        {
-            return NetAdmission.Reject("the host removed you from this room");
         }
 
         if (_options.Password.Length > 0 && !string.Equals(join.Password, _options.Password, StringComparison.Ordinal))

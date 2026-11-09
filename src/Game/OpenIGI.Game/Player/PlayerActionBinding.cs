@@ -49,6 +49,14 @@ public enum PlayerAction
     /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the next free bit. The host reads it; the player's update does not.</remarks>
     Scoreboard = 0x40,
 
+    /// <summary>Open a match's buy menu while its buy time runs.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the next free bit. The host reads it; the player's update does not.</remarks>
+    BuyMenu = 0x80,
+
+    /// <summary>Drop what is in hand for others to pick up: a gun, or a bomb mode's bomb.</summary>
+    /// <remarks><b>Not retail</b>, as <see cref="Flashlight"/>: the last free bit, <c>0x80000000</c>. Multiplayer only.</remarks>
+    DropWeapon = int.MinValue,
+
     /// <summary>Fire the held weapon.</summary>
     Fire = 0x100,
 

@@ -32,6 +32,7 @@ public sealed class MouseState
 
     private readonly bool[] _current = new bool[ButtonCount];
     private readonly bool[] _previous = new bool[ButtonCount];
+    private readonly bool[] _held = new bool[ButtonCount];
     private float _deltaX;
     private float _deltaY;
     private float _wheelDelta;
@@ -63,6 +64,11 @@ public sealed class MouseState
     public void BeginFrame()
     {
         Captured = false;
+        for (int i = 0; i < ButtonCount; i++)
+        {
+            _held[i] &= _current[i];
+        }
+
         _current.AsSpan().CopyTo(_previous);
         DeltaX = 0.0f;
         DeltaY = 0.0f;
@@ -103,26 +109,40 @@ public sealed class MouseState
         _current[index] = down;
     }
 
+    /// <summary>
+    /// Takes a press for an overlay that used it -- a click on a menu's card -- so the button reads as up from now until it is let
+    /// go, and what is underneath (the game's fire) never sees it, however long it is held after the overlay shuts.
+    /// </summary>
+    /// <param name="button">The button.</param>
+    public void TakePress(MouseButton button)
+    {
+        int index = (int)button;
+        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(button));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ButtonCount, nameof(button));
+        _held[index] = _current[index];
+    }
+
     /// <summary>Determines whether a button is down this frame.</summary>
     /// <param name="button">The button.</param>
     /// <returns><see langword="true"/> when the button is down.</returns>
-    public bool IsDown(MouseButton button) => !Captured && _current[(int)button];
+    public bool IsDown(MouseButton button) => !Captured && !_held[(int)button] && _current[(int)button];
 
     /// <summary>Determines whether a button went down between the previous frame and this one.</summary>
     /// <param name="button">The button.</param>
     /// <returns><see langword="true"/> on the frame the button is first down.</returns>
-    public bool WasPressed(MouseButton button) => !Captured && _current[(int)button] && !_previous[(int)button];
+    public bool WasPressed(MouseButton button) => !Captured && !_held[(int)button] && _current[(int)button] && !_previous[(int)button];
 
     /// <summary>Determines whether a button went up between the previous frame and this one.</summary>
     /// <param name="button">The button.</param>
     /// <returns><see langword="true"/> on the frame the button is first up again.</returns>
-    public bool WasReleased(MouseButton button) => !Captured && !_current[(int)button] && _previous[(int)button];
+    public bool WasReleased(MouseButton button) => !Captured && !_held[(int)button] && !_current[(int)button] && _previous[(int)button];
 
     /// <summary>Clears buttons, motion and the shadow. Position is left alone.</summary>
     public void Reset()
     {
         _current.AsSpan().Clear();
         _previous.AsSpan().Clear();
+        _held.AsSpan().Clear();
         DeltaX = 0.0f;
         DeltaY = 0.0f;
         WheelDelta = 0.0f;

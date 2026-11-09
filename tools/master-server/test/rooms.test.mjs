@@ -65,7 +65,7 @@ assert.equal((await fetch(`${base}/v1/rooms/${made.code}`)).status, 200);
 await assert.rejects(open(`${wsBase}/v1/rooms/${made.code}/ws?role=host&token=nope`));
 
 // Hosted, then listed.
-const host = await open(`${wsBase}/v1/rooms/${made.code}/ws?role=host&token=${made.hostToken}`);
+let host = await open(`${wsBase}/v1/rooms/${made.code}/ws?role=host&token=${made.hostToken}&returns=1`);
 assert.deepEqual(await host.next(), { type: "hosting", code: made.code });
 list = await (await fetch(`${base}/v1/servers?title=igi1`)).json();
 const entry = list.servers.find((s) => s.room === made.code);
@@ -119,15 +119,34 @@ await host.next(); // join
 host.send(JSON.stringify({ type: "kick", peer: secondWelcome.peer }));
 assert.equal(await second.closedWith, 4000);
 
-// The host gone is the room gone.
+// The host's socket dropping without a goodbye (a line blinking, a deploy) leaves the room waiting for it: still there, not
+// joinable meanwhile, and the host's own token takes it back -- nobody else's.
+host.close(4100, "line dropped");
+await new Promise((r) => setTimeout(r, 200));
+assert.equal((await fetch(`${base}/v1/rooms/${made.code}`)).status, 200, "kept for its host");
+await assert.rejects(open(`${wsBase}/v1/rooms/${made.code}/ws?role=join`), "no joining while the host is away");
+await assert.rejects(open(`${wsBase}/v1/rooms/${made.code}/ws?role=host&token=nope`));
+host = await open(`${wsBase}/v1/rooms/${made.code}/ws?role=host&token=${made.hostToken}&returns=1`);
+assert.deepEqual(await host.next(), { type: "hosting", code: made.code });
+await assert.rejects(open(`${wsBase}/v1/rooms/${made.code}/ws?role=host&token=${made.hostToken}&returns=1`), "one host socket at a time");
+
+// The host saying goodbye is the room gone.
 const third = await open(`${wsBase}/v1/rooms/${made.code}/ws?role=join`);
 await third.next();
-host.close();
+host.close(1000, "the host left");
 assert.equal(await third.closedWith, 4001);
 await new Promise((r) => setTimeout(r, 200));
 assert.equal((await fetch(`${base}/v1/rooms/${made.code}`)).status, 404);
 list = await (await fetch(`${base}/v1/servers?title=igi1`)).json();
 assert.ok(!list.servers.some((s) => s.room === made.code));
+
+// An older game's host never comes back for its room, so its socket dropping, goodbye or not, is the room gone at once.
+const old = await (await post("/v1/rooms", room)).json();
+const oldHost = await open(`${wsBase}/v1/rooms/${old.code}/ws?role=host&token=${old.hostToken}`);
+await oldHost.next();
+oldHost.close(4100, "aborted");
+await new Promise((r) => setTimeout(r, 200));
+assert.equal((await fetch(`${base}/v1/rooms/${old.code}`)).status, 404, "an older host's room closes with its socket");
 
 // The relays. Admin routes are ours alone.
 const ADMIN = { authorization: "Bearer admintest", "content-type": "application/json" };
@@ -168,7 +187,7 @@ async function relaysFor(hostGeo, joinerGeo) {
   const hostJoin = await h.next();
   const s = await (await fetch(`${base}/v1/stats`)).json();
   j.close();
-  h.close();
+  h.close(1000, "the host left");
   await h.closedWith;
   await new Promise((r) => setTimeout(r, 200));
   return { host: created.ice, joiner: w.ice, hostJoin: hostJoin.ice, stats: s };

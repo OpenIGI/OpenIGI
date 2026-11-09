@@ -150,4 +150,41 @@ public sealed class DestructibleObject
     internal bool ExplosionStarted { get; set; }
 
     internal bool ExplosionReady { get; set; }
+
+    // What play changes of it, as the level stood when built: put back by a match's round.
+    private Start _start;
+
+    internal void MarkLevelStart() => _start = new Start(
+        PositionUnits, Orientation, ExplosionDamageAccumulated, IsDestroyed, Countdown, BlastDue, IsLastDestroyed, IsDying,
+        DestructionTicks, PendingExplosionTicks, ExplosionStarted, ExplosionReady);
+
+    internal void ResetToLevelStart()
+    {
+        PositionUnits = _start.PositionUnits;
+        Orientation = _start.Orientation;
+        ExplosionDamageAccumulated = _start.Damage;
+        IsDestroyed = _start.IsDestroyed;
+        Countdown = _start.Countdown;
+        BlastDue = _start.BlastDue;
+        IsLastDestroyed = _start.IsLastDestroyed;
+        IsDying = _start.IsDying;
+        DestructionTicks = _start.DestructionTicks;
+        PendingExplosionTicks = _start.PendingExplosionTicks;
+        ExplosionStarted = _start.ExplosionStarted;
+        ExplosionReady = _start.ExplosionReady;
+    }
+
+    private readonly record struct Start(
+        Vector3d PositionUnits,
+        Matrix3f Orientation,
+        float Damage,
+        bool IsDestroyed,
+        int Countdown,
+        bool BlastDue,
+        bool IsLastDestroyed,
+        bool IsDying,
+        int DestructionTicks,
+        int PendingExplosionTicks,
+        bool ExplosionStarted,
+        bool ExplosionReady);
 }

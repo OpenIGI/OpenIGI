@@ -318,6 +318,36 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
     // A developer's way to watch a death: the first soldier down the line of sight takes a lethal round of
     // the named kind, through the same damage path a player's shot takes, so the death clip, the fall and the
     // ragdoll seed are exactly what a real kill gets.
+    // A capture handle for the bomb: given and raised, or held at a point of its plant, as a match plays it.
+    private void BombTest(ConsoleCommandContext context, IOpenIgiLogger logger)
+    {
+        if (mission.Player is not { } player)
+        {
+            context.Warn("No player is loaded.");
+            return;
+        }
+
+        string verb = context.Count > 0 ? context[0] : "hold";
+        Multiplayer.Igi1BombWeapon.Keep(player, true);
+        player.Weapons?.RequestWeapon(Multiplayer.Igi1BombWeapon.Id);
+        if (verb.Equals("plant", StringComparison.OrdinalIgnoreCase))
+        {
+            float share = context.Count > 1 && float.TryParse(context[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float read)
+                ? Math.Clamp(read, 0f, 1f)
+                : 0.5f;
+            player.PlayModeClip(Multiplayer.Igi1BombAnimations.Plant, Multiplayer.Igi1BombAnimations.Duration(Multiplayer.Igi1BombAnimations.Plant) * share);
+        }
+        else if (verb.Equals("stop", StringComparison.OrdinalIgnoreCase))
+        {
+            player.PlayModeClip(-1, 0f);
+        }
+
+        string report = FormattableString.Invariant(
+            $"bomb_test {verb}: holds {Multiplayer.Igi1BombWeapon.Holds(player)}, mode clip {player.ModeAnimation}, arms {player.FirstPersonBombClip}.");
+        context.Print(report);
+        logger.Warning("Bomb", report);
+    }
+
     private void KillForRagdollTest(ConsoleCommandContext context, IOpenIgiLogger logger)
     {
         if (mission.SoldierPresenter?.Simulation is not { } soldiers || mission.WeaponTypes is not { } roster)
@@ -427,6 +457,11 @@ public sealed class Igi1ImpactEffects(MissionWorld mission, IImpactEffectsHost h
             "ragdoll_test",
             "Kills a soldier with a round: ragdoll_test [gun|pistol|shotgun|grenade|list] [soldier id]; ragdoll_test bleed [id] fires a harmless round along the view, or at where that soldier lies.",
             context => KillForRagdollTest(context, logger));
+
+        console.Commands.Add(
+            "bomb_test",
+            "Puts the bomb modes' bomb in the player's hand: bomb_test hold; bomb_test plant <0-1> holds the plant at that point; bomb_test stop ends it.",
+            context => BombTest(context, logger));
 
         console.Commands.Add(
             "impact_test",

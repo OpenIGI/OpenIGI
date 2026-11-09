@@ -113,6 +113,17 @@ public sealed class HumanCollisionTests
     }
 
     [Fact]
+    public void ARefusedMoveKeepsTheHeightTheGroundSettled()
+    {
+        // 0x462BA0 copies back the first two doubles only: the move's X and Y are refused, its Z stands.
+        Vector3d start = new(0, 0, 0);
+        Vector3d end = new(2000, 0, 300);
+        Vector3d other = new(3000, 0, 0);
+
+        Assert.Equal(new Vector3d(0, 0, 300), HumanSeparation.Resolve(start, end, other));
+    }
+
+    [Fact]
     public void WalkingAwayFromSomeoneAlreadyTouchingIsAllowed()
     {
         // The test is "does this move close the gap", so an overlap can always be walked out of.

@@ -240,7 +240,7 @@ public sealed class GunShotTracerRenderer : IDisposable
                 _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
             }
 
-            _device.UpdateAnimatedMesh(_mesh, _vertices);
+            _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, _used));
             _device.ClearPoseInterpolation();
             _device.DrawTracers(_mesh, 0, _used / 4 * 6, modelView, style, StreakRadiance);
             LastDrawCount = _used / 4;

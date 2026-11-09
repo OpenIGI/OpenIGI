@@ -387,6 +387,7 @@ public abstract class GameTask
     internal void AppendChild(GameTask child)
     {
         child.Parent = this;
+        PlacementClaims.Changed();
         child.PreviousSibling = LastChild;
         child.NextSibling = null;
 
@@ -406,6 +407,7 @@ public abstract class GameTask
     internal void PrependChild(GameTask child)
     {
         child.Parent = this;
+        PlacementClaims.Changed();
         child.NextSibling = FirstChild;
         child.PreviousSibling = null;
 
@@ -450,5 +452,6 @@ public abstract class GameTask
         NextSibling = null;
         PreviousSibling = null;
         Parent = null;
+        PlacementClaims.Changed();
     }
 }

@@ -44,6 +44,22 @@ internal sealed class PlayerWeaponSelector
         _cycle.AddRange(weaponCycle);
     }
 
+    /// <summary>Forgets what was in hand and every pending pick, as a fresh spawn has it: the cycle brings up its first carried weapon.</summary>
+    internal void Reset()
+    {
+        _categoryIndex = -1;
+        _memberIndex = 0;
+        _cycleIndex = PlayerWeapons.NoCycleIndex;
+        _pendingWeaponId = -1;
+        _heldIndex = -1;
+        _categoryPick = -1;
+        _wheelPick = -1;
+        _wheelBinoculars = false;
+        _lastNonBinocularWeaponId = -1;
+        _binocularTogglePending = false;
+        _binocularOpenPending = false;
+    }
+
     /// <summary>Gets the weapon id a change is pending to, or <c>-1</c>.</summary>
     internal int PendingWeaponId => _pendingWeaponId;
 
@@ -345,6 +361,47 @@ internal sealed class PlayerWeaponSelector
         }
 
         _pendingWeaponId = -1;
+    }
+
+    /// <summary>Takes a weapon out of the carried list, keeping the hand on what it held.</summary>
+    /// <param name="weaponId">The weapon's id.</param>
+    /// <returns><see langword="true"/> when it was the one in hand: the cycle then brings up the first carried weapon.</returns>
+    internal bool Remove(int weaponId)
+    {
+        int index = IndexOf(weaponId);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        bool held = index == _heldIndex;
+        _carried.RemoveAt(index);
+        if (held)
+        {
+            _heldIndex = -1;
+            _cycleIndex = PlayerWeapons.NoCycleIndex;
+        }
+        else if (index < _heldIndex)
+        {
+            _heldIndex--;
+        }
+
+        if (_pendingWeaponId == weaponId)
+        {
+            _pendingWeaponId = -1;
+        }
+
+        if (_categoryPick == weaponId)
+        {
+            _categoryPick = -1;
+        }
+
+        if (_wheelPick == weaponId)
+        {
+            _wheelPick = -1;
+        }
+
+        return held;
     }
 
     internal int IndexOf(int weaponId)

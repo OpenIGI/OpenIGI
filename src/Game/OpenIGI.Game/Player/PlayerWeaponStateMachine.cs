@@ -398,6 +398,10 @@ internal sealed class PlayerWeaponStateMachine
 
                         return HumanWeaponState.Medipack;
 
+                    case WeaponCategory.Bomb:
+                        // A mode's bomb has no action of its own: the mode plants it while fire is held at a site.
+                        break;
+
                     case WeaponCategory.Binocular:
                         // Binoculars have no firearm action. Fire, reload and peek are ignored while
                         // the overlay is held; otherwise the generic default would request a gun
@@ -434,6 +438,7 @@ internal sealed class PlayerWeaponStateMachine
             // has an authored injection action and must never enter the generic reload
             // animation or transfer a charge from the reserve pool.
             bool reloadable = held.Weapon.Category is not WeaponCategory.Binocular
+                and not WeaponCategory.Bomb
                 and not (WeaponCategory)PlayerWeapons.MedipackCategory;
             bool asked = Flags.HasFlag(HumanWeaponFlagWord.Reload) || clip == 0;
             if (reloadable && asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)

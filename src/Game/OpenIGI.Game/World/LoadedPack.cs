@@ -276,7 +276,7 @@ public sealed class LoadedPack
             pack,
             models,
             new ReadOnlyCollection<string>(missing),
-            new ReadOnlyCollection<BoneAnimationSet>(sets));
+            new ReadOnlyCollection<BoneAnimationSet>(AnimationSetExtensions.Apply(profile ?? AssetFormatProfile.Igi1, sets)));
     }
 
     /// <summary>Resolves an instance's model.</summary>

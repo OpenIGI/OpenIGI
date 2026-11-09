@@ -572,7 +572,7 @@ public sealed class GuardRounds
             {
                 if (!partner.IsDead
                     && side != rounds._soldiers.PlayerTeam
-                    && rounds._soldiers.TryCastPlayerBody(start, limit, partner.Player.Body.Position, partner.Player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> partnerCrossings)
+                    && rounds._soldiers.TryCastPartnerBody(partner, start, limit, partner.Player.Body.Position, partner.Player.Body.Yaw, out IReadOnlyList<HumanBodyCrossing> partnerCrossings)
                     && partnerCrossings.Count > 0
                     && partnerCrossings[0].Hit.Distance < best
                     && mission.SoundRandom.NextDouble() <= round.Probability

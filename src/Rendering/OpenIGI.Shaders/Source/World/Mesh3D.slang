@@ -51,7 +51,33 @@ struct MeshPush
     float4 normalKey2;
 };
 
-OPENIGI_PUSH_CONSTANT(MeshPush, push);
+// Per instance: see PushConstants.slang and Mesh3DPipelineCache's layout, which must agree.
+#if OPENIGI_TERRAIN_ARENA && !OPENIGI_INSTANCED_PUSH
+// The arena's vertex stage puts each chunk's own rows into the block, so where the block is a real push
+// constant it reads a copy it can write.
+[[vk::push_constant]] ConstantBuffer<MeshPush> pushBlock;
+static MeshPush push;
+#else
+OPENIGI_INSTANCED_PUSH_CONSTANT(MeshPush, push);
+#endif
+
+#if OPENIGI_TERRAIN_ARENA
+// The terrain drawn many chunks to a draw (TerrainArena.slang): a draw covers every chunk in the arena
+// that wears its texture in its pass, and each vertex finds its own chunk's rows of the block here. The
+// rows are the ones a draw of that chunk alone would have pushed -- its model-view-projection, its ramp
+// and where it sits from the eye -- written by the same code, so the arithmetic below is the same to the
+// bit. A chunk this frame does not draw has no record and its triangles are put outside the view.
+static const uint NoTerrainChunk = 0xFFFFFFFFu;
+
+// Each record is six vectors: the matrix's four columns as the block's own bytes hold them (the build is
+// column-major), the ramp and the offset from the eye. Vectors rather than a structure, because a vector
+// array's stride is one every target agrees on.
+static const uint TerrainChunkVectors = 6;
+
+// By the chunk's slot in the arena, the record this frame wrote for it, or NoTerrainChunk.
+[[vk::binding(0, 2)]] StructuredBuffer<uint> uTerrainChunkRecord;
+[[vk::binding(1, 2)]] StructuredBuffer<float4> uTerrainChunks;
+#endif
 
 // The mesh set carries three textures, each with its own sampler: the diffuse, the baked
 // lightmap, and the derived surface detail that only the geometry pass reads. The detail's pair
@@ -102,6 +128,16 @@ struct VertexInput
     // its delta is zero to the bit.
     [[vk::location(5)]] float3 previousPosition : TEXCOORD5;
     [[vk::location(6)]] float3 previousNormal : TEXCOORD6;
+
+#if OPENIGI_INSTANCED_PUSH
+    // Which of the frame's push blocks is this draw's.
+    uint instance : SV_InstanceID;
+#endif
+
+#if OPENIGI_TERRAIN_ARENA
+    // Which of the arena's chunks this vertex belongs to.
+    [[vk::location(7)]] uint chunk : TEXCOORD7;
+#endif
 };
 
 struct Varyings
@@ -116,6 +152,11 @@ struct Varyings
     // How much of this vertex's surface the air leaves, one at the eye and falling with depth.
     [[vk::location(5)]] float fog : TEXCOORD5;
     [[vk::location(6)]] float3 reflection : TEXCOORD6;
+
+#if OPENIGI_INSTANCED_PUSH
+    // The draw's push block, for the fragment stage to load the same one.
+    [[vk::location(7)]] nointerpolation uint pushIndex : TEXCOORD7;
+#endif
 };
 
 /// The vertex stage: model space to Vulkan clip space, colour unswizzled from BGRA.
@@ -123,6 +164,35 @@ struct Varyings
 Varyings vertexMain(VertexInput input)
 {
     Varyings output;
+
+#if OPENIGI_INSTANCED_PUSH
+    OPENIGI_LOAD_INSTANCED_PUSH(push, input.instance);
+    output.pushIndex = input.instance;
+#elif OPENIGI_TERRAIN_ARENA
+    push = pushBlock;
+#endif
+
+#if OPENIGI_TERRAIN_ARENA
+    uint record = uTerrainChunkRecord[input.chunk];
+    if (record == NoTerrainChunk)
+    {
+        // Outside every clip plane, so the triangle is dropped before it is rasterised.
+        output = (Varyings)0;
+        output.position = float4(2.0, 2.0, 2.0, 1.0);
+#if OPENIGI_INSTANCED_PUSH
+        output.pushIndex = input.instance;
+#endif
+        return output;
+    }
+
+    uint at = record * TerrainChunkVectors;
+
+    // A constructor takes rows, so the columns go in and are turned.
+    push.modelViewProjection = transpose(float4x4(
+        uTerrainChunks[at], uTerrainChunks[at + 1], uTerrainChunks[at + 2], uTerrainChunks[at + 3]));
+    push.normalKey0.xyz = uTerrainChunks[at + 4].xyz;
+    push.normalKey1.xyz = uTerrainChunks[at + 5].xyz;
+#endif
 
     // Base plus blend times delta, not a mix: a mesh that does not animate has a zero delta
     // and comes out at input.position to the bit whatever this is set to.
@@ -243,6 +313,12 @@ struct GuideTargets
 [shader("fragment")]
 GuideTargets fragmentMain(Varyings input)
 {
+#if OPENIGI_INSTANCED_PUSH
+    OPENIGI_LOAD_INSTANCED_PUSH(push, input.pushIndex);
+#elif OPENIGI_TERRAIN_ARENA
+    push = pushBlock;
+#endif
+
     float4 diffuse = uDiffuse.Sample(uDiffuseSampler, input.diffuseUv);
     if (diffuse.a < cAlphaReference)
     {
@@ -265,6 +341,12 @@ GuideTargets fragmentMain(Varyings input)
 [shader("fragment")]
 float4 fragmentMain(Varyings input) : SV_Target
 {
+#if OPENIGI_INSTANCED_PUSH
+    OPENIGI_LOAD_INSTANCED_PUSH(push, input.pushIndex);
+#elif OPENIGI_TERRAIN_ARENA
+    push = pushBlock;
+#endif
+
     float4 diffuse = uDiffuse.Sample(uDiffuseSampler, input.diffuseUv);
 
     // An opaque draw's alpha is unused by the blend, so it carries the marker instead: one for

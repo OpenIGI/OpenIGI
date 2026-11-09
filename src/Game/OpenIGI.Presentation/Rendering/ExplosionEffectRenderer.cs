@@ -156,7 +156,7 @@ public sealed class ExplosionEffectRenderer : IDisposable
                 }
 
                 _lastUsed = used;
-                _device.UpdateAnimatedMesh(_mesh, _vertices);
+                _device.UpdateAnimatedMesh(_mesh, _vertices.AsSpan(0, used));
                 _device.ClearPoseInterpolation();
                 _device.DrawMesh(
                     _mesh,

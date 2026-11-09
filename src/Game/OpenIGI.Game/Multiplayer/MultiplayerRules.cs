@@ -47,6 +47,9 @@ public sealed record MultiplayerRules
     /// <summary>Gets the money for each player of the team that loses the mission (<c>moneymissionlost</c>).</summary>
     public int MoneyMissionLost { get; init; } = 750;
 
+    /// <summary>Gets what the attacker who plants the bomb is paid. Not the original's: it had no bomb to plant.</summary>
+    public int MoneyPlant { get; init; } = 300;
+
     /// <summary>Gets the rounds after which the map ends, or zero for no limit (<c>maprounds</c>).</summary>
     public int MapMaxRounds { get; init; }
 

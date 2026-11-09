@@ -59,6 +59,11 @@ internal sealed class CutsceneContext(
     /// <summary>Records a task's transform under the task and, when it has one, under its id.</summary>
     public void Remember(GameTask task, CutsceneTransformState state)
     {
+        if (!TaskTransforms.ContainsKey(task))
+        {
+            PlacementClaims.Changed();
+        }
+
         TaskTransforms[task] = state;
         if (task.Id != GameTask.NoId)
         {

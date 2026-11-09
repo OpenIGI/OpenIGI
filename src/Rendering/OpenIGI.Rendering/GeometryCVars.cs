@@ -8,25 +8,27 @@ namespace OpenIGI.Rendering;
 [CVarContainer]
 public static class GeometryCVars
 {
-    /// <summary>Whether the world pass culls back faces of eligible meshes after repairing triangle winding.</summary>
+    /// <summary>Whether the world pass culls back faces of eligible meshes, as the original culls every model.</summary>
     /// <remarks>
-    /// The mesh builder repairs winding using authored vertex normals. Interior sectors and meshes
-    /// without usable normals remain two-sided even when this setting is enabled: in particular,
-    /// IGI2 lightmapped geometry carries no normals. Off draws both facings for every world mesh.
+    /// The mesh builder turns each model's stored triangle order over into this renderer's front, the
+    /// facing the original culls to (CCW in every look: Direct3DRender_SetLitState 0x49D480 and
+    /// Direct3DRender_SetUnlitState 0x49D810). On in every preset: a thin surface such as a roller door
+    /// is two faces back to back on one plane, and drawn two-sided the pair fights for depth and flickers
+    /// as the eye moves. Interior sectors and meshes without usable normals stay two-sided: in particular,
+    /// IGI2 lightmapped geometry carries no normals. Not archived, so a value saved by an older build
+    /// cannot turn it off again; off is for comparing in the console only.
     /// </remarks>
     public static readonly NumericCVar<int> WorldCull = Presets.Define(
         CVar.Int(
             "r_world_cull",
-            0,
+            1,
             0,
             1,
-            CVarOptions.Archive,
-            "Cull back faces of normal-bearing world meshes; interior sectors remain two-sided."),
-        vanilla: "0",
-        enhanced: "0",
-        high: "0",
-
-        // The renderer retains two-sided drawing for sectors and meshes winding repair cannot orient.
+            CVarOptions.None,
+            "Cull back faces of normal-bearing world meshes, as the original does; interior sectors remain two-sided."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
         ultra: "1");
 
     /// <summary>How far the terrain keeps subdividing before it settles for a coarser mesh.</summary>
@@ -187,6 +189,18 @@ public static class GeometryCVars
         enhanced: "0",
         high: "0",
         ultra: "1");
+
+    /// <summary>Whether the original's ground is drawn a texture and a pass at a time, as the original draws it.</summary>
+    /// <remarks>
+    /// The direct path's ground: a draw per texture per pass over an arena of chunks (<see cref="ITerrainArenaDevice"/>) rather
+    /// than one per chunk per layer -- a few dozen draws for thousands. Off draws it chunk by chunk, for comparing the two.
+    /// Not archived: it is a diagnostic, not a preference.
+    /// </remarks>
+    public static readonly BoolCVar TerrainArena = CVar.Bool(
+        "r_terrain_arena",
+        true,
+        CVarOptions.None,
+        "Draw the original's ground a texture and a pass at a time, as the original does. Off draws it chunk by chunk.");
 
     /// <summary>Whether placed world objects use asynchronous visibility queries in the geometry pass.</summary>
     /// <remarks>

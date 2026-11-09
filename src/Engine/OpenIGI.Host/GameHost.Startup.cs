@@ -64,9 +64,13 @@ public sealed partial class GameHost
         // the command already there.
         _lamps.RegisterCommands(state.Console.System);
         RegisterCoopTalk(state.Console.System);
+        RegisterMpMapShot(state.Console.System);
         _timeOfDay.RegisterCommands(state.Console.System);
         _flashlight.RegisterCommands(state.Console.System);
         RegisterTitlePlayerCommands(state.Console.System);
+        RegisterDemoCommands(state.Console.System);
+        RegisterInviteCommand(state.Console.System);
+        RegisterPartyCommands(state.Console.System);
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterEditorCommands(state.Console.System);
@@ -547,8 +551,13 @@ public sealed partial class GameHost
                     // falls out of focus under the card, the promotion runs, and the shot opens over the
                     // start. The backdrop is gone over a played mission, so this cannot fire from the pause
                     // menu. -lockstep is excluded: the sequence runs on wall-clock time, and a reference
-                    // capture has to land on the same frame every run.
-                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep)
+                    // capture has to land on the same frame every run. So is a versus match -- a server joined
+                    // from the menu comes in here: its arena makes switches on its gates' far sides, which a
+                    // level already walked for the menu cannot take, and the server and every other player
+                    // have them.
+                    bool arena = TickObserver is Multiplayer.ISessionMode { Mode: var sessionMode }
+                        && Game.Multiplayer.Modes.ArenaLevel.IsVersus(sessionMode);
+                    if (_menuBackdrop.Preview is { } backdrop && backdrop.MissionId == id && !_options.Lockstep && !arena)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
 
@@ -645,8 +654,19 @@ public sealed partial class GameHost
                 },
                 abandonMission: () =>
                 {
-                    // Out of the mission is out of its room.
+                    // Out of the mission is out of its room -- or out of the server the command line joined or hosted, whose
+                    // session would otherwise run on against the menu's backdrop.
+                    if (Game.Multiplayer.NetCVars.AutoRecord.Value && TickObserver is Multiplayer.IDemoSource recorded and not Multiplayer.SessionClient { Playback: not null })
+                    {
+                        _ = recorded.SaveDemo(DemoPath(null));
+                    }
+
                     _coop?.Leave();
+                    if (TickObserver is IDisposable session and ISessionScoreboard)
+                    {
+                        TickObserver = null;
+                        session.Dispose();
+                    }
                     // Before it was ever shown, possibly. Counting the rest of the warm-up down would
                     // hold a loading panel over the campaign screen.
                     CancelMissionWarmUp();
@@ -732,6 +752,7 @@ public sealed partial class GameHost
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,
                 coop: _coop,
+                party: _coop is null ? null : new PartyPanel(this),
                 touchScreen: () => _window.Input.Touch.InUse,
                 openEditor: EditorFactory is null ? null : RequestEditor);
 

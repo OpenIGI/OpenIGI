@@ -152,6 +152,12 @@ public sealed class PlayerWeapons
     /// <summary>Gets the loose ammunition the player carries.</summary>
     public AmmoPool Ammunition { get; } = new();
 
+    /// <summary>
+    /// Gets or sets whether what is walked over is held to <see cref="CarrySlots"/>: a multiplayer match's rule, one weapon in
+    /// each place; off in the campaigns, whose player gathers every weapon.
+    /// </summary>
+    public bool LimitsCarry { get; set; }
+
     /// <summary>Gets everything the player carries, in the order it was given.</summary>
     public IReadOnlyList<CarriedWeapon> Carried => _carried;
 
@@ -309,6 +315,17 @@ public sealed class PlayerWeapons
         return gun;
     }
 
+    /// <summary>Takes one carried weapon away, as a mode's bomb leaves the player that planted or lost it.</summary>
+    /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>; one not carried changes nothing.</param>
+    /// <remarks>Taken from the hand, whatever the machine was doing with it ends and the cycle brings up the next weapon.</remarks>
+    public void Drop(int weaponId)
+    {
+        if (_selector.Remove(weaponId) && State != HumanWeaponState.Suspended)
+        {
+            _machine.Revive();
+        }
+    }
+
     /// <summary>Gets whether a weapon is carried.</summary>
     /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
     /// <returns><see langword="true"/> when it is carried.</returns>
@@ -448,6 +465,14 @@ public sealed class PlayerWeapons
             InHand?.Gun.Reload(Ammunition);
         }
 
+        // The weapon wheel's pick, one more than its weapon id, carried in the frame's scratch slot: so a server runs a client's
+        // pick on the very tick the client's own prediction did.
+        float wheel = input.Current[(int)PlayerInputSlot.SelectedWeaponScratch];
+        if (wheel >= 1f)
+        {
+            _selector.Pick((int)MathF.Round(wheel) - 1);
+        }
+
         _selector.SelectBinoculars(input);
         _selector.SelectCategory(input);
         _selector.CycleWeapons(input);
@@ -480,6 +505,26 @@ public sealed class PlayerWeapons
     /// </remarks>
     /// <summary>Takes the weapons out of death, as a co-op player is brought back.</summary>
     public void Revive() => _machine.Revive();
+
+    /// <summary>
+    /// Takes every weapon and round away, for a player who died in a match and stands again with only the spawn's kit: the
+    /// weapons carried after this come up as at a fresh spawn.
+    /// </summary>
+    public void Disarm()
+    {
+        _carried.Clear();
+        _selector.Reset();
+        Ammunition.Clear();
+        _shots.Clear();
+        _m203Shots.Clear();
+        _firedThisTick = false;
+        MinePlacement = null;
+        if (State != HumanWeaponState.Suspended)
+        {
+            // Alive: whatever the machine was doing with the weapon in hand ends, as nothing is.
+            _machine.Revive();
+        }
+    }
 
     /// <summary>Stops the weapons because the player has died.</summary>
     public void StopForDeath()

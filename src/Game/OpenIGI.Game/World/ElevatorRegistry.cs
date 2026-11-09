@@ -48,7 +48,7 @@ public sealed record PlacedElevator(
 }
 
 /// <summary>Collects, advances and presents the level's <c>Elevator</c> tasks.</summary>
-public sealed class ElevatorRegistry
+public sealed class ElevatorRegistry : ILevelReset
 {
     /// <summary>Horizontal radius (engine units) around the platform centre a player must be within.</summary>
     public const double PlayerInsideHorizontalRadius = 8192.0;
@@ -70,6 +70,7 @@ public sealed class ElevatorRegistry
     {
         ArgumentNullException.ThrowIfNull(elevators);
         _elevators.AddRange(elevators);
+        PlacementClaims.Changed();
     }
 
     public IReadOnlyList<PlacedElevator> Elevators => _elevators;
@@ -218,6 +219,48 @@ public sealed class ElevatorRegistry
         {
             elevator.IsSounding = false;
             _sounds(elevator, ElevatorSoundEvent.Stopped);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (ElevatorCommand command in _commands)
+        {
+            command.MarkLevelStart();
+        }
+
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            elevator.State.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Each car back where the match began, its calls as they were; its collision and what rides it with it (not its doors, whose
+    /// own reset puts them back) jump with it at once, because the next tick's move would carry only that tick's step.
+    /// </remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (ElevatorCommand command in _commands)
+        {
+            command.ResetToLevelStart();
+        }
+
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            elevator.State.ResetToLevelStart();
+            if (solids is not null)
+            {
+                ApplyCollision(solids, elevator);
+            }
+
+            if (elevator.IsSounding)
+            {
+                elevator.IsSounding = false;
+                _sounds?.Invoke(elevator, ElevatorSoundEvent.Stopped);
+            }
         }
     }
 
@@ -424,6 +467,22 @@ public sealed class ElevatorRegistry
         return false;
     }
 
+    /// <summary>Whether a task is a lift's or rides in one, so this registry may move its placement (see <see cref="PlacementClaims"/>).</summary>
+    /// <param name="task">The placement's owner.</param>
+    /// <returns><see langword="true"/> for a lift's task or one of its descendants.</returns>
+    public bool Claims(GameTask task)
+    {
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            if (ReferenceEquals(elevator.Task, task) || IsDescendantOf(task, elevator.Task))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Gets the world transform for an elevator-owned task.</summary>
     public bool TryGetDrawTransform(
         GameTask task,
@@ -443,8 +502,15 @@ public sealed class ElevatorRegistry
                 return true;
             }
 
+            // The ancestry first: every placement in the level asks this every frame, and the few riding
+            // a lift are the only ones whose displacement matters.
+            if (!IsDescendantOf(task, elevator.Task))
+            {
+                continue;
+            }
+
             Vector3d displacement = GetDisplacement(elevator, tickFraction, smooth);
-            if (IsDescendantOf(task, elevator.Task) && displacement != Vector3d.Zero)
+            if (displacement != Vector3d.Zero)
             {
                 position = authoredPosition + displacement;
                 orientation = authoredOrientation;
@@ -572,6 +638,7 @@ public sealed class ElevatorRegistry
                     TextOrEmpty(declared, "Move sound"),
                     ElevatorSplineFrame.For(declared, spline));
                 registry._elevators.Add(elevator);
+                PlacementClaims.Changed();
                 List<string> wantedExpressions = Enumerable.Range(0, 10)
                     .Select(i => TextOrEmpty(declared, $"Wanted floor {i}"))
                     .ToList();
@@ -644,6 +711,12 @@ public sealed class ElevatorRegistry
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
         public List<ExteriorSwitchCall> ExteriorCalls { get; } = ExteriorCalls;
         public bool HasExteriorRequest { get; private set; }
+
+        private bool _startRequest;
+
+        public void MarkLevelStart() => _startRequest = HasExteriorRequest;
+
+        public void ResetToLevelStart() => HasExteriorRequest = _startRequest;
 
         public void ClearExteriorRequestAfterStart()
         {

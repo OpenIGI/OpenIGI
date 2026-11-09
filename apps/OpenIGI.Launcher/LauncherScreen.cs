@@ -54,7 +54,7 @@ internal sealed class LauncherScreen : Screen
     private const float HeaderHeight = 76f;
     private const float FooterHeight = 60f;
 
-    private static readonly string[] Sections = ["Home", "Content", "Mods", "Logs", "Settings"];
+    private static readonly string[] Sections = ["Home", "Content", "Mods", "Servers", "Logs", "Settings"];
 
     private readonly UiTheme _theme;
     private readonly UiTheme _rowTheme;
@@ -70,6 +70,7 @@ internal sealed class LauncherScreen : Screen
     private HomePage? _home;
     private ContentPage? _content;
     private ContentPage? _mods;
+    private ServersPage? _servers;
     private LogsPage? _logs;
     private GameSwitcher? _switcher;
     private UiElement? _chrome;
@@ -113,12 +114,14 @@ internal sealed class LauncherScreen : Screen
         // The main area first in tree order, so focus starts on the page rather than on the chrome.
         var main = new SectionDeck();
         _deck = main;
-        _home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(4), () => ShowSection(1));
+        _home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(5), () => ShowSection(1));
         AddPage(main, _home.Root);
         _content = new ContentPage(_rowTheme, _model, _window.Picture);
         AddPage(main, _content.Root);
         _mods = new ContentPage(_rowTheme, _model, _window.Picture, ContentPageKind.Mods);
         AddPage(main, _mods.Root);
+        _servers = new ServersPage(_rowTheme, _model);
+        AddPage(main, _servers.Root);
         _logs = new LogsPage(_theme, _model, _window);
         AddPage(main, _logs.Root);
         AddPage(main, SettingsPage.Build(_rowTheme, _model, _window));
@@ -212,6 +215,7 @@ internal sealed class LauncherScreen : Screen
         _home?.Update();
         _content?.Update();
         _mods?.Update();
+        _servers?.Update(_section == 3);
         _logs?.Update();
         if (_backdrop is not null)
         {
@@ -222,7 +226,7 @@ internal sealed class LauncherScreen : Screen
         {
             _tabs[0].Badge = _model.UpdatesAvailable;
             _tabs[1].Badge = _model.Job is null ? 0 : 1;
-            _tabs[3].Badge = _logs?.Errors ?? 0;
+            _tabs[4].Badge = _logs?.Errors ?? 0;
         }
     }
 

@@ -94,6 +94,13 @@ public sealed class RadioRuntime
     /// <summary>Gets or sets <c>isOn</c>.</summary>
     public bool IsOn { get; set; }
 
+    // As the match began: whether it talked, and how long until it next does.
+    private (bool On, bool? Mirrored, int Countdown) _start;
+
+    internal void MarkLevelStart() => _start = (IsOn, MirroredOn, Countdown);
+
+    internal void ResetToLevelStart() => (IsOn, MirroredOn, Countdown) = _start;
+
     /// <summary>Gets or sets the co-op server's word on <see cref="IsOn"/>, which a client's update takes in place of its own.</summary>
     internal bool? MirroredOn { get; set; }
 

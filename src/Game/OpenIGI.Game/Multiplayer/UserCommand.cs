@@ -19,4 +19,8 @@ namespace OpenIGI.Game.Multiplayer;
 /// The server tick the client was drawing the others at when it made the command, or <see cref="long.MinValue"/> when not
 /// known: what a shot in it was aimed at, Source's <c>tick_count</c> less the client's interpolation.
 /// </param>
-public readonly record struct UserCommand(long Tick, float[] Channels, long ViewTick = long.MinValue);
+/// <param name="ViewFraction">
+/// How far past <paramref name="ViewTick"/> towards the next the client was drawing, 0 to 1: the others are drawn between
+/// ticks, and a fast target moves a good part of a body's width in one, so the server rewinds to the same fraction.
+/// </param>
+public readonly record struct UserCommand(long Tick, float[] Channels, long ViewTick = long.MinValue, float ViewFraction = 0f);

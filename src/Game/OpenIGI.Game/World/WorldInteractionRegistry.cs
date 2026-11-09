@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// <summary>
 /// All direct retail world interactions, with the original two-metre, most-head-on resolver.
 /// </summary>
-public sealed partial class WorldInteractionRegistry : IPlacementVariant
+public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevelReset
 {
     /// <summary><c>Human_UpdateActivate</c>'s regular query radius: two metres.</summary>
     public const double ActivateRadius = 8192.0;
@@ -58,10 +58,59 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant
     {
         _items.Add(item);
         _hasPlacedTasks |= item.PlacedTaskId >= 0;
+        PlacementClaims.Changed();
     }
 
     /// <summary>Adds a collected generator.</summary>
     internal void AddGenerator(GeneratorPowerState generator) => _generators.Add(generator);
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (WorldInteraction item in _items)
+        {
+            item.MarkLevelStart();
+        }
+
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            generator.MarkLevelStart();
+        }
+
+        foreach (RadioRuntime radio in _radios)
+        {
+            radio.MarkLevelStart();
+        }
+
+        _startPressed = [.. _serverPressed];
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Every switch, terminal, cabinet, lock, fence, generator and radio as the match began: unhacked, unsearched, unpicked,
+    /// its model the one it showed then.
+    /// </remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (WorldInteraction item in _items)
+        {
+            item.ResetToLevelStart();
+        }
+
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            generator.ResetToLevelStart();
+        }
+
+        foreach (RadioRuntime radio in _radios)
+        {
+            radio.ResetToLevelStart();
+        }
+
+        _serverPressed = [.. _startPressed];
+    }
+
+    private bool[] _startPressed = [];
 
     /// <summary>Adds a collected radio.</summary>
     internal void AddRadio(RadioRuntime radio) => _radios.Add(radio);
@@ -288,6 +337,23 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant
     /// <returns>Whether the round broke it.</returns>
     public bool WeaponHit(GameTask? task) =>
         task is not null && TryGet(task, out WorldInteraction? item) && item!.WeaponHit();
+
+    /// <summary>Whether a task is something a plant can put down somewhere else (see <see cref="PlacementClaims"/>).</summary>
+    public bool ClaimsPlaced(GameTask task)
+    {
+        if (_hasPlacedTasks)
+        {
+            foreach (WorldInteraction item in _items)
+            {
+                if (item.PlacedTaskId == task.Id)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Where a plant moved the task a PlaceExplosiveTBA places, if one has.</summary>
     /// <param name="task">The placed task (a charge model's EditRigidObj).</param>

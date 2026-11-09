@@ -25,7 +25,7 @@ public sealed class WorldCullingSettingsFixture
     public const string Name = "World culling settings";
 }
 
-/// <summary>Protects interior geometry in both titles when Ultra enables world backface culling: only coincident skins are culled.</summary>
+/// <summary>Culling in both titles: every model with normals is culled as the original culls it, and a mesh without normals stays two-sided.</summary>
 [Collection(WorldCullingSettingsFixture.Name)]
 public sealed class RetailWorldInteriorCullingTests
 {
@@ -76,7 +76,7 @@ public sealed class RetailWorldInteriorCullingTests
     }
 
     [RequiresGameDataFact]
-    public void Final_igi1_mission_keeps_sectors_two_sided_and_still_culls_eligible_props()
+    public void Final_igi1_mission_culls_sectors_and_props_alike_as_the_original_does()
     {
         VirtualFileSystem files = new();
         files.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -102,9 +102,10 @@ public sealed class RetailWorldInteriorCullingTests
         try
         {
             GeometryCVars.WorldCull.Value = 1;
-            AssertCull(sector, CullMode.None);
+            AssertCull(sector, CullMode.CounterClockwise);
             AssertCull(prop, CullMode.CounterClockwise);
             GeometryCVars.WorldCull.Value = 0;
+            AssertCull(sector, CullMode.None);
             AssertCull(prop, CullMode.None);
         }
         finally

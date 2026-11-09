@@ -12,15 +12,23 @@ namespace OpenIGI.Host.Multiplayer;
 /// The host plays the same map locally. Once its title's player is ticking, the session connects; after each tick it sends
 /// that tick's command and shows every other player where the snapshots put it.
 /// </remarks>
-public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, IDisposable
+public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboard, ISessionFollower, ISessionTalk, ISessionLook, ISessionHold, ISessionMode, IDemoSource, IDisposable
 {
     private const string LogCategory = "Session";
 
-    private readonly INetTransport _transport;
+    private INetTransport _transport;
+
+    // Opens a new line to the same server, for joining again after this one went quiet; null when it can't be.
+    private readonly Func<INetTransport>? _reopen;
+
+    // When the line went quiet under a joined session, and when the next try at joining again is due.
+    private double? _lostAt;
+    private double _retryAt;
     private readonly NetAddress _server;
     private readonly JoinRequest _request;
     private readonly string _titleId;
     private readonly IOpenIgiLogger _logger;
+    private readonly OpenIGI.Net.Identity.IPlayerIdentity? _identity;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private IReplicatedClientWorld? _world;
     private NetClient? _netClient;
@@ -48,8 +56,22 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <param name="request">The join request.</param>
     /// <param name="titleId">The game's id, which keys the protocol.</param>
     /// <param name="logger">Where the session's progress is told.</param>
-    public SessionClient(INetTransport transport, NetAddress server, JoinRequest request, string titleId, IOpenIgiLogger logger)
+    /// <param name="identity">Who the player is; <see langword="null"/> takes the game's own (<see cref="OpenIGI.Net.Identity.PlayerIdentities.Default"/>).</param>
+    /// <param name="reopen">
+    /// Opens a new line to the same server -- the room again by its code, or a new socket -- so a session whose line went
+    /// quiet joins again by itself and gets its own player back; <see langword="null"/> ends such a session instead.
+    /// </param>
+    public SessionClient(
+        INetTransport transport,
+        NetAddress server,
+        JoinRequest request,
+        string titleId,
+        IOpenIgiLogger logger,
+        OpenIGI.Net.Identity.IPlayerIdentity? identity = null,
+        Func<INetTransport>? reopen = null)
     {
+        _identity = identity;
+        _reopen = reopen;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _server = server;
         _request = request ?? throw new ArgumentNullException(nameof(request));
@@ -60,13 +82,16 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public string? RoomCode => Room?.Code;
 
+    /// <summary>Gets the server's address, as this client reaches it (a room's code is <see cref="RoomCode"/>).</summary>
+    public NetAddress Server => _server;
+
     /// <inheritdoc/>
     public string Place => _session?.Map is { Length: > 0 } map ? HostedSession.MapName(map) : string.Empty;
 
     /// <inheritdoc/>
     /// <remarks>A fallen player's health byte carries its revival, in the snapshots the server sends.</remarks>
     public float? OwnRevive =>
-        _session is { EntityId: { } self, Latest: { } latest } && latest.TryGet(self, out ReplicatedHuman own) && (own.Flags & ReplicatedHumanCondition.Alive) == 0
+        Game.Multiplayer.Modes.PlayerSides.Revivable(Mode) && _session is { EntityId: { } self, Latest: { } latest } && latest.TryGet(self, out ReplicatedHuman own) && (own.Flags & ReplicatedHumanCondition.Alive) == 0
             ? own.Health / 255f
             : null;
 
@@ -116,10 +141,20 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         if (!_welcomed && _session!.EntityId is { } id)
         {
             _welcomed = true;
+
+            // Brought up as a co-op level for a versus server, or the other way: loaded again, the server's way.
+            if (_levelMode is { } loadedAs
+                && Game.Multiplayer.Modes.ArenaLevel.IsVersus(loadedAs) != Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode))
+            {
+                _logger.Information(LogCategory, $"The level was brought up for {loadedAs}; {Where} plays {Mode}, so it is loaded again.");
+                _session.ReloadMap();
+            }
+
+            _lostAt = null;
             _logger.Information(LogCategory, $"Joined {Where}: map {_session.Map}, {_session.TickRate} ticks a second, playing as entity {id}.");
         }
 
-        if (_session!.EndReason is { } reason && reason != _ended)
+        if (_session!.EndReason is { } reason && reason != _ended && !Rejoin(reason, now))
         {
             _ended = reason;
             _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
@@ -174,16 +209,27 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     // up here, and each later level followed. False while there is no session to run yet.
     private bool Attach(object? title, double now)
     {
+        // The server's files first: the join waits for them, on a connection of their own.
+        if (_session is null && !FilesReady)
+        {
+            return false;
+        }
+
         // Through a room, the handshake waits for the channel to the host: until it opens there is nowhere to send it.
         if (_session is null && _transport is RoomTransport { Status: not RoomStatus.Open } room)
         {
             room.Poll();
-            if (room.Status == RoomStatus.Closed && _ended is null)
+            if (room.Status == RoomStatus.Closed && _ended is null && !Rejoin(NetClient.TimedOutReason, now))
             {
                 _ended = room.Error ?? "the room closed";
                 _logger.Warning(LogCategory, $"Could not join {room}: {_ended}.");
             }
 
+            return false;
+        }
+
+        if (_session is null && now < _retryAt)
+        {
             return false;
         }
 
@@ -195,9 +241,12 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             }
 
             _world = replicated.CreateClientWorld();
+            _world.MarkLevelStart();
             _level = replicated.Level;
-            _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId));
-            _session = new ClientSession(_netClient, _world.LocalFrame.Length);
+            _levelMode = Mode;
+            _netClient = new NetClient(_transport, MultiplayerProtocol.IdFor(_titleId), MultiplayerProtocol.Version);
+            _session = new ClientSession(_netClient, _world.LocalFrame.Length, _identity, MultiplayerProtocol.IdFor(_titleId));
+            _session.Recording = _transport is DemoPlayback ? null : new DemoRecording();
             _session.Connect(_server, _request, now);
             _logger.Information(LogCategory, $"Joining {Where} as {_request.PlayerName}.");
         }
@@ -209,8 +258,79 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         return true;
     }
 
+    /// <summary>
+    /// Gets a living player to watch, where this client draws it: the players on the board in its order, starting from one
+    /// named (a demo's recorder), stepped on by <paramref name="pick"/>.
+    /// </summary>
+    /// <param name="pick">How many on from the first.</param>
+    /// <param name="first">The name to start from, or <see langword="null"/> for the board's first.</param>
+    /// <returns>Who, and where, or <see langword="null"/> when nobody is drawn.</returns>
+    public (int Entity, string Name, Core.Numerics.Vector3d Feet, float Yaw, float Pitch)? Follow(int pick, string? first)
+    {
+        if (_session is not { Scoreboard: { } board, DrawnTick: { } drawn, Latest: { } latest } session)
+        {
+            return null;
+        }
+
+        List<ScoreboardLine> living =
+        [
+            .. board.Lines.Where(l => l.Entity >= 0 && l.Entity != session.EntityId
+                && latest.TryGet(l.Entity, out ReplicatedHuman now) && (now.Flags & ReplicatedHumanCondition.Alive) != 0),
+        ];
+        if (living.Count == 0)
+        {
+            return null;
+        }
+
+        int start = first is null ? 0 : Math.Max(0, living.FindIndex(l => l.Name == first));
+        ScoreboardLine line = living[(start + Math.Max(0, pick)) % living.Count];
+        if (!session.Remote.Sample(drawn, line.Entity, out ReplicatedHuman seen))
+        {
+            return null;
+        }
+
+        return (line.Entity, line.Name, seen.Position.ToVector(), Quantize.AngleFromBits(seen.Yaw), Quantize.AngleFromBits(seen.Pitch));
+    }
+
+    /// <summary>Gets the demo being played, when this session is one's playback; <see langword="null"/> otherwise.</summary>
+    public DemoPlayback? Playback => _transport as DemoPlayback;
+
     /// <inheritdoc/>
-    public string? TakeTravel() => _session?.TakeTravel();
+    public string? SaveDemo(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (_session is not { Recording: { Messages.Count: > 0 } recording } session)
+        {
+            return _transport is DemoPlayback ? "a demo being played is not recorded again" : "nothing has been recorded yet";
+        }
+
+        _logger.Information(
+            LogCategory,
+            DemoFile.Save(path, new DemoHeader(MultiplayerProtocol.Version, _titleId, session.Map ?? string.Empty, Mode, _request.PlayerName), recording));
+        return null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Held while the files of the map gone to are still coming, so it loads from the server's; and a level loaded before the
+    /// server's files were in -- one the command line started -- is gone to again once they are.
+    /// </remarks>
+    public string? TakeTravel()
+    {
+        if (_reloadAfterSync is { } map)
+        {
+            _reloadAfterSync = null;
+            return map;
+        }
+
+        return FilesBusy ? null : _session?.TakeTravel();
+    }
+
+    // A map to load again because the files came after it was loaded, until taken.
+    private string? _reloadAfterSync;
+
+    // Whether a level has been up here, while there was no session yet.
+    private bool _levelSeen;
 
     /// <inheritdoc/>
     public string OwnSkin => _request.Skin;
@@ -243,6 +363,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         if (title is IReplicatedTitle { Level: not null })
         {
             _heldSince ??= now;
+            _levelSeen = true;
         }
 
         if (!Attach(title, now) || _session is not { } session)
@@ -251,6 +372,7 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         session.Receive(now);
+        SyncWhilePlaying(session);
         _pumpsSinceDiagnosed++;
 
         // The server's level state, taken while the level is held, so its first tick is already the server's: nothing of a
@@ -265,13 +387,14 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
             _heldSince = null;
         }
 
-        if (session.EndReason is { } reason && reason != _ended)
+        if (session.EndReason is { } reason && reason != _ended && !Rejoin(reason, now))
         {
             _ended = reason;
             _logger.Warning(LogCategory, $"The session with {Where} ended: {reason}.");
+            return;
         }
 
-        session.Flush(now);
+        _session?.Flush(now);
     }
 
     // A new level up -- gone to, or loaded on the server's announcement and held: this one's players and state are shown on
@@ -284,7 +407,9 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
         }
 
         _world = next.CreateClientWorld();
+        _world.MarkLevelStart();
         _level = level;
+        _levelMode = Mode;
         _session.Arrived();
         _heldSince = _clock.Elapsed.TotalSeconds;
         _logger.Information(LogCategory, $"Following {Where} to {_session.Map}.");
@@ -297,8 +422,223 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public string? Ended => _ended;
 
+    // Whether the session was ended.
+    private bool _disposed;
+
     /// <inheritdoc/>
-    public void Say(string text) => _session?.Say(text);
+    /// <remarks>
+    /// The mode the server's match is being played in now -- which follows a change made while the session runs (a vote, or an
+    /// admin's <c>map 1 sd</c>) -- else the server's own as it welcomed this player, else the mode of the room or server joined
+    /// as it was listed.
+    /// </remarks>
+    public string Mode
+    {
+        get => _session?.MatchState?.Mode is { Length: > 0 } playing ? playing
+            : _session?.ServerMode is { Length: > 0 } told ? told
+            : _listedMode;
+        init => _listedMode = value ?? string.Empty;
+    }
+
+    private readonly string _listedMode = string.Empty;
+
+    // The mode the level here was brought up under, which says whether the level's soldiers were taken out of it.
+    private string? _levelMode;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => _session?.Feed.Shown(_clock.Elapsed.TotalSeconds) ?? [];
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchBanner? Banner =>
+        _session?.MatchState is { } state ? state.Banner(_clock.Elapsed.TotalSeconds - _session.MatchStateAt) : null;
+
+    /// <inheritdoc/>
+    public void Poll()
+    {
+        bool before = FilesReady;
+        SyncBeforeJoin(_clock.Elapsed.TotalSeconds);
+        if (!before && _synced && _levelSeen && Files is { } files && files.TakeChanges().Changed && files.Map is { } map)
+        {
+            // The command line's level came up before the files were in: loaded again, from the server's.
+            _reloadAfterSync = map;
+        }
+
+        _session?.Poll(_clock.Elapsed.TotalSeconds);
+        foreach (string line in _session?.TakeRconAnswers() ?? [])
+        {
+            _logger.Information("Rcon", line);
+        }
+    }
+
+    /// <summary>Sends a command to the server's remote console; its answer is told in the log as it comes.</summary>
+    /// <param name="password">The server's remote console password.</param>
+    /// <param name="command">The command.</param>
+    /// <returns><see langword="true"/> when there is a server to send it to.</returns>
+    public bool SendRcon(string password, string command)
+    {
+        if (_session is null)
+        {
+            return false;
+        }
+
+        _session.SendRcon(password, command);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public Core.Numerics.Vector3d? PositionOfSlot(int slot) =>
+        _session is { Latest: { } latest } session
+            && session.Scoreboard?.Lines.Where(l => l.Slot == slot).Select(static l => (int?)l.Entity).FirstOrDefault() is { } entity
+            && latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
+            ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
+            : null;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.SpectateTarget? Spectate(int pick) =>
+        _session is { EntityId: { } own, Latest: { } latest } session && Game.Multiplayer.Modes.ArenaLevel.IsVersus(Mode)
+            ? Game.Multiplayer.Modes.Spectating.Pick(
+                session.Scoreboard,
+                own,
+                Game.Multiplayer.Modes.GameModes.HasTeams(Mode),
+                entity => latest.TryGet(entity, out Game.Multiplayer.ReplicatedHuman human)
+                    ? new Core.Numerics.Vector3d(human.Position.X, human.Position.Y, human.Position.Z)
+                    : null,
+                pick,
+                _combat.KilledBy is { } killer ? (killer.Entity, _clock.Elapsed.TotalSeconds - killer.At) : null,
+                latest.TryGet(own, out Game.Multiplayer.ReplicatedHuman self) ? new Core.Numerics.Vector3d(self.Position.X, self.Position.Y, self.Position.Z) : null)
+            : null;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> NetGraph
+    {
+        get
+        {
+            double now = _clock.Elapsed.TotalSeconds;
+            if (_session is not { } session || _netClient?.Connection is not { } connection)
+            {
+                return [];
+            }
+
+            // The rates over the last second or so, sampled as they are asked for.
+            if (now - _graphAt >= 1)
+            {
+                double seconds = now - _graphAt;
+                _graphSnapshots = (session.SnapshotsAssembled - _graphSnapshotsAt) / seconds;
+                _graphCorrections = (session.Reconciler.Corrections - _graphCorrectionsAt) / seconds;
+                _graphAt = now;
+                _graphSnapshotsAt = session.SnapshotsAssembled;
+                _graphCorrectionsAt = session.Reconciler.Corrections;
+            }
+
+            NetStatistics stats = connection.Statistics;
+            System.Globalization.CultureInfo invariant = System.Globalization.CultureInfo.InvariantCulture;
+            return
+            [
+                string.Create(invariant, $"PING {stats.RoundTripTime * 1000:0} ms   JITTER {stats.RoundTripJitter * 1000:0} ms   LOSS {stats.PacketLoss * 100:0.0}%"),
+                string.Create(invariant, $"IN {stats.BytesReceivedPerSecond / 1024:0.0} KiB/s   OUT {stats.BytesSentPerSecond / 1024:0.0} KiB/s   CHOKE {stats.Choked}"),
+                string.Create(invariant, $"SNAPSHOTS {_graphSnapshots:0}/s   INTERP {(session.Clock?.AppliedInterpolationDelay ?? 0) * 1000:0} ms"),
+                string.Create(invariant, $"CORRECTIONS {_graphCorrections:0.0}/s   LAST {session.Reconciler.LastError:0}   {(Relayed ? "RELAYED" : "DIRECT")}"),
+            ];
+        }
+    }
+
+    private double _graphAt;
+    private double _graphSnapshots;
+    private double _graphCorrections;
+    private long _graphSnapshotsAt;
+    private long _graphCorrectionsAt;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.CombatHud? Combat(Core.Numerics.Vector3d eye, Core.Numerics.Matrix3f view)
+    {
+        double now = _clock.Elapsed.TotalSeconds;
+        if (_session is not { } session)
+        {
+            return null;
+        }
+
+        _combat.Take(session.TakeCombat(), session.EntityId ?? -1, now);
+        return _combat.Shown(now, eye, view, session.MatchState);
+    }
+
+    /// <inheritdoc/>
+    public void CreditHits(Game.Player.ShotTally? own)
+    {
+        _combat.Credit = own;
+        if (_session is { } session)
+        {
+            _combat.Take(session.TakeCombat(), session.EntityId ?? -1, _clock.Elapsed.TotalSeconds);
+        }
+    }
+
+    private readonly Game.Multiplayer.Modes.CombatFeedback _combat = new();
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MatchHud? MatchHud(Core.Numerics.Vector3d? ownPosition) =>
+        _session?.MatchState is { } state
+            && Game.Multiplayer.Modes.MatchHud.Of(
+                state,
+                _clock.Elapsed.TotalSeconds - _session.MatchStateAt,
+                CurrentScoreboard,
+                LocalEntity,
+                ownPosition,
+                Layout,
+                _session.UseHeldSince is { } since
+                    ? new Game.Multiplayer.Modes.LocalUse(true, _clock.Elapsed.TotalSeconds - since)
+                    : new Game.Multiplayer.Modes.LocalUse(false, 0),
+                _session.BombInHand ?? true) is { } hud
+            ? hud with { MapVote = hud.Phase == Game.Multiplayer.Modes.MatchPhase.Intermission ? _session.MapVote : null }
+            : null;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.ModeReport? ModeReport => _session?.MatchState?.Report;
+
+    /// <inheritdoc/>
+    public Game.Multiplayer.Modes.MpLayout? Layout { get; set; }
+
+    /// <summary>Gets a value indicating whether the line went quiet and the session is joining again.</summary>
+    public bool IsRejoining => _lostAt is not null && _ended is null;
+
+    // How long a session whose line went quiet keeps trying to join again: the server keeps its player about that long.
+    private const double RejoinSeconds = 60.0;
+
+    // A session that was joined and whose line went quiet -- the host's room still there, a socket that died with the Wi-Fi
+    // -- joins again on a new line, backing off, until RejoinSeconds have passed: the server knows it by its key and gives it
+    // its own player back where it was. Anything said on purpose (kicked, full, the room closed, a version) is the end.
+    private bool Rejoin(string reason, double now)
+    {
+        if (_reopen is null || reason != NetClient.TimedOutReason || (!_welcomed && _lostAt is null))
+        {
+            return false;
+        }
+
+        _lostAt ??= now;
+        if (now - _lostAt.Value > RejoinSeconds)
+        {
+            return false;
+        }
+
+        double tried = now - _lostAt.Value;
+        _logger.Warning(LogCategory, $"Lost {Where}; joining again ({tried:F0} s since the line went quiet).");
+        if (_netClient is { } old)
+        {
+            old.Dispose();
+        }
+        else
+        {
+            _transport.Dispose();
+        }
+
+        _netClient = null;
+        _session = null;
+        _welcomed = false;
+        _level = null;
+        _transport = _reopen();
+        _retryAt = now + Math.Min(8, 1 + tried / 4);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void Say(string text, bool team = false) => _session?.Say(text, team);
 
     /// <inheritdoc/>
     public void Mark(Int3 position) => _session?.Mark(position);
@@ -321,6 +661,15 @@ public sealed class SessionClient : IHostTickObserver, ISessionScoreboard, ISess
     /// <inheritdoc/>
     public void Dispose()
     {
+        // Ended once: by leaving the mission, and again by the program that made it as it closes.
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _syncNet?.Disconnect("client closed", 0);
+        Files?.Clear();
         if (_netClient is { } client)
         {
             client.Dispose();

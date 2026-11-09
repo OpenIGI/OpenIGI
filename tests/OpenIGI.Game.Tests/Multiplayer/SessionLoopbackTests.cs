@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
 using Xunit;
 
@@ -196,6 +197,43 @@ public sealed class SessionLoopbackTests
     }
 
     [Fact]
+    public void Each_client_gets_the_snapshots_a_second_it_asked_for_within_the_servers_bounds()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(network.Open(26001), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy") { MinUpdateRate = 10 };
+        ClientSession every = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        ClientSession third = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        ClientSession greedy = new(new NetClient(network.Open(), Protocol), ToyWorld.Channels);
+        every.Connect(serverNet.LocalAddress, new JoinRequest("every", "test", string.Empty), now);
+        third.Connect(serverNet.LocalAddress, new JoinRequest("third", "test", string.Empty, UpdateRate: TickRate / 3), now);
+        greedy.Connect(serverNet.LocalAddress, new JoinRequest("greedy", "test", string.Empty, UpdateRate: 1), now);
+        ClientSession[] clients = [every, third, greedy];
+        float[] idle = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 10 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            foreach (ClientSession client in clients)
+            {
+                client.Receive(now);
+                client.SendCommand(idle, now);
+                client.Flush(now);
+            }
+        }
+
+        // A third as many as every tick; and one asking for less than the server allows gets what it allows.
+        double ratio = third.SnapshotsAssembled / (double)every.SnapshotsAssembled;
+        Assert.InRange(ratio, 0.28, 0.4);
+        double floor = greedy.SnapshotsAssembled / (double)every.SnapshotsAssembled;
+        Assert.InRange(floor, 10.0 / TickRate * 0.8, 10.0 / TickRate * 1.3);
+    }
+
+    [Fact]
     public void A_world_too_big_for_one_packet_arrives_in_parts_and_whole()
     {
         double now = 0;
@@ -270,6 +308,442 @@ public sealed class SessionLoopbackTests
         Assert.Equal(world.Doors, newest.Doors);
     }
 
+    [Fact]
+    public void A_remote_console_command_reaches_the_server_and_its_answer_comes_back()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        List<(int Slot, string Password, string Command)> asked = [];
+        server.Rcon = (slot, password, command) =>
+        {
+            asked.Add((slot, password, command));
+            return password == "pw" ? ["Test  ·  mission toy", "  #0 one"] : ["Wrong remote console password."];
+        };
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, 0, 0, 0, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        List<string> answers = [];
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            if (tick == 2 * TickRate)
+            {
+                client.SendRcon("nope", "status");
+            }
+            else if (tick == (2 * TickRate) + 15)
+            {
+                client.SendRcon("pw", "status");
+            }
+
+            answers.AddRange(client.TakeRconAnswers());
+            client.Flush(now);
+        }
+
+        Assert.Equal([("nope", "status"), ("pw", "status")], asked.Select(a => (a.Password, a.Command)));
+        Assert.Equal(["Wrong remote console password.", "Test  ·  mission toy", "  #0 one"], answers);
+    }
+
+    [Fact]
+    public void A_level_reset_after_the_first_rounds_mark_reaches_each_client_once_on_the_reliable_line_even_over_a_lossy_one()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.05, 0.02, 0.2, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession client = new(new NetClient(Line(network.Open(), () => now, 0.05, 0.02, 0.2, 2), Protocol), ToyWorld.Channels);
+        client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+
+        int resets = 0;
+        for (long tick = 0; tick < 6 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            // The first round's start marks the level; the next puts it back, and only that is told.
+            if (tick == 2 * TickRate || tick == 3 * TickRate)
+            {
+                ((OpenIGI.Game.Multiplayer.Modes.IModeHost)server).ResetLevel();
+            }
+
+            world.Step(tick);
+            server.Send(now, tick);
+            client.Receive(now);
+            resets += client.TakeLevelReset() ? 1 : 0;
+            client.Flush(now);
+        }
+
+        Assert.Equal(1, resets);
+    }
+
+    [Fact]
+    public void A_vote_is_called_in_chat_without_the_command_being_said_and_a_player_standing_idle_is_put_off()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy") { IdleKickSeconds = 3 };
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+        ];
+        clients[0].Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+        clients[1].Connect(serverNet.LocalAddress, new JoinRequest("two", "test", string.Empty), now);
+
+        // One keeps moving its look; two stands still from the moment it is in.
+        float[] idle = new float[ToyWorld.Channels];
+        List<string> heardByTwo = [];
+        for (long tick = 0; tick < 8 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            if (tick == 1 * TickRate)
+            {
+                clients[0].Say("/vote restart");
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                float[] look = new float[ToyWorld.Channels];
+                look[0] = (tick % 2) * 0.5f;
+                clients[i].SendCommand(i == 0 ? look : idle, now);
+                clients[i].Flush(now);
+            }
+
+            heardByTwo.AddRange(clients[1].TakeChat().Select(static l => l.Text));
+        }
+
+        Assert.DoesNotContain("/vote restart", heardByTwo);
+        Assert.Contains(heardByTwo, l => l.Contains("calls a vote to start the match over", StringComparison.Ordinal));
+        Assert.Contains("idle", clients[1].EndReason ?? string.Empty, StringComparison.Ordinal);
+        Assert.Null(clients[0].EndReason);
+    }
+
+    [Fact]
+    public void A_player_switches_side_in_chat_while_the_teams_stay_within_one_and_auto_keeps_them_even()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        server.Mode = GameModes.For("tdm", world, TickRate);
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        float[] idle = new float[ToyWorld.Channels];
+        List<string> heard = [];
+        MatchPlayer? mover = null;
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+
+            // Two on one side and one on the other: one of the two goes over, by the chat line the team menu sends.
+            if (tick == 2 * TickRate)
+            {
+                Assert.Equal(3, server.Match.Players.Count);
+                int bigger = server.Match.Players.Values.Count(p => p.Team == TeamRoster.Good) >= 2 ? TeamRoster.Good : TeamRoster.Bad;
+                mover = server.Match.Players.Values.First(p => p.Team == bigger);
+                int index = int.Parse(mover.Name[1..], System.Globalization.CultureInfo.InvariantCulture);
+                clients[index].Say(bigger == TeamRoster.Good ? "/team conspiracy" : "/team igi");
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                heard.AddRange(clients[i].TakeChat().Select(static l => l.Text));
+            }
+        }
+
+        // It is over, and told so; the sides are still one apart.
+        Assert.NotNull(mover);
+        Assert.Equal(1, Math.Abs(server.Match.Players.Values.Count(p => p.Team == TeamRoster.Good) - server.Match.Players.Values.Count(p => p.Team == TeamRoster.Bad)));
+        Assert.Contains(heard, l => l.StartsWith("You are on ", StringComparison.Ordinal));
+        Assert.DoesNotContain(heard, l => l.StartsWith("/team", StringComparison.Ordinal));
+
+        // The one now alone on its side may not go over to the two; auto leaves it where it is needed.
+        MatchPlayer alone = server.Match.Players.Values.Single(p => server.Match.Players.Values.Count(q => q.Team == p.Team) == 1);
+        int other = alone.Team == TeamRoster.Good ? TeamRoster.Bad : TeamRoster.Good;
+        Assert.EndsWith("has too many players.", server.ChooseTeam(alone.Slot, other == TeamRoster.Good ? "igi" : "conspiracy"), StringComparison.Ordinal);
+        Assert.StartsWith("You are on", server.ChooseTeam(alone.Slot, "auto"), StringComparison.Ordinal);
+        Assert.NotEqual(other, alone.Team);
+        Assert.Equal("Team: igi, conspiracy or auto.", server.ChooseTeam(alone.Slot, "blue"));
+    }
+
+    [Fact]
+    public void A_team_line_is_heard_by_the_team_only_and_the_servers_word_by_all_as_nobodys()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        server.Mode = GameModes.For("tdm", world, TickRate);
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        List<ChatLine>[] heard = [[], [], []];
+        float[] idle = new float[ToyWorld.Channels];
+        int speaker = -1;
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            if (tick == 2 * TickRate)
+            {
+                speaker = clients[0].EntityId!.Value;
+                clients[0].Say("hold B", team: true);
+                server.Announce("Round two.");
+            }
+
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                heard[i].AddRange(clients[i].TakeChat());
+            }
+        }
+
+        // Which of the other two shares the speaker's team, by the server's own count.
+        int[] teams = [.. Enumerable.Range(0, clients.Length).Select(i => server.Match.Players.Values.First(p => p.Name == $"p{i}").Team)];
+        int mate = teams[1] == teams[0] ? 1 : 2;
+        int other = 3 - mate;
+        Assert.NotEqual(teams[0], teams[other]);
+
+        ChatLine team = new(speaker, "hold B", ChatKind.Team);
+        ChatLine word = new(-1, "Round two.", ChatKind.Server);
+        Assert.Contains(team, heard[0]);
+        Assert.Contains(team, heard[mate]);
+        Assert.DoesNotContain(heard[other], l => l.Kind == ChatKind.Team);
+        Assert.All(heard, h => Assert.Contains(word, h));
+    }
+
+    [Theory]
+    [InlineData(ChatKind.All)]
+    [InlineData(ChatKind.Team)]
+    [InlineData(ChatKind.Server)]
+    public void A_line_of_chat_keeps_its_kind_on_the_wire(ChatKind kind)
+    {
+        BitWriter writer = new();
+        SessionTalk.WriteChat(writer, 7, "  on me  ", kind);
+        BitReader reader = new(writer.AsSpan().ToArray());
+        Assert.Equal((uint)SessionMessage.Chat, reader.ReadBits(8));
+        Assert.Equal(new ChatLine(7, "on me", kind), SessionTalk.ReadChat(ref reader));
+    }
+
+    [Fact]
+    public void A_hit_is_told_to_the_shooter_and_the_one_hit_and_to_no_one_else()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        List<CombatNote>[] told = [[], [], []];
+        float[] idle = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 4 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            if (tick == 2 * TickRate)
+            {
+                world.Combat.Add(new CombatNote(clients[0].EntityId!.Value, clients[1].EntityId!.Value, 0.3f, Killed: false, Head: true, new(100, 200, 300)));
+            }
+
+            server.Send(now, tick);
+            for (int i = 0; i < clients.Length; i++)
+            {
+                clients[i].Receive(now);
+                clients[i].SendCommand(idle, now);
+                clients[i].Flush(now);
+                told[i].AddRange(clients[i].TakeCombat());
+            }
+        }
+
+        CombatNote hit = Assert.Single(told[0]);
+        Assert.Equal(hit, Assert.Single(told[1]));
+        Assert.Equal((0.3f, true, 200d), (MathF.Round(hit.Damage, 2), hit.Head, hit.From.Y));
+        Assert.Empty(told[2]);
+    }
+
+    [Fact]
+    public void A_decided_match_offers_the_next_maps_each_player_sees_the_count_and_its_pick_and_the_most_picked_one_is_taken()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy");
+        ClientSession[] clients =
+        [
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels),
+            new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 4), Protocol), ToyWorld.Channels),
+        ];
+        for (int i = 0; i < clients.Length; i++)
+        {
+            clients[i].Connect(serverNet.LocalAddress, new JoinRequest($"p{i}", "test", string.Empty), now);
+        }
+
+        float[] idle = new float[ToyWorld.Channels];
+        NextMapVote? seenByFirst = null;
+        NextMapVote? seenByLast = null;
+        MapChoice? taken = null;
+        MapChoice? takenAgain = null;
+        for (long tick = 0; tick < 5 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            if (tick == 1 * TickRate)
+            {
+                server.OfferMaps([new MapChoice(3, "sd", "Trainyard", Again: true), new MapChoice(5, "tdm", "Missile Trainyard")]);
+            }
+
+            if (tick == 3 * TickRate)
+            {
+                seenByFirst = clients[0].MapVote;
+                seenByLast = clients[2].MapVote;
+                taken = server.TakeChosenMap();
+                takenAgain = server.TakeChosenMap();
+            }
+
+            if (tick == 2 * TickRate)
+            {
+                clients[0].Say("/2");
+                clients[1].Say("/2");
+                clients[2].Say("/1");
+            }
+
+            server.Send(now, tick);
+            foreach (ClientSession client in clients)
+            {
+                client.Receive(now);
+                client.SendCommand(idle, now);
+                client.Flush(now);
+            }
+        }
+
+        Assert.NotNull(seenByFirst);
+        Assert.Equal([1, 2], seenByFirst.Counts);
+        Assert.Equal(3, seenByFirst.Voters);
+        Assert.Equal(1, seenByFirst.OwnPick);
+        Assert.Equal(1, seenByFirst.Leading);
+        Assert.Equal("Trainyard", seenByFirst.Choices[0].Name);
+        Assert.True(seenByFirst.Choices[0].Again);
+        Assert.Equal(0, seenByLast!.OwnPick);
+        Assert.Equal(new MapChoice(5, "tdm", "Missile Trainyard"), taken);
+        Assert.Null(takenAgain);
+        Assert.All(clients, client => Assert.Null(client.MapVote));
+    }
+
+    [Fact]
+    public void A_vote_reads_back_as_it_was_written_and_none_reads_as_none()
+    {
+        NextMapVote vote = new([new MapChoice(1, "tdm", "Trainyard", Again: true), new MapChoice(7, "sd", "Military Airbase")], [0, 2], 5, 1);
+        BitWriter writer = new();
+        NextMapVote.Write(writer, vote);
+        NextMapVote.Write(writer, null);
+        BitReader reader = new(writer.AsSpan());
+        NextMapVote? back = NextMapVote.Read(ref reader);
+        NextMapVote? none = NextMapVote.Read(ref reader);
+
+        Assert.NotNull(back);
+        Assert.Equal(vote.Choices, back.Choices);
+        Assert.Equal(vote.Counts, back.Counts);
+        Assert.Equal(5, back.Voters);
+        Assert.Equal(1, back.OwnPick);
+        Assert.Null(none);
+        Assert.False(reader.IsOverflowed);
+    }
+
+    [Fact]
+    public void A_watcher_is_sent_the_world_but_is_no_player_and_is_never_put_off_for_standing_idle()
+    {
+        double now = 0;
+        LoopbackNetwork network = new();
+        ToyWorld world = new();
+        using NetServer serverNet = new(Line(network.Open(26001), () => now, 0.02, 0, 0, 1), new NetServerOptions { ProtocolId = Protocol });
+        ServerSession server = new(serverNet, world, TickRate, "toy") { IdleKickSeconds = 3 };
+        ClientSession player = new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 2), Protocol), ToyWorld.Channels);
+        ClientSession watcher = new(new NetClient(Line(network.Open(), () => now, 0.02, 0, 0, 3), Protocol), ToyWorld.Channels);
+        player.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
+        watcher.Connect(serverNet.LocalAddress, new JoinRequest("demo", "test", string.Empty, Watch: true), now);
+
+        float[] still = new float[ToyWorld.Channels];
+        for (long tick = 0; tick < 8 * TickRate; tick++)
+        {
+            now = tick / (double)TickRate;
+            server.Receive(now, tick);
+            world.Step(tick);
+            server.Send(now, tick);
+            float[] look = new float[ToyWorld.Channels];
+            look[0] = (tick % 2) * 0.5f;
+            foreach ((ClientSession client, float[] frame) in new[] { (player, look), (watcher, still) })
+            {
+                client.Receive(now);
+                client.SendCommand(frame, now);
+                client.Flush(now);
+            }
+        }
+
+        // Welcomed as nobody, sent the player it does not have, and no player of the match or the server's.
+        Assert.Equal(ServerSession.WatcherEntity, watcher.EntityId);
+        Assert.NotNull(player.EntityId);
+        Assert.True(watcher.Latest is { } seen && seen.TryGet(player.EntityId!.Value, out _), "the watcher was never sent the player");
+        Assert.Single(server.Clients);
+        Assert.Single(server.Match.Players.Keys, k => k != ServerSession.HostSlot);
+        Assert.Null(watcher.EndReason);
+        Assert.Null(player.EndReason);
+    }
+
     private static SimulatedLinkTransport Line(INetTransport inner, Func<double> clock, double latency, double jitter, double loss, int seed)
     {
         SimulatedLinkTransport line = new(inner, clock, seed);
@@ -284,12 +758,39 @@ public sealed class SessionLoopbackTests
     }
 
     /// <summary>A world where each player moves 100 units along X a tick its forward channel is held.</summary>
-    private sealed class ToyWorld : IReplicatedWorld
+    internal sealed class ToyWorld : IReplicatedWorld
     {
         public const int Channels = 8;
 
         private readonly Dictionary<int, Player> _bySlot = [];
         private int _nextId = 1;
+
+        // Whether a player whose line dropped is kept for its return; off, it is gone at once.
+        public bool KeepsTheAway { get; set; }
+
+        public bool ParkPlayer(int slot, int parked)
+        {
+            if (!KeepsTheAway || !_bySlot.Remove(slot, out Player? player))
+            {
+                return false;
+            }
+
+            _bySlot[parked] = player;
+            return true;
+        }
+
+        public int? UnparkPlayer(int parked, int slot)
+        {
+            if (!_bySlot.Remove(parked, out Player? player))
+            {
+                return null;
+            }
+
+            _bySlot[slot] = player;
+            return player.Id;
+        }
+
+        public void ForgetPlayer(int parked) => _bySlot.Remove(parked);
 
         public int ChannelCount => Channels;
 
@@ -330,6 +831,16 @@ public sealed class SessionLoopbackTests
         public int TeamOf(int slot) => _bySlot.ContainsKey(slot) ? slot % 2 : -1;
 
         public IReadOnlyList<WorldDeath> TakeDeaths() => [];
+
+        // Hits a test makes happen, taken by the server on its next tick.
+        public List<CombatNote> Combat { get; } = [];
+
+        public IReadOnlyList<CombatNote> TakeCombat()
+        {
+            CombatNote[] taken = [.. Combat];
+            Combat.Clear();
+            return taken;
+        }
 
         public IReadOnlyList<IRoundObjective> RoundObjectives => [];
 

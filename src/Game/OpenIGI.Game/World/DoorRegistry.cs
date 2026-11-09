@@ -436,7 +436,7 @@ public sealed record PlacedDoor(
 /// <see cref="Nearest"/> is the walker's broadcast query (<c>sub_446470</c> keeps the nearest answer
 /// and has <b>no radius cap</b>).
 /// </remarks>
-public sealed class DoorRegistry
+public sealed class DoorRegistry : ILevelReset
 {
     private readonly List<PlacedDoor> _doors = [];
 
@@ -483,6 +483,7 @@ public sealed class DoorRegistry
                 : null;
             door.Initialise(baseOrientation, parent);
             registry._doors.Add(door);
+            PlacementClaims.Changed();
             registry._doorsByTask[declared] = door;
         }
 
@@ -595,6 +596,26 @@ public sealed class DoorRegistry
                 Tick(door);
                 ticked?.Invoke(door);
             });
+        }
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (PlacedDoor door in _doors)
+        {
+            door.State.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Each door as the match began, re-placed by its next tick; a sound it was making stops.</remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (PlacedDoor door in _doors)
+        {
+            door.State.ResetToLevelStart();
+            door.IsSounding = false;
         }
     }
 
@@ -714,6 +735,11 @@ public sealed class DoorRegistry
     /// <summary>Gets the live draw transform for a door placement.</summary>
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation)
         => TryGetDrawTransform(task, 1f, smooth: false, out position, out orientation);
+
+    /// <summary>Whether a task is a door, whose placement this registry draws (see <see cref="PlacementClaims"/>).</summary>
+    /// <param name="task">The placement's owner.</param>
+    /// <returns><see langword="true"/> for a door's task.</returns>
+    public bool Claims(GameTask task) => _doorsByTask.ContainsKey(task);
 
     /// <summary>Gets a door transform presented between its last two simulation states.</summary>
     public bool TryGetDrawTransform(

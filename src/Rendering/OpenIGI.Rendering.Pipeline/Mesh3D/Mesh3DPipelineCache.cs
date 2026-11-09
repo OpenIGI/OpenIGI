@@ -39,6 +39,8 @@ public sealed class Mesh3DPipelineCache : IDisposable
     private readonly ShaderReflection _reflection;
     private readonly string _vertexEntryPoint;
     private readonly string _fragmentEntryPoint;
+    private readonly string _label;
+    private readonly IReadOnlyList<RhiVertexBufferLayout> _vertexLayouts;
     // One set of variants per sun they were built for (and per fog, for a module that bakes it in), the
     // oldest dropped past a handful.
     private const int MaxEnvironments = 4;
@@ -69,13 +71,19 @@ public sealed class Mesh3DPipelineCache : IDisposable
     /// Where discarded variants wait for the frames that bound them, or null to free them at once -- which
     /// only a caller with no frame in flight can afford.
     /// </param>
+    /// <param name="arenaLayout">
+    /// For the terrain arena's form of the shader (World/TerrainArena.slang): the layout of the group its vertex
+    /// stage reads the frame's chunk table through, bound third, and with it a third vertex stream saying which
+    /// chunk each vertex is. Null is the ordinary forward shader.
+    /// </param>
     public Mesh3DPipelineCache(
         IRhiDevice device,
         IRhiBindGroupLayout materialLayout,
         IRhiBindGroupLayout cubeLayout,
         RhiTextureFormat targetFormat,
         RhiTextureFormat depthFormat,
-        RetiredResources? retired = null)
+        RetiredResources? retired = null,
+        IRhiBindGroupLayout? arenaLayout = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(materialLayout);
@@ -88,7 +96,10 @@ public sealed class Mesh3DPipelineCache : IDisposable
         _sets[_environment] = _pipelines;
         _order.Add(_environment);
 
-        _reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
+        ShaderModuleId module = arenaLayout is null ? ShaderModuleId.Mesh3D : ShaderModuleId.TerrainArena;
+        _label = module.ToString();
+        _vertexLayouts = arenaLayout is null ? VertexLayouts() : ArenaVertexLayouts();
+        _reflection = ShaderCatalog.GetReflection(module);
 
         // The fog became push data; a module that still declared it as a constant would bake it in.
         _bakesFog = ShaderConstants.Declared(
@@ -97,16 +108,19 @@ public sealed class Mesh3DPipelineCache : IDisposable
         _vertexEntryPoint = _reflection.EntryPointFor(ShaderStage.Vertex).Name;
         _fragmentEntryPoint = _reflection.EntryPointFor(ShaderStage.Fragment).Name;
 
-        _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.Mesh3D, Label: "Mesh3D"));
+        _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(module, Label: _label));
 
         MaterialLayout = materialLayout;
         CubeLayout = cubeLayout;
 
+        // Per instance: the module reads its block from an array by instance index where there are no push
+        // constants (World/Mesh3D.slang), so that backend addresses each draw's block by its first instance.
         Layout = device.CreatePipelineLayout(new RhiPipelineLayoutDescriptor(
-            [materialLayout, cubeLayout],
+            arenaLayout is null ? [materialLayout, cubeLayout] : [materialLayout, cubeLayout, arenaLayout],
             PushDataBytes,
             RhiShaderStages.Vertex | RhiShaderStages.Fragment,
-            "Mesh3D"));
+            _label,
+            PushDataPerInstance: true));
     }
 
     /// <summary>Gets the layout binding the diffuse, lightmap and detail textures.</summary>
@@ -212,6 +226,17 @@ public sealed class Mesh3DPipelineCache : IDisposable
                 new RhiVertexElement(5, RhiVertexFormat.Float32x3, 0),
                 new RhiVertexElement(6, RhiVertexFormat.Float32x3, 12),
             ]),
+    ];
+
+    /// <summary>The terrain arena's streams: the forward shader's two, then which chunk each vertex is.</summary>
+    /// <returns>The arena's vertices at slots zero and one -- a chunk has no previous pose -- and its chunk numbers at two.</returns>
+    public static IReadOnlyList<RhiVertexBufferLayout> ArenaVertexLayouts() =>
+    [
+        .. VertexLayouts(),
+        new RhiVertexBufferLayout(
+            sizeof(uint),
+            RhiVertexStepMode.Vertex,
+            [new RhiVertexElement(7, RhiVertexFormat.Uint32, 0)]),
     ];
 
     /// <summary>The layout binding a draw's material: three textures, each with its own sampler.</summary>
@@ -376,12 +401,12 @@ public sealed class Mesh3DPipelineCache : IDisposable
             Layout,
             new RhiShaderStage(_module, _vertexEntryPoint, constants),
             new RhiShaderStage(_module, _fragmentEntryPoint, constants),
-            VertexLayouts(),
+            _vertexLayouts,
             [new RhiColorTargetState(_targetFormat, BlendFor(key.Blend))],
             DepthStateFor(key.Depth, _depthFormat),
             new RhiPrimitiveState(RhiPrimitiveTopology.TriangleList, CullFor(key.Cull)),
             SampleCount: 1,
-            $"Mesh3D-{key.Depth}-{key.Cull}-{key.Blend}-{key.AlphaReference}{(key.Reflective ? "-reflective" : string.Empty)}"));
+            $"{_label}-{key.Depth}-{key.Cull}-{key.Blend}-{key.AlphaReference}{(key.Reflective ? "-reflective" : string.Empty)}"));
     }
 
     // Makes an environment the one variants are drawn with, keeping the sets already built.

@@ -118,7 +118,8 @@ r_mission_night_exposure	0	-
 r_mission_night_glow	1	-
 r_mission_night_sky	1	-
 r_mission_warmup	45	archive
-r_model_lod	0	-
+r_model_lod	1	-
+r_model_lod_reach	3	archive
 r_moon_brightness	1	archive
 r_moonlight	0.1	archive
 r_motion_blur	0	archive
@@ -185,6 +186,7 @@ r_sun_scale	1	archive
 r_sun_shafts	1	archive
 r_taa	1	archive
 r_taa_sharpen	0.25	archive
+r_terrain_arena	1	-
 r_terrain_cache	4096	archive
 r_terrain_detail	0	archive
 r_terrain_occlusion	0	archive
@@ -207,6 +209,6 @@ r_wetness	1	archive
 r_white_point	1.1	archive
 r_widescreen_fov	1	archive
 r_window_mode	borderless	archive
-r_world_cull	0	archive
+r_world_cull	1	-
 r_world_objective	1	archive
 r_world_occlusion	1	archive

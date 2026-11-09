@@ -23,14 +23,39 @@ public enum CoopPhase
 /// <param name="Error">Why it failed, when it did.</param>
 public readonly record struct CoopStatus(CoopPhase Phase, string? Code = null, bool Hosting = false, string? Error = null);
 
-/// <summary>A public room as the menu lists it.</summary>
-/// <param name="Code">Its code.</param>
+/// <summary>A line of the menu's server list: a public room, a dedicated server, one on this network, a favourite or a recent one.</summary>
+/// <param name="Code">What <see cref="ICoopRooms.Join"/> takes for it: a room's code, or a server's key.</param>
 /// <param name="Name">Its name.</param>
 /// <param name="MissionId">The mission its host plays.</param>
 /// <param name="Players">How many play.</param>
 /// <param name="MaxPlayers">How many may.</param>
 /// <param name="Passworded">Whether joining takes a password.</param>
-public sealed record CoopRoomInfo(string Code, string Name, int MissionId, int Players, int MaxPlayers, bool Passworded);
+public sealed record CoopRoomInfo(string Code, string Name, int MissionId, int Players, int MaxPlayers, bool Passworded)
+{
+    /// <summary>Gets the mode it plays, as <c>coop</c> or <c>sd</c>.</summary>
+    public string Mode { get; init; } = string.Empty;
+
+    /// <summary>Gets the round trip to it in milliseconds, or <see langword="null"/> before it has answered (or for a room).</summary>
+    public int? PingMs { get; init; }
+
+    /// <summary>Gets the region it says it plays from, or empty.</summary>
+    public string Region { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether it is a dedicated server rather than a player's room.</summary>
+    public bool Dedicated { get; init; }
+
+    /// <summary>Gets a value indicating whether it answered from this network.</summary>
+    public bool Lan { get; init; }
+
+    /// <summary>Gets a value indicating whether it is one of the player's favourites.</summary>
+    public bool Favourite { get; init; }
+
+    /// <summary>Gets a value indicating whether the player has played on it of late.</summary>
+    public bool Recent { get; init; }
+
+    /// <summary>Gets a value indicating whether this build can join it.</summary>
+    public bool Compatible { get; init; } = true;
+}
 
 /// <summary>
 /// Co-op through rooms: hosting one for friends anywhere to join by its code, or joining one, on any build. The host
@@ -52,7 +77,8 @@ public interface ICoopRooms
     /// <param name="missionId">The mission.</param>
     /// <param name="difficulty">The difficulty.</param>
     /// <param name="listed">Whether the room is listed publicly, rather than reached by its code alone.</param>
-    void Host(int missionId, int difficulty, bool listed);
+    /// <param name="mode">The mode it plays, as <c>coop</c> or <c>tdm</c>; a versus mode plays the mission's map as an arena.</param>
+    void Host(int missionId, int difficulty, bool listed, string mode = "coop");
 
     /// <summary>Joins a room by its code: loads the mission its host plays, then joins it.</summary>
     /// <param name="code">The code.</param>
@@ -77,6 +103,53 @@ public interface ICoopRooms
     /// <summary>Fetches the public rooms afresh into <see cref="Listing"/>, which keeps what it had until they come.</summary>
     /// <remarks>The same rooms again leave <see cref="Listing"/> the same list, so a page showing it need not be rebuilt.</remarks>
     void RefreshListing();
+
+    /// <summary>Makes a line a favourite, or takes it off the favourites.</summary>
+    /// <param name="code">The line's <see cref="CoopRoomInfo.Code"/>.</param>
+    /// <param name="favourite">Whether it is one.</param>
+    void SetFavourite(string code, bool favourite)
+    {
+    }
+
+    /// <summary>Whether a mission's map can be played as an arena -- laid out for multiplayer -- so the versus modes offer it.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <returns>Whether it can; every mission can, where nothing says otherwise.</returns>
+    bool HasArena(int mission) => true;
+
+    /// <summary>Gets a value indicating whether this build can start a dedicated server of its own (it ships one beside it).</summary>
+    bool CanHostServer => false;
+
+    /// <summary>Gets what the dedicated server started here is doing, or <see langword="null"/> while none runs.</summary>
+    string? ServerStatus => null;
+
+    /// <summary>Starts a dedicated server on this machine for the mission and mode, and joins it once it is up.</summary>
+    /// <param name="missionId">The mission it plays.</param>
+    /// <param name="mode">The mode it plays, as <c>tdm</c>.</param>
+    /// <param name="listed">Whether it lists itself in the server browser.</param>
+    void HostServer(int missionId, string mode, bool listed)
+    {
+    }
+
+    /// <summary>Stops the dedicated server started here.</summary>
+    void StopServer()
+    {
+    }
+
+    /// <summary>Gets the name of the server or room last played on, or <see langword="null"/> for none.</summary>
+    string? LastPlayed => null;
+
+    /// <summary>Gets when the server or room last played on was joined, or <see langword="null"/> for none.</summary>
+    DateTimeOffset? LastPlayedAt => null;
+
+    /// <summary>Joins the server or room last played on again.</summary>
+    void Reconnect()
+    {
+    }
+
+    /// <summary>Joins the best open game the list knows of -- near, with people in it, room for one more -- or says there is none.</summary>
+    void QuickPlay()
+    {
+    }
 
     /// <summary>Shows a look standing in the level behind the menu, as a player chooses it; <see langword="null"/> takes it away.</summary>
     /// <param name="skinId">The look's id.</param>

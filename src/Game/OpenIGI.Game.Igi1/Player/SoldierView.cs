@@ -382,6 +382,11 @@ public sealed class SoldierView
     public float? LadderBoundaryTime =>
         _bones.SourceOf(0) is { } clip && clip.TryGetCrossedEvent(8, out float time) ? time : null;
 
+    /// <summary>Gets whether the clip on bone 0 crossed an authored event on the last tick.</summary>
+    /// <param name="eventId">The event, as an animation trigger names it.</param>
+    /// <returns><see langword="true"/> when the last advance crossed it.</returns>
+    public bool CrossedEvent(int eventId) => _bones.SourceOf(0)?.CrossedEvent(eventId) ?? false;
+
     /// <summary>Gets how far through the clip on bone 0 the rig is, 0 at the start of the rung and 1 at its end.</summary>
     /// <remarks>Counts up whichever way the clip plays, so a backward (down) rung still runs 0 → 1.</remarks>
     public float ClipProgress

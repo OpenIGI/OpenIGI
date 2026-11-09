@@ -1,0 +1,50 @@
+{
+  "models": {
+    "113_01_1": [
+      "sacthel2",
+      "ref1"
+    ],
+    "113_02_1": [
+      "sacthel2"
+    ],
+    "113_04_1": [
+      "sacthel2",
+      "ref1"
+    ],
+    "113_04_2": [
+      "sacthel2"
+    ],
+    "113_04_3": [
+      "sacthel2"
+    ],
+    "113_04_4": [
+      "sacthel2"
+    ],
+    "113_04_5": [
+      "sacthel2"
+    ]
+  },
+  "anims": [
+    "tba_place_c4",
+    "defusing_bomb",
+    "fire_c4bomb",
+    "tense_c4bomb",
+    "weaponraise_c4bomb",
+    "fire_c4_1st",
+    "walk_c4_1st",
+    "run_c4_1st",
+    "weaponraise_c4_1st"
+  ],
+  "sounds": [
+    "tba_placec4",
+    "tba_placec4_2",
+    "tba_c4seconds",
+    "tba_c4seconds2",
+    "tba_c4defuse",
+    "explo_proxy",
+    "explo_distant"
+  ],
+  "sprites": [
+    "c4"
+  ]
+}

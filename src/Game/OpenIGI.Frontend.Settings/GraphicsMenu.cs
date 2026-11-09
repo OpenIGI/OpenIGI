@@ -8,6 +8,7 @@
 /// What a choice variable's values are called on screen, keyed by the stored value, or null to show them
 /// as stored.
 /// </param>
+/// <param name="Step">A numeric row's slider step, or <see langword="null"/> for a twentieth of the variable's range.</param>
 /// <remarks>
 /// The caption and the help are written here rather than taken from the variable, and that is the whole
 /// point of the type. A variable's own <c>Help</c> is written for whoever is reading the renderer — it
@@ -19,7 +20,8 @@ public sealed record GraphicsSetting(
     string Variable,
     string Caption,
     string Help,
-    IReadOnlyDictionary<string, string>? Choices = null);
+    IReadOnlyDictionary<string, string>? Choices = null,
+    float? Step = null);
 
 /// <summary>A titled run of rows on the graphics page.</summary>
 /// <param name="Title">The heading shown above the rows.</param>
@@ -377,6 +379,15 @@ public static class GraphicsMenu
                         ["1"] = "Smooth",
                         ["2"] = "Smoother",
                     }),
+
+                // A row of its own: a distance a player tunes by eye for their screen, not a preset's quality step.
+                new GraphicsSetting(
+                    "r_model_lod_reach",
+                    "Model Detail Distance",
+                    "How far out objects keep their full detail before switching to simpler versions. 1 is the "
+                        + "original's own distances, which swap small props only a few metres away; each step "
+                        + "keeps detail that many times as far, for a little more work per frame.",
+                    Step: 0.5f),
             ]),
 
         new GraphicsSection(
@@ -408,8 +419,9 @@ public static class GraphicsMenu
                 new GraphicsSetting(
                     "r_frame_generation",
                     "Frame Generation",
-                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs an "
-                        + "RTX 40-series or newer, and turns NVIDIA Reflex on to keep the controls responsive."),
+                    "Shows generated frames between the rendered ones, multiplying the frame rate. Needs the "
+                        + "Direct3D 12 renderer and an RTX 40-series or newer, and turns NVIDIA Reflex on to keep "
+                        + "the controls responsive."),
                 new GraphicsSetting(
                     "r_low_latency",
                     "NVIDIA Reflex",
@@ -729,7 +741,8 @@ public static class GraphicsMenu
         // slider that did nothing until the next launch would be worse than no slider.
         "r_reflection_texture",
 
-        // The original's levels of detail, for comparing with it: every preset draws models whole.
+        // The original's levels of detail: on under every preset, a comparison switch. How far out they are moved is the
+        // Model Detail Distance row.
         "r_model_lod",
 
         // What enters the traced world, which is a correctness control rather than a quality dial: the

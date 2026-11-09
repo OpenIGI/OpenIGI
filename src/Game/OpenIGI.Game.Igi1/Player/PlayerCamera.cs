@@ -228,6 +228,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerShotResolver.Humans"/>
     public HumanShot? Humans { get => _shots.Humans; set => _shots.Humans = value; }
 
+    /// <inheritdoc cref="PlayerBody.OtherHumans"/>
+    public Func<IEnumerable<Vector3d>>? OtherHumans { get => _body.OtherHumans; set => _body.OtherHumans = value; }
+
     /// <summary>Gets or sets a non-mutating human intersection used by launcher missiles.</summary>
     public HumanRayCast? HumanProbes { get => _shots.HumanProbes; set => _shots.HumanProbes = value; }
 
@@ -426,6 +429,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
 
     /// <summary>Gets whether the cursor should be held while the view is being turned.</summary>
     public bool IsCapturingMouse => _firstPerson.IsCapturingMouse;
+
+    /// <inheritdoc/>
+    public bool HeldStill { get; set; }
 
     /// <inheritdoc cref="PlayerFirstPersonView.LookSettings"/>
     public MouseLookSettings LookSettings
@@ -699,6 +705,9 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerInteractionDriver.TakeWireDragSound"/>
     public string? TakeWireDragSound() => _interaction.TakeWireDragSound();
 
+    /// <inheritdoc cref="PlayerInteractionDriver.TakeCompletedActionState"/>
+    public int TakeCompletedActionState() => _interaction.TakeCompletedActionState();
+
     /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
     public bool InteractionAnimationLoops => _interaction.AnimationLoops;
 
@@ -925,19 +934,6 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <inheritdoc cref="PlayerLadderController.TickSlide"/>
     public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain, bool entering = false) =>
         _ladder.TickSlide(rootDelta, terrain, entering);
-
-    private void TickWeapons()
-    {
-        if (_weapons is null)
-        {
-            return;
-        }
-
-        if (_weaponActions.Tick(_weapons, _input, _firstPerson.Rig, _body, LocomotionState))
-        {
-            PoseChanged = true;
-        }
-    }
 
     // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view: the optics
     // first, then whatever the weapon in hand fires.

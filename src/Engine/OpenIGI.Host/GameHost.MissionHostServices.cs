@@ -113,7 +113,7 @@ public sealed partial class GameHost
             }
         }
 
-        public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(centre);
+        public void FollowCorpse(Vector3d centre) => host.Viewpoint?.FollowDeathView(host.Spectated()?.Position ?? centre);
 
         public void FollowTeammate(Vector3d eye, float yaw, float pitch) => host.Viewpoint?.FollowTeammateView(eye, yaw, pitch);
 
@@ -162,6 +162,10 @@ public sealed partial class GameHost
 
 
         public void WeaponDropped(LoadedMission loaded, GunPickup pickup) => host._gunPickupRenderer?.Add(loaded, pickup);
+
+        public void WeaponRemoved(GunPickup pickup) => host._gunPickupRenderer?.Remove(pickup);
+
+        public void LevelWasReset() => host._effects.Clear();
 
         public void TerrainRowRead(int? row) => host._mission.TerrainMaterialRow = row;
 

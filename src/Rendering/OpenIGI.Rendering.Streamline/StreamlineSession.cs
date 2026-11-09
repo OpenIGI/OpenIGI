@@ -605,7 +605,11 @@ internal sealed unsafe class StreamlineSession : IRhiStreamline, IDisposable
         uint id = Feature(feature);
         if (!_runtime.Features.Contains(id))
         {
-            return new RhiStreamlineSupport(false, "not requested");
+            return new RhiStreamlineSupport(
+                false,
+                feature == RhiStreamlineFeature.FrameGeneration && _runtime.RenderApi != SlRenderApi.D3D12
+                    ? "needs the Direct3D 12 renderer"
+                    : "not requested");
         }
 
         SlResult supported = _runtime.IsFeatureSupported(id, _adapter.Adapter);

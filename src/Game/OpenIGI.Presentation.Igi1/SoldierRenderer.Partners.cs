@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi1.Multiplayer;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation.Igi1;
@@ -14,7 +15,7 @@ public sealed partial class SoldierRenderer
     private readonly Dictionary<object, string> _partnerNames = [];
 
     // The fallen partners: what lies where, and how far each one's revival has gone.
-    private readonly Dictionary<object, (Vector3d Feet, float Progress)> _fallen = [];
+    private readonly Dictionary<object, (Vector3d Feet, float? Progress)> _fallen = [];
 
     // A body lying a little above its feet: where a revive mark stands over it, in metres.
     private const double ReviveMarkLift = 0.7;
@@ -53,8 +54,14 @@ public sealed partial class SoldierRenderer
             return marks;
         }
 
-        foreach ((object key, (Vector3d feet, float progress)) in _fallen)
+        foreach ((object key, (Vector3d feet, float? revive)) in _fallen)
         {
+            // Only one a teammate can bring back is marked; a fallen enemy just lies there.
+            if (revive is not { } progress)
+            {
+                continue;
+            }
+
             Vector3d metres = feet / OpenIGI.Game.Ai.AiViewCone.UnitsPerMetre;
             marks.Add(new ReviveMarker(
                 new Vector3d(metres.X, metres.Y, metres.Z + ReviveMarkLift), _partnerNames.GetValueOrDefault(key) ?? "Teammate", progress));
@@ -64,6 +71,16 @@ public sealed partial class SoldierRenderer
     }
 
     private readonly Dictionary<object, (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired)> _partnerGuns = [];
+
+    // The partners carrying the bomb modes' bomb, and what draws it on their backs (made the first time one does).
+    private readonly HashSet<object> _partnerBombs = [];
+
+    // The partners holding the bomb in hand, whose charge is drawn there instead.
+    private readonly HashSet<object> _partnerHolding = [];
+    private BombRenderer? _carriedBombs;
+
+    // The rig's chest, which the charge rides on.
+    private const int BombBone = 3;
     private (LoadedMission Mission, string Model, BoneAnimationSet Animations)? _partnerLoad;
 
     // The model each partner's body was built from, so a change of look rebuilds it.
@@ -93,6 +110,7 @@ public sealed partial class SoldierRenderer
             if (_partners.TryGetValue(partner.Key, out PlayerBodyRenderer? body) && _partnerModels.GetValueOrDefault(partner.Key) != look)
             {
                 body.Release();
+                _sim.UsePartnerBody(partner.Key, null);
                 _partners.Remove(partner.Key);
                 _fallen.Remove(partner.Key);
                 body = null;
@@ -100,19 +118,27 @@ public sealed partial class SoldierRenderer
 
             if (body is null)
             {
-                body = new PlayerBodyRenderer(this, _device, _sim, _logger, new SoldierPlayerBody());
+                SoldierPlayerBody state = new();
+                body = new PlayerBodyRenderer(this, _device, _sim, _logger, state);
                 if (!body.Load(lookMission, look, animations, partner.Feet, partner.Facing))
                 {
                     continue;
                 }
 
+                // Its rounds are met on the body it is drawn with, in its own stance.
+                _sim.UsePartnerBody(partner.Key, state);
                 _partners[partner.Key] = body;
                 _partnerModels[partner.Key] = look;
             }
 
+            // A name shown over its head only while the session shows it: a team mate's, never an enemy's.
             if (partner.Name is { Length: > 0 } fallenName)
             {
                 _partnerNames[partner.Key] = fallenName;
+            }
+            else
+            {
+                _partnerNames.Remove(partner.Key);
             }
 
             // A fallen partner falls once and lies there; stood up again, it walks on from where it lay.
@@ -123,7 +149,7 @@ public sealed partial class SoldierRenderer
                     body.Kill(OpenIGI.Game.Igi1.Player.HumanPlayerDeath.Choose(0, OpenIGI.Game.Player.HumanHitZoneTable.Player, 0), partner.Feet, partner.Facing);
                 }
 
-                _fallen[partner.Key] = (partner.Feet, partner.Revive ?? 0f);
+                _fallen[partner.Key] = (partner.Feet, partner.Revive);
                 body.Tick();
                 continue;
             }
@@ -153,6 +179,24 @@ public sealed partial class SoldierRenderer
                 _partnerNames[partner.Key] = name;
             }
 
+            if (partner.CarriesBomb)
+            {
+                _partnerBombs.Add(partner.Key);
+            }
+            else
+            {
+                _partnerBombs.Remove(partner.Key);
+            }
+
+            if (partner.Weapon?.WeaponId == Igi1BombWeapon.Id)
+            {
+                _partnerHolding.Add(partner.Key);
+            }
+            else
+            {
+                _partnerHolding.Remove(partner.Key);
+            }
+
             int shots = _partnerGuns.TryGetValue(partner.Key, out (SoldierHeldWeapon? Gun, int ShotSequence, bool Fired) before)
                 ? before.ShotSequence
                 : 0;
@@ -165,8 +209,11 @@ public sealed partial class SoldierRenderer
         foreach (object gone in _partners.Keys.Where(key => !present.Contains(key)).ToArray())
         {
             _partners[gone].Release();
+            _sim.UsePartnerBody(gone, null);
             _partners.Remove(gone);
             _partnerGuns.Remove(gone);
+            _partnerBombs.Remove(gone);
+            _partnerHolding.Remove(gone);
             _partnerNames.Remove(gone);
             _fallen.Remove(gone);
             _partnerModels.Remove(gone);
@@ -266,6 +313,29 @@ public sealed partial class SoldierRenderer
             {
                 _drawer.DrawHeld(held, hand, camera, projection, gun.ShotSequence);
             }
+
+            // The bomb: in the carrier's hands while it holds it, where I.G.I. 2's carry clip hangs it; else on its back.
+            if (!_partnerBombs.Contains(key) || _fallen.ContainsKey(key))
+            {
+                continue;
+            }
+
+            _carriedBombs ??= new BombRenderer(_device, _logger);
+            _carriedBombs.Sun = Sun?.Invoke();
+            if (_partnerHolding.Contains(key))
+            {
+                if (body.TryGetPosedFrame(out BonePose pose, out Vector3d where, out Matrix3f turned))
+                {
+                    foreach (Igi2AttachedPart part in Igi1BombAnimations.InHand(pose, Igi1BombAnimations.Hold, 0f))
+                    {
+                        _carriedBombs.DrawModel(part.Model, PlayerBodyRenderer.InFrame(where, turned, part.Position, part.Orientation), camera, projection);
+                    }
+                }
+            }
+            else if (body.BoneAttachmentOf(BombBone) is { } chest)
+            {
+                _carriedBombs.DrawCarried(chest, camera, projection);
+            }
         }
     }
 
@@ -291,13 +361,18 @@ public sealed partial class SoldierRenderer
 
     private void ReleasePartners()
     {
-        foreach (PlayerBodyRenderer body in _partners.Values)
+        foreach ((object key, PlayerBodyRenderer body) in _partners)
         {
             body.Release();
+            _sim.UsePartnerBody(key, null);
         }
 
         _partners.Clear();
         _partnerGuns.Clear();
+        _partnerBombs.Clear();
+        _partnerHolding.Clear();
+        _carriedBombs?.Dispose();
+        _carriedBombs = null;
         _partnerNames.Clear();
         _partnerLoad = null;
     }

@@ -42,8 +42,7 @@ internal static class GameStarter
     /// <param name="title">The title.</param>
     /// <param name="folder">The folder.</param>
     /// <returns>Whether the title's signature file is there.</returns>
-    public static bool IsInstallation(GameTitle title, string? folder) =>
-        !string.IsNullOrWhiteSpace(folder) && File.Exists(Path.Combine(folder.Trim().Trim('"'), title.SignatureFile));
+    public static bool IsInstallation(GameTitle title, string? folder) => GameInstalls.IsInstallation(title, folder);
 
     /// <summary>Finds a title's installation: the folder the player chose, else the usual places.</summary>
     /// <param name="title">The title.</param>
@@ -178,28 +177,6 @@ internal static class GameStarter
         return parts;
     }
 
-    // Where retail installs of the two games land by default, and the folders people commonly use.
-    internal static IEnumerable<string> Candidates(GameTitle title)
-    {
-        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string[] names = title == GameTitle.Igi2
-            ? [Path.Combine("IGI 2 Covert Strike", "pc"), Path.Combine("I.G.I 2 Covert Strike", "pc"), Path.Combine("IGI2", "pc")]
-            : ["Project IGI", Path.Combine("Project IGI", "pc"), Path.Combine("I'm Going In", "pc"), "IGI"];
-        string[] roots = OperatingSystem.IsWindows()
-            ? [
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                @"C:\Games",
-                Path.Combine(home, "Games"),
-            ]
-            : [Path.Combine(home, "Games"), home];
-
-        foreach (string root in roots.Where(static r => !string.IsNullOrEmpty(r)))
-        {
-            foreach (string name in names)
-            {
-                yield return Path.Combine(root, name);
-            }
-        }
-    }
+    // The usual install folders, now shared with the dedicated server.
+    internal static IEnumerable<string> Candidates(GameTitle title) => GameInstalls.Candidates(title);
 }

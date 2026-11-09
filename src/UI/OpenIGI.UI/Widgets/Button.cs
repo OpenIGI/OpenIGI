@@ -21,6 +21,9 @@ public enum ButtonAccent
     /// <summary>A secondary action: a hairline outline that turns amber under the pointer.</summary>
     Ghost,
 
+    /// <summary>A secondary action that should still draw the eye: an amber outline and caption, washed amber under the pointer.</summary>
+    Outline,
+
     /// <summary>An action that destroys something: a red outline and caption, washed red under the pointer.</summary>
     Destructive,
 
@@ -93,6 +96,15 @@ public class Button : Control
     /// <summary>Gets the font the caption is drawn with.</summary>
     protected UiFont Face => Font ?? Theme.Heading;
 
+    /// <summary>
+    /// Gets or sets a key's name drawn in a small cap after the caption, in the caption's colour -- the key that does what the
+    /// button does. Empty for none.
+    /// </summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a second, small monospaced line under the caption. Empty for none.</summary>
+    public string SubCaption { get; set; } = string.Empty;
+
     /// <summary>Gets the caption's size in design units.</summary>
     protected float CaptionSize => TextSize > 0f ? TextSize : Theme.LabelTextSize;
 
@@ -121,9 +133,17 @@ public class Button : Control
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         float sizePx = context.Px(CaptionSize);
-        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking);
+        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking) + KeyWidth(context);
+        float height = Face.LineHeight(sizePx);
+        if (SubCaption.Length > 0)
+        {
+            float sub = context.Px(SubtitleSize);
+            width = MathF.Max(width, UiPainter.MeasureLabel(Theme.Mono, SubCaption, sub, 0.04f));
+            height = (sizePx * 0.75f) + context.Px(6f) + Theme.Mono.LineHeight(sub);
+        }
+
         Thickness padding = context.Px(Padding);
-        return new UiVec2(width + padding.Horizontal, Face.LineHeight(sizePx) + padding.Vertical);
+        return new UiVec2(width + padding.Horizontal, height + padding.Vertical);
     }
 
     /// <inheritdoc/>
@@ -151,6 +171,18 @@ public class Button : Control
                 Bgra32 border = !IsEnabled ? UiPalette.White(0.12f) : Interpolate.Lerp(UiPalette.GhostBorder, Theme.Accent, hot);
                 painter.StrokeCutRect(bounds, cut, UiCorners.BottomRight, context.Px(1f), UiPalette.Fade(border, appear));
                 caption = !IsEnabled ? Theme.TextDim : Interpolate.Lerp(Theme.Text, Theme.Accent, hot);
+                break;
+            }
+
+            case ButtonAccent.Outline:
+            {
+                if (IsEnabled && hot > 0.001f)
+                {
+                    painter.FillCutRect(bounds, cut, UiCorners.BottomRight, UiPalette.Fade(Theme.Accent, 0.1f * hot * appear));
+                }
+
+                painter.StrokeCutRect(bounds, cut, UiCorners.BottomRight, context.Px(1f), UiPalette.Fade(IsEnabled ? Theme.Accent : UiPalette.White(0.12f), appear));
+                caption = !IsEnabled ? Theme.TextDim : Interpolate.Lerp(Theme.Accent, UiPalette.AccentLight, hot);
                 break;
             }
 
@@ -219,11 +251,41 @@ public class Button : Control
         LayoutContext context = painter.Context;
         float sizePx = context.Px(CaptionSize);
         Thickness padding = context.Px(Padding);
-        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking);
+        float press = context.Px(1f) * Visual.Press;
+        if (SubCaption.Length > 0)
+        {
+            // Two lines, left-aligned in the padding: the caption, and the subtitle small and muted under it.
+            float sub = context.Px(SubtitleSize);
+            float block = (sizePx * 0.75f) + context.Px(6f) + Theme.Mono.LineHeight(sub);
+            float top = Bounds.Y + ((Bounds.Height - block) * 0.5f) + press;
+            var capsBox = new UiRect(Bounds.X, top, Bounds.Width, sizePx * 0.75f);
+            painter.DrawLabel(Face, ShownText, new UiVec2(Bounds.X + padding.Left, UiRowStyle.CapsCenterY(Face, sizePx, capsBox)), sizePx, UiPalette.Fade(color, appear), CaptionTracking);
+            painter.DrawLabel(Theme.Mono, SubCaption, new UiVec2(Bounds.X + padding.Left, top + (sizePx * 0.75f) + context.Px(6f)), sub, UiPalette.Fade(Theme.TextMuted, appear), 0.04f);
+            return;
+        }
+
+        float width = UiPainter.MeasureLabel(Face, ShownText, sizePx, CaptionTracking) + KeyWidth(context);
         float x = Accent is ButtonAccent.Bar or ButtonAccent.Link
             ? Bounds.X + padding.Left
             : Bounds.X + ((Bounds.Width - width) * 0.5f);
-        float y = UiRowStyle.CapsCenterY(Face, sizePx, Bounds) + (context.Px(1f) * Visual.Press);
-        painter.DrawLabel(Face, ShownText, new UiVec2(x, y), sizePx, UiPalette.Fade(color, appear), CaptionTracking);
+        float y = UiRowStyle.CapsCenterY(Face, sizePx, Bounds) + press;
+        UiVec2 end = painter.DrawLabel(Face, ShownText, new UiVec2(x, y), sizePx, UiPalette.Fade(color, appear), CaptionTracking);
+        if (Key.Length > 0)
+        {
+            float keyPx = context.Px(KeySize);
+            float boxW = Theme.Mono.MeasureWidth(Key, keyPx) + context.Px(8f);
+            float boxH = Theme.Mono.LineHeight(keyPx) + context.Px(2f);
+            var box = new UiRect(end.X + context.Px(KeyGap), Bounds.Center.Y - (boxH * 0.5f) + press, boxW, boxH);
+            painter.StrokeRect(box, context.Px(1f), UiPalette.Fade(color, appear));
+            painter.DrawText(Theme.Mono, Key, new UiVec2(box.X + context.Px(4f), UiRowStyle.CenterY(Theme.Mono, keyPx, box)), keyPx, UiPalette.Fade(color, appear));
+        }
     }
+
+    // The key cap's text size and its gap from the caption, and the subtitle's size. Design units.
+    private const float KeySize = 11f;
+    private const float KeyGap = 16f;
+    private const float SubtitleSize = 10f;
+
+    private float KeyWidth(LayoutContext context) =>
+        Key.Length == 0 ? 0f : context.Px(KeyGap) + Theme.Mono.MeasureWidth(Key, context.Px(KeySize)) + context.Px(8f);
 }

@@ -5,9 +5,10 @@ namespace OpenIGI.Host.Multiplayer;
 /// <summary>A session its players talk through: lines of chat, and places marked for the others.</summary>
 public interface ISessionTalk
 {
-    /// <summary>Says a line to every player.</summary>
+    /// <summary>Says a line to every player, or to this player's team only.</summary>
     /// <param name="text">The line.</param>
-    void Say(string text);
+    /// <param name="team">Whether only the team hears it.</param>
+    void Say(string text, bool team = false);
 
     /// <summary>Marks a place for every player.</summary>
     /// <param name="position">Where, in world units.</param>

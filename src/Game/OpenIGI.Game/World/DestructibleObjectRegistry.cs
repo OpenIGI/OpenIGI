@@ -8,7 +8,7 @@ namespace OpenIGI.Game.World;
 /// Tracks the retail <c>ExplodeObject</c>, glass, and explosive magic-object state shared by rendering,
 /// collision, script variables, and impact handling.
 /// </summary>
-public sealed class DestructibleObjectRegistry
+public sealed class DestructibleObjectRegistry : ILevelReset
 {
     private const string DestroyedModelParameter = "Destroyed model";
     private const string ExplosionDamageScaleParameter = "Damage scale";
@@ -229,7 +229,34 @@ public sealed class DestructibleObjectRegistry
             }
         }
 
+        registry.MarkLevelStart();
         return registry;
+    }
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (DestructibleObject item in _objects)
+        {
+            item.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Every object as the match began, whole again where it stood -- glass, cars, generators, terminals -- with nothing counting
+    /// down. Collision and drawing ask <see cref="IsDestroyed(WorldPlacement)"/> as they go, so they follow at once; a car's
+    /// moved placement is the owner's to put back, as it put it there.
+    /// </remarks>
+    public void ResetToLevelStart(ObjectCollisionIndex? solids)
+    {
+        foreach (DestructibleObject item in _objects)
+        {
+            item.ResetToLevelStart();
+        }
+
+        _readyExplosions.Clear();
+        _vehicleBlasts.ResetToLevelStart();
     }
 
     /// <summary>Gets whether one exact placement is already destroyed.</summary>

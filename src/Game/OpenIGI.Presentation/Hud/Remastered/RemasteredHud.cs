@@ -120,6 +120,32 @@ public sealed class RemasteredHud : IDisposable
         }
     }
 
+    // When the marks-only draw last ran, for the seconds between.
+    private float? _marksAt;
+
+    /// <summary>Draws only the crosshair's hit and kill marks into an open batch, for the original display's crosshair.</summary>
+    /// <param name="batch">The open batch.</param>
+    /// <param name="aim">The player's aim, whose tally the marks answer.</param>
+    /// <param name="theme">The title's look, which sizes them.</param>
+    /// <param name="frame">The screen and the time.</param>
+    /// <remarks>The marks are timed as the remastered crosshair's are, by the same state: one display or the other draws a frame.</remarks>
+    public void DrawHitMarks(SpriteBatch batch, in Game.Player.PlayerAimFeedback aim, HudTheme theme, in HudFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(theme);
+        float elapsed = _marksAt is { } at ? Math.Max(0f, frame.Seconds - at) : 0f;
+        _marksAt = frame.Seconds;
+        _reactive.Crosshair.Update(aim, frame.Seconds, elapsed);
+        if (frame.Width <= 0 || frame.Height <= 0)
+        {
+            return;
+        }
+
+        float scale = theme.ScaleFor(frame.RequestedScale, frame.Width, frame.Height);
+        UiPainter painter = UiPainter.Create(batch, new LayoutContext(frame.Width, frame.Height));
+        HudCrosshair.DrawMarks(painter, frame.Width, frame.Height, scale * theme.AuthoredHeight / HudTheme.DesignHeight, _reactive.Crosshair);
+    }
+
     /// <summary>Draws the display into an open batch, which it leaves open.</summary>
     /// <param name="batch">The open batch.</param>
     /// <param name="model">What the display shows.</param>
@@ -183,6 +209,10 @@ public sealed class RemasteredHud : IDisposable
         else if (frame.CrosshairSpread > 0f)
         {
             HudReadouts.DrawCrosshair(context, model, frame.CrosshairSpread);
+            if ((model.Show & HudParts.Crosshair) != 0)
+            {
+                HudCrosshair.DrawMarks(context.Painter, context.Width, context.Height, context.Px(1f), _reactive.Crosshair);
+            }
         }
 
         painter.PopOpacity();

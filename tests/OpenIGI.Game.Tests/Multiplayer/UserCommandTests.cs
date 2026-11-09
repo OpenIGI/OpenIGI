@@ -11,6 +11,29 @@ public sealed class UserCommandTests
     private const int Channels = 63;
 
     [Fact]
+    public void Codec_carries_the_fraction_of_a_tick_the_client_drew_at_to_a_256th()
+    {
+        UserCommandCodec codec = new(Channels);
+        UserCommand[] sent =
+        [
+            new(100, new float[Channels], ViewTick: 94, ViewFraction: 0.37f),
+            new(101, new float[Channels], ViewTick: 95, ViewFraction: 0.999f),
+            new(102, new float[Channels]),
+        ];
+
+        BitWriter writer = new();
+        codec.Write(writer, sent);
+        BitReader reader = new(writer.AsSpan());
+        List<UserCommand> read = [];
+
+        Assert.True(codec.Read(ref reader, read));
+        Assert.Equal((94L, 95L, long.MinValue), (read[0].ViewTick, read[1].ViewTick, read[2].ViewTick));
+        Assert.Equal(0.37f, read[0].ViewFraction, 1f / 256);
+        Assert.Equal(255f / 256, read[1].ViewFraction, 1e-6f);
+        Assert.Equal(0f, read[2].ViewFraction);
+    }
+
+    [Fact]
     public void Codec_RoundTripsConsecutiveCommandsExactly()
     {
         UserCommandCodec codec = new(Channels);
@@ -129,6 +152,10 @@ public sealed class UserCommandTests
     public void Queue_CatchesUpTwoATickWhenTheClientRunsAhead()
     {
         UserCommandBuffer queue = new(Channels) { TargetDepth = 1, MaxDepth = 3 };
+
+        // Two ticks with nothing to run: the client's line was held up, and it saved the runs it missed.
+        queue.Due();
+        queue.Due();
         for (long tick = 1; tick <= 5; tick++)
         {
             queue.Push(Command(tick));

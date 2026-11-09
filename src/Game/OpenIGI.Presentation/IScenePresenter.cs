@@ -116,7 +116,8 @@ public interface IWaterPresenter : IDisposable
 /// <param name="ViewportHeight">The picture's height in pixels.</param>
 /// <param name="Ground">What the weather stops on: the terrain and what stands on it.</param>
 /// <param name="Tick">The game's tick, which the weather runs on.</param>
-public readonly record struct WeatherFrame(Camera3D Camera, Matrix4f Projection, int ViewportHeight, Game.World.WorldRayCast? Ground, long Tick);
+/// <param name="Blend">How far the frame is from the previous tick to <paramref name="Tick"/>, nought to one; one draws the tick itself.</param>
+public readonly record struct WeatherFrame(Camera3D Camera, Matrix4f Projection, int ViewportHeight, Game.World.WorldRayCast? Ground, long Tick, float Blend = 1f);
 
 /// <summary>A level's weather as its title's original draws it, which the original's look draws in place of the remastered weather.</summary>
 /// <remarks>A title or level without weather returns no presenter.</remarks>

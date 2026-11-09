@@ -43,6 +43,8 @@ public sealed partial class Igi1HumanAi
     // The detection scan's slots (+5624), one per human it has been offered, and its two lists: living
     // enemies (+5648) and fallen friends (+5660), each in registration order.
     private readonly Dictionary<int, Igi1AiTrackedHuman> _tracked = [];
+    private readonly HashSet<int> _offeredScratch = [];
+    private readonly List<int> _departedScratch = [];
     private readonly List<Igi1AiTrackedHuman> _enemies = [];
     private readonly List<Igi1AiTrackedHuman> _fallenFriends = [];
     private readonly AiDetectionSlot _noSlot = new();

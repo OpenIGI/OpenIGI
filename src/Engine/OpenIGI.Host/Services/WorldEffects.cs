@@ -103,6 +103,14 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
     }
 
     /// <summary>Forgets the effects without freeing them, at a session's start.</summary>
+    // Every burst, fireball and smoke column of the round just over: the level was put back.
+    public void Clear()
+    {
+        Particles?.Clear();
+        _explosions?.Clear();
+        _smoke?.Clear();
+    }
+
     public void Forget()
     {
         Particles = null;

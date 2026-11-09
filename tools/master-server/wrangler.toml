@@ -18,7 +18,7 @@ TURN_LON = "8.7"
 [triggers]
 crons = ["* * * * *"]
 
-# The whole list lives in one Durable Object; heartbeats keep it current, so nothing needs persisting. Each co-op room
+# The whole list lives in one Durable Object, kept in its storage too so a restart doesn't empty it. Each co-op room
 # is a Durable Object of its own, named by its code. SQLite-backed: the only kind the Workers free plan has.
 [[durable_objects.bindings]]
 name = "SERVER_LIST"
@@ -27,6 +27,11 @@ class_name = "ServerList"
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Room"
+
+# Each party (friends following their leader from server to server) is a Durable Object of its own, named by its code.
+[[durable_objects.bindings]]
+name = "PARTIES"
+class_name = "Party"
 
 # The relay list: who they are, their secrets, and how their last probes went.
 [[durable_objects.bindings]]
@@ -40,3 +45,7 @@ new_sqlite_classes = ["ServerList", "Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Relays"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Party"]

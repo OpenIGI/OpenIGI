@@ -30,6 +30,10 @@ public interface INetTransport : IDisposable
     /// <param name="destination">Where to.</param>
     /// <returns>The bytes; nought for a transport that hands everything straight to the network.</returns>
     int Backlog(NetAddress destination) => 0;
+
+    /// <summary>Gets whether what the transport carries is encrypted already, end to end (a WebRTC data channel runs over DTLS).</summary>
+    /// <remarks>A connection over such a transport is not sealed a second time.</remarks>
+    bool IsEncrypted => false;
 }
 
 /// <summary>A transport that can also send to every host on the local network, for LAN server discovery.</summary>

@@ -21,5 +21,5 @@ public static class NetDiagnostics
     /// <param name="address">The peer.</param>
     /// <returns>Its route and what was dropped for it, or the address for a transport without rooms.</returns>
     public static string Route(INetTransport transport, NetAddress address) =>
-        transport is RoomTransport room ? $"route {room.Route(address)} dropped {room.Dropped(address)}" : $"udp {address}";
+        (transport as RoomTransport ?? (transport as MultiTransport)?.Part<RoomTransport>()) is { } room && address.Kind == NetAddressKind.Peer ? $"route {room.Route(address)} dropped {room.Dropped(address)}" : $"udp {address}";
 }

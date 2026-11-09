@@ -81,6 +81,17 @@ internal sealed class Igi1HudOverlay(IGraphicsDevice device, Igi1Gameplay gamepl
                 frame.Width,
                 frame.Height,
                 frame.RetailUiScale);
+
+            // The original's crosshair marks a hit and a kill as the remastered one does: a soldier's, and in a session a
+            // player's, which its server tells of.
+            if (HudCVars.ShowsHitMarkers && (_remastered ??= CreateRemastered()).IsReady)
+            {
+                _remastered.DrawHitMarks(
+                    batch,
+                    Game.Igi1.Player.Igi1Crosshair.Feedback(mission.Player, mission.Soldiers),
+                    Igi1HudTheme.Theme,
+                    HudFrame.FromSettings(frame.Width, frame.Height, frame.UiScale, frame.TickCount / 30f, crosshairSpread: 0f));
+            }
         }
 
         batch.End();

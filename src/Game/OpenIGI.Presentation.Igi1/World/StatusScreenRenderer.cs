@@ -500,6 +500,9 @@ internal sealed class StatusScreenRenderer : IHudPresenter, OpenIGI.Presentation
         "WEAPON_ID_RPG18" => "LAW80.spr",
         "WEAPON_ID_SPAS12" => "spaz.spr",
         "WEAPON_ID_UZI" or "WEAPON_ID_UZIX2" => "uzi.spr",
+
+        // The bomb modes' bomb: I.G.I. 2's own C4 picture, from the kit built into the game.
+        OpenIGI.Game.Igi1.Multiplayer.Igi1BombWeapon.ScriptId => RetailUiResources.BuiltInPrefix + OpenIGI.Game.Multiplayer.Modes.BombKit.Icon + ".spr",
         _ => "stationary.spr",
     };
 

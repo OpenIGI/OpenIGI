@@ -57,6 +57,12 @@ internal sealed class SoldierMember(SoldierAgent agent, MeshHandle mesh)
     /// <summary>Gets or sets the buffer the lower level is skinned into.</summary>
     public Vertex3D[]? LevelScratch { get; set; }
 
+    /// <summary>The poses the ticks gave <see cref="LevelMesh"/> that are not on it yet, oldest first, as <see cref="DeferredPoses"/> are for the whole body.</summary>
+    public BonePose?[] LevelDeferredPoses { get; } = new BonePose?[2];
+
+    /// <summary>How many of <see cref="LevelDeferredPoses"/> are waiting, nought to two.</summary>
+    public int LevelDeferredPoseCount { get; set; }
+
     /// <summary>
     /// The pose this soldier was skinned from this tick — its rig's, or its corpse's.
     /// </summary>
@@ -80,6 +86,16 @@ internal sealed class SoldierMember(SoldierAgent agent, MeshHandle mesh)
 
     /// <summary>Tracks whether this pose still needs an animated-buffer upload.</summary>
     public PoseUploadLatch PoseUploads { get; } = new();
+
+    /// <summary>The poses the ticks gave the mesh that are not on it yet, oldest first; see <see cref="SoldierSkinning.Defer"/>.</summary>
+    /// <remarks>
+    /// Only the last two are ever kept, because the mesh holds two streams and every earlier pose would
+    /// be pushed out of both before anything drew it.
+    /// </remarks>
+    public BonePose?[] DeferredPoses { get; } = new BonePose?[2];
+
+    /// <summary>How many of <see cref="DeferredPoses"/> are waiting, nought to two.</summary>
+    public int DeferredPoseCount { get; set; }
 
     /// <summary>
     /// The simulated corpse this soldier is drawn as once it has been killed, or

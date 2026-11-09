@@ -54,6 +54,19 @@ public sealed partial class Igi1Blasts
     // vehicle's alike, since both are the same Missile task: the scorch on whatever lies 12288 below, then five FireBalls
     // and ten fragments at 10240. The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's
     // +0x894), which is what lets a LAW rocket -- and nothing else -- blow a car up.
+    /// <summary>
+    /// A blast a multiplayer mode set off (search and destroy's bomb): shown and heard as a rocket's, shoving and breaking what
+    /// is near it, and sent to the clients as one; the mode itself says who it kills.
+    /// </summary>
+    /// <param name="at">Its centre, in units.</param>
+    /// <param name="radiusUnits">How far it reaches, in units.</param>
+    public void ModeBlast(Vector3d at, double radiusUnits)
+    {
+        float radius = (float)radiusUnits;
+        ShowMissile(at, 1f, () => Explode(at, radius * 0.5f, radius * 0.5f, 1f, WeaponCategory.Grenade));
+        Record(ReplicatedBlastKind.Missile, at, default, radius * 0.5f, radius * 0.5f);
+    }
+
     private void ShowMissile(Vector3d at, float damage, Action? harm)
     {
         impacts.ScorchBelow(at, MissileScorchDropInUnits, Igi1ImpactEffects.MissileScorchHalfWidthInUnits);

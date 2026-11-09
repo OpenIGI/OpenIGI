@@ -116,12 +116,42 @@ public sealed class RhiMeshTests
     }
 
     [Fact]
-    public void A_pose_of_the_wrong_length_is_refused()
+    public void A_pose_longer_than_the_mesh_is_refused()
     {
         using RecordingRhiDevice device = new();
         using RhiMesh mesh = RhiMesh.CreateAnimated(device, Pose(1f), [0, 1, 2], "body");
 
-        Assert.Throws<GraphicsDeviceException>(() => mesh.UpdateVertices(new Vertex3D[2], 0));
+        Assert.Throws<GraphicsDeviceException>(() => mesh.UpdateVertices(new Vertex3D[4], 0));
+    }
+
+    [Fact]
+    public void A_shorter_pose_writes_only_its_own_vertices()
+    {
+        // A streamed effect fills a prefix of its buffer; uploading the whole capacity every frame was
+        // megabytes a frame for the rain alone.
+        using RecordingRhiDevice device = new();
+        using RhiMesh mesh = RhiMesh.CreateAnimated(device, Pose(1f), [0, 1, 2], "body");
+        int before = device.Commands.Count;
+
+        mesh.UpdateVertices(Pose(2f).AsSpan(0, 2), frameCounter: 10);
+
+        RecordedRhiCommand.WriteBuffer write = Assert.Single(
+            device.Commands.Skip(before).OfType<RecordedRhiCommand.WriteBuffer>());
+        Assert.Equal(2 * Vertex3D.Size, write.SizeInBytes);
+    }
+
+    [Fact]
+    public void An_empty_pose_writes_nothing_and_keeps_the_streams()
+    {
+        using RecordingRhiDevice device = new();
+        using RhiMesh mesh = RhiMesh.CreateAnimated(device, Pose(1f), [0, 1, 2], "body");
+        IRhiBuffer current = mesh.VertexBuffer;
+        int before = device.Commands.Count;
+
+        mesh.UpdateVertices([], frameCounter: 10);
+
+        Assert.Equal(before, device.Commands.Count);
+        Assert.Same(current, mesh.VertexBuffer);
     }
 
     [Fact]

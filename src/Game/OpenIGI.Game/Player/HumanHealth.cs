@@ -40,10 +40,10 @@ public sealed class HumanHealth
     }
 
     /// <summary>Gets the table this human's zones are read from.</summary>
-    public IReadOnlyList<HumanHitZone> Zones { get; }
+    public IReadOnlyList<HumanHitZone> Zones { get; private set; }
 
     /// <summary>Gets the maximum this human was built with, before any cheat scaled it.</summary>
-    public float BaseMaximumHealth { get; }
+    public float BaseMaximumHealth { get; private set; }
 
     /// <summary>Gets how much damage kills this human — <c>Human+600</c>.</summary>
     /// <remarks>
@@ -81,7 +81,28 @@ public sealed class HumanHealth
     /// <c>"Difficulty level not defined %d"</c> for anything else. Soldiers take unscaled damage, so
     /// this defaults to 1 and is set only on the player's instance.
     /// </remarks>
-    public float DamageScale { get; init; } = 1f;
+    public float DamageScale { get => _damageScale; init => _damageScale = value; }
+
+    private float _damageScale = 1f;
+
+    /// <summary>
+    /// Gives this human another body: its zones, what kills it and its damage scale, keeping the fraction of health that remains.
+    /// </summary>
+    /// <param name="zones">The hit-zone table now read.</param>
+    /// <param name="maximumHealth">What now kills it.</param>
+    /// <param name="damageScale">The scale every hit is multiplied by.</param>
+    /// <remarks>
+    /// A versus match's players take a soldier's body rather than the campaign hero's -- see <see cref="HumanHitZoneTable.VersusMaximumHealth"/>.
+    /// Changed in place, so whatever holds this health (the mission, the rig, the harm) reads the new body.
+    /// </remarks>
+    public void UseBody(IReadOnlyList<HumanHitZone> zones, float maximumHealth, float damageScale)
+    {
+        ArgumentNullException.ThrowIfNull(zones);
+        Zones = zones;
+        _damageScale = damageScale;
+        BaseMaximumHealth = maximumHealth;
+        RescaleMaximumHealth(maximumHealth);
+    }
 
     /// <summary>Gets or sets whether every hit is ignored — the infinite-health cheat.</summary>
     /// <remarks>Not the AI's <c>SetInvulnerability</c>, which the soldiers keep on their own brain.</remarks>

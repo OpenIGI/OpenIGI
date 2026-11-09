@@ -52,14 +52,38 @@ public static class FrameCVars
 
     /// <summary>Whether models are drawn at the original's levels of detail, coarser with distance, rather than always whole.</summary>
     /// <remarks>
-    /// Off under every preset, the original's own look included: every model is drawn at its finest level at any distance.
-    /// Not archived, as <see cref="MenuBackdropLite"/> is not: it is for comparing with the original, not a preference.
+    /// On under every preset, at <see cref="ModelLodReach"/>'s distances rather than the original's: at the original's own,
+    /// scenery across a clear level -- a base's fences, roofs and tanks -- went coarse or vanished in plain view, which is why it
+    /// was once off everywhere. Moved out, what the player can see stays whole and a fogged level draws a third of the models
+    /// it did. Off draws every model at its finest at any distance. Not archived, as <see cref="MenuBackdropLite"/> is not.
     /// </remarks>
     public static readonly BoolCVar ModelLod = CVar.Bool(
         "r_model_lod",
-        false,
+        true,
         CVarOptions.None,
         "Draw models at the original's levels of detail, coarser with distance. Off draws every model at its finest.");
+
+    /// <summary>How many times as far as the original's best setting models keep each level of detail, and are drawn at all.</summary>
+    /// <remarks>
+    /// One is the original at its highest detail. The original's own distances coarsen and drop scenery the player can plainly see,
+    /// so the levels are moved out: near models stay whole and only far ones, mostly in the fog, give detail up. Three, measured
+    /// on missions 1 and 3: mission 1's base keeps every building, tank and crate whole, and mission 3 in the browser went from
+    /// 104 frames a second drawing every model to 129 (139 at two, 145 at the original's one). The Vanilla preset takes two:
+    /// the original swaps small props three to seven metres away (lod.qvm), which a modern resolution shows plainly. The
+    /// graphics page's Model Detail Distance row sets it.
+    /// </remarks>
+    public static readonly NumericCVar<float> ModelLodReach = GraphicsPresetRegistry.Default.Define(
+        CVar.Float(
+            "r_model_lod_reach",
+            3f,
+            1f,
+            16f,
+            CVarOptions.Archive,
+            "How many times as far as the original models keep their detail and are drawn at all (1 = the original's best)."),
+        vanilla: "2",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
 
     /// <summary>Whether the level behind the menu is drawn without the expensive parts of the preset.</summary>
     /// <remarks>

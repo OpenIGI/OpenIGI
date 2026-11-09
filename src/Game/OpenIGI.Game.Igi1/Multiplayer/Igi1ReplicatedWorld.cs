@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 /// plus one.
 /// </para>
 /// </remarks>
-public sealed class Igi1ReplicatedWorld : IReplicatedWorld
+public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 {
     /// <summary>The entity id of the mission's own player.</summary>
     public const int HostEntity = 0;
@@ -66,6 +66,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // The players whose clients dropped, kept aside out of the level by their parked keys.
     private readonly Dictionary<int, Igi1NetworkPlayer> _parked = [];
 
+    // The player whose round last hurt each player, by entity, and the tick it did: the death that follows is its kill.
+    private readonly Dictionary<int, (ShotTally By, long Tick)> _lastHurtBy = [];
+
+    // How long after a player's round hurt another its death is still that player's kill, in ticks (Source credits the last
+    // attacker the same way).
+    private const long KillCreditTicks = 5 * 30;
+
     // Who took each pickup, by entity: a client shows it gone, and takes what its own player took into its own hands.
     private readonly Dictionary<object, int> _takenBy = [];
 
@@ -101,20 +108,25 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         if (_game.World.Player is { } own)
         {
             Record(own, HostEntity);
+
+            // A listen host walks into its players as they walk into it.
+            SessionHumans.Meet(_game.World, own, () => IncludesHost);
         }
 
         // With friendly fire on, a player's round meets the other players as it meets the guards.
-        _game.World.Bodies.Add(new CoopPlayerBodies(_game));
+        _game.World.Bodies.Add(new CoopPlayerBodies(_game, this));
+        _game.Harm.RoundTaken = NoteHurt;
 
         // Every partner, the fallen too: a body lies where it fell until a teammate brings it back.
         _game.World.PartnerBodies = () =>
-            [.. _bySlot.Values.Select(p => Ai.PartnerBody.Of(p, p.Player, p.ClipTime) with
+            [.. _bySlot.Select(pair => (Slot: pair.Key, p: pair.Value)).Select(e => Ai.PartnerBody.Of(e.p, e.p.Player, e.p.ClipTime) with
             {
-                Fired = p.FiredThisTick,
-                Name = p.Name,
-                Dead = p.IsDead,
-                Revive = p.IsDead ? ReviveProgressOf(p.Entity) : null,
-                Model = PlayerSkins.Of(p.Skin).Model,
+                Fired = e.p.FiredThisTick,
+                Name = Game.Multiplayer.Modes.PlayerSides.ShowsName(VersusMode, TeamOf(ServerSession.HostSlot), TeamOf(e.Slot)) ? e.p.Name : null,
+                Dead = e.p.IsDead,
+                Revive = e.p.IsDead && Game.Multiplayer.Modes.PlayerSides.Revivable(VersusMode) ? ReviveProgressOf(e.p.Entity) : null,
+                Model = PlayerSkins.Of(e.p.Skin).Model,
+                CarriesBomb = e.Slot == _bombCarrier,
             })];
     }
 
@@ -151,8 +163,16 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         Igi1NetworkPlayer player = new(made.Player, made.Health) { Name = name, Entity = slot + 1, BeforeCommand = RewindSoldiers, AfterCommand = RestoreSoldiers };
         Record(made.Player, slot + 1);
+        SessionHumans.Meet(_game.World, made.Player, () => IncludesHost);
         Stand(player, slot);
         _bySlot[slot] = player;
+
+        // One joining a match under way is armed as a first spawn is, not with the campaign level's kit: now without sides,
+        // or once its side is known (SetTeam).
+        if (_versus == Versus.Everyone || (_versus == Versus.Teams && _teams.ContainsKey(slot)))
+        {
+            Restock(made.Player, slot, fresh: true);
+        }
         _game.World.NetworkPlayers.Add(player);
         return slot + 1;
     }
@@ -212,7 +232,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     public UserCommandBuffer? CommandsFor(int slot) => _bySlot.GetValueOrDefault(slot)?.Commands;
 
     /// <inheritdoc/>
-    public int TeamOf(int slot) => _bySlot.ContainsKey(slot) ? PlayerTeam : -1;
+    public int TeamOf(int slot) =>
+        _teams.TryGetValue(slot, out int team) ? team : _bySlot.ContainsKey(slot) || slot == ServerSession.HostSlot ? PlayerTeam : -1;
 
     /// <inheritdoc/>
     public Snapshot Capture(long tick)
@@ -220,13 +241,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         List<ReplicatedHuman> humans = [];
         if (IncludesHost && _game.World.Player is { } host)
         {
-            humans.Add(OnLift(WithRevive(Replicate(
-                HostEntity, host, _game.World.PlayerHealth, host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime)), host));
+            humans.Add(Carrying(OnLift(WithRevive(Replicate(
+                HostEntity, host, _game.World.PlayerHealth, host.ModeClipTimeShown ?? (host.BodyClip is null ? null : _game.World.Soldiers?.PlayerLadderClipTime))), host), ServerSession.HostSlot));
         }
 
         foreach ((int slot, Igi1NetworkPlayer other) in _bySlot)
         {
-            humans.Add(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime)), other.Player));
+            humans.Add(Carrying(OnLift(WithRevive(Replicate(slot + 1, other.Player, other.Health, other.ClipTime)), other.Player), slot));
         }
 
         // The soldiers, which only the server's minds run: every client poses its copies by these.
@@ -319,7 +340,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             }
             else if (_dead.Add(entity))
             {
-                deaths.Add(new WorldDeath(entity, -1));
+                deaths.Add(new WorldDeath(entity, KillerOf(entity)));
             }
         }
 
@@ -336,16 +357,104 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         return deaths;
     }
 
+    // A round from a player's gun hurt a player: noted against the one it hurt, if a player fired it, and whether in the head.
+    private void NoteHurt(IHarmedPlayer hurt, ShotTally? by, bool head)
+    {
+        if (EntityOf(hurt.Rig) is not { } entity)
+        {
+            return;
+        }
+
+        int? attacker = by is not null ? EntityOf(by) : null;
+        if (by is not null && attacker != entity)
+        {
+            _lastHurtBy[entity] = (by, CurrentTick);
+        }
+
+        NoteCombat(hurt, entity, attacker == entity ? null : attacker, head);
+    }
+
+    // The player who killed one that just died: the last whose round hurt it, lately enough; -1 for the level (a guard, a fall).
+    private int KillerOf(int entity)
+    {
+        if (!_lastHurtBy.Remove(entity, out (ShotTally By, long Tick) last) || CurrentTick - last.Tick > KillCreditTicks)
+        {
+            return -1;
+        }
+
+        return EntityOf(last.By) ?? -1;
+    }
+
+    // The entity of a player of the session by its rig, or by the tally its rounds count on.
+    private int? EntityOf(Player.PlayerCamera? rig)
+    {
+        if (rig is null)
+        {
+            return null;
+        }
+
+        if (IncludesHost && ReferenceEquals(rig, _game.World.Player))
+        {
+            return HostEntity;
+        }
+
+        foreach (Igi1NetworkPlayer other in _bySlot.Values)
+        {
+            if (ReferenceEquals(other.Player, rig))
+            {
+                return other.Entity;
+            }
+        }
+
+        return null;
+    }
+
+    private int? EntityOf(ShotTally tally)
+    {
+        if (IncludesHost && _game.World.Player is { } own && ReferenceEquals(own.Shots, tally))
+        {
+            return HostEntity;
+        }
+
+        foreach (Igi1NetworkPlayer other in _bySlot.Values)
+        {
+            if (ReferenceEquals(other.Player.Shots, tally))
+            {
+                return other.Entity;
+            }
+        }
+
+        return null;
+    }
+
     /// <inheritdoc/>
     /// <remarks>A fallen co-op partner comes back at full health beside the level's spawn.</remarks>
     public void Respawn(int slot)
     {
         if (slot == ServerSession.HostSlot)
         {
+            bool hostDied = _dead.Contains(HostEntity);
+            if (hostDied && IsVersus && _game.World.Player is { } fallen)
+            {
+                Igi1PlayerSetup.Disarm(fallen);
+            }
+
             _game.Harm.RevivePlayer(at: null, facing: 0f);
+
+            // Put back whole: a revive mends only the dead, and one who lived through the last round kept its wounds.
+            _game.World.Player?.Body.Health.Reset();
             if (_game.World.Player is { } own && _game.PlayerSetup?.LevelSpawn() is { } spawn)
             {
-                own.PlaceAt(_game.World.Ground, spawn);
+                if (IsVersus)
+                {
+                    PlaceVersus(own, slot, spawn);
+                }
+                else
+                {
+                    own.PlaceAt(_game.World.Ground, spawn);
+                }
+
+                Restock(own, slot, hostDied);
             }
 
             _dead.Remove(HostEntity);
@@ -354,9 +463,17 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
         if (_bySlot.TryGetValue(slot, out Igi1NetworkPlayer? player))
         {
+            bool died = _dead.Contains(slot + 1);
+            if (died && IsVersus)
+            {
+                Igi1PlayerSetup.Disarm(player.Player);
+            }
+
             Igi1PlayerHarm.RevivePlayer(player, at: null, player.Player.Body.Yaw);
+            player.Player.Body.Health.Reset();
             _dead.Remove(slot + 1);
             Stand(player, slot);
+            Restock(player.Player, slot, died);
         }
     }
 
@@ -383,6 +500,13 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         if (player.Weapons?.FiredThisTick == true)
         {
             condition |= ReplicatedHumanCondition.Firing;
+        }
+
+        // A shot's or a reload's torso clip is played once: the torso holds it until the gun is ready again, a pistol's for
+        // two thirds of a second, so a window that looped it showed the shot five times over.
+        if (!player.UpperBodyAnimationLoops)
+        {
+            condition |= ReplicatedHumanCondition.UpperBodyOnce;
         }
 
         // Standing: a client its own correction puts back on this floor stops any fall it made alone.
@@ -454,7 +578,7 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
 
     /// <inheritdoc/>
     /// <remarks>Co-op: a fallen player lies where it fell until a teammate stands by it for <see cref="ReviveTicks"/>.</remarks>
-    public bool HoldsTheDead => true;
+    public bool HoldsTheDead => _versus == Versus.None;
 
     // The level's running state as a client takes it: the objectives' counters, messages and result, and the scenes.
     private readonly BitWriter _level = new(1024);
@@ -478,6 +602,12 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
     // Who takes what: each player's pickups, as it walks over them.
     private void Record(PlayerCamera player, int entity)
     {
+        player.CanDropWeapons = true;
+        if (IsVersus)
+        {
+            UseVersusBody(player);
+        }
+
         player.GunPickedUp += pickup => _takenBy[pickup] = entity;
         player.GenericPickedUp += pickup => _takenBy[pickup] = entity;
     }
@@ -494,14 +624,22 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             if (gun.Task is null)
             {
                 writer.WriteVarUInt((uint)gun.Weapon.WeaponId);
-                Int3 at = Int3.From(gun.Position);
-                writer.WriteVarInt(at.X);
-                writer.WriteVarInt(at.Y);
-                writer.WriteVarInt(at.Z);
-                Matrix3f o = gun.Orientation;
-                foreach (float f in (ReadOnlySpan<float>)[o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33])
+                writer.WriteVarUInt(gun.Rounds is { } rounds ? (uint)Math.Max(0, rounds) + 1 : 0u);
+                writer.WriteBool(gun.Launch is not null);
+                if (gun.Launch is { } launch)
                 {
-                    writer.WriteSingle(f);
+                    WritePlace(writer, launch.Position, launch.Orientation);
+                    writer.WriteSingle((float)launch.Velocity.X);
+                    writer.WriteSingle((float)launch.Velocity.Y);
+                    writer.WriteSingle((float)launch.Velocity.Z);
+                }
+
+                // A throw in the air is left to each machine's flight, so the state does not change every tick it flies.
+                bool lies = gun.Launch is null || !gun.IsMoving;
+                writer.WriteBool(lies);
+                if (lies)
+                {
+                    WritePlace(writer, gun.Position, gun.Orientation);
                 }
             }
         }
@@ -511,6 +649,19 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         foreach (OpenIGI.Game.World.GenericPickup item in items)
         {
             writer.WriteBits(TakenBy(item, item.IsCollected), 8);
+        }
+    }
+
+    // A pickup's place: where, to the unit, and how it is turned.
+    private static void WritePlace(BitWriter writer, Vector3d position, Matrix3f o)
+    {
+        Int3 at = Int3.From(position);
+        writer.WriteVarInt(at.X);
+        writer.WriteVarInt(at.Y);
+        writer.WriteVarInt(at.Z);
+        foreach (float f in (ReadOnlySpan<float>)[o.M11, o.M12, o.M13, o.M21, o.M22, o.M23, o.M31, o.M32, o.M33])
+        {
+            writer.WriteSingle(f);
         }
     }
 
@@ -678,33 +829,42 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         }
     }
 
-    // Lag compensation for a partner's command: every living soldier put where the partner's client drew it when the command
-    // was made (the server's own snapshots sampled at the tick the client was drawing, as the client itself samples them),
-    // so the rounds the command fires meet the soldier the partner aimed at. The history reaches back no further than
-    // LagCompensation.MaxUnlag; a soldier it never held, or a command with no view tick, stands where it is.
-    private void RewindSoldiers(long commandTick, long viewTick)
+    // Lag compensation for a partner's command: every living soldier, and in a versus game every other living player, put where
+    // the partner's client drew it when the command was made (the server's own snapshots sampled at the moment the client was
+    // drawing, to the fraction of a tick, as the client itself samples them), so the rounds the command fires meet the one the
+    // partner aimed at. The history reaches back no further than LagCompensation.MaxUnlag; one it never held, or a command with
+    // no view tick, stands where it is.
+    private void RewindSoldiers(Igi1NetworkPlayer shooter, long commandTick, long viewTick, float fraction)
     {
-        if (LagCompensation is not { } lag || _game.World.Soldiers is not { } soldiers || viewTick == long.MinValue)
+        if (LagCompensation is not { } lag || viewTick == long.MinValue)
         {
             return;
         }
 
-        double moment = lag.AimedAt(commandTick, viewTick);
-        foreach (Player.SoldierView soldier in soldiers.SoldierViews)
+        double moment = lag.AimedAt(commandTick, viewTick, fraction);
+        if (_game.World.Soldiers is { } soldiers)
         {
-            if (soldier.IsDead || !lag.History.Sample(moment, SoldierEntityBase + soldiers.RuntimeIdOf(soldier), out ReplicatedHuman then))
+            foreach (Player.SoldierView soldier in soldiers.SoldierViews)
             {
-                continue;
+                if (soldier.IsDead || !lag.History.Sample(moment, SoldierEntityBase + soldiers.RuntimeIdOf(soldier), out ReplicatedHuman then))
+                {
+                    continue;
+                }
+
+                _rewound.Add((soldier, soldier.Position, soldier.Orientation));
+                soldier.PlaceAt(then.Position.ToVector(), Matrix3f.RotationZ(Quantize.AngleFromBits(then.Yaw)));
             }
 
-            _rewound.Add((soldier, soldier.Position, soldier.Orientation));
-            soldier.PlaceAt(then.Position.ToVector(), Matrix3f.RotationZ(Quantize.AngleFromBits(then.Yaw)));
+            soldiers.Rewound = _rewound.Count > 0;
         }
 
-        soldiers.Rewound = _rewound.Count > 0;
+        if (IsVersus)
+        {
+            RewindPlayers(lag, shooter, moment);
+        }
     }
 
-    // The soldiers put back where this tick has them.
+    // The soldiers and players put back where this tick has them.
     private void RestoreSoldiers()
     {
         foreach ((Player.SoldierView soldier, Vector3d position, Matrix3f orientation) in _rewound)
@@ -717,6 +877,8 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
         {
             soldiers.Rewound = false;
         }
+
+        RestorePlayers();
     }
 
     // Where a player is stood: beside the level's start, or -- joining a level the host has gone on into -- where the host is.
@@ -727,7 +889,14 @@ public sealed class Igi1ReplicatedWorld : IReplicatedWorld
             return;
         }
 
-        if (IncludesHost
+        if (IsVersus)
+        {
+            PlaceVersus(player.Player, slot, spawn);
+            return;
+        }
+
+        if (!IsVersus
+            && IncludesHost
             && _game.World.Player is { } host
             && !_game.World.IsPlayerDead
             && Vector3d.Distance(host.Body.Position, spawn.Position) > LateJoinDistance)

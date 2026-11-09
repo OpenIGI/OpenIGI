@@ -26,6 +26,9 @@ internal sealed class PlayerPickups
     /// <summary>Raised for each authored generic item collected from the world this tick.</summary>
     internal event Action<GenericPickup>? GenericPickedUp;
 
+    /// <summary>Gets the level's weapon pickups, once given.</summary>
+    internal GunPickupRegistry? Guns => _gunPickups;
+
     /// <summary>Gives the player the level's automatic weapon pickups.</summary>
     internal void UseGuns(GunPickupRegistry pickups) => _gunPickups = pickups;
 

@@ -39,6 +39,9 @@ public sealed class KeyboardState
     private readonly Queue<KeyCode> _presses = new();
     private readonly Queue<char> _characters = new();
 
+    // The line a touch screen's keyboard last put, until it is taken.
+    private string? _line;
+
     /// <summary>Gets the current state bytes, one per scan code.</summary>
     public ReadOnlySpan<byte> Current => _current;
 
@@ -189,6 +192,24 @@ public sealed class KeyboardState
         {
             _characters.Enqueue(character);
         }
+    }
+
+    /// <summary>
+    /// Puts the whole line a touch screen's keyboard holds, as it stands now: where the platform keeps the line itself (a
+    /// browser's field, with its autocorrect, its suggestions and its own Backspace), it says the line rather than its keys.
+    /// </summary>
+    /// <param name="line">The line.</param>
+    public void ReplaceLine(string line) => _line = line ?? string.Empty;
+
+    /// <summary>Takes the line a touch screen's keyboard last put (<see cref="ReplaceLine"/>), once.</summary>
+    /// <param name="line">Receives the line.</param>
+    /// <returns><see langword="false"/> when none was put since the last call.</returns>
+    public bool TryTakeLine(out string line)
+    {
+        line = _line ?? string.Empty;
+        bool put = _line is not null;
+        _line = null;
+        return put;
     }
 
     /// <summary>Takes the oldest typed character that has not been read yet.</summary>

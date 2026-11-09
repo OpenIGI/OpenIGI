@@ -246,6 +246,13 @@ public sealed partial class PlayerBody
     /// </remarks>
     public WorldRayCast? TerrainWalls { get; set; }
 
+    /// <summary>Gets or sets where the other humans the body cannot walk into stand, their feet in world units.</summary>
+    /// <remarks>
+    /// <c>0x4614B0</c>'s third pass (<c>0x462BA0</c>, <see cref="HumanSeparation"/>), over the living humans. Left unset the
+    /// body walks through everyone, as it did before a session's players met it.
+    /// </remarks>
+    public Func<IEnumerable<Vector3d>>? OtherHumans { get; set; }
+
     private WorldRayCast? _sweepCast;
 
     /// <summary>Gets whether the last tick's move was stopped by a wall.</summary>
@@ -573,6 +580,13 @@ public sealed partial class PlayerBody
         bool wasAirborne = !IsGrounded;
         float landingVelocityZ = Velocity.Z;
         Settle(ref next, terrain, start);
+
+        // Then the other humans (0x462BA0, after 0x462390): a move that would end nearer one is refused.
+        if (OtherHumans?.Invoke() is { } others)
+        {
+            next = HumanSeparation.Resolve(start, next, others);
+        }
+
         UnderRoof = ProbeRoof(next);
         if (wasAirborne && IsGrounded)
         {

@@ -43,8 +43,48 @@ public sealed partial class GameHost
         TouchButton.ZoomIn => "ZoomIn",
         TouchButton.ZoomOut => "ZoomOut",
         TouchButton.Close => "MapComputer",
+        TouchButton.Scoreboard => PlayerProfile.ScoreboardAction,
+        TouchButton.Buy => PlayerProfile.BuyMenuAction,
+        TouchButton.Drop => nameof(PlayerAction.DropWeapon),
         _ => null,
     };
+
+    // The key a match's action is pressed as when the profile, saved before the action was, binds it to nothing.
+    private static KeyCode? TouchFallbackKey(string action) => action switch
+    {
+        PlayerProfile.ScoreboardAction => KeyCode.Tab,
+        PlayerProfile.BuyMenuAction => KeyCode.G,
+        nameof(PlayerAction.DropWeapon) => KeyCode.X,
+        _ => null,
+    };
+
+    /// <summary>The match's own buttons this frame: each where it has something to do.</summary>
+    private TouchMatchButtons CurrentMatchButtons()
+    {
+        if (TickObserver is not ISessionScoreboard)
+        {
+            return TouchMatchButtons.None;
+        }
+
+        TouchMatchButtons buttons = TouchMatchButtons.Scoreboard;
+        Game.Multiplayer.Modes.MatchHud? hud = CurrentMatchHud();
+        if (hud is { BuyClock: not null } or { FreeLoadout: true })
+        {
+            buttons |= TouchMatchButtons.Buy;
+        }
+
+        if (hud is { Teams: not null, Result: null } && hud.Phase != Game.Multiplayer.Modes.MatchPhase.Intermission)
+        {
+            buttons |= TouchMatchButtons.Team;
+        }
+
+        if (TickObserver is Multiplayer.ISessionMode { Mode: var mode } && Game.Multiplayer.Modes.ArenaLevel.IsVersus(mode))
+        {
+            buttons |= TouchMatchButtons.Drop;
+        }
+
+        return buttons;
+    }
 
     /// <summary>What the game is showing, for the controls: a cutscene, play with the pointer locked, or anything with a pointer.</summary>
     private TouchControlMode CurrentTouchMode()
@@ -54,7 +94,8 @@ public sealed partial class GameHost
             return TouchControlMode.Cutscene;
         }
 
-        if (_computerOpen && !_menuFlow.MenuMode)
+        // The computer, and a match's shop or team menu over play: a finger points, and the corner's button closes it.
+        if ((_computerOpen || _buyMenuUp || _teamMenuUp) && !_menuFlow.MenuMode)
         {
             return TouchControlMode.Computer;
         }
@@ -76,6 +117,7 @@ public sealed partial class GameHost
         }
 
         TouchControlMode mode = CurrentTouchMode();
+        _touchControls.MatchButtons = CurrentMatchButtons();
         _touchControls.Update(input.Touch, mode, new LayoutContext(_window.Width, _window.Height));
         _touchKeysWanted.Clear();
         _touchButtonsWanted.Clear();
@@ -85,12 +127,26 @@ public sealed partial class GameHost
         {
             foreach (TouchButton button in _touchControls.Held)
             {
-                if (TouchAction(button) is { } action)
+                // Over a match's menu the corner's button backs out of it, as Escape does at a keyboard.
+                if (button == TouchButton.Close && !_computerOpen)
+                {
+                    _touchKeysWanted.Add(KeyCode.Escape);
+                }
+                else if (TouchAction(button) is { } action)
                 {
                     Want(profile, action);
                 }
             }
         }
+
+        // One tap, one line of chat: opened as the finger comes down, the page raising the keyboard as it lifts.
+        bool chatHeld = mode == TouchControlMode.Play && _touchControls.Held.Contains(TouchButton.Chat);
+        if (chatHeld && !_touchChatHeld && _chatEntry is null)
+        {
+            OpenChat(team: false);
+        }
+
+        _touchChatHeld = chatHeld;
 
         if (mode == TouchControlMode.Play)
         {
@@ -99,6 +155,14 @@ public sealed partial class GameHost
                 if (button == TouchButton.Pause)
                 {
                     _touchKeysWanted.Add(KeyCode.Escape);
+                }
+                else if (button == TouchButton.Team)
+                {
+                    // The team menu's key is a setting of its own, not an action the profile binds.
+                    if (DevTools.BindKeyNames.TryParse(TeamMenuCVars.Key.Value, out KeyCode team))
+                    {
+                        _touchKeysWanted.Add(team);
+                    }
                 }
                 else if (TouchAction(button) is { } action)
                 {
@@ -146,7 +210,7 @@ public sealed partial class GameHost
         if (_touchControls.Pointer is { } pointer)
         {
             input.Mouse.SetPosition(pointer.At.X, pointer.At.Y);
-            if (mode == TouchControlMode.Computer && TacticalComputer is null && _mapComputer?.Pointer is { } computer)
+            if (mode == TouchControlMode.Computer && _computerOpen && TacticalComputer is null && _mapComputer?.Pointer is { } computer)
             {
                 SteerComputerPointer(input, pointer, computer, profile);
             }
@@ -247,6 +311,11 @@ public sealed partial class GameHost
     {
         if (!PlayerProfileInputBindings.TryBoundControl(profile, action, out KeyCode key, out MouseButton? button))
         {
+            if (TouchFallbackKey(action) is { } fallback)
+            {
+                _touchKeysWanted.Add(fallback);
+            }
+
             return;
         }
 

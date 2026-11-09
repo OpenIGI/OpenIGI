@@ -440,6 +440,54 @@ internal sealed class PlayerBodyRenderer(
             orientation * handRotation);
     }
 
+    /// <summary>Gets this body as it is drawn this frame: its pose in its own frame, and where that frame stands.</summary>
+    /// <param name="pose">Receives the pose, unturned.</param>
+    /// <param name="whereUnits">Receives where the body's frame stands, in world units.</param>
+    /// <param name="orientation">Receives how it is turned: a point of the pose stands at <c>where + orientation^T . p</c>.</param>
+    /// <returns>Whether the body is posed.</returns>
+    public bool TryGetPosedFrame(out BonePose pose, out Vector3d whereUnits, out Matrix3f orientation)
+    {
+        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        pose = null!;
+        whereUnits = default;
+        orientation = Matrix3f.Identity;
+        if (_state.View is not { } view || (!_state.Following && !_state.Climbing))
+        {
+            return false;
+        }
+
+        pose = view.UnrotatedPose();
+        (Vector3d where, Matrix3f turned) = Placement();
+        if (_owner.FrameSmooth && _hasTickState && !PlacedEveryFrame)
+        {
+            where = Vector3d.Lerp(_prevTickWhere, _tickWhere, _owner.FrameAlpha);
+        }
+
+        whereUnits = where * WorldScene.UnitsPerMetre;
+        orientation = turned;
+        return true;
+    }
+
+    /// <summary>Gets a bone of this body as it is drawn this frame: where it is, in world units, and how it is turned.</summary>
+    /// <param name="bone">The bone, in the human rig.</param>
+    /// <returns>The bone, or <see langword="null"/> when the body is not posed or has no such bone.</returns>
+    public BoneAttachment? BoneAttachmentOf(int bone) =>
+        TryGetPosedFrame(out BonePose pose, out Vector3d where, out Matrix3f orientation) && bone >= 0 && bone < pose.BoneCount
+            ? InFrame(where, orientation, pose.Positions[bone], pose.Rotations[bone])
+            : null;
+
+    /// <summary>Stands a point of a posed body's own frame in the world.</summary>
+    /// <param name="whereUnits">Where the frame stands, from <see cref="TryGetPosedFrame"/>.</param>
+    /// <param name="orientation">How it is turned.</param>
+    /// <param name="position">The point, in the frame.</param>
+    /// <param name="rotation">Its turn, in the frame.</param>
+    /// <returns>It in the world.</returns>
+    public static BoneAttachment InFrame(Vector3d whereUnits, Matrix3f orientation, Vector3f position, Matrix3f rotation)
+    {
+        Vector3f turned = orientation.Transposed().Transform(position);
+        return new BoneAttachment(new Vector3d(whereUnits.X + turned.X, whereUnits.Y + turned.Y, whereUnits.Z + turned.Z), orientation * rotation);
+    }
+
     /// <summary>Gets where a name stands over this body's head as it is drawn this frame, in metres, or <see langword="null"/>.</summary>
     /// <remarks>The head is the eye bone of the posed body, so a crouch or a climb carries the name with it.</remarks>
     public Vector3d? HeadAnchorMetres()

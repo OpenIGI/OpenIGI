@@ -82,9 +82,15 @@ public sealed partial class GameHost
         string path = Path.Combine(_gamePath, "common", "anims", name);
         try
         {
-            if (Engine.Vfs.LocalFileDevice.ResolveExisting(_gamePath, $"common/anims/{name}") is { } found && File.Exists(found))
+            // A server's own set, put in place for the session, before the installation's.
+            string? found = _fileSystem.Pins?.TryGetValue($"common/anims/{name.ToLowerInvariant()}", out string? pinned) == true
+                ? pinned
+                : Engine.Vfs.LocalFileDevice.ResolveExisting(_gamePath, $"common/anims/{name}");
+            if (found is not null && File.Exists(found))
             {
-                return BoneAnimationSet.Read(File.ReadAllBytes(found));
+                // With the clips a title adds to the first game's sets (the bomb's hold, plant and defuse), as every set a
+                // pack loads has them.
+                return Game.World.AnimationSetExtensions.Read(Formats.AssetFormatProfile.Igi1, File.ReadAllBytes(found));
             }
 
             if (!required)

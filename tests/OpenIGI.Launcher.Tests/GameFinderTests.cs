@@ -1,3 +1,4 @@
+using OpenIGI.Core.Titles;
 using OpenIGI.Launcher.Services;
 using Xunit;
 
@@ -27,12 +28,12 @@ public sealed class GameFinderTests
             }
             """;
 
-        Assert.Equal([@"C:\Program Files (x86)\Steam", @"D:\SteamLibrary"], GameFinder.SteamLibraries(vdf));
+        Assert.Equal([@"C:\Program Files (x86)\Steam", @"D:\SteamLibrary"], GameInstalls.SteamLibraries(vdf));
     }
 
     [Fact]
     public void A_library_file_with_no_libraries_names_none() =>
-        Assert.Empty(GameFinder.SteamLibraries("\"libraryfolders\"\n{\n}\n"));
+        Assert.Empty(GameInstalls.SteamLibraries("\"libraryfolders\"\n{\n}\n"));
 
     [Fact]
     public void A_settings_file_from_before_the_guide_has_not_been_through_it()

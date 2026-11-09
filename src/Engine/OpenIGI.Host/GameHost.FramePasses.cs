@@ -101,12 +101,14 @@ public sealed partial class GameHost
         _window.PumpEvents();
         ApplyTouchControls();
         _coop?.Update();
+        UpdateParty();
         FollowSession(state);
 
         // Typing wanted -- a text box with the focus, or a co-op line -- for a touch screen to raise its keyboard.
         _window.SetTextEntry(
             _chatEntry is not null
             || (_menuFlow.MenuMode && state.Shell?.Stack.Top?.Focus?.Focused is OpenIGI.UI.Widgets.TextBox));
+        TellPlatformAboutChat();
         UpdateLookPreview();
 
         // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.
@@ -178,11 +180,18 @@ public sealed partial class GameHost
         state.LastConsoleMilliseconds = consoleNow;
 
         // A co-op line being typed takes the keyboard next, the same way.
+        UpdateNextMap();
+        UpdateBombSounds();
         if (!state.Console.IsOpen)
         {
             UpdateCoopVoice();
             UpdateCoopTalk();
             UpdateScoreboard();
+            UpdateControlsHelp();
+            UpdateTeamMenu();
+            UpdateBuyMenu();
+            UpdateBombPickup();
+            UpdateMapVote();
         }
     }
 
@@ -674,6 +683,7 @@ public sealed partial class GameHost
         }
 
         AdvanceRendererSwitch();
+        AdvanceMapShot(state);
 
         if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
         {

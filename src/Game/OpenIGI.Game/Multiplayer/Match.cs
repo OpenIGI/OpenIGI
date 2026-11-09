@@ -15,6 +15,9 @@ public sealed class MatchPlayer(int slot, string name, int team, int money)
     /// <summary>Gets or sets the player's team.</summary>
     public int Team { get; set; } = team;
 
+    /// <summary>Gets or sets the side it joins when the next round begins, having asked to change in the middle of one.</summary>
+    public int? NextTeam { get; set; }
+
     /// <summary>Gets or sets the player's money.</summary>
     public int Money { get; set; } = money;
 
@@ -68,6 +71,9 @@ public sealed class Match
     /// <summary>Gets the team that defends the current objective, which pays less to respawn, or -1.</summary>
     public int DefendingTeam { get; set; } = -1;
 
+    /// <summary>Gets or sets a value indicating whether everyone plays for themselves: no kill is a team kill.</summary>
+    public bool IsFreeForAll { get; set; }
+
     /// <summary>Gets a team's score.</summary>
     /// <param name="team">The team.</param>
     /// <returns>Its score.</returns>
@@ -120,7 +126,7 @@ public sealed class Match
             return;
         }
 
-        if (shooter.Team == dead.Team)
+        if (shooter.Team == dead.Team && !IsFreeForAll)
         {
             Pay(shooter, Rules.MoneyTeamKill);
             return;
@@ -217,6 +223,71 @@ public sealed class Match
             player.Objectives = 0;
             player.IsAlive = true;
             player.DiedAt = null;
+        }
+    }
+
+    /// <summary>Pays a player for something it did (a plant), within the cap.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="amount">The pay.</param>
+    public void Award(int slot, int amount)
+    {
+        if (_players.TryGetValue(slot, out MatchPlayer? player))
+        {
+            Pay(player, amount);
+        }
+    }
+
+    /// <summary>Takes a price from a player who can pay it.</summary>
+    /// <param name="slot">The player's slot.</param>
+    /// <param name="price">The price.</param>
+    /// <returns><see langword="true"/> when it was paid.</returns>
+    public bool TrySpend(int slot, int price)
+    {
+        if (!_players.TryGetValue(slot, out MatchPlayer? player) || player.Money < price)
+        {
+            return false;
+        }
+
+        player.Money -= price;
+        return true;
+    }
+
+    /// <summary>Pays every player for a round decided: the winners' pay, or the losers' (a draw pays everyone as losers).</summary>
+    /// <param name="winningTeam">The team that won it, or -1.</param>
+    public void PayRound(int winningTeam)
+    {
+        foreach (MatchPlayer player in _players.Values)
+        {
+            Pay(player, player.Team == winningTeam ? Rules.MoneyMissionWin : Rules.MoneyMissionLost);
+        }
+    }
+
+    /// <summary>Changes the teams' sides at the half: every player goes to the other team, each team's score goes with it, and
+    /// every player's money starts again.</summary>
+    public void SwapSides()
+    {
+        (_teamScores[0], _teamScores[1]) = (_teamScores[1], _teamScores[0]);
+        foreach (MatchPlayer player in _players.Values)
+        {
+            // The second half's economy starts over, as the first's did.
+            player.Money = Math.Min(Rules.MoneyStart, Rules.MoneyCap);
+            player.Team = player.Team switch
+            {
+                TeamRoster.Good => TeamRoster.Bad,
+                TeamRoster.Bad => TeamRoster.Good,
+                _ => player.Team,
+            };
+        }
+    }
+
+    /// <summary>Adds to a team's score, never below nothing: a kill in team deathmatch, a point held.</summary>
+    /// <param name="team">The team.</param>
+    /// <param name="points">The points, negative for a fine.</param>
+    public void AddTeamScore(int team, int points)
+    {
+        if ((uint)team < 2)
+        {
+            _teamScores[team] = Math.Max(0, _teamScores[team] + points);
         }
     }
 

@@ -2,10 +2,24 @@ using OpenIGI.Net;
 
 namespace OpenIGI.Game.Multiplayer;
 
-/// <summary>A line of chat, and who said it, by entity.</summary>
-/// <param name="Entity">The speaker's entity.</param>
+/// <summary>Who a line of chat is for.</summary>
+public enum ChatKind
+{
+    /// <summary>Said to every player.</summary>
+    All = 0,
+
+    /// <summary>Said to the speaker's own team only.</summary>
+    Team = 1,
+
+    /// <summary>The server's own word: a vote passed, a player put off, the message of the day. Nobody's line.</summary>
+    Server = 2,
+}
+
+/// <summary>A line of chat, who said it, by entity, and who it is for.</summary>
+/// <param name="Entity">The speaker's entity, or -1 for the server's own word.</param>
 /// <param name="Text">What was said.</param>
-public readonly record struct ChatLine(int Entity, string Text);
+/// <param name="Kind">Who it is for.</param>
+public readonly record struct ChatLine(int Entity, string Text, ChatKind Kind = ChatKind.All);
 
 /// <summary>A place one player marked for the others, and who marked it, by entity.</summary>
 /// <param name="Entity">The marker's entity.</param>
@@ -27,11 +41,13 @@ public static class SessionTalk
     /// <param name="writer">Where to.</param>
     /// <param name="entity">The speaker, or -1 from a client, which the server fills in.</param>
     /// <param name="text">What was said.</param>
-    public static void WriteChat(BitWriter writer, int entity, string text)
+    /// <param name="kind">Who it is for.</param>
+    public static void WriteChat(BitWriter writer, int entity, string text, ChatKind kind = ChatKind.All)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.WriteBits((uint)SessionMessage.Chat, 8);
         writer.WriteVarInt(entity);
+        writer.WriteBits((uint)kind, 2);
         writer.WriteString(Trim(text), MaxChatLength);
     }
 
@@ -95,8 +111,9 @@ public static class SessionTalk
     public static ChatLine? ReadChat(ref BitReader reader)
     {
         int entity = reader.ReadVarInt();
+        var kind = (ChatKind)reader.ReadBits(2);
         string text = Trim(reader.ReadString(MaxChatLength));
-        return reader.IsOverflowed || text.Length == 0 ? null : new ChatLine(entity, text);
+        return reader.IsOverflowed || text.Length == 0 || kind > ChatKind.Server ? null : new ChatLine(entity, text, kind);
     }
 
     /// <summary>Reads the rest of a mark, after its kind.</summary>

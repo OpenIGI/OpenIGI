@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -207,6 +207,9 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenHeight">The target height in pixels.</param>
     /// <param name="controls">The host's hand on the board -- the players it may remove, and the pointer -- or <see langword="null"/> for a board only read.</param>
     /// <param name="relayed">Whether this player's connection goes through the TURN relay.</param>
+    /// <param name="mode">The mode played, a <see cref="Game.Multiplayer.Modes.GameModes"/> id; empty for co-op.</param>
+    /// <param name="besideVote">Whether it shares the screen with the vote for the next map, on its left, its rows fitted to the
+    /// room under the match's card; otherwise it stands alone in the middle.</param>
     void DrawScoreboard(
         SpriteBatch batch,
         Game.Multiplayer.Scoreboard board,
@@ -216,7 +219,9 @@ public interface IRemasteredHudPresenter : IDisposable
         int screenWidth,
         int screenHeight,
         ScoreboardControls? controls = null,
-        bool relayed = false)
+        bool relayed = false,
+        string mode = "",
+        bool besideVote = false)
     {
     }
 
@@ -229,6 +234,145 @@ public interface IRemasteredHudPresenter : IDisposable
     /// <param name="screenWidth">The target width in pixels.</param>
     /// <param name="screenHeight">The target height in pixels.</param>
     void DrawDowned(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the match's banner across the top: its mode and clock, a decided match's result, a warning to get back in play.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="banner">What to show.</param>
+    /// <param name="warning">A warning over everything else (out of bounds), or <see langword="null"/>.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawMatchBanner(SpriteBatch batch, Game.Multiplayer.Modes.MatchBanner banner, string? warning, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws a multiplayer mode's HUD: the score strip, the bomb, a plant or defuse under way, a decided round's card.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="hud">What to show.</param>
+    /// <param name="warning">A warning over everything else (out of bounds), or <see langword="null"/>.</param>
+    /// <param name="useKey">The use key's name, as its hints show it.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    /// <param name="buyKey">The buy menu's key's name.</param>
+    void DrawMatchHud(SpriteBatch batch, Game.Multiplayer.Modes.MatchHud hud, string? warning, string useKey, int screenWidth, int screenHeight, string buyKey = "G")
+    {
+    }
+
+    /// <summary>Draws a match's buy menu: what the armoury sells, each with its price, those the player cannot afford dimmed.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="items">What it sells.</param>
+    /// <param name="money">The player's money, or <see langword="null"/> for a free loadout (a deathmatch's).</param>
+    /// <param name="buyClock">The buy time left, as <c>0:14</c>, or <see langword="null"/> for a loadout picked at any time.</param>
+    /// <param name="pointer">Where the pointer is, in pixels.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawBuyMenu(
+        SpriteBatch batch,
+        IReadOnlyList<Game.Multiplayer.Modes.ArmouryItem> items,
+        int? money,
+        string? buyClock,
+        (float X, float Y) pointer,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Draws a team match's team menu: a card for each side with its players, and one to be put on the fairer side.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="pick">The sides.</param>
+    /// <param name="modeTitle">The mode's name, as the menu heads it.</param>
+    /// <param name="key">The team menu's key's name, as its foot says to shut it.</param>
+    /// <param name="pointer">Where the pointer is, in pixels.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawTeamMenu(
+        SpriteBatch batch,
+        Game.Multiplayer.Modes.TeamPick pick,
+        string modeTitle,
+        string key,
+        (float X, float Y) pointer,
+        int screenWidth,
+        int screenHeight)
+    {
+    }
+
+    /// <summary>Gets where the last team menu drew each choice's card, by its index in <see cref="Game.Multiplayer.Modes.TeamPick.Choices"/>.</summary>
+    IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> TeamMenuCards => [];
+
+    /// <summary>Gets where the last buy menu drew each item's row, by its index, in pixels: what a click is tested against.</summary>
+    IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> BuyMenuRows => [];
+
+    /// <summary>Draws the vote for the next map under a decided match's card: a card for each map offered, with its votes.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="vote">The vote, as the local player sees it.</param>
+    /// <param name="clock">The time left to vote, as <c>0:12</c>, or <see langword="null"/>.</param>
+    /// <param name="pointer">Where the pointer is, in pixels.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    /// <param name="besideBoard">Whether it shares the screen with the scoreboard, on its right, the maps in two columns; otherwise
+    /// it stands alone across the middle.</param>
+    void DrawMapVote(
+        SpriteBatch batch, Game.Multiplayer.Modes.NextMapVote vote, string? clock, (float X, float Y) pointer, int screenWidth, int screenHeight, bool besideBoard = false)
+    {
+    }
+
+    /// <summary>Gets where the last vote drew each map's card, by its index, in pixels: what a click is tested against.</summary>
+    IReadOnlyList<(int Index, float X, float Y, float Width, float Height)> MapVoteCards => [];
+
+    /// <summary>Draws whom a dead player watches, low in the middle of the screen, and how to watch the next: its killer, for
+    /// the kill cam's moment, named in red with how far off it stood.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="watched">The watched player.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawSpectating(SpriteBatch batch, Game.Multiplayer.Modes.SpectateTarget watched, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the small reminder of the key held for the controls panel, where it keeps out of play's way.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="holdKey">The key, as its cap shows it.</param>
+    /// <param name="opacity">How strongly: full as a match starts, faint once the player has had time to read it.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawControlsHint(SpriteBatch batch, string holdKey, float opacity, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the controls panel: what every key does, in columns, as the player has the keys bound.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="help">What to show.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawControls(SpriteBatch batch, Hud.ControlsHelp help, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the net graph: a few lines on the connection, on a plate at the right of the screen.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="lines">The lines.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawNetGraph(SpriteBatch batch, IReadOnlyList<string> lines, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the local player's combat feedback round the crosshair: the hit marker, and where shots that struck it came from.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="hud">What to show.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawCombat(SpriteBatch batch, Game.Multiplayer.Modes.CombatHud hud, int screenWidth, int screenHeight)
+    {
+    }
+
+    /// <summary>Draws the kills of late down the top right corner, each killer and victim in its team's colour.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="kills">The kills, oldest first.</param>
+    /// <param name="screenWidth">The target width in pixels.</param>
+    /// <param name="screenHeight">The target height in pixels.</param>
+    void DrawKillFeed(SpriteBatch batch, IReadOnlyList<Game.Multiplayer.Modes.KillNote> kills, int screenWidth, int screenHeight)
     {
     }
 
@@ -253,7 +397,7 @@ public interface IRemasteredHudPresenter : IDisposable
 
     /// <summary>Draws co-op talk: the lines said, the one being typed, and the places marked, each with who and how far.</summary>
     /// <param name="batch">The batch to draw into.</param>
-    /// <param name="chat">The lines still up, oldest first.</param>
+    /// <param name="chat">The lines to show, oldest first: those still up, or the whole history while a line is typed.</param>
     /// <param name="entry">The line being typed, or <see langword="null"/>.</param>
     /// <param name="warning">A word about this player's connection, or <see langword="null"/>.</param>
     /// <param name="talking">Who is talking now, by name.</param>
@@ -266,7 +410,7 @@ public interface IRemasteredHudPresenter : IDisposable
     void DrawCoopTalk(
         SpriteBatch batch,
         IReadOnlyList<HudChatLine> chat,
-        string? entry,
+        HudChatEntry? entry,
         string? warning,
         IReadOnlyList<string> talking,
         IReadOnlyList<HudMark> marks,

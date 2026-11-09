@@ -54,6 +54,18 @@ public sealed partial class GameHost
     /// <remarks>The cascades take it from here too, so a ground the eye cannot see out to casts nothing into the room.</remarks>
     private ITerrainPresenter? OutsideTerrain => _world?.Visibility?.IsOutsideVisible == false ? null : _terrain;
 
+    /// <summary>The level's models' levels of detail as the settings have them this frame, or none when every model is drawn whole.</summary>
+    private ModelLodPolicy? ActiveModelLod()
+    {
+        if (!FrameCVars.ModelLod.Value || _modelLod is not { } lod)
+        {
+            return null;
+        }
+
+        lod.Reach = FrameCVars.ModelLodReach.Value;
+        return lod;
+    }
+
     private void DrawSceneGeometry(
         MapSceneView? mapScene, bool captured, Camera3D eye, Matrix4f projection, float verticalFieldOfView, float aspectRatio, bool cascadesRead,
         int cascadeCount, bool smoothPresentation, float tickBlend)
@@ -73,10 +85,11 @@ public sealed partial class GameHost
         // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
         // same authored haze through the froxel volume instead, and their models are lit by the
         // G-buffer pass rather than by this one.
-        // Every model whole, under every preset; the original's levels of detail only when asked for (r_model_lod).
+        // The original's levels of detail under every preset, at r_model_lod_reach times its distances; r_model_lod 0 draws every
+        // model whole.
         if (_world is { } detailedWorld)
         {
-            detailedWorld.Lod = FrameCVars.ModelLod.Value ? _modelLod : null;
+            detailedWorld.Lod = ActiveModelLod();
 
             // The original's face groups on its own look: the opaque ones without an alpha test, the sorted ones blended after.
             detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
@@ -262,6 +275,7 @@ public sealed partial class GameHost
 
         _device.SetObjectMotion(true);
         _gunPickupRenderer?.Draw(eye, projection);
+        DrawBombs(eye, projection);
 
         // The grenades, rockets and launcher rounds in the air, solid geometry among the world's own.
         WorldView?.DrawProjectiles(_grenadeRenderer, _missileRenderer, eye, projection, smoothPresentation ? tickBlend : 1f);
@@ -465,6 +479,9 @@ public sealed partial class GameHost
                 GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla);
         }
 
+        // A multiplayer mode's places -- the bomb sites -- on the ground, over the lit scene like the tracers.
+        DrawModePoints(eye, projection);
+
         // The soldiers' muzzle flames, for the same reason: drawn from the soldier pass they
         // landed in the G-buffer and shaded as scenery -- the one-frame black square at a
         // firing guard's muzzle. Light draws over the lit scene.
@@ -553,7 +570,14 @@ public sealed partial class GameHost
         else if (GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla && _retailWeather is { } retailWeather)
         {
             // The original's look draws the level's weather as the original does, stopping on whatever is above the ground.
-            retailWeather.Draw(new WeatherFrame(eye, projection, _window.Height, _mission.EffectWalls, _loop.Clock.TickCount));
+            // Smooth motion draws each drop partway through its last tick's fall, as everything else between ticks is drawn.
+            retailWeather.Draw(new WeatherFrame(
+                eye,
+                projection,
+                _window.Height,
+                _mission.EffectWalls,
+                _loop.Clock.TickCount,
+                smoothPresentation ? tickBlend : 1f));
         }
         else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
         {

@@ -56,10 +56,21 @@ public sealed class RoomTransport : INetTransport
     /// <summary>The master server rooms are opened on.</summary>
     public static readonly Uri DefaultMaster = new("https://master.openigi.com");
 
+    /// <summary>Gets the link a friend opens to join a room: in the browser, or the game where it handles the link.</summary>
+    /// <param name="code">The room's code.</param>
+    /// <returns>The link.</returns>
+    public static string InviteLink(string code) => $"https://openigi.com/join/{Uri.EscapeDataString(code)}";
+
     /// <summary>The host's address, to a joiner.</summary>
     public static readonly NetAddress HostAddress = NetAddress.Peer(0);
 
     private const string LogCategory = "Room";
+
+    // How long a host keeps trying to get back to its room after its socket to the master dropped: the room waits a minute.
+    private static readonly TimeSpan HostReturn = TimeSpan.FromSeconds(55);
+
+    // The close code the room's own closing carries: the room is gone, not the line.
+    private const int RoomClosedCode = 4001;
 
     private readonly Uri _master;
     private readonly IRtcPeerFactory _factory;
@@ -107,6 +118,10 @@ public sealed class RoomTransport : INetTransport
 
     /// <inheritdoc/>
     public int MaxDatagramSize => NetConstants.MaxPacketSize;
+
+    /// <inheritdoc/>
+    /// <remarks>Every data channel runs over DTLS.</remarks>
+    public bool IsEncrypted => true;
 
     /// <summary>Opens a room and hosts it.</summary>
     /// <param name="master">The master server.</param>
@@ -211,6 +226,20 @@ public sealed class RoomTransport : INetTransport
         }
 
         _disposed = true;
+
+        // A host leaving says goodbye, so its room closes now rather than waiting a minute for it to come back.
+        if (_hosting && _socket is { State: WebSocketState.Open } open)
+        {
+            try
+            {
+                open.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "the host left", CancellationToken.None).Wait(TimeSpan.FromSeconds(1));
+            }
+            catch (Exception ex) when (ex is WebSocketException or AggregateException or ObjectDisposedException)
+            {
+                // Gone already: the room finds out by itself.
+            }
+        }
+
         _stop.Cancel();
         foreach (IRtcPeer peer in _peers.Values)
         {
@@ -415,10 +444,45 @@ public sealed class RoomTransport : INetTransport
         _ice = ReadIce(made["ice"] as JsonArray);
         _code = code;
         string token = (string?)made["hostToken"] ?? string.Empty;
-        await ConnectAsync(new Uri(_master, $"/v1/rooms/{code}/ws?role=host&token={Uri.EscapeDataString(token)}")).ConfigureAwait(false);
+        Uri signalling = new(_master, $"/v1/rooms/{code}/ws?role=host&token={Uri.EscapeDataString(token)}&returns=1");
+
+        // The socket to the room drops -- the line blinks, the master is redeployed -- while the game runs on between the
+        // players: the host goes back to its room, which waits for it, so new joiners can still arrive. Only the first
+        // connection failing is the end at once.
+        DateTime? lostAt = null;
+        TimeSpan wait = TimeSpan.FromSeconds(1);
+        while (true)
+        {
+            try
+            {
+                bool roomClosed = await ConnectAsync(signalling).ConfigureAwait(false);
+                if (roomClosed || _stop.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                lostAt = DateTime.UtcNow;
+                wait = TimeSpan.FromSeconds(1);
+                _logger.Warning(LogCategory, $"Lost room {code}'s master server; getting back to it.");
+            }
+            catch (Exception ex) when (lostAt is not null && ex is InvalidOperationException or WebSocketException or HttpRequestException)
+            {
+                // Not back yet: the line still down, or the room not yet aware the last socket went.
+            }
+
+            if (DateTime.UtcNow - lostAt > HostReturn)
+            {
+                _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = "lost the master server" }.ToJsonString());
+                return;
+            }
+
+            await Task.Delay(wait, _stop.Token).ConfigureAwait(false);
+            wait = TimeSpan.FromSeconds(Math.Min(8, wait.TotalSeconds * 2));
+        }
     }
 
-    private async Task ConnectAsync(Uri http)
+    // One socket to the room, read until it closes: true when the room itself closed it, false when only the line dropped.
+    private async Task<bool> ConnectAsync(Uri http)
     {
         UriBuilder ws = new(http) { Scheme = http.Scheme == Uri.UriSchemeHttps ? "wss" : "ws" };
         ClientWebSocket socket = new();
@@ -436,26 +500,52 @@ public sealed class RoomTransport : INetTransport
         Task sending = SendLoopAsync(socket);
         byte[] buffer = new byte[16 * 1024];
         using MemoryStream message = new();
-        while (!_stop.IsCancellationRequested && socket.State == WebSocketState.Open)
+        bool roomClosed = false;
+        try
         {
-            WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, _stop.Token).ConfigureAwait(false);
-            if (result.MessageType == WebSocketMessageType.Close)
+            while (!_stop.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
-                string reason = socket.CloseStatusDescription is { Length: > 0 } said ? said : "the room closed";
-                _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = reason }.ToJsonString());
-                break;
-            }
+                WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, _stop.Token).ConfigureAwait(false);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    // The room closing, or refusing this side, is the end; a host's socket closed any other way is only the
+                    // line, and the host goes back. A joiner whose channel to the host is open needs the room no more.
+                    roomClosed = !_hosting || (int?)socket.CloseStatus is RoomClosedCode or 4000;
+                    if (roomClosed && (_hosting || _status != RoomStatus.Open))
+                    {
+                        string reason = socket.CloseStatusDescription is { Length: > 0 } said ? said : "the room closed";
+                        _inbox.Enqueue(new JsonObject { ["type"] = "closed", ["reason"] = reason }.ToJsonString());
+                    }
 
-            message.Write(buffer, 0, result.Count);
-            if (result.EndOfMessage)
-            {
-                _inbox.Enqueue(Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length));
-                message.SetLength(0);
+                    break;
+                }
+
+                message.Write(buffer, 0, result.Count);
+                if (result.EndOfMessage)
+                {
+                    _inbox.Enqueue(Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length));
+                    message.SetLength(0);
+                }
             }
+        }
+        catch (WebSocketException) when (_hosting || _status == RoomStatus.Open)
+        {
+            // The line to the master dropped: a host goes back to its room, a joiner already playing doesn't need it.
+            roomClosed = !_hosting;
         }
 
         _outboxReady.Release();
-        await sending.ConfigureAwait(false);
+        try
+        {
+            await sending.ConfigureAwait(false);
+        }
+        catch (WebSocketException)
+        {
+            // The same drop, seen sending.
+        }
+
+        socket.Dispose();
+        return roomClosed;
     }
 
     private async Task SendLoopAsync(ClientWebSocket socket)

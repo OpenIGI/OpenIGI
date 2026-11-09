@@ -72,15 +72,29 @@ internal sealed class Igi1CoopPair : IDisposable
     {
     }
 
-    private Igi1CoopPair(IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true)
+    /// <summary>Initializes a new instance of the <see cref="Igi1CoopPair"/> class playing a mode other than co-op.</summary>
+    /// <param name="mode">The mode's id, as <c>tdm</c>.</param>
+    /// <param name="mission">The mission both play.</param>
+    /// <param name="joinerMode">The mode the joiner believes it is joining, as a stale listing would say; the host's by default.</param>
+    /// <param name="hostSkipsIntro">Whether the host skips the level's intro, as a capture does; a player's game plays it.</param>
+    /// <param name="dedicated">Whether the server plays no part itself, as a dedicated server: its mission's player is nobody's.</param>
+    public Igi1CoopPair(string mode, int mission, string? joinerMode = null, bool hostSkipsIntro = true, bool dedicated = false)
+        : this(null, null, mission, 20000, [], [], joinLater: false, hostSkipsIntro, mode, joinerMode, dedicated)
     {
+    }
+
+    private Igi1CoopPair(
+        IAudioDeviceFactory? hostAudio, IAudioDeviceFactory? joinerAudio, int mission, int frames, string[] hostArgs, string[] joinerArgs, bool joinLater, bool hostSkipsIntro = true, string mode = "coop", string? joinerMode = null, bool dedicated = false)
+    {
+        _mode = mode;
+        _joinerMode = joinerMode ?? mode;
         bool talks = hostAudio is not null;
         Core.Configuration.CVarRegistry.Default.ResetAll();
         string[] args = ["-mission", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "-lockstep", "-frames", frames.ToString(System.Globalization.CultureInfo.InvariantCulture)];
         string[] skip = hostSkipsIntro ? ["-skipcutscene"] : [];
         _session = new HostedSession(
             _network.Open(26001),
-            new HostedSessionOptions("coop", 4, string.Empty, "coop", mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: true),
+            new HostedSessionOptions("coop", 4, string.Empty, mode, mission.ToString(System.Globalization.CultureInfo.InvariantCulture), "test", IncludesHost: !dedicated),
             "igi1",
             30,
             NullLogger.Instance);
@@ -202,19 +216,79 @@ internal sealed class Igi1CoopPair : IDisposable
         _session.Dispose();
         _hostDevice.Dispose();
         _joinerDevice.Dispose();
+        _joinerIdentity.Dispose();
     }
 
     private SessionClient NewClient()
     {
         JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0);
-        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance);
+        return new(JoinerLink, _session.LocalAddress, new JoinRequest("Anya", "test", string.Empty), "igi1", NullLogger.Instance, _joinerIdentity,
+            reopen: () => JoinerLink = new SimulatedLinkTransport(_network.Open(), () => _steps / 30.0))
+        {
+            Mode = _joinerMode,
+        };
     }
+
+    // The mode both play, and the one the joiner is told before it is welcomed.
+    private readonly string _mode;
+    private readonly string _joinerMode;
+
+    // The joiner's identity, kept across its reconnections as its game keeps its key file.
+    private readonly OpenIGI.Net.Identity.EcdsaPlayerIdentity _joinerIdentity = OpenIGI.Net.Identity.EcdsaPlayerIdentity.CreateEphemeral();
 
     // Frames run, the clock the joiner's line keeps.
     private long _steps;
 
     /// <summary>Gets the joiner's line to the host, perfect until a test makes it otherwise.</summary>
     public SimulatedLinkTransport JoinerLink { get; private set; } = null!;
+
+    /// <summary>
+    /// Finds a way ahead from a spot along which a round flies five metres clear: nothing solid crosses it, the ground is under
+    /// its end, and nothing stands between an eye there and a target anywhere up to <paramref name="sweepMetres"/> to either
+    /// side of that end -- or a round aimed at a target running across stops on a wall beside the shooter instead.
+    /// </summary>
+    /// <param name="feet">The shooter's feet.</param>
+    /// <param name="sweepMetres">How far either side the target runs; nought for a standing one.</param>
+    /// <returns>The way, flat; <see langword="null"/> when there is none.</returns>
+    public Core.Numerics.Vector3d? ClearAhead(Core.Numerics.Vector3d feet, double sweepMetres)
+    {
+        if (Host?.World.Solids?.Caster() is not { } cast)
+        {
+            return null;
+        }
+
+        Core.Numerics.Vector3d from = feet + new Core.Numerics.Vector3d(0, 0, 1.6 * 4096);
+        bool Clear(Core.Numerics.Vector3d along)
+        {
+            if (cast(from, from + (along * 7 * 4096), out _)
+                || cast(from + (along * 5 * 4096), feet + (along * 5 * 4096) + new Core.Numerics.Vector3d(0, 0, 256), out _))
+            {
+                return false;
+            }
+
+            Core.Numerics.Vector3d across = new(along.Y, -along.X, 0);
+            for (double metres = -sweepMetres; sweepMetres > 0 && metres <= sweepMetres; metres += sweepMetres / 4)
+            {
+                if (cast(from, feet + (along * 5 * 4096) + (across * metres * 4096) + new Core.Numerics.Vector3d(0, 0, 1.3 * 4096), out _))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        for (int i = 0; i < 16; i++)
+        {
+            Core.Numerics.Vector3d along = new(Math.Sin(i * Math.PI / 8), Math.Cos(i * Math.PI / 8), 0);
+            if (Clear(along))
+            {
+                return along;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>Puts a round trip between the joiner and the host, half each way.</summary>
     /// <param name="seconds">The round trip, in seconds.</param>
@@ -237,7 +311,7 @@ internal sealed class Igi1CoopPair : IDisposable
 
     // Passes the ticks on to a session and keeps the level it runs on.
     // A client's watch follows its session where the server goes.
-    private sealed class FollowingWatch(SessionClient inner) : Watch(inner), ISessionFollower
+    internal sealed class FollowingWatch(SessionClient inner) : Watch(inner), ISessionFollower
     {
         public string? TakeTravel() => (Inner as SessionClient)?.TakeTravel();
 
@@ -259,9 +333,32 @@ internal sealed class Igi1CoopPair : IDisposable
     }
 
     // The session's talk passes through too, as the game finds it on the session itself.
-    private class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold
+    internal class Watch(IHostTickObserver inner) : IHostTickObserver, ISessionTalk, ISessionHold, ISessionMode, ISessionScoreboard
     {
         public IHostTickObserver Inner { get; set; } = inner;
+
+        // The host's frame reaches the session's fight through this, as it does the session itself in the game.
+        public Game.Multiplayer.Scoreboard? CurrentScoreboard => (Inner as ISessionScoreboard)?.CurrentScoreboard;
+
+        public int? LocalEntity => (Inner as ISessionScoreboard)?.LocalEntity;
+
+        public string Title => (Inner as ISessionScoreboard)?.Title ?? string.Empty;
+
+        public void CreditHits(Game.Player.ShotTally? own) => (Inner as ISessionScoreboard)?.CreditHits(own);
+
+        public string Mode => (Inner as ISessionMode)?.Mode ?? string.Empty;
+
+        public Game.Multiplayer.Modes.MpLayout? Layout
+        {
+            get => (Inner as ISessionMode)?.Layout;
+            set
+            {
+                if (Inner is ISessionMode mode)
+                {
+                    mode.Layout = value;
+                }
+            }
+        }
 
         public bool HoldsLevel => Inner is ISessionHold { HoldsLevel: true };
 
@@ -281,7 +378,7 @@ internal sealed class Igi1CoopPair : IDisposable
 
         private ISessionTalk? Talk => Talks ? Inner as ISessionTalk : null;
 
-        public void Say(string text) => Talk?.Say(text);
+        public void Say(string text, bool team = false) => Talk?.Say(text, team);
 
         public void Mark(Int3 position) => Talk?.Mark(position);
 

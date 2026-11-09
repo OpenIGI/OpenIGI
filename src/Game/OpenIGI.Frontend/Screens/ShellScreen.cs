@@ -17,7 +17,7 @@ public enum ShellTab
     /// <summary>The campaign / mission select.</summary>
     Campaign,
 
-    /// <summary>Co-op through rooms: host, join by code, or pick a public room.</summary>
+    /// <summary>Multiplayer: the server browser, joining by code, parties and hosting every mode.</summary>
     Coop,
 
     /// <summary>The settings.</summary>
@@ -218,7 +218,7 @@ public abstract class ShellScreen : Screen
         nav.Add(new KeyCapLabel(theme, "Q") { Margin = new Thickness(0f, 0f, 12f, 0f) });
         foreach (ShellTab tab in Order)
         {
-            var button = new HeaderTab(theme, tab == ShellTab.Coop ? "Co-op" : tab.ToString()) { Selected = tab == Tab };
+            var button = new HeaderTab(theme, tab == ShellTab.Coop ? "Multiplayer" : tab.ToString()) { Selected = tab == Tab };
             ShellTab target = tab;
             button.Activated += _ => GoTo(target);
             nav.Add(button);
@@ -386,7 +386,7 @@ public abstract class ShellScreen : Screen
     private static Screen CreateScreen(ShellTab tab, ShellContext context) => tab switch
     {
         ShellTab.Campaign => new CampaignScreen(context),
-        ShellTab.Coop => new CoopScreen(context),
+        ShellTab.Coop => new MultiplayerScreen(context),
         ShellTab.Settings => new SettingsScreen(context),
         ShellTab.Profile => new ProfilesScreen(context),
         ShellTab.Extras => new ExtrasScreen(context),

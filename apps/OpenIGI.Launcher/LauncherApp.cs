@@ -110,9 +110,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         Bottom = 8,
     }
 
-    public LauncherApp()
+    /// <param name="args">The command line: an <c>openigi://</c> invite link, when an invite page opened the launcher.</param>
+    public LauncherApp(string[] args)
     {
         _model = new LauncherModel(_log);
+        Services.InviteLinks.Register(_log.Logger);
+        _model.TakeInvite(Services.InviteLinks.FromCommandLine(args ?? []));
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 
@@ -392,16 +395,21 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _log.Dispose();
     }
 
+    /// <summary>A reason the window cannot be drawn, written to the log first, since nothing on screen can show it.</summary>
+    private InvalidOperationException StartupFailure(string message)
+    {
+        string renderer = _gl is null ? "unknown" : $"{_gl.GetStringS(StringName.Renderer)}, OpenGL {_gl.GetStringS(StringName.Version)}";
+        _log.Logger.Error("Launcher", $"{message} Renderer: {renderer}.");
+        return new InvalidOperationException(message);
+    }
+
     private void OnLoad()
     {
         _gl = GL.GetApi(_window);
-        // Skia probes optional entry points (EGL, extensions) and expects null for a missing one; Silk's
-        // GetProcAddress throws instead, so the lookup goes through the non-throwing form.
-        IGLContext context = _window.GLContext!;
-        GRGlInterface glInterface = GRGlInterface.Create(name => context.TryGetProcAddress(name, out nint address) ? address : 0)
-            ?? throw new InvalidOperationException("Skia could not bind to the window's OpenGL context.");
+        GRGlInterface glInterface = SkiaGlProcs.CreateInterface(_window.GLContext!)
+            ?? throw StartupFailure("Skia could not bind to the window's OpenGL context.");
         _gr = GRContext.CreateGl(glInterface)
-            ?? throw new InvalidOperationException("Skia could not create a GPU context on the window.");
+            ?? throw StartupFailure("Skia could not create a GPU context on the window.");
 
         _typography = LauncherFonts.Load();
         (UiTheme theme, UiTheme rows) = CreateThemes(_typography);

@@ -44,6 +44,10 @@ public sealed class DoorState
     private bool _latch;
     private int _ticksOpen;
 
+    // Put back by a reset: the next tick re-places the door at the pose the match began with.
+    private bool _replace;
+    private Start _start;
+
     /// <summary>Initializes a new instance of the <see cref="DoorState"/> class, fully closed.</summary>
     /// <param name="maxAngleDegrees">The task's <c>Max angle</c> (<c>+320</c>) — zero for a purely sliding door.</param>
     /// <param name="openTimeSeconds">The task's <c>Open time</c> (<c>+324</c>), in seconds.</param>
@@ -67,6 +71,7 @@ public sealed class DoorState
         _slideLength = slideLength;
         PreviousSlideFraction = initialSlide;
         IsFullyClosed = true;
+        MarkLevelStart();
     }
 
     /// <summary>Gets the swing's current angle, in degrees — <c>+396</c>.</summary>
@@ -128,6 +133,30 @@ public sealed class DoorState
             return _latch ? 2 : 3;
         }
     }
+
+    /// <summary>Records the door as it stands, for <see cref="ResetToLevelStart"/>.</summary>
+    public void MarkLevelStart() =>
+        _start = new Start(_angleDegrees, _slide, _latch, _ticksOpen, IsFullyOpen, IsFullyClosed, WasFullyOpen, WasFullyClosed);
+
+    /// <summary>Puts the door back as <see cref="MarkLevelStart"/> found it.</summary>
+    /// <remarks>Its next <see cref="Tick"/> reports it swung and slid, so the owner re-places it and its collision follows.</remarks>
+    public void ResetToLevelStart()
+    {
+        _angleDegrees = _start.Angle;
+        _slide = _start.Slide;
+        _latch = _start.Latch;
+        _ticksOpen = _start.TicksOpen;
+        PreviousAngleDegrees = _start.Angle;
+        PreviousSlideFraction = _start.Slide;
+        IsFullyOpen = _start.IsFullyOpen;
+        IsFullyClosed = _start.IsFullyClosed;
+        WasFullyOpen = _start.WasFullyOpen;
+        WasFullyClosed = _start.WasFullyClosed;
+        _replace = true;
+    }
+
+    private readonly record struct Start(
+        float Angle, float Slide, bool Latch, int TicksOpen, bool IsFullyOpen, bool IsFullyClosed, bool WasFullyOpen, bool WasFullyClosed);
 
     /// <summary>Toggles the open command — <c>sub_447DA0</c>'s XOR.</summary>
     public void Toggle() => _latch ^= true;
@@ -249,6 +278,14 @@ public sealed class DoorState
             }
 
             SlidThisTick = true;
+        }
+
+        // A reset's: re-placed at its loaded pose whether or not anything moved.
+        if (_replace)
+        {
+            _replace = false;
+            SwungThisTick = true;
+            SlidThisTick = _slides;
         }
 
         // Fully open / fully closed are recomputed from "both channels at target": closed when the

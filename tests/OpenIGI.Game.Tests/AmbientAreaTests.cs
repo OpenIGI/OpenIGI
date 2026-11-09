@@ -88,11 +88,43 @@ public sealed class AmbientAreaTests
         live.Tick(new Vector3d(0, 0, 0));
         Assert.Equal("hum", area.PendingSound);
 
-        // Whoever plays it says so, and the area then asks for nothing further.
+        // Whoever plays it takes it and says so, and the area then asks for nothing further.
+        Assert.Equal("hum", area.TakePendingSound());
         area.IsSounding = true;
         live.Tick(new Vector3d(0, 0, 0));
         Assert.Equal(string.Empty, area.PendingSound);
         Assert.False(area.WantsStop);
+    }
+
+    [Fact]
+    public void AStartNobodyTookIsHeldUntilTheSpeakersAreServed()
+    {
+        // The walk updates areas through an intro or cutscene while the speakers are not served: a looped bed that asked to
+        // start then must still start once they are, not be held silent for as long as the player stays inside.
+        PlacedAmbientArea area = Area(halfExtentsMetres: new Vector3d(1.0, 1.0, 1.0), sound: "hum");
+        AmbientAreaRegistry live = Registry(area);
+        for (int tick = 0; tick < 10; tick++)
+        {
+            live.Tick(new Vector3d(0, 0, 0));
+        }
+
+        Assert.True(area.HasVoice);
+        Assert.Equal("hum", area.TakePendingSound());
+        Assert.Equal(string.Empty, area.TakePendingSound());
+    }
+
+    [Fact]
+    public void AStartNobodyTookIsDroppedWithoutAStopWhenTheAreaFadesOut()
+    {
+        PlacedAmbientArea area = Area(halfExtentsMetres: new Vector3d(1.0, 1.0, 1.0), sound: "hum");
+        AmbientAreaRegistry live = Registry(area);
+        live.Tick(new Vector3d(0, 0, 0));
+        live.Tick(new Vector3d(100_000, 0, 0));
+
+        Assert.Equal(0.0, area.Fade, 6);
+        Assert.Equal(string.Empty, area.PendingSound);
+        Assert.False(area.WantsStop);
+        Assert.False(area.HasVoice);
     }
 
     [Fact]
@@ -106,6 +138,10 @@ public sealed class AmbientAreaTests
         for (int tick = 0; tick < 20; tick++)
         {
             live.Tick(new Vector3d(0, 0, 0));
+            if (area.TakePendingSound().Length > 0)
+            {
+                area.IsSounding = true;
+            }
         }
 
         // The bed started at once (no gap authored), so the area holds its instance.
@@ -122,12 +158,13 @@ public sealed class AmbientAreaTests
         for (int tick = 0; tick < 30 && !stopped; tick++)
         {
             live.Tick(outside);
-            stopped = area.WantsStop;
+            stopped = area.TakeStop();
         }
 
         Assert.True(stopped);
         Assert.Equal(0.0, area.Fade, 6);
         Assert.False(area.HasVoice);
+        area.IsSounding = false;
         live.Tick(outside);
         Assert.False(area.WantsStop);
     }

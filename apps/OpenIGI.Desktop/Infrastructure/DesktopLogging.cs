@@ -2,7 +2,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Host;
 using OpenIGI.Host.Infrastructure;
-using OpenIGI.Platform.Desktop.Logging;
 
 namespace OpenIGI.Desktop;
 

@@ -11,12 +11,15 @@ public enum DesktopWindowSystem
 
     /// <summary>A Wayland surface: a display and a surface.</summary>
     Wayland,
+
+    /// <summary>A Cocoa window on macOS: no display, and the <c>NSWindow</c>.</summary>
+    Cocoa,
 }
 
 /// <summary>A desktop window's native handles, as its own window system names them.</summary>
 /// <param name="System">Which window system they belong to.</param>
-/// <param name="Display">The Win32 module instance, the Xlib display, or the Wayland display.</param>
-/// <param name="Window">The Win32 window handle, the X11 window identifier, or the Wayland surface.</param>
+/// <param name="Display">The Win32 module instance, the Xlib display, or the Wayland display; zero for Cocoa.</param>
+/// <param name="Window">The Win32 window handle, the X11 window identifier, the Wayland surface, or the <c>NSWindow</c>.</param>
 /// <remarks>
 /// For a graphics API that makes its surface from the window itself rather than from a Vulkan surface
 /// the window hands over. Named here rather than in that API's terms so the platform layer names no

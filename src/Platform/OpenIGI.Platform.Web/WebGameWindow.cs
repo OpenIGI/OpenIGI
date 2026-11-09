@@ -39,6 +39,8 @@ public sealed class WebGameWindow : IGameWindow
     private bool _cursorLocked;
     private bool _gyroWanted;
     private bool _textWanted;
+    private string? _textLine;
+    private (float X, float Y, float Width, float Height)? _textTrigger;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGameWindow"/> class.</summary>
@@ -196,6 +198,32 @@ public sealed class WebGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
+    /// <remarks>Asked of the page only when it changes: the host says it every frame.</remarks>
+    public void SetTextLine(string? line)
+    {
+        if (_textLine != line && !_disposed)
+        {
+            _textLine = line;
+            _page.SetTextLine(line);
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Asked of the page only when it changes: the host says it every frame.</remarks>
+    public void SetTextTrigger((float X, float Y, float Width, float Height)? area)
+    {
+        if (_textTrigger != area && !_disposed)
+        {
+            _textTrigger = area;
+            (float x, float y, float width, float height) = area ?? default;
+            _page.SetTextTrigger(x, y, width, height);
+        }
+    }
+
+    /// <inheritdoc/>
+    public float TextEntryInset { get; private set; }
+
+    /// <inheritdoc/>
     /// <remarks>The canvas is on the page already.</remarks>
     public void Show() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -280,6 +308,14 @@ public sealed class WebGameWindow : IGameWindow
                     Input.Keyboard.SetKey(key, down: false);
                 }
 
+                break;
+
+            case WebInputEventKind.Line:
+                Input.Keyboard.ReplaceLine(input.Code);
+                break;
+
+            case WebInputEventKind.Inset:
+                TextEntryInset = Math.Max(0f, input.X);
                 break;
 
             case WebInputEventKind.Character:

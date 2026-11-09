@@ -22,7 +22,7 @@ namespace OpenIGI.Launcher.Pages;
 /// only then learned it needs the original game, from a button that sent them to Settings.
 /// </para>
 /// <para>
-/// The search runs off the frame (<see cref="GameFinder"/>): Steam's libraries, GOG's installs and the usual
+/// The search runs off the frame (<see cref="GameInstalls"/>): Steam's libraries, GOG's installs and the usual
 /// folders. What it finds is offered to pick from; Browse and a typed path are always there too, and a folder
 /// counts only when the game's own signature file is in it. I.G.I. 2 is asked for alongside and is optional: only mods
 /// that read its data need it, and Settings keeps the same folder. Either step can be left: Skip and Later finish the
@@ -69,8 +69,8 @@ internal sealed class OnboardingScreen : Screen
         _rowTheme = rowTheme;
         _model = model;
         _window = window;
-        _search = Task.Run(() => GameFinder.Find(GameTitle.Igi1));
-        _sequelSearch = Task.Run(() => GameFinder.Find(GameTitle.Igi2));
+        _search = Task.Run(() => GameInstalls.Find(GameTitle.Igi1));
+        _sequelSearch = Task.Run(() => GameInstalls.Find(GameTitle.Igi2));
         Name = nameof(OnboardingScreen);
     }
 

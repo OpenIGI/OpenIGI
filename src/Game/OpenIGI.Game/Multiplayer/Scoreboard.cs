@@ -23,7 +23,7 @@ public readonly record struct ScoreboardLine(
 /// <param name="Lines">The players.</param>
 public sealed record Scoreboard(int Round, int GoodScore, int BadScore, ScoreboardLine[] Lines)
 {
-    /// <summary>Gets the scoreboard of a match now.</summary>
+    /// <summary>Gets the scoreboard of a match now: its players in the game, not one kept aside while its line is down.</summary>
     /// <param name="match">The match.</param>
     /// <returns>The scoreboard.</returns>
     /// <param name="entityOf">Each slot's entity in the snapshots, or -1; none named when omitted.</param>
@@ -35,7 +35,7 @@ public sealed record Scoreboard(int Round, int GoodScore, int BadScore, Scoreboa
             match.Round,
             match.ScoreOf(TeamRoster.Good),
             match.ScoreOf(TeamRoster.Bad),
-            [.. match.Players.Values.OrderBy(static p => p.Slot)
+            [.. match.Players.Values.Where(static p => p.Slot >= 0).OrderBy(static p => p.Slot)
                 .Select(p => new ScoreboardLine(
                     p.Slot, p.Name, p.Team, p.Money, p.Kills, p.Deaths, p.IsAlive, entityOf?.Invoke(p.Slot) ?? -1, pingOf?.Invoke(p.Slot) ?? 0, p.Skin))]);
     }

@@ -33,4 +33,7 @@ public enum WeaponCategory
 
     /// <summary>A placed proximity mine.</summary>
     ProximityMine = 7,
+
+    /// <summary>A mode's bomb, carried and held like any weapon: it does not fire, and is planted by holding fire or use at a site.</summary>
+    Bomb = 8,
 }

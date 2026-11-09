@@ -96,6 +96,13 @@ public sealed class AlarmSpeaker(
     /// reports.
     /// </remarks>
     public float ExplosionContactRadiusUnits { get; internal set; } = 1f;
+
+    // As the match began: where it stood, whether it sounded, was shot out, and the damage it had taken.
+    private (Vector3d Position, bool WasOn, bool ShowsOff, bool IsDestroyed, float Damage) _start;
+
+    internal void MarkLevelStart() => _start = (PositionUnits, WasOn, ShowsOff, IsDestroyed, Damage);
+
+    internal void ResetToLevelStart() => (PositionUnits, WasOn, ShowsOff, IsDestroyed, Damage) = _start;
 }
 
 /// <summary>All placed sirens in one mission and whether each is sounding.</summary>
@@ -115,7 +122,7 @@ public sealed class AlarmSpeaker(
 /// <c>AlarmControl_5.isAlarm</c> follows that control exactly as retail's does.
 /// </para>
 /// </remarks>
-public sealed class AlarmSpeakerRegistry
+public sealed class AlarmSpeakerRegistry : World.ILevelReset
 {
     private readonly List<AlarmSpeaker> _speakers = [];
     private readonly Dictionary<GameTask, AlarmSpeaker> _byTask = [];
@@ -130,6 +137,25 @@ public sealed class AlarmSpeakerRegistry
 
     /// <summary>Gets the speakers found under the level root.</summary>
     public IReadOnlyList<AlarmSpeaker> Speakers => _speakers;
+
+    /// <inheritdoc/>
+    public void MarkLevelStart()
+    {
+        foreach (AlarmSpeaker speaker in _speakers)
+        {
+            speaker.MarkLevelStart();
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Every siren whole and as loud as the match began; one sounding since falls quiet on its next tick.</remarks>
+    public void ResetToLevelStart(World.ObjectCollisionIndex? solids)
+    {
+        foreach (AlarmSpeaker speaker in _speakers)
+        {
+            speaker.ResetToLevelStart();
+        }
+    }
 
     /// <summary>Builds the registry from every spatial alarm emitter below <paramref name="root"/>.</summary>
     /// <param name="root">The level's task tree.</param>
@@ -229,6 +255,20 @@ public sealed class AlarmSpeakerRegistry
         }
     }
 
+    /// <summary>Whether a placement is an alarm light's turning reflector (see <see cref="PlacementClaims"/>).</summary>
+    public bool ClaimsReflector(WorldPlacement placement)
+    {
+        foreach (AlarmLightReflector reflector in _reflectors)
+        {
+            if (ReferenceEquals(reflector.Placement, placement))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>The orientation a reflector is drawn with this frame, turned as its light has turned it.</summary>
     /// <param name="placement">The placement.</param>
     /// <param name="alpha">How far the frame is between the last two ticks.</param>
@@ -300,6 +340,7 @@ public sealed class AlarmSpeakerRegistry
     {
         ArgumentNullException.ThrowIfNull(placements);
         _reflectors.Clear();
+        PlacementClaims.Changed();
         _lightOrientations.Clear();
 
         foreach (WorldPlacement placement in placements)

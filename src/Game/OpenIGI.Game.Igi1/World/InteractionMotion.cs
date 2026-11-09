@@ -21,7 +21,15 @@ public sealed class InteractionMotion
     /// <param name="player">The player, in a world interaction.</param>
     /// <param name="body">The body it plays the clip on, or <see langword="null"/> when there is none to pose.</param>
     /// <param name="dragSound">Sounds a wire drag's step at where it was, or <see langword="null"/> for none heard.</param>
-    public void Tick(PlayerCamera player, ILadderBody? body, Action<string, Vector3d>? dragSound = null)
+    /// <param name="clipSounds">
+    /// Sounds the events the clip crossed, at the player's feet: the vault's <c>walk_fence</c> steps are the clip's own
+    /// animation triggers, which <c>Human_FireAnimTrigger</c> (0x4613D0) plays off the body's clip every update.
+    /// </param>
+    public void Tick(
+        PlayerCamera player,
+        ILadderBody? body,
+        Action<string, Vector3d>? dragSound = null,
+        Action<ILadderBody, Vector3d>? clipSounds = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         if (!IsActive)
@@ -50,6 +58,7 @@ public sealed class InteractionMotion
 
         body.AdvanceLadderClip(player.InteractionFacing, out Vector3d rootDelta, out float? stepTime, out bool clipEnded);
         player.ApplyInteractionRootMotion(rootDelta, clipEnded, stepTime);
+        clipSounds?.Invoke(body, player.InteractionFeet);
         body.PlaceClimbing(player.InteractionFeet, player.InteractionFacing);
     }
 }

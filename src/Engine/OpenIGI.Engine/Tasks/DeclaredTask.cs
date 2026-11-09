@@ -73,6 +73,42 @@ public sealed class DeclaredTask : GameTask
     }
 
     /// <inheritdoc/>
+    /// <remarks>What the level gave the task, changed after it was read: as a level reshaped for another use is.</remarks>
+    public override bool TrySetScriptValue(string name, object? value)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return _values?.TrySet(name, value) == true;
+    }
+
+    /// <summary>
+    /// Makes another task of this one's type and values under a parent, as if the level had placed a second: a level reshaped
+    /// for another use adds what it lacks this way, before what reads its tasks walks them.
+    /// </summary>
+    /// <param name="parent">The parent the copy is placed under.</param>
+    /// <param name="id">The script id it is bound to, which names it to expressions (<c>Switch_4095</c>); one already bound
+    /// leaves it without.</param>
+    /// <returns>The copy, its values its own to change (<see cref="TrySetScriptValue"/>).</returns>
+    /// <exception cref="InvalidOperationException">The type's tasks are not declared tasks.</exception>
+    public DeclaredTask CopyUnder(GameTask parent, int id)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        if (Tree.New(parent, Type) is not DeclaredTask copy)
+        {
+            throw new InvalidOperationException($"A '{Type.Name}' is made by a class of its own, not copied as a declared task.");
+        }
+
+        copy._values = _values?.Copy();
+        copy.Label = Label;
+        if (id >= 0 && id < TaskTree.IdCapacity)
+        {
+            Tree.TryBindId(id, copy);
+        }
+
+        copy.Receive(TaskMessage.Parsed);
+        return copy;
+    }
+
+    /// <inheritdoc/>
     protected override void BindScriptParameters(ScriptArgumentReader reader) =>
         _values = TaskParameterValues.Read(reader, ScriptParameters);
 }

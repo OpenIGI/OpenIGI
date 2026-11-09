@@ -42,6 +42,7 @@ internal sealed class SoldierWeaponDrawer(
     private readonly SoldierArmoury _armoury = armoury;
     private readonly SoldierFrameInterpolator _frames = frames;
     private readonly Func<TexTextureCache> _textures = textures;
+    private readonly SubsetTextureMemo _subsetTextures = new();
     private readonly IOpenIgiLogger _logger = logger;
 
     /// <summary>Gets or sets the sector cull the soldiers are drawn by, or <see langword="null"/> for none.</summary>
@@ -176,6 +177,7 @@ internal sealed class SoldierWeaponDrawer(
                 if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
                 {
                     SoldierLevel lower = group.Lower[level - 1];
+                    SoldierLevelOfDetail.Flush(_device, group, member);
                     DrawSubsets(lower.Geometry, lower.Instance, lower.Pack, member.LevelMesh, modelView);
                 }
                 else
@@ -459,22 +461,16 @@ internal sealed class SoldierWeaponDrawer(
         Matrix4f modelView = camera.CreateModelView(originMetres, rotation);
         LightModel(rotation);
 
-        foreach (MeshSubset subset in weapon.Geometry.Subsets)
+        TextureHandle[] textures = _subsetTextures.For(weapon.Geometry, weapon.Instance, weapon.Pack, _textures());
+        for (int s = 0; s < weapon.Geometry.Subsets.Length; s++)
         {
+            MeshSubset subset = weapon.Geometry.Subsets[s];
             if (subset.IndexCount == 0)
             {
                 continue;
             }
 
-            TextureHandle diffuse = TextureHandle.None;
-            if (subset.HasMaterial
-                && weapon.Instance is { } instance
-                && weapon.Pack is { } pack
-                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
-            {
-                diffuse = _textures().Get(texture);
-            }
-
+            TextureHandle diffuse = textures[s];
             _device.DrawMesh(
                 weapon.Mesh,
                 subset.IndexOffset,
@@ -489,27 +485,25 @@ internal sealed class SoldierWeaponDrawer(
     }
 
     // Every textured subset of a body's own mesh, opaque, through the material the caller set.
-    public void DrawSubsets(SoldierGroup group, SoldierMember member, in Matrix4f modelView) =>
+    public void DrawSubsets(SoldierGroup group, SoldierMember member, in Matrix4f modelView)
+    {
+        // The poses the ticks queued go on the mesh now that something is drawing it.
+        SoldierSkinning.Flush(_device, member, group.Geometry, group.Body.Model);
         DrawSubsets(group.Geometry, group.Instance, group.Pack, member.Mesh, modelView);
+    }
 
     private void DrawSubsets(MeshGeometry geometry, MtpInstance? named, LoadedPack? from, MeshHandle mesh, in Matrix4f modelView)
     {
-        foreach (MeshSubset subset in geometry.Subsets)
+        TextureHandle[] textures = _subsetTextures.For(geometry, named, from, _textures());
+        for (int s = 0; s < geometry.Subsets.Length; s++)
         {
+            MeshSubset subset = geometry.Subsets[s];
             if (subset.IndexCount == 0)
             {
                 continue;
             }
 
-            TextureHandle diffuse = TextureHandle.None;
-            if (subset.HasMaterial
-                && named is { } instance
-                && from is { } pack
-                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
-            {
-                diffuse = _textures().Get(texture);
-            }
-
+            TextureHandle diffuse = textures[s];
             _device.DrawMesh(
                 mesh,
                 subset.IndexOffset,

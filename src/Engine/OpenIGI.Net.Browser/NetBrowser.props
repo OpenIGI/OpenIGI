@@ -5,5 +5,9 @@
     <Content Include="$(MSBuildThisFileDirectory)rtc.js"
              Link="wwwroot/rtc.js"
              CopyToOutputDirectory="PreserveNewest" />
+    <!-- identity.js, the player's key pair, under BrowserPlayerIdentity.ModuleName. -->
+    <Content Include="$(MSBuildThisFileDirectory)identity.js"
+             Link="wwwroot/identity.js"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

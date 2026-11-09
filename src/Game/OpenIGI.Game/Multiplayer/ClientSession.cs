@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Net;
+using OpenIGI.Net.Identity;
 
 namespace OpenIGI.Game.Multiplayer;
 
@@ -29,20 +30,49 @@ public sealed class ClientSession
     /// <summary>Initializes a new instance of the <see cref="ClientSession"/> class.</summary>
     /// <param name="net">The client's network end; the session reads its events, so nothing else should.</param>
     /// <param name="channelCount">The title's channel frame length.</param>
-    public ClientSession(NetClient net, int channelCount)
+    /// <param name="identity">
+    /// Who the player is, which signs the server's challenge; <see langword="null"/> takes <see cref="PlayerIdentities.Default"/>,
+    /// or one made for this session where the game set none.
+    /// </param>
+    /// <param name="protocolId">The protocol the session plays, which the proof names.</param>
+    public ClientSession(NetClient net, int channelCount, IPlayerIdentity? identity = null, ulong protocolId = 0)
     {
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _codec = new UserCommandCodec(channelCount);
+        _identity = identity ?? PlayerIdentities.Default ?? (EcdsaPlayerIdentity.IsSupported ? EcdsaPlayerIdentity.CreateEphemeral() : null);
+        _protocolId = protocolId;
     }
+
+    private readonly IPlayerIdentity? _identity;
+    private readonly ulong _protocolId;
+
+    // The server's challenge, until its proof has gone, and the signing of it while that runs.
+    private byte[]? _challenge;
+    private Task<byte[]>? _signing;
 
     /// <summary>Gets the entity id of this client's own human, once welcomed.</summary>
     public int? EntityId { get; private set; }
+
+    /// <summary>Gets the kills of late the server has told of, stamped with the receiving clock.</summary>
+    public Modes.KillFeed Feed { get; } = new();
 
     /// <summary>Gets the server's ticks per second, once welcomed.</summary>
     public int TickRate { get; private set; }
 
     /// <summary>Gets the map the server plays, once welcomed.</summary>
     public string? Map { get; private set; }
+
+    /// <summary>Gets the mode the server plays, once welcomed, or <see langword="null"/>.</summary>
+    public string? ServerMode { get; private set; }
+
+    /// <summary>Has the map loaded again, as the server's Travel to it does: for a level brought up under the wrong mode.</summary>
+    public void ReloadMap()
+    {
+        if (Map is { Length: > 0 } map)
+        {
+            _travel = map;
+        }
+    }
 
     /// <summary>Gets which of the server's levels this client is on, counted on at each travel.</summary>
     public byte Epoch { get; private set; }
@@ -104,12 +134,154 @@ public sealed class ClientSession
         return heard;
     }
 
-    /// <summary>Says a line to every player.</summary>
+    /// <summary>Says a line to every player, or to this player's team only.</summary>
     /// <param name="text">The line.</param>
-    public void Say(string text)
+    /// <param name="team">Whether only the team hears it.</param>
+    public void Say(string text, bool team = false)
     {
         _writer.Reset();
-        SessionTalk.WriteChat(_writer, -1, text);
+        SessionTalk.WriteChat(_writer, -1, text, team ? ChatKind.Team : ChatKind.All);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    private readonly List<CombatNote> _combat = [];
+
+    /// <summary>Takes the hits this client's player scored or took that the server told of since the last call.</summary>
+    /// <returns>The hits.</returns>
+    public IReadOnlyList<CombatNote> TakeCombat()
+    {
+        if (_combat.Count == 0)
+        {
+            return [];
+        }
+
+        CombatNote[] notes = [.. _combat];
+        _combat.Clear();
+        return notes;
+    }
+
+    // Level resets the server has told of and the client has not yet made.
+    private int _levelResets;
+
+    // Weapons the server handed this client's player and its own copy has not yet taken.
+    private readonly List<(string Weapon, int Rounds)> _given = [];
+    private readonly List<(bool Fresh, IReadOnlyList<(string Weapon, int Rounds)> Kit)> _kits = [];
+
+    /// <summary>Takes the kits the server sent for this client's player since last asked (respawns), oldest first.</summary>
+    /// <returns>Each kit, and whether it is from nothing.</returns>
+    public IReadOnlyList<(bool Fresh, IReadOnlyList<(string Weapon, int Rounds)> Kit)> TakeKits()
+    {
+        if (_kits.Count == 0)
+        {
+            return [];
+        }
+
+        (bool, IReadOnlyList<(string, int)>)[] taken = [.. _kits];
+        _kits.Clear();
+        return taken;
+    }
+
+    /// <summary>Takes the weapons the server handed this client's player since the last call (its buys).</summary>
+    /// <returns>Each weapon's script id and rounds.</returns>
+    public IReadOnlyList<(string Weapon, int Rounds)> TakeGiven()
+    {
+        if (_given.Count == 0)
+        {
+            return [];
+        }
+
+        (string, int)[] taken = [.. _given];
+        _given.Clear();
+        return taken;
+    }
+
+    /// <summary>Takes whether the server put its level back since the last call: the client's copy goes back too.</summary>
+    /// <returns><see langword="true"/> once for each reset told of (several at once are one).</returns>
+    public bool TakeLevelReset()
+    {
+        bool any = _levelResets > 0;
+        _levelResets = 0;
+        return any;
+    }
+
+    /// <summary>Gets when the local player's use key went down, on the session's clock; <see langword="null"/> while it is up.</summary>
+    public double? UseHeldSince { get; private set; }
+
+    /// <summary>Gets whether the local player holds the mode's bomb in hand, or <see langword="null"/> where its title never holds one.</summary>
+    public bool? BombInHand { get; private set; }
+
+    /// <summary>Notes the local player's use key, as each command goes out.</summary>
+    /// <param name="held">Whether it is down.</param>
+    /// <param name="now">The session's clock.</param>
+    /// <param name="bombInHand">Whether the bomb is in its hand, or <see langword="null"/> where the title never holds one.</param>
+    public void NoteUse(bool held, double now, bool? bombInHand = null)
+    {
+        UseHeldSince = held ? UseHeldSince ?? now : null;
+        BombInHand = bombInHand;
+    }
+
+    /// <summary>Sends a command to the server's remote console.</summary>
+    /// <param name="password">The server's remote console password.</param>
+    /// <param name="command">The command, as its console takes it.</param>
+    public void SendRcon(string password, string command)
+    {
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Rcon, 8);
+        _writer.WriteString(password ?? string.Empty, 64);
+        _writer.WriteString(command ?? string.Empty, 256);
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
+    }
+
+    /// <summary>Takes the remote console's answers that came since the last call.</summary>
+    /// <returns>Their lines, oldest first.</returns>
+    public IReadOnlyList<string> TakeRconAnswers()
+    {
+        string[] lines = [.. _rconAnswers];
+        _rconAnswers.Clear();
+        return lines;
+    }
+
+    // The remote console's answers, waiting to be taken.
+    private readonly List<string> _rconAnswers = [];
+
+    // The server's newest list of files, and the pieces of files that came, until taken.
+    private SessionFileList? _fileList;
+    private readonly List<FilePiece> _filePieces = [];
+
+    /// <summary>Takes the list of files the server last sent, if one came since the last call.</summary>
+    /// <returns>The list, or <see langword="null"/>.</returns>
+    public SessionFileList? TakeFileList()
+    {
+        SessionFileList? list = _fileList;
+        _fileList = null;
+        return list;
+    }
+
+    /// <summary>Takes the pieces of files that came since the last call.</summary>
+    /// <returns>The pieces, in the order they came.</returns>
+    public IReadOnlyList<FilePiece> TakeFilePieces()
+    {
+        FilePiece[] pieces = [.. _filePieces];
+        _filePieces.Clear();
+        return pieces;
+    }
+
+    /// <summary>Asks the server for files of a list it sent.</summary>
+    /// <param name="map">The list's map.</param>
+    /// <param name="indices">The files, by place in the list.</param>
+    public void WantFiles(string map, IReadOnlyCollection<int> indices)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        ArgumentNullException.ThrowIfNull(indices);
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.FileWant, 8);
+        _writer.WriteString(map, 64);
+        _writer.WriteVarUInt((uint)indices.Count);
+        foreach (int index in indices)
+        {
+            _writer.WriteVarUInt((uint)index);
+        }
+
         _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
@@ -160,6 +332,15 @@ public sealed class ClientSession
 
     /// <summary>Gets the newest scoreboard, or <see langword="null"/>.</summary>
     public Scoreboard? Scoreboard { get; private set; }
+
+    /// <summary>Gets where the server's match stood when it last said, or <see langword="null"/> before it has.</summary>
+    public Modes.MatchState? MatchState { get; private set; }
+
+    /// <summary>Gets the vote for the next map as the server last told it to this player, or <see langword="null"/> while none is open.</summary>
+    public Modes.NextMapVote? MapVote { get; private set; }
+
+    /// <summary>Gets the local time <see cref="MatchState"/> arrived, from which its clock runs down here.</summary>
+    public double MatchStateAt { get; private set; }
 
     /// <summary>Gets the server level's running state as last sent, or <see langword="null"/> before any.</summary>
     public byte[]? Level { get; private set; }
@@ -227,6 +408,16 @@ public sealed class ClientSession
 
     /// <summary>Reads what arrived.</summary>
     /// <param name="now">The current time in seconds.</param>
+    public void Poll(double now) => _net.Update(now);
+
+    /// <summary>Gets or sets the server tick, to a fraction, the others were last drawn at: what a shot made now was aimed at.</summary>
+    public double? DrawnTick { get; set; }
+
+    /// <summary>Gets or sets where every message the server delivers is kept, for a demo; <see langword="null"/> keeps none.</summary>
+    public DemoRecording? Recording { get; set; }
+
+    /// <summary>Reads what has arrived and acts on it.</summary>
+    /// <param name="now">The clock, in seconds.</param>
     public void Receive(double now)
     {
         _net.Update(now);
@@ -239,10 +430,60 @@ public sealed class ClientSession
                     EntityId = null;
                     break;
                 case NetEventKind.Message when e.Message.Data.Length > 0:
+                    Recording?.Add(now, e.Message.Channel, e.Message.Data);
                     Read(e.Message.Data, now);
                     break;
             }
         }
+
+        Prove();
+    }
+
+    // The server's challenge answered once the identity can sign it: its key and its signature, or an empty key from a game
+    // with no identity, which the server lets in as someone new.
+    private void Prove()
+    {
+        if (_challenge is not { } challenge)
+        {
+            return;
+        }
+
+        if (_identity is null || (_signing is { IsCompleted: true } && !_signing.IsCompletedSuccessfully))
+        {
+            SendProof([], []);
+            return;
+        }
+
+        if (_signing is null && _identity.IsReady)
+        {
+            _signing = _identity.SignAsync(PlayerIdentities.ProofOf(_protocolId, challenge));
+        }
+
+        if (_signing is { IsCompletedSuccessfully: true } signed)
+        {
+            SendProof(_identity.PublicKey, signed.Result);
+        }
+    }
+
+    private void SendProof(byte[] key, byte[] signature)
+    {
+        _challenge = null;
+        _signing = null;
+        _writer.Reset();
+        _writer.WriteBits((uint)SessionMessage.Proof, 8);
+        _writer.WriteVarUInt((uint)key.Length);
+        foreach (byte b in key)
+        {
+            _writer.WriteBits(b, 8);
+        }
+
+        _writer.WriteVarUInt((uint)signature.Length);
+        foreach (byte b in signature)
+        {
+            _writer.WriteBits(b, 8);
+        }
+
+        _net.Send(NetChannel.Reliable, _writer.AsSpan());
     }
 
     /// <summary>Gets how many command packets were held because the line to the server was full, for the connection readout.</summary>
@@ -271,8 +512,10 @@ public sealed class ClientSession
         // One command for each tick this client ran, numbered on from the last: the server runs exactly these, in this order,
         // so its copy of the player goes where this one went. Only the first is placed by the clock.
         long tick = _sent.Count > 0 ? _sent[^1].Tick + 1 : clock.CommandTick(now, connection.Statistics.RoundTripTime);
-        long viewTick = (long)Math.Floor(clock.InterpolationTick(now));
-        Keep(new UserCommand(tick, channels.ToArray(), viewTick));
+        // What the player aimed at is what is on its screen: the moment the others were last drawn at, not the clock's now.
+        double drawn = DrawnTick ?? clock.InterpolationTick(now);
+        long viewTick = (long)Math.Floor(drawn);
+        Keep(new UserCommand(tick, channels.ToArray(), viewTick, (float)(drawn - viewTick)));
         if (connection.Backlog > NetConstants.CommandChokeBacklog)
         {
             CommandPacketsHeld++;
@@ -371,11 +614,26 @@ public sealed class ClientSession
         BitReader reader = new(data);
         switch ((SessionMessage)reader.ReadBits(8))
         {
+            case SessionMessage.Prove:
+                byte[] challenge = new byte[PlayerIdentities.ChallengeSize];
+                for (int i = 0; i < challenge.Length; i++)
+                {
+                    challenge[i] = (byte)reader.ReadBits(8);
+                }
+
+                if (!reader.IsOverflowed)
+                {
+                    _challenge = challenge;
+                    _signing = null;
+                }
+
+                break;
             case SessionMessage.Welcome:
                 EntityId = (int)reader.ReadVarUInt();
                 TickRate = (int)reader.ReadVarUInt();
                 Map = reader.ReadString(64);
                 Epoch = (byte)reader.ReadBits(8);
+                ServerMode = reader.ReadString(16);
                 Clock = new TickClockSync(Math.Max(1, TickRate));
                 break;
             case SessionMessage.Chat when SessionTalk.ReadChat(ref reader) is { } line:
@@ -418,6 +676,88 @@ public sealed class ClientSession
                 break;
             case SessionMessage.Scoreboard:
                 Scoreboard = Multiplayer.Scoreboard.Read(ref reader) ?? Scoreboard;
+                break;
+            case SessionMessage.LevelReset:
+                _levelResets++;
+                break;
+            case SessionMessage.Given:
+                string weapon = reader.ReadString(64);
+                int rounds = (int)reader.ReadVarUInt();
+                if (!reader.IsOverflowed && _given.Count < 32)
+                {
+                    _given.Add((weapon, rounds));
+                }
+
+                break;
+            case SessionMessage.Kit:
+                bool fresh = reader.ReadBool();
+                int count = (int)Math.Min(reader.ReadVarUInt(), ServerSession.MaxKit);
+                List<(string, int)> kit = new(count);
+                for (int i = 0; i < count; i++)
+                {
+                    kit.Add((reader.ReadString(64), (int)reader.ReadVarUInt()));
+                }
+
+                if (!reader.IsOverflowed && _kits.Count < 8)
+                {
+                    _kits.Add((fresh, kit));
+                }
+
+                break;
+            case SessionMessage.Combat when CombatNote.Read(ref reader) is { } hit:
+                _combat.Add(hit);
+                if (_combat.Count > 64)
+                {
+                    _combat.RemoveAt(0);
+                }
+
+                break;
+            case SessionMessage.Files when SessionFileList.Read(ref reader) is { } list:
+                _fileList = list;
+                break;
+            case SessionMessage.FilePart:
+                string pieceMap = reader.ReadString(64);
+                int pieceIndex = (int)reader.ReadVarUInt();
+                long pieceOffset = reader.ReadVarUInt();
+                byte[] pieceData = reader.ReadBytes(ServerSession.FilePieceSize);
+                if (!reader.IsOverflowed && _filePieces.Count < 4096)
+                {
+                    _filePieces.Add(new FilePiece(pieceMap, pieceIndex, pieceOffset, pieceData));
+                }
+
+                break;
+            case SessionMessage.Rcon:
+                int lines = (int)reader.ReadBits(8);
+                for (int i = 0; i < lines && !reader.IsOverflowed; i++)
+                {
+                    _rconAnswers.Add(reader.ReadString(200));
+                }
+
+                break;
+            case SessionMessage.KillNote:
+                Modes.KillNote note = Modes.KillNote.Read(ref reader);
+                if (!reader.IsOverflowed)
+                {
+                    Feed.Add(note, now);
+                }
+
+                break;
+            case SessionMessage.MapVote:
+                Modes.NextMapVote? vote = Modes.NextMapVote.Read(ref reader);
+                if (!reader.IsOverflowed)
+                {
+                    MapVote = vote;
+                }
+
+                break;
+            case SessionMessage.MatchState:
+                Modes.MatchState state = Modes.MatchFlow.Read(ref reader);
+                if (!reader.IsOverflowed)
+                {
+                    MatchState = state;
+                    MatchStateAt = now;
+                }
+
                 break;
             case SessionMessage.Level:
                 uint length = reader.ReadVarUInt();

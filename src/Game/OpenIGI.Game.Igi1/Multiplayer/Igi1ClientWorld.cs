@@ -9,6 +9,38 @@ namespace OpenIGI.Game.Igi1.Multiplayer;
 /// <summary>A co-op client's I.G.I. mission: its own player as usual, the others stood where the server's snapshots put them.</summary>
 public sealed class Igi1ClientWorld : IReplicatedClientWorld
 {
+    /// <inheritdoc/>
+    public void MarkLevelStart() => _game.MarkLevelStart();
+
+    /// <inheritdoc/>
+    public void ResetToLevelStart() => _game.ResetToLevelStart();
+
+    /// <inheritdoc/>
+    public void ArmOwn(IReadOnlyList<(string Weapon, int Rounds)> kit, bool fresh)
+    {
+        if (_game.World.Player is { } own && _game.PlayerSetup is { } setup)
+        {
+            setup.Arm(own, kit, fresh);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool CarriesOwn(string weapon) =>
+        _game.World.Player?.Weapons is { } weapons
+        && _game.PlayerSetup?.Weapons is { } types
+        && types.TryGetByScriptId(weapon, out Game.Weapons.WeaponType type)
+        && weapons.HasWeapon(type.WeaponId);
+
+    /// <inheritdoc/>
+    /// <remarks>A gun taken in hand is picked as the weapon wheel picks, so the server is sent the pick and runs it too.</remarks>
+    public void GiveOwn(string weapon, int rounds, bool equip)
+    {
+        if (_game.World.Player is { } own && _game.PlayerSetup is { } setup && setup.Give(own, weapon, rounds) && equip)
+        {
+            Igi1PlayerSetup.TakeInHand(own, setup, weapon);
+        }
+    }
+
     private readonly Igi1Gameplay _game;
     private readonly Dictionary<int, Igi1NetworkPlayer> _others = [];
     private readonly float[] _channels = new float[Igi1Command.ChannelCount];
@@ -96,20 +128,22 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             bool fired = _shotsDrawn.TryGetValue(h.Id, out byte drawn) && drawn != h.Shots;
             _shotsDrawn[h.Id] = h.Shots;
             OpenIGI.Game.Weapons.WeaponType? gun =
-                h.Weapon > 0 && _game.PlayerSetup?.Weapons is { } roster && roster.TryGet(h.Weapon - 1, out OpenIGI.Game.Weapons.WeaponType held)
+                h.Weapon - 1 == Igi1BombWeapon.Id ? Igi1BombWeapon.Type
+                : h.Weapon > 0 && _game.PlayerSetup?.Weapons is { } roster && roster.TryGet(h.Weapon - 1, out OpenIGI.Game.Weapons.WeaponType held)
                     ? held
                     : null;
             bodies.Add(new Ai.PartnerBody(
                 h.Id, h.Position.ToVector(), -Quantize.AngleFromBits(h.Yaw), h.State - 1, true,
-                new Ai.PlayerBodyPose(h.Action - 1, true, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
+                new Ai.PlayerBodyPose(h.Action - 1, (h.Flags & ReplicatedHumanCondition.UpperBodyOnce) == 0, 0f, h.ActionSequence, Quantize.AngleFromBits(h.Pitch)),
                 gun,
                 h.Shots,
                 fired,
                 (h.Flags & ReplicatedHumanCondition.Climbing) != 0 ? Igi1ReplicatedWorld.UnpackClipTime(h.ClipTime) : null,
-                _names.GetValueOrDefault(h.Id),
+                Game.Multiplayer.Modes.PlayerSides.ShowsName(_mode, _ownTeam, _teamOf(h.Id)) ? _names.GetValueOrDefault(h.Id) : null,
                 !alive,
-                alive ? null : h.Health / 255f,
-                PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model));
+                alive || !Game.Multiplayer.Modes.PlayerSides.Revivable(_mode) ? null : h.Health / 255f,
+                PlayerSkins.Of(_skins.GetValueOrDefault(h.Id)).Model,
+                (h.Flags & ReplicatedHumanCondition.CarriesBomb) != 0));
         }
 
         return bodies;
@@ -213,6 +247,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     public void ApplyOwn(in ReplicatedHuman self)
     {
         _ownEntity = self.Id;
+
+        // A match lets its players drop what they hold; the drop is foreseen here and the gun laid by the server.
+        _game.World.Player?.CanDropWeapons = true;
         // Killed on the server: the fall, here. Brought back by the server's respawn: up again where it stood this one.
         bool alive = (self.Flags & ReplicatedHumanCondition.Alive) != 0;
         if (!alive && !_game.World.IsPlayerDead && _game.World.Player is { } falling)
@@ -236,6 +273,23 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         // come back: the server's slide ended, or it never climbed. Let go, as the server has, rather than be held on the
         // ladder here while every snapshot pulls the player to where the server has it standing or falling.
         bool climbingThere = (self.Flags & ReplicatedHumanCondition.Climbing) != 0;
+
+        // Planting or defusing there: the same clip here, at the server's time, for the arms and the hands' bomb. Carrying it
+        // there: carried here, a weapon in the cycle.
+        if (_game.World.Player is { } own)
+        {
+            Igi1BombWeapon.Keep(own, (self.Flags & ReplicatedHumanCondition.CarriesBomb) != 0);
+            int clip = self.State - 1;
+            if (climbingThere && clip is Igi1BombAnimations.Plant or Igi1BombAnimations.Defuse)
+            {
+                own.PlayModeClip(clip, Igi1ReplicatedWorld.UnpackClipTime(self.ClipTime));
+            }
+            else if (own.ModeAnimation >= 0)
+            {
+                own.PlayModeClip(-1, 0f);
+            }
+        }
+
         _offLadderThere = _game.World.Player is { IsOnLadder: true } && !climbingThere ? _offLadderThere + 1 : 0;
         if (_offLadderThere > LadderPatience && _game.World.Player is { } climber)
         {
@@ -257,6 +311,9 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     }
 
     /// <inheritdoc/>
+    public bool? HoldsBomb => _game.World.Player is { } own && Igi1BombWeapon.Holds(own);
+
+    /// <inheritdoc/>
     public void ApplyLevel(byte[] state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -269,6 +326,21 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         }
 
         ReadPickups(ref reader);
+    }
+
+    // How far a thrown gun flown here may lie from where the server's stopped before it is put there while still moving: two metres.
+    private const double StrayThrowUnits = 8192.0;
+
+    // A pickup's place as the server writes it: where, to the unit, and how it is turned.
+    private static (Vector3d At, Matrix3f Turn) ReadPlace(ref BitReader reader, scoped Span<float> o)
+    {
+        Vector3d at = new(reader.ReadVarInt(), reader.ReadVarInt(), reader.ReadVarInt());
+        for (int k = 0; k < o.Length; k++)
+        {
+            o[k] = reader.ReadSingle();
+        }
+
+        return (at, Matrix3f.FromRowMajor(o));
     }
 
     // The server's pickups: the dropped guns laid where its lie, and each one taken -- into this player's hands, as walking
@@ -285,23 +357,38 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             if (reader.ReadBool())
             {
                 int weaponId = (int)reader.ReadVarUInt();
-                Vector3d at = new(reader.ReadVarInt(), reader.ReadVarInt(), reader.ReadVarInt());
-                for (int k = 0; k < o.Length; k++)
+                uint rounds = reader.ReadVarUInt();
+                int? left = rounds == 0 ? null : (int)rounds - 1;
+                (Vector3d At, Matrix3f Turn, Vector3d Speed)? launch = null;
+                if (reader.ReadBool())
                 {
-                    o[k] = reader.ReadSingle();
+                    (Vector3d from, Matrix3f turned) = ReadPlace(ref reader, o);
+                    launch = (from, turned, new Vector3d(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
                 }
 
-                Matrix3f lies = Matrix3f.FromRowMajor(o);
+                (Vector3d At, Matrix3f Turn)? lies = reader.ReadBool() ? ReadPlace(ref reader, o) : null;
                 if (gun is null
                     && _game.World.GunPickups is { } drops
                     && _game.PlayerSetup?.Weapons is { } roster
-                    && roster.TryGet(weaponId, out OpenIGI.Game.Weapons.WeaponType weapon))
+                    && (roster.TryGet(weaponId, out OpenIGI.Game.Weapons.WeaponType? weapon) || (weapon = weaponId == Igi1BombWeapon.Id ? Igi1BombWeapon.Type : null) is not null))
                 {
-                    gun = drops.SpawnResting(at, lies, weapon);
+                    // A throw flies here from where it left the server's hand, drawn between ticks as the server's own is; one at
+                    // rest is laid where it lies.
+                    gun = launch is { } thrown && lies is null
+                        ? drops.Throw(thrown.At, thrown.Turn, weapon, thrown.Speed, left)
+                        : lies is { } rest ? drops.SpawnResting(rest.At, rest.Turn, weapon, left) : null;
+
+                    // The bomb flies with the shape the server's does; a gun's is given by the drawing that loads its model.
+                    if (gun is { IsMoving: true } && weaponId == Igi1BombWeapon.Id && Igi1BombWeapon.Collider is { } shape)
+                    {
+                        gun.UseCollider(shape);
+                    }
                 }
-                else if (gun is { IsCollected: false } && Vector3d.Distance(gun.Position, at) > 1)
+                else if (gun is { IsCollected: false } && lies is { } rest
+                    && (!gun.IsMoving || Vector3d.Distance(gun.Position, rest.At) > StrayThrowUnits) && Vector3d.Distance(gun.Position, rest.At) > 1)
                 {
-                    gun.Rest(at, lies);
+                    // Where the server's came to rest, once this one's flight has ended too -- or at once, if it has strayed.
+                    gun.Rest(rest.At, rest.Turn);
                 }
             }
 
@@ -350,6 +437,13 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
 
     /// <inheritdoc/>
     public void Skin(int entity, string skin) => _skins[entity] = skin;
+
+    /// <inheritdoc/>
+    public void Sides(string mode, Func<int, int?> teamOf, int? ownTeam) => (_mode, _teamOf, _ownTeam) = (mode, teamOf, ownTeam);
+
+    private string _mode = Game.Multiplayer.Modes.GameModes.Coop;
+    private Func<int, int?> _teamOf = static _ => null;
+    private int? _ownTeam;
 
     /// <inheritdoc/>
     public void MoveLocal(Vector3d offset, bool serverGrounded)
@@ -426,6 +520,12 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         ArgumentNullException.ThrowIfNull(predictions);
         ArgumentNullException.ThrowIfNull(snapshot);
         ApplyLifts(snapshot, ticksAhead);
+
+        // The others block this client's player where it is shown them, as the server's bodies block it there.
+        if (_game.World.Player is { OtherHumans: null } own)
+        {
+            SessionHumans.Meet(_game.World, own, static () => false);
+        }
 
         // Where the others' rounds landed, once each; this client's own it showed as it fired them.
         if (snapshot.Tick > _impactsShown)

@@ -436,6 +436,8 @@ internal sealed partial class LauncherModel : IDisposable
     /// <param name="elapsedSeconds">The real time since the last tick.</param>
     public void Tick(float elapsedSeconds)
     {
+        TickServers();
+        TickInvite(elapsedSeconds);
         while (_results.TryDequeue(out Action? result))
         {
             result();
@@ -476,6 +478,7 @@ internal sealed partial class LauncherModel : IDisposable
         _download?.Cancel();
         _download?.Dispose();
         _running?.Dispose();
+        DisposeServers();
         _http.Dispose();
     }
 
@@ -607,7 +610,7 @@ internal sealed partial class LauncherModel : IDisposable
         Changed();
     }
 
-    private void Play(LauncherGame game)
+    private void Play(LauncherGame game, IReadOnlyList<string>? join = null)
     {
         if (_installed is not { } build || game.Retail is not { } title || _running is not null)
         {
@@ -623,7 +626,7 @@ internal sealed partial class LauncherModel : IDisposable
         try
         {
             // The launcher keeps running while the game does, in the tray or not, so it always reads its log.
-            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments, game.LaunchSwitches), GameEnvironment(title), followOutput: true);
+            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments, [.. game.LaunchSwitches, .. join ?? []]), GameEnvironment(title), followOutput: true);
             _log.Follow(_running);
 
             _logger.Information(GameLogCategory, $"Started {title.DisplayName} from {build.Folder} (process {_running.Id}).");

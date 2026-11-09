@@ -10,6 +10,7 @@ import { dotnet } from './_framework/dotnet.js';
 import './wgpu-bridge.js';
 import * as platform from './platform.js';
 import * as rtc from './rtc.js';
+import * as identity from './identity.js';
 import * as audio from './audio.js';
 import * as files from './game-files.js';
 import * as userFiles from './user-files.js';
@@ -24,8 +25,11 @@ const change = $('change');
 
 const query = new URLSearchParams(location.search);
 const args = (query.get('args') ?? '').split(' ').filter(Boolean);
-// A friend's link: ?join=CODE plays in their room, ?host opens one; ?name= is who you play as.
+// A friend's link: ?join=CODE plays in their room, ?host opens one, ?party=CODE joins their party (which then follows its
+// leader from room to room); ?name= is who you play as.
 if (query.get('join')) args.push('-join', query.get('join'));
+const party = (query.get('party') ?? '').replace(/[^A-Za-z0-9]/g, '');
+if (party) args.push('+party_join', party);
 if (query.has('host')) args.push('-host');
 if (query.get('name')) args.push('-name', query.get('name'));
 
@@ -119,8 +123,14 @@ async function pickFolder() {
 /** On a phone or a tablet: the page goes fullscreen and sideways as Play is pressed, while the press allows it. */
 const touchDevice = matchMedia('(pointer: coarse)').matches;
 
+// An iPad (which says it is a Mac) or an iPhone. The iPhone's Safari has no fullscreen for a page; the iPad's has, and
+// treats a game's quick thumbs in it as someone typing on a fake keyboard -- it warns and leaves fullscreen, and its
+// swipe and pinch to leave take the finger on the stick. The touch controls went dead on an iPad and only there.
+const appleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
 function takeTheScreen() {
-  if (!touchDevice || document.fullscreenElement) return;
+  if (!touchDevice || appleTouch || document.fullscreenElement) return;
   document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })
     .then(() => screen.orientation?.lock?.('landscape'))
     .catch(() => {});
@@ -301,6 +311,7 @@ async function start() {
   platform.install(canvas);
   runtime.setModuleImports('openigi-platform', platform.imports);
   runtime.setModuleImports('openigi-rtc', rtc.imports);
+  runtime.setModuleImports('openigi-identity', identity.imports);
   runtime.setModuleImports('openigi-audio', audio.imports);
   runtime.setModuleImports('openigi-files', files.imports);
 
@@ -328,7 +339,7 @@ async function start() {
   // In a room the game can't stop when its tab is hidden: a host that stopped would stop everyone's game, and a joiner
   // that stopped would be dropped. A hidden tab gets no animation frames and its timers are held to one a second, but a
   // worker's timers run on, so while hidden the next frame comes from a worker's tick instead.
-  const inRoom = args.includes('-host') || args.includes('-join');
+  const inRoom = args.includes('-host') || args.includes('-join') || args.includes('+party_join');
   let ticker = null;
   let pending = 0;
   const next = () => {

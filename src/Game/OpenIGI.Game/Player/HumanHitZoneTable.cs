@@ -61,6 +61,43 @@ public static class HumanHitZoneTable
     /// </remarks>
     public const float LethalMultiplier = 100f;
 
+    /// <summary>What kills a player in a versus match: I.G.I. 2's multiplayer player, whose "Max damage scale" is 1.</summary>
+    /// <remarks>
+    /// The campaign's player carries 3.0 and no head zone, tuned to outlast a level of guards. Against each other, players take
+    /// I.G.I. 2's multiplayer body instead: this, <see cref="Versus"/>'s zones, and I.G.I. 2's damage for each gun.
+    /// </remarks>
+    public const float VersusMaximumHealth = 1f;
+
+    /// <summary>
+    /// A versus match's players' zones: I.G.I. 2's multiplayer damage multipliers (its <c>humanplayer.qvm</c>'s "... damage
+    /// multiplier MULTIPLAYER" rows), each I.G.I. zone given its I.G.I. 2 body part, with the head and neck lethal.
+    /// </summary>
+    /// <remarks>
+    /// Feet, shins, hands and forearms ×0.55; thighs and upper arms ×0.6; the trunk ×0.7 (I.G.I. 2's upper body), its front and
+    /// rear ×0.8 (chest, back). I.G.I. 2's head is ×1.8; here, as a round to the head kills a guard, it kills a player: one to
+    /// the head from any gun. The clips are the soldiers'.
+    /// </remarks>
+    public static IReadOnlyList<HumanHitZone> Versus { get; } =
+    [
+        new(0.55f, 44, 23, 23),
+        new(0.55f, 44, 23, 23),
+        new(0.6f, 44, 23, 23),
+        new(0.55f, 47, 28, 28),
+        new(0.55f, 47, 28, 28),
+        new(0.6f, 47, 28, 28),
+        new(0.55f, 45, 23, 23),
+        new(0.55f, 45, 23, 23),
+        new(0.6f, 45, 23, 23),
+        new(0.55f, 46, 28, 28),
+        new(0.55f, 46, 28, 28),
+        new(0.6f, 46, 28, 28),
+        new(0.7f, 27, 28, 28),
+        new(0.8f, 27, 28, 28),
+        new(0.8f, 27, 29, 29),
+        new(LethalMultiplier, 27, 30, 30),
+        new(LethalMultiplier, 27, 22, 22),
+    ];
+
     /// <summary>The player's table, at <c>0x5389F8</c>, with the multipliers the script writes.</summary>
     /// <remarks>
     /// <para>

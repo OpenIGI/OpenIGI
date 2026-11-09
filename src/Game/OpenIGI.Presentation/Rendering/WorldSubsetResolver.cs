@@ -276,7 +276,7 @@ internal sealed class WorldSubsetResolver
         MeshHandle mesh = GetMesh(
             displayed.BentGeometry is null ? displayed.Instance.Name : displayed.TaskName,
             geometry);
-        return mesh.IsValid ? new ResolvedWorldModel(geometry, mesh, displayed.Model.IsSector) : null;
+        return mesh.IsValid ? new ResolvedWorldModel(geometry, mesh) : null;
     }
 
     /// <summary>The same surface with its lamp turned down, or turned off altogether.</summary>

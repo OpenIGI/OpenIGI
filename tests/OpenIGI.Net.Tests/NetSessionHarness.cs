@@ -27,10 +27,10 @@ internal sealed class NetSessionHarness : IDisposable
 
     public IReadOnlyList<ClientEnd> Clients => _clients;
 
-    public ClientEnd AddClient(ulong protocolId = ProtocolId, int seed = 2)
+    public ClientEnd AddClient(ulong protocolId = ProtocolId, int seed = 2, ushort protocolVersion = 0, Func<INetTransport, INetTransport>? wrap = null)
     {
         SimulatedLinkTransport line = new(_network.Open(), () => Now, seed);
-        ClientEnd end = new(new NetClient(line, protocolId), line);
+        ClientEnd end = new(new NetClient(wrap?.Invoke(line) ?? line, protocolId, protocolVersion), line);
         _clients.Add(end);
         return end;
     }

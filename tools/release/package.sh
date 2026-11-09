@@ -3,6 +3,7 @@
 #
 #   tools/release/package.sh <game|launcher> <runtime> <version> [self-contained|dotnet] [output-dir]
 #   tools/release/package.sh web browser-wasm <version> [output-dir]
+#   tools/release/package.sh server <runtime> <version> [output-dir]
 #
 #   tools/release/package.sh game win-x64 0.2.0-beta.3                 openigi-game-0.2.0-beta.3-win-x64.exe
 #   tools/release/package.sh game win-x64 0.2.0-beta.3 dotnet          openigi-game-0.2.0-beta.3-win-x64-dotnet.exe
@@ -47,6 +48,34 @@ if [ "$COMPONENT" = "web" ]; then
   dotnet publish "$ROOT/apps/OpenIGI.Web/OpenIGI.Web.csproj" "${PUBLISH[@]}" --output "$STAGE/publish"
   ARCHIVE="$OUT/openigi-web-$VERSION.tar.gz"
   tar -C "$STAGE/publish/wwwroot" -czf "$ARCHIVE" .
+  echo "$ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
+  exit 0
+fi
+
+if [ "$COMPONENT" = "server" ]; then
+  # The dedicated server: a folder, not one file -- libdatachannel (browsers join through its room) has to sit beside it --
+  # with the example settings and the installers for a systemd unit or a Windows service. Self-contained, so a bare VPS
+  # needs nothing installed. The game's own data is never in it: the server reads the owner's install.
+  OUT="${4:-$ROOT/artifacts/release}"
+  NAME="openigi-server-$VERSION-$RID"
+  STAGE="$ROOT/artifacts/stage/server-$RID"
+  rm -rf "$STAGE" && mkdir -p "$STAGE/$NAME" "$OUT"
+  # Absolute, as the zip below is made from inside the stage: the workflow passes a relative folder.
+  OUT="$(cd "$OUT" && pwd)"
+  dotnet publish "$ROOT/apps/OpenIGI.Server/OpenIGI.Server.csproj" "${PUBLISH[@]}"     --runtime "$RID" --self-contained true -p:DataChannelRuntimeIdentifier="$RID" --output "$STAGE/$NAME"
+  cp "$ROOT/tools/server/README.md" "$STAGE/$NAME/README.md"
+  if [[ "$RID" == win-* ]]; then
+    cp "$ROOT/tools/server/install.ps1" "$STAGE/$NAME/"
+    ARCHIVE="$OUT/$NAME.zip"
+    rm -f "$ARCHIVE"
+    (cd "$STAGE" && zip -qr "$ARCHIVE" "$NAME")
+  else
+    cp "$ROOT/tools/server/install.sh" "$STAGE/$NAME/"
+    chmod 755 "$STAGE/$NAME/install.sh" "$STAGE/$NAME/OpenIGI.Server"
+    ARCHIVE="$OUT/$NAME.tar.gz"
+    tar -C "$STAGE" -czf "$ARCHIVE" "$NAME"
+  fi
+
   echo "$ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
   exit 0
 fi

@@ -176,11 +176,13 @@ public enum PlayerInputSlot
     /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
     Scoreboard = 37,
 
-    /// <summary>Unassigned.</summary>
-    Unused38 = 38,
+    /// <summary>Action bit <c>0x80</c> — <see cref="PlayerAction.BuyMenu"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
+    BuyMenu = 38,
 
-    /// <summary>Unassigned.</summary>
-    Unused39 = 39,
+    /// <summary>Action bit <c>0x80000000</c> — <see cref="PlayerAction.DropWeapon"/>.</summary>
+    /// <remarks>Not retail, as <see cref="Flashlight"/>: a slot the original's sampler never writes.</remarks>
+    DropWeapon = 39,
 }
 
 /// <summary>The join between an input slot and the action its bit binds.</summary>
@@ -194,9 +196,10 @@ public static class PlayerInputBindings
     /// <summary>Every slot that carries a bound action, paired with that action.</summary>
     /// <remarks>
     /// Twenty-seven entries, one per row of the binding table, and two more for the remaster's
-    /// <see cref="PlayerAction.Flashlight"/> and <see cref="PlayerAction.WeaponWheel"/>. <see cref="PlayerInputSlot.LookX"/>,
+    /// <see cref="PlayerAction.Flashlight"/> and <see cref="PlayerAction.WeaponWheel"/>, and the multiplayer scoreboard, buy menu
+    /// and weapon drop. <see cref="PlayerInputSlot.LookX"/>,
     /// <see cref="PlayerInputSlot.LookY"/>, the four developer chords,
-    /// <see cref="PlayerInputSlot.SelectedWeaponScratch"/> and the three unassigned slots are absent —
+    /// <see cref="PlayerInputSlot.SelectedWeaponScratch"/> and the unassigned slots are absent —
     /// none of them is an action a key can be bound to.
     /// </remarks>
     public static IReadOnlyList<(PlayerInputSlot Slot, PlayerAction Action)> All { get; } =
@@ -231,6 +234,8 @@ public static class PlayerInputBindings
         (PlayerInputSlot.Flashlight, PlayerAction.Flashlight),
         (PlayerInputSlot.WeaponWheel, PlayerAction.WeaponWheel),
         (PlayerInputSlot.Scoreboard, PlayerAction.Scoreboard),
+        (PlayerInputSlot.BuyMenu, PlayerAction.BuyMenu),
+        (PlayerInputSlot.DropWeapon, PlayerAction.DropWeapon),
     ];
 
     /// <summary>Gets the action name used by the persisted retail configuration.</summary>

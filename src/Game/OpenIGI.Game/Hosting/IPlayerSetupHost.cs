@@ -46,6 +46,12 @@ public interface IPlayerSetupHost
     /// <param name="pickup">The dropped gun.</param>
     void WeaponDropped(LoadedMission loaded, GunPickup pickup);
 
+    /// <summary>Takes a dropped gun out of what is drawn: a round put the level back without it.</summary>
+    /// <param name="pickup">The gun.</param>
+    void WeaponRemoved(GunPickup pickup)
+    {
+    }
+
     /// <summary>Hands the effects the game material the open ground is made of.</summary>
     /// <param name="row">The material's row, or <see langword="null"/> when the terrain declares none.</param>
     void TerrainRowRead(int? row);

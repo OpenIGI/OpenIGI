@@ -47,6 +47,34 @@ public readonly record struct NetAddress(NetAddressKind Kind, UInt128 Host, int 
     public static NetAddress IPv4(byte a, byte b, byte c, byte d, int port) =>
         new(NetAddressKind.Ip, new UInt128(0, 0xFFFF_0000_0000UL | ((ulong)a << 24) | ((ulong)b << 16) | ((ulong)c << 8) | d), port);
 
+    /// <summary>Reads an IP address as text -- <c>203.0.113.7</c>, <c>2001:db8::1</c> -- with a port.</summary>
+    /// <param name="host">The address.</param>
+    /// <param name="port">The port.</param>
+    /// <param name="address">The address, IPv4 stored mapped; default when it is not one.</param>
+    /// <returns><see langword="true"/> when <paramref name="host"/> is an IP address and <paramref name="port"/> a port.</returns>
+    public static bool TryParseIp(string? host, int port, out NetAddress address)
+    {
+        address = default;
+        if (port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(host, out System.Net.IPAddress? ip))
+        {
+            return false;
+        }
+
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            ip = ip.MapToIPv6();
+        }
+
+        Span<byte> bytes = stackalloc byte[16];
+        if (!ip.TryWriteBytes(bytes, out int written) || written != 16)
+        {
+            return false;
+        }
+
+        address = new NetAddress(NetAddressKind.Ip, System.Buffers.Binary.BinaryPrimitives.ReadUInt128BigEndian(bytes), port);
+        return true;
+    }
+
     /// <summary>Gets whether this is an IPv4-mapped IP address.</summary>
     public bool IsIPv4 => Kind == NetAddressKind.Ip && (Host >> 32) == 0xFFFF;
 

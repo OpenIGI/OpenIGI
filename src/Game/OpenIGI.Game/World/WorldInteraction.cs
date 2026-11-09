@@ -86,6 +86,66 @@ public sealed class WorldInteraction
         ActivateAnimation = activateAnimation;
     }
 
+    // As the match began: every latch, press, power and placement this task's play can change.
+    private Start _start;
+
+    internal void MarkLevelStart() => _start = new Start(
+        _pressStamp, _humming, _useStamp, _completeStamp, _wireOrigin, _offset, Pressed.Value, Pressed.Last, InUse.Value, InUse.Last,
+        IsOn, IsElectrified, IsCompleted, CompletedThisTick, IsSearched, IsPicked, IsLocked, IsDestroyed, MirroredOn,
+        MirroredElectrified, PlacedFacing, LastOn, LastDestroyed, ModelSlot, PlacedPosition, PlacedOrientation);
+
+    internal void ResetToLevelStart()
+    {
+        Start s = _start;
+        (_pressStamp, _humming, _useStamp, _completeStamp, _wireOrigin, _offset) = (s.PressStamp, s.Humming, s.UseStamp, s.CompleteStamp, s.WireOrigin, s.Offset);
+        Pressed.Restore(s.Pressed, s.LastPressed);
+        InUse.Restore(s.InUse, s.LastInUse);
+        IsOn = s.IsOn;
+        IsElectrified = s.IsElectrified;
+        IsCompleted = s.IsCompleted;
+        CompletedThisTick = s.CompletedThisTick;
+        IsSearched = s.IsSearched;
+        IsPicked = s.IsPicked;
+        IsLocked = s.IsLocked;
+        IsDestroyed = s.IsDestroyed;
+        MirroredOn = s.MirroredOn;
+        MirroredElectrified = s.MirroredElectrified;
+        PlacedFacing = s.PlacedFacing;
+        LastOn = s.LastOn;
+        LastDestroyed = s.LastDestroyed;
+        ModelSlot = s.ModelSlot;
+        PlacedPosition = s.PlacedPosition;
+        PlacedOrientation = s.PlacedOrientation;
+    }
+
+    private readonly record struct Start(
+        int PressStamp,
+        bool Humming,
+        int UseStamp,
+        int CompleteStamp,
+        Vector3d WireOrigin,
+        Vector3d Offset,
+        bool Pressed,
+        bool LastPressed,
+        bool InUse,
+        bool LastInUse,
+        bool IsOn,
+        bool IsElectrified,
+        bool IsCompleted,
+        bool CompletedThisTick,
+        bool IsSearched,
+        bool IsPicked,
+        bool IsLocked,
+        bool IsDestroyed,
+        bool? MirroredOn,
+        bool? MirroredElectrified,
+        float PlacedFacing,
+        bool LastOn,
+        bool LastDestroyed,
+        int ModelSlot,
+        Vector3d? PlacedPosition,
+        Matrix3f PlacedOrientation);
+
     public DeclaredTask Task { get; }
     public InteractionActivateType Type { get; }
     public Vector3d Anchor => _authoredAnchor + _offset;

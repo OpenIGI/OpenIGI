@@ -48,6 +48,7 @@ public sealed partial class GameHost
         bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
             && _mission.Cutscenes?.IsPlaying != true
             && Viewpoint?.IsDeathViewActive != true
+            && _demoWatched is null
             && Viewpoint?.HasPlayerHud == true;
 
         // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
@@ -353,16 +354,28 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
-        // A session's scoreboard, while its key is held: over everything but the console.
+        // A session's scoreboard, while its key is held -- or, between matches, up for everyone beside the vote for the next map:
+        // over everything but the console.
+        bool voteBesideBoard = VoteBesideBoard();
         if (TickObserver is ISessionScoreboard session
             && session.CurrentScoreboard is { } board
             && _remasteredHud is { IsReady: true } boardHud
-            && _scoreboardUp)
+            && (_scoreboardUp || voteBesideBoard))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
             boardHud.DrawScoreboard(
-                state.Batch, board, session.LocalEntity, session.RoomCode, session.Place, SafeWindowWidth, SafeWindowHeight, ScoreboardHand(board), session.Relayed);
+                state.Batch,
+                board,
+                session.LocalEntity,
+                session.RoomCode,
+                MissionPlaceName(session.Place),
+                SafeWindowWidth,
+                SafeWindowHeight,
+                _scoreboardUp ? ScoreboardHand(board) : null,
+                session.Relayed,
+                session.Mode,
+                besideVote: voteBesideBoard);
             state.Batch.End();
         }
 
@@ -404,16 +417,97 @@ public sealed partial class GameHost
             state.Batch.End();
         }
 
+        // A match's HUD -- the score strip, the bomb, a plant under way, a decided round's card -- and, out of the map's bounds,
+        // the word to get back. A session with no HUD of its own shows the plain banner.
+        if (TickObserver is ISessionScoreboard scored && _remasteredHud is { IsReady: true } matchHud
+            && (CurrentMatchHud() is { } modeHud ? (object)modeHud : scored.Banner) is { } shown)
+        {
+            string? warning = TickObserver is Multiplayer.ISessionMode { Layout: { Bounds.Length: > 0 } layout }
+                && TitlePlayer is { } own && !layout.InBounds(own.Position)
+                ? "RETURN TO THE MATCH"
+                : null;
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            if (shown is Game.Multiplayer.Modes.MatchHud hud)
+            {
+                string useKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.Activate)) ?? "E";
+                matchHud.DrawMatchHud(state.Batch, hud, warning, useKey, SafeWindowWidth, SafeWindowHeight, BuyKeyName());
+                if (hud.MapVote is { } vote)
+                {
+                    matchHud.DrawMapVote(
+                        state.Batch, vote, hud.Clock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight, besideBoard: voteBesideBoard);
+                }
+
+                if (_buyMenuUp && (hud is { BuyClock: not null, Money: not null } || hud.FreeLoadout))
+                {
+                    matchHud.DrawBuyMenu(
+                        state.Batch, BuyItems, hud.FreeLoadout ? null : hud.Money, hud.BuyClock, (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                }
+
+                if (_teamMenuUp && hud.Teams is { } pick)
+                {
+                    matchHud.DrawTeamMenu(state.Batch, pick, hud.Title, TeamKeyName(), (_window.Input.Mouse.X, _window.Input.Mouse.Y), SafeWindowWidth, SafeWindowHeight);
+                }
+            }
+            else if (shown is Game.Multiplayer.Modes.MatchBanner banner)
+            {
+                matchHud.DrawMatchBanner(state.Batch, banner, warning, SafeWindowWidth, SafeWindowHeight);
+            }
+
+            state.Batch.End();
+        }
+
+        // What every key does, while its key is held; else the corner's reminder of that key.
+        DrawControlsHelp(state);
+
+        // Dead in a match, watching a living player.
+        if (Spectated() is { } watched && _remasteredHud is { IsReady: true } spectateHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            spectateHud.DrawSpectating(state.Batch, watched, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The connection, as net_graph asks.
+        if (Game.Multiplayer.NetCVars.NetGraph.Value && TickObserver is ISessionScoreboard { NetGraph: { Count: > 0 } graph } && _remasteredHud is { IsReady: true } graphHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            graphHud.DrawNetGraph(state.Batch, graph, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The local player's fight: the hit marker and where shots that struck it came from.
+        if (TickObserver is ISessionScoreboard fighting && TitlePlayer is { } eyes && _remasteredHud is { IsReady: true } combatHud
+            && fighting.Combat(eyes.EyePosition, eyes.ViewOrientation) is { } combat)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            combatHud.DrawCombat(state.Batch, combat, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
+        // The kills of late, down the top right corner.
+        if (TickObserver is ISessionScoreboard { KillFeed: { Count: > 0 } kills } && _remasteredHud is { IsReady: true } feedHud)
+        {
+            _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+            state.Batch.Begin();
+            feedHud.DrawKillFeed(state.Batch, kills, SafeWindowWidth, SafeWindowHeight);
+            state.Batch.End();
+        }
+
         // Co-op talk: the lines said and being typed, and the places marked.
         string? linkWarning = TickObserver is ISessionScoreboard { PoorConnection: true } ? "Poor connection to the host" : null;
         Game.Multiplayer.ScoreboardLine[] talkLines = (TickObserver as ISessionScoreboard)?.CurrentScoreboard?.Lines.ToArray() ?? [];
         string[] talking = [.. Talking().Select(e => e < 0 ? "You" : talkLines.FirstOrDefault(l => l.Entity == e).Name ?? "Teammate")];
-        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, marks)
+        if (_remasteredHud is { IsReady: true } talkHud && Talk is not null && CoopTalkShown() is var (chat, chatEntry, talkMarks)
+            && ModePointMarks(talkMarks) is var marks
             && (chat.Count > 0 || marks.Count > 0 || _chatEntry is not null || linkWarning is not null || talking.Length > 0))
         {
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
             state.Batch.Begin();
-            talkHud.DrawCoopTalk(state.Batch, chat, _chatEntry, linkWarning, talking, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
+            talkHud.DrawCoopTalk(state.Batch, chat, chatEntry, linkWarning, talking, marks, eye, horizontalTangent, aspectRatio, SafeWindowWidth, SafeWindowHeight);
             state.Batch.End();
         }
 
@@ -465,5 +559,41 @@ public sealed partial class GameHost
         _device.EndStageTiming();
 
         _debugOverlays.Draw(state, eye, cameraIndoors, horizontalTangent);
+    }
+
+    // The places a mode plays for -- search and destroy's bomb sites -- marked as a player's marks are, always up, so they are
+    // found from anywhere: held on the screen's edge when out of view, with their distance.
+    private IReadOnlyList<HudMark> ModePointMarks(IReadOnlyList<HudMark> marks)
+    {
+        if (TickObserver is not Multiplayer.ISessionMode { Mode: Game.Multiplayer.Modes.GameModes.SearchAndDestroy, Layout: { } layout })
+        {
+            return marks;
+        }
+
+        List<HudMark> all = [.. marks];
+        Game.Multiplayer.Modes.ModeReport? report = (TickObserver as ISessionScoreboard)?.ModeReport;
+        if (report?.BombAt is { } bomb)
+        {
+            // Planted: the bomb is all that matters.
+            all.Add(new HudMark((bomb / WorldScene.UnitsPerMetre) + new Vector3d(0, 0, 1.0), "BOMB", 1f));
+            return all;
+        }
+
+        // Dropped: shown to the attackers, who must fetch it.
+        if (CurrentMatchHud()?.BombMarkAt is { } dropped)
+        {
+            all.Add(new HudMark((dropped / WorldScene.UnitsPerMetre) + new Vector3d(0, 0, 0.5), "BOMB", 1f));
+        }
+
+        foreach (Game.Multiplayer.Modes.MpPoint point in layout.Points)
+        {
+            if (point.Kind == Game.Multiplayer.Modes.MpPointKind.BombSite)
+            {
+                Vector3d metres = new Vector3d(point.Position[0], point.Position[1], point.Position[2]) / WorldScene.UnitsPerMetre;
+                all.Add(new HudMark(metres + new Vector3d(0, 0, 2.5), $"SITE {point.Id}", 1f));
+            }
+        }
+
+        return all;
     }
 }

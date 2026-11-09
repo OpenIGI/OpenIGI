@@ -44,13 +44,18 @@ public interface IGraphicsDevice :
     IFrameGenerationDevice,
     IShadowDevice,
     IPostPassDevice,
+    ITerrainArenaDevice,
     IDisposable
 {
     /// <summary>Replaces an animated mesh's vertices; the ones replaced become its previous pose.</summary>
     /// <param name="mesh">A mesh from <see cref="IMeshDevice.CreateAnimatedMesh"/>.</param>
-    /// <param name="vertices">The new pose. Must be exactly as many vertices as the mesh was created with.</param>
+    /// <param name="vertices">
+    /// The new pose: at most as many vertices as the mesh was created with. Fewer replaces only that many
+    /// leading vertices, and the rest hold whatever an older pose left there, so a streamed effect that
+    /// filled a prefix of its buffer uploads the prefix alone and draws only within it.
+    /// </param>
     /// <exception cref="ArgumentException">
-    /// The handle is unknown, was not created animated, or the count differs.
+    /// The handle is unknown, was not created animated, or there are more vertices than it holds.
     /// </exception>
     void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices);
 
@@ -245,6 +250,17 @@ public interface IGraphicsDevice :
             TextureHandle.None,
             TextureHandle.None,
             style == TracerStyle.Retail ? BlendMode.AlphaBlend : BlendMode.Additive);
+
+    /// <summary>Draws a place a multiplayer mode plays for -- a bomb site -- through the mode point shader: a disc and a low wall.</summary>
+    /// <param name="mesh">The point's disc (lightmap u 0, diffuse uv -1..1 across it) and wall (lightmap u 1, v up it).</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw.</param>
+    /// <param name="modelView">The mesh's transform into view space.</param>
+    /// <param name="look">Its colour, letter and state.</param>
+    /// <remarks>Depth tested, never written, never fogged. A device without the shader draws nothing.</remarks>
+    void DrawModePoint(MeshHandle mesh, int indexOffset, int indexCount, in Matrix4f modelView, in ModePointLook look)
+    {
+    }
 
     /// <summary>Draws part of a sheet of I.G.I. 2's water, as its own vertex shader lights it.</summary>
     /// <param name="mesh">The sheet's mesh: a position and a normal a vertex, with how shallow the water is there in the diffuse U.</param>

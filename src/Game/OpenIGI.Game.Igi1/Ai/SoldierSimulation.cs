@@ -250,7 +250,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         brain.HumanDead = _context.HealthOf(view).IsDead;
         brain.TickAmong(
             TickCount - 1,
-            _sight.CandidatesFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
+            _sight.HumansFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
             travel,
             alarmOn,
             alarmWasOn,
@@ -913,7 +913,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         }
 
         SoldierAgent? corpse = _context.FindAgent(view);
-        if (brain.TickDeadAi(corpse?.DrawnLastRender ?? false, _generators.IsGenerated(view)))
+        if (brain.TickDeadAi(corpse?.DrawnLastRender ?? false, _generators.IsGenerated(view), GameplayCVars.BodiesStay.Value))
         {
             // 0x44F410 unregisters the body (0x4609A0) and the Human's own update no longer runs.
             _context.RemoveBody(view);
