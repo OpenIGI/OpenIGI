@@ -320,15 +320,23 @@ function validate(body, ip, now) {
 // A room counts once its host is connected (one still waiting for its host is only "waiting"), and as playing once
 // anyone has joined its host. Each relay counts the rooms whose host it was handed first, and their players: what the
 // master chose, not what ICE ended up using, which only the players' games know.
+// A dedicated server's own room is the server: counted under servers (as the list shows it once), though its relay still
+// counts it. The servers are listed too, as the server browser lists them, by name -- never an address, port or room code.
 export function stats(servers, rooms, relayStatus = []) {
   const tally = () => ({ open: 0, playing: 0, players: 0 });
-  const out = { rooms: { public: tally(), private: tally(), waiting: 0 }, servers: { open: 0, players: 0 }, byTitle: {}, relays: {} };
+  const out = {
+    rooms: { public: tally(), private: tally(), waiting: 0 },
+    servers: { open: 0, playing: 0, players: 0, list: [] },
+    byTitle: {},
+    relays: {},
+  };
   for (const r of relayStatus) {
     if (r.enabled) {
       out.relays[r.id] = { region: r.region, healthy: r.healthy, rooms: 0, players: 0 };
     }
   }
 
+  const served = new Set([...servers.values()].map((s) => s.room).filter(Boolean));
   for (const r of rooms.values()) {
     if (!r.hosted) {
       out.rooms.waiting++;
@@ -336,14 +344,18 @@ export function stats(servers, rooms, relayStatus = []) {
     }
 
     const players = r.view.players ?? 1;
-    const title = (out.byTitle[r.view.title] ??= { rooms: 0, servers: 0, players: 0 });
-    title.rooms++;
-    title.players += players;
     if (r.relay && out.relays[r.relay]) {
       out.relays[r.relay].rooms++;
       out.relays[r.relay].players += players;
     }
 
+    if (served.has(r.view.room)) {
+      continue;
+    }
+
+    const title = (out.byTitle[r.view.title] ??= { rooms: 0, servers: 0, players: 0 });
+    title.rooms++;
+    title.players += players;
     const kind = r.public ? out.rooms.public : out.rooms.private;
     kind.open++;
     kind.players += players;
@@ -358,8 +370,25 @@ export function stats(servers, rooms, relayStatus = []) {
     title.players += s.players;
     out.servers.open++;
     out.servers.players += s.players;
+    if (s.players > 0) {
+      out.servers.playing++;
+    }
+
+    out.servers.list.push({
+      name: s.name,
+      title: s.title,
+      version: s.version,
+      mode: s.mode,
+      map: s.map,
+      players: s.players,
+      maxPlayers: s.maxPlayers,
+      region: s.region,
+      passworded: s.passworded,
+    });
   }
 
+  // Busiest first, then by name, so the list reads the same between two looks.
+  out.servers.list.sort((a, b) => b.players - a.players || String(a.name).localeCompare(String(b.name)));
   return out;
 }
 
