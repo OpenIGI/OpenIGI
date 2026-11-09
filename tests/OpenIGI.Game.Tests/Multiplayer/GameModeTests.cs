@@ -415,6 +415,9 @@ public sealed class GameModeTests
         Assert.Equal([0], host.Killed);
         Assert.Equal(MatchPhase.RoundOver, mode.Flow.Phase);
         Assert.Equal(SearchAndDestroyMode.Attackers, mode.Flow.Winner);
+
+        // The blast's round is held the bomb's own pause (mp_bombendtime, 10 s by default), not the 1 s of any other end.
+        Assert.InRange(mode.Flow.SecondsLeft(tick)!.Value, 9.5, 10);
     }
 
     [Fact]

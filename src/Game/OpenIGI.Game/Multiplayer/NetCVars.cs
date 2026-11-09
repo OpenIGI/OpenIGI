@@ -45,6 +45,24 @@ public static class NetCVars
         CVarOptions.None,
         "How long players may buy in a search and destroy round on a server this game hosts, in seconds after the freeze time; 0 for no buying. Read as each round begins.");
 
+    /// <summary>How long a decided round's result is shown before the next round begins, in seconds.</summary>
+    public static readonly NumericCVar<float> RoundEndTime = CVar.Float(
+        "mp_roundendtime",
+        5f,
+        1f,
+        60f,
+        CVarOptions.None,
+        "How long a round's result is shown before the next round begins in search and destroy and elimination on a server this game hosts, in seconds. Read as each round begins.");
+
+    /// <summary>How long a round the bomb ended is shown before the next, in seconds: a while to watch what it brought down.</summary>
+    public static readonly NumericCVar<float> BombEndTime = CVar.Float(
+        "mp_bombendtime",
+        10f,
+        1f,
+        60f,
+        CVarOptions.None,
+        "How long a search and destroy round the bomb ended is shown before the next round begins, in seconds, to watch the blast and the collapse; never shorter than mp_roundendtime. Read as each round begins.");
+
     /// <summary>The money each player starts a map, and each half, with (I.G.I. 2's <c>moneystart</c>).</summary>
     public static readonly NumericCVar<int> MoneyStart = CVar.Int(
         "mp_moneystart",
@@ -134,7 +152,7 @@ public static class NetCVars
     /// Gets the settings a server's operator may set by name: in a dedicated server's <c>server.cfg</c>, or at its console.
     /// </summary>
     public static IReadOnlyList<ICVar> ServerSettings { get; } =
-        [TimeLimit, BuyTime, MoneyStart, MoneyCap, MoneyKill, MoneyTeamKill, MoneyWin, MoneyLose, MoneyPlant, ShotLog];
+        [TimeLimit, BuyTime, RoundEndTime, BombEndTime, MoneyStart, MoneyCap, MoneyKill, MoneyTeamKill, MoneyWin, MoneyLose, MoneyPlant, ShotLog];
 
     /// <summary>Whether a session joined is saved as a demo when it is left.</summary>
     public static readonly BoolCVar AutoRecord = CVar.Bool(

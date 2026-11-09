@@ -12,6 +12,12 @@ public sealed record RoundSettings
     /// <summary>Gets the seconds a decided round's result is shown before the next begins.</summary>
     public double RoundOverSeconds { get; init; } = 5;
 
+    /// <summary>
+    /// Gets the seconds a round the bomb ended is shown before the next: a while to watch the blast and what it brought
+    /// down. Never shorter than <see cref="RoundOverSeconds"/>.
+    /// </summary>
+    public double DetonatedRoundOverSeconds { get; init; } = 10;
+
     /// <summary>Gets the seconds the scores are shown once the match is decided.</summary>
     public double IntermissionSeconds { get; init; } = 15;
 
