@@ -1,4 +1,5 @@
 using OpenIGI.Game.Multiplayer;
+using OpenIGI.Game.Multiplayer.Modes;
 using OpenIGI.Net;
 using OpenIGI.Net.Identity;
 using Xunit;
@@ -112,6 +113,50 @@ public sealed class PlayerIdentityTests
         room.Run(2);
         Assert.Equal(2, room.Server.CurrentScoreboard().Lines.Length);
         Assert.Equal(2, room.Server.Match.Players.Count);
+    }
+
+    [Fact]
+    public void Players_kept_for_their_return_do_not_count_on_their_side_when_a_player_switches_or_one_joins()
+    {
+        // Live on the EU server: two of a side dropped and were kept for their return, so the side looked full to the
+        // team menu's switch (and to a newcomer's side) though nobody was playing on it.
+        using Room room = new();
+        room.World.KeepsTheAway = true;
+        room.Server.Mode = GameModes.For("tdm", room.World, TickRate);
+        EcdsaPlayerIdentity[] keys = [.. Enumerable.Range(0, 5).Select(_ => EcdsaPlayerIdentity.CreateEphemeral())];
+        try
+        {
+            Room.Player[] players = [.. Enumerable.Range(0, 4).Select(i => room.Join($"p{i}", keys[i]))];
+            room.Run(2);
+            Assert.Equal(2, room.Server.Match.Players.Values.Count(p => p.Team == TeamRoster.Good));
+
+            // Both of one side drop and are kept.
+            MatchPlayer[] good = [.. room.Server.Match.Players.Values.Where(p => p.Team == TeamRoster.Good)];
+            foreach (MatchPlayer gone in good)
+            {
+                players[int.Parse(gone.Name[1..], System.Globalization.CultureInfo.InvariantCulture)].Drop();
+            }
+
+            room.Run(1);
+            Assert.Equal(2, room.Server.Match.Players.Keys.Count(k => k < 0));
+
+            // A newcomer goes to the side nobody is playing on (counting the kept, the sides were level: a coin toss).
+            room.Join("p4", keys[4]);
+            room.Run(2);
+            Assert.Equal(TeamRoster.Good, room.Server.Match.Players.Values.Single(p => p.Name == "p4").Team);
+
+            // One playing against two: one of the two may go over (counting the kept, that side held three).
+            MatchPlayer mover = room.Server.Match.Players.Values.First(p => p.Slot >= 0 && p.Team == TeamRoster.Bad);
+            Assert.StartsWith("You are on ", room.Server.ChooseTeam(mover.Slot, "igi"), StringComparison.Ordinal);
+            Assert.Equal(TeamRoster.Good, mover.Team);
+        }
+        finally
+        {
+            foreach (EcdsaPlayerIdentity key in keys)
+            {
+                key.Dispose();
+            }
+        }
     }
 
     [Fact]
