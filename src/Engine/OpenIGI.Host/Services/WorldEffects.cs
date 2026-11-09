@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Physics;
@@ -32,7 +33,8 @@ internal interface IWorldEffectsHost
 /// <param name="logger">Where load problems and the test commands report.</param>
 /// <param name="random">The stream the puffs' drift and life draw from, shared with the rest of the frame's effects.</param>
 /// <param name="host">The title's own mission, whose impact effects are drawn among the rest.</param>
-internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger, IgiRandom random, IWorldEffectsHost host) : IHostService
+/// <param name="work">Where the bomb's breaks are worked out, beside the frame.</param>
+internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger, IgiRandom random, IWorldEffectsHost host, IWorkScheduler work) : IHostService
 {
     /// <summary>Gets the bursts where rounds land, and the procedural explosions a mission without the fireball falls back to.</summary>
     public ImpactParticleRenderer? Particles { get; private set; }
@@ -100,7 +102,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
 
         // What the bomb shatters and holes, and the pieces it throws.
         _blastDebris?.Dispose();
-        _blastDebris = new BlastDebris(device);
+        _blastDebris = new BlastDebris(device, work);
     }
 
     /// <summary>Frees a mission's effects, as it goes.</summary>

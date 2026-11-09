@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.UI.Animation;
 
 namespace OpenIGI.Presentation.Rendering.Blast;
 
@@ -106,12 +107,12 @@ public sealed class BombBlast
     /// <summary>The colour temperature of its light: white-hot at the flash, cooling to a deep orange as the fire burns down.</summary>
     /// <param name="age">Its age, in seconds.</param>
     /// <returns>The temperature, in kelvin.</returns>
-    public static float LightKelvin(float age) => Lerp(6500f, 1700f, Smooth(0f, 1.4f, age));
+    public static float LightKelvin(float age) => Interpolate.Lerp(6500f, 1700f, Smooth(0f, 1.4f, age));
 
     /// <summary>How far its light reaches, in metres.</summary>
     /// <param name="age">Its age, in seconds.</param>
     /// <returns>The reach.</returns>
-    public float LightReachMetres(float age) => RadiusMetres * Lerp(4.5f, 2.2f, Smooth(0f, 1.5f, age));
+    public float LightReachMetres(float age) => RadiusMetres * Interpolate.Lerp(4.5f, 2.2f, Smooth(0f, 1.5f, age));
 
     /// <summary>Where its visible shock front is, in metres from its centre.</summary>
     /// <param name="age">Its age, in seconds.</param>
@@ -171,5 +172,4 @@ public sealed class BombBlast
         return t * t * (3f - (2f * t));
     }
 
-    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
 }

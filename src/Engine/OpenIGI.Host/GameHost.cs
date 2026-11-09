@@ -373,7 +373,7 @@ public sealed partial class GameHost : IDisposable
         _session = new MissionSession();
         _audioOut = new AudioOutput(audioFactory, fileSystem, logger, MenuSoundArchive);
         _cutsceneSounds = new CutsceneSounds(_audioOut);
-        _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this));
+        _effects = new WorldEffects(device, logger, _mission.SoundRandom, new WorldEffectsHost(this), _work);
         _timeOfDay = new TimeOfDayLighting(device, options, new TimeOfDayHost(this));
         _lamps = new LevelLamps(device, new LevelLampsHost(this));
         _switch = new RendererSwitchService(device, logger);

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.World;
 using OpenIGI.Game.World.Fracture;
@@ -30,7 +31,8 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 /// </para>
 /// </remarks>
 /// <param name="device">The device the pieces are uploaded to and drawn with.</param>
-public sealed class BlastDebris(IGraphicsDevice device) : IDisposable
+/// <param name="work">Where a break is worked out, off the frame where the scheduler runs work beside it.</param>
+public sealed class BlastDebris(IGraphicsDevice device, IWorkScheduler work) : IDisposable
 {
     // How fast the nearest piece leaves, in metres a second, for a bomb of twenty metres; scaled with the blast.
     private const float LaunchMetresPerSecond = 34f;
@@ -109,7 +111,7 @@ public sealed class BlastDebris(IGraphicsDevice device) : IDisposable
 
         int generation = _generation;
         ShatterBudget budget = _budget;
-        Task<List<ShatterPlan>> work = Task.Run(() =>
+        Task<List<ShatterPlan>> planning = work.Run(() =>
         {
             List<ShatterPlan> plans = [];
             foreach (ShatterSource source in sources)
@@ -122,7 +124,7 @@ public sealed class BlastDebris(IGraphicsDevice device) : IDisposable
 
             return plans;
         });
-        _pending = new Pending(blast, work, generation);
+        _pending = new Pending(blast, planning, generation);
     }
 
     /// <summary>Steps the pieces one tick, and brings in the pieces of a break that has finished.</summary>
@@ -400,15 +402,13 @@ public sealed class BlastDebris(IGraphicsDevice device) : IDisposable
             return b;
         }
 
-        Vector3f x = Lerp(a.Column1, b.Column1, t).Normalized();
-        Vector3f y = Lerp(a.Column2, b.Column2, t);
+        Vector3f x = Vector3f.Lerp(a.Column1, b.Column1, t).Normalized();
+        Vector3f y = Vector3f.Lerp(a.Column2, b.Column2, t);
         y = (y - (x * Vector3f.Dot(x, y))).Normalized();
         float hand = Vector3f.Dot(Vector3f.Cross(b.Column1, b.Column2), b.Column3) < 0f ? -1f : 1f;
         Vector3f z = Vector3f.Cross(x, y) * hand;
         return new Matrix3f(x.X, y.X, z.X, x.Y, y.Y, z.Y, x.Z, y.Z, z.Z);
     }
-
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
 
     private void EnsureTextures()
     {
