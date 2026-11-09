@@ -135,6 +135,42 @@ public sealed class Igi1ArenaGateTests(Xunit.Abstractions.ITestOutputHelper outp
     }
 
     [RequiresGameDataFact]
+    public void A_switch_a_joiner_presses_clicks_once_on_its_game_though_the_servers_word_of_the_press_comes_back_and_the_hosts_press_clicks_there_too()
+    {
+        using Igi1CoopPair pair = new(GameModes.SearchAndDestroy, mission: 5, hostSkipsIntro: true);
+        Assert.True(pair.RunUntil(() => pair.Joined && pair.Host!.World.NetworkPlayers.Count == 1, 3000) >= 0, "the joiner was never welcomed");
+        WorldInteractionRegistry server = pair.Host!.World.Interactions!;
+        WorldInteractionRegistry joiner = pair.Joiner!.World.Interactions!;
+        List<int> clicks = [];
+        Action<InteractionSoundEvent>? own = joiner.Sounds;
+        joiner.Sounds = e =>
+        {
+            if (e.What == InteractionSound.Played)
+            {
+                clicks.Add(e.Task.Id);
+            }
+
+            own?.Invoke(e);
+        };
+        pair.Ping(0.15);
+        pair.RunUntil(() => false, 60);
+
+        // The "GOD" gate's switch, 501: the joiner's press clicks on its game at once, and the server's word of it, coming
+        // back a round trip later, is that same press.
+        clicks.Clear();
+        joiner.Items.Single(i => i.Task.Id == 501).Press();
+        server.Items.Single(i => i.Task.Id == 501).Press();
+        pair.RunUntil(() => false, 90);
+        Assert.Equal([501], clicks);
+
+        // The host's press of it, a while on, is heard on the joiner's game as the server's word of it comes.
+        clicks.Clear();
+        server.Items.Single(i => i.Task.Id == 501).Press();
+        pair.RunUntil(() => false, 90);
+        Assert.Equal([501], clicks);
+    }
+
+    [RequiresGameDataFact]
     public void A_gate_already_switched_from_both_sides_gets_no_new_switch_but_shuts_to_them()
     {
         using Igi1DedicatedTrio trio = new(GameModes.TeamDeathmatch, 1, 0.05, 0.05);
