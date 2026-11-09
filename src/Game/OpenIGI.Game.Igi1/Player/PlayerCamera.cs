@@ -795,7 +795,8 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        if (_firstPerson.Turn(input.Mouse, MountedStationaryGun) is { } steered)
+        // A mod has the body (ControlTaken): the mouse does not turn it. The mouse stays captured and the view in step.
+        if (!ControlTaken && _firstPerson.Turn(input.Mouse, MountedStationaryGun) is { } steered)
         {
             _interaction.FaceAlongGun(steered);
             SyncView();
