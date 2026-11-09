@@ -32,8 +32,8 @@ jobs:
           - { rid: win-arm64, os: windows-latest, arch: arm64 }
           - { rid: linux-x64, os: ubuntu-22.04, arch: "" }
           - { rid: linux-arm64, os: ubuntu-22.04-arm, arch: "" }
-          - { rid: osx-arm64, os: macos-14, arch: arm64 }
-          - { rid: osx-x64, os: macos-14, arch: x64 }
+          - { rid: osx-arm64, os: macos-15, arch: arm64 }
+          - { rid: osx-x64, os: macos-15, arch: x64 }
     steps:
       - uses: actions/checkout@v7
 
@@ -62,6 +62,9 @@ jobs:
 
   release:
     needs: build
+    # Whatever built is attached, so one platform's broken runner keeps none of the others back; a platform that failed
+    # keeps the archive it had.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
