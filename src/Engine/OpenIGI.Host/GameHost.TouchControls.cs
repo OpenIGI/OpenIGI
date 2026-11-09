@@ -118,7 +118,7 @@ public sealed partial class GameHost
 
         TouchControlMode mode = CurrentTouchMode();
         _touchControls.MatchButtons = CurrentMatchButtons();
-        _touchControls.Update(input.Touch, mode, new LayoutContext(_window.Width, _window.Height));
+        _touchControls.Update(input.Touch, mode, CreateShellLayoutContext());
         _touchKeysWanted.Clear();
         _touchButtonsWanted.Clear();
         PlayerProfile? profile = _configuration.Active;
@@ -343,7 +343,7 @@ public sealed partial class GameHost
         state.Batch.Begin();
         TouchControlsRenderer.Draw(
             state.Batch,
-            new LayoutContext(_window.Width, _window.Height),
+            CreateShellLayoutContext(),
             _touchControls,
             source?.Theme,
             source?.Icons,

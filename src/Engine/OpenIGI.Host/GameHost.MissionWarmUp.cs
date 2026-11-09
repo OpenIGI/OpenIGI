@@ -500,7 +500,7 @@ public sealed partial class GameHost
         {
             _device.Set2DProjection(_window.Width, _window.Height);
             batch.Begin();
-            var painter = UiPainter.Create(batch, new LayoutContext(_window.Width, _window.Height));
+            var painter = UiPainter.Create(batch, CreateShellLayoutContext());
             painter.PushOpacity(card * _loadSequence.Opacity);
             PaintLoadingCard(painter, width, height, seconds);
             painter.PopOpacity();

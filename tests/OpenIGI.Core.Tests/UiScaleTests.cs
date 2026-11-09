@@ -76,4 +76,31 @@ public sealed class UiScaleTests
         Assert.Equal(expected, UiScale.Desktop(requested, height));
         Assert.Equal(3, UiScale.Resolve(UiScale.Automatic, 2560, 1440));
     }
+
+    [Theory]
+    [InlineData(1080f, 1f)]
+    [InlineData(1440f, 1f)]
+    [InlineData(2160f, 1f)]
+    public void Shell_user_scale_at_or_above_1080p_is_one(float height, float expected)
+    {
+        Assert.Equal(expected, UiScale.ShellUserScale(height));
+    }
+
+    [Theory]
+    [InlineData(720f, 0.85f)]
+    [InlineData(768f, 0.85f)]
+    public void Shell_user_scale_on_low_resolutions_clamps_effective_scale_to_legible_floor(float height, float expectedEffectiveScale)
+    {
+        float userScale = UiScale.ShellUserScale(height);
+        float effectiveScale = userScale * (height / 1080f);
+        Assert.Equal(expectedEffectiveScale, effectiveScale, 4);
+    }
+
+    [Fact]
+    public void Shell_user_scale_honours_explicit_request()
+    {
+        Assert.Equal(1.25f, UiScale.ShellUserScale(720f, 1.25f));
+        Assert.Equal(0.5f, UiScale.ShellUserScale(1080f, 0.2f));
+        Assert.Equal(4f, UiScale.ShellUserScale(1080f, 10f));
+    }
 }

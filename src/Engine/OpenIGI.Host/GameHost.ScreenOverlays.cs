@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
@@ -191,7 +191,7 @@ public sealed partial class GameHost
 
         _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
         state.Batch.Begin();
-        UiPainter painter = UiPainter.Create(state.Batch, new LayoutContext(_window.Width, _window.Height));
+        UiPainter painter = UiPainter.Create(state.Batch, CreateShellLayoutContext());
         HudOverlayFrame frame = new(painter, font, _window.Width, _window.Height, view.Eye, view.Projection, _loop.Clock.TickCount);
         foreach (IHudOverlay overlay in _hudOverlays)
         {

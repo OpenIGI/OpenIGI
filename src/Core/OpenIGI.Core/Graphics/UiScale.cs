@@ -122,4 +122,40 @@ public static class UiScale
         float grown = 1f + (MathF.Max(0f, screenHeight - 1440f) / 1440f);
         return Math.Clamp(MathF.Round(grown * 4f) / 4f, 1f, 2f);
     }
+
+    /// <summary>
+    /// Calculates the user scale multiplier for the modern vector/SDF shell layout so that text and interface
+    /// controls remain comfortably readable on lower-resolution displays (such as 720p or 768p laptops).
+    /// </summary>
+    /// <param name="screenHeight">The display or back buffer height in pixels.</param>
+    /// <param name="requested">A user-requested scale multiplier, or 0 for automatic.</param>
+    /// <returns>A multiplier to pass as user scale to the layout context.</returns>
+    /// <remarks>
+    /// At 1080p and higher, 1.0 is returned (standard 1080p reference canvas). Below 900 lines (e.g. 720p or 768p
+    /// laptop displays), pure height-proportional scaling drops font sizes down to 11px body and 7px captions,
+    /// causing extreme stem thinning on coverage atlases. Clamping the minimum effective layout scale to 0.85
+    /// restores clear legibility while remaining safely within screen boundaries with the shell's scrollable layout.
+    /// </remarks>
+    public static float ShellUserScale(float screenHeight, float requested = 0f)
+    {
+        if (requested > 0f)
+        {
+            return Math.Clamp(requested, 0.5f, 4f);
+        }
+
+        if (screenHeight <= 0f)
+        {
+            return 1f;
+        }
+
+        const float referenceHeight = 1080f;
+        const float minLegibleScale = 0.85f;
+        float heightScale = screenHeight / referenceHeight;
+        if (heightScale < minLegibleScale)
+        {
+            return minLegibleScale / heightScale;
+        }
+
+        return 1f;
+    }
 }

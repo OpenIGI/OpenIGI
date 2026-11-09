@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -28,6 +28,7 @@ using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Lighting;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Host;
 
@@ -80,6 +81,10 @@ public sealed partial class GameHost : IDisposable
 
     /// <summary>Gets the window height, or the authored 240 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowHeight => _window.Height > 0 ? _window.Height : 240;
+
+    /// <summary>Creates a layout context for the modern shell, scaling up low resolutions to maintain readable text.</summary>
+    private LayoutContext CreateShellLayoutContext() =>
+        new(_window.Width, _window.Height, userScale: UiScale.ShellUserScale(_window.Height));
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
