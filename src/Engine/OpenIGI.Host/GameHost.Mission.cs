@@ -204,6 +204,10 @@ public sealed partial class GameHost
                     + $"{gates.Mirrored.Count} switch(es) made on a gate's far side"
                     + string.Concat(gates.Mirrored.Select(m => $" ({m.Of} -> {m.Made})"))
                     + (promoted ? "; none made, the level was already walked." : "."));
+
+            // And the level's story: the vehicles its script brings in, its timers, one-off sounds and messages.
+            int scripted = Game.Multiplayer.Modes.ArenaLevel.RemoveScriptedActivity(levelRoot);
+            _logger.Information("Session", $"An arena: {scripted} of the level's scripted vehicles, timers, sounds and messages taken out.");
         }
 
         LevelUpdateWalker walker = new(levelRoot);

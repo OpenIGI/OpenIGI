@@ -120,6 +120,12 @@ public sealed record MatchHud
     /// <summary>Gets the local player's money in a mode with an economy, or <see langword="null"/>.</summary>
     public int? Money { get; init; }
 
+    /// <summary>
+    /// Gets what the local player's money last changed by -- a kill's pay, a round's, a team kill's fine, a buy -- while it is
+    /// still shown beside the money, or <see langword="null"/>.
+    /// </summary>
+    public int? MoneyChange { get; init; }
+
     /// <summary>Gets the buy time left, as <c>0:14</c>, while the armoury sells; <see langword="null"/> once it is shut.</summary>
     public string? BuyClock { get; init; }
 

@@ -15,7 +15,8 @@ public sealed partial class GameHost
     /// <remarks>
     /// Presentation alone: <c>bomb_blast</c> shows the blast -- its light, shake, shockwave, fireball, ground and what it
     /// shatters -- and harms nobody, so it can be set off in any level, in or out of a match, as many times as tuning takes.
-    /// The rocket's own fire the bomb is drawn over in a match is the game's and is not shown. <c>bomb_blast_reset</c>
+    /// The rocket's own fire the bomb is drawn over in a match is the game's and is not shown. Its pieces land on the level's
+    /// own collision, as a match's do. <c>bomb_blast_reset</c>
     /// puts back what it broke, as a new round does.
     /// </remarks>
     private void RegisterBlastCommands(ConsoleSystem console)
@@ -47,12 +48,25 @@ public sealed partial class GameHost
                     eye.Position,
                     _scene,
                     _world as IShatterableWorld,
-                    debrisWorld: null);
+                    debrisWorld: new OpenIGI.Game.Physics.RagdollWorld(_mission.Collision.Cast));
                 string said = shown
                     ? FormattableString.Invariant($"Bomb blast at {metres.X:0.#},{metres.Y:0.#},{metres.Z:0.#}, radius {radius:0.#} m.")
                     : "The remastered bomb blast is off (r_blast_quality 0).";
 
                 // To the log too, for a headless -runat capture, which has no scrollback to read.
+                context.Print(said);
+                _logger.Information("Blast", said);
+            });
+
+        console.Commands.Add(
+            "bomb_blast_skip",
+            "Moves the bomb blast and everything it set going on some seconds at once: bomb_blast_skip [seconds, 5].",
+            context =>
+            {
+                float seconds = float.TryParse(context[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float s) ? s : 5f;
+                int ticks = Math.Clamp((int)MathF.Round(seconds * 30f), 0, 30 * 120);
+                _effects.FastForward(ticks);
+                string said = FormattableString.Invariant($"Bomb blast moved on {ticks / 30f:0.#} s.");
                 context.Print(said);
                 _logger.Information("Blast", said);
             });

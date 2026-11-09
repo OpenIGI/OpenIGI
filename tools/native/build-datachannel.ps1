@@ -3,6 +3,7 @@
 #
 #   pwsh tools/native/build-datachannel.ps1 -Vcpkg D:/vcpkg                    this machine's platform
 #   pwsh tools/native/build-datachannel.ps1 -Vcpkg ~/vcpkg -Architecture x64   macOS on Intel, from either Mac
+#   pwsh tools/native/build-datachannel.ps1 -Vcpkg D:/vcpkg -Architecture arm64 Windows on ARM, cross-built on x64 Windows
 #
 # Windows (datachannel.dll), Linux (libdatachannel.so) and macOS (libdatachannel.dylib). One library with everything it
 # needs linked in (OpenSSL, usrsctp, libjuice and, on Windows, the C runtime): the
@@ -25,13 +26,13 @@ if (-not $Vcpkg -or -not (Test-Path (Join-Path $Vcpkg 'vcpkg*'))) {
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $triplets = Join-Path $PSScriptRoot 'triplets'
 $installed = Join-Path ([System.IO.Path]::GetTempPath()) 'openigi-vcpkg'
+# The machine's own architecture unless -Architecture names another (macOS builds Intel on Apple silicon, Windows ARM on x64).
+$arch = if ($Architecture) { $Architecture } elseif ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
 if ($IsWindows) {
-    $rid = 'win-x64'; $triplet = 'x64-windows-openigi'; $file = 'datachannel.dll'; $folder = 'bin'
+    $rid = "win-$arch"; $triplet = "$arch-windows-openigi"; $file = 'datachannel.dll'; $folder = 'bin'
 } elseif ($IsLinux) {
-    $rid = 'linux-x64'; $triplet = 'x64-linux-openigi'; $file = 'libdatachannel.so'; $folder = 'lib'
+    $rid = "linux-$arch"; $triplet = "$arch-linux-openigi"; $file = 'libdatachannel.so'; $folder = 'lib'
 } elseif ($IsMacOS) {
-    # Apple silicon by default; -Architecture x64 for an Intel build (cross-built fine on either).
-    $arch = if ($Architecture) { $Architecture } elseif ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
     $rid = "osx-$arch"; $triplet = "$arch-osx-openigi"; $file = 'libdatachannel.dylib'; $folder = 'lib'
 } else {
     throw 'No triplet for this platform yet.'

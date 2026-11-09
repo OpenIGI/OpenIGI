@@ -70,6 +70,32 @@ public sealed partial class GameHost
     }
 
     // The match's HUD as the local player sees it, where it stands.
-    private Game.Multiplayer.Modes.MatchHud? CurrentMatchHud() =>
-        (TickObserver as ISessionScoreboard)?.MatchHud(TitlePlayer is { } own ? own.Position : (Vector3d?)null);
+    private Game.Multiplayer.Modes.MatchHud? CurrentMatchHud()
+    {
+        Game.Multiplayer.Modes.MatchHud? hud = (TickObserver as ISessionScoreboard)?.MatchHud(TitlePlayer is { } own ? own.Position : (Vector3d?)null);
+        if (hud?.Money is not { } money)
+        {
+            _moneySeen = null;
+            return hud;
+        }
+
+        // What the money changed by, shown beside it a few seconds: a change on top of one still shown adds to it.
+        int now = _loop.TimeSource.Milliseconds;
+        if (_moneySeen is { } seen && money != seen)
+        {
+            _moneyChange = (now - _moneyChangedAt <= MoneyChangeMilliseconds ? _moneyChange : 0) + (money - seen);
+            _moneyChangedAt = now;
+        }
+
+        _moneySeen = money;
+        return _moneyChange != 0 && now - _moneyChangedAt <= MoneyChangeMilliseconds ? hud with { MoneyChange = _moneyChange } : hud;
+    }
+
+    // How long a change of the money is shown beside it.
+    private const int MoneyChangeMilliseconds = 3000;
+
+    // The money as last seen, what it last changed by and when.
+    private int? _moneySeen;
+    private int _moneyChange;
+    private int _moneyChangedAt;
 }

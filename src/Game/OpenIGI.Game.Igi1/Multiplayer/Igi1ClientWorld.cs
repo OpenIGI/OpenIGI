@@ -457,6 +457,13 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         {
             scenes.Held = true;
         }
+
+        // Nor any of the level's own pickups, as on the server: none to draw, none to walk over.
+        if (Game.Multiplayer.Modes.GameModes.IsVersus(mode))
+        {
+            _game.World.GunPickups?.LevelCleared = true;
+            _game.World.GenericPickups?.LevelCleared = true;
+        }
     }
 
     private string _mode = Game.Multiplayer.Modes.GameModes.Coop;

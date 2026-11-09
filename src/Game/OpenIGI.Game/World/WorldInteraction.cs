@@ -193,6 +193,13 @@ public sealed class WorldInteraction
     public float PlacedFacing { get; private set; }
 
     /// <summary>The switch is pressed as a co-op server's was: the pulse and its stamp, with nothing it calls -- a lift's own word comes with it.</summary>
+    // When this end's own player (or script) last pressed it, rather than a server's word of a press.
+    private int? _ownPressStamp;
+
+    /// <summary>Whether this end pressed the switch itself within the last ticks, so a server's word of a press is its own come back.</summary>
+    /// <param name="ticks">How many ticks back.</param>
+    internal bool PressedHereWithin(int ticks) => _ownPressStamp is { } at && Clock() - at <= ticks;
+
     internal void PressAsServerDid()
     {
         Pressed.Shift(true);
@@ -667,6 +674,7 @@ public sealed class WorldInteraction
     {
         Pressed.Shift(true);
         _pressStamp = Clock();
+        _ownPressStamp = _pressStamp;
         _onPress?.Invoke();
     }
 

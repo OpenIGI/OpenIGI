@@ -69,6 +69,9 @@ public interface ISessionScoreboard
     /// <summary>Gets what the mode last said of itself (a bomb planted, and where), or <see langword="null"/>.</summary>
     Game.Multiplayer.Modes.ModeReport? ModeReport => null;
 
+    /// <summary>Gets how many weapons and items the match has handed the local player, its buys and loadouts: a count that only grows.</summary>
+    int OwnHandedOver => 0;
+
     /// <summary>Gets the kills of late, oldest first, as the feed in the corner lists them.</summary>
     IReadOnlyList<Game.Multiplayer.Modes.KillNote> KillFeed => [];
 }

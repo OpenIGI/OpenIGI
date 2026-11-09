@@ -79,6 +79,11 @@ internal sealed partial class RemasteredHudRenderer
         if (hud.Money is { } money)
         {
             string cash = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"${money:N0}");
+            if (hud.MoneyChange is { } change)
+            {
+                cash += string.Create(System.Globalization.CultureInfo.InvariantCulture, $"   {(change > 0 ? "+" : "-")}${Math.Abs(change):N0}");
+            }
+
             string line = hud.BuyClock is { } buy ? $"{cash}   ·   {buyKey}  BUY  {buy}" : cash;
             _ = Chip(painter, type, line, centre, y, hud.BuyClock is null ? StripFace : Victory.WithAlpha(190), hud.BuyClock is null ? Victory : Bgra32.FromRgb(20, 16, 10), Px);
         }

@@ -16,6 +16,9 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public sealed partial class WorldInteractionRegistry
 {
+    // How long after this client pressed a switch the server's word of a press of it is taken for that same press: a second.
+    private const int OwnPressEchoTicks = 30;
+
     private readonly BitWriter _state = new(256);
     private bool[] _serverPressed = [];
 
@@ -117,8 +120,10 @@ public sealed partial class WorldInteractionRegistry
                 item.MirroredElectrified = electrified;
             }
 
-            // A press the server's switch took: pulsed here once, as its rises, unless this client's own press is still held.
-            if (pressed && !_serverPressed[i] && !item.Pressed.Value && item.Type == InteractionActivateType.Switch)
+            // A press the server's switch took: pulsed here once, as its rises -- unless it is this client's own press come back,
+            // which it pressed, and clicked, itself a moment ago (its pulse is three ticks; the round trip is longer).
+            if (pressed && !_serverPressed[i] && !item.Pressed.Value && item.Type == InteractionActivateType.Switch
+                && !item.PressedHereWithin(OwnPressEchoTicks))
             {
                 item.PressAsServerDid();
                 MirroredChanges++;

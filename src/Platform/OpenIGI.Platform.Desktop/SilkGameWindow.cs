@@ -357,21 +357,37 @@ public sealed class SilkGameWindow : IGameWindow
     /// <remarks>
     /// Reached through the first keyboard, which is where the backend hangs it. A machine with no
     /// keyboard attached reports an empty clipboard and swallows writes rather than throwing: a paste
-    /// that quietly does nothing is a far better failure than a developer tool that crashes the game.
+    /// that quietly does nothing is a far better failure than a developer tool that crashes the game. So
+    /// does a clipboard holding something that is not text -- a screenshot just copied -- which GLFW
+    /// reports by throwing.
     /// </remarks>
     public string ClipboardText
     {
         get
         {
             IKeyboard? keyboard = _input.Keyboards.Count > 0 ? _input.Keyboards[0] : null;
-            return keyboard?.ClipboardText ?? string.Empty;
+            try
+            {
+                return keyboard?.ClipboardText ?? string.Empty;
+            }
+            catch (Silk.NET.GLFW.GlfwException)
+            {
+                return string.Empty;
+            }
         }
 
         set
         {
             if (_input.Keyboards.Count > 0)
             {
-                _input.Keyboards[0].ClipboardText = value ?? string.Empty;
+                try
+                {
+                    _input.Keyboards[0].ClipboardText = value ?? string.Empty;
+                }
+                catch (Silk.NET.GLFW.GlfwException)
+                {
+                    // The clipboard is another program's for the moment; the copy is lost, not the game.
+                }
             }
         }
     }

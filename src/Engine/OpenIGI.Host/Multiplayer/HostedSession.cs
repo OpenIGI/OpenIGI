@@ -109,6 +109,9 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
     public Scoreboard? CurrentScoreboard => _session?.CurrentScoreboard();
 
     /// <inheritdoc/>
+    public int OwnHandedOver => _session?.HostHandedOver ?? 0;
+
+    /// <inheritdoc/>
     public int? LocalEntity => _options.IncludesHost ? ServerSession.HostEntity : null;
 
     /// <inheritdoc/>
@@ -197,6 +200,8 @@ public sealed partial class HostedSession : IHostTickObserver, ISessionScoreboar
                 _net, _world, _tickRate, _options.Map, hostName: _options.IncludesHost ? _options.HostName : null, hostSkin: _options.HostSkin,
                 protocolId: MultiplayerProtocol.IdFor(_titleId));
             _session.Title = _titleId;
+            _session.UsesMoneySettings = true;
+            _session.Match.Rules = Game.Multiplayer.NetCVars.WithMoney(_session.Match.Rules);
             _session.Files = Files;
             _session.Banned = Banned;
             _session.Rcon = Rcon;

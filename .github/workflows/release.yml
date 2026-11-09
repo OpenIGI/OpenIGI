@@ -42,6 +42,8 @@ env:
   TAG: ${{ inputs.tag || github.ref_name }}
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   RUNTIMES: win-x64 linux-x64 osx-arm64
+  # The dedicated server's other runtimes, beside linux-x64 and win-x64.
+  SERVER_ARM_RUNTIMES: linux-arm64 win-arm64
 
 # Steps run in bash everywhere: a job container's default shell is sh, which has no arrays or ${x::n}.
 defaults:
@@ -119,6 +121,10 @@ jobs:
             # Co-op through rooms needs libdatachannel beside the game; prebuilt by native-datachannel.yml.
             tools/native/fetch-datachannel.sh $RUNTIMES
           fi
+          if [ "$PRODUCT" = game ]; then
+            # The dedicated server also runs on ARM hosts (Graviton, Ampere, a Raspberry Pi, Windows on ARM).
+            tools/native/fetch-datachannel.sh $SERVER_ARM_RUNTIMES
+          fi
           if [ "$PRODUCT" = launcher ]; then
             # The launcher alone, self-contained only: the one program a player starts with nothing installed.
             for rid in $RUNTIMES; do
@@ -135,7 +141,7 @@ jobs:
             tools/release/package.sh web browser-wasm "$VERSION"
             # The dedicated server, for the hosts people rent: kept out of artifacts/release, whose files the launcher's
             # manifest lists, and uploaded beside them.
-            for rid in linux-x64 win-x64; do
+            for rid in linux-x64 win-x64 $SERVER_ARM_RUNTIMES; do
               tools/release/package.sh server "$rid" "$VERSION" artifacts/server
             done
           fi
@@ -193,6 +199,7 @@ jobs:
             if [ "$PRODUCT" = game ]; then
               echo
               echo "**Dedicated server**: [openigi-server-$v-linux-x64.tar.gz]($dl/openigi-server-$v-linux-x64.tar.gz) (\`sudo ./install.sh\`) or [openigi-server-$v-win-x64.zip]($dl/openigi-server-$v-win-x64.zip) (\`.\install.ps1\`); it plays your own copy of the game too."
+              echo "On ARM hosts: [openigi-server-$v-linux-arm64.tar.gz]($dl/openigi-server-$v-linux-arm64.tar.gz) or [openigi-server-$v-win-arm64.zip]($dl/openigi-server-$v-win-arm64.zip), installed the same way."
             fi
           } > "$RUNNER_TEMP/notes/release.md"
           cp "$RUNNER_TEMP/notes/notes.md" artifacts/release/CHANGELOG.md

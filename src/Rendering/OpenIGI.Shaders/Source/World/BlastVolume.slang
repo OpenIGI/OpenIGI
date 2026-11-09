@@ -27,7 +27,7 @@
 #include "../Common/ViewDepth.slang"
 
 // How many blasts one frame's parameters carry.
-#define BLAST_SLOTS 2
+#define BLAST_SLOTS 3
 
 struct BlastVolumePush
 {
@@ -57,6 +57,10 @@ struct BlastSlot
 
     // xyz: the fire's light, linear. w: how brightly the fire glows, against the exposure.
     float4 fire;
+
+    // x: the kind -- nought a bomb's fireball, one a building's collapse dust (time.z its radius, shape.x its height,
+    // shape.y its density, centre.xyz its footprint's middle on the ground). yzw: unused.
+    float4 extra;
 };
 
 struct BlastVolumeParams
@@ -193,32 +197,144 @@ struct VolumeSample
     float heat;
 };
 
+// Billowed fractal noise: the creased, rounded puffs of rolling smoke rather than fuzz, in about [0,1].
+float Billow(float3 x, int octaves)
+{
+    float sum = 0.0;
+    float amplitude = 0.5;
+    float total = 0.0;
+    for (int i = 0; i < 4; i++)
+    {
+        if (i >= octaves)
+        {
+            break;
+        }
+
+        sum += (1.0 - abs((Noise3(x) * 2.0) - 1.0)) * amplitude;
+        total += amplitude;
+        x = float3((x.x * 1.7) - (x.z * 1.1), (x.y * 1.7) + (x.z * 0.9), (x.z * 1.9) + (x.x * 0.4)) + float3(5.7, 2.3, 9.1);
+        amplitude *= 0.5;
+    }
+
+    return sum / max(total, 1e-4);
+}
+
+// How many heads the fireball throws off its core.
+#define FIRE_LOBES 6
+
+// One head of the fireball, drawn from the blast's seed: a ball thrown off the core, up-biased, a few hundredths of a
+// second after it, so the fire bursts out in heads rather than growing as a sphere. xyz where it ends up about the
+// fireball's centre, w its radius; both in fireball radii.
+float4 Lobe(float seed, int i)
+{
+    float k = float(i) + 1.0;
+    float h0 = Hash3(float3(seed * 0.00113, k * 1.37, 0.71));
+    float h1 = Hash3(float3(k * 2.11, seed * 0.00071, 1.93));
+    float h2 = Hash3(float3(0.37, k * 3.07, seed * 0.00157));
+    float h3 = Hash3(float3((seed * 0.00031) + k, 4.1, k * 0.53));
+    float3 d = normalize(float3((h0 * 2.0) - 1.0, (h1 * 2.0) - 1.0, (h2 * 1.4) - 0.2) + float3(0.0, 0.0, 1e-3));
+    return float4(d * (0.32 + (0.34 * h3)), 0.42 + (0.26 * h2));
+}
+
+// The fireball's heads as they stand this frame -- where each is and how big -- worked out once a pixel by PrepareLobes
+// rather than at every one of the march's look-ups: they hang only on the blast's seed and age.
+static float4 gLobeAt[FIRE_LOBES];
+static float gLobeCore[FIRE_LOBES];
+
+void PrepareLobes(BlastSlot b, float3 fireCentre)
+{
+    float age = b.time.x;
+    float seed = b.time.y;
+    float fireR = max(b.time.z, 0.1);
+    float grow = 1.0 - exp(-age / 0.11);
+    for (int i = 0; i < FIRE_LOBES; i++)
+    {
+        float4 lobe = Lobe(seed, i);
+        float delay = 0.012 * float(i);
+        float thrown = saturate((age - delay) / 0.28);
+        thrown = 1.0 - ((1.0 - thrown) * (1.0 - thrown));
+        float radius = fireR * lobe.w * saturate(((age - delay) / 0.09) + 0.15);
+        gLobeAt[i] = float4(fireCentre + (lobe.xyz * fireR * (0.4 + (0.6 * thrown))), 1.0 / max(radius, 0.05));
+        gLobeCore[i] = 1.0 - (0.35 * grow * lobe.w);
+    }
+}
+
+// Where the fireball's middle is at an age: it rises as it burns, and the column's cap is where it ends up.
+float3 FireCentre(BlastSlot b)
+{
+    float age = b.time.x;
+    float fireR = max(b.time.z, 0.1);
+    float rise = fireR * (0.35 + (0.6 * smoothstep(0.2, 3.0, age)));
+    float capZ = max(b.shape.x - (fireR * 0.4), rise);
+    return float3(0.0, 0.0, lerp(rise, capZ, smoothstep(0.8, 6.0, age)));
+}
+
+// A building's collapse at a point, in metres from its footprint's middle on the ground: a dome of dust that rolls out
+// off the footprint along the ground and hangs.
+VolumeSample Dust(BlastSlot b, float3 q, float3 seedShift, int octaves)
+{
+    VolumeSample s;
+    float age = b.time.x;
+    float r = max(b.time.z, 0.5);
+    float h = max(b.shape.x, 0.5);
+    float3 e = float3(q.xy / r, max(q.z, 0.0) / (h * 0.75));
+    float dome = saturate(1.0 - length(e)) * (q.z > -1.0 ? 1.0 : 0.0);
+
+    // The rim rolls: a fat ring at the edge, the surge every collapse pushes out along the ground.
+    float2 ring = float2(length(q.xy) - (r * 0.78), max(q.z, 0.0) - (h * 0.18));
+    float rim = saturate(1.0 - (length(ring) / max(h * 0.42, 0.3)));
+    // Mostly the rolling surge; the dome over the heap only a broken haze, never a smooth cap.
+    float body = max(dome * 0.6, rim);
+
+    // No noise can raise dust where the shape holds none: most of the box, left at the cost of the shape alone.
+    s.heat = 0.0;
+    if (body < 0.05)
+    {
+        s.density = 0.0;
+        return s;
+    }
+
+    float3 m = (float3(q.xy, q.z * 0.8) / r * 2.2) + seedShift;
+    m.z -= age * 0.12;
+    m.xy -= normalize(q.xy + float2(1e-3, 1e-3)) * (age * 0.18);
+    float puff = saturate(((Billow(m, octaves) - 0.5) * 2.4) + 0.5);
+    float grain = octaves >= 3 ? Fbm((m * 3.3) + float3(0.0, 0.0, age * 0.3), 2) : 0.5;
+    float d = smoothstep(0.08, 0.6, (body * 1.6) - ((1.0 - puff) * 1.4));
+    s.density = saturate(d - ((1.0 - d) * grain * 1.1)) * b.shape.y * 0.6;
+    return s;
+}
+
 // The volume at a point, in metres from the centre with z up.
 VolumeSample Volume(BlastSlot b, float3 q, int octaves)
 {
-    VolumeSample s;
     float age = b.time.x;
     float seed = b.time.y;
     float fireR = max(b.time.z, 0.1);
     float heat = b.time.w;
     float top = b.shape.x;
     float smoke = b.shape.y;
+    float3 seedShift = float3(frac(seed * 0.0013) * 97.0, frac(seed * 0.0007) * 61.0, frac(seed * 0.0021) * 43.0);
+    if (b.extra.x > 0.5)
+    {
+        return Dust(b, q, seedShift, octaves);
+    }
+
+    VolumeSample s;
 
     // The fireball rises as it burns, and the column's cap is where it ends up.
     float rise = fireR * (0.35 + (0.6 * smoothstep(0.2, 3.0, age)));
     float capZ = max(top - (fireR * 0.4), rise);
     float3 fireCentre = float3(0.0, 0.0, lerp(rise, capZ, smoothstep(0.8, 6.0, age)));
 
-    // The boil: the noise field climbs and turns over with time, warped by a coarser field of itself.
-    float3 seedShift = float3(frac(seed * 0.0013) * 97.0, frac(seed * 0.0007) * 61.0, frac(seed * 0.0021) * 43.0);
-    float3 n = (q / max(fireR, 1.0)) * 2.8 + seedShift;
-    n.z -= age * 0.55;
-    float3 warp = float3(Noise3(n * 0.5), Noise3((n * 0.5) + 7.3), Noise3((n * 0.5) + 13.1)) - 0.5;
-    // Spread out of the fractal's narrow middle, so the noise really eats the edge into billows rather than shading a ball.
-    float detail = saturate(((Fbm(n + (warp * 1.6), octaves) - 0.5) * 2.4) + 0.5);
-
-    // The fireball: a soft ball, its edge eaten by the noise.
-    float dBall = length(q - fireCentre) / fireR;
+    // The fireball: a core and the heads it throws off, each a soft ball, the nearest one's shape kept.
+    float ball = saturate(1.0 - (length(q - fireCentre) / (fireR * 0.78)));
+    float core = saturate(1.0 - (length(q - fireCentre) / (fireR * 0.6)));
+    for (int i = 0; i < FIRE_LOBES; i++)
+    {
+        float d = length(q - gLobeAt[i].xyz) * gLobeAt[i].w;
+        ball = max(ball, saturate(1.0 - d));
+        core = max(core, saturate(1.0 - (d * 1.3)) * gLobeCore[i]);
+    }
 
     // The stem: from the ground to the cap, wider at the foot where the dust is sucked in.
     float stemT = saturate(q.z / max(capZ, 0.1));
@@ -226,32 +342,95 @@ VolumeSample Volume(BlastSlot b, float3 q, int octaves)
     float dStem = (length(q.xy) / max(stemR, 0.05)) + (q.z < 0.0 ? -q.z / fireR * 4.0 : 0.0) + (q.z > capZ ? (q.z - capZ) / fireR * 4.0 : 0.0);
 
     // The cap: a flattened torus rolling where the column spreads.
-    float capR = fireR * lerp(0.6, 1.25, smoothstep(0.4, 6.0, age));
+    float capR = fireR * lerp(0.55, 0.95, smoothstep(0.4, 6.0, age));
     float2 torus = float2(length(q.xy) - (capR * 0.55), (q.z - capZ) * 1.6);
     float dCap = length(torus) / max(capR * 0.6, 0.1);
 
-    float ball = saturate(1.0 - dBall);
     float stem = saturate(1.0 - dStem) * smoke;
-    float cap = saturate(1.0 - dCap) * smoothstep(0.5, 1.6, age) * smoke;
+    float cap = saturate(1.0 - dCap) * smoothstep(0.5, 1.6, age) * smoke * 0.8;
     float shape = max(ball, max(stem * 0.85, cap));
 
-    // The noise breaks the surface: low noise eats in, high noise pushes out.
-    // A soft shoulder rather than a square, so the ball is solid out to most of its radius and only its edge is wisps.
-    float density = smoothstep(0.0, 0.5, (shape * 1.9) - ((1.0 - detail) * 0.95));
+    // No noise can raise smoke where the shape holds none: most of the box, left at the cost of the shape alone.
+    s.heat = 0.0;
+    if (shape <= 0.0)
+    {
+        s.density = 0.0;
+        return s;
+    }
 
-    // Heat: the fireball's core burns, the column's does not; it all cools with the blast's own heat.
-    float core = saturate(1.0 - (dBall * 1.1));
-    s.heat = saturate(core * (0.55 + (detail * 0.7)) * heat);
-    s.density = density * lerp(1.0, 0.75, s.heat) * max(smoke, heat);
+
+    // The boil: the noise field climbs and turns over, fast while it burns and slow once it is smoke, warped by a coarser
+    // field of itself.
+    float boil = (age * 0.35) + (0.9 * (1.0 - exp(-age / 0.45)));
+    float3 n = ((q / max(fireR, 1.0)) * 2.6) + seedShift;
+    n.z -= boil;
+    // A shadow's look-up (one octave) takes the field unwarped and as one noise: it only needs the body's depth.
+    float3 warped = n;
+    float fine;
+    float puffs;
+    if (octaves >= 2)
+    {
+        float3 warp = float3(Noise3(n * 0.5), Noise3((n * 0.5) + 7.3), Noise3((n * 0.5) + 13.1)) - 0.5;
+        warped = n + (warp * 1.7);
+        fine = Fbm(warped, octaves);
+        puffs = Billow(warped * 0.7, max(octaves - 1, 2));
+    }
+    else
+    {
+        fine = Noise3(n);
+        puffs = fine;
+    }
+
+    float detail = saturate(((lerp(fine, puffs, 0.55) - 0.5) * 2.5) + 0.5);
+
+    // The noise breaks the surface: low noise eats in, high noise pushes out. A soft shoulder rather than a square, so the
+    // ball is solid out to most of its radius and only its edge is billows.
+    float density = smoothstep(0.0, 0.45, (shape * 1.9) - ((1.0 - detail) * 1.0));
+
+    // The edges eaten into wisps by a finer field, where the body thins; its heart left whole.
+    if (octaves >= 3 && density > 0.0 && density < 0.9)
+    {
+        float wisp = Fbm((warped * 3.1) + float3(0.0, 0.0, -boil * 1.7), 2);
+        density = saturate((density - ((1.0 - density) * wisp * 0.75)) / max(1.0 - (wisp * 0.3), 0.3));
+    }
+
+    // Heat: the cores burn and their outsides do not -- the fire inside a shell of its own soot, which is what makes a
+    // fireball read as one. It all cools with the blast's own heat.
+    float shell = smoothstep(0.08, 0.5, ball);
+    s.heat = saturate(core * (0.2 + (detail * 1.1)) * shell * 1.3) * heat;
+    s.density = density * lerp(1.0, 0.8, s.heat) * max(smoke, heat);
     return s;
+}
+
+#ifndef PI
+#define PI 3.14159265
+#endif
+
+// How many steps each sample's shadow takes toward the sun, and how many orders of scattering are summed.
+#define SHADOW_STEPS 3
+#define SCATTER_ORDERS 3
+#define ISOTROPIC_PHASE (1.0 / (4.0 * PI))
+
+// Henyey-Greenstein: how much light a particle sends off at an angle to how it came, for an asymmetry g.
+float HenyeyGreenstein(float g, float cosTheta)
+{
+    float g2 = g * g;
+    float denominator = max(1.0 + g2 - (2.0 * g * cosTheta), 1e-4);
+    return (1.0 - g2) / (4.0 * PI * denominator * sqrt(denominator));
+}
+
+// Smoke and dust scatter mostly onward -- the bright rim of a cloud against the sun -- with a little thrown back.
+float DualLobePhase(float cosTheta)
+{
+    return lerp(HenyeyGreenstein(0.6, cosTheta), HenyeyGreenstein(-0.25, cosTheta), 0.3);
 }
 
 // Black-body light for a heat in [0,1]: nothing cold, a dull red, orange, then yellow-white at the hottest.
 float3 BlackBody(float heat)
 {
     float t = saturate(heat);
-    float3 colour = float3(1.0, pow(t, 1.8) * 0.42, pow(t, 4.5) * 0.12);
-    return colour * (pow(t, 2.2) * 26.0);
+    float3 colour = float3(1.0, pow(t, 1.6) * 0.5, pow(t, 4.0) * 0.18);
+    return colour * (pow(t, 2.4) * 16.0);
 }
 
 // The world direction of a view-space direction.
@@ -350,6 +529,25 @@ float4 fragmentMain(BlastVaryings input) : SV_Target
         dust = onSurface * shockStrength * saturate(-surface.z / max(shockR * 0.15, 1.0) + 0.6) * 0.35;
     }
 
+    // ---- The heat haze over the fire: the air above it shimmers while it burns ---------------------------------------
+    float hazeHeat = b.extra.x > 0.5 ? 0.0 : b.time.w;
+    if (hazeHeat > 0.05)
+    {
+        float hazeR = max(b.time.z, 0.1) * 1.5;
+        float3 hazeCentre = float3(0.0, 0.0, max(b.time.z, 0.1) * 1.6);
+        float along = max(dot(hazeCentre - originW, dirW), 0.0);
+        if (along < sceneT)
+        {
+            float miss = length(originW + (dirW * along) - hazeCentre);
+            float haze = exp(-(miss * miss) / (hazeR * hazeR)) * smoothstep(0.05, 0.5, hazeHeat);
+            float age = b.time.x;
+            float2 wobble = float2(
+                Noise3(float3(uv * float2(70.0, 38.0), age * 2.6)),
+                Noise3(float3((uv * float2(70.0, 38.0)) + 11.7, (age * 2.6) + 5.1))) - 0.5;
+            bend += wobble * (0.0045 * haze);
+        }
+    }
+
     // ---- The backdrop, bent and fringed -----------------------------------------------------------------------------
     float3 behind;
     float bendAmount = length(bend);
@@ -371,10 +569,13 @@ float4 fragmentMain(BlastVaryings input) : SV_Target
     behind = lerp(behind, float3(0.32, 0.27, 0.22) * (p.ambient.rgb + (p.sunColour.rgb * p.sun.w * 0.5)), saturate(dust));
 
     // ---- The fireball and the column --------------------------------------------------------------------------------
+    bool isDust = b.extra.x > 0.5;
     float fireR = max(b.time.z, 0.1);
     float top = b.shape.x;
-    float3 halfSize = float3(fireR * 1.6, fireR * 1.6, (top + fireR * 1.5) * 0.5);
-    float3 boxCentre = float3(0.0, 0.0, halfSize.z - (fireR * 0.6));
+    float3 halfSize = isDust
+        ? float3(fireR * 1.15, fireR * 1.15, (top * 0.6) + 1.0)
+        : float3(fireR * 1.7, fireR * 1.7, (top + fireR * 1.6) * 0.5);
+    float3 boxCentre = isDust ? float3(0.0, 0.0, halfSize.z - 1.0) : float3(0.0, 0.0, halfSize.z - (fireR * 0.6));
     float2 span = RayBox(originW - boxCentre, dirW, halfSize);
     span.x = max(span.x, 0.0);
     span.y = min(span.y, sceneT);
@@ -387,10 +588,31 @@ float4 fragmentMain(BlastVaryings input) : SV_Target
         float stepLength = (span.y - span.x) / float(steps);
         float jitter = InterleavedGradient(float2(pixel), push.draw.w);
         float3 sunW = ViewToWorld(p.sun.xyz);
-        int octaves = steps >= 40 ? 5 : (steps >= 24 ? 4 : 3);
+        int octaves = steps >= 20 ? 4 : 3;
 
-        // How thick the smoke is per metre at full density: a fireball tens of metres across is opaque at its heart.
-        float sigma = 7.0 / max(fireR, 1.0);
+        // How thick the smoke is per metre at full density: a fireball tens of metres across is opaque at its heart. Dust
+        // is thinner per metre: a collapse's cloud is seen into, not a wall.
+        float sigma = (isDust ? 4.0 : 7.0) / max(fireR, 1.0);
+
+        // Soot early, grey smoke once the fire is out: the smoke right off a fireball is near black, its column greys.
+        float soot = saturate(b.time.w * 1.6);
+        float3 albedo = isDust
+            ? float3(0.62, 0.56, 0.47)
+            : lerp(float3(0.36, 0.34, 0.32), float3(0.08, 0.072, 0.065), soot);
+
+        // The first frames: a flash core brighter than any fire, the whole ball lit through.
+        float flash = isDust ? 0.0 : exp(-b.time.x / 0.05);
+        if (!isDust)
+        {
+            PrepareLobes(b, FireCentre(b));
+        }
+
+        // The shadow look-ups are the march's cost: taken at every other lit sample and held between, which the jittered
+        // march and the temporal resolve smooth over.
+        float depthSun = 0.0;
+        float depthFire = 0.0;
+        float depthUp = 0.0;
+        int lit = 0;
         for (int i = 0; i < 64; i++)
         {
             if (i >= steps || transmittance < 0.01)
@@ -406,26 +628,67 @@ float4 fragmentMain(BlastVaryings input) : SV_Target
                 continue;
             }
 
-            // Its own shadow: two steps toward the sun, two toward the fire's core.
-            float towardSun = 0.0;
-            float towardFire = 0.0;
-            float3 core = float3(0.0, 0.0, fireR * 0.5);
-            float3 toCore = normalize(core - q + float3(0.0, 0.0, 1e-3));
-            for (int k = 1; k <= 2; k++)
+            // Its own shadow: the depth of smoke toward the sun, toward the fire's core and straight up, read at steps that
+            // spread out with distance -- close detail for the billows' own shading, far reach for the body's.
+            float reachAll = isDust ? max(top, 2.0) * 0.9 : fireR * 1.3;
+            if ((lit & 1) == 0)
             {
-                float reach = fireR * 0.35 * float(k);
-                towardSun += Volume(b, q + (sunW * reach), 2).density;
-                towardFire += Volume(b, q + (toCore * reach), 2).density;
+                depthSun = 0.0;
+                depthFire = 0.0;
+                float3 core = float3(0.0, 0.0, fireR * 0.5);
+                float3 toCore = normalize(core - q + float3(0.0, 0.0, 1e-3));
+                float previous = 0.0;
+                for (int k = 1; k <= SHADOW_STEPS; k++)
+                {
+                    float f = float(k) / float(SHADOW_STEPS);
+                    float reach = reachAll * f * f;
+                    float segment = reach - previous;
+                    previous = reach;
+                    depthSun += Volume(b, q + (sunW * reach), 1).density * segment;
+                }
+
+                if (!isDust && b.time.w > 0.01)
+                {
+                    depthFire = Volume(b, q + (toCore * (fireR * 0.4)), 1).density * fireR * 0.6;
+                }
+
+                // The sky reaches less of it the deeper into the smoke it is from above.
+                float upReach = reachAll * 0.5;
+                depthUp = Volume(b, q + float3(0.0, 0.0, upReach), 1).density * upReach;
             }
 
-            // Soft: smoke forward-scatters, so even its shaded side is never black.
-            float sunLit = lerp(0.25, 1.0, exp(-towardSun * sigma * fireR * 0.18)) * p.sun.w;
-            float fireLit = exp(-towardFire * sigma * fireR * 0.2);
+            lit++;
 
-            // Dark smoke with a little brown: soot scatters little of what reaches it.
-            float3 albedo = float3(0.13, 0.12, 0.11);
-            float3 scattered = albedo * ((p.sunColour.rgb * sunLit) + (p.ambient.rgb * 1.1) + (b.fire.rgb * b.fire.w * fireLit * 0.35));
-            float3 emitted = BlackBody(s.heat) * b.fire.w;
+            // Light scattered several times: each order weaker, less shadowed and less directional, so the core stays
+            // dark but the shaded side never goes flat black.
+            float cosTheta = dot(dirW, sunW);
+            float phase = DualLobePhase(cosTheta);
+            float sunLit = 0.0;
+            float scatterWeight = 1.0;
+            float extinctionWeight = 1.0;
+            float phaseWeight = 1.0;
+            for (int o = 0; o < SCATTER_ORDERS; o++)
+            {
+                float orderPhase = lerp(ISOTROPIC_PHASE, phase, phaseWeight);
+                sunLit += scatterWeight * exp(-depthSun * sigma * extinctionWeight) * orderPhase;
+                scatterWeight *= 0.5;
+                extinctionWeight *= 0.4;
+                phaseWeight *= 0.5;
+            }
+
+            // In the scene's light as the fog's medium is lit: the sun through the phase, the sky by a share of it.
+            sunLit *= p.sun.w;
+            float skyLit = lerp(0.35, 1.0, exp(-depthUp * sigma * 0.6));
+
+            // The ground's light from under it, a little, on the side facing down.
+            float groundLit = 0.18 * saturate(1.0 - (q.z / max(reachAll, 1.0)));
+            float fireLit = exp(-depthFire * sigma);
+
+            // The smoke lit by the sun and the sky, in the scene's own light as the backdrop is, and from inside and below by
+            // the fire it rolls over -- which, like the fire's glow, is lifted out of the exposure.
+            float3 scattered = albedo * ((p.sunColour.rgb * sunLit) + (p.ambient.rgb * (skyLit + groundLit) * 0.25));
+            float3 fireScattered = albedo * b.fire.rgb * (b.fire.w * b.time.w * fireLit * 3.0);
+            float3 emitted = (BlackBody(s.heat) + (float3(1.0, 0.82, 0.6) * (flash * 60.0 * saturate(s.density * 2.0)))) * b.fire.w;
 
             float extinction = s.density * sigma;
             float absorbed = 1.0 - exp(-extinction * stepLength);
@@ -433,7 +696,7 @@ float4 fragmentMain(BlastVaryings input) : SV_Target
             // Energy-conserving integration of a slab of constant medium.
             // The smoke's lit colour is in the scene's own light, as the backdrop is; only the fire's glow is lifted out of
             // the exposure, so it burns under any.
-            light += transmittance * absorbed * (scattered + (emitted * push.draw.y));
+            light += transmittance * absorbed * (scattered + ((emitted + fireScattered) * push.draw.y));
             transmittance *= 1.0 - absorbed;
         }
     }

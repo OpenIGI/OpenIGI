@@ -103,6 +103,10 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         // What the bomb shatters and holes, and the pieces it throws.
         _blastDebris?.Dispose();
         _blastDebris = new BlastDebris(device, work);
+        _blastDebris.Dust += (at, size, strength) =>
+            Particles?.SpawnRubbleDust(at, size, strength, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
+        _blastDebris.Collapsed += (ground, footprint, height, seed) =>
+            Particles?.SpawnCollapseSurge(ground, footprint, height, seed, Math.Max(1f, CombatEffectCVars.ImpactParticles.Value));
     }
 
     /// <summary>Frees a mission's effects, as it goes.</summary>
@@ -156,6 +160,21 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _blastDebris?.Tick();
     }
 
+    /// <summary>Steps the effects some ticks at once: a blast seen as it stands that long after, for tuning and measuring.</summary>
+    /// <param name="ticks">How many ticks.</param>
+    public void FastForward(int ticks)
+    {
+        _blastDebris?.FinishBreaking();
+        for (int i = 0; i < ticks; i++)
+        {
+            Tick();
+            if (i == 0)
+            {
+                _blastDebris?.FinishBreaking();
+            }
+        }
+    }
+
     /// <summary>Draws the effects over the lit scene, in the order they composite.</summary>
     /// <param name="eye">The camera.</param>
     /// <param name="projection">The world's projection.</param>
@@ -178,7 +197,7 @@ internal sealed class WorldEffects(IGraphicsDevice device, IOpenIgiLogger logger
         _explosions?.Draw(eye, projection, blend);
 
         // The bomb's fireball, column and shock front last, over everything: the volume writes the scene behind it whole.
-        _blastVolume?.Draw(Bomb.Blasts, eye, projection, blend);
+        _blastVolume?.Draw(Bomb.Blasts, _blastDebris?.Clouds ?? [], eye, projection, blend);
     }
 
     /// <summary>Sets search and destroy's bomb off as the remaster shows it: its shake, light and fireball, and its ground.</summary>

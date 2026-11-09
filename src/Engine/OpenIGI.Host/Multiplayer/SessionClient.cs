@@ -115,6 +115,9 @@ public sealed partial class SessionClient : IHostTickObserver, ISessionScoreboar
     public Scoreboard? CurrentScoreboard => _session?.Scoreboard;
 
     /// <inheritdoc/>
+    public int OwnHandedOver => _session?.OwnHandedOver ?? 0;
+
+    /// <inheritdoc/>
     public int? LocalEntity => _session?.EntityId;
 
     /// <inheritdoc/>

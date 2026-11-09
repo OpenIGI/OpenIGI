@@ -663,6 +663,53 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_versus_match_lays_none_of_the_levels_pickups_on_the_host_or_the_joiner_and_a_new_round_brings_none_back()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        static int Lying(Igi1Gameplay game) =>
+            (game.World.GenericPickups?.Items.Count(p => !p.IsCollected) ?? 0) + (game.World.GunPickups?.Items.Count(p => !p.IsCollected) ?? 0);
+        pair.RunUntil(() => false, 30);
+        Assert.True((pair.Host!.World.GenericPickups?.Items.Count ?? 0) + (pair.Host.World.GunPickups?.Items.Count ?? 0) > 0, "the level has no pickups to clear");
+        Assert.Equal(0, Lying(pair.Host!));
+        Assert.Equal(0, Lying(pair.Joiner!));
+
+        // The joiner falls, which ends the round; the next one puts the level back -- without them.
+        Match match = pair.Session.Session!.Match;
+        ((IModeHost)pair.Session.Session).World.KillPlayer(0);
+        Assert.True(pair.RunUntil(() => match.Players[0] is { IsAlive: false }, 120) >= 0, "the joiner never fell");
+        Assert.True(pair.RunUntil(() => match.Players[0].IsAlive && !pair.Joiner!.World.IsPlayerDead, 3000) >= 0, "the next round never stood the joiner up");
+        pair.RunUntil(() => false, 30);
+        Assert.Equal(0, Lying(pair.Host!));
+        Assert.Equal(0, Lying(pair.Joiner!));
+    }
+
+    [RequiresGameDataFact]
+    public void A_gun_bought_is_taken_in_hand_and_a_rifle_bought_over_another_too_by_the_host_and_by_the_joiner()
+    {
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        Match match = pair.Session.Session!.Match;
+        foreach (int slot in match.Players.Keys)
+        {
+            match.Award(slot, 6000);
+        }
+
+        Igi1NetworkPlayer joiner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        Game.Igi1.Player.PlayerCamera host = pair.Host.World.Player!;
+        static bool Holds(Game.Igi1.Player.PlayerCamera rig, string weapon) => rig.Weapons?.InHand?.Weapon.ScriptId == weapon;
+        static string Held(Game.Igi1.Player.PlayerCamera rig) =>
+            (rig.Weapons?.InHand?.Weapon.ScriptId ?? "nothing") + " [" + string.Join(",", rig.Weapons?.Carried.Select(c => c.Weapon.ScriptId) ?? []) + "]";
+
+        foreach ((string buy, string weapon) in new[] { ("ak47", "WEAPON_ID_AK47"), ("m16", "WEAPON_ID_M16A2") })
+        {
+            pair.Session.Say($"/buy {buy}");
+            pair.Client.Say($"/buy {buy}");
+            Assert.True(
+                pair.RunUntil(() => Holds(host, weapon) && Holds(joiner.Player, weapon) && Holds(pair.Joiner!.World.Player!, weapon), 300) >= 0,
+                $"after /buy {buy}: the host holds {Held(host)}, the joiner on the server {Held(joiner.Player)}, in its own game {Held(pair.Joiner!.World.Player!)}");
+        }
+    }
+
+    [RequiresGameDataFact]
     public void A_player_killed_after_buying_starts_the_next_round_with_the_spawn_kit_and_the_survivor_keeps_its_gun()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);

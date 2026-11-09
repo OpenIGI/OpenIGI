@@ -506,6 +506,32 @@ public sealed class GunPickupRegistry : ILevelReset
 
     // The guns there were as the match began; every other was dropped since.
     private readonly HashSet<GunPickup> _atStart = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<GunPickup> _authored = new(ReferenceEqualityComparer.Instance);
+    private bool _levelCleared;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the guns the level itself lays about are all gone, for good: a versus match,
+    /// where a gun is bought or taken off a player who dropped it. Guns dropped later still lie where they fall; every round
+    /// put back keeps the level's own gone.
+    /// </summary>
+    public bool LevelCleared
+    {
+        get => _levelCleared;
+        set
+        {
+            // Only as it first goes: what lies about by then is the level's own; a gun dropped after is a player's.
+            bool clearing = value && !_levelCleared;
+            _levelCleared = value;
+            if (clearing)
+            {
+                foreach (GunPickup pickup in _items)
+                {
+                    _authored.Add(pickup);
+                    pickup.IsCollected = true;
+                }
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public void MarkLevelStart()
@@ -536,6 +562,10 @@ public sealed class GunPickupRegistry : ILevelReset
             else
             {
                 pickup.ResetToLevelStart();
+                if (_levelCleared && _authored.Contains(pickup))
+                {
+                    pickup.IsCollected = true;
+                }
             }
         }
 

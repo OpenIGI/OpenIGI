@@ -26,12 +26,13 @@ public sealed class DebrisCollision
 
     private const double SearchAbove = 4096.0;
     private const double SearchBelow = 409600.0;
-    private const int MostPassThroughs = 6;
+    private const int MostPassThroughs = 16;
 
     private readonly WorldRayCast? _cast;
     private readonly RagdollWorld? _fallback;
     private readonly List<GoneBox> _boxes = [];
     private readonly List<(Vector3d Centre, double Radius)> _holes = [];
+    private readonly List<RubbleMound> _mounds = [];
 
     /// <summary>Initializes a new instance of the <see cref="DebrisCollision"/> class.</summary>
     /// <param name="world">The level's queries, or <see langword="null"/> for flat ground at <paramref name="groundUnits"/>.</param>
@@ -49,9 +50,16 @@ public sealed class DebrisCollision
     /// <param name="high">Its high corner.</param>
     public void AddGone(Vector3d position, Matrix3f orientation, Vector3d low, Vector3d high)
     {
-        // A little in from the faces, so the floor the building stood on still holds what falls on it.
-        Vector3d margin = new(60.0, 60.0, 60.0);
-        _boxes.Add(new GoneBox(position, orientation, low + margin, high - margin));
+        // A little in from its floor, so the floor the building stood on still holds what falls on it; a little out past its
+        // walls and its roof, so their outer faces -- which lie on the box -- go with it, and nothing lands on a roof that
+        // is no longer there.
+        const double inside = 60.0;
+        const double outside = 120.0;
+        _boxes.Add(new GoneBox(
+            position,
+            orientation,
+            new Vector3d(low.X - outside, low.Y - outside, low.Z + inside),
+            new Vector3d(high.X + outside, high.Y + outside, high.Z + outside)));
     }
 
     /// <summary>Marks a hole as gone.</summary>
@@ -59,11 +67,20 @@ public sealed class DebrisCollision
     /// <param name="radius">Its radius.</param>
     public void AddHole(Vector3d centre, double radius) => _holes.Add((centre, radius));
 
+    /// <summary>Lays a building's rubble heap on the ground: what falls there lands on it, as high as it has risen.</summary>
+    /// <param name="mound">The heap.</param>
+    public void AddMound(RubbleMound mound)
+    {
+        ArgumentNullException.ThrowIfNull(mound);
+        _mounds.Add(mound);
+    }
+
     /// <summary>Forgets every gone volume, as the level is put back.</summary>
     public void Clear()
     {
         _boxes.Clear();
         _holes.Clear();
+        _mounds.Clear();
     }
 
     /// <summary>The ground under a point, as a plane.</summary>
@@ -73,6 +90,36 @@ public sealed class DebrisCollision
     /// <param name="normal">Receives its upward normal.</param>
     /// <returns>Whether there is ground.</returns>
     public bool TryGroundPlane(Vector3d at, double reach, out Vector3d point, out Vector3d normal)
+    {
+        bool found = TryLevelGround(at, reach, out point, out normal);
+
+        // A rubble heap over the ground there, where it stands higher than the ground.
+        foreach (RubbleMound mound in _mounds)
+        {
+            double top = mound.TopAt(at);
+            if (top > double.NegativeInfinity && (!found || top > point.Z) && top < at.Z + reach + SearchAbove)
+            {
+                point = new Vector3d(at.X, at.Y, top);
+                normal = mound.NormalAt(at);
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>The height of the level's own ground under a point -- not any rubble heap -- in world units.</summary>
+    /// <param name="at">The point, world units; the ground is looked for from a little above it down.</param>
+    /// <param name="groundZ">Receives the ground's height.</param>
+    /// <returns>Whether there is ground under it.</returns>
+    public bool TryGroundUnder(Vector3d at, out double groundZ)
+    {
+        bool found = TryLevelGround(at, 0.0, out Vector3d point, out _);
+        groundZ = point.Z;
+        return found;
+    }
+
+    private bool TryLevelGround(Vector3d at, double reach, out Vector3d point, out Vector3d normal)
     {
         normal = Vector3d.UnitZ;
         if (_cast is not null)

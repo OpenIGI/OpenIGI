@@ -107,6 +107,23 @@ public sealed class DebrisBody
     /// <summary>Gets a value indicating whether it lies still.</summary>
     public bool IsAtRest { get; private set; }
 
+    /// <summary>Gets how many ticks it still stands where it was before it lets go; negative for one that never does.</summary>
+    /// <remarks>
+    /// A building comes down in order: what the blast struck goes at once, what it held up after. A held piece stands in its
+    /// place, still, keeping the velocity and spin it will fall with.
+    /// </remarks>
+    public int HeldTicks { get; private set; }
+
+    /// <summary>Gets a value indicating whether it still stands where it was.</summary>
+    public bool IsHeld => HeldTicks != 0;
+
+    /// <summary>Gets how hard it struck the ground this tick, world units a tick; nought when it did not.</summary>
+    public double LandingSpeed { get; private set; }
+
+    /// <summary>Keeps it standing where it is for some ticks, or for good.</summary>
+    /// <param name="ticks">How many ticks; negative for good -- a stump of wall the collapse leaves standing.</param>
+    public void Hold(int ticks) => HeldTicks = ticks;
+
     /// <summary>Gets how far its farthest corner is from its centre, in world units.</summary>
     public double Radius => _radius;
 
@@ -124,6 +141,17 @@ public sealed class DebrisBody
         ArgumentNullException.ThrowIfNull(world);
         PreviousPosition = Position;
         PreviousOrientation = Orientation;
+        LandingSpeed = 0.0;
+        if (HeldTicks != 0)
+        {
+            if (HeldTicks > 0)
+            {
+                HeldTicks--;
+            }
+
+            return;
+        }
+
         if (IsAtRest)
         {
             return;
@@ -206,6 +234,11 @@ public sealed class DebrisBody
                     Vector3d arm = arms[i];
                     Vector3d pointVelocity = Velocity + Vector3d.Cross(Spin, arm);
                     double closing = Vector3d.Dot(pointVelocity, groundNormal);
+                    if (pass == 0)
+                    {
+                        LandingSpeed = Math.Max(LandingSpeed, -closing);
+                    }
+
                     double bounce = pass == 0 && closing < -BounceThreshold ? Restitution : 0.0;
                     double weight = 1.0 + Vector3d.Dot(Vector3d.Cross(ApplyInverseInertia(Vector3d.Cross(arm, groundNormal)), arm), groundNormal);
                     double impulse = -(1.0 + bounce) * closing / weight;

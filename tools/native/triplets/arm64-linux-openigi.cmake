@@ -1,0 +1,11 @@
+# The dedicated server's libdatachannel on 64-bit ARM Linux: one shared library with OpenSSL, usrsctp and libjuice linked in
+# statically.
+set(VCPKG_TARGET_ARCHITECTURE arm64)
+set(VCPKG_CRT_LINKAGE dynamic)
+set(VCPKG_LIBRARY_LINKAGE static)
+set(VCPKG_BUILD_TYPE release)
+set(VCPKG_CMAKE_SYSTEM_NAME Linux)
+set(VCPKG_FIXUP_ELF_RPATH ON)
+if(PORT STREQUAL "libdatachannel")
+  set(VCPKG_LIBRARY_LINKAGE dynamic)
+endif()

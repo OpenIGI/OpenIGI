@@ -23,6 +23,36 @@ public static class ArenaLevel
     /// <returns>How many were taken out.</returns>
     public static int RemoveSoldiers(GameTask root) => RemoveSoldiers(root, []);
 
+    /// <summary>
+    /// Takes the level's own story out of it: the vehicles its script drives (the helicopter that drops the allies, the car
+    /// that brings Priboi, the trains and planes), the gun an AI mans, and the script's timers, one-off sounds, radio calls
+    /// and messages -- nothing in an arena is the mission's, and they would come in, fire or be heard mid-round.
+    /// </summary>
+    /// <param name="root">The level's root task.</param>
+    /// <returns>How many were taken out.</returns>
+    /// <remarks>The level's ambience (<c>AmbientArea</c>), its doors, lifts, switches and the rest of the ground stay.</remarks>
+    public static int RemoveScriptedActivity(GameTask root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        List<GameTask> doomed = [.. root.Descendants().Where(t => ScriptedTypes.Contains(t.Type.Name))];
+        foreach (GameTask task in doomed)
+        {
+            if (!task.IsDeleted)
+            {
+                root.Tree.Delete(task);
+            }
+        }
+
+        return doomed.Count;
+    }
+
+    // The task types of a level's story rather than its ground.
+    private static readonly HashSet<string> ScriptedTypes = new(StringComparer.Ordinal)
+    {
+        "Heli", "Plane", "Train", "Car", "CarAI", "SplineObj", "AIStationaryGunHolder",
+        "LevelTimer", "ConditionalSound", "StatusMessage", "Radio",
+    };
+
     /// <summary>A place a level's soldier stood, and the AI graph it walked: what a generated arena is laid out from.</summary>
     /// <param name="Position">Where it stood, in world units.</param>
     /// <param name="Graph">The id of the graph its <c>HumanAI</c> walks, or 0 for none.</param>
