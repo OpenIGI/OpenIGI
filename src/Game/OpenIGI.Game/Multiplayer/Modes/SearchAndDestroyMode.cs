@@ -124,6 +124,13 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
     /// <summary>Gets a value indicating whether this round's bomb went off.</summary>
     public bool Exploded { get; private set; }
 
+    /// <summary>The seconds a round the bomb ended is held before the next: long enough to watch the blast and what it
+    /// brought down.</summary>
+    public const double DetonatedRoundOverSeconds = 20;
+
+    /// <inheritdoc/>
+    protected override double RoundOverSeconds => Exploded ? Math.Max(DetonatedRoundOverSeconds, Settings.RoundOverSeconds) : base.RoundOverSeconds;
+
     /// <inheritdoc/>
     public override string Status(long tick)
     {
@@ -265,12 +272,15 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
             return 0f;
         }
 
-        return BombDamage.Share(EffectiveMetres(host, bomb, feet), Bomb.BlastMetres);
+        return BombDamage.Share(EffectiveMetres(bomb, feet), Bomb.BlastMetres);
     }
 
-    // How far the wave effectively travels to a player: by the field once it is built; before that, the straight line, a
-    // wall between counted as the field would count it.
-    private double EffectiveMetres(IModeHost host, Vector3d bomb, Vector3d feet)
+    // How far the wave effectively travels to a player: by the field once it is built; before that -- the few seconds after
+    // the plant it takes to build -- the straight line. Not a wall's penalty where the line is blocked: what blocks it near a
+    // bomb is as often a crate or a dock's edge the wave goes straight round as a wall, and a penalty there read as no
+    // risk at all, so a player beside the bomb saw nothing until the field was done and then the whole bar flash at once.
+    // Better the warning shown at once and eased off behind a real wall than shown late.
+    private double EffectiveMetres(Vector3d bomb, Vector3d feet)
     {
         Vector3d chest = feet + new Vector3d(0.0, 0.0, 1.2 * WorldUnits.PerMetre);
         if (_wave is { IsReady: true } wave)
@@ -279,10 +289,7 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
         }
 
         Vector3d air = bomb + new Vector3d(0.0, 0.0, 0.4 * WorldUnits.PerMetre);
-        double straight = (chest - air).Length / WorldUnits.PerMetre;
-        return host.World.Collision is { } cast && cast(air, chest, out _)
-            ? (straight + BlastWaveField.WallPenaltyMetres) * (1.0 + BlastWaveField.DetourWeight)
-            : straight;
+        return (chest - air).Length / WorldUnits.PerMetre;
     }
 
     // How far the wave effectively travels to a pane: its own centre, which the pane's surface may not hide from itself.
@@ -341,7 +348,7 @@ public sealed class SearchAndDestroyMode(int tickRate, RoundSettings? settings =
                 continue;
             }
 
-            double effective = EffectiveMetres(host, bomb, feet);
+            double effective = EffectiveMetres(bomb, feet);
             if (effective > front)
             {
                 continue;

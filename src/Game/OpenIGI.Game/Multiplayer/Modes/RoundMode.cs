@@ -85,6 +85,9 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     /// first <see cref="RoundSettings.BuySeconds"/> of each round.</summary>
     protected virtual bool HasArmoury => false;
 
+    /// <summary>Gets the seconds the round just decided is shown before the next begins; a mode may hold some ends longer.</summary>
+    protected virtual double RoundOverSeconds => Settings.RoundOverSeconds;
+
     // When the round in play began, and where each player stood as it did: where it may buy.
     private long _roundBegan;
     private readonly Dictionary<int, Core.Numerics.Vector3d> _startedAt = [];
@@ -422,7 +425,7 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
             host.Match.PayRound(winner);
         }
 
-        Flow.Enter(MatchPhase.RoundOver, tick, Settings.RoundOverSeconds, winner);
+        Flow.Enter(MatchPhase.RoundOver, tick, RoundOverSeconds, winner);
     }
 
     /// <inheritdoc/>
