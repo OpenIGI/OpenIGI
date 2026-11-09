@@ -57,10 +57,16 @@ public sealed class Match
 
     /// <summary>Initializes a new instance of the <see cref="Match"/> class.</summary>
     /// <param name="rules">The server's rules.</param>
-    public Match(MultiplayerRules rules) => Rules = rules ?? throw new ArgumentNullException(nameof(rules));
+    public Match(MultiplayerRules rules) => _rules = rules ?? throw new ArgumentNullException(nameof(rules));
 
-    /// <summary>Gets the server's rules.</summary>
-    public MultiplayerRules Rules { get; }
+    private MultiplayerRules _rules;
+
+    /// <summary>Gets or sets the server's rules: its operator may change the money they pay mid-match, taken from the next pay on.</summary>
+    public MultiplayerRules Rules
+    {
+        get => _rules;
+        set => _rules = value ?? throw new ArgumentNullException(nameof(value));
+    }
 
     /// <summary>Gets the players, by slot.</summary>
     public IReadOnlyDictionary<int, MatchPlayer> Players => _players;
@@ -291,6 +297,8 @@ public sealed class Match
         }
     }
 
+    // Pay up to the cap (money already over it, from a cap lowered mid-match, is kept but not added to); a fine down to nothing,
+    // never a debt a player would have to win back before it could buy anything again.
     private void Pay(MatchPlayer player, int amount) =>
-        player.Money = amount >= 0 ? Math.Min(player.Money + amount, Math.Max(Rules.MoneyCap, player.Money)) : player.Money + amount;
+        player.Money = amount >= 0 ? Math.Min(player.Money + amount, Math.Max(Rules.MoneyCap, player.Money)) : Math.Max(0, player.Money + amount);
 }

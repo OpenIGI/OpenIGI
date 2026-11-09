@@ -24,6 +24,9 @@ The installers ask for the game's folder, the server's name, its port, a remote 
 - `public`: list on the master server; `room`: also accept browser players
 - `map <mission> <mode>` lines: the rotation. Modes: `coop`, `objective`, `tdm`, `ffa`, `elim`, `sd`
 - `mp_buytime <seconds>`: how long players may buy in a search and destroy round (20; 0 for none). Also a console command.
+- `mp_moneystart`, `mp_moneycap`, `mp_moneykill`, `mp_moneyteamkill`, `mp_moneywin`, `mp_moneylose`, `mp_moneyplant`: the
+  round modes' money -- start money (1000), the most a player holds (15000), a kill's pay (800), a team kill's fine (4000), a
+  round's pay to its winners (1250) and losers (750), the bomb planter's pay (300). Also console commands; they take hold at once.
 
 The command line wins over the file: `-servername`, `-port`, `-maxplayers`, `-password`, `-mode`, `-mission`.
 

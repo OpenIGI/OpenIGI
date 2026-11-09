@@ -105,6 +105,12 @@ public sealed partial class ServerSession : IModeHost
     /// <summary>The match slot of a listen server's own player, past every client's.</summary>
     public const int HostSlot = 1000;
 
+    /// <summary>
+    /// Gets or sets whether the match pays by the money settings (<see cref="NetCVars.MoneyKill"/> and the rest) rather than the
+    /// rules it was made with: a game's hosted session does, a test's own rules do not.
+    /// </summary>
+    public bool UsesMoneySettings { get; set; }
+
     /// <summary>The entity id of a listen server's own player.</summary>
     public const int HostEntity = 0;
 
@@ -345,6 +351,13 @@ public sealed partial class ServerSession : IModeHost
 
         _tick = tick;
         PumpFiles(now);
+
+        // The money the operator set (mp_moneykill and the rest), taken from this tick's pay on.
+        if (UsesMoneySettings)
+        {
+            Match.Rules = NetCVars.WithMoney(Match.Rules);
+        }
+
         Mode.Tick(this, tick, _world.TakeDeaths());
         TellKits();
         TellCombat();

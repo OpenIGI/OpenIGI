@@ -23,6 +23,15 @@ log server.log                # the server's log (rolled, the last 8 kept); empt
 mp_buytime 20                 # seconds players may buy in a search and destroy round, after the freeze; 0 for none
 mp_timelimit 0                # minutes a deathmatch lasts; 0 for the mode's own ten
 
+# The money of search and destroy and elimination; each takes hold at once when set at the console.
+mp_moneystart 1000            # money each player starts a map, and each half, with
+mp_moneycap 15000             # the most money a player may hold
+mp_moneykill 800              # paid for killing an enemy
+mp_moneyteamkill 4000         # taken for killing a team mate; 0 for no fine
+mp_moneywin 1250              # paid to each player of the team that wins a round
+mp_moneylose 750              # paid to each player of the team that loses one
+mp_moneyplant 300             # paid to the attacker who plants the bomb
+
 # The maps played in turn: mission number, then the mode. Leave the mode off to keep the one played.
 # Modes: coop, objective, tdm, ffa, elim, sd
 map 1 sd
@@ -30,4 +39,4 @@ map 1 tdm
 map 1 elim
 
 # Console commands (typed at the server's terminal): help, status, say, kick, ban, unban, bans, map, next, mode,
-# rotation, mp_buytime, mp_timelimit, sv_shotlog, quit. Players are named by name, an unambiguous start of it, or #slot from status.
+# rotation, mp_buytime, mp_timelimit, the mp_money settings, sv_shotlog, quit. Players are named by name, an unambiguous start of it, or #slot from status.

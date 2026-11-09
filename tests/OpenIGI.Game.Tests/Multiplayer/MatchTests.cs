@@ -29,9 +29,45 @@ public sealed class MatchTests
         Assert.Equal(1, match.Players[2].Deaths);
         Assert.False(match.Players[2].IsAlive);
 
+        // The fine takes it to nothing, not into debt.
         match.Kill(victim: 1, killer: 0, now: 6);
-        Assert.Equal(-2200, match.Players[0].Money);
+        Assert.Equal(0, match.Players[0].Money);
         Assert.Equal(1, match.Players[0].Kills);
+    }
+
+    [Fact]
+    public void TheMoneySettingsPayInPlaceOfTheRulesAMatchWasMadeWith()
+    {
+        try
+        {
+            MultiplayerRules made = new();
+            Assert.Same(made, NetCVars.WithMoney(made));
+
+            NetCVars.MoneyKill.Value = 300;
+            NetCVars.MoneyTeamKill.Value = 0;
+            NetCVars.MoneyCap.Value = 2000;
+            NetCVars.MoneyStart.Value = 1500;
+            Match match = NewMatch(NetCVars.WithMoney(made));
+            Assert.Equal(1500, match.Players[0].Money);
+
+            match.Kill(victim: 2, killer: 0, now: 1);
+            Assert.Equal(1800, match.Players[0].Money);
+            match.Kill(victim: 1, killer: 0, now: 2);
+            Assert.Equal(1800, match.Players[0].Money);
+
+            // Changed mid-match, and past the cap the pay is cut to it.
+            NetCVars.MoneyKill.Value = 5000;
+            match.Rules = NetCVars.WithMoney(match.Rules);
+            match.Kill(victim: 2, killer: 0, now: 3);
+            Assert.Equal(2000, match.Players[0].Money);
+        }
+        finally
+        {
+            NetCVars.MoneyKill.Reset();
+            NetCVars.MoneyTeamKill.Reset();
+            NetCVars.MoneyCap.Reset();
+            NetCVars.MoneyStart.Reset();
+        }
     }
 
     [Fact]

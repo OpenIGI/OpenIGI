@@ -118,9 +118,23 @@ public sealed class DedicatedServerTests
             Assert.StartsWith("mp_buytime is 45 (default 20", console.Execute("mp_buytime")[0], StringComparison.Ordinal);
             Assert.Contains("sv_shotlog is", console.Execute("sv_shotlog 0")[0], StringComparison.Ordinal);
             Assert.False(Game.Multiplayer.NetCVars.ShotLog.Value);
+
+            // The money, by I.G.I. 2's names under mp_.
+            problems.Clear();
+            ServerConfig.Parse(["mp_moneykill 500", "mp_moneycap 9000", "mp_moneyteamkill 0"], problems);
+            Assert.Empty(problems);
+            Assert.Equal(500, Game.Multiplayer.NetCVars.MoneyKill.Value);
+            Assert.Equal(9000, Game.Multiplayer.NetCVars.MoneyCap.Value);
+            Assert.Equal(["mp_moneywin is 2000."], console.Execute("mp_moneywin 2000"));
+            Game.Multiplayer.MultiplayerRules money = Game.Multiplayer.NetCVars.WithMoney(new Game.Multiplayer.MultiplayerRules());
+            Assert.Equal((500, 9000, 0, 2000), (money.MoneyKill, money.MoneyCap, money.MoneyTeamKill, money.MoneyMissionWin));
         }
         finally
         {
+            Game.Multiplayer.NetCVars.MoneyKill.Reset();
+            Game.Multiplayer.NetCVars.MoneyCap.Reset();
+            Game.Multiplayer.NetCVars.MoneyTeamKill.Reset();
+            Game.Multiplayer.NetCVars.MoneyWin.Reset();
             Game.Multiplayer.NetCVars.BuyTime.Reset();
             Game.Multiplayer.NetCVars.TimeLimit.Reset();
             Game.Multiplayer.NetCVars.ShotLog.Reset();

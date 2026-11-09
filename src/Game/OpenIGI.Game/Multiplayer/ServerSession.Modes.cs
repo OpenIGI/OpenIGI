@@ -36,12 +36,20 @@ public sealed partial class ServerSession
         : Mode.IsTeamMode ? MatchState.TeamName(winner)
         : Match.Players.TryGetValue(winner, out MatchPlayer? player) ? player.Name : string.Empty;
 
+    /// <summary>Gets how many weapons and items the mode has handed the listen host's own player, its buys and loadouts: a count that only grows.</summary>
+    public int HostHandedOver { get; private set; }
+
     /// <inheritdoc/>
     bool IModeHost.Give(int slot, string weapon, int rounds)
     {
         if (!_world.Give(slot, weapon, rounds))
         {
             return false;
+        }
+
+        if (slot == HostSlot)
+        {
+            HostHandedOver++;
         }
 
         // A joined player's own game carries it too; the listen host's own player is the world's, already holding it.

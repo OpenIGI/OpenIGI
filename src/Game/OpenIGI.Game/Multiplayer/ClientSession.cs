@@ -181,6 +181,9 @@ public sealed class ClientSession
         return taken;
     }
 
+    /// <summary>Gets how many weapons and items the server has handed this client's player, its buys and loadouts: a count that only grows.</summary>
+    public int OwnHandedOver { get; private set; }
+
     /// <summary>Takes the weapons the server handed this client's player since the last call (its buys).</summary>
     /// <returns>Each weapon's script id and rounds.</returns>
     public IReadOnlyList<(string Weapon, int Rounds)> TakeGiven()
@@ -686,6 +689,7 @@ public sealed class ClientSession
                 if (!reader.IsOverflowed && _given.Count < 32)
                 {
                     _given.Add((weapon, rounds));
+                    OwnHandedOver++;
                 }
 
                 break;
