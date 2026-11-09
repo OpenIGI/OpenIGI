@@ -21,9 +21,11 @@ public readonly record struct RotationEntry(int Mission, string Mode);
 /// motd "Be nice. Bombs at A and B."
 /// public 1          # listed on the master server
 /// room 1            # also hosts a WebRTC room, so browsers can join
+/// mp_buytime 30     # a server setting by its name: seconds to buy in a round
 /// map 1 sd
 /// map 2 tdm
 /// </code>
+/// A line naming one of <see cref="Game.Multiplayer.NetCVars.ServerSettings"/> sets it as the file is read.
 /// The command line wins over the file: a server started with <c>-servername</c> or <c>-port</c> keeps them.
 /// </remarks>
 public sealed record ServerConfig
@@ -181,6 +183,16 @@ public sealed record ServerConfig
 
                     break;
                 default:
+                    if (ServerSetting(key) is { } setting)
+                    {
+                        if (!setting.TrySetText(value, out string? why))
+                        {
+                            problems.Add(string.Create(CultureInfo.InvariantCulture, $"line {number}: {key}: {why ?? "not a value it takes"}"));
+                        }
+
+                        continue;
+                    }
+
                     ok = false;
                     break;
             }
@@ -193,6 +205,12 @@ public sealed record ServerConfig
 
         return config with { Rotation = rotation };
     }
+
+    /// <summary>Finds a server setting by its name.</summary>
+    /// <param name="name">The name, in any case.</param>
+    /// <returns>The setting, or <see langword="null"/> when it is not one a server's operator may set.</returns>
+    internal static Core.Configuration.ICVar? ServerSetting(string name) =>
+        Game.Multiplayer.NetCVars.ServerSettings.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 
     // A line's words: split on spaces, a quoted value kept whole, a comment cut off.
     internal static string[] Words(string line)

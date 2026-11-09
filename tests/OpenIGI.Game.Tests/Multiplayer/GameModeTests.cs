@@ -236,6 +236,25 @@ public sealed class GameModeTests
     }
 
     [Fact]
+    public void A_round_takes_its_buy_time_as_it_begins_so_a_change_mid_round_waits_for_the_next()
+    {
+        Host host = new(teams: [0, 1]);
+        host.Positions[0] = new(0, 0, 0);
+        host.Positions[1] = new(-50 * Metre, 0, 0);
+        double buy = 45;
+        EliminationMode mode = new(TickRate, new RoundSettings { FreezeSeconds = 10 }) { SettingsEachRound = s => s with { BuySeconds = buy } };
+        mode.Start(host, 0);
+        long tick = Run(mode, host, 1, TickRate * 5);
+        Assert.Equal(50, mode.Report(tick).BuyLeft, 1);
+
+        // The server's operator changes it during the round: this round keeps the buy time it began with.
+        buy = 5;
+        tick = Run(mode, host, tick, TickRate * 5);
+        Assert.Equal(45, mode.Report(tick).BuyLeft, 1);
+        Assert.Equal(45, mode.Settings.BuySeconds);
+    }
+
+    [Fact]
     public void An_elimination_round_opens_on_a_freeze_and_buy_time_as_search_and_destroys_does()
     {
         Host host = new(teams: [0, 1]);

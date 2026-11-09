@@ -181,7 +181,7 @@ public sealed partial class MultiplayerScreen
             [
                 ("Rounds to win", rounds.RoundsToWin.ToString(CultureInfo.InvariantCulture)),
                 ("Round time", string.Create(CultureInfo.InvariantCulture, $"{rounds.RoundSeconds / 60:0} min")),
-                ("Buy time", string.Create(CultureInfo.InvariantCulture, $"{rounds.BuySeconds:0} s")),
+                ("Buy time", string.Create(CultureInfo.InvariantCulture, $"{Game.Multiplayer.NetCVars.BuyTime.Value:0} s")),
                 ("Sides swap", rounds.SwapSides ? "At half" : "Never"),
             ],
         };

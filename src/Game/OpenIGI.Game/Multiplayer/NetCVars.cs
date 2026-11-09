@@ -36,6 +36,20 @@ public static class NetCVars
         CVarOptions.None,
         "How long a team deathmatch or free-for-all lasts on a server this game hosts, in minutes; 0 for the mode's own ten. Read when a match starts on a new map.");
 
+    /// <summary>How long a round of a mode with a buy phase sells for, in seconds, from the end of its freeze time.</summary>
+    public static readonly NumericCVar<float> BuyTime = CVar.Float(
+        "mp_buytime",
+        20f,
+        0f,
+        300f,
+        CVarOptions.None,
+        "How long players may buy in a search and destroy round on a server this game hosts, in seconds after the freeze time; 0 for no buying. Read as each round begins.");
+
+    /// <summary>
+    /// Gets the settings a server's operator may set by name: in a dedicated server's <c>server.cfg</c>, or at its console.
+    /// </summary>
+    public static IReadOnlyList<ICVar> ServerSettings { get; } = [TimeLimit, BuyTime, ShotLog];
+
     /// <summary>Whether a session joined is saved as a demo when it is left.</summary>
     public static readonly BoolCVar AutoRecord = CVar.Bool(
         "cl_autorecord",

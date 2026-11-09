@@ -98,6 +98,36 @@ public sealed class DedicatedServerTests
     }
 
     [Fact]
+    public void A_config_and_the_console_set_the_buy_time_by_its_name_and_refuse_a_value_it_does_not_take()
+    {
+        try
+        {
+            List<string> problems = [];
+            ServerConfig.Parse(["mp_buytime 30", "MP_TIMELIMIT 15"], problems);
+            Assert.Empty(problems);
+            Assert.Equal(30f, Game.Multiplayer.NetCVars.BuyTime.Value);
+            Assert.Equal(15f, Game.Multiplayer.NetCVars.TimeLimit.Value);
+
+            ServerConfig.Parse(["mp_buytime soon"], problems);
+            Assert.Contains("line 1: mp_buytime", Assert.Single(problems), StringComparison.Ordinal);
+            Assert.Equal(30f, Game.Multiplayer.NetCVars.BuyTime.Value);
+
+            ServerConsole console = new(new FakeServer());
+            Assert.Equal(["mp_buytime is 45."], console.Execute("mp_buytime 45"));
+            Assert.Equal(45f, Game.Multiplayer.NetCVars.BuyTime.Value);
+            Assert.StartsWith("mp_buytime is 45 (default 20", console.Execute("mp_buytime")[0], StringComparison.Ordinal);
+            Assert.Contains("sv_shotlog is", console.Execute("sv_shotlog 0")[0], StringComparison.Ordinal);
+            Assert.False(Game.Multiplayer.NetCVars.ShotLog.Value);
+        }
+        finally
+        {
+            Game.Multiplayer.NetCVars.BuyTime.Reset();
+            Game.Multiplayer.NetCVars.TimeLimit.Reset();
+            Game.Multiplayer.NetCVars.ShotLog.Reset();
+        }
+    }
+
+    [Fact]
     public void The_console_changes_map_and_mode_and_refuses_what_is_not_one()
     {
         FakeServer server = new();

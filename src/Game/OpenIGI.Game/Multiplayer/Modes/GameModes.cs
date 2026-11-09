@@ -86,6 +86,10 @@ public static class GameModes
     private static DeathmatchSettings Deathmatch() =>
         NetCVars.TimeLimit.Value > 0 ? new DeathmatchSettings { TimeLimitMinutes = NetCVars.TimeLimit.Value } : new DeathmatchSettings();
 
+    // A round's settings, its buy time the server's mp_buytime.
+    private static RoundSettings Rounds(RoundSettings? settings) =>
+        (settings ?? new RoundSettings()) with { BuySeconds = NetCVars.BuyTime.Value };
+
     private static IGameMode Made(string? id, IReplicatedWorld world, int tickRate)
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -93,8 +97,8 @@ public static class GameModes
         {
             return id switch
             {
-                Elimination => new EliminationMode(tickRate),
-                SearchAndDestroy => new SearchAndDestroyMode(tickRate),
+                Elimination => new EliminationMode(tickRate, Rounds(null)) { SettingsEachRound = Rounds },
+                SearchAndDestroy => new SearchAndDestroyMode(tickRate, Rounds(null)) { SettingsEachRound = Rounds },
                 _ => new DeathmatchMode(tickRate, teams: id == TeamDeathmatch, Deathmatch()),
             };
         }

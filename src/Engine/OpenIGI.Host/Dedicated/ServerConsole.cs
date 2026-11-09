@@ -93,6 +93,9 @@ public sealed class ServerConsole(IServerControl server)
         "where                          every player's team, place, health and gun",
         "tp <player> <other> [metres]   put a player in front of another, facing it (5 m)",
         "sv_shotlog 0|1                 log every round a player fires at the others (on)",
+        "mp_buytime <seconds>           how long a round's buy time lasts, from the next round (20; 0 for none)",
+        "mp_timelimit <minutes>         how long a deathmatch lasts, from the next map (0 for the mode's ten)",
+        "<setting>                      a setting's value, range and what it does",
         "ban <player> [minutes] [reason] put a player out and keep its key out (0 or none: for ever)",
         "unban <name|id>                lift a ban",
         "bans                           the bans in force",
@@ -132,15 +135,26 @@ public sealed class ServerConsole(IServerControl server)
                 words[1],
                 words[2],
                 words.Length > 3 && double.TryParse(words[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double metres) ? Math.Clamp(metres, 0.5, 100) : 5)],
-            "sv_shotlog" when words.Length > 1 => [Game.Multiplayer.NetCVars.ShotLog.TrySetText(words[1], out string? why) ? $"sv_shotlog is {Game.Multiplayer.NetCVars.ShotLog.Value}." : why ?? "No."],
             "endmatch" => EndMatch(),
             "next" => server.NextMap() is { } next ? [$"Going on to mission {next.Mission} ({ModeOf(next)})."] : ["There is no rotation; use map <mission> [mode]."],
             "mode" when words.Length > 1 => server.UseMode(words[1]) ? [$"{words[1].ToLowerInvariant()} is played from the next map."] : [$"'{words[1]}' is not a mode: {string.Join(", ", Game.Multiplayer.Modes.GameModes.All)}."],
             "rotation" => Rotation(),
             "demo_save" => SaveDemo(words.Length > 1 ? words[1] : null),
             "quit" or "exit" or "stop" => Quit(),
+            _ when ServerConfig.ServerSetting(words[0]) is { } setting => Setting(setting, words.Length > 1 ? words[1] : null),
             _ => [$"Unknown command or missing argument: {words[0]}. Type help."],
         };
+    }
+
+    // A server setting shown, or set to a value.
+    private static string[] Setting(Core.Configuration.ICVar setting, string? value)
+    {
+        if (value is null)
+        {
+            return [$"{setting.Name} is {setting.ValueText} (default {setting.DefaultText}{(setting.RangeText.Length > 0 ? $", {setting.RangeText}" : string.Empty)}).", setting.Help];
+        }
+
+        return setting.TrySetText(value, out string? why) ? [$"{setting.Name} is {setting.ValueText}."] : [$"{setting.Name}: {why ?? "not a value it takes"}."];
     }
 
     // A demo saved in the demos folder beside the server, named as asked or by the time.
