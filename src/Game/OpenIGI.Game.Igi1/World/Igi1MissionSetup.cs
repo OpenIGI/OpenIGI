@@ -376,12 +376,26 @@ public sealed class Igi1MissionSetup(
     /// door spans. The retail ray (0x446D10 at 0x447302) casts across the doorway at roughly body
     /// height; we test each human's feet against the segment with a generous half-metre radius, which
     /// finds a body standing in the opening whether it is at waist, chest or head.
+    /// <para>
+    /// In a session every player is a human the door meets: the joined ones on a server (<see cref="MissionWorld.NetworkPlayers"/>),
+    /// the others as this game shows them on a client (<see cref="MissionWorld.ShownPartners"/>). With only its own player, a
+    /// dedicated server shut a gate through a joined player that the player's own game sent back open each time it reached
+    /// it -- each end's door taking the other's in turn, and the gate's sound looping for as long as the player stood there.
+    /// </para>
     /// </remarks>
     private bool DoorwayIsBlockedByHuman(Vector3d from, Vector3d to)
     {
         if (HumanStandsInSegment(mission.Player?.Body.Position, from, to))
         {
             return true;
+        }
+
+        foreach (Multiplayer.Igi1NetworkPlayer player in mission.NetworkPlayers.Concat(mission.ShownPartners))
+        {
+            if (!player.IsDead && HumanStandsInSegment(player.Player.Body.Position, from, to))
+            {
+                return true;
+            }
         }
 
         if (mission.Soldiers is { } soldiers)

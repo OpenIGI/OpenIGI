@@ -51,8 +51,14 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
     /// <inheritdoc/>
     public MatchFlow Flow { get; } = new(tickRate);
 
-    /// <summary>Gets how it is played.</summary>
-    public RoundSettings Settings { get; } = settings ?? new RoundSettings();
+    /// <summary>Gets how it is played: as it was made, and as <see cref="SettingsEachRound"/> has it from each round on.</summary>
+    public RoundSettings Settings { get; private set; } = settings ?? new RoundSettings();
+
+    /// <summary>
+    /// Gets or sets where each round takes its settings from as it begins, or <see langword="null"/> to keep the match's own:
+    /// a server's operator changing them mid-match changes the next round, not the one being played.
+    /// </summary>
+    public Func<RoundSettings, RoundSettings>? SettingsEachRound { get; set; }
 
     /// <summary>Gets what keeps the players inside the map's bounds.</summary>
     public OutOfBounds Bounds { get; } = new();
@@ -381,6 +387,11 @@ public abstract class RoundMode(int tickRate, RoundSettings? settings) : IGameMo
             {
                 host.Respawn(slot);
             }
+        }
+
+        if (SettingsEachRound is { } each)
+        {
+            Settings = each(Settings);
         }
 
         Flow.Enter(MatchPhase.Live, tick, Settings.RoundSeconds + (HasArmoury ? Settings.FreezeSeconds : 0));

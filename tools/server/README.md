@@ -23,6 +23,7 @@ The installers ask for the game's folder, the server's name, its port, a remote 
 - `rcon_password`: lets an admin run console commands from inside the game (`rcon_password <pw>`, then `rcon status`)
 - `public`: list on the master server; `room`: also accept browser players
 - `map <mission> <mode>` lines: the rotation. Modes: `coop`, `objective`, `tdm`, `ffa`, `elim`, `sd`
+- `mp_buytime <seconds>`: how long players may buy in a search and destroy round (20; 0 for none). Also a console command.
 
 The command line wins over the file: `-servername`, `-port`, `-maxplayers`, `-password`, `-mode`, `-mission`.
 

@@ -794,6 +794,132 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void The_hosts_pause_menu_does_not_stop_the_game_for_everyone_and_holds_only_the_hosts_own_player()
+    {
+        // Live: Escape over a multiplayer game paused it as it pauses a mission alone -- a listen server stopped ticking, the
+        // match stood still for every player, and a joined game fell behind its server.
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera host = pair.Host!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        pair.RunUntil(() => false, 30);
+
+        // The host's menu up (as Escape brings it up), the host still holding forward.
+        object flow = pair.HostGame.GetType().GetField("_menuFlow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.HostGame)!;
+        System.Reflection.PropertyInfo pause = flow.GetType().GetProperty("PauseMenu")!;
+        pause.SetValue(flow, true);
+        Igi1CoopPair.Hold(pair.HostInput, KeyCode.W, true);
+        Vector3d hostFrom = host.Body.Position;
+        Vector3d partnerFrom = partner.Player.Body.Position;
+
+        // The joiner walks on, and the server runs it.
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 60);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        Igi1CoopPair.Hold(pair.HostInput, KeyCode.W, false);
+        pause.SetValue(flow, false);
+
+        double walked = Vector3d.Distance(partnerFrom, partner.Player.Body.Position);
+        double hostMoved = Vector3d.Distance(hostFrom, host.Body.Position);
+        Assert.True(walked > 2048, $"the joiner walked only {walked:0} units on the server while the host's menu was up");
+        Assert.True(hostMoved < 256, $"the host's own player moved {hostMoved:0} units under its menu");
+    }
+
+    [RequiresGameDataFact]
+    public void The_server_holds_the_weapon_the_joiner_chose_even_when_their_carried_lists_differ()
+    {
+        // Live S&D: the server's copy of the bomb carrier held the knife while the carrier's own game held the bomb, so it
+        // could not plant -- and could, with the knife out. Switches crossed as steps from what was in hand, and the two copies'
+        // carried lists had come apart (the bomb is given on the server a moment before the client hears of it).
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        pair.RunUntil(() => false, 30);
+        Game.Player.PlayerWeapons mine = own.Weapons!;
+        Game.Player.PlayerWeapons theirs = partner.Player.Weapons!;
+
+        // The server's copy carries a weapon the joiner's game does not.
+        Igi1BombWeapon.Keep(partner.Player, true);
+        Assert.False(mine.HasWeapon(Igi1BombWeapon.Id));
+
+        // The joiner changes weapon on its own game by a way the server never hears as a key.
+        int target = mine.Carried
+            .Select(static c => c.Weapon.WeaponId)
+            .First(id => id != mine.InHand?.Weapon.WeaponId && !mine.IsBinoculars(id) && theirs.HasWeapon(id));
+        mine.RequestWeapon(target);
+        pair.RunUntil(() => false, 60);
+        Assert.Equal(target, mine.InHand?.Weapon.WeaponId);
+        Assert.Equal(target, theirs.InHand?.Weapon.WeaponId);
+
+        // The server's copy starts a switch of its own the joiner never made: it is dropped, the joiner's weapon kept.
+        theirs.RequestWeapon(Igi1BombWeapon.Id);
+        pair.RunUntil(() => false, 60);
+        Assert.Equal(target, theirs.InHand?.Weapon.WeaponId);
+        Assert.False(Igi1BombWeapon.Holds(partner.Player), "the server's copy took the bomb out the joiner never chose");
+    }
+
+    [RequiresGameDataFact]
+    public void A_player_put_back_at_a_spawn_while_climbing_lets_go_of_the_ladder_and_stays_put()
+    {
+        // Live S&D: a round ended with a player on a ladder, and the next round's respawn left it on the ladder -- the climb
+        // carries the body each tick, so it pulled the player straight back from the spawn.
+        using Igi1CoopPair pair = Joined();
+        ServerSession server = pair.Session.Session!;
+
+        // The first round's start marks the level, as a match's does; the next round's start goes back to it.
+        ((Game.Multiplayer.Modes.IModeHost)server).ResetLevel();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        object controller = typeof(Game.Igi1.Player.PlayerCamera).GetField("_ladder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(own)!;
+        var ladders = (IReadOnlyList<LadderPlacement>)controller.GetType().GetField("_ladders", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(controller)!;
+        LadderPlacement ladder = ladders.OrderBy(l => l.Top.Z - l.Bottom.Z).Last();
+        foreach (Game.Igi1.Player.PlayerCamera body in new[] { own, partner.Player })
+        {
+            body.Body.Position = ladder.BottomMount - new Vector3d(0, 0, LadderPlacement.BottomVerticalOffsetUnits);
+            body.Body.Yaw = ladder.PlayerYaw;
+        }
+
+        pair.RunUntil(() => false, 10);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        bool mounted = pair.RunUntil(() => own.IsOnLadder && partner.Player.IsOnLadder, 30) >= 0;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Assert.True(mounted, $"the joiner never got on: own {own.IsOnLadder}, on the host {partner.Player.IsOnLadder}");
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 90);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        Assert.True(partner.Player.IsOnLadder, "the joiner came off the ladder before the respawn");
+
+        // The server puts it back, as a new round does: the level reset, then everyone at a spawn.
+        ((Game.Multiplayer.Modes.IModeHost)server).ResetLevel();
+        ((Game.Multiplayer.Modes.IModeHost)server).Respawn(Assert.Single(server.Clients));
+        Vector3d placed = partner.Player.Body.Position;
+        Assert.False(partner.Player.IsOnLadder, "the respawn left the player on the ladder");
+
+        // And it stays there, on the host and on its own game.
+        List<string> trace = [];
+        for (int frame = 0; frame < 60; frame++)
+        {
+            Assert.True(pair.Step());
+            if (frame % 6 == 0)
+            {
+                Vector3d at = partner.Player.Body.Position - placed;
+                trace.Add($"{frame}: d({at.X:0},{at.Y:0},{at.Z:0}) host-ladder {partner.Player.IsOnLadder} own-ladder {own.IsOnLadder} grounded {partner.Player.Body.IsGrounded}");
+            }
+
+            // Its own game lets go once the reset reaches it, not after the ladder patience.
+            if (frame == 20)
+            {
+                Assert.False(own.IsOnLadder, $"the joiner's own game still has it climbing 20 frames on: {string.Join(" | ", trace)}");
+            }
+        }
+
+        Vector3d now = partner.Player.Body.Position;
+        double drift = Math.Sqrt(((now.X - placed.X) * (now.X - placed.X)) + ((now.Y - placed.Y) * (now.Y - placed.Y)));
+        Assert.True(drift < 4096, $"the player was carried {drift:0} units from where the respawn put it: {string.Join(" | ", trace)}");
+        Assert.False(own.IsOnLadder, "the joiner's own game still has it on the ladder");
+        Assert.True(Vector3d.Distance(own.Body.Position, partner.Player.Body.Position) < 512, "the joiner's own game has it elsewhere");
+    }
+
+    [RequiresGameDataFact]
     public void A_joiner_climbing_and_sliding_down_a_ladder_lands_where_the_host_has_it()
     {
         using Igi1CoopPair pair = Joined();

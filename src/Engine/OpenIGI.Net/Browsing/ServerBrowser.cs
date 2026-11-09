@@ -89,7 +89,12 @@ public sealed class ServerBrowser : IDisposable
         foreach ((BookedServer booked, BrowserSource source) in _book.Favourites.Select(static f => (f, BrowserSource.Favourite))
             .Concat(_book.History.Select(static h => (h, BrowserSource.History))))
         {
-            Merge(Booked(booked, source));
+            // A server at an address is a line until it answers; a room has no address to ask and is there only while the
+            // master lists it -- booked, it only marks the master's line (see TakeMasterList), or it would stand for good.
+            if (!IsRoom(booked.Key))
+            {
+                Merge(Booked(booked, source));
+            }
         }
 
         _query?.QueryLocalNetwork(_options.LanPort, now);
@@ -267,8 +272,9 @@ public sealed class ServerBrowser : IDisposable
 
     /// <summary>
     /// Takes in the master's list as it now stands: each line merged, and a line the master listed before but no longer does
-    /// (a room closed, a server gone quiet) dropped -- or, when the player also knows it otherwise (saved, played on, on this
-    /// network), kept for that alone.
+    /// (a room closed, a server gone quiet) dropped -- or, for a server at an address the player also knows otherwise (saved,
+    /// played on, on this network), kept for that alone. A room is never kept: it lives only as long as the master lists it,
+    /// and its code is not given out again, so a closed room saved or played on is a line nobody can join.
     /// </summary>
     /// <param name="listed">The master's lines.</param>
     internal void TakeMasterList(IReadOnlyList<BrowserServer> listed)
@@ -276,10 +282,10 @@ public sealed class ServerBrowser : IDisposable
         HashSet<string> keys = new(listed.Select(static s => s.Key), StringComparer.Ordinal);
         foreach ((string key, BrowserServer line) in _servers.ToArray())
         {
-            if (line.Sources.HasFlag(BrowserSource.Internet) && !keys.Contains(key))
+            if (!keys.Contains(key) && (IsRoom(key) || line.Sources.HasFlag(BrowserSource.Internet)))
             {
                 BrowserSource rest = line.Sources & ~BrowserSource.Internet;
-                if (rest == BrowserSource.None)
+                if (rest == BrowserSource.None || IsRoom(key))
                 {
                     _servers.Remove(key);
                 }
@@ -292,9 +298,14 @@ public sealed class ServerBrowser : IDisposable
 
         foreach (BrowserServer server in listed)
         {
-            Merge(server);
+            BrowserSource booked = (_book.IsFavourite(server.Key) ? BrowserSource.Favourite : BrowserSource.None)
+                | (_book.History.Any(h => h.Key == server.Key) ? BrowserSource.History : BrowserSource.None);
+            Merge(IsRoom(server.Key) ? server with { Sources = server.Sources | booked } : server);
         }
     }
+
+    // Whether a line is a room, reached through the master's signalling rather than at an address.
+    private static bool IsRoom(string key) => key.StartsWith(BrowserServer.KeyOfRoom(string.Empty), StringComparison.Ordinal);
 
     // A booked server as a line of its own until it answers or the master lists it.
     private BrowserServer Booked(BookedServer booked, BrowserSource source)

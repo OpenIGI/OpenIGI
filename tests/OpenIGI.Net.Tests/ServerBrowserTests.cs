@@ -42,7 +42,7 @@ public sealed class ServerBrowserTests
     }
 
     [Fact]
-    public void A_room_the_master_stops_listing_leaves_the_list_and_a_saved_one_stays_saved()
+    public void A_room_the_master_stops_listing_leaves_the_list_even_saved_and_comes_back_saved_when_listed_again()
     {
         static JsonNode Rooms(params string[] codes) => JsonNode.Parse(
             "{ \"servers\": [" + string.Join(',', codes.Select(c => $"{{ \"title\": \"igi1\", \"room\": \"{c}\", \"name\": \"Joe's game\", \"map\": \"1\", \"mode\": \"coop\", \"players\": 1, \"maxPlayers\": 4 }}")) + "] }")!;
@@ -53,11 +53,27 @@ public sealed class ServerBrowserTests
         Assert.Equal(3, browser.Servers.Count());
         browser.SetFavourite(browser.Servers.Single(s => s.Room == "CCCCCC"), true);
 
-        // Two rooms closed and one opened: the list is what the master says now, the saved room kept as saved alone.
+        // Two rooms closed and one opened: the list is what the master says now. A closed room cannot be joined, so the
+        // saved one goes too -- on the live server browser, closed rooms stood as "Mission 0, 0/0" for good.
         browser.TakeMasterList(ServerBrowser.ReadMasterList(Rooms("BBBBBB", "DDDDDD"), "igi1"));
-        Assert.Equal(["BBBBBB", "CCCCCC", "DDDDDD"], browser.Servers.Select(s => s.Room).Order());
+        Assert.Equal(["BBBBBB", "DDDDDD"], browser.Servers.Select(s => s.Room).Order());
+
+        // Listed again, it is marked saved.
+        browser.TakeMasterList(ServerBrowser.ReadMasterList(Rooms("CCCCCC"), "igi1"));
         BrowserServer saved = browser.Servers.Single(s => s.Room == "CCCCCC");
-        Assert.Equal(BrowserSource.Favourite, saved.Sources);
+        Assert.Equal(BrowserSource.Internet | BrowserSource.Favourite, saved.Sources);
+    }
+
+    [Fact]
+    public void A_recent_room_is_no_line_of_its_own_but_a_recent_server_is_asked_after()
+    {
+        ServerBook book = new();
+        book.Played(BrowserServer.KeyOfRoom("GONE01"), "Joe's game");
+        book.Played("udp:1.2.3.4:26001", "A server");
+        using ServerBrowser browser = new(new ServerBrowserOptions(null, "igi1", Decode), null, book);
+
+        browser.Refresh(0);
+        Assert.Equal(["udp:1.2.3.4:26001"], browser.Servers.Select(s => s.Key));
     }
 
     [Fact]

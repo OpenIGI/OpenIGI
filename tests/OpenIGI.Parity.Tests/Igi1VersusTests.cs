@@ -67,6 +67,74 @@ public sealed class Igi1VersusTests
     }
 
     [RequiresGameDataFact]
+    public void A_joiner_switching_weapons_through_round_after_round_holds_what_the_servers_copy_holds()
+    {
+        // Live S&D: the server's copy of a player held another weapon than the player's own game did, for whole rounds. Each
+        // respawn re-arms both, but the server on its tick and the player's game when the kit reaches it, a round trip of the
+        // player's commands later; a switch key between the two lands on a fresh kit on one and the old weapon on the other,
+        // and every switch after it -- each a step from what is in hand -- kept the two a weapon apart for the round.
+        using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);
+        pair.JoinerLink.Send.Latency = 0.06;
+        pair.JoinerLink.Receive.Latency = 0.06;
+        IGameMode mode = pair.Session.Session!.Mode;
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        int joiner = pair.Session.Session.Match.Players.Values.Single(p => p.Name == "Anya").Slot;
+        int rounds = mode.Flow.Round;
+        List<string> apart = [];
+        bool down = false;
+        for (int frame = 0; frame < 30 * 125; frame++)
+        {
+            // Each twenty seconds: the switch key pressed and let go again and again from a moment before the respawn on, then
+            // left alone for the last three seconds before the joiner is killed, the round ends, and the next respawns it.
+            // Its rhythm differs from round to round, so the press around the respawn falls at another moment of it each time.
+            int beat = frame % 600;
+            if (frame % (5 + (frame / 600 % 4)) == 0 && (beat < 200 || beat >= 440))
+            {
+                down = !down;
+                pair.JoinerInput.Mouse.SetButton(Input.MouseButton.Right, down);
+            }
+            else if (beat == 200)
+            {
+                down = false;
+                pair.JoinerInput.Mouse.SetButton(Input.MouseButton.Right, false);
+            }
+
+            if (beat == 300 && mode.Flow.Phase == MatchPhase.Live)
+            {
+                // Settled: the server's copy holds what the joiner's game holds.
+                Igi1NetworkPlayer copy = Assert.Single(pair.Host!.World.NetworkPlayers);
+                int? theirs = copy.Player.Weapons?.InHand?.Weapon.WeaponId;
+                int? mine = own.Weapons?.InHand?.Weapon.WeaponId;
+                if (theirs != mine)
+                {
+                    apart.Add($"round {mode.Flow.Round}: {mine} on the joiner's game, {theirs} on the server");
+                }
+
+                ((IModeHost)pair.Session.Session).World.KillPlayer(joiner);
+            }
+
+            Assert.True(pair.Step());
+        }
+
+        Assert.True(mode.Flow.Round - rounds >= 3, $"only {mode.Flow.Round - rounds} rounds were played");
+        Assert.True(apart.Count == 0, string.Join("; ", apart));
+    }
+
+    [RequiresGameDataFact]
+    public void A_player_killed_by_the_match_without_a_wound_falls_on_its_own_game_too()
+    {
+        // Live S&D: the kill for leaving the match's bounds runs the death without spending the health, and the snapshot called
+        // a player alive by its health alone -- so the player played on, on its own game, a body the server held dead: its
+        // switches ran there and not here, and it came out of the round holding another weapon than the server's copy.
+        using Igi1CoopPair pair = Joined(GameModes.FreeForAll);
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        int slot = pair.Session.Session!.Match.Players.Values.Single(p => p.Name == "Anya").Slot;
+        ((IModeHost)pair.Session.Session).World.KillPlayer(slot);
+        Assert.True(partner.IsDead, "the server never put the partner down");
+        Assert.True(pair.RunUntil(() => pair.Joiner!.World.IsPlayerDead, 30) >= 0, "the joiner's own game never saw it fall");
+    }
+
+    [RequiresGameDataFact]
     public void A_restarted_match_puts_the_wounded_back_whole_and_everyone_carries_only_its_sides_knife_and_pistol()
     {
         using Igi1CoopPair pair = Joined(GameModes.SearchAndDestroy);

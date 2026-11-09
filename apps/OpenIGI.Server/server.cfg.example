@@ -19,6 +19,10 @@ room 1                        # also host a WebRTC room, so browser players can 
 bans bans.json                # banned players' keys, kept between runs
 log server.log                # the server's log (rolled, the last 8 kept); empty for the console only
 
+# Match settings, also set at the console by name (mp_buytime 30) or with +mp_buytime 30 on the command line.
+mp_buytime 20                 # seconds players may buy in a search and destroy round, after the freeze; 0 for none
+mp_timelimit 0                # minutes a deathmatch lasts; 0 for the mode's own ten
+
 # The maps played in turn: mission number, then the mode. Leave the mode off to keep the one played.
 # Modes: coop, objective, tdm, ffa, elim, sd
 map 1 sd
@@ -26,4 +30,4 @@ map 1 tdm
 map 1 elim
 
 # Console commands (typed at the server's terminal): help, status, say, kick, ban, unban, bans, map, next, mode,
-# rotation, quit. Players are named by name, an unambiguous start of it, or #slot from status.
+# rotation, mp_buytime, mp_timelimit, sv_shotlog, quit. Players are named by name, an unambiguous start of it, or #slot from status.
