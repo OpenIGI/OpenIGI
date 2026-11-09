@@ -111,6 +111,8 @@ jobs:
         env:
           VERSION: ${{ steps.tag.outputs.version }}
           PRODUCT: ${{ steps.tag.outputs.product }}
+          # fetch-datachannel.sh falls back to the GitHub API when the release download address fails.
+          GH_TOKEN: ${{ github.token }}
         run: |
           rm -rf artifacts/release artifacts/web
           if [ "$PRODUCT" != launcher ]; then

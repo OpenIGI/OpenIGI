@@ -7,16 +7,22 @@ set -euo pipefail
 
 VERSION=0.23.2
 REPOSITORY=${GITHUB_REPOSITORY:-OpenIGI/OpenIGI}
+RELEASE=natives-libdatachannel-$VERSION
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 
 for rid in "$@"; do
   destination="$ROOT/third-party/libdatachannel/$rid"
   mkdir -p "$destination"
-  # GitHub's download servers can answer 504 for minutes at a time; later tries often reach a working one.
-  # Downloaded to a file first, so a try that fails halfway never feeds tar a broken stream.
+  file=libdatachannel-$rid.tar.gz
+  # Downloaded to a file first, so a try that fails halfway never feeds tar a broken stream. GitHub's download
+  # address can answer 504 for half an hour from some networks while its API serves the same file, so a failing
+  # address falls back to the API (gh, signed in on a workstation, GH_TOKEN on a runner).
   archive=$(mktemp)
-  curl -fsSL --retry 10 --retry-all-errors --retry-delay 20 -o "$archive" \
-    "https://github.com/$REPOSITORY/releases/download/natives-libdatachannel-$VERSION/libdatachannel-$rid.tar.gz"
+  if ! curl -fsSL --retry 4 --retry-all-errors --retry-delay 10 -o "$archive" \
+      "https://github.com/$REPOSITORY/releases/download/$RELEASE/$file"; then
+    echo "download address failed for $file; fetching it through the GitHub API" >&2
+    gh release download "$RELEASE" --repo "$REPOSITORY" --pattern "$file" --output "$archive" --clobber
+  fi
   tar -xzf "$archive" -C "$destination"
   rm -f "$archive"
   echo "libdatachannel $VERSION -> $destination"
