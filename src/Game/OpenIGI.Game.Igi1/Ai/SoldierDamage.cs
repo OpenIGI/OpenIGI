@@ -52,18 +52,32 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     /// <summary>Gets or sets where a dead soldier's weapon is published as it becomes a world pickup.</summary>
     public Action<WeaponType, Vector3d, Matrix3f, Vector3d>? WeaponDrop { get; set; }
 
-    /// <summary>Gets what mods are told of each round that strikes a living soldier. Empty unless a mod adds to it. <b>Not retail.</b></summary>
+    /// <summary>
+    /// Gets what mods are told of each round that strikes a living soldier, an invulnerable one too (with no damage). It is
+    /// told after the game has applied and reacted to the round, by either path: <see cref="SoldierStrike.Killed"/> means
+    /// he dies of it, though his body may not be down until his next update. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
     public List<Action<SoldierStrike>> Struck { get; } = [];
 
     /// <summary>Gets the soldiers who let go of their gun before they died (<see cref="DropGun"/>), so their death drops no other. <b>Not retail.</b></summary>
     public HashSet<SoldierView> LetGoOfGun { get; } = [];
 
-    // Tells each mod listening of a round that struck (Struck), from whichever of the two round paths it came by.
+    // Tells each mod listening of a round that struck (Struck), from whichever of the two round paths it came by. By index,
+    // so a listener may add or remove one; a listener's failure is its own, and the tick and the others go on.
     private void TellStruck(SoldierStrike strike)
     {
-        foreach (Action<SoldierStrike> told in Struck)
+        for (int i = 0; i < Struck.Count; i++)
         {
-            told(strike);
+            try
+            {
+                Struck[i](strike);
+            }
+#pragma warning disable CA1031 // A mod's failure is its own; the game and the other listeners go on.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _context.Logger.Error(SoldierContext.LogCategory, $"A Struck listener failed: {ex.Message}");
+            }
         }
     }
 
@@ -117,7 +131,11 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     }
 
     /// <summary>Forgets the deaths no update has taken yet, for a new level.</summary>
-    public void ClearPendingDeaths() => _pendingDeaths.Clear();
+    public void ClearPendingDeaths()
+    {
+        _pendingDeaths.Clear();
+        LetGoOfGun.Clear();
+    }
 
     /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
     /// <remarks>
@@ -357,6 +375,8 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         float damageFactor = round.Category == WeaponCategory.Knife && brain is { HasCombatRecord: false }
             ? SoldierSimulation.KnifeUnawareDamageFactor
             : round.DamageFactor;
+        bool wasAlive = !health.IsDead;
+        float dealt = 0f;
         if (!invulnerable)
         {
             if (BloodSpray is { } bleed)
@@ -380,13 +400,8 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
                 return;
             }
 
-            float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
             round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
-            if (Struck.Count > 0)
-            {
-                TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));
-            }
-
             if (health.IsDead)
             {
                 // The brain hears of the round that kills it too: the event is posted to an AI that is not dead yet,
@@ -408,6 +423,12 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         if (!health.IsDead || invulnerable)
         {
             brain?.ReceiveDamage(round.Origin, round.Shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
+        }
+
+        // Told after the game has applied and reacted to the round, as the marched path tells it.
+        if (wasAlive && Struck.Count > 0)
+        {
+            TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));
         }
 
         // Deliberately the same shape as the probe's [dmg] line from the retail game (probes.cpp

@@ -1,3 +1,5 @@
+using OpenIGI.Core.Diagnostics;
+
 namespace OpenIGI.Presentation.Igi1;
 
 /// <content>
@@ -28,6 +30,7 @@ public sealed partial class SoldierRenderer
                 foreach (SoldierMember member in group.Soldiers)
                 {
                     DropStyledBody(member);
+                    member.StyleFailed = false;
                 }
             }
 
@@ -43,13 +46,34 @@ public sealed partial class SoldierRenderer
             return;
         }
 
-        if (member.Styled is null && style.Create(new SoldierBodySoldier(group, member, _sim, _device)) is { } made)
+        // A body that failed is let go of, and the soldier is drawn as the game draws him until the style is set again.
+        if (member.StyleFailed)
         {
-            member.Styled = made;
-            _styledBodies.Add(made);
+            DropStyledBody(member);
+            return;
         }
 
-        member.Styled?.Tick();
+        if (member.Styled is null)
+        {
+            ISoldierBody? made = null;
+            if (!TryMod(_logger, "Create", () => made = style.Create(new SoldierBodySoldier(group, member, _sim, _device))))
+            {
+                member.StyleFailed = true;
+                return;
+            }
+
+            if (made is not null)
+            {
+                member.Styled = made;
+                _styledBodies.Add(made);
+            }
+        }
+
+        if (member.Styled is { } body && !TryMod(_logger, "Tick", body.Tick))
+        {
+            member.StyleFailed = true;
+            DropStyledBody(member);
+        }
     }
 
     // The style poses its bodies for the frame, before any is drawn: between ticks when frames are smoothed, on the tick when not.
@@ -57,7 +81,7 @@ public sealed partial class SoldierRenderer
     {
         if (_bodyStyle is { } style && _styledBodies.Count > 0)
         {
-            style.Frame(_styledBodies, smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f, _drawer.LastEye);
+            TryMod(_logger, "Frame", () => style.Frame(_styledBodies, smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f, _drawer.LastEye));
         }
     }
 
@@ -67,7 +91,28 @@ public sealed partial class SoldierRenderer
         {
             _styledBodies.Remove(body);
             member.Styled = null;
-            body.Dispose();
+            TryMod(_logger, "Dispose", body.Dispose);
+        }
+    }
+
+    /// <summary>Runs a mod body's code; its failure is its own, so it is logged and the game goes on.</summary>
+    /// <param name="logger">Where the failure is logged.</param>
+    /// <param name="step">Which of the body's calls it is, for the log.</param>
+    /// <param name="call">The call.</param>
+    /// <returns>Whether it ran without throwing.</returns>
+    internal static bool TryMod(IOpenIgiLogger logger, string step, Action call)
+    {
+        try
+        {
+            call();
+            return true;
+        }
+#pragma warning disable CA1031 // A mod's failure is its own; the game and the other soldiers go on.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            logger.Error(LogCategory, $"A mod's soldier body failed in {step}: {ex.Message}");
+            return false;
         }
     }
 }

@@ -257,7 +257,7 @@ public sealed class RagdollSkeleton
     /// <returns>The prepared rig.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="skeleton"/> or <paramref name="measured"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The hierarchy cannot be resolved in one forward pass, or the profile does not fit it.</exception>
-    public static RagdollSkeleton Build(
+    public static RagdollSkeleton BuildMeasured(
         BoneSkeleton skeleton,
         IReadOnlyList<(int Bone, Vector3f At)> measured,
         RagdollLimits? limits = null,
