@@ -794,6 +794,39 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void The_server_holds_the_weapon_the_joiner_chose_even_when_their_carried_lists_differ()
+    {
+        // Live S&D: the server's copy of the bomb carrier held the knife while the carrier's own game held the bomb, so it
+        // could not plant -- and could, with the knife out. Switches crossed as steps from what was in hand, and the two copies'
+        // carried lists had come apart (the bomb is given on the server a moment before the client hears of it).
+        using Igi1CoopPair pair = Joined();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        pair.RunUntil(() => false, 30);
+        Game.Player.PlayerWeapons mine = own.Weapons!;
+        Game.Player.PlayerWeapons theirs = partner.Player.Weapons!;
+
+        // The server's copy carries a weapon the joiner's game does not.
+        Igi1BombWeapon.Keep(partner.Player, true);
+        Assert.False(mine.HasWeapon(Igi1BombWeapon.Id));
+
+        // The joiner changes weapon on its own game by a way the server never hears as a key.
+        int target = mine.Carried
+            .Select(static c => c.Weapon.WeaponId)
+            .First(id => id != mine.InHand?.Weapon.WeaponId && !mine.IsBinoculars(id) && theirs.HasWeapon(id));
+        mine.RequestWeapon(target);
+        pair.RunUntil(() => false, 60);
+        Assert.Equal(target, mine.InHand?.Weapon.WeaponId);
+        Assert.Equal(target, theirs.InHand?.Weapon.WeaponId);
+
+        // The server's copy starts a switch of its own the joiner never made: it is dropped, the joiner's weapon kept.
+        theirs.RequestWeapon(Igi1BombWeapon.Id);
+        pair.RunUntil(() => false, 60);
+        Assert.Equal(target, theirs.InHand?.Weapon.WeaponId);
+        Assert.False(Igi1BombWeapon.Holds(partner.Player), "the server's copy took the bomb out the joiner never chose");
+    }
+
+    [RequiresGameDataFact]
     public void A_player_put_back_at_a_spawn_while_climbing_lets_go_of_the_ladder_and_stays_put()
     {
         // Live S&D: a round ended with a player on a ladder, and the next round's respawn left it on the ladder -- the climb

@@ -25,9 +25,13 @@ public static class Igi1Command
     // Where the look and the crosshair's ray sit after the frame's slots.
     private const int Look = PlayerInputFrame.SlotCount;
     private const int Aim = Look + 2;
+    private const int Chosen = Aim + 6;
 
-    /// <summary>The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray.</summary>
-    public const int ChannelCount = Aim + 6;
+    /// <summary>
+    /// The channels a command carries: the frame's slots, the heading and the pitch, the crosshair's ray, and the weapon its
+    /// player had chosen once the tick ran.
+    /// </summary>
+    public const int ChannelCount = Chosen + 1;
 
     /// <summary>The farthest a crosshair's ray may start from the eye, in world units: the over-the-shoulder camera's reach and some.</summary>
     /// <remarks>
@@ -42,7 +46,8 @@ public static class Igi1Command
     /// <param name="pitch">The view's pitch, radians.</param>
     /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
     /// <param name="aim">The crosshair's ray as an offset from the eye and a direction, or <see langword="null"/> in first person.</param>
-    public static void Pack(in PlayerInputFrame frame, float yaw, float pitch, Span<float> channels, (Vector3d EyeOffset, Vector3f Direction)? aim = null)
+    /// <param name="chosen">The weapon the player had chosen once the tick ran (<see cref="PlayerWeapons.ChosenWeaponId"/>), or -1.</param>
+    public static void Pack(in PlayerInputFrame frame, float yaw, float pitch, Span<float> channels, (Vector3d EyeOffset, Vector3f Direction)? aim = null, int chosen = -1)
     {
         PlayerInputFrame copy = frame;
         copy.AsSpan().CopyTo(channels);
@@ -55,6 +60,16 @@ public static class Igi1Command
         channels[Aim + 3] = direction.X;
         channels[Aim + 4] = direction.Y;
         channels[Aim + 5] = direction.Z;
+        channels[Chosen] = chosen + 1;
+    }
+
+    /// <summary>Reads the weapon a command's player had chosen once its tick ran.</summary>
+    /// <param name="channels">At least <see cref="ChannelCount"/> channels.</param>
+    /// <returns>The weapon's id, or <see langword="null"/> for none or a value that is no weapon id.</returns>
+    public static int? UnpackChosen(ReadOnlySpan<float> channels)
+    {
+        float value = channels[Chosen];
+        return float.IsFinite(value) && value >= 1f && value <= 65536f ? (int)MathF.Round(value) - 1 : null;
     }
 
     /// <summary>Reads a command's channels back into a frame and a look.</summary>
@@ -230,6 +245,34 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
     /// </remarks>
     public bool FiredThisTick { get; private set; }
 
+    // The weapon its client had chosen once the same tick ran there, taken here when this copy chose another. The switches
+    // themselves come as keys -- next, previous, a category, the wheel -- each a step from what is in hand; once the two
+    // copies' carried lists differ (the bomb given here a moment before the client hears of it, a buy, a pickup), every step
+    // lands on another weapon and they never meet again: a live S&D bomb carrier held the bomb on its own game and the knife
+    // here, and could plant only with the knife out. The binoculars are left to their own key, which toggles them.
+    private void KeepChosenWeapon(int? chosen)
+    {
+        if (chosen is not { } wanted
+            || Player.Weapons is not { } weapons
+            || weapons.ChosenWeaponId == wanted
+            || !weapons.HasWeapon(wanted)
+            || weapons.IsBinoculars(wanted)
+            || weapons.IsBinoculars(weapons.ChosenWeaponId))
+        {
+            return;
+        }
+
+        // The client kept what this copy has in hand: drop the switch this copy is making. Otherwise switch to the client's.
+        if (weapons.InHand?.Weapon.WeaponId == wanted)
+        {
+            weapons.KeepInHand();
+        }
+        else
+        {
+            weapons.RequestWeapon(wanted);
+        }
+    }
+
     // One of its client's commands.
     private void RunCommand(IGroundHeightField? ground, Action<PlayerCamera> rung)
     {
@@ -240,6 +283,7 @@ public sealed class Igi1NetworkPlayer(PlayerCamera player, HumanHealth health) :
         // Its rounds converge where its crosshair was, as on its client's own game.
         Player.AimConvergenceRay = Igi1Command.UnpackAim(_channels) is { } aim ? (Player.Body.Eye + aim.EyeOffset, aim.Direction) : null;
         Player.TickFrame(frame, ground);
+        KeepChosenWeapon(Igi1Command.UnpackChosen(_channels));
         _ladderBody ??= Player.BodyAnimations is { } set ? new SimulatedLadderBody(set) : null;
 
         // At a computer, on a wire, over a wall: the interaction's clip on the partner's body, as the player's own plays.

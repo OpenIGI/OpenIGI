@@ -63,6 +63,9 @@ internal sealed class PlayerWeaponSelector
     /// <summary>Gets the weapon id a change is pending to, or <c>-1</c>.</summary>
     internal int PendingWeaponId => _pendingWeaponId;
 
+    /// <summary>Gets the weapon the player has chosen: the one a change is pending to, else the one in hand; <c>-1</c> for none.</summary>
+    internal int ChosenWeaponId => _pendingWeaponId != -1 ? _pendingWeaponId : InHand?.Weapon.WeaponId ?? -1;
+
     /// <summary>Gets the weapon in hand, or <see langword="null"/> before one has been selected.</summary>
     internal CarriedWeapon? InHand => _heldIndex < 0 ? null : _carried[_heldIndex];
 
@@ -403,6 +406,20 @@ internal sealed class PlayerWeaponSelector
 
         return held;
     }
+
+    /// <summary>Keeps the weapon in hand: any change pending or picked is dropped, the cycle's cursor put back on the hand.</summary>
+    internal void KeepInHand()
+    {
+        _pendingWeaponId = -1;
+        _categoryPick = -1;
+        _wheelPick = -1;
+        if (InHand is { } held && _cycle.IndexOf(held.Weapon.WeaponId) is >= 0 and var at)
+        {
+            _cycleIndex = at;
+        }
+    }
+
+    internal bool IsBinoculars(int weaponId) => IndexOf(weaponId) is >= 0 and var index && _carried[index].Weapon.Category == WeaponCategory.Binocular;
 
     internal int IndexOf(int weaponId)
     {

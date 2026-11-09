@@ -230,7 +230,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
         {
             if (_game.World.Player is { } player)
             {
-                Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels, player.FrameAim);
+                Igi1Command.Pack(player.LastFrame, player.FrameYaw, player.FramePitch, _channels, player.FrameAim, player.Weapons?.ChosenWeaponId ?? -1);
             }
 
             return _channels;

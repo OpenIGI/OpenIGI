@@ -202,6 +202,17 @@ public sealed class PlayerWeapons
     /// <remarks>Slot 0 of the original's three-pointer array at <c>Human+1220</c>.</remarks>
     public CarriedWeapon? InHand => _selector.InHand;
 
+    /// <summary>Gets the weapon the player has chosen: the one being switched to, else the one in hand; <c>-1</c> for none.</summary>
+    public int ChosenWeaponId => _selector.ChosenWeaponId;
+
+    /// <summary>Keeps the weapon in hand, dropping any switch not yet made: a server agreeing with its client, which kept it.</summary>
+    public void KeepInHand() => _selector.KeepInHand();
+
+    /// <summary>Gets whether a weapon carried is the binoculars, which their own key raises and lowers.</summary>
+    /// <param name="weaponId">The weapon's id.</param>
+    /// <returns><see langword="true"/> for the binoculars.</returns>
+    public bool IsBinoculars(int weaponId) => _selector.IsBinoculars(weaponId);
+
     /// <summary>
     /// Gets the fire-variant counter — the original's <c>Human+1256</c>.
     /// </summary>
