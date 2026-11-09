@@ -14,6 +14,8 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 /// <param name="High">Its high corner.</param>
 /// <param name="HoleCentre">The hole's centre, in the mesh's space, for a holed one.</param>
 /// <param name="HoleRadius">The hole's radius, metres; nought for none.</param>
+/// <param name="Carried">Whether it is something a building brought down was holding up -- hung on it, or standing on it -- which
+/// falls whole as the building goes.</param>
 public sealed record ShatterPlan(
     ShatterSource Source,
     MeshGeometry? Holed,
@@ -22,7 +24,8 @@ public sealed record ShatterPlan(
     Vector3f Low = default,
     Vector3f High = default,
     Vector3f HoleCentre = default,
-    float HoleRadius = 0f);
+    float HoleRadius = 0f,
+    bool Carried = false);
 
 /// <summary>How much breaking a blast may do: fewer, larger pieces on the web, phones and the lower presets.</summary>
 /// <param name="CellScale">The share of each break's usual cell count.</param>
@@ -35,8 +38,11 @@ public readonly record struct ShatterBudget(float CellScale, int MostPieces, int
     /// <param name="quality">The quality.</param>
     /// <returns>The budget.</returns>
     public static ShatterBudget For(int quality) => quality >= 2
-        ? new ShatterBudget(1f, 220, 14, 2)
-        : new ShatterBudget(0.4f, 56, 6, 1);
+        ? new ShatterBudget(1f, 560, 14, 2)
+        : new ShatterBudget(0.4f, 90, 6, 1);
+
+    /// <summary>Gets how finely a building brought down is broken into slabs at this budget.</summary>
+    public PanelFractureOptions Panels => CellScale >= 1f ? PanelFractureOptions.Full : PanelFractureOptions.Light;
 }
 
 /// <summary>
@@ -77,6 +83,12 @@ public static class BlastShatterPlanner
     // How many faces a source may have before it is too costly to break whole.
     private const int MostPropFaces = 1500;
     private const int MostBuildingFaces = 8000;
+
+    // The most faces a carried thing may have to fall whole; how far past a building's walls, and how high off its floor,
+    // something is still taken to stand on it.
+    private const int MostCarriedFaces = 6000;
+    private const float CarriedMarginMetres = 1.0f;
+    private const float CarriedFloorMetres = 0.8f;
 
     /// <summary>Plans one placement's break.</summary>
     /// <param name="source">The placement, its mesh and its textures.</param>
@@ -134,16 +146,15 @@ public static class BlastShatterPlanner
             return null;
         }
 
-        // Near enough, and small enough, to bring down: the whole building into slabs, smaller toward the blast.
+        // Near enough, and small enough, to bring down: the building wall by wall and floor by floor into slabs as thick as
+        // its walls, smaller toward the blast -- not into solid blocks of it, which would fill its rooms.
         if (gap <= radiusMetres * CollapseReach && mesh.Bounds.Radius <= BuildingRadiusMetres && mesh.TriangleCount <= MostBuildingFaces)
         {
             List<FracturePolygon> walls = Faces(mesh);
             if (walls.Count > 0)
             {
                 (Vector3f low, Vector3f high) = Box(walls);
-                int cells = Scaled(Math.Clamp((int)MathF.Round(14f + (mesh.Bounds.Radius * 1.6f)), 16, 48), budget, 8);
-                Vector3f[] seeds = VoronoiFracture.SeedsToward(low, high, local, cells, random);
-                List<FractureChunk> slabs = VoronoiFracture.Break(walls, seeds, [], MinimumArea(mesh.Bounds.Radius * 0.3f));
+                List<FractureChunk> slabs = PanelFracture.Break(walls, local, random, budget.Panels);
                 if (slabs.Count > 0)
                 {
                     return new ShatterPlan(source, null, slabs, Collapse: true, Low: low, High: high);
@@ -173,6 +184,86 @@ public static class BlastShatterPlanner
         Vector3f[] rubbleSeeds = VoronoiFracture.SeedsToward(holeLow, holeHigh, local, rubble, random);
         List<FractureChunk> chunks = VoronoiFracture.Break(removed, rubbleSeeds, ball, MinimumArea(hole));
         return new ShatterPlan(source, cut.Kept, chunks, HoleCentre: centre, HoleRadius: hole);
+    }
+
+    /// <summary>
+    /// Plans what a building brought down does to something it held up: one of its attachments, or a placement standing on or
+    /// in it off the ground, which comes down whole with it. Its glass and glows, which would have no frame left, go.
+    /// </summary>
+    /// <param name="rider">The placement, its mesh and its textures.</param>
+    /// <param name="attached">Whether it hangs on the building, rather than only standing near it.</param>
+    /// <param name="building">The building's plan, a collapse.</param>
+    /// <param name="blastMetres">Where the blast went off, in world metres.</param>
+    /// <param name="seed">The blast's seed.</param>
+    /// <param name="budget">How much breaking it may do.</param>
+    /// <returns>The plan, or <see langword="null"/> when the building was not holding it up.</returns>
+    /// <remarks>
+    /// Something as big as a structure -- a building's inner shell, its second skin of walls, a roof hung on it -- is
+    /// brought down as the building is, wall by wall into slabs; anything smaller falls whole.
+    /// </remarks>
+    public static ShatterPlan? PlanCarried(ShatterSource rider, bool attached, ShatterPlan building, Vector3d blastMetres, uint seed, ShatterBudget budget)
+    {
+        ArgumentNullException.ThrowIfNull(rider);
+        ArgumentNullException.ThrowIfNull(building);
+        MeshGeometry mesh = rider.Geometry;
+        if (!building.Collapse || mesh.TriangleCount > MostCarriedFaces)
+        {
+            return null;
+        }
+
+        // Where it is in the building's own space: carried only if it is over the building's footprint, off its floor.
+        WorldPlacement placement = rider.Placement;
+        WorldPlacement house = building.Source.Placement;
+        Matrix3f toWorld = placement.Orientation.Transposed();
+        Vector3f low = new(float.MaxValue, float.MaxValue, float.MaxValue);
+        Vector3f high = new(float.MinValue, float.MinValue, float.MinValue);
+        foreach (Vertex3D v in mesh.Vertices)
+        {
+            Vector3f w = toWorld.Transform(v.Position);
+            Vector3d relative = placement.Position + new Vector3d(w.X, w.Y, w.Z) - house.Position;
+            Vector3f local = house.Orientation.Transform(new Vector3f((float)relative.X, (float)relative.Y, (float)relative.Z));
+            low = new Vector3f(MathF.Min(low.X, local.X), MathF.Min(low.Y, local.Y), MathF.Min(low.Z, local.Z));
+            high = new Vector3f(MathF.Max(high.X, local.X), MathF.Max(high.Y, local.Y), MathF.Max(high.Z, local.Z));
+        }
+
+        if (!attached)
+        {
+            Vector3f middle = (low + high) * 0.5f;
+            bool over = middle.X > building.Low.X - CarriedMarginMetres && middle.X < building.High.X + CarriedMarginMetres
+                && middle.Y > building.Low.Y - CarriedMarginMetres && middle.Y < building.High.Y + CarriedMarginMetres;
+            bool raised = low.Z > building.Low.Z + CarriedFloorMetres && low.Z < building.High.Z + 1f;
+            if (!over || !raised)
+            {
+                return null;
+            }
+        }
+
+        List<FracturePolygon> faces = Faces(mesh);
+        if (faces.Count == 0)
+        {
+            return new ShatterPlan(rider, null, [], Carried: true);
+        }
+
+        (Vector3f boxLow, Vector3f boxHigh) = Box(faces);
+        if (mesh.Bounds.Radius > PropRadiusMetres && mesh.TriangleCount <= MostBuildingFaces)
+        {
+            Vector3d relative = blastMetres - placement.Position;
+            Vector3f blastLocal = placement.Orientation.Transform(new Vector3f((float)relative.X, (float)relative.Y, (float)relative.Z));
+            var random = new IgiRandom(seed ^ Hash(placement.TaskName) ^ Hash(placement.Instance.Name) ^ 0x5EC0DEu);
+            List<FractureChunk> slabs = PanelFracture.Break(faces, blastLocal, random, budget.Panels);
+            if (slabs.Count > 0)
+            {
+                return new ShatterPlan(rider, null, slabs, Collapse: true, Low: boxLow, High: boxHigh, Carried: true);
+            }
+        }
+
+        Vector3f size = boxHigh - boxLow;
+        var whole = new FractureChunk(
+            faces,
+            (boxLow + boxHigh) * 0.5f,
+            size.Length * 0.5f,
+            MathF.Max(size.X, 0.05f) * MathF.Max(size.Y, 0.05f) * MathF.Max(size.Z, 0.05f));
+        return new ShatterPlan(rider, null, [whole], Low: boxLow, High: boxHigh, Carried: true);
     }
 
     // The mesh's breakable faces as polygons: opaque and cut-out subsets only.

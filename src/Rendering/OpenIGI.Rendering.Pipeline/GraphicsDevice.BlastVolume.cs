@@ -126,12 +126,13 @@ public sealed partial class GraphicsDevice
         Row(kept, ref at, sunColour.X, sunColour.Y, sunColour.Z, 0f);
         Row(kept, ref at, ambient.X, ambient.Y, ambient.Z, 0f);
 
-        at += slot * 16;
+        at += slot * BlastVolumePipelineCache.SlotFloats;
         float half = look.BoxHalfSize;
         Row(kept, ref at, look.CentreView.X, look.CentreView.Y, look.CentreView.Z, half);
         Row(kept, ref at, look.AgeSeconds, look.Seed % 65521u, look.FireballRadiusMetres, look.Heat);
         Row(kept, ref at, look.ColumnHeightMetres, look.SmokeDensity, look.ShockRadiusMetres, look.ShockStrength);
         Row(kept, ref at, look.FireLight.X, look.FireLight.Y, look.FireLight.Z, look.FireGlow);
+        Row(kept, ref at, look.Kind == BlastVolumeKind.CollapseDust ? 1f : 0f, 0f, 0f, 0f);
 
         kept.AsSpan().CopyTo(block);
     }

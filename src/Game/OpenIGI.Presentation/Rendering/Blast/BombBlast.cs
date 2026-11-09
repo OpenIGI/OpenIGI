@@ -133,17 +133,18 @@ public sealed class BombBlast
     /// <param name="age">Its age, in seconds.</param>
     /// <returns>The radius, in metres.</returns>
     public float FireballRadiusMetres(float age) =>
-        RadiusMetres * ((0.55f * (1f - MathF.Exp(-age / 0.09f))) + (0.18f * Smooth(0.1f, 3f, age)));
+        RadiusMetres * ((0.6f * (1f - MathF.Exp(-age / 0.08f))) + (0.22f * Smooth(0.1f, 3f, age)));
 
     /// <summary>How hot the fireball still is, which picks its colour and how much light it gives.</summary>
     /// <param name="age">Its age, in seconds.</param>
     /// <returns>One at the flash, nought when only smoke is left.</returns>
-    public static float FireballHeat(float age) => 1f - Smooth(0.05f, 2.4f, age);
+    /// <remarks>It burns for a second and a half and glows in its own smoke for about as long again.</remarks>
+    public static float FireballHeat(float age) => 1f - Smooth(0.15f, 3.0f, age);
 
     /// <summary>How high the top of the smoke column has climbed above the centre, in metres.</summary>
     /// <param name="age">Its age, in seconds.</param>
     /// <returns>The height.</returns>
-    public float ColumnHeightMetres(float age) => RadiusMetres * (0.35f + (1.9f * Smooth(0.15f, 7f, age)));
+    public float ColumnHeightMetres(float age) => RadiusMetres * (0.35f + (1.25f * Smooth(0.1f, 6f, age)));
 
     /// <summary>How dense the smoke is, which fades as the round's close runs out.</summary>
     /// <param name="age">Its age, in seconds.</param>

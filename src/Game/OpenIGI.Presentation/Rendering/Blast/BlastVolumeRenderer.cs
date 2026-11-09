@@ -17,24 +17,32 @@ namespace OpenIGI.Presentation.Rendering.Blast;
 public sealed class BlastVolumeRenderer(IGraphicsDevice device) : IDisposable
 {
     // The march's steps at the volume's quality.
-    private const int VolumeSteps = 36;
+    private const int VolumeSteps = 30;
+
+    // The steps once the fire is out: the column is soft smoke then, and it hangs for the rest of the round, so it is what
+    // the blast costs for longest.
+    private const int SmokeSteps = 20;
+
+    // The steps through a building's dust: softer than fire, so fewer will do.
+    private const int DustSteps = 16;
 
     // How brightly the fire glows, against the exposure the resolve applies.
-    private const float FireGlow = 1.6f;
+    private const float FireGlow = 1.8f;
 
     private MeshHandle _cube;
     private bool _disposed;
 
-    /// <summary>Draws every blast still burning.</summary>
+    /// <summary>Draws every blast still burning, and the dust of every building brought down.</summary>
     /// <param name="blasts">The blasts.</param>
+    /// <param name="clouds">The buildings' dust; only marched at the volume's quality.</param>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The world's projection.</param>
     /// <param name="blend">How far the frame is between the last tick and the next.</param>
-    public void Draw(IReadOnlyList<BombBlast> blasts, in Camera3D camera, in Matrix4f projection, float blend)
+    public void Draw(IReadOnlyList<BombBlast> blasts, IReadOnlyList<CollapseCloud> clouds, in Camera3D camera, in Matrix4f projection, float blend)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         int quality = BombBlastEffects.Quality;
-        if (blasts.Count == 0 || quality <= 0)
+        if ((blasts.Count == 0 && clouds.Count == 0) || quality <= 0)
         {
             return;
         }
@@ -75,13 +83,51 @@ public sealed class BlastVolumeRenderer(IGraphicsDevice device) : IDisposable
                 shock,
                 ColourTemperature.ToLinearRgb(BombBlast.LightKelvin(age)),
                 FireGlow * MathF.Max(heat, 0.05f),
-                VolumeSteps);
+                heat > 0.05f ? VolumeSteps : SmokeSteps);
 
             // The cube the shader keeps the far face of, the size it reckons from the same look.
             float half = look.BoxHalfSize;
             Matrix3f scale = Matrix3f.FromRows(new Vector3f(half, 0f, 0f), new Vector3f(0f, half, 0f), new Vector3f(0f, 0f, half));
             Matrix4f modelView = camera.CreateModelView(blast.CentreMetres, scale);
             device.DrawBlastVolume(_cube, 0, CubeIndices.Length, modelView, look);
+        }
+
+        if (quality < 2)
+        {
+            return;
+        }
+
+        foreach (CollapseCloud cloud in clouds)
+        {
+            float age = cloud.Age(blend);
+            float density = CollapseCloud.Density(age);
+            if (density <= 0.001f)
+            {
+                continue;
+            }
+
+            Vector3f relative = new(
+                (float)(cloud.GroundMetres.X - camera.Position.X),
+                (float)(cloud.GroundMetres.Y - camera.Position.Y),
+                (float)(cloud.GroundMetres.Z - camera.Position.Z));
+            var look = new BlastVolumeLook(
+                worldToView.Transform(relative),
+                cloud.RadiusMetres(age),
+                age,
+                cloud.Seed,
+                cloud.RadiusMetres(age),
+                0f,
+                cloud.HeightMetres(age),
+                density,
+                0f,
+                0f,
+                default,
+                0f,
+                DustSteps,
+                BlastVolumeKind.CollapseDust);
+            float half = look.BoxHalfSize;
+            Matrix3f scale = Matrix3f.FromRows(new Vector3f(half, 0f, 0f), new Vector3f(0f, half, 0f), new Vector3f(0f, 0f, half));
+            device.DrawBlastVolume(_cube, 0, CubeIndices.Length, camera.CreateModelView(cloud.GroundMetres, scale), look);
         }
     }
 

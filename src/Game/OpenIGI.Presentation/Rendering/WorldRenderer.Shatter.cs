@@ -26,6 +26,13 @@ public interface IShatterableWorld
     /// <returns>Its mesh and textures, or <see langword="null"/>.</returns>
     ShatterSource? ShatterSourceOf(WorldPlacement placement);
 
+    /// <summary>What a structure may be holding up: the things attached to it, and the placements standing within its reach.</summary>
+    /// <param name="scene">The scene.</param>
+    /// <param name="holder">The structure.</param>
+    /// <param name="reachMetres">How far from its middle to look, metres.</param>
+    /// <returns>The placements, with where each one's middle is, in world metres.</returns>
+    List<(WorldPlacement Placement, Vector3d CentreMetres, bool Attached)> RidersOf(WorldScene scene, WorldPlacement holder, double reachMetres);
+
     /// <summary>Takes a placement out of the frame, shattered.</summary>
     /// <param name="placement">The placement.</param>
     void Shatter(WorldPlacement placement);
@@ -59,21 +66,14 @@ public sealed partial class WorldRenderer : IShatterableWorld
         List<(WorldPlacement, double)> near = [];
         foreach (WorldPlacement placement in scene.Placements)
         {
-            if (placement.IsSuppressed || placement.IsRotor || placement.IsAttached || placement.MagicTaskTypeName.Length > 0
-                || _transforms.Shattered.Contains(placement) || _subsets.IsBreached(placement)
-                || _transforms.Destructibles?.IsDestroyed(placement) == true || _transforms.Destruction?.IsDestroyed(placement) == true)
-            {
-                continue;
-            }
-
-            if ((placement.BentGeometry ?? _subsets.GetGeometry(placement)) is not { } geometry)
+            if (placement.IsAttached || placement.MagicTaskTypeName.Length > 0 || IsGone(placement)
+                || (placement.BentGeometry ?? _subsets.GetGeometry(placement)) is not { } geometry)
             {
                 continue;
             }
 
             BoundingSphere bounds = geometry.Bounds;
-            Vector3f offset = placement.Orientation.Transposed().Transform(bounds.Centre);
-            Vector3d centre = placement.Position + new Vector3d(offset.X, offset.Y, offset.Z);
+            Vector3d centre = CentreOf(placement, bounds);
             double distance = Math.Max(0.0, (centre - centreMetres).Length - bounds.Radius);
             if (distance <= reachMetres)
             {
@@ -82,6 +82,57 @@ public sealed partial class WorldRenderer : IShatterableWorld
         }
 
         return near;
+    }
+
+    /// <summary>What a structure may be holding up: what is attached to it, and the placements standing within its reach.</summary>
+    /// <param name="scene">The scene.</param>
+    /// <param name="holder">The structure.</param>
+    /// <param name="reachMetres">How far from its middle to look, metres.</param>
+    /// <returns>The placements, where each one's middle is in world metres, and whether it is attached to the structure.</returns>
+    /// <remarks>
+    /// Its attachments are its own task's children -- the ladders, lamps, boxes and windows the level hung on it -- which
+    /// draw on it wherever it stands, so nothing else would bring them down with it.
+    /// </remarks>
+    public List<(WorldPlacement Placement, Vector3d CentreMetres, bool Attached)> RidersOf(WorldScene scene, WorldPlacement holder, double reachMetres)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(holder);
+        List<(WorldPlacement, Vector3d, bool)> riders = [];
+        if ((holder.BentGeometry ?? _subsets.GetGeometry(holder)) is not { } structureGeometry)
+        {
+            return riders;
+        }
+
+        Vector3d middle = CentreOf(holder, structureGeometry.Bounds);
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (ReferenceEquals(placement, holder) || IsGone(placement)
+                || (placement.BentGeometry ?? _subsets.GetGeometry(placement)) is not { } geometry)
+            {
+                continue;
+            }
+
+            bool attached = placement.IsAttached && ReferenceEquals(placement.Owner, holder.Owner);
+            Vector3d centre = CentreOf(placement, geometry.Bounds);
+            if (attached || (!placement.IsAttached && placement.MagicTaskTypeName.Length == 0 && (centre - middle).Length <= reachMetres))
+            {
+                riders.Add((placement, centre, attached));
+            }
+        }
+
+        return riders;
+    }
+
+    // Whether a placement is out of the blast's reckoning: hidden, spinning, or already broken.
+    private bool IsGone(WorldPlacement placement) =>
+        placement.IsSuppressed || placement.IsRotor
+        || _transforms.Shattered.Contains(placement) || _subsets.IsBreached(placement)
+        || _transforms.Destructibles?.IsDestroyed(placement) == true || _transforms.Destruction?.IsDestroyed(placement) == true;
+
+    private static Vector3d CentreOf(WorldPlacement placement, BoundingSphere bounds)
+    {
+        Vector3f offset = placement.Orientation.Transposed().Transform(bounds.Centre);
+        return placement.Position + new Vector3d(offset.X, offset.Y, offset.Z);
     }
 
     /// <summary>A placement's mesh and textures, for a blast to break.</summary>

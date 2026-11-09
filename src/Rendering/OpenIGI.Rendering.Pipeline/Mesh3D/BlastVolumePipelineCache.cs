@@ -23,10 +23,13 @@ public sealed class BlastVolumePipelineCache : IDisposable
     public const int PushDataFloats = 20;
 
     /// <summary>How many floats the frame's parameters hold: see <c>BlastVolumeParams</c>.</summary>
-    public const int ParameterFloats = 16 + (8 * 4) + (BlastSlots * 16);
+    public const int ParameterFloats = 16 + (8 * 4) + (BlastSlots * SlotFloats);
+
+    /// <summary>How many floats one blast's slot holds: see <c>BlastSlot</c>.</summary>
+    public const int SlotFloats = 20;
 
     /// <summary>How many blasts one frame's parameters carry.</summary>
-    public const int BlastSlots = 2;
+    public const int BlastSlots = 3;
 
     private readonly IRhiShaderModule _module;
     private bool _disposed;
