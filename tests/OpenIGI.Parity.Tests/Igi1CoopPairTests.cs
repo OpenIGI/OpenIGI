@@ -794,6 +794,68 @@ public sealed class Igi1CoopPairTests
     }
 
     [RequiresGameDataFact]
+    public void A_player_put_back_at_a_spawn_while_climbing_lets_go_of_the_ladder_and_stays_put()
+    {
+        // Live S&D: a round ended with a player on a ladder, and the next round's respawn left it on the ladder -- the climb
+        // carries the body each tick, so it pulled the player straight back from the spawn.
+        using Igi1CoopPair pair = Joined();
+        ServerSession server = pair.Session.Session!;
+
+        // The first round's start marks the level, as a match's does; the next round's start goes back to it.
+        ((Game.Multiplayer.Modes.IModeHost)server).ResetLevel();
+        Game.Igi1.Player.PlayerCamera own = pair.Joiner!.World.Player!;
+        Igi1NetworkPlayer partner = Assert.Single(pair.Host!.World.NetworkPlayers);
+        object controller = typeof(Game.Igi1.Player.PlayerCamera).GetField("_ladder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(own)!;
+        var ladders = (IReadOnlyList<LadderPlacement>)controller.GetType().GetField("_ladders", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(controller)!;
+        LadderPlacement ladder = ladders.OrderBy(l => l.Top.Z - l.Bottom.Z).Last();
+        foreach (Game.Igi1.Player.PlayerCamera body in new[] { own, partner.Player })
+        {
+            body.Body.Position = ladder.BottomMount - new Vector3d(0, 0, LadderPlacement.BottomVerticalOffsetUnits);
+            body.Body.Yaw = ladder.PlayerYaw;
+        }
+
+        pair.RunUntil(() => false, 10);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, true);
+        bool mounted = pair.RunUntil(() => own.IsOnLadder && partner.Player.IsOnLadder, 30) >= 0;
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.E, false);
+        Assert.True(mounted, $"the joiner never got on: own {own.IsOnLadder}, on the host {partner.Player.IsOnLadder}");
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, true);
+        pair.RunUntil(() => false, 90);
+        Igi1CoopPair.Hold(pair.JoinerInput, KeyCode.W, false);
+        Assert.True(partner.Player.IsOnLadder, "the joiner came off the ladder before the respawn");
+
+        // The server puts it back, as a new round does: the level reset, then everyone at a spawn.
+        ((Game.Multiplayer.Modes.IModeHost)server).ResetLevel();
+        ((Game.Multiplayer.Modes.IModeHost)server).Respawn(Assert.Single(server.Clients));
+        Vector3d placed = partner.Player.Body.Position;
+        Assert.False(partner.Player.IsOnLadder, "the respawn left the player on the ladder");
+
+        // And it stays there, on the host and on its own game.
+        List<string> trace = [];
+        for (int frame = 0; frame < 60; frame++)
+        {
+            Assert.True(pair.Step());
+            if (frame % 6 == 0)
+            {
+                Vector3d at = partner.Player.Body.Position - placed;
+                trace.Add($"{frame}: d({at.X:0},{at.Y:0},{at.Z:0}) host-ladder {partner.Player.IsOnLadder} own-ladder {own.IsOnLadder} grounded {partner.Player.Body.IsGrounded}");
+            }
+
+            // Its own game lets go once the reset reaches it, not after the ladder patience.
+            if (frame == 20)
+            {
+                Assert.False(own.IsOnLadder, $"the joiner's own game still has it climbing 20 frames on: {string.Join(" | ", trace)}");
+            }
+        }
+
+        Vector3d now = partner.Player.Body.Position;
+        double drift = Math.Sqrt(((now.X - placed.X) * (now.X - placed.X)) + ((now.Y - placed.Y) * (now.Y - placed.Y)));
+        Assert.True(drift < 4096, $"the player was carried {drift:0} units from where the respawn put it: {string.Join(" | ", trace)}");
+        Assert.False(own.IsOnLadder, "the joiner's own game still has it on the ladder");
+        Assert.True(Vector3d.Distance(own.Body.Position, partner.Player.Body.Position) < 512, "the joiner's own game has it elsewhere");
+    }
+
+    [RequiresGameDataFact]
     public void A_joiner_climbing_and_sliding_down_a_ladder_lands_where_the_host_has_it()
     {
         using Igi1CoopPair pair = Joined();

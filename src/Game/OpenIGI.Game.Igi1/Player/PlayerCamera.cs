@@ -752,8 +752,13 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public bool ShowLadderAction => _ladder.ShowAction;
 
     /// <inheritdoc cref="PlayerPlacement.PlaceAt"/>
+    /// <remarks>
+    /// A player on a ladder lets go of it first: the climb carries the body every tick, so left on, it would take a player put
+    /// back at a spawn straight back to the ladder -- as a versus round that ended with a player climbing did.
+    /// </remarks>
     public bool PlaceAt(IGroundHeightField? terrain, PlayerSpawnPoint spawn, WorldRayCast? registrationGround = null)
     {
+        _ladder.Release();
         _firstPerson.Pair.HasPair = false;
         _firstPerson.ResetKicks();
         return PlayerPlacement.PlaceAt(_body, terrain, spawn, registrationGround);

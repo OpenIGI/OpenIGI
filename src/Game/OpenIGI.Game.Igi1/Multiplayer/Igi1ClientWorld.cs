@@ -13,7 +13,16 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
     public void MarkLevelStart() => _game.MarkLevelStart();
 
     /// <inheritdoc/>
-    public void ResetToLevelStart() => _game.ResetToLevelStart();
+    /// <remarks>
+    /// A player climbing when the round ended lets go here at once: the server puts it back at a spawn with the reset, and
+    /// waiting out the ladder patience held it on the ladder here for a second and a half before it snapped there.
+    /// </remarks>
+    public void ResetToLevelStart()
+    {
+        _game.ResetToLevelStart();
+        _game.World.Player?.ReleaseLadder();
+        _offLadderThere = 0;
+    }
 
     /// <inheritdoc/>
     public void ArmOwn(IReadOnlyList<(string Weapon, int Rounds)> kit, bool fresh)
