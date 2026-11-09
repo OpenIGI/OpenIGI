@@ -29,7 +29,9 @@ jobs:
       matrix:
         include:
           - { rid: win-x64, os: windows-latest, arch: "" }
+          - { rid: win-arm64, os: windows-latest, arch: arm64 }
           - { rid: linux-x64, os: ubuntu-22.04, arch: "" }
+          - { rid: linux-arm64, os: ubuntu-22.04-arm, arch: "" }
           - { rid: osx-arm64, os: macos-14, arch: arm64 }
           - { rid: osx-x64, os: macos-14, arch: x64 }
     steps:

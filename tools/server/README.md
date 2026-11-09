@@ -8,8 +8,8 @@ the game's data, so point it at your installation's folder.
 
 | Host | How |
 | --- | --- |
-| Linux (systemd) | `tar xzf openigi-server-*-linux-x64.tar.gz && cd openigi-server-* && sudo ./install.sh` |
-| Windows | unzip, then in an administrator PowerShell: `.\install.ps1` |
+| Linux (systemd) | `tar xzf openigi-server-*-linux-x64.tar.gz && cd openigi-server-* && sudo ./install.sh` (`linux-arm64` on an ARM host) |
+| Windows | unzip (`win-x64`, or `win-arm64` on Windows on ARM), then in an administrator PowerShell: `.\install.ps1` |
 | Docker | see `docker-compose.yml`: game at `./game`, settings in `./data/server.cfg`, `docker compose up -d` |
 | By hand | `./OpenIGI.Server -config server.cfg -game /path/to/game -title igi1` |
 
