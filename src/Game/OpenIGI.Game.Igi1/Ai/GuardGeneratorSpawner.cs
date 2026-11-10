@@ -41,7 +41,8 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
     public LevelExpressionRuntime? GuardExpressions { get; set; }
 
     /// <summary>Gets or sets what prepares a generator's replacement guard to be drawn, and says whether it could.</summary>
-    public Func<GuardGeneratorTask, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody { get; set; }
+    /// <remarks>It is given who asks, for what it reports; the group the body is drawn in; the new body; and the one it replaces.</remarks>
+    public Func<string, SoldierModelGroup, SoldierAgent, SoldierAgent, bool>? SpawnedBody { get; set; }
 
     /// <summary>Connects each retail GuardGenerator to the one authored soldier subtree it owns.</summary>
     public void PrepareGuardGenerators(GameTask? levelRoot)
@@ -215,55 +216,12 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
             return null;
         }
 
-        SoldierView freshView = new(deadView.Soldier, deadView.Bones.Set);
-        Vector3d spawn = new(
-            deadAgent.Position.X * WorldScene.UnitsPerMetre,
-            deadAgent.Position.Y * WorldScene.UnitsPerMetre,
-            deadAgent.Position.Z * WorldScene.UnitsPerMetre);
-        freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
-
-        // The clone is made from the template (0x488000), whose Weapon child is the gun the authored guard carried -- not
-        // whatever he held when he died, a stationary gun he had mounted among them. It is the gun his death drops
-        // (Gun_Drop): left out, a replacement's gun went with his body and could not be picked up.
-        WeaponType? carried = deadAgent.CarriedWeaponType;
-        SoldierAgent freshAgent = new(freshView, deadAgent.Position)
-        {
-            IsCutsceneActor = false,
-            WeaponType = carried,
-            CarriedWeaponType = carried,
-            AmmoInClip = carried?.RoundsPerClip ?? 0,
-        };
-        if (SpawnedBody is { } drawing && !drawing(generator, group, freshAgent, deadAgent))
+        _context.DetectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale);
+        _context.Combat.TryGetValue(deadView, out AiCombatParameters? combat);
+        if (Clone(generator.Name, deadView, deadBrain, deadAgent, group, runtimeId ?? _context.NewRuntimeId(), cutsceneActor: false, markerScale, combat) is not { } freshView)
         {
             return null;
         }
-
-        group.Add(freshAgent);
-
-        // The clone's task is the one the body left; putting it in the world sets +3318 again (0x460950).
-        deadView.Soldier.IsOutOfWorld = false;
-
-        if (_context.DetectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale))
-        {
-            _context.DetectorMarkerScaleMetres[freshView] = markerScale;
-        }
-        if (_context.Combat.TryGetValue(deadView, out AiCombatParameters? combat))
-        {
-            _context.Combat[freshView] = combat;
-        }
-        _context.Health[freshView] = _context.NewHealth(freshView);
-
-        Igi1HumanAi freshBrain = deadBrain.Respawned(
-            freshView.Position,
-            freshView.Soldier.Gamma,
-            brain => SoldierWeaponFire.CombatWeaponState(brain, freshAgent));
-        // Each live instance has its own runtime ID, so nothing keyed by the old guard's -- its weapon sound, the replies to its
-        // alerts -- is taken for the replacement's. Keep the authored Soldier.Id for mission queries.
-        freshBrain.RuntimeId = runtimeId ?? _context.NewRuntimeId();
-        _sight.BindViewTracking(freshBrain, freshView);
-        freshBrain.SetDefaultTarget(_context.PlayerTarget);
-        _context.Register(freshView, freshBrain);
-        _enlist(freshView);
 
         // 0x487EE0 deletes the dead child (0x4015F0) as it clones the next; its body has already left the world. The task it
         // stood for is the replacement's, so the human list keeps it.
@@ -277,6 +235,131 @@ internal sealed class GuardGeneratorSpawner(SoldierContext context, SoldierSight
             SoldierContext.LogCategory,
             $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
                 + $"{freshView.Soldier.Name} cloned at its authored position.");
+        return freshView;
+    }
+
+    /// <summary>
+    /// Makes every soldier afresh in the place of the one its task has now -- its body standing, its mind not yet created, its
+    /// health whole, its template's gun in its hands -- as the level made them when it came up. For a save game read onto a
+    /// level that was played on: its dead stand again and no mind keeps what it was in the middle of, and the save then puts
+    /// each where it was. <b>Not retail</b>, which kept no save games; the clone is the generator's own (<c>0x488000</c>).
+    /// </summary>
+    /// <remarks>
+    /// Every soldier is taken out before any is made, and they are made in the order they were held in, so the order the
+    /// humans are offered and drawn in is the level's own again.
+    /// </remarks>
+    public void RemakeAll()
+    {
+        List<(SoldierView View, Igi1HumanAi Brain, SoldierAgent Agent, SoldierModelGroup Group, float MarkerScale, AiCombatParameters? Combat, GuardGeneratorTask? Generator)> old = [];
+        foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains.ToArray())
+        {
+            brain.Retire();
+            if (!_context.GoneBodies.ContainsKey(view))
+            {
+                _context.RemoveBody(view);
+            }
+
+            if (!_context.GoneBodies.TryGetValue(view, out (SoldierAgent Agent, SoldierModelGroup Group) body))
+            {
+                _context.Logger.Warning(SoldierContext.LogCategory, $"{view.Soldier.Name} has no body to be made afresh from.");
+                continue;
+            }
+
+            _context.DetectorMarkerScaleMetres.TryGetValue(view, out float markerScale);
+            _context.Combat.TryGetValue(view, out AiCombatParameters? combat);
+            old.Add((view, brain, body.Agent, body.Group, markerScale, combat, GeneratorOf(view)));
+        }
+
+        _context.ClearBrains();
+        _context.GoneBodies.Clear();
+        _context.Health.Clear();
+        _context.Combat.Clear();
+        _context.DetectorMarkerScaleMetres.Clear();
+        _context.ViewsByTask.Clear();
+        foreach ((SoldierView view, Igi1HumanAi brain, SoldierAgent agent, SoldierModelGroup group, float markerScale, AiCombatParameters? combat, GuardGeneratorTask? generator) in old)
+        {
+            SoldierView? fresh = Clone(view.Soldier.Name, view, brain, agent, group, brain.RuntimeId, agent.IsCutsceneActor, markerScale, combat);
+            if (fresh is null)
+            {
+                _context.Logger.Warning(SoldierContext.LogCategory, $"{view.Soldier.Name} could not be made afresh, and is gone from the level.");
+            }
+
+            if (generator is not null && fresh is not null)
+            {
+                GuardGenerators[generator] = fresh;
+            }
+            else if (generator is not null)
+            {
+                GuardGenerators.Remove(generator);
+            }
+        }
+    }
+
+    // The clone itself (0x488000): a new body, health, gun and mind for a soldier's task, wired as the one it replaces was.
+    private SoldierView? Clone(
+        string asker,
+        SoldierView deadView,
+        Igi1HumanAi deadBrain,
+        SoldierAgent deadAgent,
+        SoldierModelGroup group,
+        int runtimeId,
+        bool cutsceneActor,
+        float markerScale,
+        AiCombatParameters? combat)
+    {
+        SoldierView freshView = new(deadView.Soldier, deadView.Bones.Set);
+        Vector3d spawn = new(
+            deadAgent.Position.X * WorldScene.UnitsPerMetre,
+            deadAgent.Position.Y * WorldScene.UnitsPerMetre,
+            deadAgent.Position.Z * WorldScene.UnitsPerMetre);
+        freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
+
+        // The clone is made from the template (0x488000), whose Weapon child is the gun the authored guard carried -- not
+        // whatever he held when he died, a stationary gun he had mounted among them. It is the gun his death drops
+        // (Gun_Drop): left out, a replacement's gun went with his body and could not be picked up.
+        WeaponType? carried = deadAgent.CarriedWeaponType;
+        SoldierAgent freshAgent = new(freshView, deadAgent.Position)
+        {
+            IsCutsceneActor = cutsceneActor,
+            WeaponType = carried,
+            CarriedWeaponType = carried,
+            AmmoInClip = carried?.RoundsPerClip ?? 0,
+        };
+        if (SpawnedBody is { } drawing && !drawing(asker, group, freshAgent, deadAgent))
+        {
+            return null;
+        }
+
+        group.Add(freshAgent);
+
+        // The clone's task is the one the body left; putting it in the world sets +3318 again (0x460950), and a new Human
+        // is not dead (0x45ECD0 clears +3317), which the level's scripts read as isDead.
+        deadView.Soldier.IsOutOfWorld = false;
+        deadView.Soldier.IsDead = false;
+
+        if (markerScale > 0f)
+        {
+            _context.DetectorMarkerScaleMetres[freshView] = markerScale;
+        }
+
+        if (combat is not null)
+        {
+            _context.Combat[freshView] = combat;
+        }
+
+        _context.Health[freshView] = _context.NewHealth(freshView);
+
+        Igi1HumanAi freshBrain = deadBrain.Respawned(
+            freshView.Position,
+            freshView.Soldier.Gamma,
+            brain => SoldierWeaponFire.CombatWeaponState(brain, freshAgent));
+        // Each live instance has its own runtime ID, so nothing keyed by the old guard's -- its weapon sound, the replies to its
+        // alerts -- is taken for the replacement's. Keep the authored Soldier.Id for mission queries.
+        freshBrain.RuntimeId = runtimeId;
+        _sight.BindViewTracking(freshBrain, freshView);
+        freshBrain.SetDefaultTarget(_context.PlayerTarget);
+        _context.Register(freshView, freshBrain);
+        _enlist(freshView);
         return freshView;
     }
 }

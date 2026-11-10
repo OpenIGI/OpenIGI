@@ -167,6 +167,7 @@ public sealed partial class GameHost : IDisposable
 
     // Starts the mission that is up afresh: the pause menu's restart, which a save game's load asks for too.
     private Action? _restartMission;
+    private Action? _resumeMission;
     private readonly MissionState _mission;
 
     // The player the host steers and looks through, when the mission has one.

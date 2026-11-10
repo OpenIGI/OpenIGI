@@ -52,6 +52,14 @@ public interface IMissionSetupHost : IGuardRoundHost
     {
     }
 
+    /// <summary>
+    /// Tells the host a save game has been read onto the level that is up: what the host keeps of the level played on -- a
+    /// mission it had failed -- is over.
+    /// </summary>
+    void SaveReadOntoLevel()
+    {
+    }
+
     /// <summary>Answers a native the level's cutscene scripts call that the host owns: the music, the menus.</summary>
     /// <param name="name">The native.</param>
     /// <param name="arguments">Its arguments.</param>

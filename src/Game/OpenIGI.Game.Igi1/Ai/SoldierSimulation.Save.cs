@@ -14,7 +14,7 @@ namespace OpenIGI.Game.Igi1.Ai;
 public sealed partial class SoldierSimulation : ISavedStateSource
 {
     /// <inheritdoc/>
-    /// <remarks>Each soldier by the task the level declares it with, then each guard generator's counts.</remarks>
+    /// <remarks>Each soldier by the task the level declares it with, then each guard generator's counts, then each alarm control.</remarks>
     public IEnumerable<KeyValuePair<GameTask, ISavedState>> SavedStates(ObjectCollisionIndex? solids)
     {
         foreach ((SoldierView view, Igi1HumanAi brain) in _context.Brains)
@@ -26,6 +26,33 @@ public sealed partial class SoldierSimulation : ISavedStateSource
         {
             yield return new KeyValuePair<GameTask, ISavedState>(generator, generator);
         }
+
+        foreach (KeyValuePair<GameTask, ISavedState> control in AlarmControls?.SavedStates ?? [])
+        {
+            yield return control;
+        }
+    }
+
+    /// <summary>
+    /// Makes the soldiers ready for a save game to be read onto the level they were played on: every one afresh, as the level
+    /// made them, and nothing kept of what they were in the middle of -- the rounds in flight, the deaths not yet taken, who
+    /// was seen through the binoculars. The save then puts each where it was, as it does on a level just come up.
+    /// </summary>
+    internal void RemakeForLoad()
+    {
+        _rounds.Clear();
+        _damage.ClearForLoad();
+        _footsteps.Clear();
+        _combatClipMissing.Clear();
+        _releasedThisEntry.Clear();
+        _releasedState.Clear();
+        _seenSince.Clear();
+        _binoculars.Detected.Clear();
+        _binoculars.Visibility.Clear();
+        _generators.RemakeAll();
+
+        // The alarm's edge is read again from the controls the save puts back.
+        _alarmWasOn = false;
     }
 
     /// <summary>Kills a soldier where it stands, as a round through its chest would, for a test that needs one dead.</summary>

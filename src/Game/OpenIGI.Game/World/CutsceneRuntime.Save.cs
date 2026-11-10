@@ -52,9 +52,14 @@ public sealed partial class CutsceneRuntime : ISavedStateSource
                 animation.IsRun = exchange.Bool(animation.IsRun);
                 animation.RanThisTick = exchange.Bool(animation.RanThisTick);
                 animation.Tick = exchange.Int(animation.Tick);
+
+                // The programme's own count of its steps: without it a programme read back as never run seeks to its start
+                // on its next step, and whatever it flies or drives begins its course again.
+                int programTick = exchange.Int(animation.Program.Tick);
                 float[] channels = exchange.Run(animation.Program.Channels.ToArray(), static (e, value) => e.Real(value));
                 if (exchange.IsReading)
                 {
+                    animation.Program.RestoreTick(programTick);
                     for (int i = 0; i < channels.Length && i < AnimDataProgram.ChannelCount; i++)
                     {
                         animation.Program.WriteChannel(i, channels[i]);

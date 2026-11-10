@@ -44,13 +44,48 @@ internal static class TakenPickupTask
     /// <param name="isTaken">Whether it has been taken.</param>
     /// <param name="variables">Where its <c>isPickedUp</c> is exported, or <see langword="null"/>.</param>
     internal static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, ScriptVarRegistry? variables) =>
+        BindUpdate(walker, task, isTaken, static () => false, variables, null);
+
+    /// <summary>
+    /// Binds a pickup task's update into the level walk, which deletes the task once it is taken -- or, in a level whose save
+    /// games may put the pickup back, only withdraws it: the task stays, and its <c>isPickedUp</c> goes as the delete handler
+    /// takes it, so the level's scripts read what they read of a deleted one; the symbol is exported again once the pickup lies
+    /// there again.
+    /// </summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="task">The pickup's task.</param>
+    /// <param name="isTaken">Whether it has been taken.</param>
+    /// <param name="withdraws">Whether a taken pickup is withdrawn rather than deleted.</param>
+    /// <param name="variables">Where its <c>isPickedUp</c> is exported, or <see langword="null"/>.</param>
+    /// <param name="export">Exports its <c>isPickedUp</c> again, or <see langword="null"/>.</param>
+    /// <remarks>Not retail, which kept no save games and had nothing to put back.</remarks>
+    internal static void BindUpdate(LevelRun walker, GameTask task, Func<bool> isTaken, Func<bool> withdraws, ScriptVarRegistry? variables, Action? export)
+    {
+        bool withdrawn = false;
         walker.Bind(task, owned =>
         {
-            if (isTaken())
+            if (!isTaken())
+            {
+                if (withdrawn)
+                {
+                    withdrawn = false;
+                    export?.Invoke();
+                }
+            }
+            else if (!withdraws())
             {
                 Delete(owned, variables);
             }
+            else if (!withdrawn)
+            {
+                withdrawn = true;
+                if (owned.Id >= 0)
+                {
+                    variables?.Unbind(owned, PickedUpField);
+                }
+            }
         });
+    }
 
     /// <summary>Deletes a taken pickup's task, as its delete handler does.</summary>
     /// <param name="task">The task.</param>

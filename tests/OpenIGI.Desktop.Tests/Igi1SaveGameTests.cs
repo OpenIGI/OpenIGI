@@ -10,7 +10,8 @@ namespace OpenIGI.Desktop.Tests;
 
 /// <summary>
 /// Project I.G.I.'s save games on a real mission, played headless: a level played on and saved, read onto the same mission
-/// started afresh, is saved again as the same script -- so nothing a save keeps is lost on the way out or back.
+/// started afresh or onto the level as it was played on after, is saved again as the same script -- so nothing a save keeps is
+/// lost on the way out or back, whatever became of the level it is read onto.
 /// </summary>
 /// <remarks>Not retail: the original kept no save games. One mission a process.</remarks>
 [Collection(AiScenarioSupport.CollectionName)]
@@ -48,8 +49,205 @@ public sealed class Igi1SaveGameTests : IDisposable
     }
 
     /// <summary>
-    /// The quick save key writes the quick slot and the quick load key starts the mission afresh with that save read onto it: the
-    /// player, moved after the save, stands where it was saved, and the mission counts one game loaded.
+    /// A level saved, then played on -- more of its soldiers dead, its player elsewhere and hurt, time gone by -- and the save read
+    /// onto that same level, without the mission being brought up again, is saved again as the same script: a load puts back
+    /// everything a save keeps, whatever became of the level since.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_save_read_onto_the_level_played_on_puts_it_back()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-inplace-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable(Igi1SaveFormat.DirectoryVariable, folder);
+        try
+        {
+            ReadOntoThePlayedLevel();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(Igi1SaveFormat.DirectoryVariable, null);
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
+    private void ReadOntoThePlayedLevel()
+    {
+        using RecordingGraphicsDevice device = new();
+        GameHost host = _support.Host(device, "-mission", Mission, "-skipcutscene", "-lockstep", "-nosave", "-frames", "1000000");
+        host.Start();
+        for (int i = 0; i < 20_000 && (host.Player() is null || host.Soldiers() is null); i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        MissionWorld world = host.Mission();
+        Steps(300);
+        Wreck(kills: 1);
+        Steps(400);
+
+        // A mission that opens on a scene, or with its menus off, is saved once it lets itself be; one that never does within
+        // two minutes has nothing here to check.
+        for (int i = 0; i < 3600 && !host.SaveGames()!.CanSave; i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        if (!host.SaveGames()!.CanSave)
+        {
+            return;
+        }
+
+        SaveContext context = Igi1SaveFormat.Context(world);
+        string saved = SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!;
+        Assert.True(host.SaveGames()!.Save(0));
+        int savesUsed = world.SavesUsed;
+        int deadWhenSaved = host.Soldiers()!.Simulation.SoldierViews.Count(static v => v.IsDead);
+
+        // Played on: a gun and a box of rounds taken from where the level laid them, if it laid any; three more dead, long
+        // enough for their bodies to go; the player moved on, hurt again and firing.
+        OpenIGI.Game.World.GunPickup? gun = world.GunPickups?.Items.FirstOrDefault(static p => p.Task is not null && !p.IsCollected);
+        OpenIGI.Game.World.GenericPickup? box = world.GenericPickups?.Items.FirstOrDefault(static p => !p.IsCollected);
+        for (int i = 0; i < 120 && gun is { IsCollected: false }; i++)
+        {
+            host.Player()!.StandAt(gun.Position, 0f);
+            Steps(1);
+        }
+
+        for (int i = 0; i < 120 && box is { IsCollected: false }; i++)
+        {
+            host.Player()!.StandAt(box.Position, 0f);
+            Steps(1);
+        }
+
+        Steps(5);
+        Wreck(kills: 3);
+
+        // And the player stood in front of a guard, to be seen, shot at and hunted: minds in a fight, an alarm perhaps raised,
+        // the player perhaps dead.
+        float before = world.PlayerHealth.RemainingFraction;
+        foreach (OpenIGI.Game.Igi1.Player.SoldierView guard in host.Soldiers()!.Simulation.SoldierViews.Where(static v => !v.IsDead).ToArray())
+        {
+            host.Player()!.StandAt(new OpenIGI.Core.Numerics.Vector3d(guard.Position.X + 12288.0, guard.Position.Y, guard.Position.Z), 0f);
+            Steps(150);
+            if (world.IsPlayerDead || world.PlayerHealth.RemainingFraction < before)
+            {
+                break;
+            }
+        }
+
+        Steps(600);
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } fight)
+        {
+            File.WriteAllLines(
+                fight + ".fight",
+                [$"dead={world.IsPlayerDead} health={world.PlayerHealth.RemainingFraction}", .. host.Soldiers()!.Simulation.BrainPairsForTesting.Select(static p => $"{p.Key.Soldier.Id} {p.Value.DescribeTick()}")]);
+        }
+
+        Wreck(kills: 1);
+        Steps(60);
+        Assert.True(host.Soldiers()!.Simulation.SoldierViews.Count(static v => v.IsDead) > deadWhenSaved);
+
+        // The load the game makes: onto this level, the mission not brought up again.
+        Assert.True(host.SaveGames()!.Load(0));
+        Assert.False(host.SaveGames()!.LoadRestartsMission);
+        Assert.Same(world, host.Mission());
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } afterLoad)
+        {
+            File.WriteAllText(afterLoad + ".afterload", $"dead {world.IsPlayerDead} task {world.PlayerTask?.IsDead} failed {world.Objectives?.IsFailed} health {world.PlayerHealth.Damage}");
+        }
+        Assert.False(world.IsPlayerDead);
+        Assert.True(gun is null || !gun.IsCollected, "The gun taken after the save does not lie there again.");
+        Assert.True(
+            box is null || !box.IsCollected,
+            $"The box taken after the save does not lie there again: {box?.Task.Type.Name} {box?.Task.Id} deleted {box?.Task.IsDeleted} parent {box?.Task.Parent?.Type.Name} {box?.Task.Parent?.Id}.");
+        Assert.Equal(1, world.GameLoads);
+        world.GameLoads = 0;
+        world.SavesUsed = savesUsed - 1;
+        context = Igi1SaveFormat.Context(world);
+        string again = SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!;
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } dump)
+        {
+            File.WriteAllText(dump + ".saved", saved);
+            File.WriteAllText(dump + ".again", again);
+        }
+
+        Assert.Equal(Lines(saved), Lines(again));
+        Assert.Equal(deadWhenSaved, host.Soldiers()!.Simulation.SoldierViews.Count(static v => v.IsDead));
+
+        // And it plays on from there: the clock runs, the player lives.
+        long clock = world.PlayerTicks;
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } trace)
+        {
+            List<string> lines = [];
+            float damage = -1f;
+            for (int i = 0; i < 300; i++)
+            {
+                Assert.True(host.Step());
+                if (world.PlayerHealth.Damage != damage || i % 50 == 0)
+                {
+                    damage = world.PlayerHealth.Damage;
+                    OpenIGI.Core.Numerics.Vector3d at = host.Player()!.PositionUnits;
+                    double nearest = host.Soldiers()!.Simulation.SoldierViews.Where(static v => !v.IsDead).Min(v => OpenIGI.Core.Numerics.Vector3d.Distance(v.Position, at));
+                    lines.Add($"step {i} tick {world.PlayerTicks} damage {damage} hits {world.PlayerHealth.Hits} dead {world.IsPlayerDead} task {world.PlayerTask?.IsDead} failed {world.Objectives?.IsFailed} mines {host.Player()!.Grenades.Mines.Count} grenades {host.Player()!.Grenades.Grenades.Count} nearest {nearest:F0} guardRounds {host.GuardRoundsFired()} hitsOnPlayer {host.GuardHitsOnPlayer()}");
+                }
+            }
+
+            File.WriteAllLines(trace + ".trace", lines);
+        }
+        else
+        {
+            Steps(300);
+        }
+        Assert.Equal(deadWhenSaved, host.Soldiers()!.Simulation.SoldierViews.Count(static v => v.IsDead));
+        Assert.True(world.PlayerTicks > clock);
+        Assert.False(world.IsPlayerDead);
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } later)
+        {
+            // A diagnostic beside the check: the same save read onto a level just come up and played as long. Where the two
+            // differ, the level played on kept something a save does not hold.
+            context = Igi1SaveFormat.Context(world);
+            File.WriteAllText(later + ".inplace", SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!);
+            File.WriteAllLines(
+                later + ".minds-inplace",
+                host.Soldiers()!.Simulation.BrainPairsForTesting.Select(static p => $"{p.Key.Soldier.Id} {p.Value.DescribeTick()}"));
+            File.WriteAllText(later + ".fresh", Played(saved).Later);
+        }
+
+        static string[] Lines(string script) => script.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        void Steps(int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                Assert.True(host.Step());
+            }
+        }
+
+        void Wreck(int kills)
+        {
+            for (int i = 0; i < kills; i++)
+            {
+                host.Soldiers()!.Simulation.KillForTesting(host.Soldiers()!.Simulation.SoldierViews.First(static v => !v.IsDead));
+            }
+
+            OpenIGI.Game.Igi1.Player.PlayerCamera rig = host.Player()!;
+            rig.StandAt(new OpenIGI.Core.Numerics.Vector3d(rig.PositionUnits.X + 4096.0, rig.PositionUnits.Y, rig.PositionUnits.Z), rig.Yaw + 1f, 0.25f);
+            world.PlayerHealth.ApplyDirect(0, 0.2f);
+            if (rig.Weapons is { Carried.Count: > 0 } weapons)
+            {
+                weapons.Carried[0].Gun.State.RoundsInClip = Math.Max(0, weapons.Carried[0].Gun.State.RoundsInClip - 2);
+            }
+
+            rig.Grenades.Lay(new OpenIGI.Game.Weapons.PlacedMine(rig.PositionUnits, OpenIGI.Core.Numerics.Matrix3f.Identity, string.Empty));
+            Assert.True(rig.Grenades.SpawnWithVelocity(rig.PositionUnits, default, default, fuseTicks: 9000));
+        }
+    }
+
+    /// <summary>
+    /// The quick save key writes the quick slot and the quick load key reads that save onto the level that is up: the player,
+    /// moved after the save, stands where it was saved, and the mission counts one game loaded.
     /// </summary>
     [RequiresGameDataFact]
     public void The_quick_keys_save_and_load()

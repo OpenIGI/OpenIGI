@@ -17,9 +17,11 @@ public sealed partial class GameHost
     {
         RunComputerSaves();
         ulong pressed = TitleInputBindings.Sample(_configuration.Active, ViewInput, SaveBindings, pressed: true);
-        if (pressed != 0 && !_menuFlow.MenuMode)
+        // Not under a menu -- but the quick load does answer the failed page, where it is what a dead player reaches for.
+        bool save = (pressed & QuickSaveBit) != 0;
+        if (pressed != 0 && (!_menuFlow.MenuMode || (!save && _session.FailedMenu)))
         {
-            QuickSaveOrLoad(save: (pressed & QuickSaveBit) != 0);
+            QuickSaveOrLoad(save);
         }
     }
 

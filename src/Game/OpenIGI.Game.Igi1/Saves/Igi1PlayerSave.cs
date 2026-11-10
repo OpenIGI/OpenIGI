@@ -69,12 +69,14 @@ internal static class Igi1PlayerSave
             return;
         }
 
-        rig.StandAt(feet, yaw, pitch);
+        rig.StandAfresh(feet, yaw, pitch);
         if (weapons is null || world.WeaponTypes is not { } types)
         {
             return;
         }
 
+        // Out of death first, when the level the save is read onto had killed it: only a living hand is armed.
+        rig.ReviveWeapons();
         weapons.Disarm();
         foreach ((int weaponId, int rounds) in carried)
         {

@@ -635,7 +635,7 @@ public sealed partial class GameHost
                         _timeOfDay.DayNight.ResetForLevel(_timeOfDay.Sun, ExposureCVars.TimeOfDay.Value);
                     }
                 },
-                resumeMission: () =>
+                resumeMission: _resumeMission = () =>
                 {
                     // Nothing is reloaded and nobody is placed again: the level was never torn down, only
                     // left un-ticked, so resuming is this loop putting the menu away.

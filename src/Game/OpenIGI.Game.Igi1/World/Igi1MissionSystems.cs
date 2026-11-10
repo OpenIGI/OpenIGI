@@ -122,7 +122,13 @@ public static class Igi1MissionSystems
                 // A level starts with its saves unused; a save read onto it brings its own counts.
                 game.World.SavesUsed = 0;
                 game.World.GameLoads = 0;
-                game.Saves = new Saves.Igi1MissionSaves(game.World, game.SaveSession, host);
+                game.Saves = new Saves.Igi1MissionSaves(game.World, game.SaveSession, host, game.MakeReadyForSave);
+
+                // A save game read onto this level may put back a gun or a box of rounds taken since: its task stays to come
+                // back to. Not in a session with other players, whose level keeps no saves of its own.
+                bool kept = game.SaveGames is not null;
+                game.World.GunPickups?.WithdrawsTakenTasks = kept;
+                game.World.GenericPickups?.WithdrawsTakenTasks = kept;
                 if (game.Saves.ApplyPending())
                 {
                     host.Logger.Information("Saves", "The level was put back as a save game kept it.");

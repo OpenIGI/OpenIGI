@@ -63,7 +63,7 @@ public static partial class SaveScript
         }
 
         Dictionary<int, GameTask> byId = [];
-        foreach ((GameTask task, int id) in Ids(LevelRoot(root)))
+        foreach ((GameTask task, int id) in Ids(LevelRoot(root), context))
         {
             byId.TryAdd(id, task);
         }

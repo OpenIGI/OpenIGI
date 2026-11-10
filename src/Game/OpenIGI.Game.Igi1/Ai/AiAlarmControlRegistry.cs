@@ -27,6 +27,10 @@ public sealed class AiAlarmControlRegistry
 
     private AiAlarmControlRegistry(LevelExpressionRuntime expressions) => _expressions = expressions;
 
+    /// <summary>Gets each control's task with what a save game keeps of it.</summary>
+    public IEnumerable<KeyValuePair<GameTask, OpenIGI.Game.Saves.ISavedState>> SavedStates =>
+        _controls.Values.Select(static entry => new KeyValuePair<GameTask, OpenIGI.Game.Saves.ISavedState>(entry.Task, entry.State));
+
     /// <summary>Gets the number of controls collected from the task tree.</summary>
     public int Count => _controls.Count;
 

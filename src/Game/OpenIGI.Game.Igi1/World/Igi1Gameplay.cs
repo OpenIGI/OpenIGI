@@ -138,6 +138,35 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
             rig.ControlTaken = false;
         }
 
+        ClearWhatPlayLeft();
+    }
+
+    /// <summary>
+    /// Makes the level that is up ready for a save game to be read onto it, once the save has checked (I.G.I. 2's
+    /// <c>Game_LoadFromSlot</c> deletes what a load makes again the same way): the player stands again if the level had killed
+    /// it; every soldier is made afresh, so its dead stand and no mind keeps the fight it was in
+    /// (<c>HumanAI_DeSerializeHandler</c> starts each mind afresh too); and what play left in the level that no save keeps --
+    /// rockets in flight, bullet holes, bursts still burning -- goes. Each part a save keeps then reads itself back.
+    /// </summary>
+    /// <remarks>Not retail: Project I.G.I. kept no save games.</remarks>
+    public void MakeReadyForSave()
+    {
+        if (World.Player is { } rig && (World.IsPlayerDead || World.PlayerHealth.IsDead))
+        {
+            Harm.RevivePlayer(at: null, rig.Body.Yaw);
+        }
+
+        // The task's own death latch (Human+3317), which the level's scripts read: a save is never made of a dead player.
+        World.PlayerTask?.IsDead = false;
+        World.Soldiers?.RemakeForLoad();
+        World.OfferedPrompt = null;
+        ClearWhatPlayLeft();
+    }
+
+    // What play left in the level that none of its parts keeps: the eye and controls a mod had taken, the rockets in flight,
+    // every impact and every burst still burning.
+    private void ClearWhatPlayLeft()
+    {
         // A round starts with the player's own eye and controls, whatever a mod had taken in the last one.
         World.ViewTakeover = null;
         World.ShownProjectiles.Clear();

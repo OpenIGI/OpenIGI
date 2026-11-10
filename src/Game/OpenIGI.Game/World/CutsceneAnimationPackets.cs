@@ -271,6 +271,7 @@ internal sealed class CutsceneAnimationPackets(
             return;
         }
 
+        transform.TakeSavedBodyMotion();
         SnapshotDynamicPose(transform, simulationOrder);
 
         // 0x4F4660 ticks the attachments -- the rotors push their lift and yaw -- right before Heli_Tick.
@@ -482,6 +483,7 @@ internal sealed class CutsceneAnimationPackets(
             return;
         }
 
+        transform.TakeSavedBodyMotion();
         SnapshotDynamicPose(transform, simulationOrder);
         retailPlane.Tick(planeWorld);
         CutsceneVehicleBodies.CopyRetailPose(transform, retailPlane);

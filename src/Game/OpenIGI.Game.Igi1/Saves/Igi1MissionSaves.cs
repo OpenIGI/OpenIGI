@@ -25,7 +25,10 @@ public static class Igi1SaveFormat
     /// <param name="world">The played mission, as it stands.</param>
     /// <returns>The context.</returns>
     public static SaveContext Context(MissionWorld world) =>
-        new() { Version = Version, States = new Igi1SaveStates(world), Sections = [.. Igi1SaveStates.Sections(world)] };
+        new() { Version = Version, States = new Igi1SaveStates(world), Sections = [.. Igi1SaveStates.Sections(world)], RootId = RootId };
+
+    /// <summary>The id the level's root is written under, which no task of a level has.</summary>
+    public const int RootId = -2;
 
     /// <summary>The slots, under the user's folder, or under the directory <see cref="DirectoryVariable"/> names.</summary>
     /// <returns>The slots.</returns>
@@ -116,52 +119,75 @@ public sealed class Igi1SaveStates : ISaveStates
 }
 
 /// <summary>
-/// A running Project I.G.I. mission's save games: the shared slots, limits and save (<see cref="MissionSaves"/>), and a load that
-/// starts the mission afresh and puts the save onto the level as it comes up.
+/// A running Project I.G.I. mission's save games: the shared slots, limits, save and load (<see cref="MissionSaves"/>). A load
+/// reads the save onto the level that is up, as I.G.I. 2's does (<c>Game_LoadFromSlot</c>): nothing of the mission is brought up
+/// again.
 /// </summary>
 /// <remarks>
-/// A level played on is not the level a save was made of: its dead are gone from the walk, its spawned guards are extra, its broken
-/// things are broken. So a load does not read onto the level that is up, as I.G.I. 2's does; it asks the host for the mission
-/// again, as I.G.I. 2's menus do (<c>Game_nMenuLoadFromSlot</c>), and the save is read once that level is made.
+/// A level played on is not the level a save was made of -- its dead lie where they fell, its minds are in their fights, its
+/// player may be dead -- so the level is first made ready (<see cref="Igi1Gameplay.MakeReadyForSave"/>), and each part a save
+/// keeps then reads itself back whatever became of it. Should a save not read, the mission is brought up afresh with it, as
+/// I.G.I. 2's menus do (<c>Game_nMenuLoadFromSlot</c>), rather than a level be left half read.
 /// </remarks>
 public sealed class Igi1MissionSaves : MissionSaves
 {
     private readonly SaveSession _session;
     private readonly MissionWorld _world;
     private readonly IMissionSetupHost _host;
+    private readonly Level _level;
+    private bool _restarted;
 
     /// <summary>Initializes a new instance of the <see cref="Igi1MissionSaves"/> class.</summary>
     /// <param name="world">The played mission.</param>
     /// <param name="session">What is kept of the save games across a restart.</param>
     /// <param name="host">What restarts the mission, and says whose saves these are.</param>
-    public Igi1MissionSaves(MissionWorld world, SaveSession session, IMissionSetupHost host)
+    /// <param name="makeReady">Makes the level that is up ready for a save to be read onto it, or <see langword="null"/>.</param>
+    public Igi1MissionSaves(MissionWorld world, SaveSession session, IMissionSetupHost host, Action? makeReady = null)
+        : this(world, session, host, new Level(world, makeReady))
+    {
+    }
+
+    private Igi1MissionSaves(MissionWorld world, SaveSession session, IMissionSetupHost host, Level level)
         : base(
             Igi1SaveFormat.Slots(),
             () => new SaveOwner(host.ActiveProfileIndex, (int)host.Difficulty, world.MissionId),
-            new Level(world))
+            level)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _world = world;
         _host = host ?? throw new ArgumentNullException(nameof(host));
+        _level = level;
         PlayedMods = host.PlayedMods;
     }
 
     /// <inheritdoc/>
-    public override bool LoadRestartsMission => true;
+    /// <remarks>Only when the last load could not be read onto the level that was up.</remarks>
+    public override bool LoadRestartsMission => _restarted;
 
     /// <inheritdoc/>
     /// <remarks>Not with the player dead, a cut-scene playing, or the level's menus switched off for one.</remarks>
     public override bool CanSave => !_world.IsPlayerDead && _world.Cutscenes?.IsPlaying != true && _world.MenusEnabled;
 
     /// <inheritdoc/>
-    /// <remarks>The slot is kept for the level the restart makes; nothing of the level that is up is touched.</remarks>
+    /// <remarks>
+    /// Onto the level that is up. A save that checks but does not read leaves the level made ready and unread: the mission is
+    /// then brought up afresh, and the slot kept for the level that makes.
+    /// </remarks>
     public override bool Load(int slot)
     {
-        if (!SlotStore.Check(Owner, slot).IsValid)
+        _restarted = false;
+        if (!SlotStore.Check(Owner, slot).IsValid || _world.LevelRoot is null)
         {
             return false;
         }
 
+        if (base.Load(slot))
+        {
+            _host.SaveReadOntoLevel();
+            return true;
+        }
+
+        _restarted = true;
         _session.PendingLoadSlot = slot;
         _host.RestartMission();
         return true;
@@ -169,11 +195,38 @@ public sealed class Igi1MissionSaves : MissionSaves
 
     /// <summary>Reads the slot a load asked for onto the level just made, if one was asked for.</summary>
     /// <returns><see langword="true"/> when a save was read.</returns>
-    public bool ApplyPending() => _session.TakePendingLoadSlot() is var slot and >= 0 && base.Load(slot);
+    public bool ApplyPending()
+    {
+        if (_session.TakePendingLoadSlot() is not (var slot and >= 0))
+        {
+            return false;
+        }
+
+        // A level just made is as a save expects it: nothing of it is made ready.
+        _level.IsFresh = true;
+        try
+        {
+            return base.Load(slot);
+        }
+        finally
+        {
+            _level.IsFresh = false;
+        }
+    }
 
     // The played mission as the shared save games ask of it.
-    private sealed class Level(MissionWorld world) : IMissionSaveSource
+    private sealed class Level(MissionWorld world, Action? makeReady) : IMissionSaveSource
     {
+        public bool IsFresh { get; set; }
+
+        public void BeforeLoad()
+        {
+            if (!IsFresh)
+            {
+                makeReady?.Invoke();
+            }
+        }
+
         public GameTask Root => world.LevelRoot ?? throw new InvalidOperationException("No level is up to save.");
 
         public int MissionTime => (int)world.PlayerTicks;

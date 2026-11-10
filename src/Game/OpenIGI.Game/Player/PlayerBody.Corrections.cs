@@ -71,4 +71,18 @@ public sealed partial class PlayerBody
         InheritedVelocity = default;
         IsGrounded = true;
     }
+
+    /// <summary>
+    /// Brings the body to rest, standing: its fall stopped (<see cref="StopStrayFall"/>), and the knock of the rounds that hit
+    /// it and the slide of the slope it stood on gone, as the events that zero all six velocity words leave it
+    /// (<c>0x40BE40</c>, <c>0x4113E0</c>). For a body a save game puts somewhere else: what moved it where it was does not
+    /// move it there.
+    /// </summary>
+    public void ComeToRest()
+    {
+        StopStrayFall();
+        HitShove = default;
+        SlopeSlide = default;
+        _previousStep = default;
+    }
 }

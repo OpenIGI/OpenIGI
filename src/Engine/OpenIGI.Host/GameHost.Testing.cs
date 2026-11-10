@@ -15,6 +15,9 @@ public sealed partial class GameHost
     /// <summary>Gets the played mission's registries, which the host keeps together.</summary>
     internal MissionState MissionForTesting => _mission;
 
+    /// <summary>Gets the save games of the mission that is up, for a test.</summary>
+    internal OpenIGI.Game.Player.ITitleSaveGames? SaveGamesForTesting => MissionSaveGames;
+
     /// <summary>Gets the soldiers' bodies the title brought up, or <see langword="null"/> before a mission has them.</summary>
     internal ISoldierBodies? SoldiersForTesting => _soldiers;
 

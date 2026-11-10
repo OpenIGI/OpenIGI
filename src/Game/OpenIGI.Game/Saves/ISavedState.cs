@@ -160,6 +160,14 @@ public sealed class SaveContext
     /// <summary>Gets the title's own statements.</summary>
     public IReadOnlyList<ISaveSection> Sections { get; init; } = [];
 
+    /// <summary>
+    /// Gets the id the level's root is written under when it has none of its own, or <see langword="null"/> to give it none,
+    /// as I.G.I. 2's format does. A task without an id is kept against its nearest ancestor that has one; with this, one that
+    /// has no such ancestor -- a box of rounds in an unnumbered container at the top of a Project I.G.I. level -- is kept
+    /// against the root rather than not at all.
+    /// </summary>
+    public int? RootId { get; init; }
+
     /// <summary>A header this game writes: this version, valid.</summary>
     /// <param name="missionId">The mission.</param>
     /// <param name="ticks">The level's tick.</param>

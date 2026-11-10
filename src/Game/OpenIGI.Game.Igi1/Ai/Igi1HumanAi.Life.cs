@@ -56,6 +56,21 @@ public sealed partial class Igi1HumanAi
         }
     }
 
+    /// <summary>
+    /// Lets go of everything the level holds for this mind -- its place among its target's attackers, the gun it sits at, the
+    /// alarm panel's claim handles and its node cell -- as the deletion of its task does (<c>0x4015F0</c>), for a mind that is
+    /// replaced while its soldier still lives.
+    /// </summary>
+    internal void Retire()
+    {
+        _gunnerCombat?.End();
+        SetTarget(null);
+        _pendingActions.Clear();
+        ReleaseActivateClaims();
+        _occupancy?.Release(this);
+        _occupancy?.ReleaseDead(this);
+    }
+
     /// <summary>Creates the fresh HumanAI instance installed by a GuardGenerator respawn.</summary>
     /// <param name="position">The authored soldier spawn position.</param>
     /// <param name="facing">The authored soldier heading.</param>

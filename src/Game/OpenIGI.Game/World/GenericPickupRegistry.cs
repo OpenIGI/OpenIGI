@@ -129,6 +129,9 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
     /// <summary>Gets or sets a value indicating whether a taken ammunition pickup keeps its task, as <see cref="GunPickupRegistry.KeepsTakenTasks"/>.</summary>
     public bool KeepsTakenTasks { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether a taken ammunition pickup is withdrawn rather than deleted, as <see cref="GunPickupRegistry.WithdrawsTakenTasks"/>.</summary>
+    public bool WithdrawsTakenTasks { get; set; }
+
     // Which were taken as the match began.
     private bool[] _startCollected = [];
     private bool _levelCleared;
@@ -200,7 +203,13 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
         {
             if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
             {
-                TakenPickupTask.BindUpdate(walker, pickup.Task, () => pickup.IsCollected && !KeepsTakenTasks, _variables);
+                TakenPickupTask.BindUpdate(
+                    walker,
+                    pickup.Task,
+                    () => pickup.IsCollected && !KeepsTakenTasks,
+                    () => WithdrawsTakenTasks,
+                    _variables,
+                    _variables is { } variables ? () => Export(variables, pickup) : null);
             }
         }
     }
@@ -208,6 +217,9 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
     /// <summary>Returns whether a world placement's owner has already been removed by pickup.</summary>
     public bool IsCollected(GameTask owner) =>
         owner is not null && _byTask.TryGetValue(owner, out GenericPickup? pickup) && pickup.IsCollected;
+
+    private static void Export(ScriptVarRegistry variables, GenericPickup pickup) =>
+        TakenPickupTask.Export(variables, pickup.Task, () => pickup.IsCollected, value => pickup.IsCollected = value);
 
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
@@ -229,7 +241,7 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
             GenericPickup pickup = new(declared, position, orientation, modelName);
             _items.Add(pickup);
             _byTask.Add(declared, pickup);
-            TakenPickupTask.Export(variables, declared, () => pickup.IsCollected, value => pickup.IsCollected = value);
+            Export(variables, pickup);
         }
 
         foreach (GameTask child in task.Children)

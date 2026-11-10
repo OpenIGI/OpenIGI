@@ -291,6 +291,12 @@ public sealed class GunPickupRegistry : ILevelReset
     /// </summary>
     public bool KeepsTakenTasks { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether a taken pickup is withdrawn rather than deleted: for a level whose save games
+    /// may put it back. See <see cref="TakenPickupTask"/>.
+    /// </summary>
+    public bool WithdrawsTakenTasks { get; set; }
+
     private GunPickupRegistry(AmmoTypeRegistry ammunition) => _ammunition = ammunition;
 
     /// <summary>Gets every resolved pickup, including consumed ones for diagnostics.</summary>
@@ -323,13 +329,16 @@ public sealed class GunPickupRegistry : ILevelReset
             {
                 if (pickup.Task is { } task)
                 {
-                    TakenPickupTask.Export(variables, task, () => pickup.IsCollected, value => pickup.IsCollected = value);
+                    Export(variables, pickup, task);
                 }
             }
         }
 
         return registry;
     }
+
+    private static void Export(ScriptVarRegistry variables, GunPickup pickup, GameTask task) =>
+        TakenPickupTask.Export(variables, task, () => pickup.IsCollected, value => pickup.IsCollected = value);
 
     /// <summary>
     /// Gets or sets whether the pickups are a co-op client's, taken when the server says who took them rather than by whoever
@@ -415,7 +424,13 @@ public sealed class GunPickupRegistry : ILevelReset
         {
             if (pickup.Task is { } task)
             {
-                TakenPickupTask.BindUpdate(walker, task, () => pickup.IsCollected && !KeepsTakenTasks, _variables);
+                TakenPickupTask.BindUpdate(
+                    walker,
+                    task,
+                    () => pickup.IsCollected && !KeepsTakenTasks,
+                    () => WithdrawsTakenTasks,
+                    _variables,
+                    _variables is { } variables ? () => Export(variables, pickup, task) : null);
             }
         }
     }
@@ -425,7 +440,7 @@ public sealed class GunPickupRegistry : ILevelReset
     private void Take(GunPickup pickup)
     {
         pickup.IsCollected = true;
-        if (!_inWalk && !KeepsTakenTasks && pickup.Task is { } task)
+        if (!_inWalk && !KeepsTakenTasks && !WithdrawsTakenTasks && pickup.Task is { } task)
         {
             TakenPickupTask.Delete(task, _variables);
         }
@@ -530,6 +545,25 @@ public sealed class GunPickupRegistry : ILevelReset
                     {
                         Take(pickup);
                     }
+                    else if (!taken)
+                    {
+                        // Taken since the save was made: it lies there again.
+                        pickup.IsCollected = false;
+                    }
+                }
+            }
+
+            // The guns dropped since the level came up go before the save's own are made again, as I.G.I. 2's load deletes
+            // every dropped gun first.
+            if (exchange.IsReading)
+            {
+                for (int i = _items.Count - 1; i >= 0; i--)
+                {
+                    if (_items[i] is { Task: null } loose)
+                    {
+                        _items.RemoveAt(i);
+                        Removed?.Invoke(loose);
+                    }
                 }
             }
 
@@ -553,7 +587,7 @@ public sealed class GunPickupRegistry : ILevelReset
     /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>
     public event Action<GunPickup>? Spawned;
 
-    /// <summary>Raised as a dropped gun leaves the level for good: a round put the level back without it.</summary>
+    /// <summary>Raised as a dropped gun leaves the level for good: a round, or a save game read, put the level back without it.</summary>
     public event Action<GunPickup>? Removed;
 
     // The guns there were as the match began; every other was dropped since.

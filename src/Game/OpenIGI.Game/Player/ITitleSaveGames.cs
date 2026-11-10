@@ -28,8 +28,9 @@ public interface ITitleSaveGames
     float BatteryLevel => SavesLeft == 0 ? 0f : 1f;
 
     /// <summary>
-    /// Gets a value indicating whether a load starts the mission afresh and reads the save onto the new level, rather than onto the
-    /// level that is up: the host then shows the mission coming up, and the menu has nothing to resume.
+    /// Gets a value indicating whether the last load started the mission afresh to read the save onto the new level, rather than
+    /// onto the level that is up: the host then shows the mission coming up, and the menu has nothing to resume. Both games
+    /// read a save onto the level that is up, as I.G.I. 2 does; a mission is brought up again only for a save that would not read.
     /// </summary>
     bool LoadRestartsMission => false;
 

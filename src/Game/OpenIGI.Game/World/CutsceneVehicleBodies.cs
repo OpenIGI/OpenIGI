@@ -606,6 +606,7 @@ internal sealed class CutsceneVehicleBodies(
         float channel1,
         float channel3)
     {
+        transform.TakeSavedBodyMotion();
         SnapshotDynamicPose(transform, simulationOrder);
         if (transform.RetailBody is { } retailBody && _retailCarWorld is { } retailWorld)
         {

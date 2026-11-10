@@ -41,11 +41,80 @@ internal sealed class CutsceneTransformState(Vector3d position, Matrix3f orienta
         RotorPhaseTick = exchange.Int(RotorPhaseTick);
         AngularMomentum = exchange.Vector(AngularMomentum);
         PhysicsTicks = exchange.Int(PhysicsTicks);
+
+        // The rigid body a car, a helicopter or a plane runs on, when it has one: the pose above is only what the body last
+        // published, and the body publishes its own again at its next step. So the body's motion is kept too, and the body
+        // is put back to it: at once when it has its body, else before the first step of the body it is given.
+        RetailRigidBody.Motion? kept = SavedBodyMotion ?? Body?.CurrentMotion;
+        bool hasBody = exchange.Bool(kept is not null);
+        RetailRigidBody.Motion motion = kept ?? default;
+        motion = new RetailRigidBody.Motion(
+            exchange.Position(motion.Position),
+            exchange.Frame(hasBody ? motion.Orientation : Matrix3f.Identity),
+            exchange.Vector(motion.Velocity),
+            exchange.Vector(motion.Momentum),
+            exchange.Vector(motion.Spin));
         if (exchange.IsReading)
         {
             DynamicRevision++;
-            RetailResetPending = RetailBody is not null;
+            SavedBodyMotion = hasBody ? motion : null;
+            if (!hasBody)
+            {
+                // Kept before the vehicle first moved: the body it was given since goes, and its controller's set-up packet
+                // makes it again where the level placed it.
+                RetailBody = null;
+                RetailHeli = null;
+                RetailPlane = null;
+            }
+
+            TakeSavedBodyMotion();
         }
+    }
+
+    /// <summary>Gets the rigid body the vehicle runs on, whichever kind it is, or <see langword="null"/> before it has one.</summary>
+    public RetailRigidBody? Body => (RetailRigidBody?)RetailBody ?? (RetailRigidBody?)RetailHeli ?? RetailPlane;
+
+    /// <summary>
+    /// Gets or sets how a save game kept the vehicle's rigid body moving, while the vehicle has no body yet to put back to it;
+    /// <see langword="null"/> otherwise.
+    /// </summary>
+    public RetailRigidBody.Motion? SavedBodyMotion { get; set; }
+
+    /// <summary>
+    /// Puts the vehicle's rigid body back as a save game kept it, if one was read and is still waiting, with the controls the
+    /// save kept beside it. Before the body's step, so the step runs on from the save; the pose the vehicle publishes is the
+    /// one the save kept, read beside it.
+    /// </summary>
+    /// <returns><see langword="true"/> when the body was put back.</returns>
+    public bool TakeSavedBodyMotion()
+    {
+        if (SavedBodyMotion is not { } motion || Body is not { } body)
+        {
+            return false;
+        }
+
+        SavedBodyMotion = null;
+        body.RestoreMotion(motion);
+        switch (body)
+        {
+            case RetailCarBody car:
+                car.Steering = Steering;
+                car.SteeringTarget = TargetSteering;
+                car.Throttle = Thrust;
+                car.ThrottleTarget = TargetThrust;
+                car.Handbrake = ParkingBrake;
+                break;
+            case RetailHeliBody heli:
+                heli.Collective = Thrust;
+                heli.CollectiveTarget = TargetThrust;
+                break;
+            case RetailPlaneBody plane:
+                plane.Thrust = Thrust;
+                plane.ThrustTarget = TargetThrust;
+                break;
+        }
+
+        return true;
     }
 
     public Vector3d Position { get; set; } = position;

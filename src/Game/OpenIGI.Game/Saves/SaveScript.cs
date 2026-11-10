@@ -54,7 +54,7 @@ public static partial class SaveScript
 
         StringBuilder text = new();
         text.Append(Header(info));
-        Writer writer = new(context.States, Ids(LevelRoot(root)), text);
+        Writer writer = new(context.States, Ids(LevelRoot(root), context), text);
         writer.Serialize(root);
         foreach (ISaveSection section in context.Sections)
         {
@@ -83,7 +83,7 @@ public static partial class SaveScript
             return null;
         }
 
-        Dictionary<GameTask, int> ids = Ids(LevelRoot(owner));
+        Dictionary<GameTask, int> ids = Ids(LevelRoot(owner), context);
         if (!ids.ContainsKey(owner))
         {
             return null;
@@ -123,9 +123,14 @@ public static partial class SaveScript
         string.Create(CultureInfo.InvariantCulture, $"{SaveGameInfo}({info.Version}, {info.MissionId}, {info.Ticks});\r\n{BreakScript}();\r\n");
 
     // Level_atLevelQTaskID: the tasks that have a level id, under the level's root.
-    private static Dictionary<GameTask, int> Ids(GameTask root)
+    private static Dictionary<GameTask, int> Ids(GameTask root, SaveContext context)
     {
         Dictionary<GameTask, int> ids = new(ReferenceEqualityComparer.Instance);
+        if (root.Id == GameTask.NoId && context.RootId is { } rootId)
+        {
+            ids.Add(root, rootId);
+        }
+
         foreach (GameTask task in root.Descendants().Prepend(root))
         {
             if (task.Id != GameTask.NoId)

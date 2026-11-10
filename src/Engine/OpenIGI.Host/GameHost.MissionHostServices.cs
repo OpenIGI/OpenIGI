@@ -201,6 +201,8 @@ public sealed partial class GameHost
 
         public void RestartMission() => host._restartMission?.Invoke();
 
+        public void SaveReadOntoLevel() => host.SaveReadOntoLevel();
+
         public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
         {
         if (name == GameMusicNatives.EnableNative)

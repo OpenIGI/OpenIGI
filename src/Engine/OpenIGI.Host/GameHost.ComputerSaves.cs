@@ -26,6 +26,22 @@ public sealed partial class GameHost
     /// </remarks>
     private IComputerSaves? ComputerSaves => MissionSaveGames is null ? null : _computerSaves ??= new HostComputerSaves(this);
 
+    /// <summary>
+    /// A save game was read onto the level that is up: the mission is no longer failed, if it had been, and plays on from the
+    /// save.
+    /// </summary>
+    private void SaveReadOntoLevel()
+    {
+        // The failed page, if the mission stood failed, is put away as its own resume does: the level plays on behind it.
+        if (_session.FailedMenu)
+        {
+            _resumeMission?.Invoke();
+        }
+
+        _session.FailedMenu = false;
+        _session.ClearFailure();
+    }
+
     /// <summary>Does what the computer's save page asked for since the last frame: the load, then the save.</summary>
     private void RunComputerSaves()
     {

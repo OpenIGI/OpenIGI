@@ -171,7 +171,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         _armoury = new SoldierArmoury(_groups, _sim, _meshes, _logger);
         _drawer = new SoldierWeaponDrawer(_groups, _device, _armoury, _frames, () => Textures, _logger);
         _playerBody = new PlayerBodyRenderer(this, _device, _sim, _logger);
-        _sim.SpawnedBody = (generator, roster, fresh, dead) =>
+        _sim.SpawnedBody = (asker, roster, fresh, dead) =>
         {
             SoldierGroup group = _groups.First(candidate => ReferenceEquals(candidate.Roster, roster));
             SoldierMember member;
@@ -181,7 +181,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
             {
-                _logger.Warning(LogCategory, $"{generator.Name} could not upload its cloned Human: {ex.Message}");
+                _logger.Warning(LogCategory, $"{asker} could not upload its cloned Human: {ex.Message}");
                 return false;
             }
 

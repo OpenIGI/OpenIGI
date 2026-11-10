@@ -142,6 +142,14 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         LetGoOfGun.Clear();
     }
 
+    /// <summary>Forgets what is held of soldiers that a save game's load makes afresh: that, and each one's recoil and quiet after a hit.</summary>
+    public void ClearForLoad()
+    {
+        ClearForLevel();
+        _recoil.Clear();
+        _hitQuietUntil.Clear();
+    }
+
     /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
     /// <remarks>
     /// <para>

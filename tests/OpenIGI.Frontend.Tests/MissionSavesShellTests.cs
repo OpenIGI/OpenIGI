@@ -84,9 +84,48 @@ public sealed class MissionSavesShellTests : ShellTestHarness
         }
     }
 
+    /// <summary>
+    /// A failed mission offers its newest save beside its restart, as I.G.I. 2's menu does: it is read onto the level that is
+    /// up, which plays on.
+    /// </summary>
+    [Fact]
+    public void The_failed_page_loads_the_last_save_and_plays_on()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Saves saves = new([new TitleSaveSlot(0, true, "0:12:00")]);
+            host.MissionSaves = saves;
+            Pump(shell, 0.1f);
+            shell.OpenMissionFailed();
+            Pump(shell, 0.6f);
+            Find<Button>(shell.Stack.Top!, static b => b.Text == "LOAD LAST SAVE")!.Activate();
+            Pump(shell, 0.1f);
+
+            Assert.Equal(1, saves.QuickLoads);
+            Assert.Equal(1, host.ResumeCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
     private sealed class Saves(IReadOnlyList<TitleSaveSlot> slots) : ITitleSaveGames
     {
         public int Loads { get; private set; }
+
+        public int QuickLoads { get; private set; }
+
+        public bool QuickLoad()
+        {
+            QuickLoads++;
+            return true;
+        }
 
         public bool Restarts { get; init; }
 

@@ -141,6 +141,10 @@ public sealed class AnimDataProgram
         Tick = 0;
     }
 
+    /// <summary>Puts the tick counter back as a save game kept it; the channels, which hold the program counter and the delay, are written back beside it.</summary>
+    /// <param name="tick">The tick the programme had been advanced to, <c>-1</c> for one that had not run.</param>
+    public void RestoreTick(int tick) => Tick = tick;
+
     /// <summary>Moves the tick counter on once a step's packet has gone out.</summary>
     /// <remarks>
     /// <c>0x4F3EF0</c> calls the step <c>0x4F3F60</c>, whose packet (<c>0x4F4060</c>) carries the counter

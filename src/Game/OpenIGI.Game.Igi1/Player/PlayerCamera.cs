@@ -457,6 +457,30 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
         _body.Pitch = pitch;
     }
 
+    /// <summary>
+    /// Stands the body where a save game has it, out of whatever it was in the middle of on the level the save is read onto: off
+    /// its ladder, away from the lock, the terminal or the gun it was at, its sights and binoculars down. <b>Not retail</b>,
+    /// which kept no save games.
+    /// </summary>
+    /// <param name="feet">Where its feet go, in world units.</param>
+    /// <param name="yaw">Its facing.</param>
+    /// <param name="pitch">How far above level it looks, in radians.</param>
+    public void StandAfresh(Vector3d feet, float yaw, float pitch)
+    {
+        _ladder.Release();
+        if (_interaction.Active is not null)
+        {
+            _interaction.End(completed: false, terrain: null);
+        }
+
+        ResetOptics();
+        _shots.Missiles.Clear();
+        _shots.M203.Clear();
+        _shots.Marks.Clear();
+        _body.ComeToRest();
+        StandAt(feet, yaw, pitch);
+    }
+
     /// <inheritdoc cref="PlayerFirstPersonView.LookSettings"/>
     public MouseLookSettings LookSettings
     {
