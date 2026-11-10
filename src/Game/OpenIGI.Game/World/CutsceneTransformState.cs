@@ -4,8 +4,50 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>The live pose and vehicle state of one task a cutscene moves, attaches to or targets.</summary>
-internal sealed class CutsceneTransformState(Vector3d position, Matrix3f orientation)
+internal sealed class CutsceneTransformState(Vector3d position, Matrix3f orientation) : Saves.IExchangedState
 {
+    // Not retail: Project I.G.I. kept no save games. Where it is and how it is turned, how it is moving and what drives it; a
+    // vehicle's physics body is set down again from these on its next tick.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Position = exchange.Position(Position);
+        PreviousPosition = exchange.Position(PreviousPosition);
+        Orientation = exchange.Frame(Orientation);
+        PreviousOrientation = exchange.Frame(PreviousOrientation);
+        Euler = exchange.Vector(Euler);
+        Speed = exchange.Real(Speed);
+        IsDynamic = exchange.Bool(IsDynamic);
+        TrackPosition = exchange.Real(TrackPosition);
+        PreviousTrackPosition = exchange.Real(PreviousTrackPosition);
+        Thrust = exchange.Real(Thrust);
+        TargetThrust = exchange.Real(TargetThrust);
+        OriginalThrust = exchange.Real(OriginalThrust);
+        ThrustStep = exchange.Real(ThrustStep);
+        MaxSpeed = exchange.Real(MaxSpeed);
+        Control = exchange.Vector(Control);
+        Steering = exchange.Real(Steering);
+        TargetSteering = exchange.Real(TargetSteering);
+        ParkingBrake = exchange.Bool(ParkingBrake);
+        VehicleGateReleased = exchange.Bool(VehicleGateReleased);
+        Heading = exchange.Real(Heading);
+        Velocity = exchange.Position(Velocity);
+        GroundContact = exchange.Bool(GroundContact);
+        CollisionEnabled = exchange.Bool(CollisionEnabled);
+        TerminalLandingOnTerrain = exchange.Bool(TerminalLandingOnTerrain);
+        TerminalLandingLatched = exchange.Bool(TerminalLandingLatched);
+        TerminalLandingTarget = exchange.Position(TerminalLandingTarget);
+        TerminalLandingPosition = exchange.Position(TerminalLandingPosition);
+        RotorPhase = exchange.Real(RotorPhase);
+        RotorPhaseTick = exchange.Int(RotorPhaseTick);
+        AngularMomentum = exchange.Vector(AngularMomentum);
+        PhysicsTicks = exchange.Int(PhysicsTicks);
+        if (exchange.IsReading)
+        {
+            DynamicRevision++;
+            RetailResetPending = RetailBody is not null;
+        }
+    }
+
     public Vector3d Position { get; set; } = position;
     public Vector3d PreviousPosition { get; set; } = position;
     public Vector3d OriginPosition { get; } = position;

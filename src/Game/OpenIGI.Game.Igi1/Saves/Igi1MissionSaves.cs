@@ -74,7 +74,7 @@ public sealed class Igi1SaveStates : ISaveStates
         return new object?[]
         {
             world.Elevators, world.Doors, world.Interactions, world.GenericPickups, world.AlarmSpeakers, world.Destructibles,
-            world.SecurityCameras, world.RotatingObjects, world.Objectives, world.Soldiers,
+            world.SecurityCameras, world.RotatingObjects, world.Objectives, world.Cutscenes, world.Soldiers,
         }.OfType<ISavedStateSource>();
     }
 
@@ -85,9 +85,15 @@ public sealed class Igi1SaveStates : ISaveStates
     {
         ArgumentNullException.ThrowIfNull(world);
         yield return Igi1PlayerSave.Section(world);
+        yield return Igi1LevelSave.Section(world);
         if (world.Objectives is { } objectives)
         {
             yield return objectives.SaveSection;
+        }
+
+        if (world.Cutscenes is { } walk)
+        {
+            yield return walk.SaveSection;
         }
 
         if (world.GunPickups is { } guns)

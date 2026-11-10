@@ -43,6 +43,69 @@ public sealed class Igi1SaveGameTests : IDisposable
         static string[] Lines(string script) => script.Split('\n', StringSplitOptions.RemoveEmptyEntries);
     }
 
+    /// <summary>
+    /// A diagnostic, not a check: mission 1 played ten seconds and saved, played ten more and saved again; the first save read
+    /// onto a fresh level, played the same ten and saved. Where the two later saves differ is state a save does not yet keep, or
+    /// that its mind starting afresh changes. Runs only when <c>SAVE_DUMP</c> names where to write the two.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void Diagnostic_how_far_a_loaded_level_drifts_from_the_one_played_on()
+    {
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is not { Length: > 0 } dump)
+        {
+            return;
+        }
+
+        (string first, string later) = Played(read: null);
+        (_, string loadedLater) = Played(read: first);
+        File.WriteAllText(dump + ".later", later);
+        File.WriteAllText(dump + ".loaded", loadedLater);
+    }
+
+    // Mission 1 played ten seconds (or a save of that read onto it), saved, played ten more and saved again.
+    private (string First, string Later) Played(string? read)
+    {
+        using RecordingGraphicsDevice device = new();
+        GameHost host = _support.Host(device, "-mission", "1", "-skipcutscene", "-lockstep", "-frames", "1000000");
+        host.Start();
+        for (int i = 0; i < 20_000 && (host.Player() is null || host.Soldiers() is null); i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        MissionWorld world = host.Mission();
+        if (read is null)
+        {
+            Run(host, 300);
+        }
+        else
+        {
+            Assert.True(SaveScript.Load(read, world.LevelRoot!, Igi1SaveFormat.Context(world)).IsValid);
+        }
+
+        SaveContext context = Igi1SaveFormat.Context(world);
+        string first = SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!;
+        Run(host, 300);
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } dump)
+        {
+            File.WriteAllLines(
+                dump + (read is null ? ".minds-played" : ".minds-loaded"),
+                host.Soldiers()!.Simulation.BrainPairsForTesting.Select(static p => $"{p.Key.Soldier.Id} {p.Value.DescribeTick()}"));
+        }
+
+        context = Igi1SaveFormat.Context(world);
+        return (first, SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!);
+
+        static void Run(GameHost host, int ticks)
+        {
+            long from = host.Soldiers()!.Simulation.TickCount;
+            for (int i = 0; i < 200_000 && host.Soldiers()!.Simulation.TickCount < from + ticks; i++)
+            {
+                Assert.True(host.Step());
+            }
+        }
+    }
+
     // Mission 1 brought up and played a while, and saved; then a save read onto it, if one is given, and saved again.
     private (string Before, string After) Saved(int ticksPlayed, string? read)
     {

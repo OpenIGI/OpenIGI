@@ -269,3 +269,13 @@ public sealed class SavedStateThen(ISavedState state, Action done) : ISavedState
         done();
     }
 }
+
+/// <summary>A state whose fields are passed through by a function, for one that is no class of its own.</summary>
+/// <param name="exchange">Passes the fields through, in an order that never changes.</param>
+public sealed class ExchangedState(Action<StateExchange> exchange) : IExchangedState
+{
+    private readonly Action<StateExchange> _exchange = exchange ?? throw new ArgumentNullException(nameof(exchange));
+
+    /// <inheritdoc/>
+    public void Exchange(StateExchange exchange) => _exchange(exchange);
+}

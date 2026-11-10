@@ -63,6 +63,22 @@ public sealed class RetailWorldObjects : ILevelReset
         }
     }
 
+    /// <summary>Passes through a save which panes of glass are broken, in the order they were placed. Not retail.</summary>
+    /// <param name="exchange">The exchange.</param>
+    public void ExchangeGlass(Saves.StateExchange exchange)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+        RetailGlassPane[] panes = [.. _objects.OfType<RetailRayModel>().Select(static m => m.Owner).OfType<RetailGlassPane>()];
+        bool[] broken = exchange.Run([.. panes.Select(static p => p.IsBroken)], static (e, b) => e.Bool(b));
+        if (exchange.IsReading)
+        {
+            for (int i = 0; i < panes.Length && i < broken.Length; i++)
+            {
+                panes[i].IsBroken = broken[i];
+            }
+        }
+    }
+
     /// <summary>Gets how many spline segments were skipped because they are laid rigid (path B, not transcribed).</summary>
     public int SkippedRigidSegments { get; private set; }
 

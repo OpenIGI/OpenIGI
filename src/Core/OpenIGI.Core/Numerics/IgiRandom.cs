@@ -81,6 +81,9 @@ public sealed class IgiRandom
         _c = c;
     }
 
+    /// <summary>Gets the generator's three words as they stand, which <see cref="Seed(uint, uint, uint)"/> puts back: a stream kept and taken up again draws on as it would have.</summary>
+    public (uint A, uint B, uint C) State => (_a, _b, _c);
+
     /// <summary>Mixes a seed into the words, as <c>0x4B47E0</c> does: <c>a ^= s, b += s &lt;&lt; 15, c -= s &lt;&lt; 9</c>.</summary>
     /// <param name="seed">The seed.</param>
     public void Mix(uint seed)
