@@ -51,6 +51,19 @@ internal static class Igi1PlayerSave
             static (e, ammo) => (e.Int(ammo.Ammo), e.Int(ammo.Count)));
         // The weapon in its hands, or the one it is reaching for.
         int inHand = exchange.Int(weapons?.WantedWeaponId ?? -1);
+
+        // What it has thrown and laid: its grenades with their fuses running, and its mines. A rocket or a launcher's round in
+        // flight is over in a moment and is not kept.
+        if (rig is not null)
+        {
+            rig.Grenades.Exchange(exchange);
+        }
+        else
+        {
+            exchange.Int(0);
+            exchange.Int(0);
+        }
+
         if (!exchange.IsReading || rig is null)
         {
             return;

@@ -148,6 +148,10 @@ public sealed class Igi1SaveGameTests : IDisposable
             {
                 weapons.Carried[0].Gun.State.RoundsInClip = 3;
             }
+
+            // And a mine laid at its feet and a grenade lying beside it, its fuse running.
+            rig.Grenades.Lay(new OpenIGI.Game.Weapons.PlacedMine(rig.PositionUnits, OpenIGI.Core.Numerics.Matrix3f.Identity, string.Empty));
+            Assert.True(rig.Grenades.SpawnWithVelocity(rig.PositionUnits, default, default, fuseTicks: 9000));
         }
 
         SaveContext context = Igi1SaveFormat.Context(world);
@@ -162,6 +166,8 @@ public sealed class Igi1SaveGameTests : IDisposable
         Assert.Empty(misread);
         context = Igi1SaveFormat.Context(world);
         Assert.Contains(host.Soldiers()!.Simulation.SoldierViews, static v => v.IsDead);
+        Assert.Single(host.Player()!.Grenades.Mines);
+        Assert.Single(host.Player()!.Grenades.Grenades);
         string after = SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!;
 
         // And the level read back plays on: its soldiers' minds start afresh from where they stood, its dead stay dead.

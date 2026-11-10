@@ -617,6 +617,65 @@ public sealed class GrenadeSimulation
         }
     }
 
+    /// <summary>
+    /// Passes through a save the grenades in flight or lying with their fuses running, and the mines laid. Not retail for
+    /// Project I.G.I., which kept no save games. Read back, each is made as a throw or a laying makes it, without its sound.
+    /// </summary>
+    /// <param name="exchange">The exchange.</param>
+    public void Exchange(Saves.StateExchange exchange)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+        if (exchange.IsReading)
+        {
+            Clear();
+        }
+
+        LiveGrenade[] flying = [.. _grenades];
+        int count = exchange.Int(flying.Length);
+        for (int i = 0; i < count; i++)
+        {
+            LiveGrenade? was = i < flying.Length ? flying[i] : null;
+            Vector3d position = exchange.Position(was?.Position ?? default);
+            Vector3f velocity = exchange.Vector(was?.Velocity ?? default);
+            GrenadeExplosionType type = (GrenadeExplosionType)exchange.Int((int)(was?.Type ?? default));
+            int fuse = exchange.Int(was?.FuseTicks ?? 0);
+            float radius = exchange.Real((was?.RadiusUnits ?? 0f) / 4096f);
+            float falloff = exchange.Real((was?.FalloffUnits ?? 0f) / 4096f);
+            float damage = exchange.Real(was?.DamageFactor ?? 0f);
+            Matrix3f orientation = exchange.Frame(was?.Orientation ?? Matrix3f.Identity);
+            bool resting = exchange.Bool(was?.Resting ?? false);
+            bool contact = exchange.Bool(was?.SurfaceContact ?? false);
+            bool landed = exchange.Bool(was?.LandedPoseCaptured ?? false);
+            int tumble = exchange.Int(was?.TumbleTicks ?? 0);
+            bool sounded = exchange.Bool(was?.BounceSounded ?? false);
+            int sinceContact = exchange.Int(was?.TicksSinceContact ?? 0);
+            if (!exchange.IsReading || !SpawnWithVelocity(position, velocity, type, fuse, radius, falloff, damage, orientation))
+            {
+                continue;
+            }
+
+            // Its throw was heard when it was thrown.
+            _thrown.RemoveAt(_thrown.Count - 1);
+            LiveGrenade made = _grenades[^1];
+            made.Orientation = orientation;
+            made.Resting = resting;
+            made.SurfaceContact = contact;
+            made.LandedPoseCaptured = landed;
+            made.TumbleTicks = tumble;
+            made.BounceSounded = sounded;
+            made.TicksSinceContact = sinceContact;
+        }
+
+        PlacedMine[] laid = exchange.Run([.. _mines], PlacedMine.Exchange);
+        if (exchange.IsReading)
+        {
+            foreach (PlacedMine mine in laid)
+            {
+                Lay(mine);
+            }
+        }
+    }
+
     /// <summary>Removes every grenade, as changing level does.</summary>
     public void Clear()
     {

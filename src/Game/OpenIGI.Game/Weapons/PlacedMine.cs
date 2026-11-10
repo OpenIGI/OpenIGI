@@ -136,6 +136,37 @@ public sealed class PlacedMine
         }
     }
 
+    /// <summary>
+    /// Passes a laid mine through a save: what it was made with, then how far its fuse has run and the damage it has taken. Not
+    /// retail for Project I.G.I., which kept no save games; I.G.I. 2 keeps its mines so (<c>Mine_ptSerializeParameterList</c>).
+    /// </summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <param name="mine">The mine as it stands, or <see langword="null"/> for one a save holds and the level does not.</param>
+    /// <returns>The mine as it is to be: a new one while a save is read.</returns>
+    public static PlacedMine Exchange(Saves.StateExchange exchange, PlacedMine? mine)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+        Vector3d position = exchange.Position(mine?.Position ?? default);
+        Matrix3f orientation = exchange.Frame(mine?.Orientation ?? Matrix3f.Identity);
+        string model = exchange.Text(mine?.Model ?? string.Empty);
+        int armTicks = exchange.Int(mine?._fuse.ArmTicks ?? 0);
+        int countdownTicks = exchange.Int(mine?._fuse.CountdownTicks ?? 0);
+        float activateRadius = exchange.Real(mine?._fuse.ActivateRadiusMetres ?? DefaultActivateRadiusMetres);
+        float explosionRadius = exchange.Real((mine?.ExplosionRadiusUnits ?? (DefaultExplosionRadiusMetres * 4096f)) / 4096f);
+        bool remote = exchange.Bool(mine?.IsRemote ?? false);
+        float contactRadius = exchange.Real(mine?.ContactRadiusUnits ?? 0f);
+        Vector3f blastOffset = exchange.Vector(mine?.BlastPointOffset ?? default);
+        PlacedMine kept = exchange.IsReading || mine is null
+            ? new PlacedMine(
+                position, orientation, model, armTicks / 30f, countdownTicks / 30f, activateRadius, explosionRadius, remote, contactRadius, blastOffset)
+            : mine;
+        kept._fuse.Exchange(exchange);
+        kept._damage = exchange.Real(kept._damage);
+        kept._timer = exchange.Int(kept._timer);
+        kept._explodeFlag = exchange.Bool(kept._explodeFlag);
+        return kept;
+    }
+
     /// <summary>A human's place (<c>0x475DF0</c>), told by its run.</summary>
     /// <param name="origin">The human's origin.</param>
     /// <param name="radius">The human's radius.</param>
