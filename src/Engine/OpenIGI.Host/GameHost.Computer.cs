@@ -404,9 +404,9 @@ public sealed partial class GameHost
             _computerOpenedFrame = _loop.Clock.FrameCount;
         }
 
-        // The computer draws its own pointer; the platform's would be a second one over it.
+        // The computer draws its own pointer; the platform's would be a second one over it. Whether the mouse is locked
+        // away is the frame's to say, where the view's own lock is decided.
         _window.CursorVisible = false;
-        _window.CursorLocked = false;
         _computerWheel = 0;
     }
 

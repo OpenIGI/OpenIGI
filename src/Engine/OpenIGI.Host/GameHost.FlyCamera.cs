@@ -131,7 +131,12 @@ public sealed partial class GameHost
                 // The computer takes the pointer outright. Re-arming the look here is what stops
                 // closing it from throwing the view: dropping the lock restores the desktop pointer,
                 // and taking it back re-centres the backend's virtual one.
-                _window.CursorLocked = false;
+                //
+                // The original computer moves its own pointer by the mouse's counts alone, so the mouse stays locked
+                // away for it: a free desktop pointer stops at the edge of the screen and its counts stop with it, which
+                // left the computer's pointer stuck short of where it was going. The remastered computer reads where
+                // the desktop pointer is, and needs it free.
+                _window.CursorLocked = UsesMissionComputer && !OverlayHasPointer && !state.CaptureMode;
                 HostedPlayer?.ReleaseLook();
             }
             else if (_mission.Cutscenes?.IsPlaying == true)
