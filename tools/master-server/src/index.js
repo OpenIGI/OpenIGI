@@ -33,8 +33,28 @@ const MAX_ROOMS_PER_IP = 4;
 // The parties one address may make in a minute.
 const MAX_PARTIES_PER_MINUTE = 6;
 
+// The seconds a GET of the list or the stats is kept at the edge, so a browser asking every few seconds -- every player
+// on the multiplayer page -- costs the list's Durable Object one request a few seconds per Cloudflare location, not one
+// each. Durable Object requests are counted, and the free plan has 100,000 a day.
+const EDGE_SECONDS = { "/v1/servers": 5, "/v1/stats": 15 };
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    try {
+      return await route(request, env, ctx);
+    } catch (error) {
+      // An uncaught throw is Cloudflare's bare "error code: 1101"; a game is told something it can read instead.
+      return cors(fallback(request, env, error) ?? failure(error));
+    }
+  },
+
+  // Every minute: the relays probed, so one that stops answering stops being handed out.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(relays(env).fetch("https://relays/probe", { method: "POST" }));
+  },
+};
+
+async function route(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") {
       return cors(new Response(null, { status: 204 }));
@@ -77,14 +97,92 @@ export default {
       return cors(json({ error: "not found" }, 404));
     }
 
-    return cors(await list.fetch(request));
-  },
+    const seconds = request.method === "GET" ? EDGE_SECONDS[url.pathname] : undefined;
+    if (seconds) {
+      return cors(await kept(request, env, ctx, seconds, () => list.fetch(request)));
+    }
 
-  // Every minute: the relays probed, so one that stops answering stops being handed out.
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(relays(env).fetch("https://relays/probe", { method: "POST" }));
-  },
-};
+    return cors(await list.fetch(request));
+}
+
+// A GET answered from this location's cache while it is fresh, and otherwise asked and kept. NO_EDGE_CACHE=1 (the tests'
+// env file) asks every time, so a test sees a change at once.
+async function kept(request, env, ctx, seconds, ask) {
+  if (env.NO_EDGE_CACHE === "1") {
+    return ask();
+  }
+
+  const cache = caches.default;
+  const key = new Request(request.url, { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) {
+    return hit;
+  }
+
+  const answer = await ask();
+  if (!answer.ok) {
+    return answer;
+  }
+
+  const keep = new Response(answer.body, answer);
+  keep.headers.set("cache-control", `public, max-age=${seconds}`);
+  ctx.waitUntil(cache.put(key, keep.clone()));
+  return keep;
+}
+
+// What a throw becomes. Out of Durable Object requests (the free plan's daily allowance, back at 00:00 UTC) or an object
+// overloaded is a 503 that says when to come back; anything else a 500.
+function failure(error) {
+  const message = String(error?.message ?? error);
+  console.error(message);
+  if (/Durable Objects free tier/i.test(message)) {
+    const now = new Date();
+    const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+    return withRetry(json({ error: "the master server is out of capacity for today; try again later" }, 503), Math.ceil((midnight - now) / 1000));
+  }
+
+  if (/overloaded/i.test(message)) {
+    return withRetry(json({ error: "the master server is busy; try again shortly" }, 503), 10);
+  }
+
+  return json({ error: "internal error" }, 500);
+}
+
+// Out of Durable Object requests, the list and the stats are still answered: the servers named in FALLBACK_SERVERS
+// (wrangler.toml), which a game then asks over UDP for what they really play and who is on them. Rooms and parties live
+// in Durable Objects and have no stand-in until the allowance is back.
+function fallback(request, env, error) {
+  const path = new URL(request.url).pathname;
+  if (request.method !== "GET" || !(path in EDGE_SECONDS) || !/Durable Objects free tier/i.test(String(error?.message ?? error))) {
+    return null;
+  }
+
+  let named = [];
+  try {
+    named = JSON.parse(env.FALLBACK_SERVERS ?? "[]");
+  } catch {
+    // None.
+  }
+
+  const url = new URL(request.url);
+  const title = url.searchParams.get("title");
+  // The browser marks a line of another protocol unjoinable; the asked one is echoed, as the game's own handshake still
+  // turns a mismatch away.
+  const protocol = url.searchParams.get("protocol");
+  const entries = named
+    .filter((s) => !title || s.title === title)
+    .map((s) => ({ wsPort: 0, players: 0, passworded: false, room: null, ...s, protocol: protocol ?? s.protocol ?? "", lastSeen: Date.now() }));
+  if (path === "/v1/stats") {
+    return json({ ...stats(new Map(entries.map((s) => [`${s.address}:${s.port}`, s])), new Map(), []), degraded: true });
+  }
+
+  return json({ servers: entries.map((s) => ({ ...publicView(s, false), degraded: true })) });
+}
+
+function withRetry(response, seconds) {
+  response.headers.set("retry-after", String(seconds));
+  return response;
+}
 
 function relays(env) {
   return env.RELAYS.get(env.RELAYS.idFromName("global"));
@@ -99,7 +197,12 @@ function geoOf(request, env) {
     return readGeo({ lat, lon });
   }
 
-  return readGeo({ lat: request.cf?.latitude, lon: request.cf?.longitude });
+  // Run on our own machine behind Cloudflare's proxy (selfhost/), there is no request.cf: the zone's "add visitor location
+  // headers" transform says the same, and the origin takes requests from Cloudflare's edge alone, so nobody else says it.
+  return readGeo({
+    lat: request.cf?.latitude ?? request.headers.get("cf-iplatitude"),
+    lon: request.cf?.longitude ?? request.headers.get("cf-iplongitude"),
+  });
 }
 
 // The relay list's admin routes, for us alone: a bearer token checked against the Worker secret ADMIN_TOKEN, and no

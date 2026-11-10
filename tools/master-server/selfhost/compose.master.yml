@@ -1,0 +1,21 @@
+# The master server's service, added under `services:` in the release VM's /srv/openigi/config/compose.yml (and caddy's
+# depends_on). deploy.sh puts the build in /srv/openigi/master; the Durable Objects keep their storage in
+# /srv/openigi/master-data, which outlives every deploy.
+services:
+  master:
+    # workerd needs nothing but glibc (and CA certificates, mounted from the host).
+    image: debian:trixie-slim
+    restart: unless-stopped
+    user: "1655:1655"
+    working_dir: /app
+    command: ["/app/workerd", "serve", "/app/selfhost/master.capnp", "--directory-path", "storage=/data"]
+    # TURN_SECRET, ADMIN_TOKEN and RELAY_KEY.
+    env_file: /srv/openigi/master.env
+    volumes:
+      - /srv/openigi/master:/app:ro
+      - /srv/openigi/master-data:/data
+      # The slim image has no CA store; the relay probe's TLS and fetch() read the host's.
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    # Caddy reaches it as master:8790; the probe timer on the host as 127.0.0.1:8790.
+    ports:
+      - "127.0.0.1:8790:8790"

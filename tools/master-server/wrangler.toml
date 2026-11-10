@@ -2,8 +2,8 @@ name = "openigi-master"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-# Served at master.openigi.com; Cloudflare makes the DNS record for a custom domain itself.
-routes = [{ pattern = "master.openigi.com", custom_domain = true }]
+# master.openigi.com is served from the release VM since 2026-11-10 (selfhost/: the same code under workerd, no daily
+# Durable Object allowance). This Worker keeps no domain -- a route here would take the name back from the VM's DNS record.
 
 # The built-in relay, every room's last resort: coturn on the data.openigi.com VM in Frankfurt (tools/turn). Its secret
 # is the Worker secret TURN_SECRET (`wrangler secret put TURN_SECRET`; `.dev.vars` locally), never here. Other relays
@@ -13,6 +13,9 @@ TURN_HOST = "turn.openigi.com"
 TURN_REGION = "Europe"
 TURN_LAT = "50.1"
 TURN_LON = "8.7"
+# Listed by /v1/servers and counted by /v1/stats only while the Durable Objects can't answer (the free plan's daily
+# requests spent): the official servers, which a game then asks over UDP for what they play.
+FALLBACK_SERVERS = '[{"address":"185.110.190.243","port":26001,"title":"igi1","name":"Official OpenIGI EU","version":"0.6.7.1","mode":"tdm","map":"1","maxPlayers":16,"region":"eu"}]'
 
 # The relays probed every minute, so one that stops answering stops being handed out.
 [triggers]

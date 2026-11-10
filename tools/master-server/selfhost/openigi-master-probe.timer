@@ -1,0 +1,9 @@
+[Unit]
+Description=Every minute: the OpenIGI master server's relays probed, so one that stops answering stops being handed out
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

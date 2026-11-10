@@ -1,0 +1,6 @@
+[Unit]
+Description=Probe the OpenIGI master server's relays (Cloudflare's cron, on our own machine)
+
+[Service]
+Type=oneshot
+ExecStart=/srv/openigi/master/selfhost/probe.sh
