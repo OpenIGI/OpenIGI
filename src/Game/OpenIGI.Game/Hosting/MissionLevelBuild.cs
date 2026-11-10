@@ -170,4 +170,7 @@ public static class MissionSystemNames
 
     /// <summary>The game's events: the mission's watch set up, and the level told loaded. The last system, after every mod's.</summary>
     public const string Events = "Events";
+
+    /// <summary>The mission's save games, made once the level is whole; a load that was asked for is read onto it here.</summary>
+    public const string Saves = "Saves";
 }

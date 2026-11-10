@@ -124,7 +124,13 @@ public sealed class MissionSavesScreen : ShellScreen
         _confirmed = -1;
         if (_saves.Load(slot))
         {
-            Context.Host.ResumeMission();
+            // A load that starts the mission afresh has the host bring it up, as a restart does; one read onto the level
+            // that is up plays on from here.
+            if (!_saves.LoadRestartsMission)
+            {
+                Context.Host.ResumeMission();
+            }
+
             return;
         }
 

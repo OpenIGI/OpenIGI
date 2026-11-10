@@ -87,6 +87,9 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     }
 
     /// <inheritdoc/>
+    public virtual bool LoadRestartsMission => false;
+
+    /// <inheritdoc/>
     public int SavesLeft => Math.Max(SaveRules.SavesAllowed(_owner().Difficulty) - _source.SavesUsed, 0);
 
     /// <summary>Gets the battery's charge as a share, <c>HumanPlayer_GetBatteryLevel</c>: the saves left of the difficulty's, none on hard.</summary>
@@ -137,7 +140,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// </para>
     /// <para>A load that succeeds adds one to the games loaded, <c>nGameLoads</c>, after the save's own count is put back.</para>
     /// </remarks>
-    public bool Load(int slot)
+    public virtual bool Load(int slot)
     {
         SaveOwner whose = _owner();
         if (!_slots.Check(whose, slot).IsValid)

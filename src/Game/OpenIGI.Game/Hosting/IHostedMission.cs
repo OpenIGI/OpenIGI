@@ -42,6 +42,9 @@ public interface IHostedMission : IMissionGameplay
     /// <summary>Gets the mission's own impact effects.</summary>
     IMissionImpacts Impacts { get; }
 
+    /// <summary>Gets the save games of the mission that is up, or <see langword="null"/> when it keeps none.</summary>
+    ITitleSaveGames? SaveGames => null;
+
     /// <summary>Starts bringing up a level's player.</summary>
     /// <returns>The bring-up, whose rig is made by <see cref="IPlayerBringUp.Begin"/>.</returns>
     IPlayerBringUp NewPlayerSetup();

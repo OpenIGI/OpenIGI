@@ -18,6 +18,12 @@ public interface ITitleSaveGames
     /// <summary>Gets the slots this mission may be saved to and loaded from.</summary>
     IReadOnlyList<TitleSaveSlot> Slots { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether a load starts the mission afresh and reads the save onto the new level, rather than onto the
+    /// level that is up: the host then shows the mission coming up, and the menu has nothing to resume.
+    /// </summary>
+    bool LoadRestartsMission => false;
+
     /// <summary>Gets how many more saves the mission allows, or <c>-1</c> when there is no limit.</summary>
     int SavesLeft { get; }
 

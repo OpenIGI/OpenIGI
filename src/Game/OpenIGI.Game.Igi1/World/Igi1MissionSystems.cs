@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Events;
 using OpenIGI.Engine.Tasks;
@@ -114,6 +115,17 @@ public static class Igi1MissionSystems
                 {
                     game.World.EventWatch = new Igi1EventWatch(game.World, events);
                     events.Raise(new LevelLoaded(GameTitle.Igi1, b.Id));
+                }
+            }))
+            .Add(new LevelSystem<MissionLevelBuild>(MissionSystemNames.Saves, _ =>
+            {
+                // A level starts with its saves unused; a save read onto it brings its own counts.
+                game.World.SavesUsed = 0;
+                game.World.GameLoads = 0;
+                game.Saves = new Saves.Igi1MissionSaves(game.World, game.SaveSession, host);
+                if (game.Saves.ApplyPending())
+                {
+                    host.Logger.Information("Saves", "The level was put back as a save game kept it.");
                 }
             }));
     }

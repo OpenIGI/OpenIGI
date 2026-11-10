@@ -96,6 +96,12 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets the id of the mission this level is.</summary>
     public int MissionId { get; set; }
 
+    /// <summary>Gets or sets the saves made this mission, each of which uses one of the charges its difficulty allows.</summary>
+    public int SavesUsed { get; set; }
+
+    /// <summary>Gets or sets the games loaded this mission.</summary>
+    public int GameLoads { get; set; }
+
     /// <summary>Gets the other players a co-op client's level shows, as the server's snapshots have them.</summary>
     public List<Multiplayer.Igi1NetworkPlayer> ShownPartners { get; } = [];
 

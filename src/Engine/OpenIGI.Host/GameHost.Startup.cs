@@ -647,7 +647,7 @@ public sealed partial class GameHost
                     _session.FailedMenu = false;
                     _session.ClearFailure();
                 },
-                restartMission: () =>
+                restartMission: _restartMission = () =>
                 {
                     if (_session.Mission is { } mission)
                     {
@@ -745,7 +745,7 @@ public sealed partial class GameHost
                     return pixels;
                 },
                 settingUnavailable: SettingUnavailable,
-                missionSaves: () => TitlePlayer?.SaveGames,
+                missionSaves: () => TitlePlayer?.SaveGames ?? _hosted.SaveGames,
                 inputBindingLabel: action => TitleInputBindings.Label(action, _gameplay?.InputBindings ?? []),
                 resetInputBindings: profile =>
                 {

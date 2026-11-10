@@ -36,6 +36,20 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
 
+    /// <summary>Gets what is kept of the save games across a restart: the slot a load asked for.</summary>
+    public OpenIGI.Game.Saves.SaveSession SaveSession { get; } = new();
+
+    /// <summary>Gets or sets the save games of the level that is up, made once it is whole.</summary>
+    public Saves.Igi1MissionSaves? Saves { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// None while they are switched off (<c>g_igi1_saves</c>), and none in a session with other players, whose level is the
+    /// server's to keep.
+    /// </remarks>
+    public ITitleSaveGames? SaveGames =>
+        GameplayCVars.Igi1Saves.Value && !World.CoopClient && World.NetworkPlayers.Count == 0 ? Saves : null;
+
     /// <inheritdoc/>
     public string Map => World.MissionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 

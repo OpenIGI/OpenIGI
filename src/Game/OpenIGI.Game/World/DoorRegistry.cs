@@ -453,6 +453,12 @@ public sealed class DoorRegistry : ILevelReset
     /// <summary>Gets the level's doors.</summary>
     public IReadOnlyList<PlacedDoor> Doors => _doors;
 
+    /// <summary>The state a save game keeps of a door, by the task the level declares it with.</summary>
+    /// <param name="task">The task.</param>
+    /// <returns>The door's state, or <see langword="null"/> for a task that is no door of this level.</returns>
+    public OpenIGI.Game.Saves.ISavedState? StateOf(GameTask task) =>
+        _doorsByTask.TryGetValue(task, out PlacedDoor? door) ? door.State : null;
+
     /// <summary>Collects every <c>Door</c> task in a level.</summary>
     /// <param name="root">The level's task tree.</param>
     /// <returns>The registry.</returns>

@@ -41,6 +41,17 @@ public interface IMissionSetupHost : IGuardRoundHost
     /// <summary>Gets a value indicating whether the level's cinematics play, or are broken as Escape breaks them.</summary>
     bool PlayCutscenes { get; }
 
+    /// <summary>Gets the active profile's place among the profiles, which names its save games.</summary>
+    int ActiveProfileIndex => 0;
+
+    /// <summary>Gets the mods that change play this session is played with, which a save game records beside itself.</summary>
+    IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => [];
+
+    /// <summary>Starts the mission that is up afresh, as the pause menu's restart does.</summary>
+    void RestartMission()
+    {
+    }
+
     /// <summary>Answers a native the level's cutscene scripts call that the host owns: the music, the menus.</summary>
     /// <param name="name">The native.</param>
     /// <param name="arguments">Its arguments.</param>

@@ -29,7 +29,7 @@ namespace OpenIGI.Game.World;
 /// <see cref="DoorRegistry.SetDoorwayBlockedQuery"/>.
 /// </para>
 /// </remarks>
-public sealed class DoorState
+public sealed class DoorState : OpenIGI.Game.Saves.ISavedState
 {
     /// <summary>The ticks per second the steps divide by (<c>flt_5333BC</c>).</summary>
     private const float TicksPerSecond = 30.0f;
@@ -135,23 +135,53 @@ public sealed class DoorState
     }
 
     /// <summary>Records the door as it stands, for <see cref="ResetToLevelStart"/>.</summary>
-    public void MarkLevelStart() =>
-        _start = new Start(_angleDegrees, _slide, _latch, _ticksOpen, IsFullyOpen, IsFullyClosed, WasFullyOpen, WasFullyClosed);
+    public void MarkLevelStart() => _start = Capture();
 
     /// <summary>Puts the door back as <see cref="MarkLevelStart"/> found it.</summary>
     /// <remarks>Its next <see cref="Tick"/> reports it swung and slid, so the owner re-places it and its collision follows.</remarks>
-    public void ResetToLevelStart()
+    public void ResetToLevelStart() => Apply(_start);
+
+    /// <inheritdoc/>
+    /// <remarks>Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps.</remarks>
+    public void WriteState(OpenIGI.Game.Saves.StateWriter writer)
     {
-        _angleDegrees = _start.Angle;
-        _slide = _start.Slide;
-        _latch = _start.Latch;
-        _ticksOpen = _start.TicksOpen;
-        PreviousAngleDegrees = _start.Angle;
-        PreviousSlideFraction = _start.Slide;
-        IsFullyOpen = _start.IsFullyOpen;
-        IsFullyClosed = _start.IsFullyClosed;
-        WasFullyOpen = _start.WasFullyOpen;
-        WasFullyClosed = _start.WasFullyClosed;
+        ArgumentNullException.ThrowIfNull(writer);
+        Start now = Capture();
+        writer.Real(now.Angle);
+        writer.Real(now.Slide);
+        writer.Bool(now.Latch);
+        writer.Int(now.TicksOpen);
+        writer.Bool(now.IsFullyOpen);
+        writer.Bool(now.IsFullyClosed);
+        writer.Bool(now.WasFullyOpen);
+        writer.Bool(now.WasFullyClosed);
+    }
+
+    /// <inheritdoc/>
+    public void ReadState(OpenIGI.Game.Saves.StateReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        Apply(new Start(
+            reader.Real(), reader.Real(), reader.Bool(), reader.Int(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool()));
+    }
+
+    // The door as it stands: what a level reset and a save game keep of it.
+    private Start Capture() =>
+        new(_angleDegrees, _slide, _latch, _ticksOpen, IsFullyOpen, IsFullyClosed, WasFullyOpen, WasFullyClosed);
+
+    // Its next Tick reports it swung and slid, so the owner re-places it and its collision follows.
+    private void Apply(in Start state)
+    {
+        _angleDegrees = state.Angle;
+        _slide = state.Slide;
+        _latch = state.Latch;
+        _ticksOpen = state.TicksOpen;
+        PreviousAngleDegrees = state.Angle;
+        PreviousSlideFraction = state.Slide;
+        IsFullyOpen = state.IsFullyOpen;
+        IsFullyClosed = state.IsFullyClosed;
+        WasFullyOpen = state.WasFullyOpen;
+        WasFullyClosed = state.WasFullyClosed;
         _replace = true;
     }
 

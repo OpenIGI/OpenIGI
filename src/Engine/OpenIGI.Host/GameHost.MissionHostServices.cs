@@ -193,6 +193,12 @@ public sealed partial class GameHost
 
         public bool PlayCutscenes => host._options.PlayCutscenes;
 
+        public int ActiveProfileIndex => host._configuration.ActiveIndex;
+
+        public IReadOnlyList<OpenIGI.Core.Content.ModReference> PlayedMods => host._titleRuntime.Mods;
+
+        public void RestartMission() => host._restartMission?.Invoke();
+
         public QvmValue? HostNative(string name, OpenIGI.Scripting.Expressions.ScriptArguments arguments)
         {
         if (name == GameMusicNatives.EnableNative)
