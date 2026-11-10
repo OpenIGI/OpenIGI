@@ -361,7 +361,7 @@ public sealed class MissionPreviewLoader(
         // interior previewed with its lamps out is simply a different, darker picture.
         EmissiveLightProposer.Proposal lamps = LocalLightCVars.GlobalIlluminationLamps.Value != 0
             ? EmissiveLightProposer.Propose(
-                scene, resources, context.Lamps, missionId, context.TitleId, logger)
+                scene, resources, context.Lamps, missionId, context.TitleId, logger, context.Formats)
             : EmissiveLightProposer.Proposal.None;
 
         // The other half: the distance field the real-time lighting traces against. Cached, it is a file

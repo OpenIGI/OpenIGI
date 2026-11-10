@@ -250,6 +250,7 @@ public sealed partial class GameHost : IDisposable
     // and the player's own material lookup already use.
 
     private ICameraStatusLightPresenter? _cameraStatusLights;
+    private ModelGlowRenderer? _modelGlows;
     private IGrenadePresenter? _grenadeRenderer;
     private IMissilePresenter? _missileRenderer;
 
@@ -945,6 +946,7 @@ public sealed partial class GameHost : IDisposable
         _marks?.Dispose();
         _effects.Dispose();
         _cameraStatusLights?.Dispose();
+        _modelGlows?.Dispose();
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
         _retailMenus?.Dispose();

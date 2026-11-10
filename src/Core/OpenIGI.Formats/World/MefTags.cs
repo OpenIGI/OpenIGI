@@ -51,6 +51,9 @@ public static class MefTags
     /// <summary>Chunk <c>HPRM</c> (<c>MRPH</c>): an I.G.I. 2 bone mesh's morph targets (see <see cref="MefMorph"/>).</summary>
     public static FourCc Morphs { get; } = FourCc.FromString("HPRM");
 
+    /// <summary>Chunk <c>WOLG</c> (<c>GLOW</c>): an I.G.I. 2 model's glows, the lights the artists placed on it (see <see cref="MefGlow"/>).</summary>
+    public static FourCc Glows { get; } = FourCc.FromString("WOLG");
+
     /// <summary>Chunk <c>TROP</c> (<c>PORT</c>): portals.</summary>
     public static FourCc Portals { get; } = FourCc.FromString("TROP");
 

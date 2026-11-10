@@ -238,6 +238,16 @@ public interface IWorldPresenter : IDisposable
     /// <param name="options">What the draw should include.</param>
     void Draw(WorldScene scene, in Camera3D camera, in Matrix4f projection, in WorldDrawOptions options);
 
+    /// <summary>Gets or sets a value indicating whether the eye's opaque draw gathers the glows of the models it shows.</summary>
+    bool CollectGlows
+    {
+        get => false;
+        set { }
+    }
+
+    /// <summary>Gets the glows of the models the eye's last opaque draw showed, when <see cref="CollectGlows"/> asked for them.</summary>
+    IReadOnlyList<WorldGlow> DrawnGlows => [];
+
     /// <summary>Issues the visibility queries the next frame's culling reads.</summary>
     /// <param name="camera">Where the world is seen from.</param>
     void IssueOcclusionQueries(in Camera3D camera);

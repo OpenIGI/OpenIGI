@@ -93,6 +93,10 @@ public sealed partial class GameHost
 
             // The original's face groups on its own look: the opaque ones without an alpha test, the sorted ones blended after.
             detailedWorld.FaceGroupBlending = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
+
+            // The glows the models carry, drawn as the original draws them on its own look. The other looks light the
+            // lamps those glows mark instead (GlowLamps), and a sprite over a lit lamp would be the lamp twice.
+            detailedWorld.CollectGlows = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
         }
 
         bool retailFog = FogCVars.RetailFog.Value;
@@ -623,6 +627,13 @@ public sealed partial class GameHost
                 lights.ReflectorFlares(eye.Position * WorldScene.UnitsPerMetre, smoothPresentation ? tickBlend : 1f),
                 eye,
                 projection);
+        }
+
+        // The glows of the models this frame drew (Glow_DrawSorted), over the finished scene with the other sprites.
+        if (_world is { CollectGlows: true, DrawnGlows.Count: > 0 } glowing)
+        {
+            _modelGlows ??= new ModelGlowRenderer(_device, _resources, _logger);
+            _modelGlows.Draw(glowing.DrawnGlows, eye, projection);
         }
 
         // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD

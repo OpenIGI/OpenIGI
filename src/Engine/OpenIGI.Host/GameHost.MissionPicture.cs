@@ -279,7 +279,7 @@ public sealed partial class GameHost
             _gi.ApplyLamps(
                 LocalLightCVars.GlobalIlluminationLamps.Value != 0
                     ? EmissiveLightProposer.Propose(
-                        _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger)
+                        _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger, _titleRuntime.Formats)
                     : EmissiveLightProposer.Proposal.None,
                 id);
         }

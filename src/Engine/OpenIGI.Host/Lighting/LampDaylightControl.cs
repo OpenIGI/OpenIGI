@@ -246,8 +246,13 @@ internal sealed class LampDaylightControl
         }
 
         const double headroom = 0.05;
+
+        // However far overhead. The shelter's own reach is the rain's question -- how high a roof still keeps a
+        // drop off -- and a lamp in a base cut into a mountain has its roof a hundred metres up: by that reach it
+        // stood in the open, followed the daylight, and was out all day in a room with no window.
+        const double anyHeight = double.MaxValue;
         Vector3d at = fixture.Position;
-        int covered = shelter.IsSheltered(at.X, at.Y, at.Z, headroom) ? 1 : 0;
+        int covered = shelter.IsSheltered(at.X, at.Y, at.Z, headroom, anyHeight) ? 1 : 0;
 
         for (int k = 0; k < 8; k++)
         {
@@ -255,7 +260,7 @@ internal sealed class LampDaylightControl
             double x = at.X + (LampRoofRing * Math.Cos(angle));
             double y = at.Y + (LampRoofRing * Math.Sin(angle));
 
-            if (shelter.IsSheltered(x, y, at.Z, headroom))
+            if (shelter.IsSheltered(x, y, at.Z, headroom, anyHeight))
             {
                 covered++;
             }

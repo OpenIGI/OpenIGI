@@ -364,6 +364,7 @@ public sealed partial class GameHost
         _marks = null;
         _effects.Forget();
         _cameraStatusLights = null;
+        _modelGlows = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
         _loadedMissionForWeapon = null;

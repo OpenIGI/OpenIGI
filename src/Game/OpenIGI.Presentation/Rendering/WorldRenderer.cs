@@ -414,6 +414,15 @@ public sealed partial class WorldRenderer : IWorldPresenter
         // The view's horizontal half-angle tangent, which a level of detail is picked against.
         // The lens as authored, not as widened for the screen: a wide screen sees more, not coarser. See WidescreenLens.
         float lodFieldOfView = WidescreenLens.AuthoredTangent(projection);
+
+        // The eye's own opaque pass is the one that decides which models are seen, so it is the one the
+        // glows are gathered from; the passes after it draw other halves of the same placements.
+        bool gatherGlows = CollectGlows && fromEye && !rotorsOnly && !glassOnly && !blendedOnly;
+        if (gatherGlows)
+        {
+            _drawnGlows.Clear();
+        }
+
         foreach (int index in order)
         {
             ref WorldFrameEntry entry = ref frame[index];
@@ -550,6 +559,11 @@ public sealed partial class WorldRenderer : IWorldPresenter
             if (!ApplyClip(entry, fromEye, ref appliedClip))
             {
                 continue;
+            }
+
+            if (gatherGlows)
+            {
+                GatherGlows(displayed, entry);
             }
 
             WorldSubsetDraw[] subsets = model.Subsets ?? _subsets.ResolveSubsets(scene, model, displayed);

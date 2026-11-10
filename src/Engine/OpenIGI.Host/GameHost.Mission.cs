@@ -620,6 +620,7 @@ public sealed partial class GameHost
         _marks?.Dispose();
         _effects.Release();
         _cameraStatusLights?.Dispose();
+        _modelGlows?.Dispose();
         _grenadeRenderer?.Dispose();
         _missileRenderer?.Dispose();
         _arms?.Dispose();
@@ -642,6 +643,7 @@ public sealed partial class GameHost
         _debugOverlay = null;
         _marks = null;
         _cameraStatusLights = null;
+        _modelGlows = null;
         _grenadeRenderer = null;
         _missileRenderer = null;
         _arms = null;
