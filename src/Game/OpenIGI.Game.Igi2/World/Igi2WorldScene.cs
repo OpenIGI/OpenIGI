@@ -150,6 +150,11 @@ public sealed class Igi2WorldScene
     /// VERTEX of the holder, which is why only the holder is bound here.
     /// </description></item>
     /// <item><description>
+    /// <c>Fence</c> — <c>Fence_UpdateInternalDataHandler</c> turns the model by its <c>Gamma</c> alone: the rotation is
+    /// that one angle's cosine and sine about the up axis, whatever else the object held. It declares no
+    /// <c>Orientation</c>, so read the usual way every fence panel faced down the world's X axis.
+    /// </description></item>
+    /// <item><description>
     /// <c>StationaryGun</c>, <c>AIStationaryGunHolder</c> — <c>AIStationaryGunHolder_UpdateInternalDataHandler</c>
     /// copies the parameter block's orientation straight into the model object. An automatic gun's barrel is
     /// an object of its gun's own, the attach point of type <c>AIStationaryGun</c>: <c>AIStationaryGun_UpdateInternalDataHandler</c>
@@ -205,6 +210,7 @@ public sealed class Igi2WorldScene
                 MountedModel: "Camera Model",
                 MountedAlpha: "Camera Alpha",
                 MountedGamma: "Camera Gamma"),
+            ["Fence"] = new(ModelParameter, PositionParameter, Gamma: "Gamma"),
             ["StationaryGun"] = new("Holder model", PositionParameter, OrientationParameter),
             ["AIStationaryGunHolder"] = new(
                 "Holder model",
