@@ -403,7 +403,7 @@ fn fragmentMain( _S13 : pixelInput_0, @builtin(position) position_3 : vec4<f32>)
         var roughnessScale_0 : f32 = mix(1.0f, _S22 * 2.0f, saturate(frame_0.surface_0.x));
         if(authored_0)
         {
-            detailStrength_0 = clamp(_S22, 0.03999999910593033f, 1.0f);
+            detailStrength_0 = clamp(_S22, 0.01999999955296516f, 1.0f);
         }
         else
         {
