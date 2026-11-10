@@ -295,7 +295,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         int mission = request.World.Mission.Descriptor.Id;
         Saves.Igi2MissionSaves saves = new(
             new Saves.Igi2SaveSlots(folder),
-            () => new Saves.Igi2SaveOwner(config?.ActiveIndex ?? 0, config?.Active?.Difficulty ?? (int)player.Human.Difficulty, mission),
+            () => new SaveOwner(config?.ActiveIndex ?? 0, config?.Active?.Difficulty ?? (int)player.Human.Difficulty, mission),
             level,
             player.Human)
         {
@@ -313,7 +313,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         {
             session.Slots = saves.SlotStore;
             session.Owner = saves.Owner;
-            if (session.TakeMenuLoadSlot() is var slot and >= 0)
+            if (session.TakePendingLoadSlot() is var slot and >= 0)
             {
                 saves.Load(slot);
             }

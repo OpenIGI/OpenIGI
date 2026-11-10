@@ -452,10 +452,10 @@ public sealed class RetailIgi2LevelAiTests
             (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
             m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
             Saves.Igi2SaveSlots slots = new(folder);
-            Saves.Igi2SaveOwner owner = new(0, 1, 11);
-            Assert.True(slots.Save(owner, 1, m.Tree[0], 30 * 3725));
-            Assert.True(slots.Save(owner, Saves.Igi2SaveSlots.QuickSave, m.Tree[0], 30));
-            File.SetLastWriteTimeUtc(slots.PathOf(Saves.Igi2SaveSlots.SlotFileName(owner, Saves.Igi2SaveSlots.QuickSave)), DateTime.UtcNow.AddHours(-1));
+            SaveOwner owner = new(0, 1, 11);
+            Assert.True(slots.Save(owner, 1, m.Tree[0], 30 * 3725, Saves.Igi2SaveFormat.Context()));
+            Assert.True(slots.Save(owner, SaveRules.QuickSave, m.Tree[0], 30, Saves.Igi2SaveFormat.Context()));
+            File.SetLastWriteTimeUtc(slots.PathOf(Saves.Igi2SaveSlots.SlotFileName(owner, SaveRules.QuickSave)), DateTime.UtcNow.AddHours(-1));
             Assert.True(File.Exists(Path.Combine(folder, "savegames", "0-1-11-1.igi2save")));
 
             Assert.Equal(new SaveInfo(63, 11, 30 * 3725, true), slots.Check(owner, 1));
@@ -463,17 +463,17 @@ public sealed class RetailIgi2LevelAiTests
             Assert.True(slots.TryFindNewest(owner, out int newest));
             Assert.Equal(1, newest);
             IReadOnlyList<Saves.Igi2SaveListing> lines = slots.Listings(owner, static key => key == Saves.Igi2SaveSlots.QuickSaveKey ? "Quicksave" : "Mission Time");
-            Assert.Equal([1, Saves.Igi2SaveSlots.QuickSave, 12345678], lines.Select(static l => l.Slot));
+            Assert.Equal([1, SaveRules.QuickSave, 12345678], lines.Select(static l => l.Slot));
             Assert.EndsWith(" Mission Time: 1:02:05", lines[0].Text, StringComparison.Ordinal);
             Assert.Contains("[Quicksave]", lines[1].Text, StringComparison.Ordinal);
             Assert.Equal(new Saves.Igi2SaveListing(12345678, "menusystem/Restart Mission", true), lines[2]);
 
             (RetailIgi2Mission1 fresh, _, _, Igi2TitlePlayer again) = Build();
             fresh.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = again.Human;
-            Assert.True(slots.Load(owner, 1, fresh.Tree[0]).IsValid);
-            Assert.False(slots.Load(owner, 2, fresh.Tree[0]).IsValid);
-            Assert.Equal([3, 2, 0], Enumerable.Range(0, 3).Select(Saves.Igi2SaveSlots.AvailableSlots));
-            Assert.True(Saves.Igi2SaveSlots.TryParseSlotFileName("savegames/0-1-11-5.igi2save", out Saves.Igi2SaveOwner parsed, out int slot));
+            Assert.True(slots.Load(owner, 1, fresh.Tree[0], Saves.Igi2SaveFormat.Context()).IsValid);
+            Assert.False(slots.Load(owner, 2, fresh.Tree[0], Saves.Igi2SaveFormat.Context()).IsValid);
+            Assert.Equal([3, 2, 0], Enumerable.Range(0, 3).Select(SaveRules.AvailableSlots));
+            Assert.True(Saves.Igi2SaveSlots.TryParseSlotFileName("savegames/0-1-11-5.igi2save", out SaveOwner parsed, out int slot));
             Assert.Equal((owner, 5), (parsed, slot));
         }
         finally
@@ -499,7 +499,7 @@ public sealed class RetailIgi2LevelAiTests
         }
 
         Saves.Igi2SaveSlots retail = new(root);
-        Saves.Igi2SaveOwner owner = new(0, 0, 11);
+        SaveOwner owner = new(0, 0, 11);
         Assert.Equal(5, retail.Listings(owner, static key => key).Count);
         Assert.True(retail.TryFindNewest(owner, out _));
 
@@ -518,7 +518,7 @@ public sealed class RetailIgi2LevelAiTests
         try
         {
             Saves.Igi2SaveSlots slots = new(folder);
-            Saves.Igi2SaveOwner next = new(0, 0, 12);
+            SaveOwner next = new(0, 0, 12);
             Assert.True(slots.SaveCarryOver(next, m.Tree.OfType<Igi2HumanPlayerTask>().Single()));
             byte[] written = File.ReadAllBytes(slots.PathOf(Saves.Igi2SaveSlots.CarryOverFileName(next)));
             Assert.EndsWith("co000012.qsc", Saves.Igi2SaveSlots.CarryOverFileName(next), StringComparison.Ordinal);
@@ -547,7 +547,7 @@ public sealed class RetailIgi2LevelAiTests
             (RetailIgi2Mission1 m, _, _, Igi2TitlePlayer player) = Build();
             m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
             int difficulty = 1;
-            Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), () => new Saves.Igi2SaveOwner(0, difficulty, 11), m.Run, player.Human);
+            Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), () => new SaveOwner(0, difficulty, 11), m.Run, player.Human);
             Assert.Equal(2, saves.Slots.Count);
             Assert.Equal(3, saves.SavesLeft);
             Assert.False(saves.Slots[0].IsUsed);
