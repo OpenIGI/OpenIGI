@@ -190,9 +190,10 @@ public class SaveSlots(string directory, string folder, string extension, int ve
     /// <param name="relative">The path under the directory.</param>
     /// <param name="script">The script, or <see langword="null"/> for none.</param>
     /// <returns><see langword="true"/> once written.</returns>
+    /// <remarks>Nothing is written while a multiplayer session holds the save games shut (<see cref="SaveGameLock"/>).</remarks>
     public bool WriteText(string relative, string? script)
     {
-        if (script is null)
+        if (script is null || SaveGameLock.IsHeld)
         {
             return false;
         }
@@ -218,8 +219,18 @@ public class SaveSlots(string directory, string folder, string extension, int ve
     /// <param name="relative">The path under the directory.</param>
     /// <param name="file">Its bytes; empty when there is none.</param>
     /// <returns><see langword="true"/> for a file with something in it.</returns>
+    /// <remarks>
+    /// Nothing is read while a multiplayer session holds the save games shut (<see cref="SaveGameLock"/>): every slot is then
+    /// an empty one, to a load, a list of saves and a carry-over alike.
+    /// </remarks>
     public bool TryRead(string relative, out byte[] file)
     {
+        if (SaveGameLock.IsHeld)
+        {
+            file = [];
+            return false;
+        }
+
         try
         {
             string path = PathOf(relative);
@@ -242,15 +253,22 @@ public class SaveSlots(string directory, string folder, string extension, int ve
 /// <remarks><c>Game_nMenuLoadFromSlot</c>, <c>-1</c> for none: a load asked for from a menu restarts the mission and loads into it.</remarks>
 public class SaveSession
 {
+    private int _pendingLoadSlot = -1;
+
     /// <summary>Gets or sets the slot to load as the next level starts, or <c>-1</c>.</summary>
-    public int PendingLoadSlot { get; set; } = -1;
+    /// <remarks>None is asked for while a multiplayer session holds the save games shut (<see cref="SaveGameLock"/>).</remarks>
+    public int PendingLoadSlot
+    {
+        get => _pendingLoadSlot;
+        set => _pendingLoadSlot = SaveGameLock.IsHeld ? -1 : value;
+    }
 
     /// <summary>Takes back the slot asked for, leaving none, as the level that loads it starts.</summary>
-    /// <returns>The slot, or <c>-1</c>.</returns>
+    /// <returns>The slot, or <c>-1</c>: always none for a level a multiplayer session starts, whatever was asked before it.</returns>
     public int TakePendingLoadSlot()
     {
-        int slot = PendingLoadSlot;
-        PendingLoadSlot = -1;
+        int slot = SaveGameLock.IsHeld ? -1 : _pendingLoadSlot;
+        _pendingLoadSlot = -1;
         return slot;
     }
 }

@@ -117,6 +117,51 @@ public sealed class Igi1CoopSessionTests
         Assert.False(capture.Game.World.PlayerHealth.IsDead);
     }
 
+    /// <summary>
+    /// A hosted session keeps no save games: its host is offered none, and the level's own save games, asked directly, neither
+    /// write a slot nor use a charge. Once the session is over they are there again.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_session_keeps_no_save_games()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-session-saves-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable(OpenIGI.Game.Igi1.Saves.Igi1SaveFormat.DirectoryVariable, folder);
+        try
+        {
+            int checkedFrames = 0;
+            Play(600, (game, frame) =>
+            {
+                if (frame < 400 || game.Saves is not { } saves)
+                {
+                    return;
+                }
+
+                checkedFrames++;
+                Assert.True(OpenIGI.Game.Saves.SaveGameLock.IsHeld);
+                Assert.Null(game.SaveGames);
+                int used = game.World.SavesUsed;
+                Assert.False(saves.CanSave);
+                Assert.False(saves.Save(0));
+                Assert.False(saves.QuickSave());
+                Assert.False(saves.Load(0));
+                Assert.False(saves.QuickLoad());
+                Assert.Equal(used, game.World.SavesUsed);
+                Assert.False(game.World.GunPickups?.WithdrawsTakenTasks == true && !OpenIGI.Game.Saves.SaveGameLock.IsHeld);
+            });
+
+            Assert.True(checkedFrames > 0, "The session never came up.");
+            Assert.False(Directory.Exists(folder) && Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Any());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(OpenIGI.Game.Igi1.Saves.Igi1SaveFormat.DirectoryVariable, null);
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
+
     [RequiresGameDataFact]
     public void A_round_that_meets_a_partner_is_taken_by_the_players_own_hit_handler()
     {

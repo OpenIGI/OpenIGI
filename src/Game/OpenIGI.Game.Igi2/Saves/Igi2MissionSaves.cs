@@ -35,7 +35,7 @@ public sealed class Igi2MissionSaves : MissionSaves
 
     /// <inheritdoc/>
     /// <remarks><c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked.</remarks>
-    public override bool CanSave => _player.IsSaveAllowed;
+    public override bool CanSave => !SaveGameLock.IsHeld && _player.IsSaveAllowed;
 
     /// <summary>Gets where the slots are kept, with the load list and the carry-overs that are this game's own.</summary>
     public new Igi2SaveSlots SlotStore => _slots;
@@ -98,7 +98,7 @@ public sealed class Igi2MissionSaves : MissionSaves
     public bool LoadCarryOver(Igi2HumanPlayerTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return task.CarryOverWeapons && _slots.LoadCarryOver(Owner, _level.Root).IsValid;
+        return !SaveGameLock.IsHeld && task.CarryOverWeapons && _slots.LoadCarryOver(Owner, _level.Root).IsValid;
     }
 
     /// <summary>Leaves the player's weapons for the mission that follows, <c>Game_SaveCarryover</c>, unless the player is dead.</summary>
@@ -106,7 +106,7 @@ public sealed class Igi2MissionSaves : MissionSaves
     /// <param name="nextMission">The mission that follows.</param>
     /// <returns><see langword="true"/> once written.</returns>
     public bool SaveCarryOver(GameTask task, int nextMission) =>
-        !_player.IsDead && _slots.SaveCarryOver(Owner with { Mission = nextMission }, task);
+        !SaveGameLock.IsHeld && !_player.IsDead && _slots.SaveCarryOver(Owner with { Mission = nextMission }, task);
 
     // The running level as the shared save games ask of it.
     private sealed class Level(Igi2LevelRun level, Igi2HumanPlayer player) : IMissionSaveSource

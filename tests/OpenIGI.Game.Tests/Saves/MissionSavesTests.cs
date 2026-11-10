@@ -60,6 +60,53 @@ public sealed class MissionSavesTests : IDisposable
         Assert.Equal(2, saves.SavesLeft);
     }
 
+    /// <summary>
+    /// In a multiplayer session nothing is saved, loaded, listed or counted, whatever asks; once the session is over the
+    /// saves made before it are there as they were.
+    /// </summary>
+    [Fact]
+    public void A_multiplayer_session_holds_the_save_games_shut()
+    {
+        (MissionSaves saves, Level level) = Saves(difficulty: 0);
+        level.Counter.Value = 1;
+        Assert.True(saves.Save(0));
+        int used = level.SavesUsed;
+        string file = saves.SlotStore.PathOf(saves.SlotStore.SlotFile(saves.Owner, 0));
+        DateTime written = File.GetLastWriteTimeUtc(file);
+        SaveSession session = new();
+
+        SaveGameLock.Hold();
+        try
+        {
+            level.Counter.Value = 7;
+            Assert.False(saves.Save(0));
+            Assert.False(saves.Save(1));
+            Assert.False(saves.QuickSave());
+            Assert.False(saves.Write(2));
+            Assert.False(saves.Load(0));
+            Assert.False(saves.QuickLoad());
+            Assert.DoesNotContain(saves.Slots, static s => s.IsUsed);
+            Assert.False(saves.SlotStore.Check(saves.Owner, 0).IsValid);
+            Assert.False(saves.SlotStore.TryFindNewest(saves.Owner, out _));
+            Assert.False(saves.SlotStore.WriteText("saves/other.save", "x"));
+            session.PendingLoadSlot = 0;
+            Assert.Equal(-1, session.TakePendingLoadSlot());
+
+            Assert.Equal(7, level.Counter.Value);
+            Assert.Equal(used, level.SavesUsed);
+            Assert.Equal(0, level.GameLoads);
+            Assert.Equal(written, File.GetLastWriteTimeUtc(file));
+            Assert.Single(Directory.GetFiles(Path.GetDirectoryName(file)!, "*.save"));
+        }
+        finally
+        {
+            SaveGameLock.Release();
+        }
+
+        Assert.True(saves.Load(0));
+        Assert.Equal(1, level.Counter.Value);
+    }
+
     /// <summary>The quick save goes to the sixth slot and counts as a save; the quick load reads the newest of the six.</summary>
     [Fact]
     public void The_quick_slot_is_saved_and_the_newest_is_loaded()

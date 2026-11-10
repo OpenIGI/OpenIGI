@@ -207,7 +207,7 @@ public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
                     walker,
                     pickup.Task,
                     () => pickup.IsCollected && !KeepsTakenTasks,
-                    () => WithdrawsTakenTasks,
+                    () => WithdrawsTakenTasks && !Saves.SaveGameLock.IsHeld,
                     _variables,
                     _variables is { } variables ? () => Export(variables, pickup) : null);
             }

@@ -12,8 +12,12 @@ public sealed partial class GameHost
     // The save page asked the computer to close: its upload is done, or a download is under way.
     private bool _computerQuit;
 
-    /// <summary>Gets the save games of the mission that is up, or none: a session with other players keeps none of its own.</summary>
-    private ITitleSaveGames? MissionSaveGames => TickObserver is null ? TitlePlayer?.SaveGames ?? _hosted.SaveGames : null;
+    /// <summary>
+    /// Gets the save games of the mission that is up, or none: a multiplayer session of any kind keeps none, so nothing that
+    /// offers them -- the keys, the console, the computer's page, the pause and failed pages -- has any to offer.
+    /// </summary>
+    private ITitleSaveGames? MissionSaveGames =>
+        TickObserver is null && !Game.Saves.SaveGameLock.IsHeld ? TitlePlayer?.SaveGames ?? _hosted.SaveGames : null;
 
     /// <summary>
     /// Gets what the computer's save page saves and loads with -- the remastered computer's, and Project I.G.I.'s own -- or

@@ -166,7 +166,8 @@ public sealed class Igi1MissionSaves : MissionSaves
 
     /// <inheritdoc/>
     /// <remarks>Not with the player dead, a cut-scene playing, or the level's menus switched off for one.</remarks>
-    public override bool CanSave => !_world.IsPlayerDead && _world.Cutscenes?.IsPlaying != true && _world.MenusEnabled;
+    public override bool CanSave =>
+        !SaveGameLock.IsHeld && !_world.IsPlayerDead && _world.Cutscenes?.IsPlaying != true && _world.MenusEnabled;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -176,7 +177,7 @@ public sealed class Igi1MissionSaves : MissionSaves
     public override bool Load(int slot)
     {
         _restarted = false;
-        if (!SlotStore.Check(Owner, slot).IsValid || _world.LevelRoot is null)
+        if (SaveGameLock.IsHeld || !SlotStore.Check(Owner, slot).IsValid || _world.LevelRoot is null)
         {
             return false;
         }

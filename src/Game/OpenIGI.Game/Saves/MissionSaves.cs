@@ -38,6 +38,10 @@ public interface IMissionSaveSource
 /// <c>Game_SaveToSlot</c>), and a load that counts itself in the mission's figures (<c>HumanPlayer_RunDelayedHandler</c>, then
 /// <c>Game_LoadFromSlot</c>).
 /// </summary>
+/// <remarks>
+/// None of it in a multiplayer session (<see cref="SaveGameLock"/>): nothing is saved or loaded, no charge is used, and every
+/// slot is an empty one.
+/// </remarks>
 /// <param name="slots">Where the slots are kept.</param>
 /// <param name="owner">Whose saves these are: the profile, its difficulty and the mission.</param>
 /// <param name="source">The running mission.</param>
@@ -97,7 +101,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// <inheritdoc/>
     public bool QuickSave()
     {
-        if (!CanSave || SavesLeft <= 0)
+        if (SaveGameLock.IsHeld || !CanSave || SavesLeft <= 0)
         {
             return false;
         }
@@ -108,7 +112,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
 
     /// <inheritdoc/>
     /// <remarks>The newest valid save of the six, by when its file was written (<c>Game_FindNewestSaveGame</c>).</remarks>
-    public bool QuickLoad() => _slots.TryFindNewest(_owner(), out int slot) && Load(slot);
+    public bool QuickLoad() => !SaveGameLock.IsHeld && _slots.TryFindNewest(_owner(), out int slot) && Load(slot);
 
     /// <inheritdoc/>
     public int SavesLeft => Math.Max(SaveRules.SavesAllowed(_owner().Difficulty) - _source.SavesUsed, 0);
@@ -132,7 +136,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     public bool Save(int slot)
     {
         SaveOwner whose = _owner();
-        if (!CanSave || SavesLeft <= 0 || slot < 0 || slot >= SaveRules.MenuSlots)
+        if (SaveGameLock.IsHeld || !CanSave || SavesLeft <= 0 || slot < 0 || slot >= SaveRules.MenuSlots)
         {
             return false;
         }
@@ -150,7 +154,8 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     public bool Write(int slot)
     {
         SaveOwner whose = _owner();
-        return slot >= 0
+        return !SaveGameLock.IsHeld
+            && slot >= 0
             && slot <= SaveRules.QuickSave
             && Recorded(whose, slot, _slots.Save(whose, slot, _source.Root, _source.MissionTime, _source.Context));
     }
@@ -165,7 +170,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     public virtual bool Load(int slot)
     {
         SaveOwner whose = _owner();
-        if (!_slots.Check(whose, slot).IsValid)
+        if (SaveGameLock.IsHeld || !_slots.Check(whose, slot).IsValid)
         {
             return false;
         }

@@ -294,6 +294,7 @@ public sealed partial class Igi2TitlePlayer
     /// </summary>
     private void RunComputerSaves()
     {
+        // Neither in a multiplayer session, where what was asked for is only forgotten (SaveGameLock).
         if (Human.LoadSlot is var load and not 0)
         {
             Human.LoadSlot = 0;
@@ -313,18 +314,37 @@ public sealed partial class Igi2TitlePlayer
     {
         public float BatteryLevel => player.Saves?.BatteryLevel ?? 0f;
 
-        public bool IsSaveAllowed => player.Human.IsSaveAllowed;
+        // HumanPlayer_IsSaveAllowed: not while the action is locked, and only in a single player's game.
+        public bool IsSaveAllowed => player.Human.IsSaveAllowed && !SaveGameLock.IsHeld;
 
         public int QuickLoadSlot => player.Human.QuickLoadSlot;
 
         public (bool IsUsed, string Info, string When) Slot(int slot) =>
             player.Saves?.SlotLabel(slot, key => player.Strings?.Get(key) ?? key) ?? (false, string.Empty, string.Empty);
 
-        public void BeginSave(int slot) => player.Human.BeginSaveToSlot(slot);
+        public void BeginSave(int slot)
+        {
+            if (!SaveGameLock.IsHeld)
+            {
+                player.Human.BeginSaveToSlot(slot);
+            }
+        }
 
-        public void FinishSave(int slot) => player.Human.FinishSaveToSlot(slot);
+        public void FinishSave(int slot)
+        {
+            if (!SaveGameLock.IsHeld)
+            {
+                player.Human.FinishSaveToSlot(slot);
+            }
+        }
 
-        public void Load(int slot) => player.Human.LoadFromSlot(slot);
+        public void Load(int slot)
+        {
+            if (!SaveGameLock.IsHeld)
+            {
+                player.Human.LoadFromSlot(slot);
+            }
+        }
 
         public void FreezeFire() => player.FreezeFire();
 

@@ -44,11 +44,14 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <inheritdoc/>
     /// <remarks>
-    /// None while they are switched off (<c>g_igi1_saves</c>), and none in a session with other players, whose level is the
-    /// server's to keep.
+    /// None while they are switched off (<c>g_igi1_saves</c>), and none in a multiplayer session of any kind -- co-op, a
+    /// versus match, a server, a demo played back -- whose level is the server's to keep
+    /// (<see cref="OpenIGI.Game.Saves.SaveGameLock"/>): not for its host either, and not while it waits alone for others.
     /// </remarks>
     public ITitleSaveGames? SaveGames =>
-        GameplayCVars.Igi1Saves.Value && !World.CoopClient && World.NetworkPlayers.Count == 0 ? Saves : null;
+        GameplayCVars.Igi1Saves.Value && !OpenIGI.Game.Saves.SaveGameLock.IsHeld && !World.CoopClient && World.NetworkPlayers.Count == 0
+            ? Saves
+            : null;
 
     /// <inheritdoc/>
     public string Map => World.MissionId.ToString(System.Globalization.CultureInfo.InvariantCulture);

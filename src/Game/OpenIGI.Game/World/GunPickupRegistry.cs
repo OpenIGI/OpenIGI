@@ -428,7 +428,7 @@ public sealed class GunPickupRegistry : ILevelReset
                     walker,
                     task,
                     () => pickup.IsCollected && !KeepsTakenTasks,
-                    () => WithdrawsTakenTasks,
+                    () => WithdrawsTakenTasks && !Saves.SaveGameLock.IsHeld,
                     _variables,
                     _variables is { } variables ? () => Export(variables, pickup, task) : null);
             }
@@ -440,7 +440,7 @@ public sealed class GunPickupRegistry : ILevelReset
     private void Take(GunPickup pickup)
     {
         pickup.IsCollected = true;
-        if (!_inWalk && !KeepsTakenTasks && !WithdrawsTakenTasks && pickup.Task is { } task)
+        if (!_inWalk && !KeepsTakenTasks && !(WithdrawsTakenTasks && !Saves.SaveGameLock.IsHeld) && pickup.Task is { } task)
         {
             TakenPickupTask.Delete(task, _variables);
         }
