@@ -10,7 +10,7 @@ namespace OpenIGI.Game.Ai;
 /// (<c>0x488000</c>/<c>0x488040</c>) recursively rebuilds the authored subtree; the managed runtime keeps
 /// the typed authored task as the template while creating a fresh live brain/view for every instance.
 /// </remarks>
-public partial class GuardGeneratorTask : ContainerTask
+public partial class GuardGeneratorTask : ContainerTask, Saves.IExchangedState
 {
     /// <summary>The level-script type name.</summary>
     public const string TypeName = "GuardGenerator";
@@ -31,6 +31,14 @@ public partial class GuardGeneratorTask : ContainerTask
 
     /// <summary>How many instances have been spawned so far.</summary>
     public int SpawnCount { get; private set; }
+
+    // Not retail: what a save keeps of a generator is whether it is on, whether its first guard stands, and how many it has made.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        IsOn = exchange.Bool(IsOn);
+        IsSpawned = exchange.Bool(IsSpawned);
+        SpawnCount = exchange.Int(SpawnCount);
+    }
 
     /// <summary>
     /// Gets or sets the lives of a template another game drives, which the generator's update spawns in place of cloning its own

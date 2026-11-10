@@ -22,7 +22,7 @@ namespace OpenIGI.Game.Igi1.Player;
 /// the same convention as <see cref="HumanView"/>.
 /// </para>
 /// </remarks>
-public sealed class SoldierView
+public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
 {
     private BoneObject _bones;
     private BonePose? _pose;
@@ -542,6 +542,43 @@ public sealed class SoldierView
         CurrentAnimation = StandAnimation;
         Position = Soldier.Position;
         Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, Soldier.Gamma);
+        _pose = null;
+        _unrotatedPose = null;
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a save keeps of a body is where it stands and how it is turned,
+    // whether it is dead, and the clip its whole body plays and how far through. What its shoulders were doing is not kept:
+    // its mind starts afresh and takes its stance up again.
+    void OpenIGI.Game.Saves.IExchangedState.Exchange(OpenIGI.Game.Saves.StateExchange exchange)
+    {
+        Vector3d position = exchange.Position(Position);
+        Matrix3f orientation = exchange.Frame(Orientation);
+        bool dead = exchange.Bool(IsDead);
+        int animation = exchange.Int(CurrentAnimation);
+        BoneClip? playing = _bones.SourceOf(0);
+        bool loops = exchange.Bool(playing?.Loops ?? true);
+        float time = exchange.Real(playing?.Time ?? 0f);
+        if (!exchange.IsReading)
+        {
+            return;
+        }
+
+        PlaceAt(position, orientation);
+        if (dead)
+        {
+            Kill(animation);
+        }
+        else
+        {
+            ReleaseUpperBody();
+            PlayStateAnimation(animation, loops);
+        }
+
+        if (CurrentAnimation == animation)
+        {
+            _bones.SourceOf(0)?.SetTime(time);
+        }
+
         _pose = null;
         _unrotatedPose = null;
     }

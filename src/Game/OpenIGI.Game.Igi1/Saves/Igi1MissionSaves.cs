@@ -74,7 +74,7 @@ public sealed class Igi1SaveStates : ISaveStates
         return new object?[]
         {
             world.Elevators, world.Doors, world.Interactions, world.GenericPickups, world.AlarmSpeakers, world.Destructibles,
-            world.SecurityCameras, world.RotatingObjects, world.Objectives,
+            world.SecurityCameras, world.RotatingObjects, world.Objectives, world.Soldiers,
         }.OfType<ISavedStateSource>();
     }
 

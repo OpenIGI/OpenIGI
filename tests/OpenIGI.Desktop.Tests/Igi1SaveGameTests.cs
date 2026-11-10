@@ -31,6 +31,12 @@ public sealed class Igi1SaveGameTests : IDisposable
 
         (string fresh, string again) = Saved(ticksPlayed: 0, read: played);
         Assert.NotEqual(Lines(fresh), Lines(played));
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } dump)
+        {
+            File.WriteAllText(dump + ".a", played);
+            File.WriteAllText(dump + ".b", again);
+        }
+
         Assert.Equal(Lines(played), Lines(again));
 
         static string[] Lines(string script) => script.Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -55,6 +61,18 @@ public sealed class Igi1SaveGameTests : IDisposable
         }
 
         MissionWorld world = host.Mission();
+        if (read is null)
+        {
+            // One soldier dead and fallen, so a save holds a body as well as the living.
+            host.Soldiers()!.Simulation.KillForTesting(host.Soldiers()!.Simulation.SoldierViews.First(static v => !v.IsDead));
+            for (int i = 0; i < 400; i++)
+            {
+                Assert.True(host.Step());
+            }
+
+            Assert.Contains(host.Soldiers()!.Simulation.SoldierViews, static v => v.IsDead);
+        }
+
         SaveContext context = Igi1SaveFormat.Context(world);
         string before = SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!;
         if (read is null)
@@ -66,6 +84,16 @@ public sealed class Igi1SaveGameTests : IDisposable
         Assert.True(SaveScript.Load(read, world.LevelRoot!, context, misread).IsValid);
         Assert.Empty(misread);
         context = Igi1SaveFormat.Context(world);
-        return (before, SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!);
+        Assert.Contains(host.Soldiers()!.Simulation.SoldierViews, static v => v.IsDead);
+        string after = SaveScript.Create(world.LevelRoot!, context.Info(1, 0), context)!;
+
+        // And the level read back plays on: its soldiers' minds start afresh from where they stood, its dead stay dead.
+        for (int i = 0; i < 300; i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        Assert.Contains(host.Soldiers()!.Simulation.SoldierViews, static v => v.IsDead);
+        return (before, after);
     }
 }

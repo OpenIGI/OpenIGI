@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Player;
 /// <see cref="HumanHitZoneTable.LethalMultiplier"/> = 100, so any weapon at all reaches 1.0 in one hit.
 /// </para>
 /// </remarks>
-public sealed class HumanHealth
+public sealed class HumanHealth : Saves.IExchangedState
 {
     /// <summary>Initializes a new instance of the <see cref="HumanHealth"/> class.</summary>
     /// <param name="zones">
@@ -123,6 +123,13 @@ public sealed class HumanHealth
 
     /// <summary>Gets whether this human is dead.</summary>
     public bool IsDead => HumanDamage.IsDead(Damage, MaximumHealth);
+
+    // Not retail: what a save keeps of a human's health is the damage it has taken and the hits that dealt it.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Damage = exchange.Real(Damage);
+        Hits = exchange.Int(Hits);
+    }
 
     /// <summary>Gets how much of the human is left, from one down to zero.</summary>
     public float RemainingFraction =>

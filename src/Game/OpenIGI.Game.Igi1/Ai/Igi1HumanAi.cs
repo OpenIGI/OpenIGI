@@ -347,7 +347,10 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        AiPatrolRoute? route = AiPatrolRoute.Start(path);
+        // A patrol a save game had it on is taken up at the command it had reached.
+        int start = _resumePatrol is { } resumed && resumed.Path == pathId ? resumed.Index : 0;
+        _resumePatrol = null;
+        AiPatrolRoute? route = AiPatrolRoute.Start(path, start) ?? AiPatrolRoute.Start(path);
         if (route is null)
         {
             return false;
