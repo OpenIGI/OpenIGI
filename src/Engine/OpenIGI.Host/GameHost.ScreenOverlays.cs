@@ -309,18 +309,25 @@ public sealed partial class GameHost
             && ComputerObjectives is { } computerObjectives
             && ComputerBodyUnits is { } computerBody)
         {
+            // The feed over the picture, then the display through the visor: passes of the computer's own, between which
+            // it opens and closes the batch itself.
             _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-            state.Batch.Begin();
             tacticalChrome.Draw(
                 state.Batch,
                 computerObjectives,
                 computerBody,
                 ComputerContacts(),
                 ComputerHighlights(),
-                _window.Width,
-                _window.Height,
-                _computerFlight.ChromeOpacity);
-            state.Batch.End();
+                new ComputerFrame(
+                    _window.Width,
+                    _window.Height,
+                    _options.UiScale,
+                    _computerFlight.ChromeOpacity,
+                    _computerFlight.Display,
+                    ComputerSubject() is { } computerSubject ? OpenIGI.Presentation.Cameras.CameraPose.FromCamera(computerSubject.Camera).Yaw : 0f)
+                {
+                    CloseKey = PlayerProfileInputBindings.BoundKeyName(_configuration.Active, PlayerInputBindings.ConfigName(PlayerAction.MapComputer)) ?? string.Empty,
+                });
         }
 
         _hudOverlay?.DrawWashes(state.Batch, hudFrame);

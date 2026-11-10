@@ -69,8 +69,8 @@ public sealed partial class GameHost
 
         // Whether the eye is under a roof, which the weather and the HUD read. A title's own screen over
         // the view (I.G.I. 2's map computer turns the rain off) keeps the weather off as a building's
-        // shell does.
-        bool cameraIndoors = IsCameraInsideBuilding(view.Eye.Position) || TitlePlayer?.IsWeatherHidden == true;
+        // shell does, and so does the remastered computer's map, read in clear air (ComputerMapClear).
+        bool cameraIndoors = IsCameraInsideBuilding(view.Eye.Position) || TitlePlayer?.IsWeatherHidden == true || ComputerMapClear;
 
         DrawSceneGeometry(
             view.MapScene, captured, view.Eye, view.Projection, view.VerticalFieldOfView, view.AspectRatio, cascadesRead,

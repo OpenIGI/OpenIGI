@@ -12,10 +12,9 @@ namespace OpenIGI.Rendering;
 /// survive it.
 /// </para>
 /// <para>
-/// It is separate from <see cref="TacticalDisplaySettings"/> rather than a generalisation of it. That
-/// one is the map computer's tube; this is the first-person binocular's glass. The two are never on
-/// together -- the computer replaces the first-person view -- so they can coexist as independent
-/// uniforms without either changing what the other puts on screen.
+/// It is separate from <see cref="MapFeedSettings"/> rather than a generalisation of it. That one is
+/// the map computer's feed; this is the first-person binocular's glass. The two are never on together
+/// -- the computer replaces the first-person view -- so neither changes what the other puts on screen.
 /// </para>
 /// <para>
 /// Everything is continuous because the raise is the point: the glass bends into existence as the

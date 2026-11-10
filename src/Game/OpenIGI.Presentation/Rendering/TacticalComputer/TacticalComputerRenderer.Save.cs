@@ -2,11 +2,8 @@ using System.Globalization;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Computer;
 using OpenIGI.Input;
-using OpenIGI.UI;
-using OpenIGI.UI.Kit;
+using OpenIGI.Presentation.Hud.Remastered;
 using OpenIGI.UI.Layout;
-using OpenIGI.UI.Text;
-using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Presentation.Rendering;
 
@@ -25,6 +22,12 @@ public sealed partial class TacticalComputerRenderer
     private float _saveClock;
     private bool _saveShown;
     private int _hoverSaveRow = -1;
+
+    // The battery's charge as an upload began and as it will stand once that save is written: the gauge runs from the one
+    // to the other as the upload does, since the charge itself is only spent after the page has gone.
+    private ComputerSaveState _saveStateShown;
+    private float _batteryFrom;
+    private float _batteryTo;
 
     /// <inheritdoc/>
     public IComputerSaves? Saves
@@ -49,7 +52,7 @@ public sealed partial class TacticalComputerRenderer
     private readonly record struct SaveRow(UiRect Rect, SaveRowKind Kind, int Slot, string Title, string Detail, bool Dimmed);
 
     // The page's run: its ticks at the game's own rate, its rows under the pointer, and a click on one.
-    private void UpdateSave(InputState input, float step, LayoutContext context, in TacticalComputerChrome chrome)
+    private void UpdateSave(InputState input, float step, in TacticalComputerChrome chrome)
     {
         if (_page != Page.Save || Saves is null)
         {
@@ -73,7 +76,17 @@ public sealed partial class TacticalComputerRenderer
             _save.Run();
         }
 
-        LayOutSaveRows(context, chrome.Page);
+        if (_save.State == ComputerSaveState.Uploading && _saveStateShown != ComputerSaveState.Uploading)
+        {
+            _batteryFrom = Saves?.BatteryLevel ?? 0f;
+            _batteryTo = Saves?.BatteryAfterSave ?? 0f;
+            PlaySound?.Invoke(StaticSound);
+        }
+
+        _saveStateShown = _save.State;
+
+        LayOutSaveRows(chrome);
+        int hoverBefore = _hoverSaveRow;
         _hoverSaveRow = -1;
         for (int i = 0; i < _saveRows.Count; i++)
         {
@@ -83,10 +96,18 @@ public sealed partial class TacticalComputerRenderer
             }
         }
 
+        // A row newly under the pointer clicks, and a row chosen sounds, as the original's items do.
+        if (_hoverSaveRow >= 0 && _hoverSaveRow != hoverBefore && !_saveRows[_hoverSaveRow].Dimmed)
+        {
+            PlaySound?.Invoke(HoverSound);
+        }
+
         if (_hoverSaveRow < 0 || !input.Mouse.WasPressed(MouseButton.Left))
         {
             return;
         }
+
+        PlaySound?.Invoke(ClickSound);
 
         SaveRow row = _saveRows[_hoverSaveRow];
         switch (row.Kind)
@@ -112,14 +133,15 @@ public sealed partial class TacticalComputerRenderer
         }
     }
 
-    // The rows the shown page offers, down the card from under its heading.
-    private void LayOutSaveRows(LayoutContext context, UiRect card)
+    // The rows the shown page offers, down the panel from under its heading.
+    private void LayOutSaveRows(in TacticalComputerChrome chrome)
     {
         _saveRows.Clear();
-        float pad = context.Px(34f);
+        UiRect card = chrome.Page;
+        float pad = PagePad(chrome);
         float x = card.X + pad, width = card.Width - (pad * 2f);
-        float y = card.Y + context.Px(88f) + context.Px(40f);
-        float height = context.Px(52f), gap = context.Px(8f);
+        float y = PageBodyTop(chrome);
+        float height = chrome.Line + chrome.Px(16f), gap = chrome.Px(6f);
 
         void Add(SaveRowKind kind, int slot, string title, string detail, bool dimmed = false)
         {
@@ -157,72 +179,76 @@ public sealed partial class TacticalComputerRenderer
     private static string SlotTitle(ComputerSaveSlot slot) =>
         string.Create(CultureInfo.InvariantCulture, $"SLOT 0{slot.Slot + 1}   {(slot.IsFree ? "UNUSED" : slot.Info.ToUpperInvariant())}");
 
-    private void DrawSave(UiPainter painter, LayoutContext context, UiFont body, UiFont label, UiRect card, float pad, float y)
+    // The page's name: what the uplink is doing.
+    private string SaveHeading() => _save.State switch
     {
+        ComputerSaveState.Upload => "UPLOAD TO WHICH SLOT",
+        ComputerSaveState.Download => "DOWNLOAD FROM WHICH SLOT",
+        ComputerSaveState.Overwrite => "THAT SLOT HOLDS A SAVE",
+        ComputerSaveState.Uploading => "UPLOADING",
+        ComputerSaveState.Complete => "UPLOAD COMPLETE",
+        _ => "IGI HQ UPLINK",
+    };
+
+    private void DrawSave(ComputerCanvas canvas, UiRect card, float pad, float y)
+    {
+        HudPalette palette = canvas.Palette;
+        ComputerText text = canvas.Text;
         float width = card.Width - (pad * 2f);
-        string heading = _save.State switch
-        {
-            ComputerSaveState.Upload => "UPLOAD TO WHICH SLOT",
-            ComputerSaveState.Download => "DOWNLOAD FROM WHICH SLOT",
-            ComputerSaveState.Overwrite => "THAT SLOT HOLDS A SAVE",
-            ComputerSaveState.Uploading => "UPLOADING",
-            ComputerSaveState.Complete => "UPLOAD COMPLETE",
-            _ => "IGI HQ UPLINK",
-        };
-        UiVectors.DrawTracked(painter, label, heading, new UiVec2(card.X + pad, y), context.Px(14f), TextMuted, context.Px(2f));
-        DrawBattery(painter, context, label, new UiVec2(card.Right - pad, y));
 
         if (_save.State is ComputerSaveState.Uploading or ComputerSaveState.Complete)
         {
             // The upload's bar, filling as the original's does over its hundred ticks.
-            float barY = y + context.Px(48f);
-            var track = new UiRect(card.X + pad, barY, width, context.Px(8f));
-            painter.FillRect(track, UiPalette.White(0.08f));
-            painter.FillRect(track with { Width = width * Math.Clamp(_save.UploadProgress, 0f, 1f) }, Signal);
+            float progress = Math.Clamp(_save.UploadProgress, 0f, 1f);
+            var track = new UiRect(card.X + pad, y + canvas.Px(8f), width, MathF.Max(4f, canvas.Px(8f)));
+            canvas.Painter.FillRect(track, ComputerCanvas.Fade(palette.Primary, 0.14f));
+            canvas.Painter.FillRect(track with { Width = MathF.Round(width * progress) }, palette.Primary);
+            canvas.Painter.StrokeRect(track, canvas.Hairline, ComputerCanvas.Fade(palette.Primary, 0.6f));
             string count = _save.State == ComputerSaveState.Complete
                 ? "COMPLETE"
-                : string.Create(CultureInfo.InvariantCulture, $"{(int)(_save.UploadProgress * 100f)}%");
-            UiVectors.DrawTracked(painter, label, count, new UiVec2(card.X + pad, barY + context.Px(22f)), context.Px(16f), Text, context.Px(2f));
+                : string.Create(CultureInfo.InvariantCulture, $"{(int)(progress * 100f)}%");
+            text.Draw(count, card.X + pad, track.Bottom + canvas.Px(10f), palette.Highlight);
             return;
         }
 
-        // Laid out again on the card as it is drawn, which rises a little as the display comes up.
-        LayOutSaveRows(context, card);
+        float bar = MathF.Max(2f, MathF.Round(canvas.Px(2.5f)));
+        LayOutSaveRows(canvas.Chrome);
         for (int i = 0; i < _saveRows.Count; i++)
         {
             SaveRow row = _saveRows[i];
             UiRect rect = row.Rect;
             bool hovered = i == _hoverSaveRow;
-            painter.FillRect(rect, hovered ? UiPalette.AccentAt(0.13f) : UiPalette.White(0.05f));
-            painter.FillRect(new UiRect(rect.X, rect.Y, context.Px(3f), rect.Height), hovered ? Accent : row.Dimmed ? Border : SignalDim);
-            Bgra32 colour = row.Dimmed ? TextMuted : hovered ? UiPalette.AccentLight : Text;
-            UiVectors.DrawTracked(painter, label, row.Title, new UiVec2(rect.X + context.Px(20f), rect.Y + context.Px(17f)),
-                context.Px(16f), colour, context.Px(2f));
+            canvas.Painter.FillRect(rect, ComputerCanvas.Fade(palette.Primary, hovered ? 0.2f : 0.06f));
+            canvas.Painter.FillRect(
+                new UiRect(rect.X, rect.Y, bar, rect.Height),
+                hovered ? palette.Highlight : row.Dimmed ? ComputerCanvas.Fade(canvas.Quiet, 0.6f) : palette.Primary);
+
+            Bgra32 ink = row.Dimmed ? canvas.Quiet : hovered ? palette.Highlight : palette.Primary;
+            float line = rect.Y + ((rect.Height - text.LineHeight) * 0.5f);
+            text.Draw(text.Capitals(row.Title), rect.X + bar + canvas.Px(12f), line, ink);
             if (row.Detail.Length > 0)
             {
-                float size = context.Px(12f), tracking = context.Px(1.6f);
-                float detailWidth = UiVectors.MeasureTracked(label, row.Detail, size, tracking);
-                UiVectors.DrawTracked(painter, label, row.Detail, new UiVec2(rect.Right - context.Px(20f) - detailWidth, rect.Y + context.Px(20f)),
-                    size, TextMuted, tracking);
+                text.DrawRight(text.Capitals(row.Detail), rect.Right - canvas.Px(10f), line, hovered ? palette.Highlight : canvas.Quiet);
             }
         }
     }
 
     // The battery a save is made on: its charge as a gauge, right-aligned on the heading's line.
-    private void DrawBattery(UiPainter painter, LayoutContext context, UiFont label, UiVec2 rightTop)
+    private void DrawBattery(ComputerCanvas canvas, float right, float y)
     {
-        float charge = Math.Clamp(_save.Battery, 0f, 1f);
+        HudPalette palette = canvas.Palette;
+        // The charge as it stands now, not as it stood when the page came up; through an upload, running down to what
+        // that save leaves.
+        float live = _save.State is ComputerSaveState.Uploading or ComputerSaveState.Complete
+            ? _batteryFrom + ((_batteryTo - _batteryFrom) * Math.Clamp(_save.UploadProgress, 0f, 1f))
+            : Saves?.BatteryLevel ?? _save.Battery;
+        float charge = Math.Clamp(live, 0f, 1f);
         bool flat = charge <= 0f;
-        float gaugeWidth = context.Px(120f), gaugeHeight = context.Px(10f);
-        var gauge = new UiRect(rightTop.X - gaugeWidth, rightTop.Y + context.Px(3f), gaugeWidth, gaugeHeight);
-        painter.FillRect(gauge, UiPalette.White(0.08f));
-        painter.FillRect(gauge with { Width = gaugeWidth * charge }, charge > 0.34f ? Complete : Hostile);
-        painter.StrokeRect(gauge, MathF.Max(1f, context.Px(1f)), Border);
-
-        string text = flat ? "BATTERY LOW" : "BATTERY";
-        float size = context.Px(11f), tracking = context.Px(1.8f);
-        float textWidth = UiVectors.MeasureTracked(label, text, size, tracking);
-        UiVectors.DrawTracked(painter, label, text, new UiVec2(gauge.X - context.Px(12f) - textWidth, rightTop.Y + context.Px(2f)),
-            size, flat ? Hostile : TextMuted, tracking);
+        float gaugeWidth = canvas.Px(90f), gaugeHeight = MathF.Max(4f, canvas.Px(8f));
+        var gauge = new UiRect(right - gaugeWidth, MathF.Round(y + ((canvas.Text.LineHeight - gaugeHeight) * 0.5f)), gaugeWidth, gaugeHeight);
+        canvas.Painter.FillRect(gauge, ComputerCanvas.Fade(palette.Primary, 0.14f));
+        canvas.Painter.FillRect(gauge with { Width = MathF.Round(gaugeWidth * charge) }, charge > 0.34f ? palette.Primary : palette.Danger);
+        canvas.Painter.StrokeRect(gauge, canvas.Hairline, ComputerCanvas.Fade(palette.Primary, 0.6f));
+        canvas.Text.DrawRight(flat ? "BATTERY LOW" : "BATTERY", gauge.X - canvas.Px(10f), y, flat ? palette.Danger : canvas.Quiet);
     }
 }

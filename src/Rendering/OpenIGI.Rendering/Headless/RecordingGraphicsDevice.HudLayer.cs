@@ -13,6 +13,24 @@ public sealed partial class RecordingGraphicsDevice
     /// <summary>Gets the HUD layer's begins and composes, in order.</summary>
     public List<HudLayerEvent> HudLayerEvents { get; } = [];
 
+    /// <summary>Gets the map feeds drawn, each with how many 2D draws had been recorded before it.</summary>
+    public List<(MapFeedSettings Feed, int DrawsBefore)> MapFeeds { get; } = [];
+
+    /// <summary>Gets or sets a value indicating whether the device can read its own frame, and so draw the map feed.</summary>
+    public bool SupportsMapFeed { get; set; } = true;
+
+    /// <inheritdoc/>
+    public bool DrawMapFeed(in MapFeedSettings feed)
+    {
+        if (!SupportsMapFeed || !feed.IsActive)
+        {
+            return false;
+        }
+
+        Record(MapFeeds, (feed, Draws.Count));
+        return true;
+    }
+
     /// <summary>Gets or sets a value indicating whether the device offers a HUD layer at all.</summary>
     public bool SupportsHudLayer { get; set; } = true;
 

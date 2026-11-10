@@ -99,7 +99,8 @@ public sealed partial class GameHost
             detailedWorld.CollectGlows = GraphicsPresetRegistry.Default.Current == GraphicsPreset.Vanilla;
         }
 
-        bool retailFog = FogCVars.RetailFog.Value;
+        // None of it over the remastered computer's map, which is read in clear air (ComputerMapClear).
+        bool retailFog = FogCVars.RetailFog.Value && !ComputerMapClear;
         _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
         _device.SetModelAmbient(
             _gi.EffectiveLighting == LightingModel.Baked

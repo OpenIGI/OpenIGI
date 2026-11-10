@@ -595,6 +595,10 @@
       "source": "Ui/ScopeGlint.slang"
     },
     {
+      "id": "MapFeed",
+      "source": "Ui/MapFeed.slang"
+    },
+    {
       "id": "Silhouette",
       "source": "Post/Silhouette.slang"
     },

@@ -6,6 +6,12 @@ public interface IComputerSaves
     /// <summary>Gets the battery's charge as a share, <c>HumanPlayer_GetBatteryLevel</c>.</summary>
     float BatteryLevel { get; }
 
+    /// <summary>
+    /// Gets the charge the battery will stand at once a save begun now is written. The charge is spent as the save is
+    /// written, after the screen that showed it has gone, so a display that shows it draining reads it from here.
+    /// </summary>
+    float BatteryAfterSave => BatteryLevel;
+
     /// <summary>Gets a value indicating whether a save may be uploaded now, <c>HumanPlayer_IsSaveAllowed</c>.</summary>
     bool IsSaveAllowed { get; }
 

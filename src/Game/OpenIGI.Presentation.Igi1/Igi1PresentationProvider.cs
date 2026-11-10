@@ -285,7 +285,13 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     private ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request) =>
-        new TacticalComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText);
+        new TacticalComputerRenderer(
+            request.Device,
+            request.Resources,
+            request.Logger,
+            request.ResolveText,
+            OpenIGI.Presentation.Igi1.Hud.Igi1HudTheme.Theme,
+            new Igi1ComputerFont(request.Device, request.Resources.FileSystem, request.Logger));
 
     /// <inheritdoc/>
     private IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request) =>

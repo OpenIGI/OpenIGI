@@ -33,6 +33,19 @@ public sealed partial class GameHost
     private ITacticalComputerPresenter? TacticalComputer =>
         HudCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
+    /// <summary>
+    /// Gets a value indicating whether the remastered computer's map owns the frame and has arrived over the level: the
+    /// overhead view is then drawn in clear air, with no fog and no weather between the eye and the ground.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not retail</b>. A map is read for what is on the ground, and from nine hundred metres up a level's haze is a
+    /// wash over all of it and its rain a sheet across it. The climb and the fall keep both, so the shot leaves and
+    /// returns to the weather the player stands in; they go as the display is driven and come back as it is taken down.
+    /// The original's computer is left as it draws.
+    /// </remarks>
+    private bool ComputerMapClear =>
+        _computerOpen && !_computerFlight.IsFlying && TacticalComputer is { MapAvailable: true };
+
     // The map gate of the level last asked about; rebuilt when another level comes up.
     private MapComputerGate? _mapGate;
 
@@ -84,6 +97,12 @@ public sealed partial class GameHost
         {
             _tacticalComputer.Dispose();
             _tacticalComputer = null;
+        }
+
+        // Its sounds are the original computer's, played as that plays them: unplaced (0x4E7200).
+        if (_tacticalComputer is not null)
+        {
+            _tacticalComputer.PlaySound = name => _audioOut.Sounds?.PlayDefinition(name, priority: 180);
         }
 
         // The comms cards. Built here rather than beside the HUD below, because the messages belong to the
@@ -184,9 +203,12 @@ public sealed partial class GameHost
             // -computercam presses C on a named frame, so the transition can be captured from a
             // moment somebody can ask for again. Latched, not held: it must open the computer once
             // and then leave the key alone, or every frame past it would toggle.
+            // It waits out a cinematic, during which the computer does not open, rather than spend its one press on it.
             bool automaticOpen = _options.ComputerCamFrame > 0
                 && !_computerCamFired
-                && _loop.Clock.FrameCount >= _options.ComputerCamFrame;
+                && _loop.Clock.FrameCount >= _options.ComputerCamFrame
+                && !_entry.IsCameraActive
+                && _mission.Cutscenes?.IsPlaying != true;
             if (automaticOpen)
             {
                 _computerCamFired = true;
@@ -230,7 +252,10 @@ public sealed partial class GameHost
                 CameraPose vantage = mapAvailable ? tacticalComputer.Vantage() : eye;
                 float vantageFieldOfView = mapAvailable ? tacticalComputer.FieldOfView : gameplayFieldOfView;
 
-                if (!_computerOpen && toggleComputer)
+                // Not during a cinematic: the view is the cutscene's or the entry camera's, not the player's to leave, and
+                // the original takes no map key while one plays.
+                bool cinematic = _entry.IsCameraActive || _mission.Cutscenes?.IsPlaying == true;
+                if (!_computerOpen && toggleComputer && !cinematic)
                 {
                     _computerOpen = true;
                     tacticalComputer.Open(subject.BodyUnits);

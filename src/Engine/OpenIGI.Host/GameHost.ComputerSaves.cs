@@ -93,6 +93,8 @@ public sealed partial class GameHost
 
         public float BatteryLevel => host.MissionSaveGames?.BatteryLevel ?? 0f;
 
+        public float BatteryAfterSave => host.MissionSaveGames?.BatteryAfterSave ?? 0f;
+
         public bool IsSaveAllowed => host.MissionSaveGames?.CanSave ?? false;
 
         public int QuickLoadSlot => 0;

@@ -24,6 +24,9 @@ public interface ITitleSaveGames
     /// <summary>Gets a value indicating whether the mission can be saved as it stands.</summary>
     bool CanSave => true;
 
+    /// <summary>Gets the charge the battery will stand at once one more save is made: one save's share less.</summary>
+    float BatteryAfterSave => SavesLeft > 0 ? BatteryLevel * (SavesLeft - 1) / SavesLeft : 0f;
+
     /// <summary>Gets the share of the mission's saves that are left, the charge of the computer's battery: nought when none may be made.</summary>
     float BatteryLevel => SavesLeft == 0 ? 0f : 1f;
 

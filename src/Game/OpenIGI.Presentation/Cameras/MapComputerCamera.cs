@@ -225,9 +225,15 @@ public sealed class MapComputerCamera
             _ => 0f,
         };
 
-    /// <summary>Gets the settings the resolve needs to put this frame on the tube.</summary>
-    public TacticalDisplaySettings Display =>
-        new(DisplayAmount, BootEnergy, SweepStrength, SweepPosition, _seconds);
+    /// <summary>Gets how far the map's feed has come up this frame; its look is the computer's own to add.</summary>
+    public MapFeedSettings Display => new()
+    {
+        Amount = DisplayAmount,
+        Boot = BootEnergy,
+        Sweep = SweepStrength,
+        SweepPosition = SweepPosition,
+        Seconds = _seconds,
+    };
 
     /// <summary>Begins the climb out of the player's eye.</summary>
     /// <param name="eye">Where the player is looking from now.</param>

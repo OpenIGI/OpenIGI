@@ -94,15 +94,9 @@
 /// Converts the resolved picture to the high-contrast green emission of the SIMOTECH map-computer CRT.
 /// This is a display transform, not a translucent overlay: the world must remain readable underneath it.
 /// </param>
-/// <param name="Tactical">
-/// The remaster's own map-computer display: the same idea as <paramref name="GreenPhosphor"/> carried
-/// on continuous parameters, so the tube can be brought up and taken down as part of a camera move
-/// rather than switched. The two are never on together — see <see cref="TacticalDisplaySettings"/>.
-/// </param>
 /// <param name="Binocular">
 /// The remastered first-person binocular's glass lens transform, carried on continuous parameters so
-/// the optics fade in as the device is raised. Mutually exclusive with <paramref name="Tactical"/> —
-/// the map computer replaces the first-person view — see <see cref="BinocularDisplaySettings"/>.
+/// the optics fade in as the device is raised; see <see cref="BinocularDisplaySettings"/>.
 /// </param>
 /// <param name="ExposureRate">
 /// How fast the adapted exposure eases towards the scene's brightness each frame, from 0 to 1, when
@@ -138,7 +132,6 @@ public readonly record struct PostProcessSettings(
     float ColourLookup = 0f,
     bool AutoExposure = false,
     bool GreenPhosphor = false,
-    TacticalDisplaySettings Tactical = default,
     BinocularDisplaySettings Binocular = default,
     float ExposureRate = 0.04f,
     float FrameDeltaSeconds = 1f / 60f,
@@ -194,7 +187,6 @@ public readonly record struct PostProcessSettings(
         || WantsColourLookup
         || GreenPhosphor
         || NightShift > 0f
-        || Tactical.IsActive
         || Binocular.IsActive;
 
     /// <summary>The steady exposure rate <see cref="ExposureRate"/> is measured against.</summary>

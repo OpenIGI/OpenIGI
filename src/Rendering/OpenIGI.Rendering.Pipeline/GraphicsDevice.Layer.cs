@@ -187,5 +187,6 @@ public sealed partial class GraphicsDevice
         _interfaceLayer?.Dispose();
         DisposeHudLayer();
         DisposeGlint();
+        DisposeMapFeed();
     }
 }

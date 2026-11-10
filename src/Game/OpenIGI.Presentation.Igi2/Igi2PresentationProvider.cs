@@ -60,7 +60,13 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 
             // The remastered computer is both games' own: the shared display, fed whichever mission's objectives there are.
             .Add<MapComputerPresentationRequest, ITacticalComputerPresenter>(static (in MapComputerPresentationRequest request) =>
-                new TacticalComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText));
+                new TacticalComputerRenderer(
+                    request.Device,
+                    request.Resources,
+                    request.Logger,
+                    request.ResolveText,
+                    OpenIGI.Presentation.Igi2.Hud.Igi2HudTheme.Theme,
+                    new OpenIGI.Presentation.Igi2.Hud.Igi2ComputerFont(request.Device, request.Resources.FileSystem, request.Logger)));
 
     /// <inheritdoc/>
     public PresenterRegistry Presenters { get; }
