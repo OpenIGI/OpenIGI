@@ -33,9 +33,11 @@ export async function handleParties(request, env, url) {
   const parts = url.pathname.split("/").filter(Boolean); // ["v1", "parties", code?, action?]
   if (parts.length === 2 && request.method === "POST") {
     // A new code; one already taken is passed over, as a room's is.
+    // Read once: a request's body can't be read again for a second try at a code.
+    const made = await bodyText(request);
     for (let tries = 0; tries < 8; tries++) {
       const code = newCode();
-      const response = await partyStub(env, code).fetch(`https://party/${code}/create`, { method: "POST", body: await bodyText(request) });
+      const response = await partyStub(env, code).fetch(`https://party/${code}/create`, { method: "POST", body: made, headers: who(request) });
       if (response.status !== 409) {
         return response;
       }
@@ -56,7 +58,22 @@ export async function handleParties(request, env, url) {
 
   const forward = new URL(`https://party/${code}/${action || "state"}`);
   forward.search = url.search;
-  return partyStub(env, code).fetch(forward, { method: request.method, body: request.method === "POST" ? await bodyText(request) : undefined });
+  return partyStub(env, code).fetch(forward, {
+    method: request.method,
+    body: request.method === "POST" ? await bodyText(request) : undefined,
+    headers: who(request),
+  });
+}
+
+/** What a party is told of who asks: its address, and the token it sent in a header rather than in the address asked. */
+function who(request) {
+  const headers = new Headers();
+  headers.set("x-openigi-ip", request.headers.get("CF-Connecting-IP") ?? "");
+  const token = request.headers.get("x-openigi-token");
+  if (token) {
+    headers.set("x-openigi-token", token);
+  }
+  return headers;
 }
 
 export class Party {
@@ -73,6 +90,7 @@ export class Party {
     const url = new URL(request.url);
     const action = url.pathname.split("/").filter(Boolean)[1];
     const now = Date.now();
+    const ip = request.headers.get("x-openigi-ip") ?? "";
     this.expire(now);
 
     if (action === "create") {
@@ -83,7 +101,7 @@ export class Party {
       const body = await readJson(request);
       const code = url.pathname.split("/").filter(Boolean)[0];
       this.party = { code, members: [], target: null, version: 0 };
-      const member = this.admit(body?.name, now);
+      const member = this.admit(body?.name, now, ip);
       await this.save();
       return json({ code, member: member.id, token: member.token, ...this.view() });
     }
@@ -93,12 +111,17 @@ export class Party {
     }
 
     if (action === "join") {
+      // One the leader removed is kept out a while by its address too: its member and token went with it, and joining
+      // again by the code made it a new member at once.
+      if (ip && (this.party.kicked ?? []).some((k) => k.ip === ip && now - k.at < KICKED_TTL_MS)) {
+        return json({ error: "the party's leader removed you from it" }, 403);
+      }
       if (this.party.members.length >= MAX_MEMBERS) {
         return json({ error: "the party is full" }, 403);
       }
 
       const body = await readJson(request);
-      const member = this.admit(body?.name, now);
+      const member = this.admit(body?.name, now, ip);
       await this.save();
       return json({ code: this.party.code, member: member.id, token: member.token, ...this.view() });
     }
@@ -106,7 +129,8 @@ export class Party {
     // Everything else is a member speaking for itself, by its token.
     const body = action === "state" ? null : await readJson(request);
     const id = Number(action === "state" ? url.searchParams.get("member") : body?.member);
-    const token = String(action === "state" ? url.searchParams.get("token") : body?.token ?? "");
+    // The token in a header, where it is in no log of addresses asked; a game from before that sends it in the address.
+    const token = String(action === "state" ? request.headers.get("x-openigi-token") ?? url.searchParams.get("token") : body?.token ?? "");
     const member = this.party.members.find((m) => m.id === id && m.token === token);
     if (!member) {
       const kicked = (this.party.kicked ?? []).some((k) => k.id === id && k.token === token);
@@ -162,7 +186,7 @@ export class Party {
 
       if (action === "kick") {
         this.party.members = this.party.members.filter((m) => m !== other);
-        this.party.kicked = [...(this.party.kicked ?? []).filter((k) => now - k.at < KICKED_TTL_MS), { id: other.id, token: other.token, at: now }];
+        this.party.kicked = [...(this.party.kicked ?? []).filter((k) => now - k.at < KICKED_TTL_MS), { id: other.id, token: other.token, ip: other.ip ?? "", at: now }];
       } else {
         // The lead handed over: the new leader first, the old one next.
         this.party.members = [other, ...this.party.members.filter((m) => m !== other)];
@@ -184,9 +208,9 @@ export class Party {
   }
 
   // A member in, with an id the party hasn't used and a token only it is told.
-  admit(name, now) {
+  admit(name, now, ip = "") {
     const id = this.party.members.reduce((most, m) => Math.max(most, m.id), 0) + 1;
-    const member = { id, name: cleanName(name, id), token: randomToken(), seen: now, saved: now };
+    const member = { id, name: cleanName(name, id), token: randomToken(), seen: now, saved: now, ip };
     this.party.members.push(member);
     return member;
   }

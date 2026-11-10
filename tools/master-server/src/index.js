@@ -30,6 +30,9 @@ const REGIONS = ["eu", "na", "sa", "asia", "oce", "af", "me"];
 // Live rooms one address may have open at once, public or not.
 const MAX_ROOMS_PER_IP = 4;
 
+// The parties one address may make in a minute.
+const MAX_PARTIES_PER_MINUTE = 6;
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -42,6 +45,15 @@ export default {
       // An address with too many rooms open already is turned away before a code is spent on it.
       const ip = request.headers.get("CF-Connecting-IP") ?? "";
       const reserve = await list.fetch("https://list/rooms/reserve", { method: "POST", body: JSON.stringify({ ip }) });
+      if (!reserve.ok) {
+        return cors(reserve);
+      }
+    }
+
+    if (url.pathname === "/v1/parties" && request.method === "POST") {
+      // And an address making parties faster than anyone gathers friends is turned away: each is an object kept.
+      const ip = request.headers.get("CF-Connecting-IP") ?? "";
+      const reserve = await list.fetch("https://list/parties/reserve", { method: "POST", body: JSON.stringify({ ip }) });
       if (!reserve.ok) {
         return cors(reserve);
       }
@@ -153,6 +165,26 @@ export class ServerList {
     }
 
     // Reached only from the Worker and the rooms, never routed from outside (only /v1/servers and /v1/stats are).
+    if (request.method === "POST" && url.pathname === "/parties/reserve") {
+      const { ip } = await request.json();
+      this.partiesMade ??= new Map();
+      const recent = (this.partiesMade.get(ip) ?? []).filter((at) => now - at < 60_000);
+      if (ip && recent.length >= MAX_PARTIES_PER_MINUTE) {
+        this.partiesMade.set(ip, recent);
+        return json({ error: "too many parties from this address; wait a minute" }, 429);
+      }
+      recent.push(now);
+      this.partiesMade.set(ip, recent);
+      if (this.partiesMade.size > 4096) {
+        for (const [who, made] of this.partiesMade) {
+          if (made.every((at) => now - at >= 60_000)) {
+            this.partiesMade.delete(who);
+          }
+        }
+      }
+      return json({ ok: true });
+    }
+
     if (request.method === "POST" && url.pathname === "/rooms/reserve") {
       const { ip } = await request.json();
       const open = [...this.rooms.values()].filter((r) => r.ip === ip).length;
@@ -416,6 +448,7 @@ function cors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  headers.set("access-control-allow-headers", "content-type");
+  headers.set("access-control-allow-headers", "content-type, x-openigi-token");
+  headers.set("access-control-max-age", "86400");
   return new Response(response.body, { status: response.status, headers });
 }
