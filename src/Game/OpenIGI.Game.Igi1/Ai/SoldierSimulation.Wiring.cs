@@ -146,19 +146,43 @@ public sealed partial class SoldierSimulation
     public void FileTracer(GunShotTracer tracer) => _rounds.FileTracer(tracer);
 
     /// <summary>
-    /// Gets or sets what gives each guard a mod's behaviour (<see cref="IGuardBehaviour"/>): asked for every guard now and every one
-    /// made or respawned after, and returning <see langword="null"/> for one it leaves to the game. Setting it again asks every guard
-    /// again. <b>Not retail.</b>
+    /// Gives each guard what a mod's factory makes for him (<see cref="IGuardBehaviour"/>): every guard now, and every one made
+    /// or respawned after, once he has his id. The factory is handed what the behaviour may have him do, and returns
+    /// <see langword="null"/> for a guard it leaves to the game. Several may be attached: each guard hears from them in the
+    /// order they were. <b>Not retail.</b>
     /// </summary>
-    public Func<Igi1HumanAi, IGuardBehaviour?>? GuardBehaviours
+    /// <param name="factory">The factory.</param>
+    /// <returns>What lets go of it, and of every behaviour it made.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    public IDisposable AttachGuardBehaviour(Func<GuardControl, IGuardBehaviour?> factory)
     {
-        get => _context.GuardBehaviours;
-        set
+        ArgumentNullException.ThrowIfNull(factory);
+        _context.GuardBehaviours.Add(factory);
+        foreach (Igi1HumanAi brain in Brains.Values)
         {
-            _context.GuardBehaviours = value;
-            foreach (Igi1HumanAi brain in Brains.Values)
+            brain.Attach(factory, _context.Logger);
+        }
+
+        return new GuardBehaviourAttachment(this, factory);
+    }
+
+    // Lets go of one factory's behaviours, once.
+    private sealed class GuardBehaviourAttachment(SoldierSimulation soldiers, Func<GuardControl, IGuardBehaviour?> factory) : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
             {
-                brain.BehaviourFactory = value;
+                return;
+            }
+
+            _released = true;
+            soldiers._context.GuardBehaviours.Remove(factory);
+            foreach (Igi1HumanAi brain in soldiers.Brains.Values)
+            {
+                brain.Detach(factory);
             }
         }
     }

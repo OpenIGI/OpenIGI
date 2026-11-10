@@ -166,7 +166,7 @@ public sealed partial class Igi1HumanAi
             WriteChannel(AiCombatChannel.Kneel, 1f);
         }
 
-        if (Behaviour?.HoldsPatrolStop(tick) == true)
+        if (Behaviours?.HoldsPatrolStop(tick) == true)
         {
             return;
         }
@@ -232,7 +232,7 @@ public sealed partial class Igi1HumanAi
         {
             _animationFinished = false;
             route.Advance();
-            Behaviour?.PatrolCommandFinished(tick);
+            Behaviours?.PatrolCommandFinished(tick);
         }
     }
 

@@ -297,7 +297,7 @@ public sealed partial class Igi1HumanAi
 
     private readonly List<AiChannelWrite> _channelWrites = [];
 
-    private void WriteChannel(AiCombatChannel channel, float value) =>
+    internal void WriteChannel(AiCombatChannel channel, float value) =>
         _channelWrites.Add(new AiChannelWrite(channel, AiCombatChannels.SlotOf(_type, channel), value));
 
     private bool WroteChannel(AiCombatChannel channel) =>
@@ -392,13 +392,10 @@ public sealed partial class Igi1HumanAi
     /// It runs however the fight ends — the arm giving up, the target dying, the action being ended to
     /// make way for another — and nothing else: the body is left as it is, for whatever runs next.
     /// </remarks>
-    private void EndCombat()
+    internal void EndCombat()
     {
-        if (_combatInstalled)
-        {
-            Behaviour?.CombatEnded();
-        }
-
+        // The behaviours are told once the fight is down, so one that ends a fight from here finds none to end.
+        bool wasInstalled = _combatInstalled;
         _combatInstalled = false;
         _combat?.Cancel();
         _gunnerCombat?.End();
@@ -416,6 +413,11 @@ public sealed partial class Igi1HumanAi
         if (Activity == AiSoldierActivity.Engaging)
         {
             Activity = AiSoldierActivity.Idle;
+        }
+
+        if (wasInstalled)
+        {
+            Behaviours?.CombatEnded();
         }
     }
 
@@ -514,8 +516,8 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        // A mod's fight in place of the game's, for a guard or a patrol (IGuardBehaviour.Fight); a gunner keeps his own.
-        if (Behaviour?.Fight(enemy) == true)
+        // A mod's fight in place of the game's, for a guard or a patrol (IGuardCombat.Fight); a gunner keeps his own.
+        if (Behaviours?.Fight(enemy) == true)
         {
             return;
         }

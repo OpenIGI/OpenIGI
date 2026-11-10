@@ -1,7 +1,6 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Igi1.Ai;
+namespace OpenIGI.Game.World;
 
 /// <summary>What stands between two points of the level, at its heaviest: for a mod's own sense of sound or sight. <b>Not retail.</b></summary>
 public enum LineCover
@@ -17,11 +16,17 @@ public enum LineCover
 }
 
 /// <summary>Asks the level what stands between two points. <b>Not retail.</b></summary>
+/// <remarks>
+/// It steps along the line as a soldier's sight test does (<see cref="SightSkipEpsilonUnits"/>, <see cref="SightSkipLimit"/>),
+/// but reports the heaviest cover it meets rather than whether the line is blocked, so it keeps going past moving objects.
+/// </remarks>
 public static class LineCoverQuery
 {
-    // As the sight test: how far past a see-through hit the next cast starts, and how many it steps past at most.
-    private const double SkipEpsilonUnits = 64d;
-    private const int SkipLimit = 8;
+    /// <summary>How far past a see-through hit the next cast along a line of sight starts, so it clears that thin surface, in world units.</summary>
+    public const double SightSkipEpsilonUnits = 64d;
+
+    /// <summary>The most see-through layers a single cast along a line of sight steps through before giving up.</summary>
+    public const int SightSkipLimit = 8;
 
     /// <summary>The heaviest cover along the line from one point to another.</summary>
     /// <param name="trace">The level's world trace (MissionLevelBuild.WorldTrace).</param>
@@ -38,7 +43,7 @@ public static class LineCoverQuery
         LineCover cover = LineCover.Open;
         Vector3d origin = from;
         double travelled = 0d;
-        for (int step = 0; step <= SkipLimit && length > 0d; step++)
+        for (int step = 0; step <= SightSkipLimit && length > 0d; step++)
         {
             if (!trace(new WorldTraceRequest(origin, to, WorldTraceMask.World), out WorldTraceHit hit))
             {
@@ -55,7 +60,7 @@ public static class LineCoverQuery
                 cover = LineCover.MovingObject;
             }
 
-            double advance = hit.Distance + SkipEpsilonUnits;
+            double advance = hit.Distance + SightSkipEpsilonUnits;
             if (advance >= length - travelled)
             {
                 return cover;

@@ -95,14 +95,14 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         Brains[view] = brain;
         BrainsByRuntimeId[brain.RuntimeId] = brain;
         _highestRuntimeId = Math.Max(_highestRuntimeId, brain.RuntimeId);
-        if (GuardBehaviours is not null && brain.BehaviourFactory is null)
+        foreach (Func<GuardControl, IGuardBehaviour?> factory in GuardBehaviours)
         {
-            brain.BehaviourFactory = GuardBehaviours;
+            brain.Attach(factory, Logger);
         }
     }
 
-    /// <summary>Gets or sets what attaches a mod's behaviour to each guard (SoldierSimulation.GuardBehaviours). <b>Not retail.</b></summary>
-    public Func<Igi1HumanAi, IGuardBehaviour?>? GuardBehaviours { get; set; }
+    /// <summary>Gets what attaches mods' behaviours to each guard, in the order they were attached (SoldierSimulation.AttachGuardBehaviour). <b>Not retail.</b></summary>
+    public List<Func<GuardControl, IGuardBehaviour?>> GuardBehaviours { get; } = [];
 
     /// <summary>Forgets every brain, for the next level.</summary>
     public void ClearBrains()
@@ -412,7 +412,7 @@ internal sealed class SoldierContext(IOpenIgiLogger logger)
         Vector3d feet = brain.Position;
         double origin = feet.Z + view.RootSample.Z;
         Vector3d placed = new(feet.X, feet.Y, origin + (brain.Body.CrouchByte ? 1433.6 : 2867.24));
-        return brain.Behaviour is { } behaviour ? placed + behaviour.EyeOffset : placed;
+        return brain.Behaviours is { HasSenses: true } behaviours ? placed + behaviours.EyeOffset : placed;
     }
 
     /// <summary>

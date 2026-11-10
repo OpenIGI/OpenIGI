@@ -495,7 +495,7 @@ public sealed partial class Igi1HumanAi
         || _lookForTargetLatched;
 
     /// <summary>Holds the posture channel the kneel and prone arms, and their children, write every tick.</summary>
-    private void HoldPosture()
+    internal void HoldPosture()
     {
         if (_patrolProne)
         {
@@ -704,7 +704,7 @@ public sealed partial class Igi1HumanAi
     /// over them. So the cone narrows with the height difference, and a target a few metres off is above it: a
     /// running patrol holds its fire until it is clear of the target, and only fires at range.
     /// </remarks>
-    private bool FacesForFollowFire(Vector3d recordPoint)
+    internal bool FacesForFollowFire(Vector3d recordPoint)
     {
         double dx = recordPoint.X - Position.X;
         double dy = recordPoint.Y - Position.Y;

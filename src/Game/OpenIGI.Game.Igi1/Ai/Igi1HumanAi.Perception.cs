@@ -179,17 +179,17 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        // His own side's fire the game leaves unheard; a mod's behaviour may hear it (IGuardBehaviour.Stimulus).
-        if (fromSameSide)
-        {
-            return Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot, sameSide: true) ?? false;
-        }
-
         range = Math.Max(0.0, range);
         double distance = Vector3d.Distance(Position, shotPosition);
         if (distance > range)
         {
             return false;
+        }
+
+        // His own side's fire within reach the game leaves unheard; a mod's behaviour may hear it (IGuardSenses.Stimulus).
+        if (fromSameSide)
+        {
+            return Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot, sameSide: true) ?? false;
         }
 
         if (Sensed(GuardStimulusKind.Gunshot, ref shotPosition, shooter, range, AiEvent.Gunshot) is { } answered)
@@ -882,15 +882,15 @@ public sealed partial class Igi1HumanAi
             Vector3d mark = human.Candidate.Mark;
             int looked = human.Candidate.Id;
 
-            // A mod's behaviour judges what counts as seen (IGuardBehaviour.Sighting). The sweep's cooldowns keep the visible
+            // A mod's behaviour judges what counts as seen (IGuardSenses.Sighting). The sweep's cooldowns keep the visible
             // flag between its tests, so it is handed back the sweep's own last verdict, not the judgement.
-            IGuardBehaviour? judge = Behaviour;
+            GuardBehaviourSet? judge = Behaviours is { HasSenses: true } senses ? senses : null;
             if (judge is not null)
             {
                 human.Slot.IsVisible = human.SweepVisible;
             }
 
-            _schedule.Sweep(
+            bool rayRan = _schedule.Sweep(
                 human.Slot,
                 () => snapshot.IsVisible(mark),
                 () =>
@@ -903,7 +903,6 @@ public sealed partial class Igi1HumanAi
             if (judge is not null)
             {
                 human.SweepVisible = human.Slot.IsVisible;
-                bool rayRan = human.Slot.IsInCone && human.Slot.RayCooldown == _schedule.RayInterval;
                 human.Slot.IsVisible = judge.Sighting(new GuardSighting(human.Candidate, human.SweepVisible, human.Slot.IsInCone, rayRan, snapshot, tick));
             }
         }
@@ -958,25 +957,14 @@ public sealed partial class Igi1HumanAi
     public Vector3d EyePosition()
     {
         Vector3d eye = _eyePosition?.Invoke() ?? new Vector3d(Position.X, Position.Y, Position.Z + HumanSeparationEyeHeight);
-        return Behaviour is { } behaviour ? eye + behaviour.EyeOffset : eye;
+        return Behaviours is { HasSenses: true } behaviours ? eye + behaviours.EyeOffset : eye;
     }
 
-    private Matrix3f EyeOrientation() => TurnedBy(Behaviour?.EyeTurn ?? 0f, _eyeOrientation?.Invoke() ?? Orientation);
+    private Matrix3f EyeOrientation() =>
+        TurnedBy(Behaviours is { HasSenses: true } behaviours ? behaviours.EyeTurn : 0f, _eyeOrientation?.Invoke() ?? Orientation);
 
-    // The eye turned about its own up by a mod's glance (IGuardBehaviour.EyeTurn): right and forward swung together.
-    private static Matrix3f TurnedBy(float turn, Matrix3f eye)
-    {
-        if (turn == 0f)
-        {
-            return eye;
-        }
-
-        (float sin, float cos) = MathF.SinCos(turn);
-        Vector3f r = eye.Column1, f = eye.Column2, u = eye.Column3;
-        Vector3f right = new((r.X * cos) - (f.X * sin), (r.Y * cos) - (f.Y * sin), (r.Z * cos) - (f.Z * sin));
-        Vector3f ahead = new((f.X * cos) + (r.X * sin), (f.Y * cos) + (r.Y * sin), (f.Z * cos) + (r.Z * sin));
-        return new Matrix3f(right.X, ahead.X, u.X, right.Y, ahead.Y, u.Y, right.Z, ahead.Z, u.Z);
-    }
+    // The eye turned about its own up by a mod's glance (IGuardSenses.EyeTurn): right and forward swung together.
+    internal static Matrix3f TurnedBy(float turn, Matrix3f eye) => turn == 0f ? eye : eye * Matrix3f.RotationZ(-turn);
 
     /// <summary>Diagnostics: the eye matrix a sweep run now would test against -- the bound eye, or the body's.</summary>
     public Matrix3f CurrentEyeOrientation => EyeOrientation();

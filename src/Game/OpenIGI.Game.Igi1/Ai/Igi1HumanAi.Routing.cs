@@ -217,8 +217,8 @@ public sealed partial class Igi1HumanAi
                 return false;
             }
 
-            // A mod's behaviour may pass it now, short of standing on it (IGuardBehaviour.PassesWaypoint): a corner cut.
-            if (Behaviour?.PassesWaypoint(waypoint, _route.Count) == true)
+            // A mod's behaviour may pass it now, short of standing on it (IGuardMovement.PassesWaypoint): a corner cut.
+            if (Behaviours?.PassesWaypoint(waypoint, _route.Count) == true)
             {
                 CurrentNode = waypoint.Node;
                 _route.RemoveAt(0);
@@ -242,7 +242,7 @@ public sealed partial class Igi1HumanAi
                 continue;
             }
 
-            TurnTowards(Behaviour?.SteerToward(waypoint) ?? waypoint.Point, 0f, level: true);
+            TurnTowards(Behaviours?.SteerToward(waypoint) ?? waypoint.Point, 0f, level: true);
             WalksForward = true;
             return false;
         }
@@ -373,7 +373,7 @@ public sealed partial class Igi1HumanAi
         return IsInsideNodeBox(Position, node, devianceMetres: 0.3);
     }
 
-    private int NearestNode(Vector3d from) =>
+    internal int NearestNode(Vector3d from) =>
         _graph is null
         || GraphNearestNode.Find(_graph, from, out GraphNode? best, out _) == GraphNearestNodeResult.None
             ? -1

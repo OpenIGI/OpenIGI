@@ -5,26 +5,22 @@ using OpenIGI.Game.Ai;
 namespace OpenIGI.Game.Igi1.Ai;
 
 /// <summary>
-/// A mod's say in one guard's life, attached through <see cref="SoldierSimulation.GuardBehaviours"/>: told when he decides,
-/// asked about what he senses, and allowed to shape how he moves and looks. Every member has a default that changes nothing,
-/// so a mod overrides only what it needs, and a guard with none runs exactly as the game runs him. <b>Not retail.</b>
+/// A mod's say in one guard, attached through <see cref="SoldierSimulation.AttachGuardBehaviour"/>. It says nothing itself: a
+/// behaviour implements whichever of <see cref="IGuardLife"/>, <see cref="IGuardSenses"/>, <see cref="IGuardMovement"/> and
+/// <see cref="IGuardCombat"/> it needs, every member of which has a default that changes nothing. A guard with no behaviour runs
+/// exactly as the game runs him, and one with several hears from each in the order they were attached. <b>Not retail.</b>
 /// </summary>
-public interface IGuardBehaviour
+/// <remarks>A behaviour that throws is logged, and the guard goes on as though it had said nothing.</remarks>
+public interface IGuardBehaviour;
+
+/// <summary>A behaviour's say in a guard's life: his tick, his idle, his patrol, his body. <b>Not retail.</b></summary>
+public interface IGuardLife : IGuardBehaviour
 {
-    /// <summary>Gets a value indicating whether he may play an idle animation now.</summary>
+    /// <summary>Gets a value indicating whether he may play an idle animation now; he plays one only if every behaviour lets him.</summary>
     bool AllowsIdleAnimation => true;
 
-    /// <summary>Gets a value indicating whether his body stays in the world when nobody saw it fall: the game takes it away.</summary>
-    bool KeepsBodyOutOfView => false;
-
-    /// <summary>Gets a value indicating whether a round asked of his gun this tick may leave it.</summary>
-    bool MayFire => true;
-
-    /// <summary>Gets an offset added to his eye, in world units: a lean.</summary>
-    Vector3d EyeOffset => default;
-
-    /// <summary>Gets a turn added to where his eye looks, in radians about the vertical: a glance.</summary>
-    float EyeTurn => 0f;
+    /// <summary>Gets a value indicating whether his body stays when nobody saw it fall, which the game takes away; it stays if any behaviour keeps it.</summary>
+    bool KeepsUnseenBody => false;
 
     /// <summary>His tick begins, once the humans he may see have been offered to him.</summary>
     /// <param name="tick">The tick.</param>
@@ -32,33 +28,16 @@ public interface IGuardBehaviour
     {
     }
 
-    /// <summary>Asked just before he would go idle, when nothing the script answered is waiting: the place to give him something to do.</summary>
-    /// <returns>Whether it gave him something (<see cref="Igi1HumanAi.ApplyActions"/> and the like).</returns>
-    bool BeforeIdle() => false;
+    /// <summary>
+    /// He is about to go idle, when nothing his script answered is waiting: the place to give him something to do
+    /// (<see cref="GuardControl.ApplyActionsAt"/>). Given something, he does not go idle.
+    /// </summary>
+    void BeforeIdle()
+    {
+    }
 
     /// <summary>His tick ends, just before his body steps.</summary>
     void TickEnded()
-    {
-    }
-
-    /// <summary>Asked each tick he fights, before the game's own fighting: the place for a fight of the mod's own.</summary>
-    /// <param name="enemy">Where he last knew the enemy's feet, in world units.</param>
-    /// <returns>Whether it fought for him this tick; if so the game's fighting does not run.</returns>
-    bool Fight(Vector3d enemy) => false;
-
-    /// <summary>His fight is over.</summary>
-    void CombatEnded()
-    {
-    }
-
-    /// <summary>Asked before he begins the next command of his patrol.</summary>
-    /// <param name="tick">The tick.</param>
-    /// <returns>Whether he holds where he is this tick instead.</returns>
-    bool HoldsPatrolStop(int tick) => false;
-
-    /// <summary>A command of his patrol has finished.</summary>
-    /// <param name="tick">The tick.</param>
-    void PatrolCommandFinished(int tick)
     {
     }
 
@@ -68,42 +47,88 @@ public interface IGuardBehaviour
     void ActionsApplied(AiEvent? cause, IReadOnlyList<AiProducedAction> actions)
     {
     }
+}
 
-    /// <summary>Asked about something he senses, before the game hands it to his script.</summary>
-    /// <param name="stimulus">What he senses; the mod may move where he believes it came from.</param>
-    /// <returns><see langword="null"/> to let the game go on with it; otherwise what the sensing method returns, and the game does no more with it.</returns>
+/// <summary>A behaviour's say in what a guard senses and sees. <b>Not retail.</b></summary>
+public interface IGuardSenses : IGuardBehaviour
+{
+    /// <summary>Gets an offset added to his eye, in world units: a lean. Every behaviour's are added.</summary>
+    Vector3d EyeOffset => default;
+
+    /// <summary>Gets a turn added to where his eye looks, in radians about the vertical: a glance. Every behaviour's are added.</summary>
+    float EyeTurn => 0f;
+
+    /// <summary>Asked about something he senses, before the game hands it to his script; each behaviour in turn, until one answers.</summary>
+    /// <param name="stimulus">What he senses; a behaviour may move where he believes it came from, and the next is asked of that.</param>
+    /// <returns><see langword="null"/> to let the next behaviour, then the game, go on with it; otherwise what the sensing method returns, and nothing more is done with it.</returns>
     bool? Stimulus(ref GuardStimulus stimulus) => null;
 
-    /// <summary>Asked after each sweep of his eyes over a human, whether he counts as seen.</summary>
-    /// <param name="sighting">What the sweep found.</param>
-    /// <returns>Whether he is seen; the sweep's own answer by default.</returns>
+    /// <summary>Asked after each sweep of his eyes over a human, whether he counts as seen; each behaviour is handed the last one's verdict.</summary>
+    /// <param name="sighting">What the sweep found, its <see cref="GuardSighting.Visible"/> the verdict so far.</param>
+    /// <returns>Whether he is seen.</returns>
     bool Sighting(in GuardSighting sighting) => sighting.Visible;
+}
 
-    /// <summary>Shapes his body's step this tick: how far he turns and where he moves.</summary>
-    /// <param name="shaped">The step the game would take.</param>
+/// <summary>A behaviour's say in how a guard moves: his step, his route and his patrol. <b>Not retail.</b></summary>
+public interface IGuardMovement : IGuardBehaviour
+{
+    /// <summary>Shapes his body's step this tick, as the behaviours before it left it.</summary>
+    /// <param name="shaped">The step the game would take, as shaped so far.</param>
     void ShapeStep(ref GuardStep shaped)
     {
     }
 
-    /// <summary>Asked whether he may pass a waypoint of his route now, short of standing on it: a corner cut.</summary>
+    /// <summary>Asked whether he may pass a waypoint of his route now, short of standing on it: a corner cut. He passes it if any behaviour lets him.</summary>
     /// <param name="waypoint">The waypoint he is heading for.</param>
     /// <param name="remaining">How many waypoints his route has left, this one included.</param>
     /// <returns>Whether he passes it now.</returns>
     bool PassesWaypoint(AiWaypoint waypoint, int remaining) => false;
 
-    /// <summary>Where he steers for a waypoint.</summary>
-    /// <param name="waypoint">The waypoint.</param>
-    /// <returns>The point he turns towards; the waypoint itself by default.</returns>
+    /// <summary>Where he steers for a waypoint; each behaviour is handed the point the last one chose.</summary>
+    /// <param name="waypoint">The waypoint, its <see cref="AiWaypoint.Point"/> the point chosen so far.</param>
+    /// <returns>The point he turns towards; the waypoint's by default.</returns>
     Vector3d SteerToward(AiWaypoint waypoint) => waypoint.Point;
+
+    /// <summary>Asked before he begins the next command of his patrol; he holds if any behaviour holds him.</summary>
+    /// <param name="tick">The tick.</param>
+    /// <returns>Whether he holds where he is this tick instead.</returns>
+    bool HoldsPatrolStop(int tick) => false;
+
+    /// <summary>A command of his patrol has finished.</summary>
+    /// <param name="tick">The tick.</param>
+    void PatrolCommandFinished(int tick)
+    {
+    }
 }
 
-/// <summary>One point of a guard's route. <b>Not retail</b> as a public type; the route is the game's.</summary>
-/// <param name="Point">Where it is, in world units.</param>
-/// <param name="Node">Its graph node, or -1.</param>
-/// <param name="Door">Whether it is a door he must pass through on it.</param>
+/// <summary>A behaviour's say in how a guard fights. <b>Not retail.</b></summary>
+public interface IGuardCombat : IGuardBehaviour
+{
+    /// <summary>Gets a value indicating whether a round asked of his gun this tick may leave it. Every behaviour is asked, and it leaves only if all let it.</summary>
+    bool MayFire => true;
+
+    /// <summary>Asked each tick he fights, before the game's own fighting: the place for a fight of the behaviour's own. The first to fight for him has the tick.</summary>
+    /// <param name="enemy">Where he last knew the enemy's feet, in world units.</param>
+    /// <returns>Whether it fought for him this tick; if so no other behaviour is asked and the game's fighting does not run.</returns>
+    bool Fight(Vector3d enemy) => false;
+
+    /// <summary>His fight is over.</summary>
+    void CombatEnded()
+    {
+    }
+}
+
+/// <summary>
+/// One item of a guard's movement queue -- <c>0x452080</c>'s record: the point walked to (<c>+8</c>), whether a door stands on
+/// the hop (<c>+32</c>), and the node that becomes the current one when it is reached (<c>+36</c>). <b>Not retail</b> as a public
+/// type; the route is the game's.
+/// </summary>
+/// <param name="Point">The point walked to, in world units (<c>+8</c>).</param>
+/// <param name="Node">The node that becomes the current one when it is reached, or -1 (<c>+36</c>).</param>
+/// <param name="Door">Whether a door stands on the hop (<c>+32</c>).</param>
 public readonly record struct AiWaypoint(Vector3d Point, int Node, bool Door);
 
-/// <summary>What a guard senses, as <see cref="IGuardBehaviour.Stimulus"/> is asked about it. <b>Not retail.</b></summary>
+/// <summary>What a guard senses, as <see cref="IGuardSenses.Stimulus"/> is asked about it. <b>Not retail.</b></summary>
 public enum GuardStimulusKind
 {
     /// <summary>A gunshot heard.</summary>
@@ -162,7 +187,7 @@ public struct GuardStimulus
 /// <param name="Tick">The tick.</param>
 public readonly record struct GuardSighting(AiDetectionCandidate Candidate, bool Visible, bool InCone, bool RayRan, AiEyeSnapshot Eye, int Tick);
 
-/// <summary>A guard's body's step this tick, as <see cref="IGuardBehaviour.ShapeStep"/> may shape it. <b>Not retail.</b></summary>
+/// <summary>A guard's body's step this tick, as <see cref="IGuardMovement.ShapeStep"/> may shape it. <b>Not retail.</b></summary>
 public struct GuardStep
 {
     /// <summary>Gets or sets how far he turns this tick, in radians.</summary>

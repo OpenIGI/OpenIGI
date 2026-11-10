@@ -93,12 +93,14 @@ public sealed class AiDetectionSchedule
     /// wait.
     /// </para>
     /// </remarks>
-    public void Sweep(AiDetectionSlot slot, Func<bool> coneTest, Func<bool> rayTest, double distance)
+    /// <returns>Whether the line-of-sight ray was cast this sweep, rather than its last verdict kept.</returns>
+    public bool Sweep(AiDetectionSlot slot, Func<bool> coneTest, Func<bool> rayTest, double distance)
     {
         ArgumentNullException.ThrowIfNull(slot);
         ArgumentNullException.ThrowIfNull(coneTest);
         ArgumentNullException.ThrowIfNull(rayTest);
 
+        bool rayRan = false;
         if (slot.ConeCooldown == 0)
         {
             slot.IsInCone = coneTest();
@@ -117,6 +119,7 @@ public sealed class AiDetectionSchedule
             {
                 slot.IsVisible = rayTest();
                 slot.RayCooldown = RayInterval + 1;
+                rayRan = true;
             }
 
             slot.RayCooldown--;
@@ -124,5 +127,6 @@ public sealed class AiDetectionSchedule
 
         slot.ConeCooldown--;
         slot.Distance = distance;
+        return rayRan;
     }
 }
