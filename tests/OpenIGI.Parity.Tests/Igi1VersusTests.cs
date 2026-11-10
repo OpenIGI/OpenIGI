@@ -22,10 +22,11 @@ public sealed class Igi1VersusTests
         Assert.Empty(pair.Host!.World.Soldiers?.SoldierViews ?? []);
         Assert.Empty(pair.Joiner!.World.Soldiers?.SoldierViews ?? []);
 
-        // Laid out from where they stood: spawns for both teams, and the host's own start inside play.
+        // Laid out for the mode: somewhere for each team to start -- a deathmatch's spawns are anyone's, apart from the team
+        // starts the round modes keep -- and the host's own start inside play.
         MpLayout layout = Assert.IsType<MpLayout>(pair.Session.Session.Layout);
-        Assert.Contains(layout.Spawns, s => s.Team == TeamRoster.Good);
-        Assert.Contains(layout.Spawns, s => s.Team == TeamRoster.Bad);
+        Assert.NotEmpty(layout.SpawnsFor(TeamRoster.Good));
+        Assert.NotEmpty(layout.SpawnsFor(TeamRoster.Bad));
         Assert.True(layout.InBounds(pair.Host.World.Player!.Body.Position));
 
         // One a side.
