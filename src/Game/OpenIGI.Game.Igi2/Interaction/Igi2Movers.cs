@@ -31,3 +31,15 @@ public interface IIgi2Attached
     /// <summary>Moves to where its parent now holds it.</summary>
     void UpdateAttachment();
 }
+
+/// <summary>
+/// A child an object that moves carries with it wherever the level put the child beneath it: a figure in a helicopter's seat, the
+/// smoke of its exhaust, a prop on a prop.
+/// </summary>
+public interface IIgi2Carried : IIgi2Attached
+{
+    /// <summary>Holds it to the object that moves, as the two stand when the level is built (<c>Attach_eAttachEvent</c>).</summary>
+    /// <param name="parent">The object that moves.</param>
+    /// <returns><see langword="false"/> when it is not held, something else moving it.</returns>
+    bool AttachTo(OpenIGI.Game.World.IAttachParent parent);
+}

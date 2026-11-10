@@ -210,7 +210,8 @@ internal sealed class WorldFrameState
             Vector3d wasPosition = entry.Position;
 
             if (GenericPickups?.IsCollected(authored.Owner) == true
-                || !ConditionalContainerGate.IsTaskActive(authored.Owner))
+                || !ConditionalContainerGate.IsTaskActive(authored.Owner)
+                || _transforms.Presence?.IsInWorld(authored) == false)
             {
                 NoteGone(wasSkipped, wasModel, wasPosition);
                 entry.Skip = true;

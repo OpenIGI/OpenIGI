@@ -631,7 +631,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         {
             foreach (Igi2RigidObject solid in _objects)
             {
-                if ((objectGroups & (solid.Group | EveryTypeGroup)) != 0 && !PassesSight(solid.Owner))
+                if (solid.IsInWorld && (objectGroups & (solid.Group | EveryTypeGroup)) != 0 && !PassesSight(solid.Owner))
                 {
                     Igi2RigidLineOfSight.Meet(solid, sight);
                 }
@@ -712,7 +712,7 @@ public sealed class Igi2CollisionWorld : IIgi2CollisionQuery, IIgi2SightQuery, I
         max = new Vector3d(max.X + BoxWidth, max.Y + BoxWidth, max.Z + BoxDepth);
         foreach (Igi2RigidObject solid in _objects)
         {
-            if ((groups & (solid.Group | EveryTypeGroup)) == 0)
+            if (!solid.IsInWorld || (groups & (solid.Group | EveryTypeGroup)) == 0)
             {
                 continue;
             }

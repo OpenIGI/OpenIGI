@@ -51,6 +51,9 @@ internal sealed class WorldPlacementTransforms
     /// <summary>Gets or sets the title's destroyed placements.</summary>
     internal IPlacementDestruction? Destruction { get; set; }
 
+    /// <summary>Gets or sets which placements a title's own level has in the world.</summary>
+    internal IPlacementPresence? Presence { get; set; }
+
     /// <summary>Gets the placements a bomb's blast has shattered into flying pieces, which leave the frame until the level is put back.</summary>
     internal HashSet<WorldPlacement> Shattered { get; } = new(ReferenceEqualityComparer.Instance);
 
@@ -161,13 +164,17 @@ internal sealed class WorldPlacementTransforms
 
         // A fan or a radar head, which turns for ever and never leaves its spot. Same reasoning as
         // the camera above: the model and the position are settled, only the transform is per-frame.
+        // What moves the placement below is asked with it as it has turned: a rotor turns in its helicopter's frame, and the
+        // helicopter carries it turned, where asked as authored the turn was lost the moment its object moved.
+        WorldPlacement carried = placement;
         if (Spins?.TryGetOrientation(placement, FrameAlpha, out Matrix3f spun) == true)
         {
             displayed = displayed with { Orientation = spun };
+            carried = placement with { Orientation = spun };
         }
 
         // A door a title swings: it leaves its spot as well as turning.
-        if (Motions?.TryGetTransform(placement, FrameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
+        if (Motions?.TryGetTransform(carried, FrameAlpha, out Vector3d moved, out Matrix3f movedOrientation) == true)
         {
             displayed = displayed with { Position = moved, Orientation = movedOrientation };
         }

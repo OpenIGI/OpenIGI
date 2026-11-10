@@ -202,6 +202,9 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets which placements a title's own objects have destroyed, or null when none can be.</summary>
     IPlacementDestruction? Destruction { get; set; }
 
+    /// <summary>Gets or sets which placements a title's own level has in the world, or null when all of them always are.</summary>
+    IPlacementPresence? Presence { get; set; }
+
     /// <summary>
     /// Gets or sets the title's own view culling, which leaves placements out of every pass of the frame, or null when only
     /// the renderer's culling applies.

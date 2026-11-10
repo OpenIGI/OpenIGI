@@ -151,6 +151,9 @@ public sealed partial class WorldRenderer : IWorldPresenter
     public IPlacementDestruction? Destruction { get => _transforms.Destruction; set => _transforms.Destruction = value; }
 
     /// <inheritdoc/>
+    public IPlacementPresence? Presence { get => _transforms.Presence; set => _transforms.Presence = value; }
+
+    /// <inheritdoc/>
     public IPlacementVariant? Variants { get => _transforms.Variants; set => _transforms.Variants = value; }
 
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>

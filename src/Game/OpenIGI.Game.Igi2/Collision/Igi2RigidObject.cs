@@ -127,6 +127,12 @@ public sealed class Igi2RigidObject : IWorldCollider, OpenIGI.Game.World.IAttach
     /// <summary>Gets or sets a value indicating whether the model has baked lightmaps (<c>+0x134</c> set and non-empty).</summary>
     public bool IsLightmapped { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether it is in the world: one its container took out
+    /// (<c>ConditionalContainer_RemoveChildren</c>) is met by no line until it is put back.
+    /// </summary>
+    public bool IsInWorld { get; set; } = true;
+
     /// <summary>Gets one collision mesh level.</summary>
     /// <param name="level">The level, <c>iMesh</c>.</param>
     /// <returns>The level, or <see langword="null"/> when the model has none there.</returns>

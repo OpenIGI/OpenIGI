@@ -124,6 +124,7 @@ public sealed partial class GameHost
         _mission.ForgetPlayer();
         _world?.Motions = player.Motions;
         _world?.Destruction = player.Destruction;
+        _world?.Presence = player.Presence;
         if (player.Visibility is { } visibility)
         {
             _world?.Visibility = visibility;

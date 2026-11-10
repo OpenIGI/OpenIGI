@@ -101,7 +101,7 @@ public sealed partial class Igi2SoundGeneratorTask : Igi2Task
         ArgumentNullException.ThrowIfNull(name);
         Stop();
         Sound = name.Length > MaxSoundName ? name[..MaxSoundName] : name;
-        if (Sound.Length > 0 && Sounds?.New(Sound, Where()) is { } made)
+        if (Sound.Length > 0 && Sounds?.New(Sound, Where(), Where) is { } made)
         {
             _sound = made;
             _isPlaying = 1;
@@ -124,11 +124,19 @@ public sealed partial class Igi2SoundGeneratorTask : Igi2Task
         variables.BindInt(this, "isPlaying", () => _isPlaying, value => _isPlaying = (byte)value, sizeof(byte));
     }
 
-    /// <summary>Where it stands: the position of the nearest task above it that has one.</summary>
+    /// <summary>
+    /// Where it stands: the nearest task above it that has a place, where that stands now -- its sound is a child of its own, which
+    /// follows what carries the generator (<c>SoundGenerator_UpdateAttachmentHandler</c>).
+    /// </summary>
     private Vector3d Where()
     {
         for (GameTask? task = Parent; task is not null; task = task.Parent)
         {
+            if (task is OpenIGI.Game.World.IAttachParent carrier)
+            {
+                return carrier.AttachPosition;
+            }
+
             if (task.TryGetScriptValue("Position", out object? value) && value is Vector3d position)
             {
                 return position;

@@ -40,7 +40,7 @@ public sealed class Igi2SmokeRandom
 /// drawn turn speed, for its life and its fade over its intensity, in ticks.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2SmokeTask : Igi2Task
+public sealed partial class Igi2SmokeTask : Igi2Task, Interaction.IIgi2Carried
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "Smoke";
@@ -52,6 +52,7 @@ public sealed partial class Igi2SmokeTask : Igi2Task
     private readonly SmokePlumeEmitter<Fpu> _emitter = new();
     private int _damageTimer;
     private Vector3f _direction;
+    private readonly Igi2Attachment _attachment = new();
 
     /// <summary>Gets or sets where it is.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -213,6 +214,25 @@ public sealed partial class Igi2SmokeTask : Igi2Task
         _system.Look = _system.Look with { Range = ((Fpu)ViewCutoff * 4096.0).F };
         // smoke.c Smoke_UpdateInternalDataHandler: the plume owns its system even between emissions.
         _system.IsSelfDestruct = false;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Its place alone is kept against what carries it; which way it blows is the world's.</remarks>
+    public bool AttachTo(OpenIGI.Game.World.IAttachParent parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        _attachment.Attach(parent, Position, EngineEuler.Rotation(0f, 0f, 0f));
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks><c>Smoke_UpdateAttachmentHandler</c>: it rises from where what carries it now holds it.</remarks>
+    public void UpdateAttachment()
+    {
+        if (_attachment.TryResolve(out Vector3d position))
+        {
+            Position = position;
+        }
     }
 
     /// <inheritdoc/>

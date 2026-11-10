@@ -188,6 +188,9 @@ public sealed partial class Igi2TitlePlayer : ITitlePlayer, ITitleFirstPerson, I
     public IPlacementDestruction? Destruction { get; set; }
 
     /// <inheritdoc/>
+    public IPlacementPresence? Presence { get; set; }
+
+    /// <inheritdoc/>
     public IPlacementVariant? Variants { get; set; }
 
     /// <inheritdoc/>

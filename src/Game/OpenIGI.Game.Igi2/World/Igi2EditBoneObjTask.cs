@@ -27,7 +27,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// and 0.2.
 /// </para>
 /// </remarks>
-public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Animation.IIgi2MorphTargets
+public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Animation.IIgi2MorphTargets, Interaction.IIgi2Carried
 {
     /// <summary>The script name level data instantiates this type under.</summary>
     public const string TypeName = "EditBoneObj";
@@ -45,6 +45,8 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
     private int _listAt = -1;
     private int _blinkTimer;
     private Igi2BoneBuffer? _bones;
+    private readonly Igi2Attachment _attachment = new();
+    private float[]? _carriedFrame;
 
     /// <summary>Gets or sets where it stands.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
@@ -199,7 +201,7 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         source.Interpolate(_bones, Igi2AnimController.EveryBone);
         Igi2BoneMath.UpdateHierarchy(rig, _bones, null);
         BonePose pose = _bones.ToPose(rig.Parents);
-        float[] turn = EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
+        float[] turn = _carriedFrame ?? EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z);
         Matrix3f frame = new(turn[0], turn[1], turn[2], turn[3], turn[4], turn[5], turn[6], turn[7], turn[8]);
         List<TitleWorldModel> models = [new TitleWorldModel(WornModel, Position, frame, pose, this, tick) { MorphWeights = Animation.Igi2MorphWeights.Drawn(MorphWeights) }];
         if (_current.Clip is { } clip)
@@ -212,6 +214,28 @@ public sealed partial class Igi2EditBoneObjTask : Igi2Task, IIgi2PlacedTask, Ani
         }
 
         return models;
+    }
+
+    /// <inheritdoc/>
+    public bool AttachTo(OpenIGI.Game.World.IAttachParent parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        _attachment.Attach(parent, Position, EngineEuler.Rotation(Orientation.X, Orientation.Y, Orientation.Z));
+        return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>EditBoneObj_UpdateAttachmentHandler</c> over <c>ModelObj_UpdateAttachment</c> (<c>igi2 0x56CB40</c>): it stands and faces
+    /// as what carries it now holds it -- a pilot stays in the seat of a helicopter that flies.
+    /// </remarks>
+    public void UpdateAttachment()
+    {
+        if (_attachment.TryResolve(out Vector3d position, out float[] frame))
+        {
+            Position = position;
+            _carriedFrame = frame;
+        }
     }
 
     private Igi2AnimController NewController()

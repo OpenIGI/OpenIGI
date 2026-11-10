@@ -172,19 +172,35 @@ internal static class Igi2InteractionSystems
             portals is null ? null : portals.IsOpen);
     }
 
-    /// <summary>Props moved along spline guides: they move, and carry what stands on them.</summary>
+    /// <summary>
+    /// Props moved along spline guides: they move, and carry what the level put beneath them -- a pilot, an exhaust's smoke, an
+    /// engine's sound, and the props on them, which move with them and carry their own.
+    /// </summary>
     public static void Props(Igi2LevelBuild b)
     {
         foreach (Igi2EditRigidObjTask prop in b.Root.Descendants().OfType<Igi2EditRigidObjTask>())
         {
             if (prop.Guide is not null)
             {
-                prop.Models = b.Models;
-                prop.Magic = b.Magic;
-                prop.Bind(b.Player.CollisionWorld.SolidsOf(Igi2EditRigidObjTask.TypeName, prop.Id));
-                b.Movers.Add(prop);
+                Move(prop, b);
+                Igi2Attachment.AttachChildren(prop, prop, carried =>
+                {
+                    if (carried is Igi2EditRigidObjTask nested)
+                    {
+                        Move(nested, b);
+                    }
+                });
             }
         }
+    }
+
+    // A prop that moves: its solids go with it, and it is drawn where it stands.
+    private static void Move(Igi2EditRigidObjTask prop, Igi2LevelBuild b)
+    {
+        prop.Models = b.Models;
+        prop.Magic = b.Magic;
+        prop.Bind(b.Player.CollisionWorld.SolidsOf(Igi2EditRigidObjTask.TypeName, prop.Id));
+        b.Movers.Add(prop);
     }
 
     /// <summary>
@@ -291,5 +307,10 @@ internal static class Igi2InteractionSystems
         player.Cameras = [.. b.Root.Descendants().OfType<Igi2SecurityCameraTask>()];
         List<IIgi2PartMover> partMovers = [.. b.Root.Descendants().OfType<Igi2CabinetTask>(), .. b.Turrets, .. b.Cars, .. player.Cameras];
         player.Motions = b.Movers.Count > 0 || partMovers.Count > 0 ? new Igi2MoverMotions(b.Movers, partMovers) : null;
+
+        // What the level's conditional containers keep out of the world is neither drawn nor met.
+        Igi2WorldPresence? presence = Igi2WorldPresence.Build(b.Root, player.CollisionWorld);
+        player.Presence = presence;
+        b.Level.WorldPresence = presence;
     }
 }
