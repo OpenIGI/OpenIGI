@@ -99,6 +99,16 @@ public sealed class BanList(string? path, Func<DateTimeOffset>? clock = null)
         if (ban is not null)
         {
             _bans.Remove(ban.PlayerId);
+
+            // With it the ban on the machine that player was banned with, which stands under the same name.
+            foreach (string address in _bans.Values
+                .Where(b => b.PlayerId.StartsWith("ip-", StringComparison.Ordinal) && string.Equals(b.Name, ban.Name, StringComparison.OrdinalIgnoreCase))
+                .Select(static b => b.PlayerId)
+                .ToArray())
+            {
+                _bans.Remove(address);
+            }
+
             Save();
         }
 

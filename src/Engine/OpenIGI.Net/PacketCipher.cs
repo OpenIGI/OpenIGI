@@ -47,6 +47,9 @@ internal sealed class PacketCipher : IDisposable
         CryptographicOperations.ZeroMemory(receiveKey);
     }
 
+    /// <summary>Gets a hash of the two public keys the connection's keys were agreed from, the server's first: the same at both ends.</summary>
+    public byte[] Binding { get; private init; } = [];
+
     /// <summary>Gets whether this platform can seal packets.</summary>
     public static bool IsSupported { get; } = ProbeSupport();
 
@@ -90,9 +93,14 @@ internal sealed class PacketCipher : IDisposable
             BinaryPrimitives.WriteUInt64LittleEndian(salt, nonce);
             byte[] toServer = DeriveKey(own, other.PublicKey, "OpenIGI client to server", salt);
             byte[] toClient = DeriveKey(own, other.PublicKey, "OpenIGI server to client", salt);
+            // What both ends can name the agreement by: the two public halves, the server's first.
+            Span<byte> halves = stackalloc byte[PublicKeySize * 2];
+            WritePublicKey(own, halves[(isServer ? 0 : PublicKeySize)..]);
+            otherPublic[..PublicKeySize].CopyTo(halves[(isServer ? PublicKeySize : 0)..]);
+            byte[] binding = SHA256.HashData(halves);
             return isServer
-                ? new PacketCipher(toClient, toServer, sendLabel: 2, receiveLabel: 1)
-                : new PacketCipher(toServer, toClient, sendLabel: 1, receiveLabel: 2);
+                ? new PacketCipher(toClient, toServer, sendLabel: 2, receiveLabel: 1) { Binding = binding }
+                : new PacketCipher(toServer, toClient, sendLabel: 1, receiveLabel: 2) { Binding = binding };
         }
         catch (CryptographicException)
         {

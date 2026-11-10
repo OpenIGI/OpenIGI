@@ -158,9 +158,7 @@ public sealed class NetClient : IDisposable
         _ = now;
         if (State == NetClientState.Connected)
         {
-            int prefix = NetConstants.PacketPrefixSize;
-            BinaryPrimitives.WriteUInt32LittleEndian(_sendBuffer.AsSpan(prefix), Connection!.Salt);
-            int length = prefix + 4 + PacketCodec.WriteString(_sendBuffer.AsSpan(prefix + 4), reason);
+            int length = Connection!.WriteDisconnect(_sendBuffer, reason);
             for (int i = 0; i < 3; i++)
             {
                 SendOutOfBand(PacketKind.Disconnect, _sendBuffer.AsSpan(0, length));
@@ -247,9 +245,8 @@ public sealed class NetClient : IDisposable
                 return;
 
             case PacketKind.Disconnect when State == NetClientState.Connected
-                                            && packet.Length >= prefix + 4
-                                            && BinaryPrimitives.ReadUInt32LittleEndian(packet[prefix..]) == Connection!.Salt:
-                EndConnection(PacketCodec.ReadString(packet[(prefix + 4)..]));
+                                            && Connection!.TryReadDisconnect(packet, out string left):
+                EndConnection(left);
                 return;
         }
     }

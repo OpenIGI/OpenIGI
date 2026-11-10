@@ -349,8 +349,16 @@ public sealed class RoomTransport : INetTransport
                 Add(peer, _factory.Create(message["ice"] is JsonArray pairIce ? ReadIce(pairIce) : _ice, offerer: false));
                 break;
 
+            // A joiner's socket to the room closed. One still on its way in is gone; one whose channel is open is playing, and
+            // has only lost the room -- its line blinked, the master was redeployed -- which it needs no longer. Its channel
+            // says so itself when it really goes. Dropped here, every redeploy of the master put every joiner of every room
+            // out of its game.
             case "leave" when _hosting:
-                Drop(peer);
+                if (!_peers.TryGetValue(peer, out IRtcPeer? leaving) || leaving.State != RtcPeerState.Open)
+                {
+                    Drop(peer);
+                }
+
                 break;
 
             case "offer" or "answer" when data is not null:
@@ -433,8 +441,18 @@ public sealed class RoomTransport : INetTransport
         using HttpClient http = new();
         using StringContent content = new(body.ToJsonString(), Encoding.UTF8, "application/json");
         using HttpResponseMessage response = await http.PostAsync(new Uri(_master, "/v1/rooms"), content, _stop.Token).ConfigureAwait(false);
-        JsonObject made = JsonNode.Parse(await response.Content.ReadAsStringAsync(_stop.Token).ConfigureAwait(false)) as JsonObject
-            ?? throw new InvalidOperationException("the master server answered nothing");
+        JsonObject? answered;
+        try
+        {
+            answered = JsonNode.Parse(await response.Content.ReadAsStringAsync(_stop.Token).ConfigureAwait(false)) as JsonObject;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Not the master's own answer: an error page from whatever stands in front of it.
+            throw new InvalidOperationException($"the master server answered {(int)response.StatusCode}");
+        }
+
+        JsonObject made = answered ?? throw new InvalidOperationException("the master server answered nothing");
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException((string?)made["error"] ?? $"the master server answered {(int)response.StatusCode}");

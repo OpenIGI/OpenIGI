@@ -262,6 +262,14 @@ public sealed class ServerConsole(IServerControl server)
         }
 
         Ban ban = server.Bans.Add(player.PlayerId, player.Name, minutes, reason);
+
+        // And the machine it plays from: a key costs nothing to make anew, and a ban by key alone lasted until its player
+        // made one.
+        if (player.AddressId.Length > 0)
+        {
+            server.Bans.Add(player.AddressId, player.Name, minutes, reason);
+        }
+
         server.Remove(player.Slot, server.Bans.Check(ban.PlayerId) ?? reason);
         return [minutes > 0 ? string.Create(CultureInfo.InvariantCulture, $"Banned {player.Name} for {minutes:0.#} minutes: {reason}.") : $"Banned {player.Name}: {reason}."];
     }

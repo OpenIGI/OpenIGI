@@ -35,6 +35,12 @@ public sealed class SnapshotInterpolator
     /// <summary>Gets or sets how many ticks past the newest snapshot a body is carried on (<c>cl_extrapolate_amount</c>).</summary>
     public double MaxExtrapolationTicks { get; set; } = 6;
 
+    /// <summary>Gets or sets how far a human can move in a tick, in world units (4096 to the metre): further, it was put there.</summary>
+    public double TeleportUnitsPerTick { get; set; } = 3 * 4096;
+
+    /// <summary>Gets or sets the distance allowed on top of that, in world units.</summary>
+    public double TeleportSlackUnits { get; set; } = 2 * 4096;
+
     /// <summary>Gets the oldest tick it can still answer for, or <see cref="long.MaxValue"/> when empty.</summary>
     public long OldestTick => _snapshots.Count > 0 ? _snapshots[0].Tick : long.MaxValue;
 
@@ -93,6 +99,17 @@ public sealed class SnapshotInterpolator
 
         Snapshot to = _snapshots[next];
         to.TryGet(id, out ReplicatedHuman b);
+
+        // Further between the two than anyone moves in the ticks between them: put there, not gone there -- a respawn, a
+        // round's reset, a teleport. It stands where it was until the moment it was put, rather than sliding the length of
+        // the level, and a round aimed at it in between meets it where it stood.
+        double reach = (((to.Tick - from.Tick) * TeleportUnitsPerTick) + TeleportSlackUnits);
+        if ((b.Position.ToVector() - a.Position.ToVector()).LengthSquared > reach * reach)
+        {
+            human = a;
+            return true;
+        }
+
         double t = (tick - from.Tick) / (to.Tick - from.Tick);
         human = a with
         {

@@ -17,8 +17,8 @@ public sealed class UserCommandCodec
     /// <summary>The most commands one packet carries.</summary>
     public const int MaxCommandsPerPacket = 8;
 
-    // The furthest behind its tick a command's view tick is carried; a further one is carried as this (Source caps at a second).
-    private const int MaxViewLag = 255;
+    // The furthest from the packet's base a command's view tick is carried, either way; a further one is carried as this.
+    private const int MaxViewReach = 1 << 20;
 
     private const uint TagZero = 0;
     private const uint TagOne = 1;
@@ -39,8 +39,9 @@ public sealed class UserCommandCodec
     /// <summary>Writes consecutive commands, oldest first.</summary>
     /// <param name="writer">Where to.</param>
     /// <param name="commands">One to <see cref="MaxCommandsPerPacket"/> commands on consecutive ticks, oldest first.</param>
+    /// <param name="viewBase">The server tick the view ticks are counted from: the newest snapshot the client holds.</param>
     /// <exception cref="ArgumentException">The commands are not consecutive, too many, or of the wrong length.</exception>
-    public void Write(BitWriter writer, ReadOnlySpan<UserCommand> commands)
+    public void Write(BitWriter writer, ReadOnlySpan<UserCommand> commands, long viewBase = 0)
     {
         ArgumentNullException.ThrowIfNull(writer);
         if (commands.Length is < 1 or > MaxCommandsPerPacket)
@@ -67,12 +68,15 @@ public sealed class UserCommandCodec
                 throw new ArgumentException($"A command has {ChannelCount} channels.", nameof(commands));
             }
 
-            // How far behind its own tick the client drew the world: nought for unknown, else one more than the gap.
-            writer.WriteVarUInt(command.ViewTick == long.MinValue
-                ? 0u
-                : (uint)Math.Clamp(command.Tick - command.ViewTick + 1, 1, MaxViewLag + 1));
+            // The tick the client drew the world at, from the packet's base -- the newest snapshot it holds, a tick of the
+            // server's as the view is. Never from the command's own tick: the commands are numbered on from the first, one
+            // for each tick the client ran, and a client that ran fewer than the server (a hitch its clock gave up catching
+            // up on) has them fall behind the server's ticks for good, so a view counted from them was read as older than
+            // what the player saw, and its targets put back too far.
+            writer.WriteBool(command.ViewTick != long.MinValue);
             if (command.ViewTick != long.MinValue)
             {
+                writer.WriteVarInt((int)Math.Clamp(command.ViewTick - viewBase, -MaxViewReach, MaxViewReach));
                 // The fraction of a tick past it, in 256ths: a sixth of a centimetre at a run.
                 writer.WriteBits((uint)Math.Clamp((int)MathF.Round(command.ViewFraction * FractionSteps), 0, FractionSteps - 1), 8);
             }
@@ -113,8 +117,9 @@ public sealed class UserCommandCodec
     /// <summary>Reads what <see cref="Write"/> wrote.</summary>
     /// <param name="reader">Where from.</param>
     /// <param name="commands">Where the commands go, oldest first.</param>
+    /// <param name="viewBase">The tick the writer counted the view ticks from.</param>
     /// <returns><see langword="false"/> when the bytes are malformed; nothing is added then.</returns>
-    public bool Read(ref BitReader reader, List<UserCommand> commands)
+    public bool Read(ref BitReader reader, List<UserCommand> commands, long viewBase = 0)
     {
         ArgumentNullException.ThrowIfNull(commands);
         int count = reader.ReadRanged(1, MaxCommandsPerPacket);
@@ -129,14 +134,15 @@ public sealed class UserCommandCodec
         for (int i = 0; i < count; i++)
         {
             long tick = newest - (count - 1 - i);
-            uint viewLag = reader.ReadVarUInt();
-            if (viewLag > MaxViewLag + 1)
+            bool viewed = reader.ReadBool();
+            int viewOffset = viewed ? reader.ReadVarInt() : 0;
+            if (viewOffset is < -MaxViewReach or > MaxViewReach)
             {
                 return false;
             }
 
-            long viewTick = viewLag == 0 ? long.MinValue : tick - (viewLag - 1);
-            float viewFraction = viewLag == 0 ? 0f : reader.ReadBits(8) / (float)FractionSteps;
+            long viewTick = viewed ? viewBase + viewOffset : long.MinValue;
+            float viewFraction = viewed ? reader.ReadBits(8) / (float)FractionSteps : 0f;
             float[] channels = previous is null ? new float[ChannelCount] : (float[])previous.Clone();
             for (int c = 0; c < ChannelCount; c++)
             {

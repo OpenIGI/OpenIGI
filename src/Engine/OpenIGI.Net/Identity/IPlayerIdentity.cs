@@ -72,14 +72,20 @@ public static class PlayerIdentities
     /// <summary>Gets what a player signs to prove itself to a server: the purpose, the protocol and the server's challenge.</summary>
     /// <param name="protocolId">The protocol the session plays, so a proof for one game is no proof for another.</param>
     /// <param name="challenge">The server's challenge.</param>
+    /// <param name="binding">
+    /// The connection's <see cref="NetConnection.ChannelBinding"/>, or nothing on a line that has none: a proof made on one
+    /// connection is no proof on another, so a server a player joins can't pass that player's proof on to a second server
+    /// and join there as it.
+    /// </param>
     /// <returns>The bytes to sign.</returns>
-    public static byte[] ProofOf(ulong protocolId, ReadOnlySpan<byte> challenge)
+    public static byte[] ProofOf(ulong protocolId, ReadOnlySpan<byte> challenge, ReadOnlySpan<byte> binding = default)
     {
-        ReadOnlySpan<byte> purpose = "OpenIGI player proof v1"u8;
-        byte[] data = new byte[purpose.Length + 8 + challenge.Length];
+        ReadOnlySpan<byte> purpose = "OpenIGI player proof v2"u8;
+        byte[] data = new byte[purpose.Length + 8 + challenge.Length + binding.Length];
         purpose.CopyTo(data);
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(purpose.Length), protocolId);
         challenge.CopyTo(data.AsSpan(purpose.Length + 8));
+        binding.CopyTo(data.AsSpan(purpose.Length + 8 + challenge.Length));
         return data;
     }
 }

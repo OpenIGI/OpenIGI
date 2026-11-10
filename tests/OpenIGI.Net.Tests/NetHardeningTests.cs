@@ -187,6 +187,45 @@ public sealed class NetHardeningTests
         Assert.Equal(2, bucket.Refused);
     }
 
+    [Fact]
+    public void Reliable_messages_all_arrive_in_order_over_a_lossy_line_at_the_lowest_rate()
+    {
+        // At a rate that leaves less than a packet a flush, the flushes between are bare acknowledgements. One that stood
+        // for the reliable messages of the packet before it had them counted delivered when that packet was lost.
+        using NetSessionHarness session = new(new NetServerOptions { Rate = 4 * NetConstants.MaxPacketSize });
+        NetSessionHarness.ClientEnd client = Join(session);
+        session.SetLine(0.02, 0.005, 0.2, 0);
+        const int Count = 40;
+        for (int i = 0; i < Count; i++)
+        {
+            byte[] message = new byte[900];
+            message[0] = (byte)i;
+            session.Server.Send(client.Client.Slot, NetChannel.Reliable, message);
+        }
+
+        Assert.True(session.RunUntil(() => client.Messages(NetChannel.Reliable).Count() == Count, 120));
+        Assert.Equal(Enumerable.Range(0, Count).Select(static i => (byte)i), client.Messages(NetChannel.Reliable).Select(static m => m[0]));
+    }
+
+    [Fact]
+    public void A_goodbye_not_sealed_by_the_other_end_does_not_end_a_sealed_connection()
+    {
+        using NetSessionHarness session = new();
+        NetSessionHarness.ClientEnd client = Join(session);
+        NetConnection line = client.Client.Connection!;
+        Assert.True(line.IsSealed);
+
+        // What anyone who saw one packet of the connection could write: its salt, and a reason in the clear.
+        Span<byte> forged = stackalloc byte[NetConstants.PacketPrefixSize + 4 + 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(forged[NetConstants.PacketPrefixSize..], line.Salt);
+        Assert.False(line.TryReadDisconnect(forged, out _));
+
+        Span<byte> real = stackalloc byte[NetConstants.MaxPacketSize];
+        int length = session.Server.GetConnection(client.Client.Slot)!.WriteDisconnect(real, "bye");
+        Assert.True(line.TryReadDisconnect(real[..length], out string reason));
+        Assert.Equal("bye", reason);
+    }
+
     private static NetSessionHarness.ClientEnd Join(NetSessionHarness session)
     {
         NetSessionHarness.ClientEnd client = session.AddClient();

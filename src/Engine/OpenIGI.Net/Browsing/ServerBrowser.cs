@@ -52,6 +52,10 @@ public sealed class ServerBrowser : IDisposable
     private CancellationTokenSource? _cancel;
     private double _lastQuery = double.NegativeInfinity;
 
+    // When each server last answered, by its key, and the asks one may leave unanswered before it is shown as silent.
+    private readonly Dictionary<string, double> _answeredAt = new(StringComparer.Ordinal);
+    private const double SilentAsks = 3.5;
+
     /// <summary>Initializes a new instance of the <see cref="ServerBrowser"/> class.</summary>
     /// <param name="options">What it asks and how it reads answers.</param>
     /// <param name="query">The UDP queries, or <see langword="null"/> where there is no UDP (the web): the master's list alone.</param>
@@ -139,7 +143,20 @@ public sealed class ServerBrowser : IDisposable
                     ? known with { Info = info, Ping = answer.Ping, Sources = known.Sources | (IsLocal(answer.Address) ? BrowserSource.Lan : BrowserSource.None) }
                     : new BrowserServer(key, answer.Address, null, info, string.Empty, BrowserSource.Lan, answer.Ping);
                 _servers[key] = line;
+                _answeredAt[key] = now;
                 changed = true;
+            }
+
+            // One that answered and has since said nothing to three asks is shown as not answering, rather than with the
+            // players and the ping it last had for as long as the list is open.
+            foreach ((string key, BrowserServer line) in _servers.ToArray())
+            {
+                if (line.Answered && now - _answeredAt.GetValueOrDefault(key, now) > _options.RequerySeconds * SilentAsks)
+                {
+                    _servers[key] = line with { Ping = null };
+                    _answeredAt.Remove(key);
+                    changed = true;
+                }
             }
 
             if (now - _lastQuery >= _options.RequerySeconds)

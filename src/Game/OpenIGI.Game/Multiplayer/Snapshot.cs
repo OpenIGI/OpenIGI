@@ -29,6 +29,8 @@ namespace OpenIGI.Game.Multiplayer;
 /// What the server's switches, terminals, TBAs, cabinets, locks, fences, generators and radios are, as the world writes them,
 /// or <see langword="null"/> where it sends none.
 /// </param>
+/// <param name="ImpactSequence">The number of the first of <paramref name="Impacts"/> among all its client was ever sent.</param>
+/// <param name="SenseSequence">The number of the first of <paramref name="Senses"/> among all its client was ever sent.</param>
 public sealed record Snapshot(
     long Tick,
     ReplicatedHuman[] Humans,
@@ -39,7 +41,9 @@ public sealed record Snapshot(
     ReplicatedCamera[]? Cameras = null,
     byte[]? Wrecks = null,
     ReplicatedProjectile[]? Projectiles = null,
-    byte[]? Tasks = null)
+    byte[]? Tasks = null,
+    uint ImpactSequence = 0,
+    uint SenseSequence = 0)
 {
     /// <summary>Finds a human by id.</summary>
     /// <param name="id">The id.</param>
@@ -162,10 +166,11 @@ public static class SnapshotCodec
 
         if (!same)
         {
-            writer.WriteVarUInt((uint)doors.Length);
-            foreach (byte b in doors)
+            int length = Math.Min(doors.Length, MaxDoorBytes);
+            writer.WriteVarUInt((uint)length);
+            for (int i = 0; i < length; i++)
             {
-                writer.WriteBits(b, 8);
+                writer.WriteBits(doors[i], 8);
             }
         }
 
@@ -253,7 +258,10 @@ public static class SnapshotCodec
         writer.WriteBool(impacts.Length > first);
         if (impacts.Length > first)
         {
+            // With the count of the first among all its client was ever sent: an event rides every snapshot until one that
+            // carried it is acknowledged, and the client takes each once by its number.
             writer.WriteVarUInt((uint)(impacts.Length - first));
+            writer.WriteBits(unchecked(snapshot.ImpactSequence + (uint)first), 32);
         }
 
         for (int i = first; i < impacts.Length; i++)
@@ -268,6 +276,7 @@ public static class SnapshotCodec
         if (senses.Length > firstSense)
         {
             writer.WriteVarUInt((uint)(senses.Length - firstSense));
+            writer.WriteBits(unchecked(snapshot.SenseSequence + (uint)firstSense), 32);
             for (int i = firstSense; i < senses.Length; i++)
             {
                 senses[i].Write(writer);
@@ -444,6 +453,7 @@ public static class SnapshotCodec
         }
 
         uint impactCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
+        uint impactSequence = impactCount == 0 ? 0 : reader.ReadBits(32);
         if (reader.IsOverflowed || impactCount > ReplicatedImpact.MaxPerSnapshot)
         {
             return false;
@@ -456,6 +466,7 @@ public static class SnapshotCodec
         }
 
         uint senseCount = reader.ReadBool() ? reader.ReadVarUInt() : 0;
+        uint senseSequence = senseCount == 0 ? 0 : reader.ReadBits(32);
         if (reader.IsOverflowed || senseCount > ReplicatedSense.MaxPerSnapshot)
         {
             return false;
@@ -472,7 +483,7 @@ public static class SnapshotCodec
             return false;
         }
 
-        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks);
+        snapshot = new Snapshot(tick, humans, doors, impacts, senses, lifts, cameras, wreckBits, projectiles, tasks, impactSequence, senseSequence);
         return true;
     }
 

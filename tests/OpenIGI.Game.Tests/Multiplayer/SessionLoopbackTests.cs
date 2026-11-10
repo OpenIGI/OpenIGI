@@ -278,7 +278,7 @@ public sealed class SessionLoopbackTests
         client.Connect(serverNet.LocalAddress, new JoinRequest("one", "test", string.Empty), now);
 
         float[] idle = new float[ToyWorld.Channels];
-        int landed = 0;
+        List<int> landed = [];
         for (long tick = 0; tick < 3 * TickRate; tick++)
         {
             now = tick / (double)TickRate;
@@ -289,9 +289,9 @@ public sealed class SessionLoopbackTests
             world.Landed = [new ReplicatedImpact(ImpactKind.Surface, 1, new Int3((int)tick, 0, 0), new Vector3f(0, 0, 1))];
             server.Send(now, tick);
             client.Receive(now);
-            if (client.Latest is { } latest && latest.Tick > 0)
+            if (client.TakeLatest() is { } latest && latest.Tick > 0)
             {
-                landed += latest.Impacts?.Length ?? 0;
+                landed.AddRange((latest.Impacts ?? []).Select(static i => i.Position.X));
                 Assert.Equal(world.Doors, latest.Doors);
                 Assert.True(latest.Humans.Length > 1);
             }
@@ -300,11 +300,13 @@ public sealed class SessionLoopbackTests
             client.Flush(now);
         }
 
-        // Every snapshot read carried its doors and its one round, however many parts it came in.
-        Assert.True(landed > 0, "no round reached the client");
+        // Every snapshot read carried its doors, however many parts it came in; and every round landed once and in order,
+        // none missed between the first and the last, though each rode every snapshot until one was acknowledged.
+        Assert.True(landed.Count > 0, "no round reached the client");
         Assert.Equal(0, client.DroppedSnapshots);
+        Assert.Equal(Enumerable.Range(landed[0], landed.Count), landed);
         Snapshot newest = Assert.IsType<Snapshot>(client.Latest);
-        Assert.Single(newest.Impacts!);
+        Assert.Null(newest.Impacts);
         Assert.Equal(world.Doors, newest.Doors);
     }
 

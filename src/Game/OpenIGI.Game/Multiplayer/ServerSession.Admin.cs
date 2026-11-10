@@ -47,14 +47,19 @@ public sealed partial class ServerSession
     /// <summary>Puts a client out with a reason it is told, and keeps its key out while the session stands.</summary>
     /// <param name="slot">The client's slot.</param>
     /// <param name="reason">What it is told.</param>
-    public void Remove(int slot, string reason)
+    /// <param name="bar">Whether its key and its address are kept out after; not for one put off only for standing idle.</param>
+    public void Remove(int slot, string reason, bool bar = true)
     {
         if (!_clients.Remove(slot, out ClientState? client))
         {
             return;
         }
 
-        _barred[client.PlayerId] = client.Name;
+        if (bar)
+        {
+            Bar(slot, client);
+        }
+
         _world.RemovePlayer(slot);
         Match.Leave(slot);
         _net.Disconnect(slot, reason);
@@ -106,6 +111,11 @@ public sealed partial class ServerSession
     public void Poll(double now) => _net.Update(now);
 
     // The reason a joining key is turned away, or null to let it in.
-    private string? TurnedAway(string playerId) =>
-        _barred.ContainsKey(playerId) ? "the host removed you from this room" : Banned?.Invoke(playerId);
+    private string? TurnedAway(int slot, string playerId)
+    {
+        string? address = AddressIdOf(slot);
+        return _barred.ContainsKey(playerId) || (address is not null && _barred.ContainsKey(address))
+            ? "the host removed you from this room"
+            : Banned?.Invoke(playerId) ?? (address is null ? null : Banned?.Invoke(address));
+    }
 }

@@ -122,7 +122,9 @@ public sealed partial class ServerSession
     // Each tick: a vote carried or lost, and a player idle too long.
     private void TickSay(double now)
     {
-        if (_vote.Settle([.. Match.Players.Keys], now, out bool passed) is { } settled)
+        // Among those playing: one kept for its return (a negative slot) has no say, and counted made a vote that much
+        // harder to carry.
+        if (_vote.Settle([.. Match.Players.Keys.Where(static slot => slot >= 0)], now, out bool passed) is { } settled)
         {
             string question = settled.Kind switch
             {
@@ -148,8 +150,7 @@ public sealed partial class ServerSession
             if (!client.Watching && now - client.ActiveAt > IdleKickSeconds)
             {
                 string name = client.Name;
-                Remove(slot, "idle too long");
-                _barred.Remove(client.PlayerId);
+                Remove(slot, "idle too long", bar: false);
                 Announce($"{name} was put off for standing idle.");
             }
         }

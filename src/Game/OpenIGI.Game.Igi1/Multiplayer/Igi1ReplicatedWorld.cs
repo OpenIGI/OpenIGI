@@ -199,6 +199,14 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         _reviving.Remove(player.Entity);
         _dead.Remove(player.Entity);
         _parked[parked] = player;
+
+        // Its side goes aside with it: left under the slot, it was the side of whoever next joined on that slot, and the
+        // player coming back on another had none.
+        if (_teams.Remove(slot, out int side))
+        {
+            _parkedTeams[parked] = side;
+        }
+
         return true;
     }
 
@@ -212,12 +220,24 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
 
         player.Entity = slot + 1;
         _bySlot[slot] = player;
+        if (_parkedTeams.Remove(parked, out int side))
+        {
+            _teams[slot] = side;
+        }
+
         _game.World.NetworkPlayers.Add(player);
         return player.Entity;
     }
 
     /// <inheritdoc/>
-    public void ForgetPlayer(int parked) => _parked.Remove(parked);
+    public void ForgetPlayer(int parked)
+    {
+        _parked.Remove(parked);
+        _parkedTeams.Remove(parked);
+    }
+
+    // The sides of the players kept aside, by the key each is kept under.
+    private readonly Dictionary<int, int> _parkedTeams = [];
 
     /// <inheritdoc/>
     public void RemovePlayer(int slot)
@@ -226,6 +246,8 @@ public sealed partial class Igi1ReplicatedWorld : IReplicatedWorld
         {
             _game.World.NetworkPlayers.Remove(player);
         }
+
+        _teams.Remove(slot);
     }
 
     /// <inheritdoc/>
