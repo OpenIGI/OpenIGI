@@ -72,8 +72,36 @@ public sealed partial class CutsceneRuntime : ISavedStateSource
         {
             yield return new(sound.Task, new ExchangedState(exchange =>
             {
-                sound.IsRun = exchange.Bool(sound.IsRun);
-                sound.HasPlayed = exchange.Bool(sound.HasPlayed);
+                bool wasRun = sound.IsRun, hadPlayed = sound.HasPlayed;
+                bool run = exchange.Bool(sound.IsRun);
+                bool played = exchange.Bool(sound.HasPlayed);
+                if (!exchange.IsReading)
+                {
+                    return;
+                }
+
+                sound.IsRun = run;
+                sound.HasPlayed = played;
+
+                // A sound that holds its voice while its condition is true -- an alarm's siren -- has its voice follow the
+                // save: one sounding on the level the save is read onto and silent in the save is stopped, as its condition's
+                // falling edge stops it, and one the save has sounding is started. Written straight back, the run byte would
+                // show no edge to the next update, and the siren of an alarm raised since the save rang on.
+                if (sound.Simple)
+                {
+                    return;
+                }
+
+                if (wasRun && hadPlayed && !run)
+                {
+                    _soundChanged?.Invoke(new CutsceneSoundEvent(
+                        sound.Task, sound.Sound, sound.RelativeToMicrophone ? null : sound.Position, Playing: false, Simple: false));
+                }
+                else if (!wasRun && run && played && !(_held && IsSceneSound(sound)))
+                {
+                    _soundChanged?.Invoke(new CutsceneSoundEvent(
+                        sound.Task, sound.Sound, sound.RelativeToMicrophone ? null : sound.Position, Playing: true, Simple: false));
+                }
             }));
         }
 

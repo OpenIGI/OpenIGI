@@ -74,6 +74,67 @@ public sealed class RetailCutsceneMissionOneIntroTests
         Assert.Single(edges, e => e.Name == "_cut01_01");
     }
 
+    /// <summary>
+    /// A sound that holds its voice while its condition is true follows a save game read onto the level: sounding now and
+    /// silent in the save, its voice is stopped; silent now and sounding in the save, it is started. Without it the siren of an
+    /// alarm raised after a save rang on through the load of it.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void A_held_sound_follows_a_save_read_onto_the_level()
+    {
+        RetailMissionFixture fixture = RetailMissionFixture.Open();
+        GameLoop loop = fixture.Loop;
+        LevelTask root = fixture.Root;
+        _ = fixture.Load(1);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        List<CutsceneSoundEvent> edges = [];
+        CutsceneRuntime runtime = new(root, loop.Variables, soundChanged: edges.Add);
+        OpenIGI.Game.Saves.SaveContext context = new() { Version = 1, States = new RuntimeStates(runtime), RootId = -2 };
+
+        runtime.Tick();
+        Assert.Contains(edges, static e => e.Name == "m1_heligen01" && e.Playing);
+        string sounding = OpenIGI.Game.Saves.SaveScript.Create(root, context.Info(1, 0), context)!;
+        for (int tick = 0; tick < 400; tick++)
+        {
+            runtime.Tick();
+        }
+
+        Assert.Contains(edges, static e => e.Name == "m1_heligen01" && !e.Playing);
+        string silent = OpenIGI.Game.Saves.SaveScript.Create(root, context.Info(1, 0), context)!;
+
+        // Silent now, sounding in the save: started, once.
+        edges.Clear();
+        Assert.True(OpenIGI.Game.Saves.SaveScript.Load(sounding, root, context).IsValid);
+        Assert.Single(edges, static e => e.Name == "m1_heligen01" && e.Playing && !e.Simple);
+        Assert.DoesNotContain(edges, static e => e.Simple);
+
+        // Sounding now, silent in the save: stopped.
+        edges.Clear();
+        Assert.True(OpenIGI.Game.Saves.SaveScript.Load(silent, root, context).IsValid);
+        Assert.Single(edges, static e => e.Name == "m1_heligen01" && !e.Playing);
+
+        // And read again as it already stands, nothing is told.
+        edges.Clear();
+        Assert.True(OpenIGI.Game.Saves.SaveScript.Load(silent, root, context).IsValid);
+        Assert.Empty(edges);
+    }
+
+    // What the walk keeps of its tasks, as a save game asks for it.
+    private sealed class RuntimeStates : OpenIGI.Game.Saves.ISaveStates
+    {
+        private readonly Dictionary<OpenIGI.Engine.Tasks.GameTask, OpenIGI.Game.Saves.ISavedState> _states = new(ReferenceEqualityComparer.Instance);
+
+        public RuntimeStates(CutsceneRuntime runtime)
+        {
+            foreach ((OpenIGI.Engine.Tasks.GameTask task, OpenIGI.Game.Saves.ISavedState state) in runtime.SavedStates(null))
+            {
+                _states.TryAdd(task, state);
+            }
+        }
+
+        public OpenIGI.Game.Saves.ISavedState? StateOf(OpenIGI.Engine.Tasks.GameTask task) => _states.GetValueOrDefault(task);
+    }
+
     [RequiresGameDataFact]
     public void MissionOneStartsItsAuthoredIntroAndAdvancesItsCamera()
     {
