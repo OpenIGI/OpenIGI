@@ -60,16 +60,18 @@ public sealed class GameEvents(IOpenIgiLogger? logger = null)
 
         foreach (Delegate handler in handlers)
         {
-            try
-            {
-                ((GameEventListener<TEvent>)handler)(in gameEvent);
-            }
-#pragma warning disable CA1031 // A subscriber's failure is its own; the game and the other subscribers go on.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                _logger.Error(LogCategory, $"A handler of {typeof(TEvent).Name} failed: {ex.Message}");
-            }
+            Contained.Run(
+                _logger,
+                LogCategory,
+                HandlerName<TEvent>.Text,
+                (Handler: (GameEventListener<TEvent>)handler, Event: gameEvent),
+                static call => call.Handler(in call.Event));
         }
+    }
+
+    // Named once per kind, so raising an event formats nothing unless a handler fails.
+    private static class HandlerName<TEvent>
+    {
+        public static readonly string Text = $"A handler of {typeof(TEvent).Name}";
     }
 }
