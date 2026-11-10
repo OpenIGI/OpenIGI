@@ -18,6 +18,11 @@ internal static class ControlsSettingsTab
     private static readonly GraphicsSetting[] TouchSettings =
     [
         new GraphicsSetting(
+            "touch_look_sensitivity",
+            "Look Sensitivity",
+            "How far the view turns for a drag across the screen. At 1 it is the game's own rate; higher turns further "
+                + "for the same drag."),
+        new GraphicsSetting(
             "touch_gyro",
             "Gyroscope Aim",
             "Turning the phone turns the view, alongside the fingers. Scope aims with it only through a sight or the "
@@ -133,7 +138,23 @@ internal static class ControlsSettingsTab
         List<SettingsGroup> groups = [SettingsGroup.Of("Mouse", [sensitivity, invert, resetButton])];
         if (context.Host.TouchScreen)
         {
-            groups.Add(SettingsGroup.Of("Touch", rowBuilder.SettingRows(theme, TouchSettings)));
+            List<Control> touchRows = rowBuilder.SettingRows(theme, TouchSettings);
+
+            // The layout is arranged over the mission itself, so the way to its editor is offered only from a mission's pause.
+            var layoutButton = new Button(theme, "CUSTOMISE CONTROLS")
+            {
+                Accent = ButtonAccent.Ghost,
+                TextSize = 16f,
+                Padding = new Thickness(18f, 10f),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = context.InGame,
+                Tooltip = context.InGame
+                    ? "Move, resize, fade, hide or add the touch controls and the display's readouts, over three saved layouts."
+                    : "Start a mission and pause it to arrange the touch controls and the display's readouts.",
+            };
+            layoutButton.Activated += _ => context.Host.EditTouchLayout();
+            touchRows.Insert(0, layoutButton);
+            groups.Add(SettingsGroup.Of("Touch", touchRows));
         }
 
         groups.Add(SettingsGroup.Of("Key bindings", [.. bindingRows]));

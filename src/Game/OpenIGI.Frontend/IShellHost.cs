@@ -113,6 +113,12 @@ public interface IShellHost
     /// <summary>Gets whether the game is being played on a touch screen: whether its own settings are worth showing.</summary>
     bool TouchScreen => false;
 
+    /// <summary>Leaves the pause menu for the touch layout editor, over the mission the menu is up over.</summary>
+    /// <remarks>Where the player moves, resizes, fades, hides and brings back the touch controls and the display's readouts.</remarks>
+    void EditTouchLayout()
+    {
+    }
+
     /// <summary>Gets whether this build has the editor, so the menu offers it.</summary>
     bool CanOpenEditor => false;
 

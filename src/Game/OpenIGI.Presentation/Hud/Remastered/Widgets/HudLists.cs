@@ -52,6 +52,7 @@ public static class HudInventory
         float width = (columns * columnWidth) + ((columns - 1) * gap) + context.Px(12f);
         float height = context.Px(8f) + headHeight + (deepest * nameHeight) + context.Px(8f);
         HudPanel.Draw(context, new UiRect(anchor.X, anchor.Y, width, height), opacity);
+        context.Report(HudElement.Inventory, new UiRect(anchor.X, anchor.Y, width, height));
 
         float x = anchor.X + context.Px(6f) - columnWidth - gap;
         float y = 0f;
@@ -202,6 +203,7 @@ public static class HudReadouts
         float width = context.Px(360f);
         float height = context.Px(10f);
         UiRect track = new(anchor.X - (width * 0.5f), anchor.Y, width, height);
+        context.Report(HudElement.Progress, new UiRect(track.X - context.Px(6f), track.Y - context.Px(6f), track.Width + context.Px(12f), track.Height + context.Px(12f)));
         HudPanel.Draw(context, new UiRect(track.X - context.Px(6f), track.Y - context.Px(6f), track.Width + context.Px(12f), track.Height + context.Px(12f)));
         float p = Math.Clamp(progress, 0f, 1f);
         context.Painter.FillRect(new UiRect(track.X, track.Y, track.Width * p, track.Height), palette.Primary);
@@ -232,6 +234,7 @@ public static class HudReadouts
         float width = UiPainter.MeasureLabel(context.Fonts.Value, text, size, 0.06f);
         UiRect panel = new(anchor.X - (width * 0.5f) - context.Px(12f), anchor.Y, width + context.Px(24f), size + context.Px(10f));
         HudPanel.Draw(context, panel, context.Reactive.Appear);
+        context.Report(HudElement.Timer, panel);
         Bgra32 colour = s <= 30 ? palette.Danger : palette.Accent;
         context.Painter.DrawLabel(context.Fonts.Value, text, new UiVec2(panel.X + context.Px(12f), panel.Y + context.Px(4f)), size, colour, 0.06f);
     }

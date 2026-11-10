@@ -110,6 +110,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/OpenIGI.Tools.Common/OpenIGI.Tools.Common.csproj" />
+    <Project Path="tools/OpenIGI.Tools.IconAtlas/OpenIGI.Tools.IconAtlas.csproj" />
     <Project Path="tools/OpenIGI.Tools.QvmDisasm/OpenIGI.Tools.QvmDisasm.csproj" />
     <Project Path="tools/OpenIGI.Tools.Release/OpenIGI.Tools.Release.csproj" />
     <Project Path="tools/OpenIGI.Tools.ResExtract/OpenIGI.Tools.ResExtract.csproj" />

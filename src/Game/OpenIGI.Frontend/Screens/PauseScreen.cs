@@ -36,6 +36,12 @@ public sealed class PauseScreen : ShellScreen
         List<(string Text, ButtonAccent Accent, Action Activated)> actions = [];
 
         // A co-op client's mission is its host's: the host restarts, saves and loads it, and this game follows.
+        // On a touch screen, the way to its layout editor: the pause button is on the screen in play, so this is two taps away.
+        if (Context.Host.TouchScreen)
+        {
+            actions.Add(("CUSTOMISE CONTROLS", ButtonAccent.Ghost, () => Context.Host.EditTouchLayout()));
+        }
+
         if (Context.Host.Coop?.Status is { Phase: CoopPhase.Playing, Hosting: false })
         {
             actions.Add(("LEAVE ROOM", ButtonAccent.Destructive, () => Context.Host.AbandonMission()));

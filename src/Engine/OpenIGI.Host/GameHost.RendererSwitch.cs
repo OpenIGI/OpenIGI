@@ -24,7 +24,7 @@ public sealed partial class GameHost
 
     /// <summary>Gets the input the player and the free camera are steered by this frame.</summary>
     /// <remarks>Still while the pause menu is up over a multiplayer game, which plays on under it (<see cref="MenuPausesGame"/>).</remarks>
-    private InputState ViewInput => _menuFlow.PauseMenu && !MenuPausesGame
+    private InputState ViewInput => (_menuFlow.PauseMenu && !MenuPausesGame) || _touchEditor.IsOpen
         ? _stillInput
         : ScriptedViewInput ?? (_switch.IsHolding || WheelHoldsInput ? _stillInput : _window.Input);
 

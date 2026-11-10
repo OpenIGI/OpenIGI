@@ -34,6 +34,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="coop">Co-op through rooms, where the build can make WebRTC connections.</param>
 /// <param name="party">Parties, where the build can play together at all.</param>
 /// <param name="touchScreen">Whether the game is being played on a touch screen.</param>
+/// <param name="editTouchLayout">Leaves the pause menu for the touch layout editor, over the mission.</param>
 /// <param name="openEditor">Opens the editor, or <see langword="null"/> in a build without one.</param>
 public sealed class ShellHost(
     Action<int, int> startMission,
@@ -55,6 +56,7 @@ public sealed class ShellHost(
     Func<IReadOnlyList<OpenIGI.Core.Content.ModReference>>? playedMods = null,
     ICoopRooms? coop = null,
     Func<bool>? touchScreen = null,
+    Action? editTouchLayout = null,
     Func<bool>? openEditor = null,
     IPartyPanel? party = null) : IShellHost
 {
@@ -121,6 +123,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public bool TouchScreen => touchScreen?.Invoke() ?? false;
+
+    /// <inheritdoc/>
+    public void EditTouchLayout() => editTouchLayout?.Invoke();
 
     /// <inheritdoc/>
     public bool CanOpenEditor => openEditor is not null;

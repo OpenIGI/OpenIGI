@@ -729,7 +729,7 @@ public sealed partial class GameHost : IDisposable
             // is one the player never gets to watch.
             if (_session.LevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel;
+                pausableLevel.IsPaused = MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel;
             }
 
             // The session's socket, read on every pass: a packet is timed as it lands, not a tick later.
@@ -762,7 +762,7 @@ public sealed partial class GameHost : IDisposable
             // simulation until they choose an action.
             // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
             // the cut-scene runtime, the weather -- stands still until the level is revealed.
-            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel))
+            if (outcome == FrameOutcome.Tick && (_session.FailedMenu || MenuPausesGame || PresentationHoldsLevel || EditorHoldsLevel || TouchEditorHoldsLevel))
             {
                 // A held co-op level still hears and tells the others: that everyone is there is what lets it go.
                 if (PresentationHoldsLevel && TickObserver is Multiplayer.ISessionHold hold)
@@ -943,6 +943,7 @@ public sealed partial class GameHost : IDisposable
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
+        _touchIcons?.Dispose();
         _debugOverlay?.Dispose();
         _mapComputer?.Dispose();
         _mapComputerDevice?.Dispose();

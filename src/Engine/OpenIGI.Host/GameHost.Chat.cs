@@ -216,8 +216,9 @@ public sealed partial class GameHost
     {
         _touchControls.ChatShown = Talk is not null && _session.Mission is not null;
         _window.SetTextLine(_chatEntry is null ? null : _chatSeed ?? string.Empty);
-        TouchButtonSpot? chat = _touchControls.ChatShown && _window.Input.Touch.InUse
-            ? _touchControls.Layout.FirstOrDefault(s => s.Button == TouchButton.Chat) is { Radius: > 0f } spot ? spot : null
+        // Not under the layout's editor, where a tap on the button takes hold of it rather than typing.
+        TouchButtonSpot? chat = _touchControls.ChatShown && _window.Input.Touch.InUse && !_touchEditor.IsOpen
+            ? _touchControls.Layout.FirstOrDefault(s => s.Button == TouchButton.Chat) is { Radius: > 0f, Hidden: false } spot ? spot : null
             : null;
         _window.SetTextTrigger(chat is { } c ? (c.Centre.X - c.Radius, c.Centre.Y - c.Radius, c.Radius * 2f, c.Radius * 2f) : null);
     }

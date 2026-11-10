@@ -42,6 +42,7 @@ public static class HudWeapon
         bool counted = weapon.Magazine is not null || weapon.Reserve is not null;
         float height = pad + context.Px(44f) + context.Px(26f) + (counted ? context.Px(44f) + context.Px(12f) : 0f) + pad;
         UiRect panel = new(anchor.X - width + offset, anchor.Y - height, width, height);
+        context.Report(HudElement.Weapon, new UiRect(anchor.X - width, anchor.Y - height, width, height));
         HudPanel.Draw(context, panel, opacity);
 
         float right = panel.Right - pad;

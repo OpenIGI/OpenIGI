@@ -26,6 +26,10 @@ public static class TouchControlsRenderer
     private static readonly Bgra32 Shade = Bgra32.FromRgba(0, 0, 0, 90);
     private static readonly Bgra32 DefaultAccent = Bgra32.FromRgba(255, 182, 64, 255);
 
+    /// <summary>Gets or sets the baked icons the buttons' pictures are drawn from, or <see langword="null"/> to draw them as strokes.</summary>
+    /// <remarks>The host's, made on its device; set before the controls or the layout's editor are drawn.</remarks>
+    public static TouchIconAtlas? Icons { get; set; }
+
     /// <summary>Draws the controls in play.</summary>
     /// <param name="batch">The batch to draw into, begun.</param>
     /// <param name="context">The screen's layout.</param>
@@ -46,35 +50,56 @@ public static class TouchControlsRenderer
         float rim = MathF.Max(1f, context.Px(2f));
         float stroke = MathF.Max(1.5f, context.Px(4f));
 
-        if (controls.Mode == TouchControlMode.Play)
+        bool editing = controls.Mode == TouchControlMode.Edit;
+        if (controls.Mode == TouchControlMode.Play || editing)
         {
-            DrawStick(painter, controls, rim, stroke);
+            // A stick taken off the screen is still shown to the editor, ghosted, to be put back.
+            if (controls.StickShown || editing)
+            {
+                painter.PushOpacity(controls.StickShown ? controls.StickOpacity : HiddenOpacity);
+                DrawStick(painter, controls, rim, stroke);
+                painter.PopOpacity();
+            }
         }
 
         bool offered = model is { Actions.Count: > 0 };
         foreach (TouchButtonSpot spot in controls.Layout)
         {
-            bool held = controls.Held.Contains(spot.Button);
-            if (spot.Card)
-            {
-                DrawWeaponCard(painter, batch, context, spot, held, icons, model, font, rim, stroke);
-                continue;
-            }
-
-            bool live = spot.Button == TouchButton.Use && offered;
-            Disc(painter, spot.Centre, spot.Radius, held ? GlassHeld : Glass, held || live ? accent : Rim, held || live ? rim * 1.6f : rim);
-
-            HudIcon action = spot.Button == TouchButton.Use && model is { Actions: [var first, ..] } ? first.Icon : HudIcon.None;
-            if (action.IsSome && icons is not null
-                && DrawPicture(batch, icons, action, spot.Centre, spot.Radius * 1.25f, spot.Radius * 1.05f, Ink))
-            {
-                continue;
-            }
-
-            float size = spot.Radius * (spot.Button == TouchButton.Fire ? 0.5f : 0.46f);
-            Bgra32 ink = spot.Button == TouchButton.Use && !offered && !held ? InkFaint : Ink;
-            DrawGlyph(painter, spot.Button, spot.Centre, size, spot.Radius > context.Px(80f) ? stroke * 1.3f : stroke, ink);
+            float opacity = spot.Hidden ? HiddenOpacity : spot.Opacity;
+            painter.PushOpacity(opacity);
+            DrawSpot(painter, batch, context, spot, controls.Held.Contains(spot.Button), offered, accent, icons, model, font, rim, stroke, opacity);
+            painter.PopOpacity();
         }
+    }
+
+    // How much of a control the player took off the screen the editor still shows.
+    private const float HiddenOpacity = 0.28f;
+
+    private static void DrawSpot(
+        UiPainter painter, SpriteBatch batch, LayoutContext context, TouchButtonSpot spot, bool held, bool offered, Bgra32 accent,
+        IHudIconSource? icons, HudModel? model, UiFont? font, float rim, float stroke, float opacity)
+    {
+        // The title's own pictures are drawn by the batch, not the painter, and so take the opacity in their colour.
+        Bgra32 pictureInk = Ink.WithAlpha((byte)(Ink.A * Math.Clamp(opacity, 0f, 1f)));
+        if (spot.Card)
+        {
+            DrawWeaponCard(painter, batch, context, spot, held, icons, model, font, rim, stroke, pictureInk);
+            return;
+        }
+
+        bool live = spot.Button == TouchButton.Use && offered;
+        Disc(painter, spot.Centre, spot.Radius, held ? GlassHeld : Glass, held || live ? accent : Rim, held || live ? rim * 1.6f : rim);
+
+        HudIcon action = spot.Button == TouchButton.Use && model is { Actions: [var first, ..] } ? first.Icon : HudIcon.None;
+        if (action.IsSome && icons is not null
+            && DrawPicture(batch, icons, action, spot.Centre, spot.Radius * 1.25f, spot.Radius * 1.05f, pictureInk))
+        {
+            return;
+        }
+
+        float size = spot.Radius * (spot.Button == TouchButton.Fire ? 0.5f : 0.46f);
+        Bgra32 ink = spot.Button == TouchButton.Use && !offered && !held ? InkFaint : Ink;
+        DrawGlyph(painter, spot.Button, spot.Centre, size, spot.Radius > context.Px(80f) ? stroke * 1.3f : stroke, ink);
     }
 
     private static void Disc(UiPainter painter, UiVec2 centre, float radius, Bgra32 fill, Bgra32 edge, float thickness)
@@ -110,7 +135,7 @@ public static class TouchControlsRenderer
 
     private static void DrawWeaponCard(
         UiPainter painter, SpriteBatch batch, LayoutContext context, TouchButtonSpot spot, bool held,
-        IHudIconSource? icons, HudModel? model, UiFont? font, float rim, float stroke)
+        IHudIconSource? icons, HudModel? model, UiFont? font, float rim, float stroke, Bgra32 pictureInk)
     {
         UiRect box = spot.Box;
         float cut = box.Height * 0.22f;
@@ -138,7 +163,7 @@ public static class TouchControlsRenderer
 
         UiVec2 middle = new(box.X + ((box.Width - textWidth) * 0.5f) + (mark * 0.8f), box.Y + (box.Height * 0.5f));
         if (weapon is { Icon.IsSome: true } shown && icons is not null
-            && DrawPicture(batch, icons, shown.Icon, middle, (box.Width - textWidth) * 0.7f, box.Height * 0.66f, Ink))
+            && DrawPicture(batch, icons, shown.Icon, middle, (box.Width - textWidth) * 0.7f, box.Height * 0.66f, pictureInk))
         {
             return;
         }
@@ -159,8 +184,14 @@ public static class TouchControlsRenderer
     }
 
     /// <summary>The button's picture as strokes: <paramref name="size"/> is half its height.</summary>
-    private static void DrawGlyph(UiPainter painter, TouchButton button, UiVec2 c, float size, float stroke, Bgra32 ink)
+    internal static void DrawGlyph(UiPainter painter, TouchButton button, UiVec2 c, float size, float stroke, Bgra32 ink)
     {
+        // The baked icon where there is one; the strokes below stand in on a device the atlas was never given.
+        if (Icons is { } icons && icons.TryDraw(painter, button, c, size * 2.9f, ink))
+        {
+            return;
+        }
+
         UiVec2 P(float x, float y) => new(c.X + (x * size), c.Y + (y * size));
         void Line(float x0, float y0, float x1, float y1) => painter.StrokeLine(P(x0, y0), P(x1, y1), stroke, ink);
         void Ring(float x, float y, float r) => painter.FillArc(P(x, y), (r * size) - (stroke * 0.5f), (r * size) + (stroke * 0.5f), 0f, MathF.Tau, ink);
@@ -291,6 +322,50 @@ public static class TouchControlsRenderer
                 Dot(0.38f, -0.42f, 0.22f);
                 painter.FillArc(P(-0.38f, 0.55f), size * 0.18f, size * 0.42f, MathF.PI, MathF.Tau, ink);
                 painter.FillArc(P(0.38f, 0.55f), size * 0.18f, size * 0.42f, MathF.PI, MathF.Tau, ink);
+                break;
+            case TouchButton.Flashlight:
+                // A torch, and the three rays of its beam.
+                painter.FillQuad(P(-0.95f, -0.22f), P(-0.1f, -0.22f), P(-0.1f, 0.22f), P(-0.95f, 0.22f), ink);
+                painter.FillQuad(P(-0.1f, -0.22f), P(0.3f, -0.45f), P(0.3f, 0.45f), P(-0.1f, 0.22f), ink);
+                Line(0.55f, 0f, 1f, 0f);
+                Line(0.5f, -0.35f, 0.88f, -0.62f);
+                Line(0.5f, 0.35f, 0.88f, 0.62f);
+                break;
+            case TouchButton.WalkRun:
+                // A figure in stride.
+                Dot(0.12f, -0.78f, 0.19f);
+                Line(0.05f, -0.52f, -0.08f, 0.1f);
+                Line(-0.08f, 0.1f, 0.38f, 0.42f);
+                Line(0.38f, 0.42f, 0.3f, 0.95f);
+                Line(-0.08f, 0.1f, -0.4f, 0.5f);
+                Line(-0.4f, 0.5f, -0.75f, 0.55f);
+                Line(0f, -0.35f, 0.5f, -0.1f);
+                Line(0f, -0.35f, -0.48f, -0.18f);
+                break;
+            case TouchButton.PreviousWeapon:
+                // The weapon before: one arrow back.
+                Line(0.8f, 0f, -0.45f, 0f);
+                painter.FillTriangle(P(-0.9f, 0f), P(-0.4f, -0.4f), P(-0.4f, 0.4f), ink);
+                break;
+            case TouchButton.WeaponWheel:
+                // The wheel and its spokes.
+                Ring(0f, 0f, 0.85f);
+                Ring(0f, 0f, 0.3f);
+                Line(0f, -0.85f, 0f, -0.3f);
+                Line(0f, 0.3f, 0f, 0.85f);
+                Line(-0.85f, 0f, -0.3f, 0f);
+                Line(0.3f, 0f, 0.85f, 0f);
+                break;
+            case TouchButton.QuickSave:
+                KitIcons.Draw(painter, KitIcon.Save, c, size * 1.5f, ink);
+                break;
+            case TouchButton.QuickLoad:
+                // Out of the box, back into the game.
+                Line(0f, 0.35f, 0f, -0.8f);
+                painter.DrawChevron(P(0f, -0.68f), size * 0.5f, UiDirection.Up, stroke, ink);
+                Line(-0.75f, 0.1f, -0.75f, 0.82f);
+                Line(-0.75f, 0.82f, 0.75f, 0.82f);
+                Line(0.75f, 0.82f, 0.75f, 0.1f);
                 break;
             case TouchButton.Drop:
                 // Down, onto the ground.

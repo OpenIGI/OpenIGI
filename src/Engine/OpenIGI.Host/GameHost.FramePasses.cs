@@ -415,6 +415,7 @@ public sealed partial class GameHost
         if (!_menuFlow.MenuMode
             && !state.Console.IsOpen
             && !_computerOpen
+            && !_touchEditor.IsOpen
             && !_session.FailedMenu
             && _mission.Cutscenes?.IsPlaying != true
             && TitlePlayer is not { IsCutscenePlaying: true } and not { IsMenuEnabled: false }

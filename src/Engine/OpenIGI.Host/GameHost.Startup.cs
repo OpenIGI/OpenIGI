@@ -75,6 +75,7 @@ public sealed partial class GameHost
         RegisterCameraCommands(state.Console.System);
         RegisterBlastCommands(state.Console.System);
         RegisterSaveCommands(state.Console.System);
+        RegisterTouchLayoutEditor(state);
         RegisterEditorCommands(state.Console.System);
         RegisterRendererSwitchCommand(state.Console.System);
         _contentLayers.Register(state.Console.System);
@@ -757,6 +758,15 @@ public sealed partial class GameHost
                 coop: _coop,
                 party: _coop is null ? null : new PartyPanel(this),
                 touchScreen: () => _window.Input.Touch.InUse,
+                editTouchLayout: () =>
+                {
+                    // Out of the pause menu and straight into the editor, over the mission the menu was up over.
+                    if (_menuFlow.PauseMenu && !_session.FailedMenu && _session.Mission is not null)
+                    {
+                        _resumeMission?.Invoke();
+                        OpenTouchLayoutEditor();
+                    }
+                },
                 openEditor: EditorFactory is null ? null : RequestEditor);
 
             state.ShellHostForEntryCam = state.ShellHost;

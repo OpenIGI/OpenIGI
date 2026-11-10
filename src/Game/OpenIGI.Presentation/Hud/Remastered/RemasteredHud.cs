@@ -34,6 +34,9 @@ public readonly record struct HudFrame(int Width, int Height, int RequestedScale
     /// <summary>Gets the player's view, for what is projected onto the level, or <see langword="null"/> for none.</summary>
     public HudProjector? Projector { get; init; }
 
+    /// <summary>Gets the player's own arrangement of the readouts on a touch screen, or <see langword="null"/> for the theme's.</summary>
+    public HudLayoutOverrides? Layout { get; init; }
+
     /// <summary>Gets the frame's settings as the player has them (<see cref="HudCVars"/>).</summary>
     /// <param name="width">The screen's width in pixels.</param>
     /// <param name="height">The screen's height in pixels.</param>
@@ -48,6 +51,7 @@ public readonly record struct HudFrame(int Width, int Height, int RequestedScale
             Sway = HudCVars.HudSway.Value,
             Threats = HudCVars.HudThreat.Value,
             WorldObjective = HudCVars.WorldObjective.Value,
+            Layout = HudLayoutOverrides.Current,
         };
 }
 
@@ -181,14 +185,25 @@ public sealed class RemasteredHud : IDisposable
             Smooth = _smooth,
             Behind = behind,
             ShaderBackdrop = layered && glass is not null,
+            Layout = frame.Layout,
         };
+        frame.Layout?.Boxes.Clear();
+        frame.Layout?.Unshown.Clear();
 
         // The rest of the display gives way as the weapon wheel opens.
         painter.PushOpacity(behind);
+        context.BeginElement(HudElement.Vitals);
         Part(context, HudParts.Status, frame.Density, model, static (c, m) => HudStatus.Draw(c, m));
+        context.EndElement();
+        context.BeginElement(HudElement.Inventory);
         Part(context, HudParts.Inventory, frame.Density, model, static (c, m) => HudInventory.Draw(c, m));
+        context.EndElement();
+        context.BeginElement(HudElement.Weapon);
         Part(context, HudParts.Weapon, frame.Density, model, static (c, m) => HudWeapon.Draw(c, m));
+        context.EndElement();
+        context.BeginElement(HudElement.Actions);
         HudActions.Draw(context, model);
+        context.EndElement();
         if (frame.WorldObjective && frame.Projector is { } projector)
         {
             HudObjective.Draw(context, model, projector);
@@ -198,9 +213,16 @@ public sealed class RemasteredHud : IDisposable
         {
             HudAlertBanner.Draw(context);
         }
+        context.BeginElement(HudElement.Progress);
         HudReadouts.DrawProgress(context, model);
+        context.EndElement();
+        context.BeginElement(HudElement.Timer);
         HudReadouts.DrawTimer(context, model);
+        context.EndElement();
+        context.BeginElement(HudElement.Messages);
         HudReadouts.DrawMessages(context, model);
+        context.EndElement();
+        ReportUnshown(context);
         // The remastered crosshair, shaped to the weapon and answering the aim; without it, the plain mark the frame opens.
         if (HudCVars.Crosshair.Value)
         {
@@ -263,6 +285,33 @@ public sealed class RemasteredHud : IDisposable
         }
 
         _device.DrawScopeGlints(glints[..count], frame.Seconds);
+    }
+
+    // For the layout's editor: a readout with nothing to show now still has a box where it would stand, to be taken hold of.
+    private static void ReportUnshown(HudDrawContext context)
+    {
+        if (context.Layout is not { Editing: true } arranged)
+        {
+            return;
+        }
+
+        foreach (HudElement element in Touch.TouchLayout.Readouts)
+        {
+            if (arranged.Boxes.ContainsKey(element))
+            {
+                continue;
+            }
+
+            context.BeginElement(element);
+            if (context.Place(element) is { } anchor)
+            {
+                bool centred = context.Theme.Anchors.TryGetValue(element, out HudAnchor placed) && placed.EdgeX == HudEdgeX.Centre;
+                arranged.Boxes[element] = HudLayoutOverrides.NominalBox(element, anchor, context.Px(1f), centred);
+                arranged.Unshown.Add(element);
+            }
+
+            context.EndElement();
+        }
     }
 
     // A part at the density's opacity: the painter carries it to the shapes and text, the context to the title's pictures.

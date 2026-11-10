@@ -21,6 +21,9 @@ public enum TouchControlMode
 
     /// <summary>The map computer: a finger is its pointer, and a button in the corner closes it.</summary>
     Computer,
+
+    /// <summary>The layout's editor: every control is shown where it stands and none is pressed; the editor reads the fingers itself.</summary>
+    Edit,
 }
 
 /// <summary>A button on the screen in play, and the player's action it holds.</summary>
@@ -85,6 +88,24 @@ public enum TouchButton
 
     /// <summary>Drops what is in hand for others to pick up: a gun, or a bomb mode's bomb.</summary>
     Drop,
+
+    /// <summary>The flashlight, on or off.</summary>
+    Flashlight,
+
+    /// <summary>Swaps between walking and running.</summary>
+    WalkRun,
+
+    /// <summary>The previous weapon.</summary>
+    PreviousWeapon,
+
+    /// <summary>Held, the weapon wheel is open; dragged, it is pointed; let go, the weapon pointed at is taken.</summary>
+    WeaponWheel,
+
+    /// <summary>Saves the mission to the quick slot.</summary>
+    QuickSave,
+
+    /// <summary>Loads the mission's newest save.</summary>
+    QuickLoad,
 }
 
 /// <summary>The match's own buttons a multiplayer session offers, each only where it has something to do.</summary>
@@ -119,7 +140,13 @@ public readonly record struct TouchPointer(UiVec2 At, UiVec2 Delta, bool Began);
 /// <param name="Radius">Its radius, or half the card's height, in window pixels.</param>
 /// <param name="Card">Whether it is a wide card rather than a round button.</param>
 /// <param name="Aims">Whether dragging it also turns the view: the right-hand fire button, so one thumb aims and shoots.</param>
-public readonly record struct TouchButtonSpot(TouchButton Button, UiVec2 Centre, float Radius, bool Card = false, bool Aims = false)
+/// <param name="Opacity">How much of it shows, nought to one, as the player's layout has it.</param>
+/// <param name="Id">Which of the layout's controls it is: the two fire buttons are one button and two controls.</param>
+/// <param name="Hidden">Whether the player took it off the screen; laid out only for the layout's editor, which shows it ghosted.</param>
+/// <param name="Extra">Its place among the buttons the player added, or <c>-1</c> for one of the game's own.</param>
+public readonly record struct TouchButtonSpot(
+    TouchButton Button, UiVec2 Centre, float Radius, bool Card = false, bool Aims = false, float Opacity = 1f,
+    TouchControlId Id = TouchControlId.Fire, bool Hidden = false, int Extra = -1)
 {
     /// <summary>Gets a card's box.</summary>
     public UiRect Box => new(Centre.X - (Radius * 2.4f), Centre.Y - Radius, Radius * 4.8f, Radius * 2f);
@@ -167,11 +194,7 @@ public sealed class TouchControls
     /// <summary>The stick's reach, in design units.</summary>
     public const float StickReach = 120f;
 
-    private const float FireRadius = 110f;
-    private const float LeftFireRadius = 68f;
     private const float ButtonRadius = 62f;
-    private const float SmallRadius = 50f;
-    private const float CornerRadius = 36f;
 
     private readonly Dictionary<int, Role> _roles = [];
     private readonly List<TouchButtonSpot> _layout = [];
@@ -180,6 +203,51 @@ public sealed class TouchControls
     private (float Width, float Height) _laidOutFor;
     private bool _talkShown;
     private bool _chatShown;
+    private bool _savesShown;
+    private bool _editing;
+    private TouchLayout _arrangement = new();
+
+    /// <summary>Gets or sets the player's own arrangement of the controls; a new one, or one changed in place, is laid out afresh.</summary>
+    public TouchLayout Arrangement
+    {
+        get => _arrangement;
+        set
+        {
+            _arrangement = value ?? throw new ArgumentNullException(nameof(value));
+            _laidOutFor = default;
+        }
+    }
+
+    /// <summary>Gets or sets whether the layout's editor is up: every control is then laid out, offered or not, hidden or not.</summary>
+    public bool Editing
+    {
+        get => _editing;
+        set
+        {
+            if (_editing != value)
+            {
+                _editing = value;
+                _laidOutFor = default;
+            }
+        }
+    }
+
+    /// <summary>Gets or sets whether the quick save and quick load buttons have something to do: the mission keeps save games.</summary>
+    public bool SavesShown
+    {
+        get => _savesShown;
+        set
+        {
+            if (_savesShown != value)
+            {
+                _savesShown = value;
+                _laidOutFor = default;
+            }
+        }
+    }
+
+    /// <summary>Gets or sets how far a drag turns the view against the shipped rate (<see cref="LookCountsPerPixel"/>).</summary>
+    public float LookScale { get; set; } = 1f;
 
     /// <summary>Gets or sets whether the button held to talk is offered: in a co-op room, with push to talk.</summary>
     public bool TalkShown
@@ -255,6 +323,12 @@ public sealed class TouchControls
     /// <summary>Gets the stick's reach in back-buffer pixels.</summary>
     public float StickReachPixels { get; private set; }
 
+    /// <summary>Gets how much of the stick shows, nought to one, as the player's layout has it.</summary>
+    public float StickOpacity { get; private set; } = 1f;
+
+    /// <summary>Gets a value indicating whether the stick is on the screen; a player with a pad may take it off.</summary>
+    public bool StickShown { get; private set; } = true;
+
     /// <summary>Gets how far the view is to turn this frame, in mouse counts.</summary>
     public UiVec2 Look { get; private set; }
 
@@ -325,7 +399,7 @@ public sealed class TouchControls
             switch (role.Kind)
             {
                 case RoleKind.Stick:
-                    UiVec2 origin = new(point.StartX, point.StartY);
+                    UiVec2 origin = _arrangement.StickMode == TouchStickMode.Fixed ? StickRest : new UiVec2(point.StartX, point.StartY);
                     float dx = point.X - origin.X, dy = point.Y - origin.Y;
                     float length = MathF.Sqrt((dx * dx) + (dy * dy));
                     float scale = length > StickReachPixels ? StickReachPixels / length : 1f;
@@ -357,7 +431,8 @@ public sealed class TouchControls
         // drag and the last one's, which evens those out and still turns the view by exactly as far as the finger went.
         UiVec2 smoothed = new((look.X + _lastLook.X) * 0.5f, (look.Y + _lastLook.Y) * 0.5f);
         _lastLook = look;
-        Look = new UiVec2(smoothed.X * LookCountsPerPixel, smoothed.Y * LookCountsPerPixel);
+        float counts = LookCountsPerPixel * LookScale;
+        Look = new UiVec2(smoothed.X * counts, smoothed.Y * counts);
         Pointer = pointer;
     }
 
@@ -393,15 +468,22 @@ public sealed class TouchControls
             return new Role(RoleKind.Ignored, null);
         }
 
+        // Where the player's layout laps one button over another, the smaller is the one meant.
+        TouchButtonSpot? pressed = null;
         foreach (TouchButtonSpot spot in _layout)
         {
-            if (spot.Hit(point.StartX, point.StartY))
+            if (!spot.Hidden && spot.Hit(point.StartX, point.StartY) && (pressed is not { } best || spot.Radius < best.Radius))
             {
-                return new Role(RoleKind.Button, spot.Button, spot.Aims);
+                pressed = spot;
             }
         }
 
-        bool stickHalf = point.StartX < context.Viewport.X * 0.42f && point.StartY > context.Viewport.Y * 0.3f;
+        if (pressed is { } hit)
+        {
+            return new Role(RoleKind.Button, hit.Button, hit.Aims);
+        }
+
+        bool stickHalf = StickShown && TakesStick(point.StartX, point.StartY, context);
         bool stickFree = true;
         foreach (Role other in _roles.Values)
         {
@@ -411,81 +493,99 @@ public sealed class TouchControls
         return new Role(stickHalf && stickFree ? RoleKind.Stick : RoleKind.Look, null);
     }
 
+    /// <summary>Lays the controls out now, rather than at the next read: for the layout's editor, which reads where they stand.</summary>
+    /// <param name="context">The screen's layout, in back-buffer pixels.</param>
+    public void Arrange(LayoutContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        LayOut(context);
+    }
+
+    // Whether a thumb landing here is the stick's: on the stick itself when it is fixed, else anywhere on its side of the
+    // screen below the top's buttons.
+    private bool TakesStick(float x, float y, LayoutContext context)
+    {
+        if (_arrangement.StickMode == TouchStickMode.Fixed)
+        {
+            float dx = x - StickRest.X, dy = y - StickRest.Y;
+            float reach = StickReachPixels * 1.5f;
+            return (dx * dx) + (dy * dy) <= reach * reach;
+        }
+
+        float width = context.Viewport.X;
+        bool side = StickRest.X <= width * 0.5f ? x < width * 0.42f : x > width * 0.58f;
+        return side && y > context.Viewport.Y * 0.3f;
+    }
+
+    // Whether a session has something for a control to do. The editor is shown them all, to place them before they are needed.
+    private bool Offered(TouchControlId id) => _editing || id switch
+    {
+        TouchControlId.Talk => _talkShown,
+        TouchControlId.Chat => _chatShown,
+        TouchControlId.Scoreboard => (_matchButtons & TouchMatchButtons.Scoreboard) != 0,
+        TouchControlId.Buy => (_matchButtons & TouchMatchButtons.Buy) != 0,
+        TouchControlId.Team => (_matchButtons & TouchMatchButtons.Team) != 0,
+        TouchControlId.Drop => (_matchButtons & TouchMatchButtons.Drop) != 0,
+        TouchControlId.QuickSave or TouchControlId.QuickLoad => _savesShown,
+        _ => true,
+    };
+
     private void LayOut(LayoutContext context)
     {
         _laidOutFor = (context.Viewport.X, context.Viewport.Y);
         _layout.Clear();
         UiRect safe = context.SafeRect;
-        float Px(float design) => context.Px(design);
-        void Round(TouchButton button, float right, float bottom, float radius, bool aims = false) =>
-            _layout.Add(new TouchButtonSpot(button, new UiVec2(safe.Right - Px(right), safe.Bottom - Px(bottom)), Px(radius), Aims: aims));
+        Func<TouchControlId, bool> offered = Offered;
 
-        StickReachPixels = Px(StickReach);
-        StickRest = new UiVec2(safe.X + Px(250f), safe.Bottom - Px(230f));
-
-        // The right thumb's cluster, as shooters on a phone lay it out: fire large in the corner, the sight and the reload
-        // within a thumb's roll of it, jump above, and the stances in a column along the edge.
-        Round(TouchButton.Fire, 300f, 230f, FireRadius, aims: true);
-        Round(TouchButton.Scope, 470f, 400f, ButtonRadius);
-        Round(TouchButton.Reload, 505f, 190f, ButtonRadius);
-        Round(TouchButton.Jump, 300f, 430f, ButtonRadius);
-        Round(TouchButton.Crouch, 110f, 170f, SmallRadius);
-        Round(TouchButton.Peek, 110f, 315f, SmallRadius);
-        Round(TouchButton.ZoomIn, 110f, 600f, CornerRadius);
-        Round(TouchButton.ZoomOut, 110f, 495f, CornerRadius);
-
-        // The left thumb's fire, above the stick, for shooting while the right one aims.
-        _layout.Add(new TouchButtonSpot(TouchButton.Fire, new UiVec2(safe.X + Px(250f), safe.Bottom - Px(540f)), Px(LeftFireRadius)));
-
-        // The weapon in hand on a card at the bottom's middle, and the use button above it, where a prompt would be.
-        float cardRadius = Px(52f);
-        _layout.Add(new TouchButtonSpot(TouchButton.Weapon, new UiVec2(safe.X + (safe.Width * 0.5f), safe.Bottom - Px(90f)), cardRadius, Card: true));
-        _layout.Add(new TouchButtonSpot(TouchButton.Use, new UiVec2(safe.X + (safe.Width * 0.5f), safe.Bottom - Px(250f)), Px(SmallRadius)));
-
-        // A match's own, as a phone shooter lays them out: the board, the shop and the sides along the top left, out of a thumb's
-        // way in a fight; the drop small beside the reload, where a thumb rolls to it.
-        float matchY = safe.Y + Px(80f);
-        float matchX = safe.X + Px(80f);
-        foreach ((TouchMatchButtons flag, TouchButton button) in new[]
+        // Each control where the player put it, or where the game does (TouchLayout.DefaultOf).
+        foreach (TouchControlId id in TouchLayout.AllControls)
         {
-            (TouchMatchButtons.Scoreboard, TouchButton.Scoreboard),
-            (TouchMatchButtons.Buy, TouchButton.Buy),
-            (TouchMatchButtons.Team, TouchButton.Team),
-        })
-        {
-            if ((_matchButtons & flag) != 0)
+            if (!Offered(id))
             {
-                _layout.Add(new TouchButtonSpot(button, new UiVec2(matchX, matchY), Px(CornerRadius + 4f)));
-                matchX += Px((CornerRadius + 4f) * 2.6f);
+                continue;
+            }
+
+            TouchPlacement placement = _arrangement.Resolve(id, offered);
+            UiVec2 centre = TouchLayout.CentreOf(placement, context);
+            float radius = context.Px(TouchLayout.DesignRadius(id) * placement.Scale);
+            if (id == TouchControlId.Stick)
+            {
+                StickRest = centre;
+                StickReachPixels = radius;
+                StickOpacity = placement.Opacity;
+                StickShown = placement.Visible;
+                continue;
+            }
+
+            if ((placement.Visible || _editing) && TouchLayout.ButtonOf(id) is { } button)
+            {
+                _layout.Add(new TouchButtonSpot(
+                    button, centre, radius, TouchLayout.IsCard(id), TouchLayout.Aims(id), placement.Opacity, id, Hidden: !placement.Visible));
             }
         }
 
-        if ((_matchButtons & TouchMatchButtons.Drop) != 0)
+        // The buttons the player added: more of the same controls, each offered when its control is.
+        for (int i = 0; i < _arrangement.Extras.Count; i++)
         {
-            Round(TouchButton.Drop, 660f, 330f, SmallRadius);
+            TouchExtra extra = _arrangement.Extras[i];
+            if (Offered(extra.Kind) && (extra.Placement.Visible || _editing) && TouchLayout.ButtonOf(extra.Kind) is { } button)
+            {
+                _layout.Add(new TouchButtonSpot(
+                    button,
+                    TouchLayout.CentreOf(extra.Placement, context),
+                    context.Px(TouchLayout.DesignRadius(extra.Kind) * extra.Placement.Scale),
+                    TouchLayout.IsCard(extra.Kind),
+                    TouchLayout.Aims(extra.Kind),
+                    extra.Placement.Opacity,
+                    extra.Kind,
+                    Hidden: !extra.Placement.Visible,
+                    Extra: i));
+            }
         }
 
         // The computer's way out, where a window's close button is.
         _computerLayout.Clear();
-        _computerLayout.Add(new TouchButtonSpot(TouchButton.Close, new UiVec2(safe.Right - Px(90f), safe.Y + Px(90f)), Px(ButtonRadius)));
-
-        // The few that are not reached for in a fight, small along the top right.
-        float y = safe.Y + Px(80f);
-        List<TouchButton> corner = [TouchButton.Pause, TouchButton.Map, TouchButton.Binoculars];
-        if (_talkShown)
-        {
-            corner.Add(TouchButton.Talk);
-        }
-
-        if (_chatShown)
-        {
-            corner.Add(TouchButton.Chat);
-        }
-
-        for (int i = 0; i < corner.Count; i++)
-        {
-            _layout.Add(new TouchButtonSpot(corner[i], new UiVec2(safe.Right - Px(80f) - (i * Px(CornerRadius * 2.6f)), y), Px(CornerRadius)));
-        }
+        _computerLayout.Add(new TouchButtonSpot(TouchButton.Close, new UiVec2(safe.Right - context.Px(90f), safe.Y + context.Px(90f)), context.Px(ButtonRadius)));
     }
 
     private static bool Contains(TouchState touch, int id)
