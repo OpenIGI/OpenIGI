@@ -273,20 +273,23 @@ public static class MaterialMapGenerator
     public static void PackDetail(Maps maps, Span<Bgra32> destination) =>
         MaterialMapPacking.PackDetail(maps, destination);
 
+    /// <summary>One source map for <see cref="PackAuthoredDetail"/>: its pixels, row by row from the top, and its width.</summary>
+    /// <param name="Pixels">The pixels, or empty for no map.</param>
+    /// <param name="Width">The width in pixels; ignored when there are no pixels.</param>
+    public readonly record struct SourceMap(ReadOnlyMemory<Bgra32> Pixels, int Width);
+
     /// <summary>
     /// Packs a model's OWN maps, as glTF defines them, into the detail map the G-buffer reads for a surface drawn with
     /// <c>SurfaceMaterial.AuthoredDetail</c>.
     /// </summary>
     /// <param name="normal">
-    /// The tangent-space normal map, row by row from the top, or empty for none (the surface is drawn flat). glTF's
+    /// The tangent-space normal map, or <see langword="default"/> for none (the surface is drawn flat). glTF's
     /// convention: red is +X, green is +Y up the image.
     /// </param>
-    /// <param name="normalWidth">The normal map's width in pixels; ignored when it is empty.</param>
     /// <param name="metallicRoughness">
-    /// The metal-roughness map, row by row from the top, or empty for none. glTF's channels: green is roughness, blue is
+    /// The metal-roughness map, or <see langword="default"/> for none. glTF's channels: green is roughness, blue is
     /// metalness, both linear.
     /// </param>
-    /// <param name="metallicRoughnessWidth">The metal-roughness map's width in pixels; ignored when it is empty.</param>
     /// <param name="metallicFactor">glTF's metallic factor: it scales the map, and stands for it where there is none.</param>
     /// <param name="roughnessFactor">glTF's roughness factor: it scales the map, and stands for it where there is none.</param>
     /// <param name="destination">Receives the packed map, row by row from the top.</param>
@@ -309,23 +312,26 @@ public static class MaterialMapGenerator
     /// upload it, pair it with the model's colour texture through <c>IGraphicsDevice.SetTextureDetail</c>, and draw
     /// with <c>SurfaceMaterial.AuthoredDetail</c> set. Nothing in the game's own data does. <b>Not retail.</b>
     /// </para>
+    /// <para>
+    /// <b>No occlusion.</b> Alpha carries the metalness, so there is no channel left for one, and a glTF occlusion map
+    /// is not taken: an authored surface is drawn fully open.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="width"/> or <paramref name="height"/> is not positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="width"/> or <paramref name="height"/> is not positive, or their product overflows.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="destination"/> is too small, or a source's length is not a whole number of rows of its width.
     /// </exception>
     public static void PackAuthoredDetail(
-        ReadOnlySpan<Bgra32> normal,
-        int normalWidth,
-        ReadOnlySpan<Bgra32> metallicRoughness,
-        int metallicRoughnessWidth,
+        SourceMap normal,
+        SourceMap metallicRoughness,
         float metallicFactor,
         float roughnessFactor,
         Span<Bgra32> destination,
         int width,
         int height) =>
-        MaterialMapPacking.PackAuthoredDetail(
-            normal, normalWidth, metallicRoughness, metallicRoughnessWidth, metallicFactor, roughnessFactor, destination, width, height);
+        MaterialMapPacking.PackAuthoredDetail(normal, metallicRoughness, metallicFactor, roughnessFactor, destination, width, height);
 
     /// <summary>Packs occlusion, roughness and metallic into the industry's usual three channels.</summary>
     /// <param name="maps">The derived maps.</param>

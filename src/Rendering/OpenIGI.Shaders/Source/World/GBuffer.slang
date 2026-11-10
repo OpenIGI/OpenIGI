@@ -323,7 +323,8 @@ GBufferTargets fragmentMain(Varyings input)
     // A surface whose detail map was AUTHORED with it rather than derived from its diffuse (a model that ships
     // its own normal, roughness and metal maps, SurfaceMaterial.AuthoredDetail): the map is applied whole
     // whatever the preset's strength, its third channel is the roughness itself and its fourth the metalness,
-    // texel by texel. Nothing in the game's own data sets it. Not retail.
+    // texel by texel. Nothing in the game's own data sets it. Not retail. Its fourth channel being the metalness,
+    // it never sets occlusion, so a glTF occlusion map is dropped and the surface stays fully open.
     bool authored = push.normal0.w < -1.5;
 
     // A body: cloth and skin, which do not shine. See the end of this stage for what it is given.
@@ -392,7 +393,7 @@ GBufferTargets fragmentMain(Varyings input)
         // floor came out at 0.36 -- under both reflection ceilings, and handed a full-strength reflection
         // at the 1.7 intensity. The two halves of one map now move together.
         float roughnessScale = lerp(1.0, detail.z * 2.0, saturate(frame.surface.x));
-        roughness = authored ? clamp(detail.z, 0.04, 1.0) : clamp(roughness * roughnessScale, 0.02, 1.0);
+        roughness = authored ? clamp(detail.z, 0.02, 1.0) : clamp(roughness * roughnessScale, 0.02, 1.0);
 
         // Alpha is OCCLUSION -- how much of its surroundings a texel can see, from the horizon search
         // the generator has always run and nothing has ever read. Metal moved to materials.json, where

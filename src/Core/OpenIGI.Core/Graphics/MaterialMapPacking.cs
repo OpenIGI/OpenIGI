@@ -115,10 +115,8 @@ internal static class MaterialMapPacking
 
     /// <inheritdoc cref="MaterialMapGenerator.PackAuthoredDetail"/>
     public static void PackAuthoredDetail(
-        ReadOnlySpan<Bgra32> normal,
-        int normalWidth,
-        ReadOnlySpan<Bgra32> metallicRoughness,
-        int metallicRoughnessWidth,
+        MaterialMapGenerator.SourceMap normal,
+        MaterialMapGenerator.SourceMap metallicRoughness,
         float metallicFactor,
         float roughnessFactor,
         Span<Bgra32> destination,
@@ -127,14 +125,17 @@ internal static class MaterialMapPacking
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(height, int.MaxValue / width);
         if (destination.Length < width * height)
         {
             throw new ArgumentException(
                 $"A {width}x{height} map needs {width * height} pixels, got {destination.Length}.", nameof(destination));
         }
 
-        int normalHeight = RowsOf(normal, normalWidth, nameof(normal));
-        int surfaceHeight = RowsOf(metallicRoughness, metallicRoughnessWidth, nameof(metallicRoughness));
+        ReadOnlySpan<Bgra32> normalPixels = normal.Pixels.Span;
+        ReadOnlySpan<Bgra32> surfacePixels = metallicRoughness.Pixels.Span;
+        int normalHeight = RowsOf(normalPixels, normal.Width, nameof(normal));
+        int surfaceHeight = RowsOf(surfacePixels, metallicRoughness.Width, nameof(metallicRoughness));
 
         for (int y = 0; y < height; y++)
         {
@@ -142,17 +143,17 @@ internal static class MaterialMapPacking
             {
                 // Flat where there is no normal map: the neutral pair.
                 byte red = 128, green = 128;
-                if (!normal.IsEmpty)
+                if (!normalPixels.IsEmpty)
                 {
-                    Bgra32 n = normal[Nearest(x, y, width, height, normalWidth, normalHeight)];
+                    Bgra32 n = normalPixels[Nearest(x, y, width, height, normal.Width, normalHeight)];
                     red = n.R;
                     green = (byte)(255 - n.G);
                 }
 
                 float roughness = roughnessFactor, metalness = metallicFactor;
-                if (!metallicRoughness.IsEmpty)
+                if (!surfacePixels.IsEmpty)
                 {
-                    Bgra32 s = metallicRoughness[Nearest(x, y, width, height, metallicRoughnessWidth, surfaceHeight)];
+                    Bgra32 s = surfacePixels[Nearest(x, y, width, height, metallicRoughness.Width, surfaceHeight)];
                     roughness *= s.G / 255f;
                     metalness *= s.B / 255f;
                 }

@@ -72,10 +72,8 @@ public sealed class AuthoredDetailPackingTests
     {
         Bgra32[] packed = new Bgra32[1];
         MaterialMapGenerator.PackAuthoredDetail(
-            [Bgra32.FromRgba(normalRed, normalGreen, 255, 255)],
-            1,
-            [Bgra32.FromRgba(0, roughnessGreen, metalBlue, 255)],
-            1,
+            new(new[] { Bgra32.FromRgba(normalRed, normalGreen, 255, 255) }, 1),
+            new(new[] { Bgra32.FromRgba(0, roughnessGreen, metalBlue, 255) }, 1),
             metallicFactor,
             roughnessFactor,
             packed,
@@ -93,7 +91,7 @@ public sealed class AuthoredDetailPackingTests
     public void NoMapsLeaveAFlatNormalAndTheFactors()
     {
         Bgra32[] packed = new Bgra32[4];
-        MaterialMapGenerator.PackAuthoredDetail([], 0, [], 0, 0.25f, 0.75f, packed, 2, 2);
+        MaterialMapGenerator.PackAuthoredDetail(default, default, 0.25f, 0.75f, packed, 2, 2);
 
         Assert.All(packed, texel =>
         {
@@ -111,7 +109,7 @@ public sealed class AuthoredDetailPackingTests
         // A 1x2 metal-roughness map, smooth on top and rough below, packed to 2x4.
         Bgra32[] surface = [Bgra32.FromRgba(0, 0, 0, 255), Bgra32.FromRgba(0, 255, 0, 255)];
         Bgra32[] packed = new Bgra32[8];
-        MaterialMapGenerator.PackAuthoredDetail([], 0, surface, 1, 0f, 1f, packed, 2, 4);
+        MaterialMapGenerator.PackAuthoredDetail(default, new(surface, 1), 0f, 1f, packed, 2, 4);
 
         Assert.Equal("0,0,0,0,255,255,255,255", string.Join(',', packed.Select(texel => texel.B)));
     }
@@ -122,7 +120,7 @@ public sealed class AuthoredDetailPackingTests
     {
         Bgra32[] packed = new Bgra32[1];
         Assert.Throws<ArgumentException>(() =>
-            MaterialMapGenerator.PackAuthoredDetail(new Bgra32[3], 2, [], 0, 0f, 1f, packed, 1, 1));
+            MaterialMapGenerator.PackAuthoredDetail(new(new Bgra32[3], 2), default, 0f, 1f, packed, 1, 1));
     }
 
     /// <summary>A destination smaller than the size asked for is refused.</summary>
@@ -131,6 +129,14 @@ public sealed class AuthoredDetailPackingTests
     {
         Bgra32[] packed = new Bgra32[3];
         Assert.Throws<ArgumentException>(() =>
-            MaterialMapGenerator.PackAuthoredDetail([], 0, [], 0, 0f, 1f, packed, 2, 2));
+            MaterialMapGenerator.PackAuthoredDetail(default, default, 0f, 1f, packed, 2, 2));
+    }
+
+    /// <summary>A size whose pixel count overflows is refused, not wrapped.</summary>
+    [Fact]
+    public void ASizeThatOverflowsIsRefused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MaterialMapGenerator.PackAuthoredDetail(default, default, 0f, 1f, [], 65536, 65536));
     }
 }

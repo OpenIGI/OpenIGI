@@ -122,7 +122,8 @@ public readonly record struct SurfaceMaterial(
     /// </summary>
     /// <remarks>
     /// Such a map is applied whole whatever the preset's detail strength, and its roughness and metalness replace the
-    /// material's, texel by texel. Nothing in the game's own data sets it. A property rather than a constructor parameter,
+    /// material's, texel by texel. The map has no occlusion channel, so a glTF occlusion map is dropped and the surface
+    /// is drawn fully open. Nothing in the game's own data sets it. A property rather than a constructor parameter,
     /// so the constructor a built mod calls is the one it was built against. <b>Not retail.</b>
     /// </remarks>
     public bool AuthoredDetail { get; init; }
