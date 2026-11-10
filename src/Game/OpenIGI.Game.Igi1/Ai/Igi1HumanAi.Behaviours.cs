@@ -166,6 +166,11 @@ public sealed partial class Igi1HumanAi
             WriteChannel(AiCombatChannel.Kneel, 1f);
         }
 
+        if (Behaviours?.HoldsPatrolStop(tick) == true)
+        {
+            return;
+        }
+
         bool finished = route.Begin(tick);
 
         switch (command.Kind)
@@ -227,6 +232,7 @@ public sealed partial class Igi1HumanAi
         {
             _animationFinished = false;
             route.Advance();
+            Behaviours?.PatrolCommandFinished(tick);
         }
     }
 

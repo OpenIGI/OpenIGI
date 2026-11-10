@@ -495,7 +495,7 @@ public sealed partial class Igi1HumanAi
         || _lookForTargetLatched;
 
     /// <summary>Holds the posture channel the kneel and prone arms, and their children, write every tick.</summary>
-    private void HoldPosture()
+    internal void HoldPosture()
     {
         if (_patrolProne)
         {
@@ -627,13 +627,14 @@ public sealed partial class Igi1HumanAi
     /// <summary>The fire and reload sub-actions the two arms share.</summary>
     /// <param name="enemy">Where the target is.</param>
     /// <param name="weapon">The held weapon's state this tick.</param>
-    private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon)
+    /// <param name="suppressAt">A point to fire at in place of the target, seen or not (Igi1HumanAi.FireBurstAt); null for the target.</param>
+    private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon, Vector3d? suppressAt = null)
     {
-        Vector3d aim = TrueAimPoint();
+        Vector3d aim = suppressAt ?? TrueAimPoint();
         AiCombatSense sense = new(
-            HasDetectionSlot: TargetSlot.IsRegistered,
-            InCone: TargetSlot.IsInCone,
-            Visible: TargetSlot.IsVisible,
+            HasDetectionSlot: TargetSlot.IsRegistered || suppressAt is not null,
+            InCone: TargetSlot.IsInCone || suppressAt is not null,
+            Visible: TargetSlot.IsVisible || suppressAt is not null,
             TargetPosition: aim,
             DistanceToTargetInUnits: Vector3d.Distance(Position, aim),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
@@ -678,6 +679,7 @@ public sealed partial class Igi1HumanAi
         if (command.StartedBurst is { } burst)
         {
             HitProbability = burst.HitProbability;
+            BurstHitProbability = burst.HitProbability;
         }
 
         if (command.Aim is { } mode && Target is not null)
@@ -702,7 +704,7 @@ public sealed partial class Igi1HumanAi
     /// over them. So the cone narrows with the height difference, and a target a few metres off is above it: a
     /// running patrol holds its fire until it is clear of the target, and only fires at range.
     /// </remarks>
-    private bool FacesForFollowFire(Vector3d recordPoint)
+    internal bool FacesForFollowFire(Vector3d recordPoint)
     {
         double dx = recordPoint.X - Position.X;
         double dy = recordPoint.Y - Position.Y;

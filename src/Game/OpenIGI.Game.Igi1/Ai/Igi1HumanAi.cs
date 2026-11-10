@@ -663,7 +663,7 @@ public sealed partial class Igi1HumanAi
     // plus one tick, and the count stands still on a tick the AI does not run.
     private void TickIdleAnimation()
     {
-        if (_animationCountdown < 0 || _animationEntries.Count == 0)
+        if (_animationCountdown < 0 || _animationEntries.Count == 0 || Behaviours is { AllowsIdleAnimation: false })
         {
             return;
         }
@@ -736,7 +736,7 @@ public sealed partial class Igi1HumanAi
     public static Vector3d AimPointOf(Vector3d target, bool crouching = false) =>
         Igi1AiGeometry.AimPointOf(target, crouching);
 
-    private int NextBounded(int exclusiveBound) => exclusiveBound <= 0
+    internal int NextBounded(int exclusiveBound) => exclusiveBound <= 0
         ? 0
         : checked((int)_random.NextBounded(checked((uint)exclusiveBound)));
 }

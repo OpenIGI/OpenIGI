@@ -24,11 +24,9 @@ internal sealed class SoldierSightQueries(SoldierContext context, Action<string,
     /// <summary>The soldier model's <c>MESH+0x78</c> bound, <c>Human+160</c>, when the model's own is not to hand.</summary>
     public const float DefaultHumanBoundMetres = 0.94f;
 
-    /// <summary>How far past a see-through hit the next probe starts, so it clears that thin surface.</summary>
-    private const double SightSkipEpsilonUnits = 64d;
+    private const double SightSkipEpsilonUnits = LineCoverQuery.SightSkipEpsilonUnits;
 
-    /// <summary>The most see-through layers a single sight probe steps through before giving up.</summary>
-    private const int SightSkipLimit = 8;
+    private const int SightSkipLimit = LineCoverQuery.SightSkipLimit;
 
     /// <summary>
     /// Bone 5's offset from the origin (Human+32) in the palette a soldier is created with, in its body's frame: the eye

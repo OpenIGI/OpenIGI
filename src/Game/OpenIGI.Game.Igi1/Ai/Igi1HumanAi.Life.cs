@@ -164,7 +164,7 @@ public sealed partial class Igi1HumanAi
             return false;
         }
 
-        if (generated || (!drawnLastRender && !bodiesStay))
+        if (generated || (!drawnLastRender && !bodiesStay && Behaviours is not { KeepsUnseenBody: true }))
         {
             HasLeftWorld = true;
             return true;
@@ -373,6 +373,10 @@ public sealed partial class Igi1HumanAi
             OfferCandidates(candidates);
         }
 
+        // Who was offered, for a mod's behaviour to read during the tick (OfferedHumans).
+        TakeOffer(_offeredReferences is not null, candidates);
+
+        Behaviours?.TickStarted(tick);
         _enemyAlive = TargetHuman?.Candidate.Alive ?? true;
 
         // 0x44F410 zeroes the whole input-channel block (+15476, 0xA0 bytes) before anything runs: only the
@@ -428,6 +432,7 @@ public sealed partial class Igi1HumanAi
                 RunWithoutAction();
             }
 
+            Behaviours?.TickEnded();
             StepBodyOrWait();
             return;
         }
@@ -503,6 +508,12 @@ public sealed partial class Igi1HumanAi
         {
             if (friend.Slot.IsVisible && !friend.Candidate.Alive)
             {
+                Vector3d fallenAt = friend.Candidate.Feet;
+                if (Sensed(GuardStimulusKind.FallenFriend, ref fallenAt, friend.Candidate.Id) is not null)
+                {
+                    continue;
+                }
+
                 PostDetection(AiEvent.FriendlyDetection, friend);
             }
         }
@@ -530,7 +541,8 @@ public sealed partial class Igi1HumanAi
         // reaches from ENEMYDETECTION -- and posts IDLE whenever the action stack is empty (0x450DC0).
         // Declared priority, not a pending-event test, keeps IDLE behind the events that matter: a "nothing
         // pending" condition never let IDLE through while the alarm posted ALARMON every tick, which froze
-        // a guard in place for the rest of the alarm.
+        // a guard in place for the rest of the alarm. A mod's behaviour may give him something first (BeforeIdle).
+        Behaviours?.BeforeIdle();
         if (!_pendingActions.HasPending)
         {
             Events.Post(AiEventRecord.Simple(AiEvent.Idle), owner: 0, worldTests: null);
@@ -547,6 +559,7 @@ public sealed partial class Igi1HumanAi
             RunWithoutAction();
         }
 
+        Behaviours?.TickEnded();
         StepBodyOrWait();
     }
 

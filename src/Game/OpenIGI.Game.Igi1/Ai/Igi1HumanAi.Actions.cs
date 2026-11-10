@@ -86,6 +86,8 @@ public sealed partial class Igi1HumanAi
                 FinishAction(node);
             }
         }
+
+        Behaviours?.ActionsApplied(_currentEventType, LastActions);
     }
 
     // The flag word is every AIAction_* native's last argument (0x44D0E0, 0x44D160, 0x44D6E0, ...).
@@ -331,7 +333,7 @@ public sealed partial class Igi1HumanAi
         return handled;
     }
 
-    private bool IsActionActive(string name) => name switch
+    internal bool IsActionActive(string name) => name switch
     {
         ActionPatrol => Route is not null,
         ActionCombat => _combatInstalled,

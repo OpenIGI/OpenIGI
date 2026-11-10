@@ -162,6 +162,48 @@ public sealed partial class SoldierSimulation
     /// <summary>Gets how many ticks the simulation has run: a clock for a mod's own timings. <b>Not retail.</b></summary>
     public int TicksRun => TickCount;
 
+    /// <summary>
+    /// Gives each guard what a mod's factory makes for him (<see cref="IGuardBehaviour"/>): every guard now, and every one made
+    /// or respawned after, once he has his id. The factory is handed what the behaviour may have him do, and returns
+    /// <see langword="null"/> for a guard it leaves to the game. Several may be attached: each guard hears from them in the
+    /// order they were. <b>Not retail.</b>
+    /// </summary>
+    /// <param name="factory">The factory.</param>
+    /// <returns>What lets go of it, and of every behaviour it made.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    public IDisposable AttachGuardBehaviour(Func<GuardControl, IGuardBehaviour?> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _context.GuardBehaviours.Add(factory);
+        foreach (Igi1HumanAi brain in Brains.Values)
+        {
+            brain.Attach(factory, _context.Logger);
+        }
+
+        return new GuardBehaviourAttachment(this, factory);
+    }
+
+    // Lets go of one factory's behaviours, once.
+    private sealed class GuardBehaviourAttachment(SoldierSimulation soldiers, Func<GuardControl, IGuardBehaviour?> factory) : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+            soldiers._context.GuardBehaviours.Remove(factory);
+            foreach (Igi1HumanAi brain in soldiers.Brains.Values)
+            {
+                brain.Detach(factory);
+            }
+        }
+    }
+
     /// <inheritdoc cref="SoldierDamage.BloodSpray"/>
     public Action<object, Vector3d, Vector3f>? BloodSpray { get => _damage.BloodSpray; set => _damage.BloodSpray = value; }
 

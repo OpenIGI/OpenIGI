@@ -168,13 +168,26 @@ public sealed partial class Igi1HumanAi
             return;
         }
 
-        Facing = Igi1AiGeometry.Wrap((float)(Facing + _bodyTurn.Step(turn)));
-        ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+        // The turn and the clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked for:
+        // the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back. A mod's behaviour may
+        // shape both (IGuardMovement.ShapeStep), handed the step the game would take.
+        double turned = _bodyTurn.Step(turn);
+        GuardStep step = new()
+        {
+            Turn = turned,
+            Move = SoldierDeathFall.RotateAboutZ(
+                new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Igi1AiGeometry.Wrap((float)(Facing + turned)) + RecoilYaw),
+            RootMotion = _rootMotionThisTick,
+            RootLateral = _rootLateralThisTick,
+        };
+        if (Behaviours is { HasMovement: true } behaviours)
+        {
+            behaviours.ShapeStep(ref step);
+        }
 
-        // The clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked
-        // for: the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back.
-        Vector3d world = SoldierDeathFall.RotateAboutZ(
-            new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing + RecoilYaw);
+        Facing = Igi1AiGeometry.Wrap((float)(Facing + step.Turn));
+        ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+        Vector3d world = step.Move;
         double x = Position.X + world.X;
         double y = Position.Y + world.Y;
         if (world.X != 0.0 || world.Y != 0.0)
@@ -232,7 +245,7 @@ public sealed partial class Igi1HumanAi
     /// by the door wait and by the walker, which levels the view as it goes.
     /// </param>
     /// <returns>Whether the view was already within the tolerance, in yaw and pitch, before this tick's turn.</returns>
-    private bool TurnTowards(Vector3d target, float tolerance, bool level = false)
+    internal bool TurnTowards(Vector3d target, float tolerance, bool level = false)
     {
         _steering.YawClamp = MathF.PI;
         _steering.PitchClamp = MathF.PI;

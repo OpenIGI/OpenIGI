@@ -6,13 +6,6 @@ namespace OpenIGI.Game.Igi1.Ai;
 /// <content>Graph routing: the movement queue the planner builds and the walker steps, door hops, and the combat free-position search.</content>
 public sealed partial class Igi1HumanAi
 {
-    /// <summary>
-    /// One item of the movement queue — <c>0x452080</c>'s record: the point walked to (<c>+8</c>), whether a
-    /// door stands on the hop (<c>+32</c>), and the node that becomes the current one when it is reached
-    /// (<c>+36</c>).
-    /// </summary>
-    private readonly record struct AiWaypoint(Vector3d Point, int Node, bool Door);
-
     /// <summary>Plans a walk to a graph node — <c>0x4518E0</c>.</summary>
     /// <param name="node">The destination node id.</param>
     /// <param name="point">
@@ -224,6 +217,16 @@ public sealed partial class Igi1HumanAi
                 return false;
             }
 
+            // A mod's behaviour may pass it now, short of standing on it (IGuardMovement.PassesWaypoint): a corner cut.
+            if (Behaviours?.PassesWaypoint(waypoint, _route.Count) == true)
+            {
+                CurrentNode = waypoint.Node;
+                _route.RemoveAt(0);
+                _doorAtHop = null;
+                _doorSearched = false;
+                continue;
+            }
+
             AiMovementOutcome outcome = _steering.Step(
                 Position, Orientation, waypoint.Point, 0f, 0f, out AiSteeringFrame frame);
             LastSteeringForward = frame.Forward;
@@ -239,7 +242,7 @@ public sealed partial class Igi1HumanAi
                 continue;
             }
 
-            TurnTowards(waypoint.Point, 0f, level: true);
+            TurnTowards(Behaviours?.SteerToward(waypoint) ?? waypoint.Point, 0f, level: true);
             WalksForward = true;
             return false;
         }
@@ -370,7 +373,7 @@ public sealed partial class Igi1HumanAi
         return IsInsideNodeBox(Position, node, devianceMetres: 0.3);
     }
 
-    private int NearestNode(Vector3d from) =>
+    internal int NearestNode(Vector3d from) =>
         _graph is null
         || GraphNearestNode.Find(_graph, from, out GraphNode? best, out _) == GraphNearestNodeResult.None
             ? -1

@@ -112,16 +112,7 @@ public readonly struct AiEyeSnapshot
     /// </remarks>
     public bool IsVisible(Vector3d target)
     {
-        Vector3d delta = new(target.X - Position.X, target.Y - Position.Y, target.Z - Position.Z);
-
-        // local = delta . M, the engine's row-vector convention: component k is column k dotted with delta.
-        double x = (Orientation.M31 * delta.Z) + (Orientation.M21 * delta.Y) + (Orientation.M11 * delta.X);
-        double y = (Orientation.M32 * delta.Z) + (Orientation.M22 * delta.Y) + (Orientation.M12 * delta.X);
-        double z = (Orientation.M33 * delta.Z) + (Orientation.M23 * delta.Y) + (Orientation.M13 * delta.X);
-
-        double distance = Math.Sqrt((x * x) + (y * y) + (z * z));
-        double elevation = Math.Abs(AiVision.AngleFromForward(y, z));
-        double azimuth = Math.Abs(AiVision.AngleFromForward(y, x));
+        (double distance, double elevation, double azimuth) = Locate(target);
 
         if (distance <= Primary.Length && elevation < Primary.Alpha && azimuth < Primary.Gamma)
         {
@@ -132,5 +123,23 @@ public readonly struct AiEyeSnapshot
             && distance <= Secondary.Length
             && elevation < Secondary.Alpha
             && azimuth < Secondary.Gamma;
+    }
+
+    /// <summary>
+    /// Where a world point sits relative to the eye, as <see cref="IsVisible"/> measures it against the cones: how far, and how
+    /// far off straight ahead up or down and to either side. <b>Not retail</b> as a public call; the measure is <c>0x489960</c>'s.
+    /// </summary>
+    /// <param name="target">The world point.</param>
+    /// <returns>Its distance in world units, and its elevation and azimuth off the eye's forward, in radians, unsigned.</returns>
+    public (double Distance, double Elevation, double Azimuth) Locate(Vector3d target)
+    {
+        Vector3d delta = new(target.X - Position.X, target.Y - Position.Y, target.Z - Position.Z);
+
+        // local = delta . M, the engine's row-vector convention: component k is column k dotted with delta.
+        double x = (Orientation.M31 * delta.Z) + (Orientation.M21 * delta.Y) + (Orientation.M11 * delta.X);
+        double y = (Orientation.M32 * delta.Z) + (Orientation.M22 * delta.Y) + (Orientation.M12 * delta.X);
+        double z = (Orientation.M33 * delta.Z) + (Orientation.M23 * delta.Y) + (Orientation.M13 * delta.X);
+
+        return (Math.Sqrt((x * x) + (y * y) + (z * z)), Math.Abs(AiVision.AngleFromForward(y, z)), Math.Abs(AiVision.AngleFromForward(y, x)));
     }
 }
