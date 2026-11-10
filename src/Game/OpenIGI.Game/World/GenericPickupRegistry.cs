@@ -5,7 +5,7 @@ using OpenIGI.Game.Level;
 namespace OpenIGI.Game.World;
 
 /// <summary>One authored retail <c>GenericPickup</c> task.</summary>
-public sealed class GenericPickup
+public sealed class GenericPickup : Saves.IExchangedState
 {
     internal GenericPickup(DeclaredTask task, Vector3d position, Matrix3f orientation, string modelName)
     {
@@ -30,6 +30,9 @@ public sealed class GenericPickup
     /// <summary>Gets whether the item has been consumed by the player.</summary>
     public bool IsCollected { get; internal set; }
 
+    // Not retail: Project I.G.I. kept no save games. Whether it was taken is all play changes of it.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange) => IsCollected = exchange.Bool(IsCollected);
+
     /// <summary>
     /// Gets the horizontal reach, in engine units: the model's bounding radius times its largest scale factor
     /// (<c>0x4D0950</c> by <c>+152..+160</c>, which are 1 for a placed item), but never under
@@ -52,7 +55,7 @@ public sealed class GenericPickup
 /// <para>An <c>AmmoPickup</c> is touched the same way (<c>0x46D990</c>) but does not stay: its own update
 /// (<c>0x46D740</c>) deletes its task once taken, and that drops its <c>isPickedUp</c> (<see cref="TakenPickupTask"/>).</para>
 /// </remarks>
-public sealed class GenericPickupRegistry : ILevelReset
+public sealed class GenericPickupRegistry : ILevelReset, Saves.ISavedStateSource
 {
     private readonly List<GenericPickup> _items = [];
     private readonly Dictionary<GameTask, GenericPickup> _byTask = [];
@@ -164,6 +167,10 @@ public sealed class GenericPickupRegistry : ILevelReset
             _items[i].IsCollected = _levelCleared || (i < _startCollected.Length && _startCollected[i]);
         }
     }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _items.Select(static pickup => new KeyValuePair<GameTask, Saves.ISavedState>(pickup.Task, pickup));
 
     /// <summary>Takes a pickup out of the level, as walking over it does.</summary>
     /// <param name="pickup">The pickup.</param>

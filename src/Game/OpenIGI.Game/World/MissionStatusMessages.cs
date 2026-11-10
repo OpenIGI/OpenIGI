@@ -75,6 +75,74 @@ internal sealed class MissionStatusMessages
         _walkedMessages.UnionWith(_start.Walked);
     }
 
+    /// <summary>Gets the state a save keeps of each message a task of the level sends.</summary>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates =>
+        _statusMessages.Where(static m => m.Task is not null)
+            .Select(static m => new KeyValuePair<GameTask, Saves.ISavedState>(m.Task!, m));
+
+    /// <summary>
+    /// Passes through a save what belongs to no one message: those no task sent, which message is in which slot, the computer's
+    /// log, and which the level's walk has reached. Not retail.
+    /// </summary>
+    /// <param name="exchange">The exchange.</param>
+    public void Exchange(Saves.StateExchange exchange)
+    {
+        StatusMessage[] transient = exchange.Run(_transientMessages, StatusMessage.ExchangeTransient);
+        if (exchange.IsReading)
+        {
+            // The slots and the walk name messages by their places, these among them.
+            _transientMessages.Clear();
+            _transientMessages.AddRange(transient);
+        }
+
+        int[] slots = exchange.Run([.. _messageSlots.Select(PlaceOf)], static (e, place) => e.Int(place));
+        MissionComputerLogEntry[] log = exchange.Run(_log, static (e, entry) =>
+        {
+            string resource = e.Text(entry?.TextResource ?? string.Empty);
+            return new MissionComputerLogEntry(resource) { Text = e.Text(entry?.Text ?? string.Empty) };
+        });
+        int[] walked = exchange.Run([.. _walkedMessages.Select(PlaceOf).Order()], static (e, place) => e.Int(place));
+        if (!exchange.IsReading)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            _messageSlots[i] = i < slots.Length ? AtPlace(slots[i]) : null;
+        }
+
+        _log.Clear();
+        _log.AddRange(log);
+        _walkedMessages.Clear();
+        _walkedMessages.UnionWith(walked.Select(AtPlace).OfType<StatusMessage>());
+    }
+
+    // A message's place for a save: among the level's own, or past them among those no task sent; -1 for none.
+    private const int TransientPlaces = 100000;
+
+    private int PlaceOf(StatusMessage? message)
+    {
+        if (message is null)
+        {
+            return -1;
+        }
+
+        int own = _statusMessages.IndexOf(message);
+        if (own >= 0)
+        {
+            return own;
+        }
+
+        int transient = _transientMessages.IndexOf(message);
+        return transient >= 0 ? TransientPlaces + transient : -1;
+    }
+
+    private StatusMessage? AtPlace(int place) =>
+        place >= TransientPlaces
+            ? place - TransientPlaces < _transientMessages.Count ? _transientMessages[place - TransientPlaces] : null
+            : place >= 0 && place < _statusMessages.Count ? _statusMessages[place] : null;
+
     /// <summary>Gets the authored, non-cutscene messages recorded by the map-computer log.</summary>
     public IReadOnlyList<MissionComputerLogEntry> Log => _log;
 

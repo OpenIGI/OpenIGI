@@ -5,7 +5,7 @@ using static OpenIGI.Game.World.DeclaredTaskValues;
 namespace OpenIGI.Game.World;
 
 /// <summary>One rotating world placement (radar dish or generic rotating object).</summary>
-public sealed class PlacedRotatingObject
+public sealed class PlacedRotatingObject : Saves.IExchangedState
 {
     private const float DegreesToRadians = MathF.PI / 180f;
     private const float DeltaTime = 1.0f / 30.0f;
@@ -178,6 +178,25 @@ public sealed class PlacedRotatingObject
         IsActive = _start.Active;
         IsBroken = _start.Broken;
         CurrentOrientation = ComputeOrientation(AngleX, AngleY, AngleZ);
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        var levelStart = _start;
+        MarkLevelStart();
+        _start = (
+            exchange.Real(_start.Tx), exchange.Real(_start.Ty), exchange.Real(_start.Tz),
+            exchange.Real(_start.Cx), exchange.Real(_start.Cy), exchange.Real(_start.Cz),
+            exchange.Real(_start.Ax), exchange.Real(_start.Ay), exchange.Real(_start.Az),
+            exchange.Bool(_start.Active), exchange.Bool(_start.Broken));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     /// <summary>A round strikes it: its <c>WeaponHit</c> handler.</summary>
@@ -374,7 +393,7 @@ public sealed class PlacedRotatingObject
 /// Both integrate rotation at the 30 Hz simulation tick and compose their live orientation with their base transform.
 /// </para>
 /// </remarks>
-public sealed class RotatingObjectRegistry : ILevelReset
+public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSource
 {
     private const string RadarDishTaskType = "TASKTYPE_RADARDISH";
     private const string RotatingObjectTaskType = "RotatingObject";
@@ -709,6 +728,13 @@ public sealed class RotatingObjectRegistry : ILevelReset
             ApplyCollision(solids);
         }
     }
+
+    /// <inheritdoc/>
+    /// <remarks>An object read back turns its collision with it at once, as a level reset does.</remarks>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _byTask.Select(pair => new KeyValuePair<GameTask, Saves.ISavedState>(
+            pair.Key,
+            solids is null ? pair.Value : new Saves.SavedStateThen(pair.Value, () => ApplyCollision(solids, pair.Value))));
 
     /// <summary>Updates one rotating object's collision solid, if its orientation changed.</summary>
     /// <param name="solids">The level's collision index.</param>

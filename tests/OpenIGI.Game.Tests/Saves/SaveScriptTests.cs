@@ -132,7 +132,7 @@ public sealed class SaveScriptTests
         }
 
         StateWriter writer = new();
-        door.WriteState(writer);
+        ((ISavedState)door).WriteState(writer);
 
         DoorState other = new(90f, 1f);
         Level level = new();
@@ -146,7 +146,7 @@ public sealed class SaveScriptTests
         Assert.Equal(door.AngleDegrees, other.AngleDegrees);
         Assert.Equal(door.IsCommandedOpen, other.IsCommandedOpen);
         StateWriter again = new();
-        other.WriteState(again);
+        ((ISavedState)other).WriteState(again);
         Assert.Equal(writer.Arguments, again.Arguments);
     }
 
@@ -224,9 +224,9 @@ public sealed class SaveScriptTests
     {
         public DoorState? State { get; set; }
 
-        public void WriteState(StateWriter writer) => State?.WriteState(writer);
+        public void WriteState(StateWriter writer) => ((ISavedState?)State)?.WriteState(writer);
 
-        public void ReadState(StateReader reader) => State?.ReadState(reader);
+        public void ReadState(StateReader reader) => ((ISavedState?)State)?.ReadState(reader);
     }
 
     // The states of a level one of whose tasks has things beneath it that are no tasks.

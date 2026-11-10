@@ -48,7 +48,7 @@ public sealed record PlacedElevator(
 }
 
 /// <summary>Collects, advances and presents the level's <c>Elevator</c> tasks.</summary>
-public sealed class ElevatorRegistry : ILevelReset
+public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
 {
     /// <summary>Horizontal radius (engine units) around the platform centre a player must be within.</summary>
     public const double PlayerInsideHorizontalRadius = 8192.0;
@@ -260,6 +260,45 @@ public sealed class ElevatorRegistry : ILevelReset
             {
                 elevator.IsSounding = false;
                 _sounds?.Invoke(elevator, ElevatorSoundEvent.Stopped);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _elevators.Select(elevator => new KeyValuePair<GameTask, Saves.ISavedState>(
+            elevator.Task,
+            new SavedLift(this, elevator, _commands.FirstOrDefault(c => ReferenceEquals(c.Elevator, elevator)), solids)));
+
+    // Not retail: Project I.G.I. kept no save games. A lift's car and the call made on it; read back, its collision and what
+    // rides it jump with it at once, as a level reset has them.
+    private sealed class SavedLift(ElevatorRegistry registry, PlacedElevator elevator, ElevatorCommand? command, ObjectCollisionIndex? solids)
+        : Saves.IExchangedState
+    {
+        public void Exchange(Saves.StateExchange exchange)
+        {
+            ((Saves.IExchangedState)elevator.State).Exchange(exchange);
+            if (command is not null)
+            {
+                command.Exchange(exchange);
+            }
+            else
+            {
+                exchange.Bool(false);
+            }
+        }
+
+        public void LoadDone()
+        {
+            if (solids is not null)
+            {
+                registry.ApplyCollision(solids, elevator);
+            }
+
+            if (elevator.IsSounding)
+            {
+                elevator.IsSounding = false;
+                registry._sounds?.Invoke(elevator, ElevatorSoundEvent.Stopped);
             }
         }
     }
@@ -717,6 +756,9 @@ public sealed class ElevatorRegistry : ILevelReset
         public void MarkLevelStart() => _startRequest = HasExteriorRequest;
 
         public void ResetToLevelStart() => HasExteriorRequest = _startRequest;
+
+        // What a save keeps of it: the call a switch outside has made.
+        public void Exchange(Saves.StateExchange exchange) => HasExteriorRequest = exchange.Bool(HasExteriorRequest);
 
         public void ClearExteriorRequestAfterStart()
         {

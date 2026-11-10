@@ -59,6 +59,8 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionWorld.VehicleMissiles)] = "cleared by Igi1Gameplay.ResetToLevelStart",
         [nameof(MissionWorld.ViewTakeover)] = "cleared by Igi1Gameplay.ResetToLevelStart, with each player's ControlTaken",
         [nameof(MissionWorld.OfferedPrompt)] = "asked for again on every tick the player updates",
+        [nameof(MissionWorld.SavesUsed)] = "the campaign's save games, which a match has none of",
+        [nameof(MissionWorld.GameLoads)] = "the campaign's save games, which a match has none of",
 
         // Held still in an arena, so a round finds them as the last did.
         [nameof(MissionState.Cutscenes)] = "held in an arena (CutsceneRuntime.Held)",

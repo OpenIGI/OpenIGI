@@ -498,6 +498,58 @@ public sealed class GunPickupRegistry : ILevelReset
         return pickup;
     }
 
+    /// <summary>
+    /// What a save keeps of the guns lying in the level: each the level placed, in the order it placed them -- taken or not, and
+    /// where it lies -- then each dropped since and not taken, by its weapon. Not retail: Project I.G.I. kept no save games.
+    /// </summary>
+    /// <param name="weaponAt">The weapon type at a place in the title's table, or <see langword="null"/> for none there.</param>
+    /// <returns>The section.</returns>
+    /// <remarks>
+    /// A taken gun's task is deleted, so a placed gun is kept by its place among the placed rather than against its task. One
+    /// still falling is read back lying where it had got to.
+    /// </remarks>
+    public Saves.ISaveSection SaveSection(Func<int, WeaponType?> weaponAt)
+    {
+        ArgumentNullException.ThrowIfNull(weaponAt);
+        return new Saves.ExchangedSection("Igi1GunPickups", exchange =>
+        {
+            GunPickup[] placed = [.. _items.Where(static p => p.Task is not null)];
+            int count = exchange.Int(placed.Length);
+            for (int i = 0; i < count; i++)
+            {
+                GunPickup? pickup = i < placed.Length ? placed[i] : null;
+                bool taken = exchange.Bool(pickup?.IsCollected ?? true);
+                Vector3d position = exchange.Position(pickup?.Position ?? default);
+                Matrix3f orientation = exchange.Frame(pickup?.Orientation ?? default);
+                int? rounds = exchange.Int(pickup?.Rounds);
+                if (exchange.IsReading && pickup is not null)
+                {
+                    pickup.Rest(position, orientation);
+                    pickup.Rounds = rounds;
+                    if (taken && !pickup.IsCollected)
+                    {
+                        Take(pickup);
+                    }
+                }
+            }
+
+            GunPickup[] dropped = [.. _items.Where(static p => p.Task is null && !p.IsCollected)];
+            int drops = exchange.Int(dropped.Length);
+            for (int i = 0; i < drops; i++)
+            {
+                GunPickup? pickup = i < dropped.Length ? dropped[i] : null;
+                int weapon = exchange.Int(pickup?.Weapon.Index ?? -1);
+                Vector3d position = exchange.Position(pickup?.Position ?? default);
+                Matrix3f orientation = exchange.Frame(pickup?.Orientation ?? default);
+                int? rounds = exchange.Int(pickup?.Rounds);
+                if (exchange.IsReading && weaponAt(weapon) is { } type)
+                {
+                    SpawnResting(position, orientation, type, rounds);
+                }
+            }
+        });
+    }
+
     /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>
     public event Action<GunPickup>? Spawned;
 

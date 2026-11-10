@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// <summary>
 /// All direct retail world interactions, with the original two-metre, most-head-on resolver.
 /// </summary>
-public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevelReset
+public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevelReset, Saves.ISavedStateSource
 {
     /// <summary><c>Human_UpdateActivate</c>'s regular query radius: two metres.</summary>
     public const double ActivateRadius = 8192.0;
@@ -111,6 +111,12 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     }
 
     private bool[] _startPressed = [];
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _items.Select(static i => new KeyValuePair<GameTask, Saves.ISavedState>(i.Task, i))
+            .Concat(_generators.Select(static g => new KeyValuePair<GameTask, Saves.ISavedState>(g.Task, g)))
+            .Concat(_radios.Select(static r => new KeyValuePair<GameTask, Saves.ISavedState>(r.Task, r)));
 
     /// <summary>Adds a collected radio.</summary>
     internal void AddRadio(RadioRuntime radio) => _radios.Add(radio);

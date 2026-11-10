@@ -10,7 +10,7 @@ internal sealed class StatusMessage(
     string textResource,
     bool sendOnce,
     bool cutscene,
-    float duration)
+    float duration) : Saves.IExchangedState
 {
     public DeclaredTask? Task { get; } = owner;
     public string SendExpression { get; } = sendExpression;
@@ -59,6 +59,47 @@ internal sealed class StatusMessage(
     internal void ResetToLevelStart() =>
         (IsSent, SendCount, SentTick, IsFinishedDisplay, FinishedDisplayTick, TicksSinceFinishedDisplay, IsDisplaying, DisplayText,
             DisplayFrame, CharactersRemaining, HoldTicks) = _start;
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        var levelStart = _start;
+        MarkLevelStart();
+        _start = (
+            exchange.Bool(_start.Sent),
+            exchange.Int(_start.Count),
+            exchange.Int(_start.SentTick),
+            exchange.Bool(_start.Finished),
+            exchange.Int(_start.FinishedTick),
+            exchange.Int(_start.SinceFinished),
+            exchange.Bool(_start.Displaying),
+            exchange.Text(_start.Text),
+            exchange.Int(_start.Frame),
+            exchange.Int(_start.Remaining),
+            exchange.Int(_start.Hold));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
+    }
+
+    /// <summary>Passes a message no task sent through a save: how long it shows and beside what, then its state.</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <param name="message">The message as it stands, or <see langword="null"/> for one a save holds and the level does not.</param>
+    /// <returns>The message as it is to be: a new one while a save is read.</returns>
+    internal static StatusMessage ExchangeTransient(Saves.StateExchange exchange, StatusMessage? message)
+    {
+        float duration = exchange.Real(message?.Duration ?? 0f);
+        string portrait = exchange.Text(message?.Portrait ?? string.Empty);
+        StatusMessage kept = exchange.IsReading || message is null
+            ? new StatusMessage(null, string.Empty, string.Empty, sendOnce: true, cutscene: false, duration) { Portrait = portrait }
+            : message;
+        ((Saves.IExchangedState)kept).Exchange(exchange);
+        return kept;
+    }
 
     public void BeginDisplay(string text)
     {

@@ -436,7 +436,7 @@ public sealed record PlacedDoor(
 /// <see cref="Nearest"/> is the walker's broadcast query (<c>sub_446470</c> keeps the nearest answer
 /// and has <b>no radius cap</b>).
 /// </remarks>
-public sealed class DoorRegistry : ILevelReset
+public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
 {
     private readonly List<PlacedDoor> _doors = [];
 
@@ -453,11 +453,9 @@ public sealed class DoorRegistry : ILevelReset
     /// <summary>Gets the level's doors.</summary>
     public IReadOnlyList<PlacedDoor> Doors => _doors;
 
-    /// <summary>The state a save game keeps of a door, by the task the level declares it with.</summary>
-    /// <param name="task">The task.</param>
-    /// <returns>The door's state, or <see langword="null"/> for a task that is no door of this level.</returns>
-    public OpenIGI.Game.Saves.ISavedState? StateOf(GameTask task) =>
-        _doorsByTask.TryGetValue(task, out PlacedDoor? door) ? door.State : null;
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _doors.Select(static door => new KeyValuePair<GameTask, Saves.ISavedState>(door.Task, door.State));
 
     /// <summary>Collects every <c>Door</c> task in a level.</summary>
     /// <param name="root">The level's task tree.</param>

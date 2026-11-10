@@ -8,7 +8,7 @@ using OpenIGI.Game.Player;
 namespace OpenIGI.Game.World;
 
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
-public sealed class WorldInteraction
+public sealed class WorldInteraction : Saves.IExchangedState
 {
     /// <summary>The fixed length of fence locomotion state 41, returned by IGI1 <c>0x440270</c>.</summary>
     public const int FenceTraversalTicks = 6 * 30;
@@ -116,6 +116,48 @@ public sealed class WorldInteraction
         ModelSlot = s.ModelSlot;
         PlacedPosition = s.PlacedPosition;
         PlacedOrientation = s.PlacedOrientation;
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Start levelStart = _start;
+        MarkLevelStart();
+        Start s = _start;
+        _start = new Start(
+            exchange.Int(s.PressStamp),
+            exchange.Bool(s.Humming),
+            exchange.Int(s.UseStamp),
+            exchange.Int(s.CompleteStamp),
+            exchange.Position(s.WireOrigin),
+            exchange.Position(s.Offset),
+            exchange.Bool(s.Pressed),
+            exchange.Bool(s.LastPressed),
+            exchange.Bool(s.InUse),
+            exchange.Bool(s.LastInUse),
+            exchange.Bool(s.IsOn),
+            exchange.Bool(s.IsElectrified),
+            exchange.Bool(s.IsCompleted),
+            exchange.Bool(s.CompletedThisTick),
+            exchange.Bool(s.IsSearched),
+            exchange.Bool(s.IsPicked),
+            exchange.Bool(s.IsLocked),
+            exchange.Bool(s.IsDestroyed),
+            exchange.Bool(s.MirroredOn),
+            exchange.Bool(s.MirroredElectrified),
+            exchange.Real(s.PlacedFacing),
+            exchange.Bool(s.LastOn),
+            exchange.Bool(s.LastDestroyed),
+            exchange.Int(s.ModelSlot),
+            exchange.Position(s.PlacedPosition),
+            exchange.Frame(s.PlacedOrientation));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     private readonly record struct Start(

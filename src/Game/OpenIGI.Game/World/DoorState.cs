@@ -29,7 +29,7 @@ namespace OpenIGI.Game.World;
 /// <see cref="DoorRegistry.SetDoorwayBlockedQuery"/>.
 /// </para>
 /// </remarks>
-public sealed class DoorState : OpenIGI.Game.Saves.ISavedState
+public sealed class DoorState : Saves.IExchangedState
 {
     /// <summary>The ticks per second the steps divide by (<c>flt_5333BC</c>).</summary>
     private const float TicksPerSecond = 30.0f;
@@ -143,26 +143,22 @@ public sealed class DoorState : OpenIGI.Game.Saves.ISavedState
 
     /// <inheritdoc/>
     /// <remarks>Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps.</remarks>
-    public void WriteState(OpenIGI.Game.Saves.StateWriter writer)
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
     {
-        ArgumentNullException.ThrowIfNull(writer);
         Start now = Capture();
-        writer.Real(now.Angle);
-        writer.Real(now.Slide);
-        writer.Bool(now.Latch);
-        writer.Int(now.TicksOpen);
-        writer.Bool(now.IsFullyOpen);
-        writer.Bool(now.IsFullyClosed);
-        writer.Bool(now.WasFullyOpen);
-        writer.Bool(now.WasFullyClosed);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(OpenIGI.Game.Saves.StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        Apply(new Start(
-            reader.Real(), reader.Real(), reader.Bool(), reader.Int(), reader.Bool(), reader.Bool(), reader.Bool(), reader.Bool()));
+        Start kept = new(
+            exchange.Real(now.Angle),
+            exchange.Real(now.Slide),
+            exchange.Bool(now.Latch),
+            exchange.Int(now.TicksOpen),
+            exchange.Bool(now.IsFullyOpen),
+            exchange.Bool(now.IsFullyClosed),
+            exchange.Bool(now.WasFullyOpen),
+            exchange.Bool(now.WasFullyClosed));
+        if (exchange.IsReading)
+        {
+            Apply(kept);
+        }
     }
 
     // The door as it stands: what a level reset and a save game keep of it.

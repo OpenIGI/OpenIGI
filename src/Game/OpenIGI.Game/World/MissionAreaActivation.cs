@@ -31,6 +31,25 @@ internal sealed class MissionAreaActivation
     internal void MarkLevelStart() =>
         _start = ([.. _areaActivations.Select(static a => a.ActiveCount)], _playerAlive, _statePlayer, _stateTeam, _stateExtraPlayer);
 
+    /// <summary>Gets the state a save keeps of each area.</summary>
+    internal IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates =>
+        _areaActivations.Select(static a => new KeyValuePair<GameTask, Saves.ISavedState>(a.Task, a));
+
+    /// <summary>Passes through a save who the areas last counted as the player, and where. Not retail.</summary>
+    /// <param name="exchange">The exchange.</param>
+    internal void Exchange(Saves.StateExchange exchange)
+    {
+        _playerAlive = exchange.Bool(_playerAlive);
+        _statePlayer = exchange.Position(_statePlayer);
+        _stateTeam = exchange.Int(_stateTeam);
+        _stateExtraPlayer = exchange.Position(_stateExtraPlayer);
+        if (exchange.IsReading)
+        {
+            _soldierOccupants.Clear();
+            _vehicleOccupants.Clear();
+        }
+    }
+
     internal void ResetToLevelStart()
     {
         for (int i = 0; i < _areaActivations.Count && i < _start.Counts.Length; i++)

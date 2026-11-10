@@ -21,6 +21,12 @@ public static class Igi1SaveFormat
     /// <summary>The slot files' extension.</summary>
     public const string Extension = ".igisave";
 
+    /// <summary>What a save of a level is written and read with: its registries' states and the level's own statements.</summary>
+    /// <param name="world">The played mission, as it stands.</param>
+    /// <returns>The context.</returns>
+    public static SaveContext Context(MissionWorld world) =>
+        new() { Version = Version, States = new Igi1SaveStates(world), Sections = [.. Igi1SaveStates.Sections(world)] };
+
     /// <summary>The slots, under the user's folder.</summary>
     /// <returns>The slots.</returns>
     public static SaveSlots Slots() => new(SettingsPaths.GetUserDirectory(), Folder, Extension, Version);
@@ -30,16 +36,71 @@ public static class Igi1SaveFormat
 /// What a Project I.G.I. level's tasks keep in a save game. The level's state lies in the registries it was built into, each of
 /// which answers for the tasks it was built from.
 /// </summary>
-/// <param name="world">The played mission.</param>
-public sealed class Igi1SaveStates(MissionWorld world) : ISaveStates
+/// <remarks>
+/// A task with a level id is written against itself; one without against the nearest task above it that has one, by its place
+/// among its siblings. A task that keeps state in more than one registry keeps each after the last, in the registries' order.
+/// </remarks>
+public sealed class Igi1SaveStates : ISaveStates
 {
-    private readonly MissionWorld _world = world ?? throw new ArgumentNullException(nameof(world));
+    private readonly Dictionary<GameTask, ISavedState> _states = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Initializes a new instance of the <see cref="Igi1SaveStates"/> class.</summary>
+    /// <param name="world">The played mission.</param>
+    public Igi1SaveStates(MissionWorld world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        foreach (ISavedStateSource source in Sources(world))
+        {
+            foreach ((GameTask task, ISavedState state) in source.SavedStates(world.Solids))
+            {
+                if (_states.TryGetValue(task, out ISavedState? known))
+                {
+                    ((SavedStateGroup)known).Add(state);
+                }
+                else
+                {
+                    _states[task] = new SavedStateGroup([state]) { IsSavedWithParent = task.Id == GameTask.NoId };
+                }
+            }
+        }
+    }
+
+    /// <summary>The parts of a mission that keep state for a save game, in the order their states are kept.</summary>
+    /// <param name="world">The played mission.</param>
+    /// <returns>The parts the level has.</returns>
+    public static IEnumerable<ISavedStateSource> Sources(MissionWorld world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        return new object?[]
+        {
+            world.Elevators, world.Doors, world.Interactions, world.GenericPickups, world.AlarmSpeakers, world.Destructibles,
+            world.SecurityCameras, world.RotatingObjects, world.Objectives,
+        }.OfType<ISavedStateSource>();
+    }
+
+    /// <summary>The statements a save holds beside the tasks' states: what belongs to the level as a whole.</summary>
+    /// <param name="world">The played mission.</param>
+    /// <returns>The sections the level has, in the order they are written.</returns>
+    public static IEnumerable<ISaveSection> Sections(MissionWorld world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        if (world.Objectives is { } objectives)
+        {
+            yield return objectives.SaveSection;
+        }
+
+        if (world.GunPickups is { } guns)
+        {
+            yield return guns.SaveSection(index =>
+                world.WeaponTypes is { } weapons && index >= 0 && index < weapons.Weapons.Count ? weapons.Weapons[index] : null);
+        }
+    }
 
     /// <inheritdoc/>
     public ISavedState? StateOf(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return _world.Doors?.StateOf(task);
+        return _states.GetValueOrDefault(task);
     }
 }
 
@@ -112,6 +173,6 @@ public sealed class Igi1MissionSaves : MissionSaves
             set => world.GameLoads = value;
         }
 
-        public SaveContext Context => new() { Version = Igi1SaveFormat.Version, States = new Igi1SaveStates(world) };
+        public SaveContext Context => Igi1SaveFormat.Context(world);
     }
 }

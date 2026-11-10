@@ -52,7 +52,7 @@ public interface IRadioSoundPlayer
 /// one still rolls every few seconds.
 /// </para>
 /// </remarks>
-public sealed class RadioRuntime
+public sealed class RadioRuntime : Saves.IExchangedState
 {
     /// <summary>How many Radio sound slots the type declares (<c>"Radio sound %d"</c>, 0 to 3).</summary>
     public const int SoundSlots = 4;
@@ -100,6 +100,21 @@ public sealed class RadioRuntime
     internal void MarkLevelStart() => _start = (IsOn, MirroredOn, Countdown);
 
     internal void ResetToLevelStart() => (IsOn, MirroredOn, Countdown) = _start;
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        var levelStart = _start;
+        MarkLevelStart();
+        _start = (exchange.Bool(_start.On), exchange.Bool(_start.Mirrored), exchange.Int(_start.Countdown));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
+    }
 
     /// <summary>Gets or sets the co-op server's word on <see cref="IsOn"/>, which a client's update takes in place of its own.</summary>
     internal bool? MirroredOn { get; set; }

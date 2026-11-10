@@ -15,7 +15,7 @@ namespace OpenIGI.Game.World;
 /// level may contain several objective definitions and switch between them with <c>Objectives Valid</c>.
 /// The last valid definition in task-update order is the one the original publishes globally.
 /// </remarks>
-public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
+public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, Saves.ISavedStateSource
 {
     /// <summary>The maximum number of objective rows in one IGI1 definition.</summary>
     public const int ObjectiveSlotCount = 6;
@@ -220,6 +220,24 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
         get => _messages.Mirrored;
         set => _messages.Mirrored = value;
     }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _editVariables.Select(static e => new KeyValuePair<GameTask, Saves.ISavedState>(e.Task, e))
+            .Concat(_levelFlows.Select(static f => new KeyValuePair<GameTask, Saves.ISavedState>(f.Task, f)))
+            .Concat(_areas.SavedStates)
+            .Concat(_messages.SavedStates);
+
+    /// <summary>
+    /// Gets what a save keeps of the level's running state that belongs to no one task: its clock, whom its areas counted, and
+    /// its messages' slots and log. Not retail: Project I.G.I. kept no save games.
+    /// </summary>
+    public Saves.ISaveSection SaveSection => new Saves.ExchangedSection("Igi1Objectives", exchange =>
+    {
+        _tick = exchange.Int(_tick);
+        _areas.Exchange(exchange);
+        _messages.Exchange(exchange);
+    });
 
     // As the match began: each edit variable's value, each level flow's verdict and clock, each area's count.
     private (int[] Edits, (sbyte Complete, sbyte Failed, int Tick)[] Flows, int Tick) _start = ([], [], 0);
@@ -750,8 +768,16 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
         string failedExpression,
         bool interfaceTimerEnabled,
         float maximumLevelPlayTimeSeconds,
-        int difficulty)
+        int difficulty) : Saves.IExchangedState
     {
+        // Not retail: what a save keeps of a level flow is its verdicts and its clock.
+        public void Exchange(Saves.StateExchange exchange)
+        {
+            Complete = (sbyte)exchange.Int(Complete);
+            Failed = (sbyte)exchange.Int(Failed);
+            Tick = exchange.Int(Tick);
+        }
+
         public DeclaredTask Task { get; } = task;
         public string CompleteExpression { get; } = completeExpression;
         public string FailedExpression { get; } = failedExpression;
@@ -838,8 +864,11 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset
         DeclaredTask task,
         int initialValue,
         string addExpression,
-        string subExpression)
+        string subExpression) : Saves.IExchangedState
     {
+        // Not retail: what a save keeps of an edit variable is its value.
+        public void Exchange(Saves.StateExchange exchange) => Value = exchange.Int(Value);
+
         public DeclaredTask Task { get; } = task;
         public int Value { get; set; } = initialValue;
         public string AddExpression { get; } = addExpression;

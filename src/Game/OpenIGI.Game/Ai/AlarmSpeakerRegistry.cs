@@ -23,7 +23,7 @@ public sealed class AlarmSpeaker(
     string DestructionSound,
     bool FollowsAnyAlarm = false,
     bool CanBeDestroyed = true,
-    string FaultySound = "")
+    string FaultySound = "") : Saves.IExchangedState
 {
     /// <summary>Gets the placed task.</summary>
     public DeclaredTask Task { get; } = Task;
@@ -103,6 +103,26 @@ public sealed class AlarmSpeaker(
     internal void MarkLevelStart() => _start = (PositionUnits, WasOn, ShowsOff, IsDestroyed, Damage);
 
     internal void ResetToLevelStart() => (PositionUnits, WasOn, ShowsOff, IsDestroyed, Damage) = _start;
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        var levelStart = _start;
+        MarkLevelStart();
+        _start = (
+            exchange.Position(_start.Position),
+            exchange.Bool(_start.WasOn),
+            exchange.Bool(_start.ShowsOff),
+            exchange.Bool(_start.IsDestroyed),
+            exchange.Real(_start.Damage));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
+    }
 }
 
 /// <summary>All placed sirens in one mission and whether each is sounding.</summary>
@@ -122,7 +142,7 @@ public sealed class AlarmSpeaker(
 /// <c>AlarmControl_5.isAlarm</c> follows that control exactly as retail's does.
 /// </para>
 /// </remarks>
-public sealed class AlarmSpeakerRegistry : World.ILevelReset
+public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateSource
 {
     private readonly List<AlarmSpeaker> _speakers = [];
     private readonly Dictionary<GameTask, AlarmSpeaker> _byTask = [];
@@ -156,6 +176,10 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset
             speaker.ResetToLevelStart();
         }
     }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(World.ObjectCollisionIndex? solids) =>
+        _speakers.Select(static speaker => new KeyValuePair<GameTask, Saves.ISavedState>(speaker.Task, speaker));
 
     /// <summary>Builds the registry from every spatial alarm emitter below <paramref name="root"/>.</summary>
     /// <param name="root">The level's task tree.</param>

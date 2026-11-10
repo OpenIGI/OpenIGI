@@ -8,7 +8,7 @@ namespace OpenIGI.Game.World;
 /// Tracks the retail <c>ExplodeObject</c>, glass, and explosive magic-object state shared by rendering,
 /// collision, script variables, and impact handling.
 /// </summary>
-public sealed class DestructibleObjectRegistry : ILevelReset
+public sealed class DestructibleObjectRegistry : ILevelReset, Saves.ISavedStateSource
 {
     private const string DestroyedModelParameter = "Destroyed model";
     private const string ExplosionDamageScaleParameter = "Damage scale";
@@ -258,6 +258,11 @@ public sealed class DestructibleObjectRegistry : ILevelReset
         _readyExplosions.Clear();
         _vehicleBlasts.ResetToLevelStart();
     }
+
+    /// <inheritdoc/>
+    /// <remarks>A task may own several objects -- a car and its parts -- kept together in the order they were made.</remarks>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
+        _byOwner.Select(static pair => new KeyValuePair<GameTask, Saves.ISavedState>(pair.Key, new Saves.SavedStateGroup(pair.Value)));
 
     /// <summary>Gets whether one exact placement is already destroyed.</summary>
     /// <remarks>

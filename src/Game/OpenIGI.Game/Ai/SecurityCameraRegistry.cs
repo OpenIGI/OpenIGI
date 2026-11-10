@@ -119,7 +119,7 @@ public enum SecurityCameraLamp
 /// the level are degrees except for the holder/head base angles; the simulation runs at the retail
 /// 30 Hz and therefore applies the original per-tick steps without frame-time scaling.
 /// </remarks>
-public sealed class SecurityCamera
+public sealed class SecurityCamera : Saves.IExchangedState
 {
     private const float DegreesToRadians = MathF.PI / 180f;
     private const float PitchStep = 2.5f * DegreesToRadians;
@@ -327,6 +327,43 @@ public sealed class SecurityCamera
         HolderPositionUnits = s.HolderPositionUnits;
         IsBodyTarget = s.IsBodyTarget;
         RefreshTransform();
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    // Whom it was looking at is not kept: a camera read back that still sees someone takes them up as it would a new sight.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Start levelStart = _start;
+        MarkLevelStart();
+        Start s = _start;
+        _start = new Start(
+            exchange.Real(s.TargetGamma),
+            exchange.Int(s.LampPulseCountdown),
+            exchange.Int(s.ScanDirection),
+            exchange.Int(s.EndDelay),
+            exchange.Int(s.ResumeScanDelay),
+            null,
+            exchange.Bool(s.LampPulseLarge),
+            exchange.Bool(s.IsPowered),
+            exchange.Position(s.HeadPositionUnits),
+            exchange.Real(s.CurrentAlpha),
+            exchange.Real(s.CurrentGamma),
+            exchange.Bool(s.IsActive),
+            exchange.Bool(s.IsDetection),
+            exchange.Bool(s.IsLastDetection),
+            exchange.Int(s.DetectionTime),
+            exchange.Bool(s.IsExploded),
+            (SecurityCameraBeep)exchange.Int((int)s.Beep),
+            exchange.Bool(s.IsMoving),
+            exchange.Position(s.HolderPositionUnits),
+            exchange.Bool(s.IsBodyTarget));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     private readonly record struct Start(
@@ -647,10 +684,13 @@ public sealed class SecurityCamera
 }
 
 /// <summary>All security cameras and camera-control aggregators in a loaded level.</summary>
-public sealed class SecurityCameraRegistry : World.ILevelReset
+public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStateSource
 {
-    private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded)
+    private sealed class Control(DeclaredTask task, string expression, Func<bool> isExploded) : Saves.IExchangedState
     {
+        // Not retail: what a save keeps of a camera's control is whether it has raised its alarm.
+        public void Exchange(Saves.StateExchange exchange) => IsDetection = exchange.Bool(IsDetection);
+
         public DeclaredTask Task { get; } = task;
         public string Expression { get; } = expression;
         public Func<bool> IsExploded { get; } = isExploded;
@@ -745,6 +785,11 @@ public sealed class SecurityCameraRegistry : World.ILevelReset
 
         _mirror = null;
     }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(World.ObjectCollisionIndex? solids) =>
+        _cameras.Select(static c => new KeyValuePair<GameTask, Saves.ISavedState>(c.Task, c))
+            .Concat(_controls.Select(static c => new KeyValuePair<GameTask, Saves.ISavedState>(c.Task, c)));
 
     /// <summary>Collects cameras, exports their retail script variables and prepares their controllers.</summary>
     public static SecurityCameraRegistry Build(

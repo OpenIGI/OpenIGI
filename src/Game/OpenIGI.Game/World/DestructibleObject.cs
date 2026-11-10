@@ -4,7 +4,7 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>One exact destructible object, including an attached magic-object placement when present.</summary>
-public sealed class DestructibleObject
+public sealed class DestructibleObject : Saves.IExchangedState
 {
     internal DestructibleObject(
         DestructibleObjectKind kind,
@@ -172,6 +172,33 @@ public sealed class DestructibleObject
         PendingExplosionTicks = _start.PendingExplosionTicks;
         ExplosionStarted = _start.ExplosionStarted;
         ExplosionReady = _start.ExplosionReady;
+    }
+
+    // Not retail: Project I.G.I. kept no save games. What a level reset puts back is what a save keeps, through the same
+    // record: the level's start is set aside, the record passed through, and put back when a save is read.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange)
+    {
+        Start levelStart = _start;
+        MarkLevelStart();
+        _start = new Start(
+            exchange.Position(_start.PositionUnits),
+            exchange.Frame(_start.Orientation),
+            exchange.Real(_start.Damage),
+            exchange.Bool(_start.IsDestroyed),
+            exchange.Int(_start.Countdown),
+            exchange.Bool(_start.BlastDue),
+            exchange.Bool(_start.IsLastDestroyed),
+            exchange.Bool(_start.IsDying),
+            exchange.Int(_start.DestructionTicks),
+            exchange.Int(_start.PendingExplosionTicks),
+            exchange.Bool(_start.ExplosionStarted),
+            exchange.Bool(_start.ExplosionReady));
+        if (exchange.IsReading)
+        {
+            ResetToLevelStart();
+        }
+
+        _start = levelStart;
     }
 
     private readonly record struct Start(

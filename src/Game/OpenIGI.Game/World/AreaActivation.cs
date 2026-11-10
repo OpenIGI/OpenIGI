@@ -5,7 +5,7 @@ namespace OpenIGI.Game.World;
 
 /// <summary>One <c>AreaActivate</c> task's oriented volume and the criteria naming whose occupants it counts.</summary>
 /// <remarks>Counted by <see cref="MissionAreaActivation"/>, which owns the occupants it is tested against.</remarks>
-internal sealed class AreaActivation
+internal sealed class AreaActivation : Saves.IExchangedState
 {
     public DeclaredTask Task { get; }
 
@@ -93,6 +93,9 @@ internal sealed class AreaActivation
     public bool AcceptsVehicle => _filter is OccupantFilter.Vehicle or OccupantFilter.All;
 
     public int ActiveCount { get; set; }
+
+    // Not retail: what a save keeps of an area is how many it counts inside.
+    void Saves.IExchangedState.Exchange(Saves.StateExchange exchange) => ActiveCount = exchange.Int(ActiveCount);
 
     /// <summary>Whether a point lies in the volume: the box test <c>0x5042B0</c>, in the area's own frame.</summary>
     /// <remarks>
