@@ -121,11 +121,7 @@ public interface ISaveStates
 }
 
 /// <summary>The states of a level whose tasks are their own.</summary>
-public sealed class TaskSaveStates : ISaveStates
-{
-    /// <summary>Gets the one instance.</summary>
-    public static TaskSaveStates Instance { get; } = new();
-}
+public sealed class TaskSaveStates : ISaveStates;
 
 /// <summary>
 /// Statements of a title's own in a save script, beside the tasks' states: I.G.I. 2's panes of glass, one
@@ -155,7 +151,7 @@ public sealed class SaveContext
     public required int Version { get; init; }
 
     /// <summary>Gets what the level's tasks keep.</summary>
-    public ISaveStates States { get; init; } = TaskSaveStates.Instance;
+    public ISaveStates States { get; init; } = new TaskSaveStates();
 
     /// <summary>Gets the title's own statements.</summary>
     public IReadOnlyList<ISaveSection> Sections { get; init; } = [];
