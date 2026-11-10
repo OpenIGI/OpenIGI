@@ -291,7 +291,7 @@ public abstract partial class Igi2Human
     public IReadOnlyList<SavedPart> SavedParts(Weapons.Igi2Inventory? inventory) =>
         inventory is null
             ? [new("HumanView", new ViewState(View))]
-            : [new(Saves.Igi2SaveSlots.WeaponPart, new InventoryState(inventory)), new("HumanView", new ViewState(View))];
+            : [new(Saves.Igi2SaveSlots.WeaponPart, inventory), new("HumanView", new ViewState(View))];
 
     private static float[] Rows(Matrix3f m) => [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33];
 
@@ -308,13 +308,6 @@ public abstract partial class Igi2Human
         }
 
         return bytes;
-    }
-
-    private sealed class InventoryState(Weapons.Igi2Inventory inventory) : ISavedState
-    {
-        public void WriteState(StateWriter writer) => inventory.WriteState(writer);
-
-        public void ReadState(StateReader reader) => inventory.ReadState(reader);
     }
 
     private sealed class ViewState(Igi2HumanView view) : ISavedState

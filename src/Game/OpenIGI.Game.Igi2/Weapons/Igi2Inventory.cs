@@ -114,7 +114,7 @@ public sealed class Igi2AmmoItem
 /// Multiplayer's branches are not here: the single-player campaign never takes them.
 /// </para>
 /// </remarks>
-public sealed class Igi2Inventory
+public sealed class Igi2Inventory : ISavedState
 {
     private readonly Igi2WeaponTables _tables;
     private readonly Igi2WeaponItem[] _weapons;
