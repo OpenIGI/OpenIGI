@@ -34,6 +34,9 @@ public abstract class GameTask
         _type ?? throw new InvalidOperationException(
             $"The task of CLR type '{GetType().Name}' was not created through a {nameof(TaskTree)} and has no task type.");
 
+    /// <summary>Gets a value indicating whether the task was made from a registered type, and so has a <see cref="Type"/>.</summary>
+    public bool HasType => _type is not null;
+
     /// <summary>Gets the tree this task belongs to.</summary>
     /// <exception cref="InvalidOperationException">The task has not been created through a <see cref="TaskTree"/>.</exception>
     /// <remarks>
