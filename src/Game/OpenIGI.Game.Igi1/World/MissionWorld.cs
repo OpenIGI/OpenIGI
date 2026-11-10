@@ -139,6 +139,10 @@ public sealed class MissionWorld : MissionState
     /// Gets what mods run at the end of every tick, once the level walk is done, whether the player updated or not. Empty
     /// unless a mod adds to it. <b>Not retail.</b>
     /// </summary>
+    /// <remarks>
+    /// Not the <c>LevelTicked</c> event: an event's subscribers only read, and the game plays the same without them, where
+    /// what runs here may change the level, such as giving the player his controls back.
+    /// </remarks>
     public List<Action> TickEnded { get; } = [];
 
     /// <summary>

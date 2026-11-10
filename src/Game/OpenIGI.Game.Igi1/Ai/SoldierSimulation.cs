@@ -362,7 +362,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _sight.SightTraceForTesting = sight;
         _context.ClearBrains();
         _rounds.Clear();
-        _damage.ClearPendingDeaths();
+        _damage.ClearForLevel();
         _generators.GuardGenerators.Clear();
         _generators.GuardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
         ScriptVariables = variables;

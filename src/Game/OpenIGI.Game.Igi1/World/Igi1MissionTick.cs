@@ -451,6 +451,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
+        // A mod's prompt lasts the tick it is offered on: dead, in a cutscene or at the map computer, there is none.
+        if (!mission.PlayerTicked)
+        {
+            mission.OfferedPrompt = null;
+        }
+
         if (mission.PlayerTicked
             || mission.Cutscenes?.IsPlaying == true
             || !host.PlayerMode

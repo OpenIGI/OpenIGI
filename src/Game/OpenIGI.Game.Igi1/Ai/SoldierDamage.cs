@@ -92,8 +92,12 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         return carried + push + new Vector3d(0.0, 0.0, lift);
     }
 
-    /// <summary>Forgets the deaths no update has taken yet, for a new level.</summary>
-    public void ClearPendingDeaths() => _pendingDeaths.Clear();
+    /// <summary>Forgets what is held of the last level's soldiers, for a new level: the deaths no update has taken yet, and who dies silently.</summary>
+    public void ClearForLevel()
+    {
+        _pendingDeaths.Clear();
+        SilentDeaths.Clear();
+    }
 
     /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
     /// <remarks>

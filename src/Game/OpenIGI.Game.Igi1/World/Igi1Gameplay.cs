@@ -114,6 +114,7 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     public void ResetToLevelStart()
     {
         World.ResetToLevelStart();
+        World.OfferedPrompt = null;
         foreach (Player.PlayerCamera rig in Rigs())
         {
             rig.Grenades.Clear();
