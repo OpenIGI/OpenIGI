@@ -74,9 +74,12 @@ namespace OpenIGI.Game.Igi2.World;
 /// into a neighbouring tile through <c>TerrainContext_t::aapiSubmap</c>, a per-square map index that
 /// lets a square change which height map it is reading (<c>0x668CBF</c>). This builds one quadtree per
 /// tile and stops each one where the finer tile begins, which
-/// <see cref="Igi2TerrainTile.IsSuperseded"/> decides from the same measurements
+/// <see cref="Igi2TerrainTile.IsWithinSubmap"/> decides from the same measurements
 /// <c>Terrain_UpdateSubmaps</c> takes. The two agree on which ground each tile owns; where they differ
-/// is the seam between them, which the original's shared-edge cache closes and separate trees cannot.
+/// is the seam between them, which the original's shared-edge cache closes by sharing its vertices and
+/// separate trees close by agreeing on its line: the coarser tile draws its samples along the join at
+/// their true heights, every square that meets the join divided to them, and the finer tile's edge
+/// stands on the straight lines between (<see cref="Igi2TerrainTile.SeamHeight"/>).
 /// Also absent: <c>TerrainRender_DrawGlitchPolyRecursive</c>
 /// (<c>0x66A930</c>), the original's repair for the T-junction a coarse square leaves against a
 /// finer neighbour that subdivided after it was drawn.
@@ -115,6 +118,7 @@ public sealed class Igi2TerrainLod
             RootSize <<= 1;
         }
 
+        SeamSize = tile.SeamSize;
         RefreshMaterials();
     }
 
@@ -154,6 +158,10 @@ public sealed class Igi2TerrainLod
     /// the tile's own extent in practice.
     /// </remarks>
     public int RootSize { get; }
+
+    /// <summary>Gets the widest square along the tile's edge that still meets the coarser tile it lies in sample for sample.</summary>
+    /// <remarks><see cref="Igi2TerrainTile.SeamSize"/>, read once: nought for a tile that lies in no other.</remarks>
+    public int SeamSize { get; }
 
     /// <summary>Gets how many drawing passes the tile has, one per material it paints.</summary>
     public int PassCount => _slotMaterial.Count;
@@ -212,31 +220,7 @@ public sealed class Igi2TerrainLod
     /// column, which is only correct for a square map; every shipped tile is square, and this uses each
     /// axis's own extent.
     /// </remarks>
-    internal double HeightAt(int x, int y)
-    {
-        int width = _tile.Width;
-        int height = _tile.Height;
-        Igi2TerrainTile tile = _tile;
-
-        if (x >= width && y >= height)
-        {
-            return (3.0 * tile.HeightAt(width - 1, height - 1))
-                - tile.HeightAt(width - 2, height - 1)
-                - tile.HeightAt(width - 1, height - 2);
-        }
-
-        if (x >= width)
-        {
-            return (2.0 * tile.HeightAt(width - 1, y)) - tile.HeightAt(width - 2, y);
-        }
-
-        if (y >= height)
-        {
-            return (2.0 * tile.HeightAt(x, height - 1)) - tile.HeightAt(x, height - 2);
-        }
-
-        return tile.HeightAt(x, y);
-    }
+    internal double HeightAt(int x, int y) => _tile.GridHeightAt(x, y);
 
     /// <summary>Gets the world position of a sample, extrapolating past the tile.</summary>
     /// <param name="x">The sample's column.</param>

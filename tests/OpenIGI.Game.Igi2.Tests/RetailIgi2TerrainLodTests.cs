@@ -148,6 +148,107 @@ public sealed class RetailIgi2TerrainLodTests
         Assert.True(superseded > 0, "no tile left any ground to a finer one, so nesting is untested here.");
     }
 
+    /// <summary>A tile and the finer tile inside it meet along one line, and neither draws the other's ground.</summary>
+    /// <remarks>
+    /// <para>
+    /// A level's tiles nest, and they are separate height maps of the same ground. The quadtree used to keep the coarser tile
+    /// drawing a sample into the finer one so the join had no holes, and under the additive passes that second ground showed
+    /// wherever it stood proud of the finer tile's surface: mission 4's far hillside had a pale square on it, one coarse sample
+    /// across and lit by the coarse tile's bake, there from the ridge above the base and gone from nearer by.
+    /// </para>
+    /// <para>
+    /// So the coarser tile now draws none of the finer tile's ground, and the two are held to one line instead. The coarser
+    /// tile has a vertex at every one of its samples round the finer tile, each at its true height, from any distance; and
+    /// every vertex of the finer tile's edge stands on the straight lines between them.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Nested_tiles_meet_along_one_line()
+    {
+        int joins = 0;
+        int held = 0;
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            Igi2TerrainSurface surface = level.Terrain();
+            if (surface.IsEmpty)
+            {
+                continue;
+            }
+
+            Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
+            foreach (Igi2TerrainTile tile in surface.Tiles)
+            {
+                bool hosts = tile.Submaps is { Count: > 0 };
+                bool hosted = tile.Hosts is { Count: > 0 };
+                if (!hosts && !hosted)
+                {
+                    continue;
+                }
+
+                Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
+                Igi2TerrainExtent own = tile.Extent;
+                foreach (double height in (double[])[EyeHeight, 409600.0, 40960000.0])
+                {
+                    Igi2TerrainView view = new(new Vector3d(tile.Centre.X, tile.Centre.Y, tile.Centre.Z + height), []);
+                    Igi2TerrainTessellation tessellation = lod.Tessellate(view, settings);
+                    Assert.Equal(0, tessellation.LargestLeafOverSubmap);
+                    Assert.Equal((long)lod.RootSize * lod.RootSize, tessellation.CoveredArea + tessellation.SupersededArea);
+
+                    IReadOnlyList<Vector3d> positions = tessellation.Mesh.Positions;
+                    int[] onJoin = new int[tile.Submaps?.Count ?? 0];
+                    foreach (Vector3d at in positions)
+                    {
+                        // This tile's own edge, in a coarser tile: on that tile's line.
+                        if (hosted && own.IsOnEdge(at.X, at.Y))
+                        {
+                            bool alongX = Math.Abs(at.Y - own.Top) <= Igi2TerrainExtent.Tolerance
+                                || Math.Abs(at.Y - own.Bottom) <= Igi2TerrainExtent.Tolerance;
+                            if (tile.SeamHeight(at.X, at.Y, alongX) is { } line)
+                            {
+                                Assert.Equal(line, at.Z, 0.01);
+                                held++;
+                                continue;
+                            }
+                        }
+
+                        // The edge of a finer tile's ground: this tile's own sample, at its true height.
+                        for (int i = 0; i < onJoin.Length; i++)
+                        {
+                            if (tile.Submaps![i].IsOnEdge(at.X, at.Y))
+                            {
+                                int column = (int)Math.Round((at.X - tile.SampleX(0)) / tile.TexelWidth);
+                                int row = (int)Math.Round((at.Y - tile.SampleY(0)) / tile.TexelHeight);
+                                Assert.Equal(tile.DrawnHeightAt(column, row), at.Z, 0.01);
+                                onJoin[i]++;
+                            }
+                        }
+                    }
+
+                    // And a vertex at every sample round each finer tile that lies whole inside this one.
+                    for (int i = 0; i < onJoin.Length; i++)
+                    {
+                        Igi2TerrainExtent inner = tile.Submaps![i];
+                        // One that another finer tile lies across has part of its edge inside that tile's ground, which is
+                        // not this tile's to draw: location2/LEVEL5 lays two across each other.
+                        if (!own.Contains(inner.Left, inner.Top, inner.Right, inner.Bottom)
+                            || tile.Submaps.Where((_, other) => other != i).Any(other => other.Touches(inner.Left, inner.Top, inner.Right, inner.Bottom)))
+                        {
+                            continue;
+                        }
+
+                        int across = (int)Math.Round((inner.Right - inner.Left) / tile.TexelWidth);
+                        int down = (int)Math.Round((inner.Bottom - inner.Top) / tile.TexelHeight);
+                        Assert.Equal(2 * (across + down), onJoin[i]);
+                        joins++;
+                    }
+                }
+            }
+        }
+
+        Assert.True(joins > 0, "no tile has a finer one inside it, so the join is untested here.");
+        Assert.True(held > 0, "no finer tile's edge was held to a coarser tile's line.");
+    }
+
     /// <summary>A tile far enough away collapses to its root: two triangles for the whole thing.</summary>
     /// <remarks>
     /// The detail test is <c>|edge|² &gt; D²·distance²</c>, so pushing the eye far enough out makes the
@@ -167,7 +268,15 @@ public sealed class RetailIgi2TerrainLodTests
             }
 
             Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
-            Igi2TerrainTile tile = surface.Tiles[0];
+
+            // A tile that neither holds a finer one nor lies in a coarser: one that does keeps its side of the join divided
+            // from any distance (Nested_tiles_meet_along_one_line), so its coarsest answer is the join's outline.
+            if (!surface.Tiles.Any(static t => t.Submaps is not { Count: > 0 } && t.Hosts is not { Count: > 0 }))
+            {
+                continue;
+            }
+
+            Igi2TerrainTile tile = surface.Tiles.First(static t => t.Submaps is not { Count: > 0 } && t.Hosts is not { Count: > 0 });
             Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
 
             // A hundred kilometres out, along every axis at once, and looking at nothing in particular:
@@ -180,10 +289,10 @@ public sealed class RetailIgi2TerrainLodTests
             Igi2TerrainTessellation tessellation = lod.Tessellate(view, settings);
             Assert.Equal(1, tessellation.SquaresDrawn);
 
-            // One leaf is two triangles, issued once per material with any weight at a corner -- so the
-            // count is two times however many of the four corners' materials differ.
+            // One leaf is two triangles, each issued once per material with any weight at one of its own three corners -- so
+            // the count is at least the two, and no more than two for every material the tile paints.
             Assert.True(
-                tessellation.Mesh.TriangleCount % 2 == 0 && tessellation.Mesh.TriangleCount >= 2,
+                tessellation.Mesh.TriangleCount >= 2 && tessellation.Mesh.TriangleCount <= 2 * (lod.PassCount + 1),
                 $"A collapsed tile issued {tessellation.Mesh.TriangleCount} triangles.");
             return;
         }
@@ -235,14 +344,14 @@ public sealed class RetailIgi2TerrainLodTests
             }
         }
 
-        // 12,938,075 triangles at full detail against 200,109 tessellated -- 1.55 per cent, a factor
-        // of 64.7. 73,000 quadtree leaves produce those triangles, and the clipping planes reject the
+        // 12,938,075 triangles at full detail against 210,752 tessellated -- 1.63 per cent, a factor
+        // of 61.4. 76,394 quadtree leaves produce those triangles, and the clipping planes reject the
         // rest outright with their subtrees. Both counts are of the ground the levels actually draw:
         // the four levels with a DiscardTask have their holes cut out of each.
         Assert.Equal(12_938_075L, full);
-        Assert.Equal(200_109L, tessellated);
-        Assert.Equal(73_000, squares);
-        Assert.Equal(7_682, culled);
+        Assert.Equal(210_752L, tessellated);
+        Assert.Equal(76_394, squares);
+        Assert.Equal(7_717, culled);
     }
 
     /// <summary>The clipping planes reject what is behind the camera.</summary>
