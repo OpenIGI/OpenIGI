@@ -15,6 +15,7 @@ public sealed partial class GameHost
     /// </remarks>
     private void HandleSaveKeys()
     {
+        RunComputerSaves();
         ulong pressed = TitleInputBindings.Sample(_configuration.Active, ViewInput, SaveBindings, pressed: true);
         if (pressed != 0 && !_menuFlow.MenuMode)
         {
@@ -52,7 +53,7 @@ public sealed partial class GameHost
     // One quick save or quick load, said on the screen and in the log.
     private void QuickSaveOrLoad(bool save)
     {
-        if (TickObserver is not null || (TitlePlayer?.SaveGames ?? _hosted.SaveGames) is not { } saves)
+        if (MissionSaveGames is not { } saves)
         {
             _logger.Information("Saves", "This mission keeps no save games.");
             return;

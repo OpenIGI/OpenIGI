@@ -49,7 +49,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// rasterisation.
 /// </para>
 /// </remarks>
-public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
+public sealed partial class TacticalComputerRenderer : ITacticalComputerPresenter
 {
     private const string LogCategory = "Computer";
 
@@ -65,8 +65,8 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     /// <summary>How quickly the zoom eases towards what the wheel asked for, per second.</summary>
     private const float ZoomResponse = 16f;
 
-    private static readonly string[] PageNames = ["MAP", "OBJECTIVES", "LOG"];
-    private static readonly KeyCode[] PageKeys = [KeyCode.D1, KeyCode.D2, KeyCode.D3];
+    private static readonly string[] PageNames = ["MAP", "OBJECTIVES", "LOG", "SAVE"];
+    private static readonly KeyCode[] PageKeys = [KeyCode.D1, KeyCode.D2, KeyCode.D3, KeyCode.D4];
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
@@ -164,6 +164,7 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         _zoomTarget = DefaultZoom;
         _page = MapAvailable ? Page.Map : Page.Objectives;
         _dragging = false;
+        _saveShown = false;
     }
 
     /// <summary>Takes a frame's input: page selection, pan, and cursor-anchored zoom.</summary>
@@ -190,6 +191,9 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         TacticalComputerChrome chrome = TacticalComputerChrome.Measure(context, _page != Page.Map, PageNames.Length);
 
+        // An upload under way keeps its page.
+        Page shown = _page;
+        bool held = SaveBusy;
         _hoverPage = -1;
         for (int i = 0; i < PageNames.Length; i++)
         {
@@ -220,6 +224,17 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             }
             while (!IsSelectable(_page));
         }
+
+        if (held || !IsSelectable(_page))
+        {
+            _page = shown;
+            if (!IsSelectable(_page))
+            {
+                _page = Page.Objectives;
+            }
+        }
+
+        UpdateSave(input, step, context, chrome);
 
         // Back to the player, which is the one navigation action a map that can be panned across a whole
         // level genuinely needs. Bound to both the obvious keys rather than one.
@@ -718,6 +733,10 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         {
             DrawObjectives(painter, context, body, label, runtime, card, pad, y);
         }
+        else if (_page == Page.Save)
+        {
+            DrawSave(painter, context, body, label, card, pad, y);
+        }
         else
         {
             DrawLog(painter, context, body, label, runtime, card, pad, y);
@@ -949,12 +968,19 @@ public sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     internal static Bgra32 PanelSolid => UiPalette.GlassMenu;
     internal static Bgra32 Border => UiPalette.Hairline;
 
-    private bool IsSelectable(Page page) => page != Page.Map || MapAvailable;
+    // The map is the level's to give; the save page is there for a mission that keeps save games.
+    private bool IsSelectable(Page page) => page switch
+    {
+        Page.Map => MapAvailable,
+        Page.Save => Saves is not null,
+        _ => true,
+    };
 
     private enum Page
     {
         Map,
         Objectives,
         Log,
+        Save,
     }
 }

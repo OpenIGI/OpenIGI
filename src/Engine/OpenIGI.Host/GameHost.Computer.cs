@@ -193,7 +193,13 @@ public sealed partial class GameHost
             }
 
             bool toggleComputer = ComputerKeyPressed() || automaticOpen;
-            bool closeComputer = _computerOpen && TacticalComputer is not null && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
+            // The save page closes the display itself once its upload is done or a download is under way.
+            bool quit = _computerQuit && TacticalComputer is not null;
+            bool closeComputer = _computerOpen && TacticalComputer is not null && (quit || _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape));
+            if (quit)
+            {
+                _computerQuit = false;
+            }
 
             // The computer always opens; whether its map is there to read is the level's to say.
             bool mapAvailable = ComputerMapOffered();
@@ -220,6 +226,7 @@ public sealed partial class GameHost
 
                 // Without the device there is no map to climb to: the pages come up over the player's own view.
                 tacticalComputer.MapAvailable = mapAvailable;
+                tacticalComputer.Saves = ComputerSaves;
                 CameraPose vantage = mapAvailable ? tacticalComputer.Vantage() : eye;
                 float vantageFieldOfView = mapAvailable ? tacticalComputer.FieldOfView : gameplayFieldOfView;
 
@@ -376,8 +383,10 @@ public sealed partial class GameHost
             _computerWheel++;
         }
 
-        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey);
+        // The save page's own closing reaches the mission's computer as the map key does.
+        OpenIGI.Game.Computer.ComputerPointerInput taken = new(_computerCountsX, _computerCountsY, buttons, _computerMapKey || _computerQuit);
         _computerMapKey = false;
+        _computerQuit = false;
         _computerCountsX = 0f;
         _computerCountsY = 0f;
         _computerButtons = 0;
@@ -389,6 +398,7 @@ public sealed partial class GameHost
     {
         _computerOpen = open;
         _computerMapKey = false;
+        _computerQuit = false;
         if (open)
         {
             _computerOpenedFrame = _loop.Clock.FrameCount;

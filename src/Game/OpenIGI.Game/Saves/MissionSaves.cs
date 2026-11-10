@@ -32,8 +32,8 @@ public interface IMissionSaveSource
 }
 
 /// <summary>
-/// A running mission's save games as the host's pause menu offers them: the slots the difficulty allows
-/// (<c>Game_GetAvailableSaveGameSlots</c>), the saves the computer's battery has left (<c>HumanPlayer_GetBatteryLevel</c>: five a
+/// A running mission's save games as its computer's save screen and the menu's load list offer them: the five slots and the
+/// quick save's, the saves the computer's battery has left (<c>HumanPlayer_GetBatteryLevel</c>: five a
 /// mission on easy, three on normal, none on hard), a save that uses one of them (<c>HumanPlayer_BeginSaveToSlot</c>, then
 /// <c>Game_SaveToSlot</c>), and a load that counts itself in the mission's figures (<c>HumanPlayer_RunDelayedHandler</c>, then
 /// <c>Game_LoadFromSlot</c>).
@@ -69,7 +69,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
         {
             SaveOwner whose = _owner();
             List<TitleSaveSlot> list = [];
-            for (int slot = 0; slot < SaveRules.AvailableSlots(whose.Difficulty); slot++)
+            for (int slot = 0; slot <= SaveRules.QuickSave; slot++)
             {
                 SaveInfo info = _slots.Check(whose, slot);
                 IReadOnlyList<ModReference> missing = info.IsValid
@@ -79,7 +79,8 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
                     slot,
                     info.IsValid,
                     info.IsValid ? SaveRules.MissionTime(info.Ticks) : string.Empty,
-                    missing.Count > 0 ? missing : null));
+                    missing.Count > 0 ? missing : null,
+                    info.IsValid ? SaveRules.WrittenLabel(_slots.WrittenAt(whose, slot)) : string.Empty));
             }
 
             return list;
@@ -89,10 +90,8 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// <inheritdoc/>
     public virtual bool LoadRestartsMission => false;
 
-    /// <summary>
-    /// Gets a value indicating whether the mission can be saved as it stands: a title says no while a save could not be played
-    /// on from -- its player dead, a cut-scene running.
-    /// </summary>
+    /// <inheritdoc/>
+    /// <remarks>A title says no while a save could not be played on from -- its player dead, a cut-scene running.</remarks>
     public virtual bool CanSave => true;
 
     /// <inheritdoc/>
@@ -114,7 +113,8 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// <inheritdoc/>
     public int SavesLeft => Math.Max(SaveRules.SavesAllowed(_owner().Difficulty) - _source.SavesUsed, 0);
 
-    /// <summary>Gets the battery's charge as a share, <c>HumanPlayer_GetBatteryLevel</c>: the saves left of the difficulty's, none on hard.</summary>
+    /// <inheritdoc/>
+    /// <remarks><c>HumanPlayer_GetBatteryLevel</c>: the saves left of the difficulty's, none on hard.</remarks>
     public float BatteryLevel
     {
         get
@@ -127,12 +127,12 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// <inheritdoc/>
     /// <remarks>
     /// A save uses one of the battery's charges before it is written, so the count it keeps includes itself; with none left, or to a
-    /// slot the difficulty does not allow, nothing is saved.
+    /// slot that is not one of the five, nothing is saved.
     /// </remarks>
     public bool Save(int slot)
     {
         SaveOwner whose = _owner();
-        if (!CanSave || SavesLeft <= 0 || slot < 0 || slot >= SaveRules.AvailableSlots(whose.Difficulty))
+        if (!CanSave || SavesLeft <= 0 || slot < 0 || slot >= SaveRules.MenuSlots)
         {
             return false;
         }

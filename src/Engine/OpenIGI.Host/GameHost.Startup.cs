@@ -746,7 +746,7 @@ public sealed partial class GameHost
                     return pixels;
                 },
                 settingUnavailable: SettingUnavailable,
-                missionSaves: () => TitlePlayer?.SaveGames ?? _hosted.SaveGames,
+                missionSaves: () => MissionSaveGames,
                 inputBindingLabel: action => TitleInputBindings.Label(action, ExtraBindings),
                 resetInputBindings: profile =>
                 {

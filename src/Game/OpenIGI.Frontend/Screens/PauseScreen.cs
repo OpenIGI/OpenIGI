@@ -27,7 +27,10 @@ public sealed class PauseScreen : ShellScreen
     protected override IReadOnlyList<KeyHint> Hints => [new("ENTER", "Select"), new("Q E", "Sections"), new("ESC", "Resume")];
 
     /// <inheritdoc/>
-    /// <remarks>A title that keeps its own save games of the mission adds saving and loading them.</remarks>
+    /// <remarks>
+    /// A title that keeps its own save games of the mission adds loading them, as I.G.I. 2's menu lists a mission's saves beside
+    /// its restart. Saving is not here: a mission is saved from the player's computer, as I.G.I. 2 saves.
+    /// </remarks>
     protected override UiElement? BuildContent(LayoutContext context)
     {
         List<(string Text, ButtonAccent Accent, Action Activated)> actions = [];
@@ -41,8 +44,7 @@ public sealed class PauseScreen : ShellScreen
 
         if (Context.Host.MissionSaves is { } saves)
         {
-            actions.Add(("SAVE GAME", ButtonAccent.Ghost, () => Context.Stack.Reset(new MissionSavesScreen(Context, saves, isSaving: true))));
-            actions.Add(("LOAD GAME", ButtonAccent.Ghost, () => Context.Stack.Reset(new MissionSavesScreen(Context, saves, isSaving: false))));
+            actions.Add(("LOAD GAME", ButtonAccent.Ghost, () => Context.Stack.Reset(new MissionSavesScreen(Context, saves))));
         }
 
         actions.Add(("RESTART MISSION", ButtonAccent.Ghost, () => Context.Host.RestartMission()));

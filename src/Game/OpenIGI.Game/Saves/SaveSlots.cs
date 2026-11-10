@@ -10,26 +10,16 @@ namespace OpenIGI.Game.Saves;
 public readonly record struct SaveOwner(int Profile, int Difficulty, int Mission);
 
 /// <summary>
-/// The rules of the save games, I.G.I. 2's (game.c, humanplayer.c): how many slots a difficulty allows and how many saves a mission.
+/// The rules of the save games, I.G.I. 2's (game.c, humanplayer.c): the slots there are and how many saves a difficulty allows a mission.
 /// Project I.G.I., which shipped with no save games, is played by the same ones.
 /// </summary>
 public static class SaveRules
 {
-    /// <summary>The slots the load list offers, <c>Game_GetNumberOfValidSaveGames</c>' five.</summary>
+    /// <summary>The slots the computer's save screen and the load list offer, <c>Game_GetNumberOfValidSaveGames</c>' five.</summary>
     public const int MenuSlots = 5;
 
     /// <summary>The quick save's slot, the sixth.</summary>
     public const int QuickSave = 5;
-
-    /// <summary>The slots a difficulty allows, <c>Game_GetAvailableSaveGameSlots</c>: three on easy, two on normal, none on hard.</summary>
-    /// <param name="difficulty">The difficulty.</param>
-    /// <returns>The slots.</returns>
-    public static int AvailableSlots(int difficulty) => difficulty switch
-    {
-        0 => 3,
-        1 => 2,
-        _ => 0,
-    };
 
     /// <summary>
     /// The saves a mission allows at a difficulty, the full charge of the computer's battery (<c>HumanPlayer_GetBatteryLevel</c>):
@@ -43,6 +33,11 @@ public static class SaveRules
         1 => 3,
         _ => 0,
     };
+
+    /// <summary>When a save was written, as the lists show it, <c>Game_GetSaveGameTimeDateString</c>: <c>(date time)</c>.</summary>
+    /// <param name="written">When.</param>
+    /// <returns>The date and the time, in the player's own form.</returns>
+    public static string WrittenLabel(DateTime written) => string.Create(CultureInfo.CurrentCulture, $"({written:d} {written:T})");
 
     /// <summary>A mission time as the lists show it, <c>Game_GetTimeStringFromGameTicks</c>: hours, minutes and seconds of thirty ticks.</summary>
     /// <param name="ticks">The ticks.</param>

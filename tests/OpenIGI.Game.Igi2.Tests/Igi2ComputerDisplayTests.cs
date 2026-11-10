@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi2.Computer;
 using Xunit;
 
@@ -63,7 +64,7 @@ public sealed class Igi2ComputerDisplayTests
         Assert.Equal(40f, display.PointerY, 3);
     }
 
-    private sealed class FakeSaves : IIgi2ComputerSaves
+    private sealed class FakeSaves : IComputerSaves
     {
         public List<string> Calls { get; } = [];
 
@@ -99,20 +100,20 @@ public sealed class Igi2ComputerDisplayTests
         display.Open(() => default);
         Tick(computer, display, new Igi2ComputerInput(0f, 0f));
         Tick(computer, display, new Igi2ComputerInput(0f, 0f));
-        Assert.Equal(Igi2ComputerSaveState.Main, display.SaveState);
+        Assert.Equal(ComputerSaveState.Main, display.SaveState);
         Assert.Equal(5, display.Items.Active?.Id);
 
         Tick(computer, display, new Igi2ComputerInput(0f, 0f, Enter: true));
         Tick(computer, display, new Igi2ComputerInput(0f, 0f));
-        Assert.Equal(Igi2ComputerSaveState.Uploading, display.SaveState);
+        Assert.Equal(ComputerSaveState.Uploading, display.SaveState);
         Assert.Equal(1, display.ChosenSlot);
 
-        for (int i = 0; i < 101 && display.SaveState == Igi2ComputerSaveState.Uploading; i++)
+        for (int i = 0; i < 101 && display.SaveState == ComputerSaveState.Uploading; i++)
         {
             Tick(computer, display, new Igi2ComputerInput(0f, 0f));
         }
 
-        Assert.Equal(Igi2ComputerSaveState.Complete, display.SaveState);
+        Assert.Equal(ComputerSaveState.Complete, display.SaveState);
         Assert.Equal(["begin 1"], saves.Calls);
         for (int i = 0; i < Igi2ComputerDisplay.CompleteTicks + 1; i++)
         {

@@ -1,73 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Computer;
 
 namespace OpenIGI.Game.Igi2.Computer;
-
-/// <summary>What the computer's save screen does to the player's saves.</summary>
-public interface IIgi2ComputerSaves
-{
-    /// <summary>Gets the battery's charge as a share, <c>HumanPlayer_GetBatteryLevel</c>.</summary>
-    float BatteryLevel { get; }
-
-    /// <summary>Gets a value indicating whether a save may be uploaded now, <c>HumanPlayer_IsSaveAllowed</c>.</summary>
-    bool IsSaveAllowed { get; }
-
-    /// <summary>Gets the slot the quick load reads, one past it, nought for none.</summary>
-    int QuickLoadSlot { get; }
-
-    /// <summary>A slot as the screen names it.</summary>
-    /// <param name="slot">The slot.</param>
-    /// <returns>Whether it holds a save, its mission time and when it was written.</returns>
-    (bool IsUsed, string Info, string When) Slot(int slot);
-
-    /// <summary>A save is started, <c>HumanPlayer_BeginSaveToSlot</c>.</summary>
-    /// <param name="slot">The slot.</param>
-    void BeginSave(int slot);
-
-    /// <summary>The save is finished, <c>HumanPlayer_FinishSaveToSlot</c>.</summary>
-    /// <param name="slot">The slot.</param>
-    void FinishSave(int slot);
-
-    /// <summary>A load is asked for, <c>HumanPlayer_LoadFromSlot</c>.</summary>
-    /// <param name="slot">The slot.</param>
-    void Load(int slot);
-
-    /// <summary>The click that chose a slot is kept from firing the gun, the input's <c>isFreezeFire</c>.</summary>
-    void FreezeFire();
-
-    /// <summary>The computer is asked to close, <c>HumanPlayer_QuitComputer</c>.</summary>
-    void QuitComputer();
-}
-
-/// <summary>The save screen's pages, <c>ComputerSaveMenu</c>'s states.</summary>
-public enum Igi2ComputerSaveState
-{
-    /// <summary>None asked for.</summary>
-    None = 0,
-
-    /// <summary>The download and upload choices.</summary>
-    Main = 1,
-
-    /// <summary>A slot to upload to.</summary>
-    Upload = 2,
-
-    /// <summary>A slot to download from.</summary>
-    Download = 3,
-
-    /// <summary>Whether to overwrite the slot chosen.</summary>
-    Overwrite = 4,
-
-    /// <summary>The upload under way.</summary>
-    Uploading = 5,
-
-    /// <summary>The upload done.</summary>
-    Complete = 6,
-}
-
-/// <summary>One of the save screen's five slots, as it names it.</summary>
-/// <param name="Slot">The slot.</param>
-/// <param name="IsFree">Whether it holds no save.</param>
-/// <param name="When">When its save was written, under its name.</param>
-public readonly record struct Igi2ComputerSaveSlot(int Slot, bool IsFree, string When);
 
 /// <content>
 /// The save screen, <c>ComputerSaveMenu</c> (<c>computersavemenu.c</c>): IGI HQ's download and upload, the five slots, the overwrite
@@ -76,45 +10,47 @@ public readonly record struct Igi2ComputerSaveSlot(int Slot, bool IsFree, string
 public sealed partial class Igi2ComputerDisplay
 {
     /// <summary>The save screen's slots.</summary>
-    public const int SaveSlots = 5;
+    public const int SaveSlots = ComputerSaveFlow.Slots;
 
     /// <summary>The upload's progress a tick.</summary>
-    public const float UploadStep = 0.009999999776482582f;
+    public const float UploadStep = ComputerSaveFlow.UploadStep;
 
     /// <summary>The ticks the finished upload shows before the computer closes.</summary>
-    public const int CompleteTicks = 30;
+    public const int CompleteTicks = ComputerSaveFlow.CompleteTicks;
 
-    private readonly Igi2ComputerSaveSlot[] _saveSlots = new Igi2ComputerSaveSlot[SaveSlots];
-    private Igi2ComputerSaveState _saveRequest;
+    // The screen's pages and what they do to the saves, the one every computer runs.
+    private readonly ComputerSaveFlow _save = new();
 
     /// <summary>Gets or sets what the save screen saves with, or <see langword="null"/> with no saves.</summary>
-    public IIgi2ComputerSaves? Saves { get; set; }
+    public IComputerSaves? Saves
+    {
+        get => _save.Saves;
+        set => _save.Saves = value;
+    }
 
     /// <summary>Gets the save screen's page.</summary>
-    public Igi2ComputerSaveState SaveState { get; private set; }
+    public ComputerSaveState SaveState => _save.State;
 
     /// <summary>Gets the slot chosen.</summary>
-    public int ChosenSlot { get; private set; }
+    public int ChosenSlot => _save.ChosenSlot;
 
     /// <summary>Gets the upload's progress, nought to one.</summary>
-    public float UploadProgress { get; private set; }
+    public float UploadProgress => _save.UploadProgress;
 
     /// <summary>Gets the battery's charge as the screen last read it.</summary>
-    public float Battery { get; private set; }
+    public float Battery => _save.Battery;
 
     /// <summary>Gets the line under the screen's title: what the slots are for.</summary>
     public string SaveSubtitle { get; private set; } = string.Empty;
 
     /// <summary>Gets the slots as the page shows them, by slot; only the page's own are meaningful.</summary>
-    public IReadOnlyList<Igi2ComputerSaveSlot> SaveSlotLabels => _saveSlots;
+    public IReadOnlyList<ComputerSaveSlot> SaveSlotLabels => _save.SlotLabels;
 
     // ComputerSaveMenu_CreateHandler: the menu, the battery read, and the first page asked for.
     private void CreateSave()
     {
         CreateScreenMenuItems(Igi2ComputerMenu.Save);
-        SaveState = Igi2ComputerSaveState.None;
-        _saveRequest = Igi2ComputerSaveState.Main;
-        Battery = Saves?.BatteryLevel ?? 0f;
+        _save.Open();
         SaveSubtitle = string.Empty;
     }
 
@@ -124,59 +60,26 @@ public sealed partial class Igi2ComputerDisplay
     /// </summary>
     private void RunSave()
     {
-        if (SaveState == Igi2ComputerSaveState.Uploading)
-        {
-            UploadProgress = ((Fpu)UploadProgress + UploadStep).F;
-            if (UploadProgress >= 1f)
-            {
-                UploadProgress = 1f;
-                _saveRequest = Igi2ComputerSaveState.Complete;
-            }
-        }
-
-        if (SaveState == Igi2ComputerSaveState.Complete)
-        {
-            if (_completeTicks <= 0)
-            {
-                Saves?.FinishSave(ChosenSlot);
-                Saves?.QuitComputer();
-            }
-            else
-            {
-                _completeTicks--;
-            }
-        }
-
-        if (_saveRequest != Igi2ComputerSaveState.None)
+        if (_save.Run())
         {
             EnterSaveState();
         }
     }
 
-    private int _completeTicks;
-
-    // The page asked for: its items made afresh, the click spent.
+    // The page that came up: its items made afresh, the click spent.
     private void EnterSaveState()
     {
         EdgeButtons = Igi2ComputerButtons.None;
         EdgeReleaseButtons = Igi2ComputerButtons.None;
         Items = new Igi2ComputerMenuItems();
-        SaveState = _saveRequest;
-        _saveRequest = Igi2ComputerSaveState.None;
         switch (SaveState)
         {
-            case Igi2ComputerSaveState.Upload or Igi2ComputerSaveState.Download:
+            case ComputerSaveState.Upload or ComputerSaveState.Download:
                 EnterSlots();
                 break;
-            case Igi2ComputerSaveState.Uploading:
-                UploadProgress = 0f;
+            case ComputerSaveState.Uploading or ComputerSaveState.Complete:
                 break;
-            case Igi2ComputerSaveState.Complete:
-                _completeTicks = CompleteTicks;
-                Saves?.BeginSave(ChosenSlot);
-                Battery = Saves?.BatteryLevel ?? 0f;
-                break;
-            case Igi2ComputerSaveState.Overwrite:
+            case ComputerSaveState.Overwrite:
                 EnterOverwrite();
                 break;
             default:
@@ -190,20 +93,13 @@ public sealed partial class Igi2ComputerDisplay
     {
         float x = ((Fpu)Width * 0.15625).F;
         Items.Add(SaveTextItem(7, 14, 10, 14, 10, x, ((Fpu)Height * 0.6145833134651184).F, Text("computer/Cancel"), LabelFont, SaveCancelActivated));
-        SaveSubtitle = Text(SaveState == Igi2ComputerSaveState.Upload ? "computer/Upload mission data to IGI H.Q" : "computer/Download mission data from IGI H.Q");
-        bool chosen = false;
+        SaveSubtitle = Text(SaveState == ComputerSaveState.Upload ? "computer/Upload mission data to IGI H.Q" : "computer/Download mission data from IGI H.Q");
         for (int slot = 0; slot < SaveSlots; slot++)
         {
             NewSaveSlot(slot, isEnabled: true);
-            if (!chosen && SaveState == Igi2ComputerSaveState.Upload && _saveSlots[slot].IsFree)
-            {
-                ChosenSlot = slot;
-                _saveRequest = Igi2ComputerSaveState.Uploading;
-                chosen = true;
-            }
         }
 
-        int quick = Saves?.QuickLoadSlot ?? 0;
+        int quick = _save.QuickLoadSlot;
         Items.Activate(quick != 0 ? quick + 9 : 7);
     }
 
@@ -211,12 +107,11 @@ public sealed partial class Igi2ComputerDisplay
     // slot leads up and left to the one above (the first to the cancel), down and right to the one below (the last to the cancel).
     private void NewSaveSlot(int slot, bool isEnabled)
     {
-        (bool used, string info, string when) = Saves?.Slot(slot) ?? (false, string.Empty, string.Empty);
-        _saveSlots[slot] = new Igi2ComputerSaveSlot(slot, !used, used ? when : string.Empty);
+        ComputerSaveSlot label = _save.SlotLabels[slot];
         int up = slot == 0 ? 7 : slot + 9, down = slot == 4 ? 7 : slot + 11;
         Igi2ComputerMenuItem item = SaveTextItem(
             slot + 10, up, down, up, down, ((Fpu)Width * 0.15625).F, (((Fpu)slot * 0.0729166641831398) + 0.25).F * Height,
-            used ? info : Text("computer/Unused"), TextFont, SaveSlotActivated);
+            label.IsFree ? Text("computer/Unused") : label.Info, TextFont, SaveSlotActivated);
         item.IsDisabled = !isEnabled;
         Items.Add(item);
     }
@@ -259,7 +154,7 @@ public sealed partial class Igi2ComputerDisplay
         CreateScreenMenuItems(Igi2ComputerMenu.Save);
         Igi2ComputerMenuItem? top = Items.Items.Count > 0 ? Items.Items[^1] : null;
         Igi2ComputerMenuItem? bottom = Items.Items.Count > 0 ? Items.Items[0] : null;
-        bool allowed = Saves?.IsSaveAllowed ?? false;
+        bool allowed = _save.IsSaveAllowed;
         if (bottom is not null)
         {
             bottom.LinkDown = 6;
@@ -323,19 +218,10 @@ public sealed partial class Igi2ComputerDisplay
     // ComputerSaveMenu_UploadItemActivateCB: with charge left, to the slots; without, a buzz.
     private void SaveUploadActivated(Igi2ComputerMenuItem item, Igi2ComputerActivation activation)
     {
-        if (!Clicked(item, activation))
+        if (Clicked(item, activation))
         {
-            return;
-        }
-
-        if (Battery > 0f)
-        {
-            PlaySound?.Invoke("mapcomp_01");
-            _saveRequest = Igi2ComputerSaveState.Upload;
-        }
-        else
-        {
-            PlaySound?.Invoke("mapcomp_06");
+            bool charged = _save.Upload();
+            PlaySound?.Invoke(charged ? "mapcomp_01" : "mapcomp_06");
         }
     }
 
@@ -345,7 +231,7 @@ public sealed partial class Igi2ComputerDisplay
         if (Clicked(item, activation))
         {
             PlaySound?.Invoke("mapcomp_01");
-            _saveRequest = Igi2ComputerSaveState.Download;
+            _save.Download();
         }
     }
 
@@ -355,7 +241,7 @@ public sealed partial class Igi2ComputerDisplay
         if (Clicked(item, activation))
         {
             PlaySound?.Invoke("mapcomp_02");
-            _saveRequest = Igi2ComputerSaveState.Main;
+            _save.Cancel();
         }
     }
 
@@ -365,7 +251,7 @@ public sealed partial class Igi2ComputerDisplay
         if (Clicked(item, activation))
         {
             PlaySound?.Invoke("mapcomp_01");
-            _saveRequest = Igi2ComputerSaveState.Uploading;
+            _save.Overwrite();
         }
     }
 
@@ -375,7 +261,7 @@ public sealed partial class Igi2ComputerDisplay
         if (Clicked(item, activation))
         {
             PlaySound?.Invoke("mapcomp_02");
-            _saveRequest = Igi2ComputerSaveState.Upload;
+            _save.Keep();
         }
     }
 
@@ -388,28 +274,14 @@ public sealed partial class Igi2ComputerDisplay
             return;
         }
 
-        Saves?.FreezeFire();
-        int slot = item.Id - 10;
-        bool free = slot is >= 0 and < SaveSlots && _saveSlots[slot].IsFree;
-        if (SaveState == Igi2ComputerSaveState.Upload)
+        switch (_save.Choose(item.Id - 10))
         {
-            PlaySound?.Invoke("mapcomp_01");
-            ChosenSlot = slot;
-            _saveRequest = free ? Igi2ComputerSaveState.Uploading : Igi2ComputerSaveState.Overwrite;
-        }
-
-        if (SaveState == Igi2ComputerSaveState.Download)
-        {
-            if (!free)
-            {
+            case ComputerSaveChoice.Upload or ComputerSaveChoice.Overwrite or ComputerSaveChoice.Download:
                 PlaySound?.Invoke("mapcomp_01");
-                Saves?.Load(slot);
-                Saves?.QuitComputer();
-            }
-            else
-            {
+                break;
+            case ComputerSaveChoice.Empty:
                 PlaySound?.Invoke("mapcomp_06");
-            }
+                break;
         }
     }
 }

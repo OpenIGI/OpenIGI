@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Igi2.Collision;
+using OpenIGI.Game.Computer;
 using OpenIGI.Game.Igi2.Computer;
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Humans;
@@ -308,7 +309,7 @@ public sealed partial class Igi2TitlePlayer
     }
 
     // The save screen's hold on the player and its saves.
-    private sealed class ComputerSaves(Igi2TitlePlayer player) : IIgi2ComputerSaves
+    private sealed class ComputerSaves(Igi2TitlePlayer player) : IComputerSaves
     {
         public float BatteryLevel => player.Saves?.BatteryLevel ?? 0f;
 

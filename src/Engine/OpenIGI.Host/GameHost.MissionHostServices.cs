@@ -84,6 +84,8 @@ public sealed partial class GameHost
 
         public void ComputerChanged(bool open) => host.MissionComputerChanged(open);
 
+        public OpenIGI.Game.Computer.IComputerSaves? ComputerSaves => host.ComputerSaves;
+
         public bool TickTitlePlayer() => host.TickTitlePlayer();
 
         public void CheatWeaponsGranted() => host.ShowCheatWeapons();

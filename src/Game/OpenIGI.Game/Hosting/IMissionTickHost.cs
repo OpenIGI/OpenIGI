@@ -61,6 +61,12 @@ public interface IMissionTickHost
     /// <param name="open">Whether it is now open.</param>
     void ComputerChanged(bool open);
 
+    /// <summary>
+    /// Gets what the mission's computer saves and loads with on its save screen, or <see langword="null"/> for a mission that
+    /// keeps no save games.
+    /// </summary>
+    OpenIGI.Game.Computer.IComputerSaves? ComputerSaves => null;
+
     /// <summary>Runs another title's own player in this one's place, if the title brought one.</summary>
     /// <returns>Whether it ran, in which case a title's player does not.</returns>
     bool TickTitlePlayer();

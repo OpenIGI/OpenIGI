@@ -74,6 +74,7 @@ public sealed partial class ComputerMap : IComputerScreen
         float tabX = w * 0.1f;
         computer.AddTab(1, tabX, h * 0.80833334f, "OBJECTIVES", OnTab);
         computer.AddTab(2, tabX, h * 0.775f, "LOG", OnTab);
+        computer.AddSaveTab(OnTab);
 
         Startup = new ComputerStartup(
             ["INITIALIZING", "CONNECTING", "DOWNLOADING"],
@@ -222,6 +223,10 @@ public sealed partial class ComputerMap : IComputerScreen
         else if (id == 2)
         {
             _computer.SetScreen(ComputerScreenKind.Log);
+        }
+        else if (id == ComputerSavePage.TabId)
+        {
+            _computer.SetScreen(ComputerScreenKind.Save);
         }
     }
 

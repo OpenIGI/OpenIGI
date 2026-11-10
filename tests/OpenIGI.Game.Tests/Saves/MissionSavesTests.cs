@@ -5,7 +5,7 @@ using Xunit;
 namespace OpenIGI.Game.Tests.Saves;
 
 /// <summary>
-/// A mission's save games as both titles keep them (<see cref="MissionSaves"/>): the slots and the saves a difficulty allows, a
+/// A mission's save games as both titles keep them (<see cref="MissionSaves"/>): the slots and the saves a difficulty allows a mission, a
 /// save that uses one of the mission's, the quick slot, and the newest save a quick load reads.
 /// </summary>
 public sealed class MissionSavesTests : IDisposable
@@ -21,21 +21,23 @@ public sealed class MissionSavesTests : IDisposable
         }
     }
 
-    /// <summary>Easy has three slots and five saves a mission, normal two and three, hard none of either.</summary>
+    /// <summary>
+    /// Every difficulty has the computer's five slots and the quick save's; easy has five saves a mission, normal three, hard none.
+    /// </summary>
     [Fact]
-    public void A_difficulty_allows_its_slots_and_saves()
+    public void A_difficulty_allows_its_saves()
     {
-        Assert.Equal([3, 2, 0], Enumerable.Range(0, 3).Select(SaveRules.AvailableSlots));
         Assert.Equal([5, 3, 0], Enumerable.Range(0, 3).Select(SaveRules.SavesAllowed));
         Assert.Equal("1:02:05", SaveRules.MissionTime(30 * 3725));
 
         (MissionSaves hard, _) = Saves(difficulty: 2);
-        Assert.Empty(hard.Slots);
+        Assert.Equal([0, 1, 2, 3, 4, SaveRules.QuickSave], hard.Slots.Select(static s => s.Slot));
+        Assert.Equal(0f, hard.BatteryLevel);
         Assert.False(hard.Save(0));
         Assert.False(hard.QuickSave());
     }
 
-    /// <summary>A save uses one of the mission's, is listed with its mission time, and is refused to a slot the difficulty has not.</summary>
+    /// <summary>A save uses one of the mission's, is listed with its mission time and when it was written, and is refused to a slot that is not one of the five.</summary>
     [Fact]
     public void A_save_uses_one_of_the_missions()
     {
@@ -43,9 +45,14 @@ public sealed class MissionSavesTests : IDisposable
         level.MissionTime = 30 * 61;
         Assert.Equal(3, saves.SavesLeft);
         Assert.True(saves.Save(1));
-        Assert.False(saves.Save(2));
+        Assert.False(saves.Save(SaveRules.MenuSlots));
         Assert.Equal(2, saves.SavesLeft);
-        Assert.Equal([(0, false, string.Empty), (1, true, "0:01:01")], saves.Slots.Select(static s => (s.Slot, s.IsUsed, s.Description)));
+        Assert.Equal(2f / 3f, saves.BatteryLevel, 5);
+        Assert.Equal(
+            [(0, false, string.Empty), (1, true, "0:01:01")],
+            saves.Slots.Take(2).Select(static s => (s.Slot, s.IsUsed, s.Description)));
+        Assert.StartsWith("(", saves.Slots[1].When, StringComparison.Ordinal);
+        Assert.Equal(string.Empty, saves.Slots[0].When);
 
         level.CanBeSaved = false;
         Assert.False(saves.Save(0));

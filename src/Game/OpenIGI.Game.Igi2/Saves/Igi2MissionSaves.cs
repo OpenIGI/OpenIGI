@@ -33,6 +33,10 @@ public sealed class Igi2MissionSaves : MissionSaves
         _player = player ?? throw new ArgumentNullException(nameof(player));
     }
 
+    /// <inheritdoc/>
+    /// <remarks><c>HumanPlayer_IsSaveAllowed</c>: not while the player's action is locked.</remarks>
+    public override bool CanSave => _player.IsSaveAllowed;
+
     /// <summary>Gets where the slots are kept, with the load list and the carry-overs that are this game's own.</summary>
     public new Igi2SaveSlots SlotStore => _slots;
 
@@ -82,9 +86,7 @@ public sealed class Igi2MissionSaves : MissionSaves
             return (false, string.Empty, string.Empty);
         }
 
-        DateTime written = _slots.WrittenAt(whose, slot);
-        string when = string.Create(System.Globalization.CultureInfo.CurrentCulture, $"({written:d} {written:T})");
-        return (true, $"{translate(Igi2SaveSlots.MissionTimeKey)}: {SaveRules.MissionTime(info.Ticks)}", when);
+        return (true, $"{translate(Igi2SaveSlots.MissionTimeKey)}: {SaveRules.MissionTime(info.Ticks)}", SaveRules.WrittenLabel(_slots.WrittenAt(whose, slot)));
     }
 
     /// <summary>

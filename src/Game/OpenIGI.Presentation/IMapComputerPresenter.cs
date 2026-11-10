@@ -116,6 +116,16 @@ public interface ITacticalComputerPresenter : IDisposable
     /// </remarks>
     bool MapAvailable { get; set; }
 
+    /// <summary>
+    /// Gets or sets what the display's save page saves and loads with, as I.G.I. 2's computer does; <see langword="null"/> for a
+    /// mission that keeps no save games, which has no such page.
+    /// </summary>
+    OpenIGI.Game.Computer.IComputerSaves? Saves
+    {
+        get => null;
+        set { }
+    }
+
     /// <summary>Loads the fonts the display is drawn from.</summary>
     /// <returns><see langword="false"/> when they are unavailable.</returns>
     bool Load();

@@ -235,6 +235,96 @@ public sealed class Igi1ComputerTests
         Assert.Equal((16f * 0.5f + 64f, 96f * 0.5f + 64f, 16f * 0.5f + 64f), link.Draw());
     }
 
+    /// <summary>
+    /// The save page, reached by its link: an upload goes to the first free slot, fills its bar, uses the battery and then saves
+    /// and closes the computer, as I.G.I. 2's save screen does.
+    /// </summary>
+    [Fact]
+    public void TheSavePageUploadsToTheFirstFreeSlotAndClosesWhenItsBarIsFull()
+    {
+        FakeWorld world = new();
+        FakeSaves saves = new();
+        saves.Used[0] = true;
+        Igi1Computer computer = new(world) { Saves = saves };
+        computer.Open(world.Player, Width, Height);
+        PointAt(computer, ComputerSavePage.TabId);
+        Press(computer, Igi1Computer.MouseLeft);
+        Release(computer);
+        ComputerSavePage page = Assert.IsType<ComputerSavePage>(computer.Screen);
+        Assert.Equal(ComputerSaveState.Main, page.State);
+
+        PointAt(computer, 5);
+        Press(computer, Igi1Computer.MouseLeft);
+        Release(computer);
+        Assert.Equal(ComputerSaveState.Uploading, page.State);
+        Assert.Empty(computer.Panel.Items);
+
+        for (int i = 0; i < 102 && page.State == ComputerSaveState.Uploading; i++)
+        {
+            Tick(computer, 1);
+        }
+
+        Assert.Equal(ComputerSaveState.Complete, page.State);
+        Assert.Equal(["begin 1"], saves.Calls);
+        Tick(computer, ComputerSaveFlow.CompleteTicks + 5);
+        Assert.Equal(["begin 1", "finish 1", "quit"], saves.Calls);
+    }
+
+    /// <summary>A download lists the slots; a used one is loaded and the computer closed, and a mission with no saves has no link.</summary>
+    [Fact]
+    public void TheSavePageDownloadsAUsedSlot()
+    {
+        Assert.DoesNotContain(Open(out _).Panel.Items, static item => item.Id == ComputerSavePage.TabId);
+
+        FakeWorld world = new();
+        FakeSaves saves = new();
+        saves.Used[2] = true;
+        Igi1Computer computer = new(world) { Saves = saves };
+        computer.Open(world.Player, Width, Height);
+        PointAt(computer, ComputerSavePage.TabId);
+        Press(computer, Igi1Computer.MouseLeft);
+        Release(computer);
+        PointAt(computer, 6);
+        Press(computer, Igi1Computer.MouseLeft);
+        Release(computer);
+        ComputerSavePage page = Assert.IsType<ComputerSavePage>(computer.Screen);
+        Assert.Equal(ComputerSaveState.Download, page.State);
+
+        PointAt(computer, 10);
+        Press(computer, Igi1Computer.MouseLeft);
+        Release(computer);
+        Assert.Equal(["freeze"], saves.Calls);
+
+        PointAt(computer, 12);
+        Press(computer, Igi1Computer.MouseLeft);
+        Assert.Equal(["freeze", "freeze", "load 2", "quit"], saves.Calls);
+    }
+
+    private sealed class FakeSaves : IComputerSaves
+    {
+        public List<string> Calls { get; } = [];
+
+        public bool[] Used { get; } = new bool[5];
+
+        public float BatteryLevel => 1f;
+
+        public bool IsSaveAllowed => true;
+
+        public int QuickLoadSlot => 0;
+
+        public (bool IsUsed, string Info, string When) Slot(int slot) => (Used[slot], "Mission time: 0:01:00", "(today)");
+
+        public void BeginSave(int slot) => Calls.Add($"begin {slot}");
+
+        public void FinishSave(int slot) => Calls.Add($"finish {slot}");
+
+        public void Load(int slot) => Calls.Add($"load {slot}");
+
+        public void FreezeFire() => Calls.Add("freeze");
+
+        public void QuitComputer() => Calls.Add("quit");
+    }
+
     private static Igi1Computer Open(out FakeWorld world)
     {
         world = new FakeWorld();

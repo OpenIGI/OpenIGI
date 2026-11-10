@@ -19,6 +19,9 @@ public enum ComputerScreenKind
 
     /// <summary>The log of messages.</summary>
     Log = 3,
+
+    /// <summary>The save games, which the original's computer had no screen for: I.G.I. 2's, see <see cref="ComputerSavePage"/>.</summary>
+    Save = 4,
 }
 
 /// <summary>One of the computer's screens.</summary>
@@ -86,6 +89,12 @@ public sealed class Igi1Computer
 
     /// <summary>Gets or sets the square the map may look over, the level's <c>DefineComputerLimit</c>, or none.</summary>
     public ComputerMapLimit? Limit { get; set; }
+
+    /// <summary>
+    /// Gets or sets what its save screen saves and loads with, or <see langword="null"/> for a mission that keeps no save games,
+    /// whose computer has no such screen.
+    /// </summary>
+    public IComputerSaves? Saves { get; set; }
 
     /// <summary>Gets a value indicating whether it is open.</summary>
     public bool IsOpen { get; private set; }
@@ -271,6 +280,31 @@ public sealed class Igi1Computer
         return Panel.Add(new ComputerTextItem(id, x, y, TabFont, text, size, 1, onEvent));
     }
 
+    /// <summary>Adds the link to the save screen a screen has above its others, for a mission that keeps save games.</summary>
+    /// <param name="onEvent">What it does: the screen's own link handler, which is told <see cref="ComputerSavePage.TabId"/>.</param>
+    public void AddSaveTab(Action<ComputerItem, int> onEvent)
+    {
+        if (Saves is not null)
+        {
+            AddTab(ComputerSavePage.TabId, Width * 0.1f, Height * ComputerSavePage.TabY, "SAVE", onEvent);
+        }
+    }
+
+    /// <summary>Adds a text link in a font of the caller's choosing, in the link colour.</summary>
+    /// <param name="id">Its id.</param>
+    /// <param name="x">Its left.</param>
+    /// <param name="y">Its top.</param>
+    /// <param name="text">Its text, as drawn.</param>
+    /// <param name="font">Its font.</param>
+    /// <param name="onEvent">What it does.</param>
+    /// <returns>The link.</returns>
+    public ComputerTextItem AddLink(int id, float x, float y, string text, string font, Action<ComputerItem, int> onEvent)
+    {
+        IComputerFonts? fonts = World.Fonts;
+        (float, float) size = fonts is null ? (text.Length * 8f, 16f) : (fonts.StringWidth(font, text), fonts.LineHeight(font));
+        return Panel.Add(new ComputerTextItem(id, x, y, font, text, size, 1, onEvent));
+    }
+
     /// <summary>The font of the screens' links and headings.</summary>
     public const string TabFont = "font3.fnt";
 
@@ -317,6 +351,7 @@ public sealed class Igi1Computer
             ComputerScreenKind.Map => new ComputerMap(this),
             ComputerScreenKind.Objectives => new ComputerObjectivesPage(this),
             ComputerScreenKind.Log => new ComputerLogPage(this),
+            ComputerScreenKind.Save => new ComputerSavePage(this),
             _ => null,
         };
     }

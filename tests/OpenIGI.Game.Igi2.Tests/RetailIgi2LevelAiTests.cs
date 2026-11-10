@@ -478,7 +478,6 @@ public sealed class RetailIgi2LevelAiTests
             fresh.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = again.Human;
             Assert.True(slots.Load(owner, 1, fresh.Tree[0], Saves.Igi2SaveFormat.Context()).IsValid);
             Assert.False(slots.Load(owner, 2, fresh.Tree[0], Saves.Igi2SaveFormat.Context()).IsValid);
-            Assert.Equal([3, 2, 0], Enumerable.Range(0, 3).Select(SaveRules.AvailableSlots));
             Assert.True(Saves.Igi2SaveSlots.TryParseSlotFileName("savegames/0-1-11-5.igi2save", out SaveOwner parsed, out int slot));
             Assert.Equal((owner, 5), (parsed, slot));
         }
@@ -541,8 +540,8 @@ public sealed class RetailIgi2LevelAiTests
     }
 
     /// <summary>
-    /// The pause menu's saves: on normal two slots and three saves a mission, each save using one and none once they are spent; a load
-    /// puts the mission back and counts itself; hard keeps no slots.
+    /// The mission's saves: on normal three saves a mission to the computer's five slots, each save using one and none once they are
+    /// spent; a load puts the mission back and counts itself; hard has the slots and no saves.
     /// </summary>
     [RequiresTitleDataFact("igi2")]
     public void Mission_saves_spend_the_battery_and_count_loads()
@@ -554,13 +553,13 @@ public sealed class RetailIgi2LevelAiTests
             m.Tree.OfType<Igi2HumanPlayerTask>().Single().Human = player.Human;
             int difficulty = 1;
             Saves.Igi2MissionSaves saves = new(new Saves.Igi2SaveSlots(folder), () => new SaveOwner(0, difficulty, 11), m.Run, player.Human);
-            Assert.Equal(2, saves.Slots.Count);
+            Assert.Equal(SaveRules.MenuSlots + 1, saves.Slots.Count);
             Assert.Equal(3, saves.SavesLeft);
             Assert.False(saves.Slots[0].IsUsed);
 
             Assert.True(saves.Save(0));
             Assert.True(saves.Save(1));
-            Assert.False(saves.Save(2));
+            Assert.False(saves.Save(SaveRules.MenuSlots));
             Assert.Equal(1, saves.SavesLeft);
             Assert.True(saves.Slots[0].IsUsed);
             Assert.True(saves.Save(0));
@@ -572,8 +571,9 @@ public sealed class RetailIgi2LevelAiTests
             Assert.False(saves.Load(4));
 
             difficulty = 2;
-            Assert.Empty(saves.Slots);
+            Assert.DoesNotContain(saves.Slots, static s => s.IsUsed);
             Assert.Equal(0, saves.SavesLeft);
+            Assert.Equal(0f, saves.BatteryLevel);
         }
         finally
         {
