@@ -123,6 +123,7 @@ public sealed class Igi1SaveStates : ISaveStates
 public sealed class Igi1MissionSaves : MissionSaves
 {
     private readonly SaveSession _session;
+    private readonly MissionWorld _world;
     private readonly IMissionSetupHost _host;
 
     /// <summary>Initializes a new instance of the <see cref="Igi1MissionSaves"/> class.</summary>
@@ -136,12 +137,17 @@ public sealed class Igi1MissionSaves : MissionSaves
             new Level(world))
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _world = world;
         _host = host ?? throw new ArgumentNullException(nameof(host));
         PlayedMods = host.PlayedMods;
     }
 
     /// <inheritdoc/>
     public override bool LoadRestartsMission => true;
+
+    /// <inheritdoc/>
+    /// <remarks>Not with the player dead, a cut-scene playing, or the level's menus switched off for one.</remarks>
+    public override bool CanSave => !_world.IsPlayerDead && _world.Cutscenes?.IsPlaying != true && _world.MenusEnabled;
 
     /// <inheritdoc/>
     /// <remarks>The slot is kept for the level the restart makes; nothing of the level that is up is touched.</remarks>

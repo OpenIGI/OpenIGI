@@ -89,6 +89,28 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     /// <inheritdoc/>
     public virtual bool LoadRestartsMission => false;
 
+    /// <summary>
+    /// Gets a value indicating whether the mission can be saved as it stands: a title says no while a save could not be played
+    /// on from -- its player dead, a cut-scene running.
+    /// </summary>
+    public virtual bool CanSave => true;
+
+    /// <inheritdoc/>
+    public bool QuickSave()
+    {
+        if (!CanSave || SavesLeft <= 0)
+        {
+            return false;
+        }
+
+        _source.SavesUsed++;
+        return Write(SaveRules.QuickSave);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>The newest valid save of the six, by when its file was written (<c>Game_FindNewestSaveGame</c>).</remarks>
+    public bool QuickLoad() => _slots.TryFindNewest(_owner(), out int slot) && Load(slot);
+
     /// <inheritdoc/>
     public int SavesLeft => Math.Max(SaveRules.SavesAllowed(_owner().Difficulty) - _source.SavesUsed, 0);
 
@@ -110,7 +132,7 @@ public class MissionSaves(SaveSlots slots, Func<SaveOwner> owner, IMissionSaveSo
     public bool Save(int slot)
     {
         SaveOwner whose = _owner();
-        if (SavesLeft <= 0 || slot < 0 || slot >= SaveRules.AvailableSlots(whose.Difficulty))
+        if (!CanSave || SavesLeft <= 0 || slot < 0 || slot >= SaveRules.AvailableSlots(whose.Difficulty))
         {
             return false;
         }

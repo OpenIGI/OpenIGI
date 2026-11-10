@@ -32,6 +32,14 @@ public interface ITitleSaveGames
     /// <returns><see langword="true"/> once saved.</returns>
     bool Save(int slot);
 
+    /// <summary>Saves the mission as it stands to the quick slot, which uses one of the mission's saves as any other does.</summary>
+    /// <returns><see langword="true"/> once saved.</returns>
+    bool QuickSave() => false;
+
+    /// <summary>Puts the mission back as its newest save holds it, the quick slot's or a menu slot's.</summary>
+    /// <returns><see langword="true"/> once loaded, or once the load is under way.</returns>
+    bool QuickLoad() => false;
+
     /// <summary>Puts the mission back as a slot holds it.</summary>
     /// <param name="slot">The slot's number.</param>
     /// <returns><see langword="true"/> once loaded.</returns>

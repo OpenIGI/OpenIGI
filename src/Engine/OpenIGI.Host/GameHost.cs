@@ -696,6 +696,7 @@ public sealed partial class GameHost : IDisposable
                 UpdatePlayerDevices(state);
                 UpdateMenuBackdrop(state);
                 HandleDeveloperKeys(state);
+                HandleSaveKeys();
                 AdvanceWorldClocks(state);
                 UpdateFlyingView(state);
             }

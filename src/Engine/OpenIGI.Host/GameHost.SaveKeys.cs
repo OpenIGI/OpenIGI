@@ -1,0 +1,43 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Player;
+
+namespace OpenIGI.Host;
+
+public sealed partial class GameHost
+{
+    /// <summary>
+    /// The quick save and quick load keys, for a mission that keeps save games: F5 saves to the quick slot, F9 loads the newest
+    /// save of the mission. Not while a menu is up, and not in a session with other players, whose level is the server's.
+    /// </summary>
+    /// <remarks>
+    /// Not retail keys: I.G.I. 2 saves through its computer, and Project I.G.I. kept no save games. Fixed keys for now -- the
+    /// rebindable action word has no bit left for two more.
+    /// </remarks>
+    private void HandleSaveKeys()
+    {
+        bool save = _window.Input.Keyboard.WasPressed(Input.KeyCode.F5);
+        bool load = _window.Input.Keyboard.WasPressed(Input.KeyCode.F9);
+        if ((!save && !load) || _menuFlow.MenuMode || TickObserver is not null)
+        {
+            return;
+        }
+
+        if ((TitlePlayer?.SaveGames ?? _hosted.SaveGames) is not { } saves)
+        {
+            return;
+        }
+
+        string said;
+        if (save)
+        {
+            said = saves.QuickSave() ? "Saving complete" : saves.SavesLeft == 0 ? "No saves are left for this mission" : "Saving failed";
+        }
+        else
+        {
+            said = saves.QuickLoad() ? "Loading complete" : "Loading failed";
+        }
+
+        _logger.Information("Saves", said + ".");
+        _mission.Objectives?.ShowTransientMessage(said);
+    }
+}
