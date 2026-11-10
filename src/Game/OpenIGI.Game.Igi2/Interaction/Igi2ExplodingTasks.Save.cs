@@ -3,27 +3,27 @@ using OpenIGI.Game.Igi2.Saves;
 namespace OpenIGI.Game.Igi2.Interaction;
 
 /// <content>Its save state, <c>ExplodeObject_ptSerializeParameterList</c>.</content>
-public sealed partial class Igi2ExplodeObjectTask : IIgi2Serialized
+public sealed partial class Igi2ExplodeObjectTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer) => Explosive.WriteState(writer);
+    public void WriteState(StateWriter writer) => Explosive.WriteState(writer);
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader) => Explosive.ReadState(reader);
+    public void ReadState(StateReader reader) => Explosive.ReadState(reader);
 }
 
 /// <content>Its save state, <c>Terminal_ptSerializeParameterList</c>: an exploding object's, then a terminal's.</content>
-public sealed partial class Igi2TerminalTask : IIgi2Serialized
+public sealed partial class Igi2TerminalTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         Explosive.WriteState(writer);
         Terminal.WriteState(writer);
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         Explosive.ReadState(reader);
         Terminal.ReadState(reader);
@@ -34,10 +34,10 @@ public sealed partial class Igi2TerminalTask : IIgi2Serialized
 /// Its save state, <c>AlarmControl_ptSerializeParameterList</c>: a terminal's, then whether it is triggered, sounds and sounded, and when
 /// it was last triggered.
 /// </content>
-public sealed partial class Igi2AlarmControlTask : IIgi2Serialized
+public sealed partial class Igi2AlarmControlTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Explosive.WriteState(writer);
@@ -49,7 +49,7 @@ public sealed partial class Igi2AlarmControlTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Explosive.ReadState(reader);
@@ -65,10 +65,10 @@ public sealed partial class Igi2AlarmControlTask : IIgi2Serialized
 /// Its save state, <c>GenericTBA_ptSerializeParameterList</c>: an exploding object's, then whether it is in use and was, when it was
 /// last, whether it may be worked, has finished, and finished this tick, and when.
 /// </content>
-public sealed partial class Igi2GenericTbaTask : IIgi2Serialized
+public sealed partial class Igi2GenericTbaTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Explosive.WriteState(writer);
@@ -82,7 +82,7 @@ public sealed partial class Igi2GenericTbaTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Explosive.ReadState(reader);

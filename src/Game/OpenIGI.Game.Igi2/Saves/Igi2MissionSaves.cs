@@ -36,6 +36,12 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     /// <summary>Gets or sets the level's panes of glass, which a save keeps and a load puts back.</summary>
     public Interaction.Igi2GlassContainer? Glass { get; set; }
 
+    /// <summary>Gets or sets the level's pickups: the weapons lying in it, which a save keeps and a load makes again.</summary>
+    public Pickups.Igi2PickupList? Pickups { get; set; }
+
+    // What the level is written and read with: its tasks, its dropped weapons and its glass.
+    private SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, _level.Root);
+
     /// <summary>Gets where the slots are kept.</summary>
     public Igi2SaveSlots SlotStore => _slots;
 
@@ -57,7 +63,7 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
             List<TitleSaveSlot> list = [];
             for (int slot = 0; slot < Igi2SaveSlots.AvailableSlots(whose.Difficulty); slot++)
             {
-                Igi2SaveInfo info = _slots.Check(whose, slot);
+                SaveInfo info = _slots.Check(whose, slot);
                 IReadOnlyList<Core.Content.ModReference> missing = info.IsValid
                     ? Core.Content.ModReference.Missing(Core.Content.ModReference.ReadList(ModsFile(whose, slot)), PlayedMods)
                     : [];
@@ -89,7 +95,7 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
         }
 
         _player.SavesUsed++;
-        return Recorded(whose, slot, _slots.Save(whose, slot, _level.Root, _player.MissionTime, Glass));
+        return Recorded(whose, slot, _slots.Save(whose, slot, _level.Root, _player.MissionTime, Context));
     }
 
     /// <summary>
@@ -99,7 +105,7 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     /// <param name="slot">The slot.</param>
     /// <returns><see langword="true"/> once written.</returns>
     public bool Write(int slot) =>
-        slot >= 0 && slot < Igi2SaveSlots.MenuSlots && Recorded(_owner(), slot, _slots.Save(_owner(), slot, _level.Root, _player.MissionTime, Glass));
+        slot >= 0 && slot < Igi2SaveSlots.MenuSlots && Recorded(_owner(), slot, _slots.Save(_owner(), slot, _level.Root, _player.MissionTime, Context));
 
     /// <summary>
     /// A slot as the computer's save screen names it (<c>ComputerSaveMenu_NewSaveSlot</c>): its mission time, <c>Mission Time: h:mm:ss</c>
@@ -113,7 +119,7 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     {
         ArgumentNullException.ThrowIfNull(translate);
         Igi2SaveOwner whose = _owner();
-        Igi2SaveInfo info = _slots.Check(whose, slot);
+        SaveInfo info = _slots.Check(whose, slot);
         if (!info.IsValid)
         {
             return (false, string.Empty, string.Empty);
@@ -135,10 +141,22 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     }
 
     /// <inheritdoc/>
-    /// <remarks>A load that succeeds adds one to the games loaded, <c>nGameLoads</c>, after the save's own count is put back.</remarks>
+    /// <remarks>
+    /// <para>
+    /// <c>Game_LoadFromSlot</c>: once the slot's header checks, every pickup in the level is deleted, and the load makes again each
+    /// the save holds.
+    /// </para>
+    /// <para>A load that succeeds adds one to the games loaded, <c>nGameLoads</c>, after the save's own count is put back.</para>
+    /// </remarks>
     public bool Load(int slot)
     {
-        if (!_slots.Load(_owner(), slot, _level.Root, _level.Natives, _level.Functions, Glass).IsValid)
+        if (!_slots.Check(_owner(), slot).IsValid)
+        {
+            return false;
+        }
+
+        Pickups?.DeleteAll();
+        if (!_slots.Load(_owner(), slot, _level.Root, Context).IsValid)
         {
             return false;
         }
@@ -156,7 +174,7 @@ public sealed class Igi2MissionSaves(Igi2SaveSlots slots, Func<Igi2SaveOwner> ow
     public bool LoadCarryOver(Igi2HumanPlayerTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return task.CarryOverWeapons && _slots.LoadCarryOver(_owner(), _level.Root, _level.Natives, _level.Functions).IsValid;
+        return task.CarryOverWeapons && _slots.LoadCarryOver(_owner(), _level.Root).IsValid;
     }
 
     /// <summary>Leaves the player's weapons for the mission that follows, <c>Game_SaveCarryover</c>, unless the player is dead.</summary>

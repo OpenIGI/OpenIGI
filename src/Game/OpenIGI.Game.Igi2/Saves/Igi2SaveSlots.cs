@@ -1,7 +1,5 @@
 using System.Globalization;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Scripting;
-using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.Igi2.Saves;
 
@@ -19,7 +17,7 @@ public readonly record struct Igi2SaveListing(int Slot, string Text, bool IsTran
 
 /// <summary>
 /// The save game slots of game.c: each a file under the user's <c>savegames</c> folder named by profile, difficulty, mission and slot,
-/// five slots and a quick save, written as <see cref="Igi2SaveGame"/> writes them and read whether this game or retail wrote them; and
+/// five slots and a quick save, written as <see cref="SaveScript"/> writes them and read whether this game or retail wrote them; and
 /// the carry-over a mission leaves for the next, the player's weapons.
 /// </summary>
 /// <param name="directory">The folder <c>savegames</c> lies in: the game's own folder for retail's saves.</param>
@@ -39,6 +37,9 @@ public sealed class Igi2SaveSlots(string directory)
 
     /// <summary>The key of the mission time's label.</summary>
     public const string MissionTimeKey = "menusystem/Mission Time";
+
+    /// <summary>The type of the task that holds what a human carries, <c>WeaponHandler</c> (<c>Weapon_eQTaskType</c>, weapon.c).</summary>
+    public const string WeaponPart = "WeaponHandler";
 
     /// <summary>The key of the quick save's tag.</summary>
     public const string QuickSaveKey = "menusystem/Quicksave";
@@ -120,36 +121,26 @@ public sealed class Igi2SaveSlots(string directory)
     /// <param name="slot">The slot.</param>
     /// <param name="root">The task the state is written from.</param>
     /// <param name="ticks">The player's mission time.</param>
-    /// <param name="glass">The level's panes of glass, or <see langword="null"/>.</param>
+    /// <param name="context">What the level is written with, or <see langword="null"/> for its tasks alone.</param>
     /// <returns><see langword="true"/> once written: retail's "Saving complete", otherwise its "Saving failed".</returns>
-    public bool Save(Igi2SaveOwner owner, int slot, GameTask root, int ticks, Interaction.Igi2GlassContainer? glass = null) =>
-        WriteText(SlotFileName(owner, slot), Igi2SaveGame.Create(root, new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, owner.Mission, ticks), glass));
+    public bool Save(Igi2SaveOwner owner, int slot, GameTask root, int ticks, SaveContext? context = null) =>
+        WriteText(SlotFileName(owner, slot), SaveScript.Create(root, Igi2SaveFormat.Info(owner.Mission, ticks), context ?? Igi2SaveFormat.Context()));
 
     /// <summary>Reads a slot's header, <c>SaveGame_Check</c>.</summary>
     /// <param name="owner">Whose.</param>
     /// <param name="slot">The slot.</param>
     /// <returns>The header; not valid for an empty slot.</returns>
-    public Igi2SaveInfo Check(Igi2SaveOwner owner, int slot) =>
-        TryRead(SlotFileName(owner, slot), out byte[] file) ? Igi2SaveGame.CheckFile(file) : default;
+    public SaveInfo Check(Igi2SaveOwner owner, int slot) =>
+        TryRead(SlotFileName(owner, slot), out byte[] file) ? SaveScript.Check(file, Igi2SaveFormat.Context()) : default;
 
     /// <summary>Loads a slot onto a level's tasks, <c>Game_LoadFromSlot</c>'s load once its header is valid.</summary>
     /// <param name="owner">Whose.</param>
     /// <param name="slot">The slot.</param>
     /// <param name="root">The level's root.</param>
-    /// <param name="natives">The namespace a text save's constants resolve in.</param>
-    /// <param name="functions">The function table.</param>
-    /// <param name="glass">The level's panes of glass, or <see langword="null"/>.</param>
+    /// <param name="context">What the level is read with, or <see langword="null"/> for its tasks alone.</param>
     /// <returns>The header; not valid when nothing was loaded: retail's "Loading failed".</returns>
-    public Igi2SaveInfo Load(
-        Igi2SaveOwner owner, int slot, GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions, Interaction.Igi2GlassContainer? glass = null)
-    {
-        if (!TryRead(SlotFileName(owner, slot), out byte[] file) || !Igi2SaveGame.CheckFile(file).IsValid)
-        {
-            return default;
-        }
-
-        return Igi2SaveGame.LoadFile(file, root, natives, functions, glass: glass);
-    }
+    public SaveInfo Load(Igi2SaveOwner owner, int slot, GameTask root, SaveContext? context = null) =>
+        TryRead(SlotFileName(owner, slot), out byte[] file) ? SaveScript.Load(file, root, context ?? Igi2SaveFormat.Context()) : default;
 
     /// <summary>The newest valid save of the six, by when its file was written, <c>Game_FindNewestSaveGame</c>.</summary>
     /// <param name="owner">Whose.</param>
@@ -189,7 +180,7 @@ public sealed class Igi2SaveSlots(string directory)
         List<Igi2SaveListing> lines = [];
         for (int slot = 0; slot <= QuickSave; slot++)
         {
-            Igi2SaveInfo info = Check(owner, slot);
+            SaveInfo info = Check(owner, slot);
             if (!info.IsValid)
             {
                 continue;
@@ -209,27 +200,23 @@ public sealed class Igi2SaveSlots(string directory)
     }
 
     /// <summary>
-    /// Leaves the player's weapons for the next mission, <c>Game_SaveCarryover</c>: what it carries, written as its weapon's state
-    /// alone, for the mission given.
+    /// Leaves the player's weapons for the next mission, <c>Game_SaveCarryover</c>: what it carries, written as its weapon task's
+    /// state alone (<c>WeaponHandler</c>, against the player), for the mission given.
     /// </summary>
     /// <param name="owner">Whose, and the mission it is for.</param>
     /// <param name="player">The player's task.</param>
     /// <returns><see langword="true"/> once written.</returns>
     public bool SaveCarryOver(Igi2SaveOwner owner, GameTask player) =>
-        WriteText(CarryOverFileName(owner), Igi2SaveGame.CreatePart(player, "Weapon", new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, owner.Mission, 0)));
+        WriteText(CarryOverFileName(owner), SaveScript.CreatePart(player, WeaponPart, Igi2SaveFormat.Info(owner.Mission, 0), Igi2SaveFormat.Context()));
 
     /// <summary>
     /// Gives the player the weapons the last mission left, <c>Game_LoadCarryOver</c>, when the player carries weapons over.
     /// </summary>
     /// <param name="owner">Whose, and the mission.</param>
     /// <param name="root">The task the carry-over is loaded onto.</param>
-    /// <param name="natives">The namespace.</param>
-    /// <param name="functions">The function table.</param>
     /// <returns>The header; not valid when there is none.</returns>
-    public Igi2SaveInfo LoadCarryOver(Igi2SaveOwner owner, GameTask root, NativeRegistry natives, Igi2ScriptFunctions functions) =>
-        TryRead(CarryOverFileName(owner), out byte[] file) && Igi2SaveGame.CheckFile(file).IsValid
-            ? Igi2SaveGame.LoadFile(file, root, natives, functions)
-            : default;
+    public SaveInfo LoadCarryOver(Igi2SaveOwner owner, GameTask root) =>
+        TryRead(CarryOverFileName(owner), out byte[] file) ? SaveScript.Load(file, root, Igi2SaveFormat.Context()) : default;
 
     private bool WriteText(string relative, string? script)
     {

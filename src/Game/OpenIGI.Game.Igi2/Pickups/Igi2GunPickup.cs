@@ -46,7 +46,7 @@ public interface IIgi2PickupTaker
 /// respawn.
 /// </para>
 /// </remarks>
-public sealed class Igi2GunPickup
+public sealed partial class Igi2GunPickup
 {
     /// <summary>The least a pickup reaches, <c>4096</c> units: a metre.</summary>
     public const float MinimumReach = 4096f;
@@ -82,6 +82,7 @@ public sealed class Igi2GunPickup
         ArgumentNullException.ThrowIfNull(orientation);
         Task = task;
         WeaponType = weaponType;
+        WeaponNumber = Math.Max(tables.WeaponTypes.ToList().IndexOf(weaponType), 0);
         Position = position;
         Orientation = [.. orientation];
         ModelRadius = modelRadius;
@@ -97,6 +98,9 @@ public sealed class Igi2GunPickup
 
     /// <summary>Gets the weapon it gives.</summary>
     public Igi2WeaponTypeTask WeaponType { get; }
+
+    /// <summary>Gets the weapon's place among the session's weapon types, <c>iWeaponID</c>.</summary>
+    public int WeaponNumber { get; }
 
     /// <summary>The weapon a thrown pickup of which lies flat as it was thrown, <c>WEAPON_ID_C4BOMB</c> (<c>zLine</c>, <c>igi2 0x6204C8</c>).</summary>
     public const string FlatWeaponId = "WEAPON_ID_C4BOMB";

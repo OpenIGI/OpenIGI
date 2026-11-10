@@ -14,7 +14,7 @@ public sealed partial class Igi2HumanAi
 
     /// <summary>Writes its save state.</summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Int(Flags);
@@ -42,7 +42,7 @@ public sealed partial class Igi2HumanAi
     /// found again by id; and a soldier that was patrolling with somewhere to go patrols again, its way there searched from its node.
     /// </summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         if (IsDetection)

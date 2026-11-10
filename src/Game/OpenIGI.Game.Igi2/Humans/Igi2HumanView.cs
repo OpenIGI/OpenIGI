@@ -381,7 +381,7 @@ public sealed class Igi2HumanView
     /// shake, its impact, its first-person model's angles and steps, its fields of view, its zoom, its translations, and its retraction.
     /// </summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Saves.Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Matrix3f o = Orientation;
@@ -424,7 +424,7 @@ public sealed class Igi2HumanView
 
     /// <summary>Reads its save state back; an override is put back only as the stationary gun that set it sets it again.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Saves.Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         reader.Bool();

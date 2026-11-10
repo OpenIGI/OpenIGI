@@ -8,7 +8,7 @@ public sealed partial class Igi2HumanSoldier
 {
     /// <summary>Writes the human part of its save state.</summary>
     /// <param name="writer">The writer.</param>
-    public void WriteSoldierState(Igi2StateWriter writer) => WriteHumanState(writer, new Igi2HumanSaveExtras
+    public void WriteSoldierState(StateWriter writer) => WriteHumanState(writer, new Igi2HumanSaveExtras
     {
         Difficulty = (int)Difficulty,
         WeaponHitProbability = WeaponHitProbability,
@@ -17,7 +17,7 @@ public sealed partial class Igi2HumanSoldier
 
     /// <summary>Reads the human part of its save state back.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadSoldierState(Igi2StateReader reader)
+    public void ReadSoldierState(StateReader reader)
     {
         Igi2HumanSaveExtras extras = ReadHumanState(reader);
         WeaponHitProbability = extras.WeaponHitProbability;

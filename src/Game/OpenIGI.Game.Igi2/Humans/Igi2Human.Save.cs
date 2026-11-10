@@ -65,7 +65,7 @@ public abstract partial class Igi2Human
     /// <summary>Writes the save state every human keeps, in its list's order.</summary>
     /// <param name="writer">The writer.</param>
     /// <param name="extras">The fields its kind keeps.</param>
-    protected void WriteHumanState(Igi2StateWriter writer, Igi2HumanSaveExtras extras)
+    protected void WriteHumanState(StateWriter writer, Igi2HumanSaveExtras extras)
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(extras);
@@ -169,7 +169,7 @@ public abstract partial class Igi2Human
     /// </summary>
     /// <param name="reader">The reader.</param>
     /// <returns>The fields its kind keeps.</returns>
-    protected Igi2HumanSaveExtras ReadHumanState(Igi2StateReader reader)
+    protected Igi2HumanSaveExtras ReadHumanState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = new();
@@ -283,10 +283,10 @@ public abstract partial class Igi2Human
     /// </summary>
     /// <param name="inventory">What it carries, if it carries anything.</param>
     /// <returns>The parts.</returns>
-    public IReadOnlyList<Igi2SerializedPart> SavedParts(Weapons.Igi2Inventory? inventory) =>
+    public IReadOnlyList<SavedPart> SavedParts(Weapons.Igi2Inventory? inventory) =>
         inventory is null
             ? [new("HumanView", new ViewState(View))]
-            : [new("Weapon", new InventoryState(inventory)), new("HumanView", new ViewState(View))];
+            : [new(Saves.Igi2SaveSlots.WeaponPart, new InventoryState(inventory)), new("HumanView", new ViewState(View))];
 
     private static float[] Rows(Matrix3f m) => [m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33];
 
@@ -305,17 +305,17 @@ public abstract partial class Igi2Human
         return bytes;
     }
 
-    private sealed class InventoryState(Weapons.Igi2Inventory inventory) : IIgi2Serialized
+    private sealed class InventoryState(Weapons.Igi2Inventory inventory) : ISavedState
     {
-        public void WriteState(Igi2StateWriter writer) => inventory.WriteState(writer);
+        public void WriteState(StateWriter writer) => inventory.WriteState(writer);
 
-        public void ReadState(Igi2StateReader reader) => inventory.ReadState(reader);
+        public void ReadState(StateReader reader) => inventory.ReadState(reader);
     }
 
-    private sealed class ViewState(Igi2HumanView view) : IIgi2Serialized
+    private sealed class ViewState(Igi2HumanView view) : ISavedState
     {
-        public void WriteState(Igi2StateWriter writer) => view.WriteState(writer);
+        public void WriteState(StateWriter writer) => view.WriteState(writer);
 
-        public void ReadState(Igi2StateReader reader) => view.ReadState(reader);
+        public void ReadState(StateReader reader) => view.ReadState(reader);
     }
 }

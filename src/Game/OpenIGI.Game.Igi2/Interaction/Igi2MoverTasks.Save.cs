@@ -9,10 +9,10 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// to and is at, where it is told to be, how far it has travelled, its nine flags, its pick time (written as a byte, as retail's
 /// boolean printer reads it), how long it has been open, and where it stood as the tick began.
 /// </content>
-public sealed partial class Igi2DoorTask : IIgi2Serialized
+public sealed partial class Igi2DoorTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, _position, _orientation);
@@ -41,7 +41,7 @@ public sealed partial class Igi2DoorTask : IIgi2Serialized
 
     /// <inheritdoc/>
     /// <remarks>The angles follow from how far open it is; it is put where that leaves it.</remarks>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);
@@ -69,17 +69,17 @@ public sealed partial class Igi2DoorTask : IIgi2Serialized
         SetPosition();
     }
 
-    private static byte Byte(Igi2StateReader reader) => reader.Bool() ? (byte)1 : (byte)0;
+    private static byte Byte(StateReader reader) => reader.Bool() ? (byte)1 : (byte)0;
 }
 
 /// <content>
 /// Its save state, <c>Lift_ptSerializeParameterList</c>: a model object's, then the floor it heads for, where its way starts and stops and where it stood, its frames as authored, at
 /// either end and as it stood, its speed and how far along it is, the ticks it has stood, its five flags and its floors.
 /// </content>
-public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
+public sealed partial class Igi2LiftTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, _position, _orientation);
@@ -105,7 +105,7 @@ public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
 
     /// <inheritdoc/>
     /// <remarks>It is put where it was along its way.</remarks>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);
@@ -137,10 +137,10 @@ public sealed partial class Igi2LiftTask : Saves.IIgi2Serialized
 /// Its save state, <c>Switch_ptSerializeParameterList</c>: whether it is on and was, is and was destroyed, is and was pressed, when it was last
 /// pressed, and whether it can be.
 /// </content>
-public sealed partial class Igi2SwitchTask : Saves.IIgi2Serialized
+public sealed partial class Igi2SwitchTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Bool(_isOn != 0);
@@ -154,7 +154,7 @@ public sealed partial class Igi2SwitchTask : Saves.IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         _isOn = reader.Bool() ? (byte)1 : (byte)0;

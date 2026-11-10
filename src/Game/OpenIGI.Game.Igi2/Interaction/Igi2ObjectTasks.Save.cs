@@ -6,13 +6,13 @@ namespace OpenIGI.Game.Igi2.Interaction;
 /// Its save state, <c>SCamera_ptSerializeParameterList</c>: a model object's, then whether it saw a dead friend, is on, sees and saw, how
 /// long it has seen, and whether it is destroyed. Its lens is its <c>SCameraLens</c> child in retail, a part here.
 /// </content>
-public sealed partial class Igi2SecurityCameraTask : IIgi2Serialized
+public sealed partial class Igi2SecurityCameraTask : ISavedState
 {
     /// <inheritdoc/>
-    public IReadOnlyList<Igi2SerializedPart> SerializedParts => [new("SCameraLens", new LensState(_lens))];
+    public IReadOnlyList<SavedPart> SavedParts => [new("SCameraLens", new LensState(_lens))];
 
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, _position, _holderFrame);
@@ -25,7 +25,7 @@ public sealed partial class Igi2SecurityCameraTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);
@@ -42,9 +42,9 @@ public sealed partial class Igi2SecurityCameraTask : IIgi2Serialized
     /// for, its delay and way round, its damage and limit, its side, how long it tracks, whether it explodes, and the timers and frame
     /// of its overlay, which the presentation keeps and are written as nought.
     /// </summary>
-    private sealed class LensState(Lens lens) : IIgi2Serialized
+    private sealed class LensState(Lens lens) : ISavedState
     {
-        public void WriteState(Igi2StateWriter writer)
+        public void WriteState(StateWriter writer)
         {
             Igi2ModelObjState.Write(writer, lens.Position, lens.Frame);
             writer.Real(lens.Alpha);
@@ -64,7 +64,7 @@ public sealed partial class Igi2SecurityCameraTask : IIgi2Serialized
             writer.Int(0);
         }
 
-        public void ReadState(Igi2StateReader reader)
+        public void ReadState(StateReader reader)
         {
             lens.Frame = Igi2ModelObjState.Read(reader).Orientation;
             lens.Alpha = reader.Real();
@@ -87,10 +87,10 @@ public sealed partial class Igi2SecurityCameraTask : IIgi2Serialized
 }
 
 /// <content>Its save state, <c>Wire_ptSerializeParameterList</c>: a model object's, then whether it is cut at and was.</content>
-public sealed partial class Igi2WireTask : IIgi2Serialized
+public sealed partial class Igi2WireTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, Position, _frame);
@@ -99,7 +99,7 @@ public sealed partial class Igi2WireTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);
@@ -112,10 +112,10 @@ public sealed partial class Igi2WireTask : IIgi2Serialized
 /// Its save state, <c>Cabinet_ptSerializeParameterList</c>: a model object's, then whether its drawer is opening or closing, whether it
 /// is searched at and was, when it last was, and whether it has been searched.
 /// </content>
-public sealed partial class Igi2CabinetTask : IIgi2Serialized
+public sealed partial class Igi2CabinetTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Igi2ModelObjState.Write(writer, Position, _frame);
@@ -128,7 +128,7 @@ public sealed partial class Igi2CabinetTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2ModelObjState.Read(reader);
@@ -142,10 +142,10 @@ public sealed partial class Igi2CabinetTask : IIgi2Serialized
 }
 
 /// <content>Its save state, <c>ConveyorBelt_ptSerializeParameterList</c>: the speeds it carries along its X and its Y.</content>
-public sealed partial class Igi2ConveyorBeltTask : IIgi2Serialized
+public sealed partial class Igi2ConveyorBeltTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Real(XSpeed);
@@ -153,7 +153,7 @@ public sealed partial class Igi2ConveyorBeltTask : IIgi2Serialized
     }
 
     /// <inheritdoc/>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         XSpeed = reader.Real();

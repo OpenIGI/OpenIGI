@@ -327,7 +327,7 @@ public sealed class Igi2Explosive
     /// exploding, its damage and its delay.
     /// </summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Saves.Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         Saves.Igi2ModelObjState.Write(writer, _parameters.Position, _frame);
@@ -339,7 +339,7 @@ public sealed class Igi2Explosive
 
     /// <summary>Reads its save state back; one that had exploded wears its destroyed model again (<c>ExplodeObject_DeSerializeHandler</c>).</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Saves.Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Saves.Igi2ModelObjState.Read(reader);

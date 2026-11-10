@@ -94,7 +94,7 @@ public sealed partial class Igi2AiSquad
 {
     /// <summary>Writes its save state.</summary>
     /// <param name="writer">The writer.</param>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Bool(IsDead);
@@ -119,7 +119,7 @@ public sealed partial class Igi2AiSquad
     /// the voices are free to play again, its events are dropped, and each saved action is put back by its kind with its state.
     /// </summary>
     /// <param name="reader">The reader.</param>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         while (_actions.Count > 0)

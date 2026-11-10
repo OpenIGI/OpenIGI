@@ -16,7 +16,7 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Writes the player's save state, a human's first.</summary>
     /// <param name="writer">The writer.</param>
-    public void WritePlayerState(Igi2StateWriter writer)
+    public void WritePlayerState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         WriteHumanState(writer, new Igi2HumanSaveExtras
@@ -113,7 +113,7 @@ public sealed partial class Igi2HumanPlayer
 
     /// <summary>Reads the player's save state back; its action state is entered afresh.</summary>
     /// <param name="reader">The reader.</param>
-    public void ReadPlayerState(Igi2StateReader reader)
+    public void ReadPlayerState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         Igi2HumanSaveExtras extras = ReadHumanState(reader);

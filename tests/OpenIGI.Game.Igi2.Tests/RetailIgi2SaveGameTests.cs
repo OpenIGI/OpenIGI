@@ -1,5 +1,6 @@
 using OpenIGI.Game.Igi2.Flow;
 using OpenIGI.Game.Igi2.Saves;
+using OpenIGI.Game.Saves;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -12,18 +13,18 @@ public sealed class RetailIgi2SaveGameTests
     [Fact]
     public void Floats_are_written_to_twenty_significant_figures()
     {
-        Assert.Equal("0.10000000149011611938", Igi2StateWriter.Format(0.1f));
-        Assert.Equal("0.5", Igi2StateWriter.Format(0.5f));
-        Assert.Equal("1024", Igi2StateWriter.Format(1024f));
-        Assert.Equal("9.9999997473787516356E-006", Igi2StateWriter.Format(1e-5f));
-        Assert.Equal("-3", Igi2StateWriter.Format(-3.0));
+        Assert.Equal("0.10000000149011611938", StateWriter.Format(0.1f));
+        Assert.Equal("0.5", StateWriter.Format(0.5f));
+        Assert.Equal("1024", StateWriter.Format(1024f));
+        Assert.Equal("9.9999997473787516356E-006", StateWriter.Format(1e-5f));
+        Assert.Equal("-3", StateWriter.Format(-3.0));
     }
 
     /// <summary>Raw bytes are written as words most significant byte first in memory order, then the bytes over, and read back.</summary>
     [Fact]
     public void Arrays_round_trip_as_retail_prints_them()
     {
-        Igi2StateWriter writer = new();
+        StateWriter writer = new();
         writer.Array((ReadOnlySpan<float>)[1f, -2.5f]);
         writer.Array((ReadOnlySpan<byte>)[1, 2, 3, 4, 5, 6]);
         Assert.Equal(", 2, 0, 0x0000803f, 0x000020c0, 1, 2, 0x01020304, 0x05, 0x06", writer.Arguments);
@@ -44,16 +45,16 @@ public sealed class RetailIgi2SaveGameTests
         }
 
         Engine.Tasks.GameTask root = played.Tree[0];
-        string? script = Igi2SaveGame.Create(root, new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, 11, played.Run.LevelFlow!.Tick));
+        string? script = SaveScript.Create(root, Saves.Igi2SaveFormat.Info(11, played.Run.LevelFlow!.Tick), Saves.Igi2SaveFormat.Context());
         Assert.NotNull(script);
         Assert.StartsWith($"SaveGameInfo(63, 11, {played.Run.LevelFlow.Tick});\r\nBreakScript();\r\n", script, StringComparison.Ordinal);
         Assert.Contains("DefineTaskState(", script, StringComparison.Ordinal);
-        Igi2SaveInfo header = Igi2SaveGame.Check(script);
+        SaveInfo header = SaveScript.Check(script, Saves.Igi2SaveFormat.Context());
         Assert.True(header.IsValid);
         Assert.Equal(11, header.MissionId);
 
         RetailIgi2Mission1 fresh = RetailIgi2Mission1.Load();
-        Igi2SaveGame.Load(script, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions);
+        SaveScript.Load(script, fresh.Tree[0], Saves.Igi2SaveFormat.Context());
         Assert.Equal(played.Run.LevelFlow.Tick, fresh.Run.LevelFlow!.Tick);
         Assert.Equal(played.Run.LevelFlow.TimeOfDayTick, fresh.Run.LevelFlow.TimeOfDayTick);
         Assert.Equal(
@@ -73,10 +74,10 @@ public sealed class RetailIgi2SaveGameTests
     public void Frames_are_written_as_their_angles()
     {
         float[] frame = EngineEuler.Rotation(0f, 0f, 1.5f);
-        Igi2StateWriter writer = new();
+        StateWriter writer = new();
         writer.Real9(frame);
         Assert.Equal(3, writer.Arguments.Split(", ", StringSplitOptions.RemoveEmptyEntries).Length);
-        Assert.EndsWith(Igi2StateWriter.Format(1.5f), writer.Arguments, StringComparison.Ordinal);
+        Assert.EndsWith(StateWriter.Format(1.5f), writer.Arguments, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -97,12 +98,12 @@ public sealed class RetailIgi2SaveGameTests
         before.SavesUsed = 2;
         before.FlashBangFlash = 3.25f;
 
-        string script = Igi2SaveGame.Create(played.Tree[0], new Igi2SaveInfo(Igi2SaveInfo.CurrentVersion, 11, 0))!;
+        string script = SaveScript.Create(played.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), Saves.Igi2SaveFormat.Context())!;
         Assert.Contains("\"HumanPlayer\"", script, StringComparison.Ordinal);
 
         RetailIgi2Mission1 fresh = RetailIgi2Mission1.Load();
         Player.Igi2HumanPlayer after = Attach(fresh);
-        Igi2SaveGame.Load(script, fresh.Tree[0], fresh.Run.Natives, fresh.Run.Functions);
+        SaveScript.Load(script, fresh.Tree[0], Saves.Igi2SaveFormat.Context());
         Weapons.Igi2Inventory loaded = after.Weapon.Inventory!;
         Assert.Equal(before.Position, after.Position);
         Assert.Equal(0.25f, after.View.Pitch);

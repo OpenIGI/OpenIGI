@@ -7,10 +7,10 @@ namespace OpenIGI.Game.Igi2.Paths;
 /// Its save state, <c>SplinePathGuideQTask_ptSerializeParameterList</c>: the path it follows, the object it moves, the segment it is on, its flags and how far
 /// along the segment it is.
 /// </content>
-public sealed partial class Igi2SplinePathGuideTask : IIgi2Serialized
+public sealed partial class Igi2SplinePathGuideTask : ISavedState
 {
     /// <inheritdoc/>
-    public void WriteState(Igi2StateWriter writer)
+    public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.Int(PathId);
@@ -22,7 +22,7 @@ public sealed partial class Igi2SplinePathGuideTask : IIgi2Serialized
 
     /// <inheritdoc/>
     /// <remarks>Its place along the path follows from the segment and how far along it.</remarks>
-    public void ReadState(Igi2StateReader reader)
+    public void ReadState(StateReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         PathId = reader.Int();

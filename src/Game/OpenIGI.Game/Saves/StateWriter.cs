@@ -2,54 +2,21 @@ using System.Globalization;
 using System.Text;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game.Igi2.Scripting;
 
-namespace OpenIGI.Game.Igi2.Saves;
-
-/// <summary>
-/// Something a save game keeps the state of, a task type with a serialize parameter list (<c>Serialize_eGetSerializeParameterListQTaskEvent</c>):
-/// it writes its fields in its list's order, its base type's first, and reads them back in the same order.
-/// </summary>
-public interface IIgi2Serialized
-{
-    /// <summary>Writes its state, <c>Serialize_WriteParameterList</c>.</summary>
-    /// <param name="writer">The writer.</param>
-    void WriteState(Igi2StateWriter writer);
-
-    /// <summary>Reads its state back, <c>Serialize_ParseParameterList</c>, then fixes itself up as its deserialize handler does.</summary>
-    /// <param name="reader">The reader.</param>
-    void ReadState(Igi2StateReader reader);
-
-    /// <summary>
-    /// Gets a value indicating whether it is written against its nearest ancestor that has a level id, rather than itself
-    /// (<c>Serialize_SaveQTaskTypeWithParent</c>, <c>isUseParentToSerialize</c>).
-    /// </summary>
-    bool IsSavedWithParent => false;
-
-    /// <summary>
-    /// Gets the parts of it that retail keeps as child tasks of their own, each with its type's name, written as those children are,
-    /// before it.
-    /// </summary>
-    IReadOnlyList<Igi2SerializedPart> SerializedParts => [];
-}
-
-/// <summary>A part of a task that retail keeps as a child task of its own type, with its own state, such as a camera's lens.</summary>
-/// <param name="TypeName">The child's type.</param>
-/// <param name="State">Its state.</param>
-public sealed record Igi2SerializedPart(string TypeName, IIgi2Serialized State);
+namespace OpenIGI.Game.Saves;
 
 /// <summary>
 /// Writes a task's fields as the save script's arguments, each as its parameter type prints it (<c>ParameterList_eQParameterPrintEvent</c>,
 /// level.c): integers in decimal, floats to twenty significant figures, booleans as <c>TRUE</c> or <c>FALSE</c>, strings quoted.
 /// </summary>
-public sealed class Igi2StateWriter
+public sealed class StateWriter
 {
     private readonly StringBuilder _text = new();
     private readonly Func<GameTask, string>? _taskReference;
 
-    /// <summary>Initializes a new instance of the <see cref="Igi2StateWriter"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="StateWriter"/> class.</summary>
     /// <param name="taskReference">How a task a field refers to is written: its hierarchy, or <c>-1</c>.</param>
-    public Igi2StateWriter(Func<GameTask, string>? taskReference = null) => _taskReference = taskReference;
+    public StateWriter(Func<GameTask, string>? taskReference = null) => _taskReference = taskReference;
 
     /// <summary>Gets the arguments written, each preceded by a comma and a space.</summary>
     public string Arguments => _text.ToString();
@@ -95,7 +62,7 @@ public sealed class Igi2StateWriter
     public void Real9(IReadOnlyList<float> value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        (float alpha, float beta, float gamma) = World.Igi2Pose.Angles(value);
+        (float alpha, float beta, float gamma) = EngineEuler.Angles(value);
         Real(alpha);
         Real(beta);
         Real(gamma);
@@ -191,7 +158,7 @@ public sealed class Igi2StateWriter
     /// <typeparam name="T">The items' type.</typeparam>
     /// <param name="items">The items.</param>
     /// <param name="write">Writes one item's fields.</param>
-    public void List<T>(IReadOnlyCollection<T> items, Action<Igi2StateWriter, T> write)
+    public void List<T>(IReadOnlyCollection<T> items, Action<StateWriter, T> write)
     {
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(write);
@@ -226,16 +193,16 @@ public sealed class Igi2StateWriter
 }
 
 /// <summary>Reads a task's fields back from the save script's arguments, in the order they were written.</summary>
-public sealed class Igi2StateReader
+public sealed class StateReader
 {
-    private readonly Igi2ScriptCall _call;
-    private readonly Func<Igi2StateReader, GameTask?>? _taskReference;
+    private readonly ISaveArguments _call;
+    private readonly Func<StateReader, GameTask?>? _taskReference;
 
-    /// <summary>Initializes a new instance of the <see cref="Igi2StateReader"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="StateReader"/> class.</summary>
     /// <param name="call">The <c>DefineTaskState</c> call.</param>
     /// <param name="next">The first argument of the task's fields.</param>
     /// <param name="taskReference">How a task reference is read back, from the reader's next arguments.</param>
-    public Igi2StateReader(Igi2ScriptCall call, int next, Func<Igi2StateReader, GameTask?>? taskReference = null)
+    public StateReader(ISaveArguments call, int next, Func<StateReader, GameTask?>? taskReference = null)
     {
         _call = call ?? throw new ArgumentNullException(nameof(call));
         Next = next;
@@ -258,7 +225,7 @@ public sealed class Igi2StateReader
 
     /// <summary>Reads a float.</summary>
     /// <returns>The value; nought past the end.</returns>
-    public float Real() => IsAtEnd ? Skip(0f) : _call.GetSingle(Next++);
+    public float Real() => IsAtEnd ? Skip(0f) : (float)_call.GetReal(Next++);
 
     /// <summary>Reads a double.</summary>
     /// <returns>The value; nought past the end.</returns>
@@ -293,7 +260,7 @@ public sealed class Igi2StateReader
     /// <returns>The value; empty past the end.</returns>
     public string Text() => IsAtEnd ? Skip(string.Empty) : _call.GetText(Next++);
 
-    /// <summary>Reads raw bytes written by <see cref="Igi2StateWriter.Array(ReadOnlySpan{byte})"/>.</summary>
+    /// <summary>Reads raw bytes written by <see cref="StateWriter.Array(ReadOnlySpan{byte})"/>.</summary>
     /// <returns>The bytes, as they lay in memory.</returns>
     public byte[] Array()
     {
@@ -363,11 +330,11 @@ public sealed class Igi2StateReader
         return _taskReference?.Invoke(this);
     }
 
-    /// <summary>Reads a list written by <see cref="Igi2StateWriter.List{T}"/>.</summary>
+    /// <summary>Reads a list written by <see cref="StateWriter.List{T}"/>.</summary>
     /// <typeparam name="T">The items' type.</typeparam>
     /// <param name="read">Reads one item's fields.</param>
     /// <returns>The items.</returns>
-    public List<T> List<T>(Func<Igi2StateReader, T> read)
+    public List<T> List<T>(Func<StateReader, T> read)
     {
         ArgumentNullException.ThrowIfNull(read);
         int count = Int();
