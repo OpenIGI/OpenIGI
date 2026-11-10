@@ -362,7 +362,7 @@ public sealed partial class SoldierSimulation : IHumanEvents
         _sight.SightTraceForTesting = sight;
         _context.ClearBrains();
         _rounds.Clear();
-        _damage.ClearPendingDeaths();
+        _damage.ClearForLevel();
         _generators.GuardGenerators.Clear();
         _generators.GuardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
         ScriptVariables = variables;
@@ -720,7 +720,12 @@ public sealed partial class SoldierSimulation : IHumanEvents
     private void PlayClipEvents(SoldierView view, Igi1HumanAi brain, BoneClip bone0)
     {
         // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
-        // event 1040 plays "bodyfall_9", etc.
+        // event 1040 plays "bodyfall_9", etc. None for a soldier a mod has silenced (SilentDeaths).
+        if (SilentDeaths.Count > 0 && SilentDeaths.Contains(view))
+        {
+            return;
+        }
+
         if (AnimationTriggers is not null)
         {
             foreach (AnimTriggerDefinition trigger in AnimationTriggers.Definitions.Values)

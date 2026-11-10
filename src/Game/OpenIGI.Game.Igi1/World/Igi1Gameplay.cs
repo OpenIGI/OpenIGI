@@ -114,14 +114,18 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     public void ResetToLevelStart()
     {
         World.ResetToLevelStart();
+        World.OfferedPrompt = null;
         foreach (Player.PlayerCamera rig in Rigs())
         {
             rig.Grenades.Clear();
             rig.Missiles.Clear();
             rig.M203.Clear();
             rig.Marks.Clear();
+            rig.ControlTaken = false;
         }
 
+        // A round starts with the player's own eye and controls, whatever a mod had taken in the last one.
+        World.ViewTakeover = null;
         World.ShownProjectiles.Clear();
         World.VehicleMissiles.Clear();
         Impacts.Runtime.Clear();

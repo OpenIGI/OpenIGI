@@ -128,6 +128,38 @@ public sealed class MissionWorld : MissionState
     /// <summary>Gets or sets what a co-op server does once a partner has run its tick: shows where its rounds landed.</summary>
     public Action<Multiplayer.Igi1NetworkPlayer>? PartnerRan { get; set; }
 
+    /// <summary>
+    /// Gets what mods run on each tick the player updates, just before the update: the place for a move of a mod's own to
+    /// advance, with the player's controls still to be read. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    /// <remarks>Not run on a tick the player does not update: dead, in a cutscene, at the map computer.</remarks>
+    public List<Action> BeforePlayerUpdate { get; } = [];
+
+    /// <summary>
+    /// Gets what mods run at the end of every tick, once the level walk is done, whether the player updated or not. Empty
+    /// unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    /// <remarks>
+    /// Not the <c>LevelTicked</c> event: an event's subscribers only read, and the game plays the same without them, where
+    /// what runs here may change the level, such as giving the player his controls back.
+    /// </remarks>
+    public List<Action> TickEnded { get; } = [];
+
+    /// <summary>
+    /// Gets where mods offer the player a prompt: each is asked on every tick the player updates, and the first to offer one
+    /// is shown, when the game has none of its own there. Empty unless a mod adds to it. <b>Not retail.</b>
+    /// </summary>
+    public List<Func<PromptOffer?>> PromptOffers { get; } = [];
+
+    /// <summary>Gets or sets the prompt a mod offers this tick, the one drawn; <see langword="null"/> for none.</summary>
+    public PromptOffer? OfferedPrompt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the player's view as a mod has taken it, or <see langword="null"/> while the player's own eye has it.
+    /// <b>Not retail.</b>
+    /// </summary>
+    public ViewTakeover? ViewTakeover { get; set; }
+
     /// <summary>Gets or sets a value indicating whether a co-op session's partners have run this tick.</summary>
     public bool PartnersTicked { get; set; }
 

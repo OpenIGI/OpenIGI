@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game;
@@ -16,7 +17,8 @@ namespace OpenIGI.Presentation.Igi1;
 /// orbit around a climbing or interacting body, and the remaster's move over the shoulder.
 /// </summary>
 /// <param name="gameplay">The first game's mission, whose player it looks through.</param>
-internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
+/// <param name="logger">Where a view takeover that fails is reported.</param>
+internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay, IOpenIgiLogger logger) : IMissionViewpoint
 {
     private readonly ThirdPersonCamera _thirdPerson = new();
     private Igi1HumanCamera _death = new();
@@ -57,7 +59,7 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool IsInteractionViewActive => _interaction.IsActive;
 
     /// <inheritdoc/>
-    public bool ShowsViewModel => _thirdPerson.ShowsViewModel && !_following;
+    public bool ShowsViewModel => _thirdPerson.ShowsViewModel && !_following && gameplay.World.ViewTakeover is not { HidesViewModel: true };
 
     /// <inheritdoc/>
     public bool ShowsBody => _thirdPerson.ShowsBody && !_following;
@@ -127,7 +129,8 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public bool HasPlayerHud => gameplay.World.Player is { View: not null, IsMountedStationaryGun: false };
 
     /// <inheritdoc/>
-    public bool HasFirstPersonHud => gameplay.World.Player is { IsOnLadder: false, IsInWorldInteraction: false };
+    public bool HasFirstPersonHud => gameplay.World.Player is { IsOnLadder: false, IsInWorldInteraction: false }
+        && gameplay.World.ViewTakeover is not { HidesHud: true };
 
     /// <inheritdoc/>
     public SightZoomFrame? SightZoom(float tickBlend) => gameplay.World.Player?.SmoothedSightZoom(tickBlend);
@@ -136,7 +139,11 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
     public float BinocularZoomIn(float tanX) => gameplay.World.Player?.BinocularZoomInFraction(tanX) ?? 0f;
 
     /// <inheritdoc/>
-    public InteractionPromptTarget? InteractionPrompt(float tickBlend) => gameplay.World.Player?.InteractionPrompt(tickBlend);
+    public InteractionPromptTarget? InteractionPrompt(float tickBlend) =>
+        gameplay.World.Player?.InteractionPrompt(tickBlend)
+        ?? (gameplay.World.OfferedPrompt is { } offer
+            ? new InteractionPromptTarget(-1, InteractionActivateType.None, null, offer.AnchorUnits, 0, false, false, null) { Title = offer.Title }
+            : null);
 
     /// <inheritdoc/>
     public Camera3D? WalkingEye(bool smooth, float tickBlend)
@@ -257,6 +264,23 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
             eye = mission.Player.SmoothedCamera(frame.TickBlend);
         }
 
+        // A mod has taken the view (MissionWorld.ViewTakeover): its eye, whatever else would have had it, with no
+        // over-the-shoulder view and no aim taken from it. An eye that throws loses the view, and the player's own has it.
+        // Not retail.
+        if (frame.PlayerMode && !mission.IsPlayerDead && TakenEye(mission, frame.Smooth ? frame.TickBlend : 1f, logger) is { } eyeTaken)
+        {
+            eye = eyeTaken;
+            bodyEye = eye;
+            _thirdPerson.Reset();
+            _thirdPersonMilliseconds = frame.NowMilliseconds;
+            if (mission.Player is not null)
+            {
+                mission.Player.AimConvergenceRay = null;
+            }
+
+            return eye;
+        }
+
         // The body's own eye, before the over-the-shoulder view moves the camera off it: the
         // flashlight hangs off the body, wherever the camera is.
         bodyEye = eye;
@@ -349,5 +373,26 @@ internal sealed class Igi1Viewpoint(Igi1Gameplay gameplay) : IMissionViewpoint
                 drawn.Position.Y * WorldScene.UnitsPerMetre,
                 drawn.Position.Z * WorldScene.UnitsPerMetre),
             drawn.Orientation.Row3);
+    }
+
+    /// <summary>Gets the eye a mod has taken the view with (<see cref="MissionWorld.ViewTakeover"/>), or <see langword="null"/> while none has.</summary>
+    /// <param name="mission">The mission.</param>
+    /// <param name="blend">How far between the last two ticks the frame is drawn.</param>
+    /// <param name="logger">Where an eye that throws is reported.</param>
+    /// <returns>The eye; <see langword="null"/> when none has the view, or when its eye threw, which loses it the view.</returns>
+    internal static Camera3D? TakenEye(MissionWorld mission, float blend, IOpenIgiLogger logger)
+    {
+        if (mission.ViewTakeover is not { } taken)
+        {
+            return null;
+        }
+
+        if (Contained.Run(logger, "Mods", "A view takeover's eye", (taken.Eye, Blend: blend), static t => t.Eye(t.Blend), out Camera3D eye))
+        {
+            return eye;
+        }
+
+        mission.ViewTakeover = null;
+        return null;
     }
 }

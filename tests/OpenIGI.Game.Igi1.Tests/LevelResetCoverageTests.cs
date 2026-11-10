@@ -57,6 +57,8 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionWorld.MineFields)] = "MissionWorld.LevelParts: their waits",
         [nameof(MissionWorld.ShownProjectiles)] = "cleared by Igi1Gameplay.ResetToLevelStart",
         [nameof(MissionWorld.VehicleMissiles)] = "cleared by Igi1Gameplay.ResetToLevelStart",
+        [nameof(MissionWorld.ViewTakeover)] = "cleared by Igi1Gameplay.ResetToLevelStart, with each player's ControlTaken",
+        [nameof(MissionWorld.OfferedPrompt)] = "asked for again on every tick the player updates",
 
         // Held still in an arena, so a round finds them as the last did.
         [nameof(MissionState.Cutscenes)] = "held in an arena (CutsceneRuntime.Held)",

@@ -268,6 +268,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
     private void EndTick()
     {
+        RunModsAtTickEnd();
+
         // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
         // fixed tick, for the same determinism reason the bodies are.
         mission.DamageFlash.Tick();
@@ -449,6 +451,12 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             return;
         }
 
+        // A mod's prompt lasts the tick it is offered on: dead, in a cutscene or at the map computer, there is none.
+        if (!mission.PlayerTicked)
+        {
+            mission.OfferedPrompt = null;
+        }
+
         if (mission.PlayerTicked
             || mission.Cutscenes?.IsPlaying == true
             || !host.PlayerMode
@@ -475,6 +483,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
         else
         {
+            RunModsBeforePlayer(player);
             player.Tick(host.ViewInput, host.Ground);
 
             // PlayerCamera advances its interaction registry before it resolves this tick's activate target.

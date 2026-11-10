@@ -70,6 +70,11 @@ public static class InteractionPromptPresentation
     /// </remarks>
     public static string Title(in InteractionPromptTarget target)
     {
+        if (target.Title is { } own)
+        {
+            return own;
+        }
+
         if (target.Type == InteractionActivateType.Door)
         {
             return target.Locked ? "Pick Lock" : target.DoorOpen ? "Close Door" : "Open Door";
