@@ -207,6 +207,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 if (group.Soldiers.Find(candidate => ReferenceEquals(candidate.Agent, agent)) is { } corpse)
                 {
                     group.Soldiers.Remove(corpse);
+                    DropStyledBody(corpse);
                     if (corpse.Mesh.IsValid)
                     {
                         _device.DestroyMesh(corpse.Mesh);
@@ -240,6 +241,11 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             if (fall.DroppedWeapon)
             {
                 member.Weapon = null;
+            }
+
+            if (member.Styled is { } styled)
+            {
+                RunStyled(_logger, member, "A mod's soldier body's Fell", (styled, fall), static fell => fell.styled.Fell(fell.fall));
             }
         };
     }
@@ -630,6 +636,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _frames.BeginFrame(tickFraction, smooth);
+        FrameStyledBodies(tickFraction, smooth);
 
         // The player's own body is not in _groups, so it resolves here rather than in the loop -- and it
         // has to resolve HERE rather than inside its draw, because its draw now runs once per shadow
@@ -817,6 +824,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 }
 
                 SoldierLevelOfDetail.Drop(_device, member);
+                DropStyledBody(member);
             }
         }
 
@@ -924,6 +932,7 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
             {
                 BonePose drawn = SoldierFrameInterpolator.PoseToDraw(member);
                 member.DrawnPose = drawn;
+                TickStyledBody(group, member);
 
                 // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
                 // upload to settle both interpolation streams, then no more skinning or driver traffic.

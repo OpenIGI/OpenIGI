@@ -286,6 +286,26 @@ public sealed class RagdollHumanTests
         return BonePose.Evaluate(skeleton, locals);
     }
 
+    /// <summary>A rig measured from no points is the rig guessed without a model; a point on a bone the skeleton lacks is skipped.</summary>
+    [RequiresGameDataFact]
+    public void AMeasuredRigSkipsPointsOnBonesItHasNot()
+    {
+        (BoneAnimationSet set, _) = Soldier();
+        RagdollLimits limits = RagdollLimits.Measure(set);
+        RagdollSkeleton guessed = RagdollSkeleton.Build(set.Skeleton, limits);
+
+        RagdollSkeleton unmeasured = RagdollSkeleton.BuildMeasured(set.Skeleton, [], limits);
+        RagdollSkeleton strays = RagdollSkeleton.BuildMeasured(
+            set.Skeleton, [(-1, new Vector3f(1f, 2f, 3f)), (set.Skeleton.BoneCount, new Vector3f(4f, 5f, 6f))], limits);
+
+        Assert.Equal(guessed.BodyCount, unmeasured.BodyCount);
+        for (int body = 0; body < guessed.BodyCount; body++)
+        {
+            Assert.Equal(guessed.BodyAt(body).Radius, unmeasured.BodyAt(body).Radius);
+            Assert.Equal(guessed.BodyAt(body).Radius, strays.BodyAt(body).Radius);
+        }
+    }
+
     private static (BoneAnimationSet Set, MefModel Model) Soldier()
     {
         BoneAnimationSet set = BoneAnimationSet.Read(File.ReadAllBytes(

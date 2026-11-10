@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi1.Ai;
@@ -186,7 +187,9 @@ internal sealed class SoldierMeshBuilder(
             }
         }
 
-        HeldWeapon held = new(geometry, mesh, instance, pack, presentation);
+        float metre = (float)(1.0 / WorldScene.UnitsPerMetre);
+        Vector3f? magicMuzzle = model.TryGetMagicVertex(2, out Vector3f vertex) ? new Vector3f(vertex.X * metre, vertex.Y * metre, vertex.Z * metre) : null;
+        HeldWeapon held = new(geometry, mesh, instance, pack, presentation, magicMuzzle);
         _weapons.Add(held);
         return held;
     }

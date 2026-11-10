@@ -1032,7 +1032,9 @@ public sealed partial class SoldierSimulation : IHumanEvents
             brain.RideMountedGun();
         }
 
-        bool fired = _fire.FireIfAsked(view, brain, aimFeet, aimCrouching);
+        // A soldier who let go of his gun (DropGun) has none of his own to fire.
+        bool fired = (brain.MountedGun is not null || !_damage.LetGoOfGun.Contains(view))
+            && _fire.FireIfAsked(view, brain, aimFeet, aimCrouching);
         if (fired)
         {
             brain.TakeWeaponKick(_fire.KickThisTick.Pitch, _fire.KickThisTick.Yaw);
