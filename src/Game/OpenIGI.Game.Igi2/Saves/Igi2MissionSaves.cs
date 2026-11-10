@@ -50,6 +50,13 @@ public sealed class Igi2MissionSaves : MissionSaves
         set => _level.Pickups = value;
     }
 
+    /// <summary>Gets or sets what answers for the mines laid in the level, which a save keeps and a load makes again.</summary>
+    public Func<Igi2LevelMines?> Mines
+    {
+        get => _level.Mines;
+        set => _level.Mines = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
     /// <summary>
     /// A slot as the computer's save screen names it (<c>ComputerSaveMenu_NewSaveSlot</c>): its mission time, <c>Mission Time: h:mm:ss</c>
     /// (<c>Game_GetSaveGameInfoString</c>), and when it was written, <c>(date time)</c> (<c>Game_GetSaveGameTimeDateString</c>); an
@@ -99,6 +106,8 @@ public sealed class Igi2MissionSaves : MissionSaves
 
         public Pickups.Igi2PickupList? Pickups { get; set; }
 
+        public Func<Igi2LevelMines?> Mines { get; set; } = static () => null;
+
         public GameTask Root => level.Root;
 
         public int MissionTime => player.MissionTime;
@@ -115,10 +124,14 @@ public sealed class Igi2MissionSaves : MissionSaves
             set => player.GameLoads = value;
         }
 
-        // Its tasks, its dropped weapons and its glass.
-        public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root);
+        // Its tasks, its dropped weapons, its mines and its glass.
+        public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines());
 
-        // Game_LoadFromSlot: every pickup in the level is deleted, and the load makes again each the save holds.
-        public void BeforeLoad() => Pickups?.DeleteAll();
+        // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds.
+        public void BeforeLoad()
+        {
+            Mines()?.DeleteAll();
+            Pickups?.DeleteAll();
+        }
     }
 }

@@ -7,6 +7,13 @@ namespace OpenIGI.Game.Igi2.Pickups;
 public sealed partial class Igi2GenericPickupTask : ISavedState
 {
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>GenericPickup_GetSerializeInfoHandler</c>: written against the nearest task above it with a level id, as retail's saves
+    /// have it (<c>Container/GenericPickup</c>, <c>Building/GenericPickup</c>).
+    /// </remarks>
+    public bool IsSavedWithParent => true;
+
+    /// <inheritdoc/>
     public void WriteState(StateWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);

@@ -9,7 +9,8 @@ namespace OpenIGI.Game.Igi2.Saves;
 /// </summary>
 /// <param name="pickups">The level's pickups, or <see langword="null"/> for a level without them.</param>
 /// <param name="dynamic">The level's <c>Dynamic</c> task, <c>Level_ptDynamicQTask</c>, beneath which the game makes a dropped weapon.</param>
-public sealed class Igi2SaveStates(Igi2PickupList? pickups, GameTask? dynamic) : ISaveStates
+/// <param name="mines">The mines laid in the level, or <see langword="null"/>.</param>
+public sealed class Igi2SaveStates(Igi2PickupList? pickups, GameTask? dynamic, Player.Igi2LevelMines? mines = null) : ISaveStates
 {
     /// <summary>The level's <c>Dynamic</c> task: the last made (<c>Level_DynamicCreateHandler</c>).</summary>
     /// <param name="root">A task of the level.</param>
@@ -30,13 +31,22 @@ public sealed class Igi2SaveStates(Igi2PickupList? pickups, GameTask? dynamic) :
     public IReadOnlyList<SavedPart> PartsOf(GameTask task)
     {
         IReadOnlyList<SavedPart> own = (task as ISavedState)?.SavedParts ?? [];
-        if (pickups is null)
-        {
-            return own;
-        }
-
         bool isDynamic = ReferenceEquals(task, dynamic);
         List<SavedPart>? all = null;
+        if (isDynamic && mines is not null)
+        {
+            // The mines laid, each a child of the level's Dynamic task in the original.
+            foreach (Weapons.Igi2Mine mine in mines.Laid)
+            {
+                (all ??= [.. own]).Add(new SavedPart(Weapons.Igi2Mine.TypeName, mine));
+            }
+        }
+
+        if (pickups is null)
+        {
+            return all ?? own;
+        }
+
         foreach (Igi2GunPickup pickup in pickups.Items)
         {
             if (pickup.Task is null && (pickup.Holder is { } holder ? ReferenceEquals(holder, task) : isDynamic))
@@ -56,7 +66,19 @@ public sealed class Igi2SaveStates(Igi2PickupList? pickups, GameTask? dynamic) :
     public ISavedState? Recreate(GameTask parent, string typeName, int id) =>
         pickups is not null && typeName == Igi2GunPickup.TypeName
             ? new MadeGunPickup(pickups, ReferenceEquals(parent, dynamic) ? null : parent, id)
-            : null;
+            : mines is not null && pickups?.Tables is { } tables && typeName == Weapons.Igi2Mine.TypeName
+                ? new MadeMine(mines, tables)
+                : null;
+
+    // A mine to be made once its state is read: whether it is a remote one is among its fields.
+    private sealed class MadeMine(Player.Igi2LevelMines mines, Weapons.Igi2WeaponTables tables) : ISavedState
+    {
+        public void WriteState(StateWriter writer)
+        {
+        }
+
+        public void ReadState(StateReader reader) => mines.Recreate(Weapons.Igi2Mine.Saved.Read(reader), tables);
+    }
 
     // A pickup to be made once its state is read: the weapon it gives is among its fields.
     private sealed class MadeGunPickup(Igi2PickupList pickups, GameTask? holder, int id) : ISavedState

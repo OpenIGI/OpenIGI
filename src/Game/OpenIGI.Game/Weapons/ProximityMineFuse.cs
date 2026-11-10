@@ -79,6 +79,19 @@ public sealed class ProximityMineFuse<TFpu>
 
     private bool _armed;
 
+    /// <summary>Puts the fuse back as a save game kept it.</summary>
+    /// <param name="armTicks">The ticks before it arms.</param>
+    /// <param name="countdownTicks">The ticks before it explodes, once set off.</param>
+    /// <param name="armed">Whether it is armed.</param>
+    /// <param name="triggered">Whether it has been set off.</param>
+    public void Restore(int armTicks, int countdownTicks, bool armed, bool triggered)
+    {
+        ArmTicks = armTicks;
+        CountdownTicks = countdownTicks;
+        _armed = armed;
+        IsTriggered = triggered;
+    }
+
     /// <summary>Passes through a save how far the fuse has run: its two counts, and whether it is armed, near someone and set off.</summary>
     /// <param name="exchange">The exchange.</param>
     public void Exchange(Saves.StateExchange exchange)

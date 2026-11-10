@@ -75,7 +75,7 @@ public interface IIgi2MineWorld
 /// task (<c>Mine_New</c>) that arms after its time, then, the first time a human comes within its radius in front of it, counts down
 /// and explodes; a bullet or a blast can set it off sooner. Once exploded it goes.
 /// </summary>
-public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplosionTarget, IIgi2Notified
+public sealed partial class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2WeaponHitTarget, IIgi2ExplosionTarget, IIgi2Notified
 {
     /// <summary>The script name of the type, <c>Mine</c>.</summary>
     public const string TypeName = "Mine";
@@ -210,6 +210,11 @@ public sealed class Igi2Mine : IDynamicTask, IIgi2ExplosiveParameters, IIgi2Weap
     /// <returns><see langword="false"/> once it has gone.</returns>
     public bool Run()
     {
+        if (IsDeleted)
+        {
+            return false;
+        }
+
         _explosive.Run(null);
         ProximityMineStep step = _fuse.Run();
         if (step.ArmedNow)

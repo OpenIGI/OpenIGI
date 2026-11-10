@@ -129,13 +129,14 @@ public sealed partial class Igi2HumanPlayer
 
         uint actionFlags = unchecked((uint)reader.Int());
         reader.Int();
-        reader.Int();
+        int previousAction = reader.Int();
         reader.Int();
         int action = reader.Int();
         reader.Array();
         if (action >= 0 && action < Action.StateCount)
         {
             Action.Enter(action, this);
+            Action.RestorePreviousState(previousAction);
         }
 
         Action.Flags = actionFlags;

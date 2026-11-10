@@ -248,7 +248,7 @@ public abstract partial class Igi2Human
 
         uint flags = unchecked((uint)reader.Int());
         reader.Int();
-        reader.Int();
+        int previous = reader.Int();
         reader.Int();
         int state = reader.Int();
         reader.Array();
@@ -270,7 +270,12 @@ public abstract partial class Igi2Human
 
         if (state >= 0 && state < Locomotion.StateCount)
         {
+            // Entering the state sets its running up; what the save held of the body's flags and of the state before is what
+            // retail's own load leaves, so they are put back over what the entry set.
+            var kept = (IsLockOrientation, IsDisableDeltaTranslation, IsRotateUpperBody, IsDisableCollision, IsGroundCollision, IsObjectCollision, IsHumanCollision);
             Locomotion.Enter(state, this);
+            Locomotion.RestorePreviousState(previous);
+            (IsLockOrientation, IsDisableDeltaTranslation, IsRotateUpperBody, IsDisableCollision, IsGroundCollision, IsObjectCollision, IsHumanCollision) = kept;
         }
 
         Locomotion.Flags = flags;

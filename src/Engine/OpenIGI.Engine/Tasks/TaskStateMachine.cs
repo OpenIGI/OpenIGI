@@ -96,6 +96,10 @@ public sealed class TaskStateMachine
     /// <remarks><see cref="NoState"/> until the state first changes, as the original's <c>-1</c>.</remarks>
     public int PreviousState { get; private set; }
 
+    /// <summary>Puts back the state the machine was in before this one, as a save game kept it: entering a state afresh forgets it.</summary>
+    /// <param name="state">The state, or <see cref="NoState"/>.</param>
+    public void RestorePreviousState(int state) => PreviousState = state;
+
     /// <summary>Gets the current state.</summary>
     public int CurrentState { get; private set; }
 

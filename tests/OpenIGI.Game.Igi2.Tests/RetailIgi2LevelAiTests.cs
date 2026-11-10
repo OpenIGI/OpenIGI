@@ -407,6 +407,12 @@ public sealed class RetailIgi2LevelAiTests
         Assert.Equal(lying, pickups.Items.Count);
         Assert.Equal(Lines(script), Lines(SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), context)!));
 
+        if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } dump)
+        {
+            File.WriteAllText(dump + ".a", script);
+            File.WriteAllText(dump + ".b", SaveScript.Create(m.Tree[0], Saves.Igi2SaveFormat.Info(11, 0), context)!);
+        }
+
         // A retail save made later in the mission holds the weapons its dead dropped, beneath Dynamic: they are made too.
         byte[] retail = File.ReadAllBytes(later);
         pickups.DeleteAll();

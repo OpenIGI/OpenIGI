@@ -344,9 +344,21 @@ public sealed class Igi2Explosive
         ArgumentNullException.ThrowIfNull(reader);
         Saves.Igi2ModelObjState.Read(reader);
         bool exploded = reader.Bool();
-        _isExplode = reader.Bool() ? (byte)1 : (byte)0;
-        _damage = reader.Real();
-        _delay = reader.Int();
+        bool explode = reader.Bool();
+        float damage = reader.Real();
+        Restore(exploded, explode, damage, reader.Int());
+    }
+
+    /// <summary>Puts back what a save game kept of it: whether it has exploded or is to, its damage and its delay.</summary>
+    /// <param name="exploded">Whether it has exploded.</param>
+    /// <param name="explode">Whether it is to explode.</param>
+    /// <param name="damage">The damage it has taken.</param>
+    /// <param name="delay">Its explosion's delay, in ticks.</param>
+    public void Restore(bool exploded, bool explode, float damage, int delay)
+    {
+        _isExplode = explode ? (byte)1 : (byte)0;
+        _damage = damage;
+        _delay = delay;
         if (exploded)
         {
             SetExploded();

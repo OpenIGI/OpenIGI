@@ -301,6 +301,7 @@ public sealed partial class Igi2Gameplay : ITitleGameplay
         {
             Glass = player.Glass,
             Pickups = player.Human.Pickups,
+            Mines = () => player.Mines,
             PlayedMods = request.Services.TryGet(out Engine.Titles.PlayedMods? played) ? played.Mods : [],
         };
         if (PlayerSpawn.FindGameplayTask(request.World.LevelRoot) is Igi2HumanPlayerTask task)

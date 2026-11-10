@@ -15,12 +15,17 @@ public static class Igi2SaveFormat
     /// <param name="glass">The level's panes of glass, written after the tasks and put back by a load, or <see langword="null"/>.</param>
     /// <param name="pickups">The level's pickups, whose dropped weapons are kept beside the tasks', or <see langword="null"/>.</param>
     /// <param name="root">A task of the level, by which its <c>Dynamic</c> task is found; needed with <paramref name="pickups"/>.</param>
+    /// <param name="mines">The mines laid in the level, kept beneath its <c>Dynamic</c> task, or <see langword="null"/>.</param>
     /// <returns>The context.</returns>
-    public static SaveContext Context(Igi2GlassContainer? glass = null, Pickups.Igi2PickupList? pickups = null, Engine.Tasks.GameTask? root = null) =>
+    public static SaveContext Context(
+        Igi2GlassContainer? glass = null,
+        Pickups.Igi2PickupList? pickups = null,
+        Engine.Tasks.GameTask? root = null,
+        Player.Igi2LevelMines? mines = null) =>
         new()
         {
             Version = Version,
-            States = new Igi2SaveStates(pickups, root is null ? null : Igi2SaveStates.DynamicOf(root)),
+            States = new Igi2SaveStates(pickups, root is null ? null : Igi2SaveStates.DynamicOf(root), mines),
             Sections = glass is null ? [] : [new GlassSection(glass)],
         };
 
