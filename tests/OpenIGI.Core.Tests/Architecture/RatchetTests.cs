@@ -92,6 +92,42 @@ public sealed class RatchetTests
             (file, text) => helper.Matches(text).Select(m => $"{file}: {m.Groups[1].Value}").Distinct(StringComparer.Ordinal)));
     }
 
+    /// <summary>A task runs itself: nothing binds work to another task's node in the level's run.</summary>
+    /// <remarks>
+    /// The original gives every type its own run handler. Work bound to a node from outside is how a registry stands in for a
+    /// task class that was never written; each file here is one to replace with the class.
+    /// </remarks>
+    [Fact]
+    public void Level_run_binds()
+    {
+        Regex bind = new(@"\b_?(?:walker|walk|level)\.Bind\(", RegexOptions.CultureInvariant);
+        Check("level-run-binds", Scan(IsGameplay, (file, text) => bind.IsMatch(text) ? [file] : []));
+    }
+
+    /// <summary>A task is told apart by its class, not by the spelling of its type's name.</summary>
+    [Fact]
+    public void Task_type_name_tests()
+    {
+        Regex test = new(
+            @"Type\.Name\s+(?:is|==|!=|switch)\b|switch\s*\(\s*[\w.]*Type\.Name\s*\)|Type\.Name\.(?:Equals|StartsWith)\(",
+            RegexOptions.CultureInvariant);
+        Check("task-type-name-tests", Scan(IsGameplay, (file, text) => test.IsMatch(text) ? [file] : []));
+    }
+
+    /// <summary>Gameplay reads a level's task through its class, not through the placeholder a type without one is given.</summary>
+    [Fact]
+    public void Declared_task_readers()
+    {
+        Regex declared = new(@"\bDeclaredTask\b", RegexOptions.CultureInvariant);
+        Check("declared-task-readers", Scan(IsGameplay, (file, text) => declared.IsMatch(text) ? [file] : []));
+    }
+
+    // The projects that hold the games and what shows them; the engine, which defines the task model, is not one.
+    private static bool IsGameplay(ProjectInfo project) =>
+        project.Name.StartsWith("OpenIGI.Game", StringComparison.Ordinal)
+        || project.Name.StartsWith("OpenIGI.Presentation", StringComparison.Ordinal)
+        || project.Name == "OpenIGI.Host";
+
     private static List<string> Scan(Func<ProjectInfo, bool> projects, Func<string, string, IEnumerable<string>> rule)
     {
         List<string> findings = [];

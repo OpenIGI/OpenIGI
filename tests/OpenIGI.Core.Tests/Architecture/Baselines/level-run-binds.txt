@@ -1,0 +1,17 @@
+src/Game/OpenIGI.Game.Igi1/Ai/AiAlarmControlRegistry.cs
+src/Game/OpenIGI.Game.Igi1/Ai/SoldierSimulation.cs
+src/Game/OpenIGI.Game.Igi1/World/AmbientAreaRegistry.cs
+src/Game/OpenIGI.Game.Igi1/World/Igi1MissionTick.cs
+src/Game/OpenIGI.Game.Igi2/Systems/Igi2FlowSystems.cs
+src/Game/OpenIGI.Game.Igi2/Systems/Igi2HostedLevel.cs
+src/Game/OpenIGI.Game/Ai/SecurityCameraRegistry.cs
+src/Game/OpenIGI.Game/World/CutsceneCarAi.cs
+src/Game/OpenIGI.Game/World/CutsceneRuntime.GunHolders.cs
+src/Game/OpenIGI.Game/World/CutsceneRuntime.cs
+src/Game/OpenIGI.Game/World/DoorRegistry.cs
+src/Game/OpenIGI.Game/World/MissionAreaActivation.cs
+src/Game/OpenIGI.Game/World/MissionObjectiveRuntime.cs
+src/Game/OpenIGI.Game/World/MissionStatusMessages.cs
+src/Game/OpenIGI.Game/World/RotatingObjectRegistry.cs
+src/Game/OpenIGI.Game/World/TakenPickupTask.cs
+src/Game/OpenIGI.Game/World/WorldInteractionRegistry.cs
