@@ -35,14 +35,14 @@ public static class GameplayCVars
 
     /// <summary>Whether Project I.G.I. offers save games, which the original never had.</summary>
     /// <remarks>
-    /// Off while the level's state is still being given to the save engine piece by piece: a save that kept only some of a
-    /// level would load into a mission that is not the one saved. I.G.I. 2's save games are its own and do not read this.
+    /// On: the pause menu's Save Game and Load Game, and the quick save and quick load keys, kept by I.G.I. 2's rules. Off, the
+    /// mission is played through as the original has it. I.G.I. 2's save games are its own and do not read this.
     /// </remarks>
     public static readonly BoolCVar Igi1Saves = CVar.Bool(
         "g_igi1_saves",
-        false,
+        true,
         CVarOptions.Archive,
-        "Offer save games in Project I.G.I. (in development: only part of a level is kept).");
+        "Offer save games in Project I.G.I., which the original never had. Off plays a mission through in one go.");
 
     /// <summary>Whether the dead are simulated rather than playing a canned death animation.</summary>
     /// <remarks>

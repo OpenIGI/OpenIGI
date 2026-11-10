@@ -133,7 +133,7 @@ public sealed class Igi1MissionSaves : MissionSaves
     public Igi1MissionSaves(MissionWorld world, SaveSession session, IMissionSetupHost host)
         : base(
             Igi1SaveFormat.Slots(),
-            () => new SaveOwner(host.ActiveProfileIndex, host.ScriptDifficulty, world.MissionId),
+            () => new SaveOwner(host.ActiveProfileIndex, (int)host.Difficulty, world.MissionId),
             new Level(world))
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));

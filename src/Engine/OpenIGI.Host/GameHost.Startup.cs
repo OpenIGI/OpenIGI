@@ -74,6 +74,7 @@ public sealed partial class GameHost
         _hosted.Impacts.Register(state.Console.System, () => _inspectorEye, _logger);
         RegisterCameraCommands(state.Console.System);
         RegisterBlastCommands(state.Console.System);
+        RegisterSaveCommands(state.Console.System);
         RegisterEditorCommands(state.Console.System);
         RegisterRendererSwitchCommand(state.Console.System);
         _contentLayers.Register(state.Console.System);

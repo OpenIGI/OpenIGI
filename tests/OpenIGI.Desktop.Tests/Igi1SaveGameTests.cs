@@ -18,6 +18,10 @@ public sealed class Igi1SaveGameTests : IDisposable
 {
     private readonly AiScenarioSupport _support = new();
 
+    // The mission played: the first, or the one SAVE_MISSION names, so every mission can be put through the same check, one a
+    // process.
+    private static string Mission => Environment.GetEnvironmentVariable("SAVE_MISSION") is { Length: > 0 } named ? named : "1";
+
     /// <inheritdoc/>
     public void Dispose() => _support.Dispose();
 
@@ -66,7 +70,7 @@ public sealed class Igi1SaveGameTests : IDisposable
     private (string First, string Later) Played(string? read)
     {
         using RecordingGraphicsDevice device = new();
-        GameHost host = _support.Host(device, "-mission", "1", "-skipcutscene", "-lockstep", "-frames", "1000000");
+        GameHost host = _support.Host(device, "-mission", Mission, "-skipcutscene", "-lockstep", "-frames", "1000000");
         host.Start();
         for (int i = 0; i < 20_000 && (host.Player() is null || host.Soldiers() is null); i++)
         {
@@ -110,7 +114,7 @@ public sealed class Igi1SaveGameTests : IDisposable
     private (string Before, string After) Saved(int ticksPlayed, string? read)
     {
         using RecordingGraphicsDevice device = new();
-        GameHost host = _support.Host(device, "-mission", "1", "-skipcutscene", "-lockstep", "-frames", "1000000");
+        GameHost host = _support.Host(device, "-mission", Mission, "-skipcutscene", "-lockstep", "-frames", "1000000");
         host.Start();
         for (int i = 0; i < 20_000 && (host.Player() is null || host.Soldiers() is null); i++)
         {

@@ -17,13 +17,26 @@ public sealed partial class GameHost
     {
         bool save = _window.Input.Keyboard.WasPressed(Input.KeyCode.F5);
         bool load = _window.Input.Keyboard.WasPressed(Input.KeyCode.F9);
-        if ((!save && !load) || _menuFlow.MenuMode || TickObserver is not null)
+        if ((save || load) && !_menuFlow.MenuMode)
         {
-            return;
+            QuickSaveOrLoad(save);
         }
+    }
 
-        if ((TitlePlayer?.SaveGames ?? _hosted.SaveGames) is not { } saves)
+    /// <summary>Registers <c>quicksave</c> and <c>quickload</c>, which do what the keys do.</summary>
+    /// <param name="console">The console to register with.</param>
+    private void RegisterSaveCommands(OpenIGI.Core.Configuration.ConsoleSystem console)
+    {
+        console.Commands.Add("quicksave", "Saves the mission to the quick slot, as F5 does.", _ => QuickSaveOrLoad(save: true));
+        console.Commands.Add("quickload", "Loads the mission's newest save, as F9 does.", _ => QuickSaveOrLoad(save: false));
+    }
+
+    // One quick save or quick load, said on the screen and in the log.
+    private void QuickSaveOrLoad(bool save)
+    {
+        if (TickObserver is not null || (TitlePlayer?.SaveGames ?? _hosted.SaveGames) is not { } saves)
         {
+            _logger.Information("Saves", "This mission keeps no save games.");
             return;
         }
 

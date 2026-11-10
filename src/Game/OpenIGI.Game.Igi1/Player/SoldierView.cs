@@ -564,9 +564,16 @@ public sealed class SoldierView : OpenIGI.Game.Saves.IExchangedState
         }
 
         PlaceAt(position, orientation);
-        if (dead)
+        if (dead && !loops)
         {
             Kill(animation);
+        }
+        else if (dead)
+        {
+            // One that died with no death clip to play lies as the clip it was in left it.
+            ReleaseUpperBody();
+            PlayStateAnimation(animation, loops: true);
+            Kill(-1);
         }
         else
         {
