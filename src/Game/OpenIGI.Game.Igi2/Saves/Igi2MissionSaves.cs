@@ -50,6 +50,13 @@ public sealed class Igi2MissionSaves : MissionSaves
         set => _level.Pickups = value;
     }
 
+    /// <summary>Gets or sets the screen's messages and the computer's log, which a load clears before it reads its save.</summary>
+    public Igi2StatusMessageScreen? StatusMessages
+    {
+        get => _level.StatusMessages;
+        set => _level.StatusMessages = value;
+    }
+
     /// <summary>Gets or sets what answers for the mines laid in the level, which a save keeps and a load makes again.</summary>
     public Func<Igi2LevelMines?> Mines
     {
@@ -108,6 +115,8 @@ public sealed class Igi2MissionSaves : MissionSaves
 
         public Func<Igi2LevelMines?> Mines { get; set; } = static () => null;
 
+        public Igi2StatusMessageScreen? StatusMessages { get; set; }
+
         public GameTask Root => level.Root;
 
         public int MissionTime => player.MissionTime;
@@ -127,10 +136,13 @@ public sealed class Igi2MissionSaves : MissionSaves
         // Its tasks, its dropped weapons, its mines and its glass.
         public SaveContext Context => Igi2SaveFormat.Context(Glass, Pickups, level.Root, Mines());
 
-        // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds.
+        // Game_LoadFromSlot: every mine and every pickup in the level is deleted, and the load makes again each the save holds;
+        // the messages on the screen and the computer's log go too. Its missile smoke, level sounds and bullet holes are the
+        // picture's and the mixer's here, which follow the level as it is read back.
         public void BeforeLoad()
         {
             Mines()?.DeleteAll();
+            StatusMessages?.ClearForLoad();
             Pickups?.DeleteAll();
         }
     }

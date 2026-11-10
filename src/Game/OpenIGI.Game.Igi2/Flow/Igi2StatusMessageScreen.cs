@@ -113,6 +113,24 @@ public sealed class Igi2StatusMessageScreen
         slot.IsUsed = false;
     }
 
+    /// <summary>
+    /// Takes every message off the screen and empties the computer's log, as <c>Game_LoadFromSlot</c> does before a load
+    /// (<c>StatusMessageScreen_RemoveMessage</c> down the slots, then <c>ComputerLog_ClearLog</c>): what the save's messages had
+    /// sent is put back by them.
+    /// </summary>
+    public void ClearForLoad()
+    {
+        for (int i = 0; i < _slots.Length; i++)
+        {
+            if (_slots[i].IsUsed)
+            {
+                Remove(i);
+            }
+        }
+
+        _log.Clear();
+    }
+
     /// <summary>A tick of every place in use, <c>StatusMessageScreen_RunHandler</c> (<c>igi2 0x43D620</c>).</summary>
     public void Run()
     {
