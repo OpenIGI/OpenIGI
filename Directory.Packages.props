@@ -63,7 +63,7 @@
          Windows and macOS natives ship inside SkiaSharp; Linux takes the no-dependencies build so the
          launcher runs on a bare distribution without fontconfig. -->
     <PackageVersion Include="SkiaSharp" Version="3.119.4" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.155.0" />
 
     <!-- The launcher's window is a plain OpenGL surface Skia renders into. -->
     <PackageVersion Include="Silk.NET.OpenGL" Version="2.23.0" />
