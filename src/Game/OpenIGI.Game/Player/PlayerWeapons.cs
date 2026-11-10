@@ -205,6 +205,9 @@ public sealed class PlayerWeapons
     /// <summary>Gets the weapon the player has chosen: the one being switched to, else the one in hand; <c>-1</c> for none.</summary>
     public int ChosenWeaponId => _selector.ChosenWeaponId;
 
+    /// <summary>Gets the weapon the hands are to hold: one picked and not yet reached for, else the one being drawn or held; <c>-1</c> for none.</summary>
+    public int WantedWeaponId => _selector.WantedWeaponId;
+
     /// <summary>Keeps the weapon in hand, dropping any switch not yet made: a server agreeing with its client, which kept it.</summary>
     public void KeepInHand() => _selector.KeepInHand();
 

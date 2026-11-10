@@ -28,6 +28,7 @@ public sealed class Igi1SaveGameTests : IDisposable
         (_, string played) = Saved(ticksPlayed: 300, read: null);
         Assert.Contains(SaveScript.DefineTaskState + "(", played, StringComparison.Ordinal);
         Assert.Contains("Igi1Objectives(", played, StringComparison.Ordinal);
+        Assert.Contains("Igi1Player(", played, StringComparison.Ordinal);
 
         (string fresh, string again) = Saved(ticksPlayed: 0, read: played);
         Assert.NotEqual(Lines(fresh), Lines(played));
@@ -71,6 +72,15 @@ public sealed class Igi1SaveGameTests : IDisposable
             }
 
             Assert.Contains(host.Soldiers()!.Simulation.SoldierViews, static v => v.IsDead);
+
+            // And the player somewhere else, looking another way, hurt, a round short.
+            OpenIGI.Game.Igi1.Player.PlayerCamera rig = host.Player()!;
+            rig.StandAt(new OpenIGI.Core.Numerics.Vector3d(rig.PositionUnits.X + 4096.0, rig.PositionUnits.Y, rig.PositionUnits.Z), rig.Yaw + 1f, 0.25f);
+            world.PlayerHealth.ApplyDirect(0, 0.5f);
+            if (rig.Weapons is { Carried.Count: > 0 } weapons)
+            {
+                weapons.Carried[0].Gun.State.RoundsInClip = 3;
+            }
         }
 
         SaveContext context = Igi1SaveFormat.Context(world);

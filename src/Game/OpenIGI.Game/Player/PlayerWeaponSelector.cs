@@ -64,6 +64,9 @@ internal sealed class PlayerWeaponSelector
     internal int PendingWeaponId => _pendingWeaponId;
 
     /// <summary>Gets the weapon the player has chosen: the one a change is pending to, else the one in hand; <c>-1</c> for none.</summary>
+    /// <summary>Gets the weapon the hands are to hold: one picked and not yet reached for, else the one being drawn or held.</summary>
+    internal int WantedWeaponId => _wheelPick != -1 ? _wheelPick : ChosenWeaponId;
+
     internal int ChosenWeaponId => _pendingWeaponId != -1 ? _pendingWeaponId : InHand?.Weapon.WeaponId ?? -1;
 
     /// <summary>Gets the weapon in hand, or <see langword="null"/> before one has been selected.</summary>

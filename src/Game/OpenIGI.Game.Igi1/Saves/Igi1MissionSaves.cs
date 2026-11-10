@@ -84,6 +84,7 @@ public sealed class Igi1SaveStates : ISaveStates
     public static IEnumerable<ISaveSection> Sections(MissionWorld world)
     {
         ArgumentNullException.ThrowIfNull(world);
+        yield return Igi1PlayerSave.Section(world);
         if (world.Objectives is { } objectives)
         {
             yield return objectives.SaveSection;
