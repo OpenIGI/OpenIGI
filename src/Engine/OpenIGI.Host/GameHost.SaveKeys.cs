@@ -10,18 +10,36 @@ public sealed partial class GameHost
     /// save of the mission. Not while a menu is up, and not in a session with other players, whose level is the server's.
     /// </summary>
     /// <remarks>
-    /// Not retail keys: I.G.I. 2 saves through its computer, and Project I.G.I. kept no save games. Fixed keys for now -- the
-    /// rebindable action word has no bit left for two more.
+    /// Not retail keys: I.G.I. 2 saves through its computer, and Project I.G.I. kept no save games. They are bindings of the
+    /// profile like any other, kept by name beside the title's own extra ones, since the shared action word has no bit left.
     /// </remarks>
     private void HandleSaveKeys()
     {
-        bool save = _window.Input.Keyboard.WasPressed(Input.KeyCode.F5);
-        bool load = _window.Input.Keyboard.WasPressed(Input.KeyCode.F9);
-        if ((save || load) && !_menuFlow.MenuMode)
+        ulong pressed = TitleInputBindings.Sample(_configuration.Active, ViewInput, SaveBindings, pressed: true);
+        if (pressed != 0 && !_menuFlow.MenuMode)
         {
-            QuickSaveOrLoad(save);
+            QuickSaveOrLoad(save: (pressed & QuickSaveBit) != 0);
         }
     }
+
+    private const ulong QuickSaveBit = 1UL << 62;
+    private const ulong QuickLoadBit = 1UL << 63;
+
+    // The two bindings, F5 and F9 until the player chooses others.
+    private static readonly TitleInputBinding[] SaveBindings =
+    [
+        new(
+            QuickSaveBit,
+            new Game.Config.InputBinding("QuickSave", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.InputBindingKeyNames.ToRetailKeyboardKey(Input.KeyCode.F5)),
+            "Quick save"),
+        new(
+            QuickLoadBit,
+            new Game.Config.InputBinding("QuickLoad", Game.Config.InputBindingKeyNames.KeyboardDevice, Game.Config.InputBindingKeyNames.ToRetailKeyboardKey(Input.KeyCode.F9)),
+            "Quick load"),
+    ];
+
+    /// <summary>Gets the bindings a profile keeps beside the shared actions: the title's own, then the save keys.</summary>
+    private IReadOnlyList<TitleInputBinding> ExtraBindings => [.. Gameplay?.InputBindings ?? [], .. SaveBindings];
 
     /// <summary>Registers <c>quicksave</c> and <c>quickload</c>, which do what the keys do.</summary>
     /// <param name="console">The console to register with.</param>

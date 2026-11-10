@@ -286,8 +286,8 @@ public sealed partial class GameHost
 
     private void RestoreTitleInputBindings()
     {
-        if (Gameplay is not { } gameplay) { return; }
-        foreach (PlayerProfile profile in _configuration.Profiles) { TitleInputBindings.RestoreMissing(profile, gameplay.InputBindings); }
+        IReadOnlyList<TitleInputBinding> extra = ExtraBindings;
+        foreach (PlayerProfile profile in _configuration.Profiles) { TitleInputBindings.RestoreMissing(profile, extra); }
     }
 
     /// <summary>Applies pending mouse motion to this rendered frame while gameplay remains on its tick.</summary>

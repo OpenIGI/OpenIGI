@@ -48,6 +48,69 @@ public sealed class Igi1SaveGameTests : IDisposable
     }
 
     /// <summary>
+    /// The quick save key writes the quick slot and the quick load key starts the mission afresh with that save read onto it: the
+    /// player, moved after the save, stands where it was saved, and the mission counts one game loaded.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void The_quick_keys_save_and_load()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "openigi-quick-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable(Igi1SaveFormat.DirectoryVariable, folder);
+        try
+        {
+            using RecordingGraphicsDevice device = new();
+            OpenIGI.Input.InputState keys = new();
+            GameHost host = _support.Host(device, "-mission", Mission, "-skipcutscene", "-lockstep", "-nosave", "-difficulty", "easy", "-frames", "1000000");
+            host.Start();
+            host.ScriptedViewInput = keys;
+            for (int i = 0; i < 20_000 && (host.Player() is null || host.Soldiers() is null); i++)
+            {
+                Assert.True(host.Step());
+            }
+
+            Steps(host, 200);
+            OpenIGI.Core.Numerics.Vector3d saved = host.Player()!.PositionUnits;
+            Press(host, keys, OpenIGI.Input.KeyCode.F5);
+            Assert.Single(Directory.GetFiles(Path.Combine(folder, "saves", "igi1"), "*-5.igisave"));
+
+            host.Player()!.StandAt(new OpenIGI.Core.Numerics.Vector3d(saved.X + 8192.0, saved.Y, saved.Z), 0f);
+            Press(host, keys, OpenIGI.Input.KeyCode.F9);
+            for (int i = 0; i < 20_000 && host.Mission().GameLoads == 0; i++)
+            {
+                Assert.True(host.Step());
+            }
+
+            Assert.Equal(1, host.Mission().GameLoads);
+            Assert.True(OpenIGI.Core.Numerics.Vector3d.Distance(saved, host.Player()!.PositionUnits) < 4096.0);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(Igi1SaveFormat.DirectoryVariable, null);
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+
+        static void Steps(GameHost host, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                Assert.True(host.Step());
+            }
+        }
+
+        static void Press(GameHost host, OpenIGI.Input.InputState keys, OpenIGI.Input.KeyCode key)
+        {
+            keys.Keyboard.SetKey(key, down: true);
+            Steps(host, 1);
+            keys.Keyboard.SetKey(key, down: false);
+            keys.Keyboard.BeginFrame();
+            Steps(host, 3);
+        }
+    }
+
+    /// <summary>
     /// A diagnostic, not a check: mission 1 played ten seconds and saved, played ten more and saved again; the first save read
     /// onto a fresh level, played the same ten and saved. Where the two later saves differ is state a save does not yet keep, or
     /// that its mind starting afresh changes. Runs only when <c>SAVE_DUMP</c> names where to write the two.

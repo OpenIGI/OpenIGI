@@ -747,10 +747,10 @@ public sealed partial class GameHost
                 },
                 settingUnavailable: SettingUnavailable,
                 missionSaves: () => TitlePlayer?.SaveGames ?? _hosted.SaveGames,
-                inputBindingLabel: action => TitleInputBindings.Label(action, _gameplay?.InputBindings ?? []),
+                inputBindingLabel: action => TitleInputBindings.Label(action, ExtraBindings),
                 resetInputBindings: profile =>
                 {
-                    TitleInputBindings.Reset(profile, _gameplay?.InputBindings ?? []);
+                    TitleInputBindings.Reset(profile, ExtraBindings);
                 },
                 displayResolutions: DisplayResolutions,
                 playedMods: () => _titleRuntime.Mods,

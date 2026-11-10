@@ -13,6 +13,9 @@ public readonly record struct TitleInputBinding(ulong Mask, InputBinding Default
 /// <summary>Feeds additional title controls through the same profile bindings as shared actions.</summary>
 public static class TitleInputBindings
 {
+    // A profile of one binding for each default, by which a binding no profile holds is sampled.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<InputBinding, PlayerProfile> Defaults = new();
+
     /// <summary>Adds missing controls without replacing saved assignments or occupying an assigned key.</summary>
     /// <param name="profile">The profile to extend.</param>
     /// <param name="bindings">The title's additional controls.</param>
@@ -92,8 +95,18 @@ public static class TitleInputBindings
         ulong mask = 0;
         foreach (TitleInputBinding binding in bindings)
         {
-            if (pressed ? PlayerProfileInputBindings.WasPressed(profile, input, binding.Default.Action)
-                : PlayerProfileInputBindings.IsDown(profile, input, binding.Default.Action)) { mask |= binding.Mask; }
+            // A profile that has never been given the binding -- or no profile at all -- answers with its default key.
+            PlayerProfile from = profile is not null && profile.Bindings.Exists(b => string.Equals(b.Action, binding.Default.Action, StringComparison.OrdinalIgnoreCase))
+                ? profile
+                : Defaults.GetOrAdd(binding.Default, static held =>
+                {
+                    PlayerProfile only = new();
+                    only.Bindings.Clear();
+                    only.Bindings.Add(held);
+                    return only;
+                });
+            if (pressed ? PlayerProfileInputBindings.WasPressed(from, input, binding.Default.Action)
+                : PlayerProfileInputBindings.IsDown(from, input, binding.Default.Action)) { mask |= binding.Mask; }
         }
         return mask;
     }

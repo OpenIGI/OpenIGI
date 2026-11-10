@@ -27,9 +27,13 @@ public static class Igi1SaveFormat
     public static SaveContext Context(MissionWorld world) =>
         new() { Version = Version, States = new Igi1SaveStates(world), Sections = [.. Igi1SaveStates.Sections(world)] };
 
-    /// <summary>The slots, under the user's folder.</summary>
+    /// <summary>The slots, under the user's folder, or under the directory <see cref="DirectoryVariable"/> names.</summary>
     /// <returns>The slots.</returns>
-    public static SaveSlots Slots() => new(SettingsPaths.GetUserDirectory(), Folder, Extension, Version);
+    public static SaveSlots Slots() =>
+        new(Environment.GetEnvironmentVariable(DirectoryVariable) is { Length: > 0 } elsewhere ? elsewhere : SettingsPaths.GetUserDirectory(), Folder, Extension, Version);
+
+    /// <summary>The environment variable that names another directory for the slots' folder: a test's, so it writes nothing of the player's.</summary>
+    public const string DirectoryVariable = "OPENIGI_SAVES_DIR";
 }
 
 /// <summary>
