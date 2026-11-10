@@ -53,11 +53,15 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     public Action<WeaponType, Vector3d, Matrix3f, Vector3d>? WeaponDrop { get; set; }
 
     /// <summary>
-    /// Gets what mods are told of each round that strikes a living soldier. By either path it is told once the round's
-    /// damage is applied and before his body turns to the round or falls, so a listener reads him as he stood when it struck:
-    /// <see cref="SoldierStrike.Killed"/> means he dies of it, though he is not down yet. Empty unless a mod adds to it.
-    /// <b>Not retail.</b>
+    /// Gets what mods are told of each round that strikes a living soldier it can hurt: an invulnerable one is not told of. By
+    /// either path it is told once the round's damage is applied, and before his brain hears of it, he flinches, turns to the
+    /// round or falls, so a listener reads him as he stood when it struck: <see cref="SoldierStrike.Killed"/> means he dies of
+    /// it, though he is not down yet. Empty unless a mod adds to it. <b>Not retail.</b>
     /// </summary>
+    /// <remarks>
+    /// A list here rather than a game event: events are raised once the tick has run, and a listener needs the soldier as
+    /// the round found him.
+    /// </remarks>
     public List<Action<SoldierStrike>> Struck { get; } = [];
 
     /// <summary>Gets the soldiers who let go of their gun before they died (<see cref="DropGun"/>), so their death drops no other. <b>Not retail.</b></summary>
@@ -69,16 +73,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
     {
         for (int i = 0; i < Struck.Count; i++)
         {
-            try
-            {
-                Struck[i](strike);
-            }
-#pragma warning disable CA1031 // A mod's failure is its own; the game and the other listeners go on.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                _context.Logger.Error(SoldierContext.LogCategory, $"A Struck listener failed: {ex.Message}");
-            }
+            Contained.Run(_context.Logger, SoldierContext.LogCategory, "A Struck listener", (Listener: Struck[i], Strike: strike), static told => told.Listener(told.Strike));
         }
     }
 
@@ -131,8 +126,8 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
         return carried + push + new Vector3d(0.0, 0.0, lift);
     }
 
-    /// <summary>Forgets the deaths no update has taken yet, for a new level.</summary>
-    public void ClearPendingDeaths()
+    /// <summary>Forgets what is held of the last level's soldiers, for a new level: the deaths no update has taken yet, and who let go of his gun.</summary>
+    public void ClearForLevel()
     {
         _pendingDeaths.Clear();
         LetGoOfGun.Clear();
@@ -322,10 +317,16 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             return;
         }
 
-        float dealt = 0f;
         if (!invulnerable)
         {
-            dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+
+            // Told once the damage is in, before the brain hears of it or he flinches, as TakeRound tells it.
+            if (Struck.Count > 0)
+            {
+                TellStruck(new SoldierStrike(struck, hit, origin, end, weapon.Category, dealt, health.IsDead));
+            }
+
             brain?.ReceiveDamage(origin, shooter?.Soldier.Id ?? AiDetectionCandidate.PlayerId);
             if (health.IsDead)
             {
@@ -335,11 +336,6 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             {
                 ReactToHit(struck, brain, hit.Zone, dealt, explosion: false);
             }
-        }
-
-        if (Struck.Count > 0)
-        {
-            TellStruck(new SoldierStrike(struck, hit, origin, end, weapon.Category, dealt, health.IsDead));
         }
 
         SoldierSimulation.DamageTraced?.Invoke(struck.Soldier.Id, hit.Zone, hit.Bone, damageFactor, health.Damage, health.MaximumHealth);
@@ -402,7 +398,7 @@ internal sealed class SoldierDamage(SoldierContext context, SoldierFootsteps foo
             float dealt = health.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
             round.Credit?.Hit(hit.Zone == HumanDamage.NeckZone);
 
-            // Told before he turns to the round or falls, as the marched path tells it before his death is taken.
+            // Told once the damage is in, before the brain hears of it, he flinches, turns to the round or falls, as StrikeWithRound tells it.
             if (Struck.Count > 0)
             {
                 TellStruck(new SoldierStrike(struckView, hit, round.Origin, round.End, round.Category, dealt, health.IsDead));

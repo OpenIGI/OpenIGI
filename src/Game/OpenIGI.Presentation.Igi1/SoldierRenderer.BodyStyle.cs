@@ -31,6 +31,7 @@ public sealed partial class SoldierRenderer
                 {
                     DropStyledBody(member);
                     member.StyleFailed = false;
+                    member.StyleDeclined = false;
                 }
             }
 
@@ -38,15 +39,15 @@ public sealed partial class SoldierRenderer
         }
     }
 
-    // A tick of a soldier's styled body, made for him first if the style will; once the game has posed his own model.
+    // A tick of a soldier's styled body, made for him first if the style will; once the game has posed his own model. A
+    // soldier the style declined, or whose body failed, is drawn as the game draws him until the style is set again.
     private void TickStyledBody(SoldierGroup group, SoldierMember member)
     {
-        if (_bodyStyle is not { } style)
+        if (_bodyStyle is not { } style || member.StyleDeclined)
         {
             return;
         }
 
-        // A body that failed is let go of, and the soldier is drawn as the game draws him until the style is set again.
         if (member.StyleFailed)
         {
             DropStyledBody(member);
@@ -55,23 +56,29 @@ public sealed partial class SoldierRenderer
 
         if (member.Styled is null)
         {
-            ISoldierBody? made = null;
-            if (!TryMod(_logger, "Create", () => made = style.Create(new SoldierBodySoldier(group, member, _sim, _device))))
+            if (!RunStyled(
+                _logger,
+                member,
+                "A mod's soldier body style's Create",
+                (style, Soldier: new SoldierBodySoldier(group, member, _sim, _device)),
+                static made => made.style.Create(made.Soldier),
+                out ISoldierBody? body))
             {
-                member.StyleFailed = true;
                 return;
             }
 
-            if (made is not null)
+            if (body is null)
             {
-                member.Styled = made;
-                _styledBodies.Add(made);
+                member.StyleDeclined = true;
+                return;
             }
+
+            member.Styled = body;
+            _styledBodies.Add(body);
         }
 
-        if (member.Styled is { } body && !TryMod(_logger, "Tick", body.Tick))
+        if (member.Styled is { } styled && !RunStyled(_logger, member, "A mod's soldier body's Tick", styled, static body => body.Tick()))
         {
-            member.StyleFailed = true;
             DropStyledBody(member);
         }
     }
@@ -81,7 +88,12 @@ public sealed partial class SoldierRenderer
     {
         if (_bodyStyle is { } style && _styledBodies.Count > 0)
         {
-            TryMod(_logger, "Frame", () => style.Frame(_styledBodies, smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f, _drawer.LastEye));
+            Contained.Run(
+                _logger,
+                LogCategory,
+                "A mod's soldier body style's Frame",
+                (style, _styledBodies, Alpha: smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f, _drawer.LastEye),
+                static frame => frame.style.Frame(frame._styledBodies, frame.Alpha, frame.LastEye));
         }
     }
 
@@ -91,28 +103,48 @@ public sealed partial class SoldierRenderer
         {
             _styledBodies.Remove(body);
             member.Styled = null;
-            TryMod(_logger, "Dispose", body.Dispose);
+            Contained.Run(_logger, LogCategory, "A mod's soldier body's Dispose", body, static dropped => dropped.Dispose());
         }
     }
 
-    /// <summary>Runs a mod body's code; its failure is its own, so it is logged and the game goes on.</summary>
+    /// <summary>Runs a call of a mod's soldier body; one that throws is logged, and the body is let go of on the next tick.</summary>
+    /// <typeparam name="TState">What the call needs.</typeparam>
     /// <param name="logger">Where the failure is logged.</param>
-    /// <param name="step">Which of the body's calls it is, for the log.</param>
+    /// <param name="member">The soldier whose body it is.</param>
+    /// <param name="what">The call, as the log names it.</param>
+    /// <param name="state">What the call needs.</param>
     /// <param name="call">The call.</param>
     /// <returns>Whether it ran without throwing.</returns>
-    internal static bool TryMod(IOpenIgiLogger logger, string step, Action call)
+    internal static bool RunStyled<TState>(IOpenIgiLogger logger, SoldierMember member, string what, TState state, Action<TState> call)
     {
-        try
+        if (Contained.Run(logger, LogCategory, what, state, call))
         {
-            call();
             return true;
         }
-#pragma warning disable CA1031 // A mod's failure is its own; the game and the other soldiers go on.
-        catch (Exception ex)
-#pragma warning restore CA1031
+
+        member.StyleFailed = true;
+        return false;
+    }
+
+    /// <summary>Runs a call of a mod's soldier body for a result; one that throws is logged, and the body is let go of on the next tick.</summary>
+    /// <typeparam name="TState">What the call needs.</typeparam>
+    /// <typeparam name="TResult">What it gives.</typeparam>
+    /// <param name="logger">Where the failure is logged.</param>
+    /// <param name="member">The soldier whose body it is.</param>
+    /// <param name="what">The call, as the log names it.</param>
+    /// <param name="state">What the call needs.</param>
+    /// <param name="call">The call.</param>
+    /// <param name="result">What it gave, or the default when it threw.</param>
+    /// <returns>Whether it ran without throwing.</returns>
+    internal static bool RunStyled<TState, TResult>(
+        IOpenIgiLogger logger, SoldierMember member, string what, TState state, Func<TState, TResult> call, out TResult result)
+    {
+        if (Contained.Run(logger, LogCategory, what, state, call, out result))
         {
-            logger.Error(LogCategory, $"A mod's soldier body failed in {step}: {ex.Message}");
-            return false;
+            return true;
         }
+
+        member.StyleFailed = true;
+        return false;
     }
 }

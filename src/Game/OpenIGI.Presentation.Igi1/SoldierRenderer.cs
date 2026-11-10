@@ -243,9 +243,9 @@ public sealed partial class SoldierRenderer : ISoldierPresenter, IDisposable
                 member.Weapon = null;
             }
 
-            if (member.Styled is { } styled && !TryMod(_logger, "Fell", () => styled.Fell(fall)))
+            if (member.Styled is { } styled)
             {
-                member.StyleFailed = true;
+                RunStyled(_logger, member, "A mod's soldier body's Fell", (styled, fall), static fell => fell.styled.Fell(fell.fall));
             }
         };
     }

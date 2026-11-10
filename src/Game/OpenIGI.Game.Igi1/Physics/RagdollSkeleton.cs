@@ -458,11 +458,17 @@ public sealed class RagdollSkeleton
             clouds[body] = [];
         }
 
-        // A character of another format: the points of its skin it was measured by (Build's measured overload).
+        // A character of another format: the points of its skin it was measured by (BuildMeasured). A point on a bone the
+        // skeleton has not is skipped, as a skinned model's is below.
         if (measured is not null)
         {
             foreach ((int bone, Vector3f at) in measured)
             {
+                if (bone < 0 || bone >= skeleton.BoneCount)
+                {
+                    continue;
+                }
+
                 int body = bodyOfBone[bone];
                 clouds[body].Add(at - restAt[bodyBone[body]]);
             }

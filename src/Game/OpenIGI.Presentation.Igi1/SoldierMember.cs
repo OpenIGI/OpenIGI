@@ -183,6 +183,9 @@ internal sealed class SoldierMember(SoldierAgent agent, MeshHandle mesh)
     /// <summary>Gets or sets whether the mod's body for him failed, so he is drawn as the game draws him until the style is set again.</summary>
     public bool StyleFailed { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the mod's style declined him a body; it is not asked again until it is set again.</summary>
+    public bool StyleDeclined { get; set; }
+
     /// <summary>Whether the weapon transform below is resolved.</summary>
     public bool HasWeaponFrameState { get; set; }
 

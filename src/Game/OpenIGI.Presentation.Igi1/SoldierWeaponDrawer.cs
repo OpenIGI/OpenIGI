@@ -178,12 +178,12 @@ internal sealed class SoldierWeaponDrawer(
                 {
                     // A mod's body in his place (SoldierRenderer.BodyStyle): the same pass, the same placement. A failed draw is
                     // logged, the device is reset below all the same, and the body is let go of on the next tick.
-                    var eye = camera;
-                    bool isEye = Visibility is null || Visibility.IsEye(camera);
-                    if (!SoldierRenderer.TryMod(_logger, "Draw", () => styled.Draw(eye, isEye, modelView)))
-                    {
-                        member.StyleFailed = true;
-                    }
+                    SoldierRenderer.RunStyled(
+                        _logger,
+                        member,
+                        "A mod's soldier body's Draw",
+                        (styled, Camera: camera, IsEye: Visibility is null || Visibility.IsEye(camera), ModelView: modelView),
+                        static draw => draw.styled.Draw(in draw.Camera, draw.IsEye, in draw.ModelView));
                 }
                 else if (level > 0 && level == member.Level && member.LevelMesh.IsValid)
                 {

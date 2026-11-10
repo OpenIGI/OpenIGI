@@ -182,11 +182,20 @@ internal sealed class SoldierFrameInterpolator(List<SoldierGroup> groups, Soldie
                     hand = armed.AttachmentPosition;
                     rotation = armed.AttachmentRotation;
                 }
-                else if (member.Styled is { } styled && styled.TryGetHeldWeapon(out Vector3f styledHand, out Matrix3f styledRotation))
+                else if (member.Styled is { } styled
+                    && SoldierRenderer.RunStyled(
+                        _logger,
+                        member,
+                        "A mod's soldier body's TryGetHeldWeapon",
+                        styled,
+                        static body => (Held: body.TryGetHeldWeapon(out Vector3f at, out Matrix3f turn), at, turn),
+                        out (bool Held, Vector3f Hand, Matrix3f Rotation) styledHeld)
+                    && styledHeld.Held)
                 {
-                    // A mod's body holds the gun where its own hand is, and the muzzle flash and the rounds go from there.
-                    hand = styledHand;
-                    rotation = styledRotation;
+                    // A mod's body holds the gun where its own hand is, and the muzzle flash and the rounds go from there. One
+                    // that throws leaves the hand where the game's own model has it.
+                    hand = styledHeld.Hand;
+                    rotation = styledHeld.Rotation;
                 }
                 member.PrevTickHandPosition = member.HasHandState ? member.TickHandPosition : hand;
                 member.PrevTickHandRotation = member.HasHandState ? member.TickHandRotation : rotation;

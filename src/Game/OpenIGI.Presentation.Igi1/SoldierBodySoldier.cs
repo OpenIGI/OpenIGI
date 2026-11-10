@@ -7,7 +7,8 @@ namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// A soldier as a mod's <see cref="ISoldierBody"/> sees him: who he is, his brain, and where the game has him this tick and
-/// this frame. Read only. <b>Not retail.</b>
+/// this frame. What it says of him cannot be set through it; the simulation and the device are the game's own, handed over for
+/// the body to act and draw with. <b>Not retail.</b>
 /// </summary>
 public sealed class SoldierBodySoldier
 {

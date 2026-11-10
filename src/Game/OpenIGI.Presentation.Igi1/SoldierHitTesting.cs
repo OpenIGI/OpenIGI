@@ -174,10 +174,19 @@ internal sealed class SoldierHitTesting(
     internal bool TryCastMember(SoldierGroup group, SoldierMember member, Vector3d origin, Vector3d rayEnd, out HumanHit candidate)
     {
         // A mod's body is met where it is drawn, when it answers for itself (SoldierRenderer.BodyStyle).
+        // One that throws leaves him to his own model.
         if (member.Styled is { } styled && member.HasFrameState && !_sim.Rewound
-            && styled.TryMeetRound(origin, rayEnd, out candidate) is { } styledMet)
+            && SoldierRenderer.RunStyled(
+                _logger,
+                member,
+                "A mod's soldier body's TryMeetRound",
+                (styled, origin, rayEnd),
+                static met => (Met: met.styled.TryMeetRound(met.origin, met.rayEnd, out HumanHit at), at),
+                out (bool? Met, HumanHit Hit) styledMet)
+            && styledMet.Met is { } styledAnswer)
         {
-            return styledMet;
+            candidate = styledMet.Hit;
+            return styledAnswer;
         }
 
         SoldierView soldier = member.Agent.View;
