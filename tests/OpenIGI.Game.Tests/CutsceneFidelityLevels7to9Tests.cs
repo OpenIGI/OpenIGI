@@ -186,7 +186,7 @@ public sealed class CutsceneFidelityLevels7to9Tests
     {
         PlayerTaskTypes.RegisterAll(types);
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(types);
     }
 
     private static IEnumerable<GameTask> Walk(GameTask root)

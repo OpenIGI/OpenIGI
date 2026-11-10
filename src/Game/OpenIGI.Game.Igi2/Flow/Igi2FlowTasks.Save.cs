@@ -2,24 +2,6 @@ using OpenIGI.Game.Igi2.Saves;
 
 namespace OpenIGI.Game.Igi2.Flow;
 
-/// <content>Its save state, <c>EditVariable_ptSerializeParameterList</c>: its value.</content>
-public sealed partial class Igi2EditVariableTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(Value);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        Value = reader.Int();
-    }
-}
-
 /// <content>Its save state (areaactivateqtask.c's serialize list): the number counted inside, <c>nActive</c>.</content>
 public sealed partial class Igi2AreaActivateTask : ISavedState
 {

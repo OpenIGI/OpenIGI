@@ -30,7 +30,7 @@ public sealed class DiagMission4Plane
         GameLoop loop = new(new ManualTimeSource());
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

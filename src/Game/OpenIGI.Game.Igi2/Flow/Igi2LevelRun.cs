@@ -142,10 +142,15 @@ public sealed class Igi2LevelRun : LevelRun, IConditionalContainerRules
         }
     }
 
-    /// <summary>Runs an expression and keeps its value.</summary>
-    /// <param name="expression">The expression.</param>
-    /// <returns>Its value.</returns>
-    public double Evaluate(LevelExpression expression)
+    /// <inheritdoc/>
+    public override LevelExpression Compile(string? source, GameTask owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        return Igi2LevelExpressions.Create(source, owner.Name, Natives);
+    }
+
+    /// <inheritdoc/>
+    public override double Evaluate(LevelExpression expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
         return expression.Run(Natives, Functions);

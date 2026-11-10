@@ -66,6 +66,7 @@ public sealed class ConditionalContainerRunTests
     {
         TaskTypeRegistry types = new();
         TaskType containerType = types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(types);
         TaskType childType = types.Register<Child>("Child");
         TaskTree tree = new(types);
         var container = (ConditionalContainerTask)tree.New(tree.Root, containerType);
@@ -96,6 +97,10 @@ public sealed class ConditionalContainerRunTests
         public void PutChildrenInWorld(ConditionalContainerTask container) => Log.Add("in");
 
         public void TakeChildrenOutOfWorld(ConditionalContainerTask container) => Log.Add("out");
+
+        public override OpenIGI.Scripting.Expressions.LevelExpression Compile(string? source, GameTask owner) => throw new NotSupportedException();
+
+        public override double Evaluate(OpenIGI.Scripting.Expressions.LevelExpression expression) => throw new NotSupportedException();
 
         protected override void RunUntyped(GameTask task) => RunChildren(task);
     }

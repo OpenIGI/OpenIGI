@@ -363,6 +363,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
         EngineTaskTypes.Register(types);
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);

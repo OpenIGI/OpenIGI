@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Flow;
 using OpenIGI.Input;
 using OpenIGI.Net;
 using OpenIGI.Scripting.Expressions;
@@ -30,7 +31,10 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     private readonly Func<string, string> _resolveText;
     private readonly List<Definition> _definitions = [];
     private readonly MissionAreaActivation _areas;
-    private readonly List<EditVariable> _editVariables = [];
+    private readonly List<EditVariableTask> _editVariables = [];
+
+    // The level's walk once the runtime is attached to it; until then, the one the counters are stepped by here.
+    private LevelUpdateWalker? _walker;
     private readonly MissionStatusMessages _messages;
     private readonly List<LevelFlow> _levelFlows = [];
 
@@ -96,6 +100,12 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
             // HumanTask.OnExportVars. What this runtime still owns is feeding the latch: the host
             // reports occupants and player state, and SetSoldierOccupants and TickLevelState write
             // through to the tasks so the binding reads a live value.
+            if (task is EditVariableTask counter)
+            {
+                _editVariables.Add(counter);
+                continue;
+            }
+
             if (task is not DeclaredTask declared)
             {
                 continue;
@@ -114,16 +124,6 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                     Vector32(declared, "Dimensions"),
                     TextTrimmed(declared, "Criteria"));
                 _areas.Declare(declared, area, variables);
-            }
-            else if (string.Equals(task.Type.Name, "EditVariable", StringComparison.Ordinal))
-            {
-                EditVariable edit = new(
-                    declared,
-                    IntStrict(declared, "Initial value", 0),
-                    TextTrimmed(declared, "Add"),
-                    TextTrimmed(declared, "Sub"));
-                _editVariables.Add(edit);
-                variables.BindInt(declared, "nValue", () => edit.Value, value => edit.Value = value);
             }
             else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
             {
@@ -218,12 +218,16 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     public bool Mirrored
     {
         get => _messages.Mirrored;
-        set => _messages.Mirrored = value;
+        set
+        {
+            _messages.Mirrored = value;
+            _walker?.IsReplica = value;
+        }
     }
 
     /// <inheritdoc/>
     public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
-        _editVariables.Select(static e => new KeyValuePair<GameTask, Saves.ISavedState>(e.Task, e))
+        _editVariables.Select(static e => new KeyValuePair<GameTask, Saves.ISavedState>(e, e))
             .Concat(_levelFlows.Select(static f => new KeyValuePair<GameTask, Saves.ISavedState>(f.Task, f)))
             .Concat(_areas.SavedStates)
             .Concat(_messages.SavedStates);
@@ -281,7 +285,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.WriteVarUInt((uint)_editVariables.Count);
-        foreach (EditVariable edit in _editVariables)
+        foreach (EditVariableTask edit in _editVariables)
         {
             writer.WriteVarInt(edit.Value);
         }
@@ -519,9 +523,11 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
 
         _areas.UpdateAll();
 
-        foreach (EditVariable edit in _editVariables)
+        // No walk reaches them: each counter's own run, in the tree's order.
+        _walker ??= new LevelUpdateWalker(_levelRoot) { Expressions = _expressions, IsReplica = Mirrored };
+        foreach (EditVariableTask edit in _editVariables)
         {
-            UpdateEdit(edit);
+            edit.Run(_walker);
         }
     }
 
@@ -547,16 +553,10 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     {
         ArgumentNullException.ThrowIfNull(walker);
         _attached = true;
+        _walker = walker;
+        walker.Expressions = _expressions;
+        walker.IsReplica = Mirrored;
         _areas.AttachTo(walker, vehicles, soldiers, player);
-
-        foreach (EditVariable edit in _editVariables)
-        {
-            walker.Bind(edit.Task, task =>
-            {
-                UpdateEdit(edit);
-                walker.RunChildren(task);
-            });
-        }
 
         _messages.AttachTo(walker);
     }
@@ -569,26 +569,6 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     public void SetLevelStateInputs(Vector3d? playerPosition, int playerTeam, Vector3d? extraPlayerPosition, bool playerAlive)
     {
         _areas.SetLevelStateInputs(playerPosition, playerTeam, extraPlayerPosition, playerAlive);
-    }
-
-    /// <summary>EditVariable::Update (<c>0x4889B0</c>): Add first, Sub second, every tick.</summary>
-    private void UpdateEdit(EditVariable edit)
-    {
-        // A co-op client's counters are the server's.
-        if (Mirrored)
-        {
-            return;
-        }
-
-        if (!string.IsNullOrEmpty(edit.AddExpression))
-        {
-            edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
-        }
-
-        if (!string.IsNullOrEmpty(edit.SubExpression))
-        {
-            edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
-        }
     }
 
     /// <summary>Feeds the per-tick state of every soldier the host is simulating.</summary>
@@ -860,18 +840,4 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         private static string DigitKeySymbol(int digit) => $"Key{digit}.isPressed";
     }
 
-    private sealed class EditVariable(
-        DeclaredTask task,
-        int initialValue,
-        string addExpression,
-        string subExpression) : Saves.IExchangedState
-    {
-        // Not retail: what a save keeps of an edit variable is its value.
-        public void Exchange(Saves.StateExchange exchange) => Value = exchange.Int(Value);
-
-        public DeclaredTask Task { get; } = task;
-        public int Value { get; set; } = initialValue;
-        public string AddExpression { get; } = addExpression;
-        public string SubExpression { get; } = subExpression;
-    }
 }

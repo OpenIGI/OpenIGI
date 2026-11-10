@@ -400,6 +400,6 @@ public sealed class CutsceneFidelityLevels13to14Tests
     {
         PlayerTaskTypes.RegisterAll(types);
         types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(types);
     }
 }

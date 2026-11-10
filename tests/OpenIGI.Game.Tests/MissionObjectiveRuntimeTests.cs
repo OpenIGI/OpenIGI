@@ -21,6 +21,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void VehicleCriteriaCountsCarsButNotHumans()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -78,7 +79,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Text("CRITERIA_HUMAN1"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
 
         ConditionalContainerTask dormantGate = (ConditionalContainerTask)loop.Tasks.New(
@@ -195,6 +196,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void AreaActivationUsesTheLoadedUpperZBound()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -232,6 +234,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void TransientStatusMessageUsesTheMissionMessageSlotsWithoutWritingTheComputerLog()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
 
         Assert.True(runtime.ShowTransientMessage("PICKEDUPWEAPONAK-47"));
@@ -244,6 +247,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void ClearMessagesEmptiesEverySlotAndFinishesTheAuthoredMessages()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -310,6 +314,7 @@ public sealed class MissionObjectiveRuntimeTests
     public void AuthoredInterfaceTimerStartsAtTheRetailMaximumAndStopsAtZero()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
@@ -346,10 +351,12 @@ public sealed class MissionObjectiveRuntimeTests
     public void LevelFlowFailureBindingReachesAuthoredStatusMessageOnTheFollowingTickAndReleases()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
                 QvmExpression.Text("Initial value"), QvmExpression.Text("Int32"),
                 QvmExpression.Text("Add"), QvmExpression.Text("VarString"),
                 QvmExpression.Text("Sub"), QvmExpression.Text("VarString")),
@@ -373,6 +380,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(2),
                 QvmExpression.Text("EditVariable"),
                 QvmExpression.Text("Failure switch"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Int(0),
                 QvmExpression.Text(string.Empty),
                 QvmExpression.Text(string.Empty)),
@@ -455,10 +463,12 @@ public sealed class MissionObjectiveRuntimeTests
     public void LevelFlowStoresItsResultTheWayTheOriginalUpdateDoes()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
                 QvmExpression.Text("Initial value"), QvmExpression.Text("Int32"),
                 QvmExpression.Text("Add"), QvmExpression.Text("VarString"),
                 QvmExpression.Text("Sub"), QvmExpression.Text("VarString")),
@@ -474,6 +484,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(2),
                 QvmExpression.Text("EditVariable"),
                 QvmExpression.Text("Complete switch"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Int(0),
                 QvmExpression.Text(string.Empty),
                 QvmExpression.Text(string.Empty)),
@@ -482,6 +493,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(3),
                 QvmExpression.Text("EditVariable"),
                 QvmExpression.Text("Failure switch"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Int(0),
                 QvmExpression.Text(string.Empty),
                 QvmExpression.Text(string.Empty)),
@@ -565,6 +577,7 @@ public sealed class MissionObjectiveRuntimeTests
         foreach (string script in scripts)
         {
             GameLoop loop = new();
+            OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
             LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
             ResourceRegistry resources = new(new VirtualFileSystem());
             const string resourceName = "LOCAL:level/objects.qvm";
@@ -669,6 +682,7 @@ public sealed class MissionObjectiveRuntimeTests
     private static (GameLoop Loop, MissionObjectiveRuntime Runtime) BuildPlayerAreaRuntime()
     {
         GameLoop loop = new();
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(loop.Types);
         QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
             QvmExpression.Call(
                 "Task_DeclareParameters",

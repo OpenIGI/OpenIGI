@@ -205,7 +205,7 @@ public sealed class Igi2FlowContentModule : IContentModule
         ArgumentNullException.ThrowIfNull(context);
         context.Types.Register<Flow.Igi2ContainerTask>(Flow.Igi2ContainerTask.TypeName);
         context.Types.Register<Flow.Igi2ConditionalContainerTask>(Flow.Igi2ConditionalContainerTask.TypeName);
-        context.Types.Register<Flow.Igi2EditVariableTask>(Flow.Igi2EditVariableTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(context.Types);
         context.Types.Register<Flow.Igi2MissionScoreSettingsTask>(Flow.Igi2MissionScoreSettingsTask.TypeName);
         context.Types.Register<World.Igi2BuildingTask>(World.Igi2BuildingTask.TypeName);
         context.Types.Register<World.Igi2LevelInfoTask>(World.Igi2LevelInfoTask.TypeName);

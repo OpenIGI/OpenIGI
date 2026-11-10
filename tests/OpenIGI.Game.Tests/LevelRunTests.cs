@@ -69,6 +69,10 @@ public sealed class LevelRunTests
 
         public GameTask? Skipped { get; init; }
 
+        public override OpenIGI.Scripting.Expressions.LevelExpression Compile(string? source, GameTask owner) => throw new NotSupportedException();
+
+        public override double Evaluate(OpenIGI.Scripting.Expressions.LevelExpression expression) => throw new NotSupportedException();
+
         protected override void RunUntyped(GameTask task)
         {
             Log.Add("untyped");

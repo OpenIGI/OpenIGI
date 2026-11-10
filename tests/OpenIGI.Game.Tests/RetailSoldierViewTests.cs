@@ -265,7 +265,7 @@ public sealed class RetailSoldierViewTests
         magic.Load(resources, loop.Natives);
 
         PlayerTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
 
         root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);

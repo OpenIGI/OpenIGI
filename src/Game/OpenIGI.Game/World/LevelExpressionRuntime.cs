@@ -86,6 +86,15 @@ public sealed class LevelExpressionRuntime
         return true;
     }
 
+    /// <summary>Evaluates a compiled slot in the float walk, against the mission's variables and natives.</summary>
+    /// <param name="expression">The expression.</param>
+    /// <returns>Its value, or nought when it is empty.</returns>
+    public double Evaluate(LevelExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return expression.Evaluate(_context);
+    }
+
     /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
     public int Execute(string? source, GameTask? owner = null) => EvaluateInt32(source, 0, owner);
 

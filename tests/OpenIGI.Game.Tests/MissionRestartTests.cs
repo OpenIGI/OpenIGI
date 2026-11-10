@@ -34,7 +34,7 @@ public sealed class MissionRestartTests
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         MissionRegistry missions = new();
         missions.Register(loop.Natives);
         missions.Scan(fs, resources, loop.Natives);

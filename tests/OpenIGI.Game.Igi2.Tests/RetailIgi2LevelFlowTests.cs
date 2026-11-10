@@ -98,7 +98,7 @@ public sealed class RetailIgi2LevelFlowTests
         Mission1 m = Mission1.Load();
         Igi2ConditionalContainerTask player = m.Container(PlayerAndAi);
         Igi2ConditionalContainerTask intro = m.Container(Intro);
-        Igi2EditVariableTask breakKey = m.Tree.OfType<Igi2EditVariableTask>().Single(static v => v.Id == 2112);
+        OpenIGI.Game.Flow.EditVariableTask breakKey = m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 2112);
         m.Flow.IsBreakKeyDown = true;
 
         m.Level.Tick();

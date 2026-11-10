@@ -26,7 +26,7 @@ public sealed class RetailIgi2LevelTimerTests
         Igi2LevelTimerTask guards = m.Tree.OfType<Igi2LevelTimerTask>().Single(static t => t.Id == Guards);
         Assert.Equal(("EditVariable_271.nValue == 1", false), (hack.OnScript, hack.InitialRun));
         Assert.Equal("EditVariable_271.nValue > 1 || this.isRun", guards.OnScript);
-        Igi2EditVariableTask variable = m.Tree.OfType<Igi2EditVariableTask>().Single(static v => v.Id == 271);
+        OpenIGI.Game.Flow.EditVariableTask variable = m.Tree.OfType<OpenIGI.Game.Flow.EditVariableTask>().Single(static v => v.Id == 271);
 
         Tick(m, hack, guards, 3);
         Assert.Equal((false, 0, false, 0), (hack.IsRun, hack.Tick, guards.IsRun, guards.Tick));

@@ -65,7 +65,7 @@ public sealed class Level4WatchOutTests
     {
         GameLoop loop = new();
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         PlayerTaskTypes.RegisterAll(loop.Types);
         ResourceRegistry resources = new(new VirtualFileSystem());
         const string resourceName = "LOCAL:level4/objects.qvm";

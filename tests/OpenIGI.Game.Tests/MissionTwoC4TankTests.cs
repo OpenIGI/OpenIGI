@@ -51,7 +51,7 @@ public sealed class MissionTwoC4TankTests
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
         GameLoop loop = new(new ManualTimeSource());
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         MissionRegistry missions = new();
         missions.Register(loop.Natives);

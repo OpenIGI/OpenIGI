@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Level;
 
@@ -43,6 +44,46 @@ public abstract class LevelRun
 
     /// <summary>Gets the level's clock: the ticks it has run, in milliseconds.</summary>
     public long TimeMilliseconds { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether this run is the level's own. One that is not only passes over the tree: it reaches no
+    /// typed task's run handler and walks such a task's children as it would a plain container's.
+    /// </summary>
+    /// <remarks>
+    /// Not retail. The host still walks the level of a title that runs itself with the first game's walk, which finds nothing
+    /// of its own there; a task of either title's must not be run twice a tick, nor by the other title's rules.
+    /// </remarks>
+    public bool OwnsLevel { get; init; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this level's running state is another machine's: a co-op client's counters,
+    /// verdicts and messages are its server's, so the tasks that work them out leave them as they were sent.
+    /// </summary>
+    /// <remarks>Not retail, whose levels each ran on one machine.</remarks>
+    public bool IsReplica { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether this run has the level's variables to evaluate a slot against. A task whose work is an
+    /// expression does nothing under one that has not.
+    /// </summary>
+    /// <remarks>Not retail: a walk made over a level's tree alone, to play its cutscenes or to test a part of it, has none.</remarks>
+    public virtual bool EvaluatesExpressions => true;
+
+    /// <summary>Compiles the script text one of a task's slots carries, as the title's engine compiles it.</summary>
+    /// <param name="source">The slot's text, or <see langword="null"/> for none.</param>
+    /// <param name="owner">The task the slot belongs to, which <c>this.</c> stands for.</param>
+    /// <returns>The expression, empty when there is no text or it does not parse.</returns>
+    /// <remarks>
+    /// Project I.G.I.'s <c>0x4F1400</c>, I.G.I. 2's <c>Level_CompileLevelExpression</c>: the same rewrite, a word at a time,
+    /// in each title's <see cref="LevelExpressionDialect"/>. A task compiles a slot once and keeps the expression.
+    /// </remarks>
+    public abstract LevelExpression Compile(string? source, GameTask owner);
+
+    /// <summary>Evaluates a compiled slot in the float walk, against the level's variables and natives.</summary>
+    /// <param name="expression">The expression.</param>
+    /// <returns>Its value, or nought when it is empty.</returns>
+    /// <remarks>Project I.G.I.'s <c>sub_4F16E0</c>, I.G.I. 2's <c>Level_RunLevelExpression</c>; a caller that wants a whole number truncates it.</remarks>
+    public abstract double Evaluate(LevelExpression expression);
 
     /// <summary>Binds the work that runs a task in place of its own, given the task.</summary>
     /// <param name="task">The task.</param>
@@ -99,7 +140,15 @@ public abstract class LevelRun
 
         if (task is TickedTask typed)
         {
-            typed.Run(this);
+            if (OwnsLevel)
+            {
+                typed.Run(this);
+            }
+            else
+            {
+                RunChildren(task);
+            }
+
             return;
         }
 

@@ -10,7 +10,6 @@ src/Game/OpenIGI.Game/World/CutsceneRuntime.GunHolders.cs
 src/Game/OpenIGI.Game/World/CutsceneRuntime.cs
 src/Game/OpenIGI.Game/World/DoorRegistry.cs
 src/Game/OpenIGI.Game/World/MissionAreaActivation.cs
-src/Game/OpenIGI.Game/World/MissionObjectiveRuntime.cs
 src/Game/OpenIGI.Game/World/MissionStatusMessages.cs
 src/Game/OpenIGI.Game/World/RotatingObjectRegistry.cs
 src/Game/OpenIGI.Game/World/TakenPickupTask.cs

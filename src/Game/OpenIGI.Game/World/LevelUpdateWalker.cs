@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Level;
+using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.World;
 
@@ -37,6 +38,29 @@ public sealed class LevelUpdateWalker : LevelRun, IConditionalContainerRules
 
     /// <summary>Gets or sets a container whose run state is held rather than re-evaluated this tick.</summary>
     public Func<ConditionalContainerTask, bool>? HoldContainer { get; set; }
+
+    /// <summary>Gets or sets the mission's variables and natives, which the level's expressions are evaluated against.</summary>
+    public LevelExpressionRuntime? Expressions { get; set; }
+
+    /// <inheritdoc/>
+    public override bool EvaluatesExpressions => Expressions is not null;
+
+    /// <inheritdoc/>
+    public override LevelExpression Compile(string? source, GameTask owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        return LevelExpressionRuntime.Create(source, owner);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The walk was given no <see cref="Expressions"/>.</exception>
+    public override double Evaluate(LevelExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        LevelExpressionRuntime runtime = Expressions
+            ?? throw new InvalidOperationException("The level's walk was given no variables to evaluate an expression against.");
+        return runtime.Evaluate(expression);
+    }
 
     /// <summary>Registers what a task does when its conditional container takes it out of the world.</summary>
     /// <param name="task">The task.</param>
