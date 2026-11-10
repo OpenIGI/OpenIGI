@@ -69,6 +69,39 @@ public sealed class RetailIgi2SaveGameTests
         Assert.Contains(played.Tree.OfType<Igi2ConditionalContainerTask>(), static c => c.IsRun);
     }
 
+    /// <summary>
+    /// Every save the retail game made of a mission is read onto that mission's level, and each task whose state this game keeps is
+    /// read to exactly the end of its arguments: a list here that is a field short or long of retail's shows as a misread. The
+    /// mission is the twelfth, or the one <c>IGI2_SAVE_MISSION</c> names (location times ten plus level), so each can be put through
+    /// it, one a process.
+    /// </summary>
+    /// <remarks>
+    /// The level is built without its humans' bodies, so the humans and their minds, which read nothing without one, are left out.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Retail_saves_of_a_mission_read_to_the_end()
+    {
+        int mission = int.TryParse(Environment.GetEnvironmentVariable("IGI2_SAVE_MISSION"), out int named) ? named : 12;
+        string folder = Path.Combine(GameDataSource.Igi2.RequireRoot(), "savegames");
+        string[] files = Directory.Exists(folder) ? Directory.GetFiles(folder, $"0-0-{mission}-*.igi2save") : [];
+        if (files.Length == 0)
+        {
+            return;
+        }
+
+        List<string> misread = [];
+        foreach (string file in files)
+        {
+            RetailIgi2Mission1 level = RetailIgi2Mission1.Load(location: $"location{mission / 10}", levelName: $"level{mission % 10}");
+            SaveInfo info = SaveScript.Load(File.ReadAllBytes(file), level.Tree[0], Igi2SaveFormat.Context(), misread);
+            Assert.True(info.IsValid);
+            Assert.Equal(mission, info.MissionId);
+        }
+
+        string[] bodiless = ["Igi2HumanSoldierTask", "Igi2HumanPlayerTask", "Igi2HumanAiTask", "Igi2AiSquadTask"];
+        Assert.Empty(misread.Where(m => !bodiless.Any(b => m.StartsWith(b, StringComparison.Ordinal))).Distinct());
+    }
+
     /// <summary>Frames are written as their three angles, as <c>Level_PrintReal32x9Handler</c> writes them, and read back as the frame.</summary>
     [Fact]
     public void Frames_are_written_as_their_angles()
