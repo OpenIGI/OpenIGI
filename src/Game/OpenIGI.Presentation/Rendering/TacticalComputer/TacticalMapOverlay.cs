@@ -72,7 +72,7 @@ internal sealed class TacticalMapOverlay
 
             bool clear = taken.All(point =>
                 MathF.Abs(point.X - hx) > labelGuardX || MathF.Abs(point.Y - hy) > labelGuardY);
-            string title = _computerString(highlight.TitleResource);
+            string title = highlight.Title ?? _computerString(highlight.TitleResource);
             if (clear && !string.IsNullOrWhiteSpace(title) && !chrome.OverInterface(hx, hy))
             {
                 DrawLabelChip(painter, context, label, title, new UiVec2(hx + context.Px(12f), hy - context.Px(9f)));

@@ -315,8 +315,8 @@ public sealed partial class GameHost
                 state.Batch,
                 computerObjectives,
                 computerBody,
-                _soldiers?.MapContacts() ?? [],
-                _computerHighlights?.Visible() ?? [],
+                ComputerContacts(),
+                ComputerHighlights(),
                 _window.Width,
                 _window.Height,
                 _computerFlight.ChromeOpacity);

@@ -191,13 +191,6 @@ public readonly record struct MapComputerPresentationRequest(
 /// <param name="Variables">The script variables a mark's visibility is gated on.</param>
 public readonly record struct ComputerHighlightRequest(GameTask LevelRoot, ScriptVarRegistry Variables);
 
-/// <remarks>
-/// In the seam rather than beside the renderer that fills it, because it is what the interface
-/// takes: a type a presenter names in its signature is part of the contract, not an implementation
-/// detail of one title.
-/// </remarks>
-public readonly record struct ComputerMapHighlight(Vector3d Position, string TitleResource, string Sprite);
-
 /// <summary>The second, straight-down 3D view owned by the retail map page.</summary>
 /// <remarks>
 /// In the seam rather than beside the renderer that fills it, because it is what the interface

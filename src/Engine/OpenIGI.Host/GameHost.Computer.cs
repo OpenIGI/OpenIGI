@@ -122,13 +122,25 @@ public sealed partial class GameHost
     /// else the title's player's own computer's, in a level of the title's own.
     /// </summary>
     private IComputerObjectives? ComputerObjectives =>
-        (IComputerObjectives?)_mission.Objectives ?? (TitlePlayer as ITitlePlayerComputer)?.ComputerObjectives;
+        (IComputerObjectives?)_mission.Objectives ?? TitleComputer?.ComputerObjectives;
+
+    /// <summary>
+    /// Gets the title's player's own computer, which the remastered computer shows in a level of the title's own: none where the
+    /// mission has objectives of its own, which it shows instead.
+    /// </summary>
+    private ITitlePlayerComputer? TitleComputer => _mission.Objectives is null ? TitlePlayer as ITitlePlayerComputer : null;
 
     /// <summary>Whether the computer offers its map: the mission's own gate where it has one, else the title's player's computer's.</summary>
     private bool ComputerMapOffered() =>
-        _mission.Objectives is null && TitlePlayer is ITitlePlayerComputer titleComputer
-            ? titleComputer.ComputerMapAvailable
-            : MapComputerAvailable();
+        TitleComputer?.ComputerMapAvailable ?? MapComputerAvailable();
+
+    /// <summary>The guards the computer's map plots: the mission's own soldiers where it has them, else the title's player's computer's.</summary>
+    private IReadOnlyList<Vector3d> ComputerContacts() =>
+        TitleComputer?.ComputerMapContacts ?? _soldiers?.MapContacts() ?? [];
+
+    /// <summary>The places the computer's map marks: the mission's own highlights where it has them, else the title's player's computer's.</summary>
+    private IEnumerable<ComputerMapHighlight> ComputerHighlights() =>
+        TitleComputer?.ComputerMapHighlights ?? _computerHighlights?.Visible() ?? [];
 
     /// <summary>The player the computer serves, where it stands in engine units and the eye it looks through; or none.</summary>
     /// <returns>The mission's own player, else a title's player using the mission's computer.</returns>

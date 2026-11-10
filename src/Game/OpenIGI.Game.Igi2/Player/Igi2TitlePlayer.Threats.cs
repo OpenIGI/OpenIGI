@@ -232,10 +232,7 @@ public sealed partial class Igi2TitlePlayer
             }
 
             string text = Strings?.Get(objective.TextResource) ?? objective.TextResource;
-            Vector3d? place = objective.LinkToPosition != -1 && TaskById?.Invoke(objective.LinkToPosition) is Flow.IIgi2CameraTarget target
-                ? target.CameraTargetPosition
-                : null;
-            return (text, place);
+            return (text, ObjectivePlace(objective));
         }
 
         return null;
