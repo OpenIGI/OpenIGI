@@ -161,57 +161,94 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
         ArgumentNullException.ThrowIfNull(walker);
         foreach (GeneratorPowerState generator in _generators)
         {
-            walker.Bind(generator.Task, task =>
-            {
-                walker.RunChildren(task);
-                generator.Tick();
-            });
+            Adopt(generator.Task);
         }
 
         foreach (WorldInteraction item in _items)
         {
-            switch (item.Type)
+            if (item.Type != InteractionActivateType.Door)
             {
-                case InteractionActivateType.Door:
-                    break;
-                case InteractionActivateType.Fence:
-                    walker.Bind(item.Task, task =>
-                    {
-                        item.Run(Now);
-                        walker.RunChildren(task);
-                    });
-                    break;
-                case InteractionActivateType.StationaryGun:
-                    walker.Bind(item.Task, task =>
-                    {
-                        item.Run(Now);
-                        if (item.StationaryGun is { IsOccupied: false } emptyGun)
-                        {
-                            emptyGun.TickEmpty();
-                        }
-
-                        walker.RunChildren(task);
-                    });
-                    break;
-                case InteractionActivateType.Wire:
-                    walker.Bind(item.Task, () => item.Run(Now));
-                    break;
-                case InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive when !item.IsExplodable:
-                    walker.Bind(item.Task, () => item.Run(Now));
-                    break;
-                default:
-                    walker.Bind(item.Task, task =>
-                    {
-                        walker.RunChildren(task);
-                        item.Run(Now);
-                    });
-                    break;
+                Adopt(item.Task);
             }
         }
 
         // The level counts its tick once its tree has run; a registry without the level's clock counts with it.
         walker.AddTickEnd(() => _updates++);
         _inWalk = true;
+    }
+
+    /// <summary>A task's own update, where the level's walk reaches it, in its type's order.</summary>
+    /// <param name="task">The task.</param>
+    /// <param name="level">The level's run, which runs the task's children.</param>
+    /// <returns>Whether the registry keeps and stepped it.</returns>
+    /// <remarks>
+    /// A switch, terminal, cabinet and generator run their children first (an ExplodeObject's update is its children, then its
+    /// blast); a GenericTBA runs them only when it is Explodable, as only then does it run ExplodeObject's update
+    /// (<c>0x4480B0</c>); a fence (<c>0x43FC30</c>) and a stationary gun (<c>0x474190</c>) run them last; a wire
+    /// (<c>0x43F340</c>) not at all.
+    /// </remarks>
+    internal bool RunFromWalk(WorldInteractionTask task, LevelRun level)
+    {
+        if (!_inWalk)
+        {
+            return false;
+        }
+
+        if (TryGet(task, out WorldInteraction? item) && item is not null && item.Type != InteractionActivateType.Door)
+        {
+            switch (item.Type)
+            {
+                case InteractionActivateType.Fence:
+                    item.Run(Now);
+                    level.RunChildren(task);
+                    break;
+                case InteractionActivateType.StationaryGun:
+                    item.Run(Now);
+                    if (item.StationaryGun is { IsOccupied: false } emptyGun)
+                    {
+                        emptyGun.TickEmpty();
+                    }
+
+                    level.RunChildren(task);
+                    break;
+                case InteractionActivateType.Wire:
+                    item.Run(Now);
+                    break;
+                case InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive when !item.IsExplodable:
+                    item.Run(Now);
+                    break;
+                default:
+                    level.RunChildren(task);
+                    item.Run(Now);
+                    break;
+            }
+
+            return true;
+        }
+
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            if (ReferenceEquals(generator.Task, task))
+            {
+                level.RunChildren(task);
+                generator.Tick();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Makes the registry the one a kept task runs through, and says so loudly when the task was made without its class.
+    private void Adopt(GameTask task)
+    {
+        if (task is not WorldInteractionTask typed)
+        {
+            throw new InvalidOperationException(
+                $"{task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+        }
+
+        typed.Interactions = this;
     }
 
     /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz, for a level whose walk does not run them.</summary>

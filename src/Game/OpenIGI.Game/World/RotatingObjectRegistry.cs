@@ -409,6 +409,7 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
 
     private readonly List<PlacedRotatingObject> _objects = [];
     private readonly HashSet<PlacedRotatingObject> _walked = [];
+    private Action<PlacedRotatingObject>? _ticked;
     private readonly Dictionary<WorldPlacement, PlacedRotatingObject> _byPlacement = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(GameTask Owner, string Model), PlacedRotatingObject> _byOwnerAndModel = [];
     private readonly Dictionary<GameTask, PlacedRotatingObject> _byTask = [];
@@ -608,13 +609,32 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
                 continue;
             }
 
-            _walked.Add(obj);
-            walker.Bind(obj.Owner, _ =>
+            if (obj.Owner is not RotatingObjectTask task)
             {
-                StepRotatingObject(obj);
-                ticked?.Invoke(obj);
-            });
+                throw new InvalidOperationException(
+                    $"{obj.Owner.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            }
+
+            _walked.Add(obj);
+            task.Rotators = this;
         }
+
+        _ticked = ticked;
+    }
+
+    /// <summary>A rotating object's own update, where the level's walk reaches its task (<c>0x439090</c>).</summary>
+    /// <param name="task">The object's task.</param>
+    /// <returns>Whether the registry keeps and stepped it.</returns>
+    internal bool RunFromWalk(RotatingObjectTask task)
+    {
+        if (!_byTask.TryGetValue(task, out PlacedRotatingObject? obj) || !_walked.Contains(obj))
+        {
+            return false;
+        }
+
+        StepRotatingObject(obj);
+        _ticked?.Invoke(obj);
+        return true;
     }
 
     /// <summary>Advances every rotating object the level walk does not reach, for one 30 Hz simulation tick.</summary>

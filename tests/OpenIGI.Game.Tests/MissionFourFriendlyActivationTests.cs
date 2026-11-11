@@ -55,7 +55,7 @@ public sealed class MissionFourFriendlyActivationTests
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
 
         HumanSoldierTask friendly = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(400));
-        DeclaredTask anim = Assert.IsType<DeclaredTask>(root.Tree.FromId(850));
+        DeclaredTask anim = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(850));
         Assert.Equal("AnimTask", anim.Type?.Name);
         GameTask? task760 = root.Tree.FromId(760);
         _output.WriteLine($"  task760 type=[{task760?.Type?.Name}] runtimeType=[{task760?.GetType().Name}]");

@@ -90,7 +90,7 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
     {
         RetailMissionData data = RetailMissionData.Get(7);
         RetailCarStepCapture capture = RetailCarStepCapture.Load(Fixture);
-        OpenIGI.Engine.Tasks.DeclaredTask task = Assert.IsType<OpenIGI.Engine.Tasks.DeclaredTask>(data.Root.Tree.FromId(353));
+        OpenIGI.Engine.Tasks.DeclaredTask task = Assert.IsAssignableFrom<OpenIGI.Engine.Tasks.DeclaredTask>(data.Root.Tree.FromId(353));
         string name = Assert.IsType<string>(task.TryGetValue(WorldScene.ModelParameter, out object? value) ? value : null);
         Assert.True(data.Vehicles.TryGetHelicopter(name, out HelicopterPhysicsDefinition physics));
         Assert.True(data.Mission.TryGetModel(name, out MefModel? model));

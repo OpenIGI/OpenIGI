@@ -32,6 +32,19 @@ public static class LevelTaskTypes
         Add<LevelFlowTask>(types, LevelFlowTask.TypeName);
         Add<Igi1DefineComputerObjectiveTask>(types, Igi1DefineComputerObjectiveTask.TypeName);
         Add<Igi1StatusMessageTask>(types, Igi1StatusMessageTask.TypeName);
+        AddDeclared<DoorTask>(types, DoorTask.TypeName);
+        AddDeclared<RotatingObjectTask>(types, RotatingObjectTask.TypeName);
+        AddDeclared<Ai.SecurityCameraTask>(types, Ai.SecurityCameraTask.TypeName);
+        AddDeclared<Ai.SecurityCameraControlTask>(types, Ai.SecurityCameraControlTask.TypeName);
+        foreach (string name in WorldInteractionTask.TypeNames)
+        {
+            AddDeclared<WorldInteractionTask>(types, name);
+        }
+
+        foreach (string name in PickupTask.TypeNames)
+        {
+            AddDeclared<PickupTask>(types, name);
+        }
     }
 
     /// <summary>Registers every shared type a Project I.G.I. level is made of.</summary>
@@ -43,6 +56,18 @@ public static class LevelTaskTypes
         ArgumentNullException.ThrowIfNull(types);
         Add<ConditionalContainerTask>(types, ConditionalContainerTask.TypeName);
         RegisterFlow(types);
+    }
+
+    // A class whose parameters stay the ones the level declares.
+    private static void AddDeclared<T>(TaskTypeRegistry types, string name)
+        where T : DeclaredTask, new()
+    {
+        if (types.TryGet(name, out TaskType? existing) && !existing.IsDeclarationOnly)
+        {
+            return;
+        }
+
+        types.RegisterDeclared<T>(name);
     }
 
     // A type a class already makes is left as it is, so a level's loader may register its own types before or after these.

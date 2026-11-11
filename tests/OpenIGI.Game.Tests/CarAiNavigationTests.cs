@@ -34,7 +34,7 @@ public sealed class CarAiNavigationTests
                 Call("Task_New", Int(-1), Text("PatrolPathCommand"), Text("destination"), Int(2), Int(2)),
                 Call("Task_New", Int(-1), Text("PatrolPathCommand"), Text("quit"), Int(7), Int(-1)))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
-        GameTask car = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(10));
+        GameTask car = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(10));
         CutsceneRuntime runtime = new(loop.Tasks.Root, loop.Variables);
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [20] = TwoNodeGraph(connected) });
         for (int tick = 0; tick < 5; tick++)

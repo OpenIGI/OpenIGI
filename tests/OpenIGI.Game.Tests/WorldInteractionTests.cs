@@ -111,8 +111,8 @@ public sealed class WorldInteractionTests
 
         return (
             variables,
-            Assert.IsType<DeclaredTask>(tree.FromId(400)),
-            Assert.IsType<DeclaredTask>(tree.FromId(403)));
+            Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(400)),
+            Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(403)));
     }
 
     /// <summary>

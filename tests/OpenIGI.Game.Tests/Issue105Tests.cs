@@ -23,9 +23,9 @@ public sealed class Issue105Tests
     public void MissionSixRetailContractSeparatesApcLimoC4AndFuelTargets()
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
-        DeclaredTask apc = Assert.IsType<DeclaredTask>(root.Tree.FromId(800));
-        DeclaredTask fakeApc = Assert.IsType<DeclaredTask>(root.Tree.FromId(803));
-        DeclaredTask limo = Assert.IsType<DeclaredTask>(root.Tree.FromId(801));
+        DeclaredTask apc = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(800));
+        DeclaredTask fakeApc = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(803));
+        DeclaredTask limo = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(801));
 
         Assert.True(apc.TryGetValue("Can fire", out object? rawCanFire));
         Assert.Equal("1", Assert.IsType<string>(rawCanFire));
@@ -351,12 +351,12 @@ public sealed class Issue105Tests
         };
         string graphPath = Path.Combine(GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
-        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
         string limoGraphPath = Path.Combine(GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH11.DAT");
         GraphFile limoGraph = GraphFile.Read(File.ReadAllBytes(limoGraphPath));
-        DeclaredTask limoGraphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(11));
+        DeclaredTask limoGraphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(11));
         Assert.True(limoGraphTask.TryGetValue("Graph position", out object? rawLimoGraphPosition));
         limoGraph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawLimoGraphPosition));
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph, [11] = limoGraph });
@@ -459,7 +459,7 @@ public sealed class Issue105Tests
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
         WorldScene scene = WorldScene.Build(mission, root);
-        DeclaredTask tank = Assert.IsType<DeclaredTask>(root.Tree.FromId(1600));
+        DeclaredTask tank = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1600));
         WorldPlacement placement = Assert.Single(scene.Placements, candidate => ReferenceEquals(candidate.Owner, tank));
         ObjectCollisionIndex collision = ObjectCollisionIndex.Build([placement]);
         Assert.True(collision.Count > 0, "the visible fuel tank has no bullet collision mesh");
@@ -522,7 +522,7 @@ public sealed class Issue105Tests
         string graphPath = Path.Combine(
             GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
-        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
@@ -624,7 +624,7 @@ public sealed class Issue105Tests
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
         new ConditionalContainerGate(variables).Prepare(root);
-        DeclaredTask apc = Assert.IsType<DeclaredTask>(root.Tree.FromId(800));
+        DeclaredTask apc = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(800));
         Assert.True(apc.TryGetValue("Position", out object? rawPosition));
         Vector3d playerEye = Assert.IsType<Vector3d>(rawPosition)
             + new Vector3d(0d, 37.0137d * WorldScene.UnitsPerMetre, 0d);
@@ -633,7 +633,7 @@ public sealed class Issue105Tests
         string graphPath = Path.Combine(
             GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
-        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        DeclaredTask graphTask = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1));
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });

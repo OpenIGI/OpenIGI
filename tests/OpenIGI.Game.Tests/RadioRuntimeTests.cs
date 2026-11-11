@@ -107,7 +107,7 @@ public sealed class RadioRuntimeTests
                 QvmExpression.Text(onExpression))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(3366));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(3366));
         bool exploded = false;
         loop.Variables.BindBool(task, "isExploded", () => exploded, _ => { });
         RadioRuntime radio = RadioRuntime.Create(

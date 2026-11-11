@@ -107,7 +107,7 @@ public sealed class RetailCutsceneOutroTests
                 return null;
             },
             vehicleObstacleReleased: _ => false);
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(778));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(778));
         Assert.Equal("Car which Jones drives into base", truck.Label);
         Assert.True(truck.TryGetValue(WorldScene.ModelParameter, out object? model));
         Assert.Equal("622_01_1", model);
@@ -141,7 +141,7 @@ public sealed class RetailCutsceneOutroTests
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
 
         new ConditionalContainerGate(loop.Variables).Prepare(root);
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1099));
         Assert.Equal("Truck which Jones will steal", truck.Label);
         Assert.True(truck.TryGetValue(WorldScene.ModelParameter, out object? model));
         Assert.Equal("622_01_1", model);

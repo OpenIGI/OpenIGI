@@ -656,7 +656,7 @@ public sealed class RetailInteractionInventoryTests
                 Assert.Equal(placement.Orientation, door.DrawOrientation);
 
                 door.State.Toggle();
-                DeclaredTask doorTask = Assert.IsType<DeclaredTask>(door.Task);
+                DeclaredTask doorTask = Assert.IsAssignableFrom<DeclaredTask>(door.Task);
                 int motionTicks = Math.Max(1, (int)Math.Ceiling(ReadReal(doorTask, "Open time", 1f) * 30f));
                 for (int tick = 0; tick <= motionTicks; tick++)
                 {
@@ -786,7 +786,7 @@ public sealed class RetailInteractionInventoryTests
                          static item => item.Type == InteractionActivateType.StationaryGun))
             {
                 stationaryGunCount++;
-                DeclaredTask declared = Assert.IsType<DeclaredTask>(gun.Task);
+                DeclaredTask declared = Assert.IsAssignableFrom<DeclaredTask>(gun.Task);
                 string parameters = string.Join(
                     "; ",
                     declared.Type.Parameters.Select(

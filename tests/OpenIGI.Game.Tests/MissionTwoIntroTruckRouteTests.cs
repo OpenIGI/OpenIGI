@@ -72,7 +72,7 @@ public sealed class MissionTwoIntroTruckRouteTests(ITestOutputHelper output)
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
 
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(778));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(778));
         Assert.Equal("Car which Jones drives into base", truck.Label);
 
         CutsceneRuntime runtime = new(

@@ -48,7 +48,7 @@ public sealed class DestructibleModelReplacementTests
 
             foreach (WorldPlacement placement in explodeObjects)
             {
-                DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
+                DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(placement.Owner);
                 Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
                 string destroyedModel = Assert.IsType<string>(rawDestroyed);
 
@@ -202,7 +202,7 @@ public sealed class DestructibleModelReplacementTests
         foreach (IGrouping<GameTask, (WorldPlacement Placement, int Index)> group in placements.GroupBy(entry => entry.Placement.Owner))
         {
             WorldPlacement placement = group.Last().Placement;
-            DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
+            DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(placement.Owner);
             Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
             string destroyedModel = Assert.IsType<string>(rawDestroyed);
             DestructibleObject destructible = Assert.Single(

@@ -92,7 +92,7 @@ public sealed class LevelThreeOutroFidelityTests
         CutSceneTask scene = Assert.IsType<CutSceneTask>(root.Tree.FromId(700));
         ConditionalContainerTask hangar = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3445));
         ConditionalContainerTask staticPlane = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3446));
-        DeclaredTask takeoffPlane = Assert.IsType<DeclaredTask>(root.Tree.FromId(601));
+        DeclaredTask takeoffPlane = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(601));
         Assert.Equal(700, runtime.ActiveScene?.Id);
         Assert.True(scene.IsRun);
         Assert.False(scene.IsFinished);

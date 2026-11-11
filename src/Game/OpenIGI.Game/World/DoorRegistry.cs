@@ -439,6 +439,8 @@ public sealed record PlacedDoor(
 public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
 {
     private readonly List<PlacedDoor> _doors = [];
+    private bool _inWalk;
+    private Action<PlacedDoor>? _ticked;
 
     /// <summary>The doors by their task, for the per-placement draw query.</summary>
     /// <remarks>
@@ -594,12 +596,27 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
         ArgumentNullException.ThrowIfNull(walker);
         foreach (PlacedDoor door in _doors)
         {
-            walker.Bind(door.Task, task =>
+            if (door.Task is not DoorTask task)
             {
-                walker.RunChildren(task);
-                Tick(door);
-                ticked?.Invoke(door);
-            });
+                throw new InvalidOperationException(
+                    $"{door.Task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            }
+
+            task.Doors = this;
+        }
+
+        _inWalk = true;
+        _ticked = ticked;
+    }
+
+    /// <summary>A door's own update, where the level's walk reaches its task, after its children (<c>0x446D10</c>).</summary>
+    /// <param name="task">The door's task.</param>
+    internal void RunFromWalk(DoorTask task)
+    {
+        if (_inWalk && _doorsByTask.TryGetValue(task, out PlacedDoor? door))
+        {
+            Tick(door);
+            _ticked?.Invoke(door);
         }
     }
 

@@ -36,7 +36,7 @@ public sealed class DestructibleObjectRegistryTests
                 QvmExpression.Real(1f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(7));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(7));
         WorldPlacement first = Placement(task, "Model");
         WorldPlacement second = Placement(task, "Model 2");
         DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
@@ -78,7 +78,7 @@ public sealed class DestructibleObjectRegistryTests
                 QvmExpression.Real(1f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(99));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(99));
         WorldPlacement model = Placement(task, "Model");
         DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
             loop.Tasks.Root,
@@ -130,7 +130,7 @@ public sealed class DestructibleObjectRegistryTests
                 QvmExpression.Real(0f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(550));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(550));
         WorldPlacement model = Placement(task, "Model");
         DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(loop.Tasks.Root, [model], loop.Variables);
         DestructibleObject item = Assert.Single(registry.Objects);
@@ -167,7 +167,7 @@ public sealed class DestructibleObjectRegistryTests
                 QvmExpression.Real(1f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(3366));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(3366));
         WorldPlacement model = Placement(task, "Model");
         DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(loop.Tasks.Root, [model], loop.Variables);
         LevelExpressionRuntime expressions = new(loop.Variables);
@@ -210,7 +210,7 @@ public sealed class DestructibleObjectRegistryTests
                 QvmExpression.Real(1f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
 
-        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(3366));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(loop.Tasks.FromId(3366));
         WorldPlacement model = Placement(task, "Model");
         DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(loop.Tasks.Root, [model], loop.Variables);
         DestructibleObject item = Assert.Single(registry.Objects);

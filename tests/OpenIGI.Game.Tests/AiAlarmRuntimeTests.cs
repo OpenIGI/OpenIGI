@@ -258,7 +258,7 @@ public sealed class AiAlarmRuntimeTests
         Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
 
         AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
-        GameTask left = Assert.IsType<DeclaredTask>(tree.FromId(12));
+        GameTask left = Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(12));
         AlarmSpeaker destroyed = Assert.IsType<AlarmSpeaker>(speakers.TryDestroy(left));
 
         Assert.Same(left, destroyed.Task);
@@ -317,7 +317,7 @@ public sealed class AiAlarmRuntimeTests
                 "Task_New", QvmExpression.Int(12), QvmExpression.Text("SCamera"), QvmExpression.Text("Lens"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
 
-        return (AlarmSpeakerRegistry.Build(tree.Root, variables), Assert.IsType<DeclaredTask>(tree.FromId(12)));
+        return (AlarmSpeakerRegistry.Build(tree.Root, variables), Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(12)));
     }
 
     [Fact]
@@ -386,7 +386,7 @@ public sealed class AiAlarmRuntimeTests
         // Running those phases in retail order must leave the alarm on after the press has ended.
         MissionObjectiveRuntime objectives = new(tree.Root, variables);
         AiAlarmControlRegistry alarms = AiAlarmControlRegistry.Build(tree.Root, variables);
-        DeclaredTask alarmSwitch = Assert.IsType<DeclaredTask>(tree.FromId(94));
+        DeclaredTask alarmSwitch = Assert.IsAssignableFrom<DeclaredTask>(tree.FromId(94));
         ScriptFlag pressed = new();
         variables.BindFlag(alarmSwitch, "isPressed", pressed);
 

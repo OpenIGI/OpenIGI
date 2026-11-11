@@ -58,7 +58,7 @@ public sealed class MissionEightAirstrikeTests
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
         LevelExpressionRuntime expressions = new(loop.Variables);
         ConditionalContainerTask su27 = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(454));
-        DeclaredTask launcher = Assert.IsType<DeclaredTask>(root.Tree.FromId(2500));
+        DeclaredTask launcher = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(2500));
         Assert.True(launcher.TryGetValue("Explosion expression", out object? strike));
 
         void Tick()

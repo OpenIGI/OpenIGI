@@ -75,7 +75,7 @@ public sealed class MissionOneOutroTruckRouteTests(ITestOutputHelper output)
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
 
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1099));
         Assert.Equal("Truck which Jones will steal", truck.Label);
 
         // 304_01_1 FENCE_GATES is a pair, and the level opens both leaves. Opening only one leaves

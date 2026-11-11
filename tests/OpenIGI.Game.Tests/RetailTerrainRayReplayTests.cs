@@ -44,7 +44,7 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
         // Nothing from the capture but the controller's packets: the car is built from the level, its type
         // and its model, and every ray is the port's own.
         RetailMissionData data = RetailMissionData.Get(mission);
-        DeclaredTask task = Assert.IsType<DeclaredTask>(data.Root.Tree.FromId(id));
+        DeclaredTask task = Assert.IsAssignableFrom<DeclaredTask>(data.Root.Tree.FromId(id));
         string modelName = Assert.IsType<string>(task.TryGetValue(WorldScene.ModelParameter, out object? value) ? value : null);
         Assert.True(data.Vehicles.TryGetCar(modelName, out CarPhysicsDefinition physics));
         Assert.True(data.Mission.TryGetModel(modelName, out MefModel? model));

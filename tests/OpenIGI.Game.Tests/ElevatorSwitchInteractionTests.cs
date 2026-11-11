@@ -121,7 +121,7 @@ public sealed class ElevatorSwitchInteractionTests
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
             root, mission, doors, variables, elevators);
         PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
-        DeclaredTask declared = Assert.IsType<DeclaredTask>(elevator.Task);
+        DeclaredTask declared = Assert.IsAssignableFrom<DeclaredTask>(elevator.Task);
 
         int startFloor = Settle(elevator, interactions, elevators, doors);
         int targetFloor = startFloor == 0 ? 1 : 0;

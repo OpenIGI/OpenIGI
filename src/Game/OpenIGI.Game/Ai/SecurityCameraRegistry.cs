@@ -702,6 +702,8 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
     private readonly Dictionary<SecurityCamera, int> _order = [];
     private ReplicatedCamera[]? _mirror;
     private readonly List<Control> _controls = [];
+    private Func<SecurityCameraScan>? _scan;
+    private Action<SecurityCamera>? _ticked;
     private readonly List<SecurityCameraSubject> _subjects = [];
     private readonly LevelExpressionRuntime _expressions;
     private readonly WorldTraceCast? _sight;
@@ -838,33 +840,73 @@ public sealed class SecurityCameraRegistry : World.ILevelReset, Saves.ISavedStat
         ArgumentNullException.ThrowIfNull(scan);
         foreach (SecurityCamera camera in _cameras)
         {
-            walker.Bind(camera.Task, task =>
+            if (camera.Task is not SecurityCameraTask task)
             {
-                TickLens(camera, BuildSubjects(scan()));
-                walker.RunChildren(task);
-                UpdatePower(camera);
-                ticked?.Invoke(camera);
-            });
+                throw new InvalidOperationException(
+                    $"{camera.Task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            }
+
+            task.Cameras = this;
         }
 
-        // SCameraControl's update (0x440D70) is Terminal's, then its isDetection: a terminal already bound in the walk runs
-        // first, its children with it.
+        // SCameraControl's update (0x440D70) is Terminal's, then its isDetection, which its task runs in that order.
         foreach (Control control in _controls)
         {
-            Action<GameTask>? terminal = walker.TryGetBound(control.Task, out Action<GameTask>? bound) ? bound : null;
-            walker.Bind(control.Task, task =>
+            if (control.Task is not SecurityCameraControlTask task)
             {
-                if (terminal is not null)
-                {
-                    terminal(task);
-                }
-                else
-                {
-                    walker.RunChildren(task);
-                }
+                throw new InvalidOperationException(
+                    $"{control.Task.Name} was made without its class; a level's loader registers the level task types before it loads.");
+            }
 
+            task.Cameras = this;
+        }
+
+        _scan = scan;
+        _ticked = ticked;
+    }
+
+    /// <summary>A camera's own update, where the level's walk reaches its task (<c>0x442610</c>): the lens, its children, then its power.</summary>
+    /// <param name="task">The camera's task.</param>
+    /// <param name="level">The level's run, which runs the camera's children.</param>
+    /// <returns>Whether the registry keeps and stepped it.</returns>
+    internal bool RunFromWalk(SecurityCameraTask task, Level.LevelRun level)
+    {
+        if (_scan is null)
+        {
+            return false;
+        }
+
+        foreach (SecurityCamera camera in _cameras)
+        {
+            if (ReferenceEquals(camera.Task, task))
+            {
+                TickLens(camera, BuildSubjects(_scan()));
+                level.RunChildren(task);
+                UpdatePower(camera);
+                _ticked?.Invoke(camera);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>A control's detection, once its terminal's update has run (<c>0x440D70</c>).</summary>
+    /// <param name="task">The control's task.</param>
+    internal void UpdateDetectionFromWalk(SecurityCameraControlTask task)
+    {
+        if (_scan is null)
+        {
+            return;
+        }
+
+        foreach (Control control in _controls)
+        {
+            if (ReferenceEquals(control.Task, task))
+            {
                 UpdateDetection(control);
-            });
+                return;
+            }
         }
     }
 

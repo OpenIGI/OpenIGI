@@ -30,7 +30,7 @@ public sealed class RetailMissionFourPlaneRideTests
     public void MissionThreePilotKeepsItsAuthoredCabinOffsetWhenHelicopterParks()
     {
         (CutsceneRuntime runtime, LevelTask root, _, _) = LoadMission(3);
-        DeclaredTask heli = Assert.IsType<DeclaredTask>(root.Tree.FromId(603));
+        DeclaredTask heli = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(603));
         DeclaredTask pilot = Assert.Single(heli.Children.OfType<DeclaredTask>(),
             child => child.TryGetValue("Model", out object? model) && Equals(model, "715_01_1"));
         Assert.True(heli.TryGetValue("Position", out object? heliPosition));

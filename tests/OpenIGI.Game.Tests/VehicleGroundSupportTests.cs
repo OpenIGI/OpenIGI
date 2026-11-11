@@ -55,7 +55,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
             terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(1);
         WorldScene world = WorldScene.Build(mission, root, magic);
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
-        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        DeclaredTask truck = Assert.IsAssignableFrom<DeclaredTask>(root.Tree.FromId(1099));
 
         // The two surfaces under the truck's starting position.
         WorldPlacement body = world.Placements.Single(
@@ -109,7 +109,7 @@ public sealed class VehicleGroundSupportTests(ITestOutputHelper output)
                 terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(1);
             WorldScene scene = WorldScene.Build(mission, levelRoot, magic);
             new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
-            DeclaredTask car = Assert.IsType<DeclaredTask>(levelRoot.Tree.FromId(1099));
+            DeclaredTask car = Assert.IsAssignableFrom<DeclaredTask>(levelRoot.Tree.FromId(1099));
             CutsceneRuntime runtime = new(
                 levelRoot,
                 loop.Variables,

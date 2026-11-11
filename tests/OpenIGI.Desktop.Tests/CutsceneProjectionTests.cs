@@ -120,7 +120,7 @@ public sealed class CutsceneProjectionTests
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(20f), QvmExpression.Real(20f), QvmExpression.Real(20f),
-                QvmExpression.Text("PLAYER"))));
+                QvmExpression.Text("CRITERIA_HUMAN0"))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
         return (loop, new MissionObjectiveRuntime(loop.Tasks.Root, loop.Variables));
