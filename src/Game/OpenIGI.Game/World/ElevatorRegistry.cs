@@ -70,7 +70,7 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
     {
         ArgumentNullException.ThrowIfNull(elevators);
         _elevators.AddRange(elevators);
-        PlacementClaims.Changed();
+        (_elevators.Count > 0 ? _elevators[0].Task : null)?.PlacementsChanged();
     }
 
     public IReadOnlyList<PlacedElevator> Elevators => _elevators;
@@ -507,7 +507,7 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
         return false;
     }
 
-    /// <summary>Whether a task is a lift's or rides in one, so this registry may move its placement (see <see cref="PlacementClaims"/>).</summary>
+    /// <summary>Whether a task is a lift's or rides in one, so this registry may move its placement (see <see cref="OpenIGI.Engine.Tasks.TaskTree.PlacementEpoch"/>).</summary>
     /// <param name="task">The placement's owner.</param>
     /// <returns><see langword="true"/> for a lift's task or one of its descendants.</returns>
     public bool Claims(GameTask task)
@@ -677,7 +677,7 @@ public sealed class ElevatorRegistry : ILevelReset, Saves.ISavedStateSource
                     declared.MoveSound,
                     ElevatorSplineFrame.For(declared, spline));
                 registry._elevators.Add(elevator);
-                PlacementClaims.Changed();
+                declared.PlacementsChanged();
                 List<string> wantedExpressions = Enumerable.Range(0, ElevatorTask.WantedFloorCount)
                     .Select(declared.WantedFloor)
                     .ToList();

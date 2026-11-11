@@ -63,7 +63,7 @@ internal sealed class LevelMotionContext(
     {
         if (!TaskTransforms.ContainsKey(task))
         {
-            PlacementClaims.Changed();
+            task.PlacementsChanged();
         }
 
         TaskTransforms[task] = state;

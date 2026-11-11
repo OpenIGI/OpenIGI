@@ -328,7 +328,7 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
         }
     }
 
-    /// <summary>Whether a placement is an alarm light's turning reflector (see <see cref="PlacementClaims"/>).</summary>
+    /// <summary>Whether a placement is an alarm light's turning reflector (see <see cref="OpenIGI.Engine.Tasks.TaskTree.PlacementEpoch"/>).</summary>
     public bool ClaimsReflector(WorldPlacement placement)
     {
         foreach (AlarmLightReflector reflector in _reflectors)
@@ -413,7 +413,7 @@ public sealed class AlarmSpeakerRegistry : World.ILevelReset, Saves.ISavedStateS
     {
         ArgumentNullException.ThrowIfNull(placements);
         _reflectors.Clear();
-        PlacementClaims.Changed();
+        (_speakers.Count > 0 ? _speakers[0].Task : null)?.PlacementsChanged();
         _lightOrientations.Clear();
 
         foreach (WorldPlacement placement in placements)

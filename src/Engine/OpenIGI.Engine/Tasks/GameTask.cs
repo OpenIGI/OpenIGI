@@ -51,6 +51,12 @@ public abstract class GameTask
     /// <summary>Gets a value indicating whether the task was created through a <see cref="TaskTree"/>, and so has a <see cref="Tree"/>.</summary>
     public bool HasTree => _tree is not null;
 
+    /// <summary>Says that what may claim a drawn placement in this task's tree has changed (<see cref="TaskTree.PlacementsChanged"/>).</summary>
+    public void PlacementsChanged() => _tree?.PlacementsChanged();
+
+    /// <summary>Gets the count of such changes in this task's tree (<see cref="TaskTree.PlacementEpoch"/>), or zero for a task outside one.</summary>
+    public int PlacementEpoch => _tree?.PlacementEpoch ?? 0;
+
     /// <summary>Gets the parent task, or <see langword="null"/> for a tree root.</summary>
     public GameTask? Parent { get; private set; }
 
@@ -407,7 +413,7 @@ public abstract class GameTask
     internal void AppendChild(GameTask child)
     {
         child.Parent = this;
-        PlacementClaims.Changed();
+        _tree?.PlacementsChanged();
         child.PreviousSibling = LastChild;
         child.NextSibling = null;
 
@@ -427,7 +433,7 @@ public abstract class GameTask
     internal void PrependChild(GameTask child)
     {
         child.Parent = this;
-        PlacementClaims.Changed();
+        _tree?.PlacementsChanged();
         child.NextSibling = FirstChild;
         child.PreviousSibling = null;
 
@@ -472,6 +478,6 @@ public abstract class GameTask
         NextSibling = null;
         PreviousSibling = null;
         Parent = null;
-        PlacementClaims.Changed();
+        _tree?.PlacementsChanged();
     }
 }

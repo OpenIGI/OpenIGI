@@ -251,7 +251,7 @@ internal sealed class WorldFrameState
 
             // What nothing claims is drawn where it stands, as the original draws an object from its own matrix (0x49DF60):
             // asked once, and again only when a claim is made or let go.
-            int epoch = PlacementClaims.Epoch;
+            int epoch = entry.Displayed!.Owner.PlacementEpoch + _transforms.Swaps;
             if (entry.ClaimEpoch != epoch || !ReferenceEquals(entry.ClaimFor, entry.Displayed))
             {
                 entry.Unclaimed = !_transforms.IsClaimed(entry.Displayed!);

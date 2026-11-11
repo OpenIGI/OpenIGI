@@ -59,7 +59,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     {
         _items.Add(item);
         _hasPlacedTasks |= item.PlacedTaskId >= 0;
-        PlacementClaims.Changed();
+        item.Task.PlacementsChanged();
     }
 
     /// <summary>Adds a collected generator.</summary>
@@ -362,7 +362,7 @@ public sealed partial class WorldInteractionRegistry : IPlacementVariant, ILevel
     public bool WeaponHit(GameTask? task) =>
         task is not null && TryGet(task, out WorldInteraction? item) && item!.WeaponHit();
 
-    /// <summary>Whether a task is something a plant can put down somewhere else (see <see cref="PlacementClaims"/>).</summary>
+    /// <summary>Whether a task is something a plant can put down somewhere else (see <see cref="OpenIGI.Engine.Tasks.TaskTree.PlacementEpoch"/>).</summary>
     public bool ClaimsPlaced(GameTask task)
     {
         if (_hasPlacedTasks)

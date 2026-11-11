@@ -488,7 +488,7 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
                 : null;
             door.Initialise(baseOrientation, parent);
             registry._doors.Add(door);
-            PlacementClaims.Changed();
+            declared.PlacementsChanged();
             registry._doorsByTask[declared] = door;
         }
 
@@ -735,7 +735,7 @@ public sealed class DoorRegistry : ILevelReset, Saves.ISavedStateSource
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation)
         => TryGetDrawTransform(task, 1f, smooth: false, out position, out orientation);
 
-    /// <summary>Whether a task is a door, whose placement this registry draws (see <see cref="PlacementClaims"/>).</summary>
+    /// <summary>Whether a task is a door, whose placement this registry draws (see <see cref="OpenIGI.Engine.Tasks.TaskTree.PlacementEpoch"/>).</summary>
     /// <param name="task">The placement's owner.</param>
     /// <returns><see langword="true"/> for a door's task.</returns>
     public bool Claims(GameTask task) => _doorsByTask.ContainsKey(task);

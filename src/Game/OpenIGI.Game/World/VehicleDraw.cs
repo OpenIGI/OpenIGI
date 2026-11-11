@@ -218,7 +218,7 @@ internal sealed class VehicleDraw(
     /// <summary>
     /// Whether a cut-scene drives, carries or attaches a placement's task, or it is a vehicle's gun or plane part: anything
     /// <see cref="TryGetPlacementDrawTransform(WorldPlacement, out Vector3d, out Matrix3f)"/> and
-    /// <see cref="TryGetRotorDrawState"/> could place (see <see cref="PlacementClaims"/>).
+    /// <see cref="TryGetRotorDrawState"/> could place (see <see cref="OpenIGI.Engine.Tasks.TaskTree.PlacementEpoch"/>).
     /// </summary>
     public bool Claims(WorldPlacement placement) =>
         _context.TaskTransforms.ContainsKey(placement.Owner)

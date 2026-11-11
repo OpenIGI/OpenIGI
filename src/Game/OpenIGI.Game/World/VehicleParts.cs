@@ -68,24 +68,24 @@ internal sealed class VehicleParts(LevelMotionContext context, VehicleArmaments 
                     int leg = legs.GetValueOrDefault(placement.Owner);
                     legs[placement.Owner] = leg + 1;
                     _planeParts[placement] = (PlanePartKind.Gear, leg);
-                    PlacementClaims.Changed();
+                    placement.Owner.PlacementsChanged();
                 }
                 else if (placement.MagicTaskTypeName == "TASKTYPE_HATCH")
                 {
                     _planeParts[placement] = (PlanePartKind.Hatch, 0);
-                    PlacementClaims.Changed();
+                    placement.Owner.PlacementsChanged();
                 }
                 else if (placement.MagicTaskTypeName == "TASKTYPE_RUDDER")
                 {
                     int surface = surfaces.GetValueOrDefault(placement.Owner);
                     surfaces[placement.Owner] = surface + 1;
                     _planeParts[placement] = (PlanePartKind.Rudder, surface);
-                    PlacementClaims.Changed();
+                    placement.Owner.PlacementsChanged();
                 }
                 else if (placement.MagicTaskTypeName == "TASKTYPE_COCKPITSHIELD")
                 {
                     _planeParts[placement] = (PlanePartKind.Canopy, 0);
-                    PlacementClaims.Changed();
+                    placement.Owner.PlacementsChanged();
                 }
 
                 continue;

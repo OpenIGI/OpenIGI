@@ -131,11 +131,14 @@ internal sealed class WorldPlacementTransforms
     internal bool IsClaimed(WorldPlacement placement) => _objects?.Claims(placement) == true;
 
     // The title's objects swapped in or out is a claim made or let go.
-    private static bool Claimed()
+    private bool Claimed()
     {
-        PlacementClaims.Changed();
+        Swaps++;
         return true;
     }
+
+    /// <summary>Gets how many times the title's objects have been swapped in or out: each is a claim made or let go.</summary>
+    internal int Swaps { get; private set; }
 
     internal void ResolveDrawTransform(
         WorldPlacement placement,

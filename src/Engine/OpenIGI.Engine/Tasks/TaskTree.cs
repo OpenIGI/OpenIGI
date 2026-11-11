@@ -19,6 +19,21 @@ namespace OpenIGI.Engine.Tasks;
 /// </remarks>
 public sealed class TaskTree : ILevelTaskTable
 {
+    private int _placementEpoch;
+
+    /// <summary>
+    /// Gets a count that moves whenever what may claim a drawn placement in this tree changes: a task joining or leaving
+    /// it, or one of a game's objects taking a placement up or letting it go.
+    /// </summary>
+    /// <remarks>
+    /// A renderer that has asked whether anything claims a placement need not ask again until this moves. Read from the
+    /// render thread while the tick writes it.
+    /// </remarks>
+    public int PlacementEpoch => Volatile.Read(ref _placementEpoch);
+
+    /// <summary>Says that what may claim a drawn placement in this tree has changed.</summary>
+    public void PlacementsChanged() => Interlocked.Increment(ref _placementEpoch);
+
     private const string LogCategory = "Tasks";
 
     /// <summary>The number of script id slots, which the original fixes at 4096.</summary>

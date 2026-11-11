@@ -524,10 +524,10 @@ public sealed class RotatingObjectRegistry : ILevelReset, Saves.ISavedStateSourc
         _byPlacement[obj.Placement] = obj;
         _byOwnerAndModel[(obj.Owner, obj.Placement.Instance.Name)] = obj;
         _byTask.TryAdd(obj.Owner, obj);
-        PlacementClaims.Changed();
+        obj.Owner.PlacementsChanged();
     }
 
-    /// <summary>Whether a placement, or its owner, turns (see <see cref="PlacementClaims"/>).</summary>
+    /// <summary>Whether a placement, or its owner, turns (see <see cref="OpenIGI.Engine.Tasks.TaskTree.PlacementEpoch"/>).</summary>
     public bool Claims(WorldPlacement placement) =>
         _byPlacement.ContainsKey(placement) || _byTask.ContainsKey(placement.Owner);
 

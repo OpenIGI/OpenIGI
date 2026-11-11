@@ -558,7 +558,7 @@ internal sealed class VehicleArmaments(
     {
         ArgumentNullException.ThrowIfNull(scene);
         _gunPlacements.Clear();
-        PlacementClaims.Changed();
+        (scene.Placements.Count > 0 ? scene.Placements[0].Owner : null)?.PlacementsChanged();
         Dictionary<GameTask, int> next = [];
         foreach (WorldPlacement placement in scene.Placements)
         {
