@@ -35,7 +35,10 @@ public static class MissionFixture
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        // The level's own task classes, as the game's content registers them: a door, a lift, a mounted gun and the rest are
+        // told by their class.
+        OpenIGI.Game.Flow.LevelTaskTypes.Register(loop.Types);
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(loop.Types);
         MissionRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Scan(fileSystem, resources, loop.Natives);
