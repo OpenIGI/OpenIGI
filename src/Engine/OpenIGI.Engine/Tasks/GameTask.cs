@@ -342,6 +342,23 @@ public abstract class GameTask
         return false;
     }
 
+    /// <summary>Gets the value a parameter was given, by the name level data declares it under, when it is of the type asked for.</summary>
+    /// <typeparam name="T">The type the value is wanted as.</typeparam>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">Receives the value, or the type's default.</param>
+    /// <returns><see langword="true"/> when the type declares the parameter and its value is a <typeparamref name="T"/>.</returns>
+    public bool TryGetScriptValue<T>(string name, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out T value)
+    {
+        if (TryGetScriptValue(name, out object? raw) && raw is T typed)
+        {
+            value = typed;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
     /// <summary>Sets a parameter by the name level data declares it under, when the value is of the parameter's type.</summary>
     /// <param name="name">The parameter's declared name.</param>
     /// <param name="value">The value.</param>

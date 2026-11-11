@@ -319,19 +319,25 @@ public sealed class MissionObjectiveRuntimeTests
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("LevelFlow"),
-                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
-                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
+                QvmExpression.Text("Start time"), QvmExpression.Text("Real32"),
                 QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
-                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32")),
             QvmExpression.Call(
                 "Task_New",
                 QvmExpression.Int(1),
                 QvmExpression.Text("LevelFlow"),
                 QvmExpression.Text("Level flow"),
-                QvmExpression.Int(1),
-                QvmExpression.Real(2.5f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f),
                 QvmExpression.Text(string.Empty),
-                QvmExpression.Text(string.Empty))));
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Int(1),
+                QvmExpression.Real(2.5f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
         MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
@@ -363,10 +369,13 @@ public sealed class MissionObjectiveRuntimeTests
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("LevelFlow"),
-                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
-                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
+                QvmExpression.Text("Start time"), QvmExpression.Text("Real32"),
                 QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
-                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32")),
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("StatusMessage"),
@@ -389,19 +398,25 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(17),
                 QvmExpression.Text("LevelFlow"),
                 QvmExpression.Text("Level flow"),
-                QvmExpression.Int(0),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f),
                 QvmExpression.Text(string.Empty),
-                QvmExpression.Text("EditVariable_2.nValue")),
+                QvmExpression.Text("EditVariable_2.nValue"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f)),
             QvmExpression.Call(
                 "Task_New",
                 QvmExpression.Int(29),
                 QvmExpression.Text("LevelFlow"),
                 QvmExpression.Text("Secondary level flow"),
-                QvmExpression.Int(0),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f),
                 QvmExpression.Text(string.Empty),
-                QvmExpression.Text("EditVariable_2.nValue")),
+                QvmExpression.Text("EditVariable_2.nValue"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f)),
             QvmExpression.Call(
                 "Task_New",
                 QvmExpression.Int(23),
@@ -414,7 +429,7 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Real(2f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
-        DeclaredTask levelFlow = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(17));
+        GameTask levelFlow = Assert.IsAssignableFrom<GameTask>(loop.Tasks.FromId(17));
         loop.Variables.BindInt(levelFlow, "unrelated", () => 7, _ => { });
         MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
 
@@ -475,10 +490,13 @@ public sealed class MissionObjectiveRuntimeTests
             QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("LevelFlow"),
-                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
-                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
+                QvmExpression.Text("Start time"), QvmExpression.Text("Real32"),
                 QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
-                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32")),
             QvmExpression.Call(
                 "Task_New",
                 QvmExpression.Int(2),
@@ -502,19 +520,25 @@ public sealed class MissionObjectiveRuntimeTests
                 QvmExpression.Int(10),
                 QvmExpression.Text("LevelFlow"),
                 QvmExpression.Text("Level flow"),
-                QvmExpression.Int(0),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f),
                 QvmExpression.Text("EditVariable_2.nValue / 2"),
-                QvmExpression.Text("EditVariable_3.nValue")),
+                QvmExpression.Text("EditVariable_3.nValue"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f)),
             QvmExpression.Call(
                 "Task_New",
                 QvmExpression.Int(11),
                 QvmExpression.Text("LevelFlow"),
                 QvmExpression.Text("Scripted flow"),
-                QvmExpression.Int(0),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
                 QvmExpression.Real(0f),
                 QvmExpression.Text(string.Empty),
-                QvmExpression.Text(string.Empty))));
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f))));
         Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
 
         HashSet<KeyCode> held = [KeyCode.D0, KeyCode.D7];
@@ -585,8 +609,7 @@ public sealed class MissionObjectiveRuntimeTests
             LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);
             loader.LoadScript(resourceName);
 
-            List<DeclaredTask> levelFlows = Walk(root)
-                .OfType<DeclaredTask>()
+            List<GameTask> levelFlows = Walk(root)
                 .Where(task => string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
                 .ToList();
             MissionObjectiveRuntime runtime = new(root, loop.Variables);
@@ -596,7 +619,7 @@ public sealed class MissionObjectiveRuntimeTests
             Assert.True(runtime.StatusMessageCount > 0, $"{script} has no StatusMessage task.");
             Assert.InRange(runtime.Objectives.Count, 0, MissionObjectiveRuntime.ObjectiveSlotCount);
 
-            foreach (DeclaredTask levelFlow in levelFlows)
+            foreach (GameTask levelFlow in levelFlows)
             {
                 foreach (string field in LevelFlowFields)
                 {
@@ -647,7 +670,7 @@ public sealed class MissionObjectiveRuntimeTests
             }
 
             runtime.Release();
-            foreach (DeclaredTask levelFlow in levelFlows)
+            foreach (GameTask levelFlow in levelFlows)
             {
                 foreach (string field in LevelFlowFields)
                 {

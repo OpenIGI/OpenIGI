@@ -22,26 +22,6 @@ public sealed partial class Igi2ConditionalContainerTask : ISavedState
     }
 }
 
-/// <content>Its save state, <c>LevelFlow_ptSerializeParameterList</c>: its tick, then its time of day.</content>
-public sealed partial class Igi2LevelFlowTask : ISavedState
-{
-    /// <inheritdoc/>
-    public void WriteState(StateWriter writer)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-        writer.Int(Tick);
-        writer.Int(TimeOfDayTick);
-    }
-
-    /// <inheritdoc/>
-    public void ReadState(StateReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(reader);
-        Tick = reader.Int();
-        TimeOfDayTick = reader.Int();
-    }
-}
-
 /// <content>Its save state, <c>CutScene_ptSerializeParameterList</c>: whether it runs and has finished, and its clock.</content>
 public sealed partial class Igi2CutSceneTask : ISavedState
 {

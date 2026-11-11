@@ -29,6 +29,7 @@ public static class LevelTaskTypes
         ArgumentNullException.ThrowIfNull(types);
         RegisterShared(types);
         types.Register<AreaActivateTask>(AreaActivateTask.TypeName);
+        types.Register<LevelFlowTask>(LevelFlowTask.TypeName);
     }
 
     /// <summary>Registers every shared type a Project I.G.I. level is made of.</summary>

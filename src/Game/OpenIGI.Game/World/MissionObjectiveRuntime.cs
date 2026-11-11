@@ -36,7 +36,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     // The level's walk once the runtime is attached to it; until then, the one the counters are stepped by here.
     private LevelUpdateWalker? _walker;
     private readonly MissionStatusMessages _messages;
-    private readonly List<LevelFlow> _levelFlows = [];
+    private readonly List<LevelFlowTask> _levelFlows = [];
 
     /// <summary>
     /// <c>Key0.isPressed</c> to <c>Key9.isPressed</c>: the globals <c>byte_5C8AA8</c>..<c>byte_5C8AB1</c>,
@@ -46,7 +46,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     private readonly Func<KeyCode, bool>? _isKeyDown;
 
     /// <summary>The LevelFlow the original's <c>flt_BC2360</c> points at: the last one initialised.</summary>
-    private readonly LevelFlow? _levelFlow;
+    private readonly LevelFlowTask? _levelFlow;
     private bool _attached;
     private int _tick;
     private bool _released;
@@ -112,6 +112,16 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 continue;
             }
 
+            if (task is LevelFlowTask flow)
+            {
+                // 0x488ED0 copies the active profile's difficulty; 0x488F90 binds the number row beside the flow's own fields.
+                flow.Difficulty = difficulty;
+                ExportDigitKeys(flow);
+                _levelFlows.Add(flow);
+                _levelFlow = flow;
+                continue;
+            }
+
             if (task is not DeclaredTask declared)
             {
                 continue;
@@ -120,21 +130,6 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
             if (string.Equals(task.Type.Name, "DefineComputerObjective", StringComparison.Ordinal))
             {
                 _definitions.Add(ReadDefinition(declared));
-            }
-            else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
-            {
-                // Level 14 sends MISSION_FAILED on LevelFlow_10.isFailed, and levels 6 and 14 time
-                // messages off LevelFlow_10.nTick, so these fields have to be exported, not just computed.
-                LevelFlow flow = new(
-                    declared,
-                    TextTrimmed(declared, "Complete"),
-                    TextTrimmed(declared, "Failed"),
-                    BoolLenient(declared, "Interface timer enabled"),
-                    Math.Max(0f, RealFromFloatOrDouble(declared, "Max level play time", 0f)),
-                    difficulty);
-                flow.Export(variables, _digitKeys);
-                _levelFlows.Add(flow);
-                _levelFlow = flow;
             }
             else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
@@ -224,7 +219,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     /// <inheritdoc/>
     public IEnumerable<KeyValuePair<GameTask, Saves.ISavedState>> SavedStates(ObjectCollisionIndex? solids) =>
         _editVariables.Select(static e => new KeyValuePair<GameTask, Saves.ISavedState>(e, e))
-            .Concat(_levelFlows.Select(static f => new KeyValuePair<GameTask, Saves.ISavedState>(f.Task, f)))
+            .Concat(_levelFlows.Select(static f => new KeyValuePair<GameTask, Saves.ISavedState>(f, f)))
             .Concat(_areas.SavedStates)
             .Concat(_messages.SavedStates);
 
@@ -288,7 +283,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
 
         _messages.WriteSends(writer);
         writer.WriteVarUInt((uint)_levelFlows.Count);
-        foreach (LevelFlow flow in _levelFlows)
+        foreach (LevelFlowTask flow in _levelFlows)
         {
             writer.WriteBits(unchecked((byte)flow.Complete), 8);
             writer.WriteBits(unchecked((byte)flow.Failed), 8);
@@ -412,7 +407,7 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
     public bool InterfaceTimerEnabled => _levelFlow?.InterfaceTimerEnabled ?? false;
 
     /// <summary>Gets the authored maximum play time in seconds.</summary>
-    public float MaximumLevelPlayTimeSeconds => _levelFlow?.MaximumLevelPlayTimeSeconds ?? 0f;
+    public float MaximumLevelPlayTimeSeconds => Math.Max(0f, _levelFlow?.MaxPlayTime ?? 0f);
 
     /// <summary>Gets the retail countdown in 30 Hz ticks, or no value when the interface timer is disabled.</summary>
     /// <remarks>
@@ -428,9 +423,10 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
                 return null;
             }
 
-            int maximumTicks = flow.MaximumLevelPlayTimeSeconds >= int.MaxValue / 30f
+            float seconds = Math.Max(0f, flow.MaxPlayTime);
+            int maximumTicks = seconds >= int.MaxValue / 30f
                 ? int.MaxValue
-                : (int)MathF.Round(flow.MaximumLevelPlayTimeSeconds * 30f, MidpointRounding.ToEven);
+                : (int)MathF.Round(seconds * 30f, MidpointRounding.ToEven);
             return Math.Max(0, maximumTicks - flow.Tick);
         }
     }
@@ -459,9 +455,16 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
             return;
         }
 
-        foreach (LevelFlow flow in _levelFlows)
+        foreach (LevelFlowTask flow in _levelFlows)
         {
-            flow.Unexport(_variables);
+            _variables.Unbind(flow, "isComplete");
+            _variables.Unbind(flow, "isFailed");
+            _variables.Unbind(flow, "nTick");
+            _variables.Unbind(flow, "eDifficulty");
+            for (int digit = 0; digit < _digitKeys.Length; digit++)
+            {
+                _variables.UnbindGlobal(flow, DigitKeySymbol(digit));
+            }
         }
 
         _released = true;
@@ -518,16 +521,10 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
         }
 
         // No walk reaches them: each area counted afresh, then each counter's own run, in the tree's order.
-        if (_walker is null)
-        {
-            _walker = new LevelUpdateWalker(_levelRoot) { Expressions = _expressions, IsReplica = Mirrored };
-            _areas.Register(_walker.Areas);
-        }
-
-        _areas.RecountAll(_walker);
+        _areas.RecountAll(DetachedRun());
         foreach (EditVariableTask edit in _editVariables)
         {
-            edit.Run(_walker);
+            edit.Run(DetachedRun());
         }
     }
 
@@ -602,24 +599,54 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
 
         _messages.Tick(ExtraMessageHoldSeconds);
 
-        // LevelFlow::Update (0x489290) updates its child tasks before it writes its own result, so the
-        // messages above see the result of the tick before this one -- as Level 14's MISSION_FAILED does.
-        foreach (LevelFlow flow in _levelFlows)
+        // A level flow runs itself where the level's walk reaches it (0x489290): its children first, then its verdicts. With
+        // no walk, each concludes here.
+        if (!_attached)
         {
-            // A co-op client's result is the server's: its own player falling does not fail the mission.
-            if (Mirrored)
+            LevelUpdateWalker run = DetachedRun();
+            foreach (LevelFlowTask flow in _levelFlows)
             {
-                flow.Tick++;
+                flow.Conclude(run);
             }
-            else
-            {
-                flow.Update(_expressions);
-            }
+        }
 
+        // The number row, as the end of 0x489290 samples it.
+        if (_levelFlows.Count > 0)
+        {
             SampleDigitKeys();
         }
 
         _tick++;
+    }
+
+    // The run a level no walk is attached to is stepped by.
+    private LevelUpdateWalker DetachedRun()
+    {
+        if (_walker is null)
+        {
+            _walker = new LevelUpdateWalker(_levelRoot) { Expressions = _expressions, IsReplica = Mirrored };
+            _areas.Register(_walker.Areas);
+        }
+
+        return _walker;
+    }
+
+    private static string DigitKeySymbol(int digit) => $"Key{digit}.isPressed";
+
+    // Key0..Key9.isPressed, globals a level flow's export binds beside its own fields (0x488F90).
+    private void ExportDigitKeys(LevelFlowTask flow)
+    {
+        for (int digit = 0; digit < _digitKeys.Length; digit++)
+        {
+            int index = digit;
+            _variables.BindGlobal(
+                flow,
+                DigitKeySymbol(index),
+                new QvmIntegerVariable(
+                    () => _digitKeys[index],
+                    value => _digitKeys[index] = unchecked((sbyte)value),
+                    size: 1));
+        }
     }
 
     /// <summary>Samples the number row the way the end of <c>0x489290</c> does.</summary>
@@ -741,104 +768,4 @@ public sealed class MissionObjectiveRuntime : IComputerObjectives, ILevelReset, 
 
         public bool IsFailed { get; set; }
     }
-
-    /// <summary>One LevelFlow task's state: the fields the original keeps in the task at <c>+96</c>..<c>+104</c>.</summary>
-    private sealed class LevelFlow(
-        DeclaredTask task,
-        string completeExpression,
-        string failedExpression,
-        bool interfaceTimerEnabled,
-        float maximumLevelPlayTimeSeconds,
-        int difficulty) : Saves.IExchangedState
-    {
-        // Not retail: what a save keeps of a level flow is its verdicts and its clock.
-        public void Exchange(Saves.StateExchange exchange)
-        {
-            Complete = (sbyte)exchange.Int(Complete);
-            Failed = (sbyte)exchange.Int(Failed);
-            Tick = exchange.Int(Tick);
-        }
-
-        public DeclaredTask Task { get; } = task;
-        public string CompleteExpression { get; } = completeExpression;
-        public string FailedExpression { get; } = failedExpression;
-        public bool InterfaceTimerEnabled { get; } = interfaceTimerEnabled;
-        public float MaximumLevelPlayTimeSeconds { get; } = maximumLevelPlayTimeSeconds;
-
-        // 0x488ED0 zeroes the result bytes and nTick, and copies the active profile's difficulty.
-
-        /// <summary><c>+96</c>, <c>isComplete</c>: a byte, read back sign-extended.</summary>
-        public sbyte Complete { get; set; }
-
-        /// <summary><c>+97</c>, <c>isFailed</c>.</summary>
-        public sbyte Failed { get; set; }
-
-        /// <summary><c>+100</c>, <c>eDifficulty</c>.</summary>
-        public int Difficulty { get; set; } = difficulty;
-
-        /// <summary><c>+104</c>, <c>nTick</c>: the updates run so far, which the interface timer counts down from.</summary>
-        public int Tick { get; set; }
-
-        /// <summary>Binds what <c>0x488F90</c> binds: four fields and the ten number-row globals.</summary>
-        public void Export(ScriptVarRegistry variables, sbyte[] digitKeys)
-        {
-            variables.BindInt(Task, "isComplete", () => Complete, value => Complete = unchecked((sbyte)value), size: 1);
-            variables.BindInt(Task, "isFailed", () => Failed, value => Failed = unchecked((sbyte)value), size: 1);
-            variables.BindInt(Task, "nTick", () => Tick, value => Tick = value);
-            variables.BindInt(Task, "eDifficulty", () => Difficulty, value => Difficulty = value);
-            for (int digit = 0; digit < digitKeys.Length; digit++)
-            {
-                int index = digit;
-                variables.BindGlobal(
-                    Task,
-                    DigitKeySymbol(index),
-                    new QvmIntegerVariable(
-                        () => digitKeys[index],
-                        value => digitKeys[index] = unchecked((sbyte)value),
-                        size: 1));
-            }
-        }
-
-        /// <summary>Removes what <see cref="Export"/> bound, as <c>0x4890F0</c> does.</summary>
-        public void Unexport(ScriptVarRegistry variables)
-        {
-            variables.Unbind(Task, "isComplete");
-            variables.Unbind(Task, "isFailed");
-            variables.Unbind(Task, "nTick");
-            variables.Unbind(Task, "eDifficulty");
-            for (int digit = 0; digit < 10; digit++)
-            {
-                variables.UnbindGlobal(Task, DigitKeySymbol(digit));
-            }
-        }
-
-        /// <summary>The result half of <c>0x489290</c>, which runs after the task's children.</summary>
-        /// <remarks>
-        /// A slot that is empty or did not compile leaves its byte alone, so a script's own write to it
-        /// stands. A present one stores its floating-point result truncated to a byte, so 0.5 is false.
-        /// A failure clears completion whichever of the two wrote it.
-        /// </remarks>
-        public void Update(LevelExpressionRuntime expressions)
-        {
-            if (expressions.TryEvaluateReal(CompleteExpression, Task, out double complete))
-            {
-                Complete = unchecked((sbyte)(long)complete);
-            }
-
-            if (expressions.TryEvaluateReal(FailedExpression, Task, out double failed))
-            {
-                Failed = unchecked((sbyte)(long)failed);
-            }
-
-            if (Failed != 0)
-            {
-                Complete = 0;
-            }
-
-            Tick++;
-        }
-
-        private static string DigitKeySymbol(int digit) => $"Key{digit}.isPressed";
-    }
-
 }
