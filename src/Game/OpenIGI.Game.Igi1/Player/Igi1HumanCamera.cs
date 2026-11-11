@@ -2,9 +2,8 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Rendering;
 
-namespace OpenIGI.Presentation.Igi1.Cameras;
+namespace OpenIGI.Game.Igi1.Player;
 
 /// <summary>
 /// Project I.G.I.'s <c>HumanCamera</c> orbit (<c>camera/humancamera.c</c>): mode 3, around a body on a ladder, a wire or

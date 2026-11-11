@@ -19,6 +19,12 @@ namespace OpenIGI.Game.Igi1.World;
 /// <param name="host">Where they play.</param>
 public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSoundHost host) : IMissionAudio
 {
+    /// <summary>The cue a gun the player picks up plays, at the listener, wherever the player stands.</summary>
+    public const string GunPickupSound = "weaponpickup_1";
+
+    /// <summary>The priority <see cref="GunPickupSound"/> plays at.</summary>
+    public const int GunPickupSoundPriority = 180;
+
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
 
@@ -362,7 +368,7 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     public void PlayGunPickupSound(GunPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
-        host.SoundOutput?.PlayDefinition("weaponpickup_1", priority: 180);
+        host.SoundOutput?.PlayDefinition(GunPickupSound, priority: GunPickupSoundPriority);
     }
 
     /// <summary>Plays an authored item reaching the player.</summary>
@@ -460,37 +466,10 @@ public sealed partial class Igi1MissionAudio(MissionWorld mission, IMissionSound
     /// Pitched between 0.8 and 1.3, which is the whole of why two steps on the same surface are never
     /// quite the same sound. Low priority: a firefight is more worth a voice than a footfall.
     /// </remarks>
-    public void PlayFootstep(in Footstep step)
-    {
-        if (host.SoundOutput is null || step.Sound.Length == 0)
-        {
-            return;
-        }
+    public void PlayFootstep(in Footstep step) => Igi1HumanSounds.PlayFootstep(_stage ??= new Igi1MissionSoundStage(mission, host), step, host.IsRaining);
 
-        // One pitch for the whole step: 0x463920 computes it once and hands the same value to the
-        // material voice and to the rain voice, so the two halves of a wet step stay together.
-        float pitch = FootstepSounds.Pitch(mission.SoundRandom);
-
-        host.SoundOutput.PlayDefinition(
-            step.Sound,
-            step.PositionInUnits,
-            gain: step.VolumeScale,
-            pitch: pitch,
-            priority: 40);
-
-        // The wet layer is played AS WELL AS the material's own sound, never instead of it. Its gate
-        // is 0x416FB0, a single global byte -- the level's weather flag rather than a shelter test --
-        // which is what the rain ambience already reads through the RainEffect task. Only the material's
-        // voice is quietened for a crouch (0x463920, 0x45A7F0): the wet one keeps its full volume.
-        if (host.IsRaining)
-        {
-            host.SoundOutput.PlayDefinition(
-                FootstepSounds.RainSoundName(step.CycleSlot),
-                step.PositionInUnits,
-                pitch: pitch,
-                priority: 40);
-        }
-    }
+    // Where the steps play: the mission's own stage, made once it is first asked for.
+    private Igi1MissionSoundStage? _stage;
 
     /// <summary>Plays the sound the ground itself makes when the player lands on it.</summary>
     /// <param name="landing">The definition name and where the feet touched down.</param>

@@ -25,7 +25,7 @@ internal static class Igi2FlowSystems
         if (b.Services.TryGet(out Menus.Igi2InGameMenu? menu) && menu.Load(b.Root, b.Request.World.Resources, b.Natives))
         {
             menu.LevelFailed = () => level.LevelFlow?.IsFailed == true;
-            menu.PlayerDead = () => player.Human.IsDead;
+            menu.PlayerDead = () => player.StandIn?.IsDead ?? player.Human.IsDead;
             player.Menu = menu;
         }
 
@@ -106,14 +106,21 @@ internal static class Igi2FlowSystems
     public static void Areas(Igi2LevelBuild b)
     {
         Igi2TitlePlayer player = b.Player;
-        IIgi2AreaOccupant[] humans = [.. b.LevelHumans()];
+        // Another game's player standing for the level's own, and the humans it joins to the level, count where they stand.
+        IIgi2AreaOccupant? standIn = player.StandIn is { } standing ? new Igi2StandInOccupant(standing, isAi: false) : null;
+        IIgi2AreaOccupant[] humans =
+        [
+            .. b.LevelHumans(),
+            .. standIn is null ? [] : (IIgi2AreaOccupant[])[standIn],
+            .. b.Level.Joined.Humans.OfType<Game.Ai.IAiHuman>().Select(static joined => new Igi2StandInOccupant(joined, isAi: true)),
+        ];
         Vehicles.Igi2CarTask[] levelCars = [.. b.Root.Descendants().OfType<Vehicles.Igi2CarTask>()];
         player.MapVehicles = levelCars;
         player.MapGunHolders = [.. b.Root.Descendants().OfType<Weapons.Igi2AiStationaryGunHolderTask>()];
         foreach (Igi2AreaActivateTask area in b.Root.Descendants().OfType<Igi2AreaActivateTask>())
         {
             area.Humans = humans;
-            area.Players.Set(player.Human);
+            area.Players.Set(standIn ?? player.Human);
             player.AreaRosters.Add(area.Players);
             area.CameraPosition = () => player.EyePosition;
             area.VehiclePositions = () => levelCars.Select(static car => car.Position);

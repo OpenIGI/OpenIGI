@@ -125,7 +125,7 @@ internal sealed class MissionPlayer(MissionWorld mission, IPlayerSenses senses) 
     public PlayerCamera? Rig => mission.Player;
 
     /// <inheritdoc/>
-    public HumanHealth Health => mission.PlayerHealth;
+    public HumanHealth Health => mission.PlayerLife.Health;
 
     /// <inheritdoc/>
     public bool IsDead

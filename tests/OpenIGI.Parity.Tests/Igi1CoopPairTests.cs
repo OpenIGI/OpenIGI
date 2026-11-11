@@ -413,7 +413,7 @@ public sealed class Igi1CoopPairTests
             Assert.Equal(fresh.BaseMaximumHealth * 2.5f, fresh.MaximumHealth, 3);
 
             // The players keep their own.
-            Assert.Equal(pair.Host.World.PlayerHealth.BaseMaximumHealth, pair.Host.World.PlayerHealth.MaximumHealth);
+            Assert.Equal(pair.Host.World.PlayerLife.Health.BaseMaximumHealth, pair.Host.World.PlayerLife.Health.MaximumHealth);
             Igi1NetworkPlayer partner = Assert.Single(pair.Host.World.NetworkPlayers);
             Assert.Equal(partner.Health.BaseMaximumHealth, partner.Health.MaximumHealth);
         }

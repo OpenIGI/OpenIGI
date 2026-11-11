@@ -135,7 +135,14 @@ internal sealed class PlayerFirstPersonView
     /// <param name="mouse">This frame's mouse.</param>
     /// <param name="mounted">The stationary gun the player is on, or <see langword="null"/>.</param>
     /// <returns>The gun the look steered, or <see langword="null"/> when it turned the head or settled.</returns>
-    internal AiStationaryGun? Turn(MouseState mouse, AiStationaryGun? mounted)
+    internal AiStationaryGun? Turn(MouseState mouse, AiStationaryGun? mounted) => Turn(mouse.DeltaX, mouse.DeltaY, mounted);
+
+    /// <summary>Turns the look by mouse motion, in mouse counts.</summary>
+    /// <param name="deltaX">The motion across.</param>
+    /// <param name="deltaY">The motion up and down.</param>
+    /// <param name="mounted">The stationary gun the player is on, or <see langword="null"/>.</param>
+    /// <returns>The gun the look steered, or <see langword="null"/> when it turned the head or settled.</returns>
+    internal AiStationaryGun? Turn(float deltaX, float deltaY, AiStationaryGun? mounted)
     {
         // A first-person view looks wherever the mouse goes - no button held. That is the difference
         // between standing in a level and inspecting one, and holding right mouse to turn is a scene
@@ -164,17 +171,17 @@ internal sealed class PlayerFirstPersonView
             if (mounted is { } gun)
             {
                 gun.Steer(
-                    LookSettings.PitchDelta(mouse.DeltaY),
-                    -LookSettings.YawDelta(mouse.DeltaX));
+                    LookSettings.PitchDelta(deltaY),
+                    -LookSettings.YawDelta(deltaX));
                 return gun;
             }
 
             float zoomLook = Rig is { } zoomView
                 ? MouseLookSettings.ZoomSensitivityScale(zoomView.TanX)
                 : 1f;
-            _body.Yaw += LookSettings.YawDelta(mouse.DeltaX) * zoomLook;
+            _body.Yaw += LookSettings.YawDelta(deltaX) * zoomLook;
             _body.Pitch = Math.Clamp(
-                _body.Pitch + (LookSettings.PitchDelta(mouse.DeltaY) * zoomLook),
+                _body.Pitch + (LookSettings.PitchDelta(deltaY) * zoomLook),
                 -PlayerBody.PitchLimit,
                 PlayerBody.PitchLimit);
         }
@@ -189,7 +196,7 @@ internal sealed class PlayerFirstPersonView
     /// again, and the mission is left exactly where it stood.
     /// </para>
     /// <para>
-    /// The mouse is released because <see cref="PlayerCamera.Look"/> claims the cursor unconditionally — a first-person
+    /// The mouse is released because <see cref="PlayerCamera.Look(float, float)"/> claims the cursor unconditionally — a first-person
     /// view looks wherever the mouse goes — so a menu drawn over it would be unreachable. Clearing the
     /// capture also re-arms the settling frame, which is what stops the warp that re-capturing produces on
     /// resume from arriving as a movement the player never made.
@@ -214,7 +221,7 @@ internal sealed class PlayerFirstPersonView
     /// were: the death camera's orbit, the third-person interaction camera, the map computer. Each of
     /// those drops the cursor lock, and dropping the lock makes the backend re-centre its virtual pointer
     /// — so the first motion after the lock comes back is a jump that has nothing to do with the player's
-    /// hand. <see cref="PlayerCamera.Look"/> skips exactly one frame after this, which is what absorbs it.
+    /// hand. <see cref="PlayerCamera.Look(float, float)"/> skips exactly one frame after this, which is what absorbs it.
     /// </para>
     /// <para>
     /// Unlike <see cref="HoldStill"/> the rig's tick pair is kept, because the player is still being

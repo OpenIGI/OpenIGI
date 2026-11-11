@@ -270,21 +270,8 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
         return true;
     }
 
-    private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)
-    {
-        foreach (LoadedPack pack in new[] { mission.CommonPack, mission.LevelPack })
-        {
-            foreach (MtpInstance instance in pack.Instances)
-            {
-                if (string.Equals(instance.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return (pack, instance);
-                }
-            }
-        }
-
-        return (null, null);
-    }
+    private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name) =>
+        mission.TryFindInstance(name, out LoadedPack? pack, out MtpInstance instance, commonFirst: true) ? (pack, instance) : (null, null);
 
     private void Release()
     {

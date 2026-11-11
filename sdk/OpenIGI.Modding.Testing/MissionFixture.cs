@@ -4,10 +4,13 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Igi1.Ai;
+using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -52,5 +55,50 @@ public static class MissionFixture
         string directory = Path.Combine(installation, mission.Descriptor.MissionDirectory);
         Dictionary<int, GraphFile> graphs = NavGraphs.Read(Path.Combine(directory, "graphs"), level, NullLogger.Instance);
         return new Igi1Mission(loop, fileSystem, resources, mission, level, WorldScene.Build(mission, level, magic), directory, graphs);
+    }
+
+    /// <summary>Loads an I.G.I. 2 mission as the game loads it, with the mods given, for its player to be stood (<see cref="Igi2Mission.Stand"/>).</summary>
+    /// <param name="missionId">The mission's id, location times ten plus level: mission one is 11.</param>
+    /// <param name="mods">The mods its session runs with, or <see langword="null"/> for none.</param>
+    /// <param name="difficulty">The difficulty the player and the soldiers play at.</param>
+    /// <param name="root">The game's installation, or <see langword="null"/> for the test machine's.</param>
+    /// <param name="logger">Where the session and the mods report, or <see langword="null"/> to discard it.</param>
+    /// <returns>The mission, its world built and its player not yet stood.</returns>
+    /// <remarks>
+    /// The session is the game's own content and the mods', started with where both games are installed, as the host starts it;
+    /// the mission is read through the game's catalogue and built by its world builder, as the menu's preview builds one.
+    /// </remarks>
+    public static Igi2Mission Igi2(
+        int missionId, ModHarness? mods = null, AiDifficulty difficulty = AiDifficulty.Normal, string? root = null, IOpenIgiLogger? logger = null)
+    {
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
+        string installation = root ?? GameDataSource.Igi2.RequireRoot();
+        IGameTitleRuntime runtime = mods?.Extend(new Igi2Runtime()) ?? new Igi2Runtime();
+        ServiceCatalog seed = new();
+        seed.Provide<ITitleDataLocator>(new ModSession.InstalledGames());
+        GuestTitle guest = GuestTitle.Start(runtime, installation, log, inherited: seed);
+        GameLoop loop = guest.Loop;
+
+        Igi2MissionCatalogue missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(guest.FileSystem, guest.Resources, loop.Natives);
+        LevelTask level = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        LevelLoader levels = new(level, loop.TaskCommands, loop.Natives, guest.Resources);
+        TerrainLoader terrain = new(guest.Resources, loop.Natives);
+        LoadedMission loaded = new MissionLoader(missions, guest.FileSystem, guest.Resources, levels, null, terrain, soundBank: null, runtime.Formats)
+            .Load(missionId);
+        new ConditionalContainerGate(loop.Variables, log).Prepare(level);
+
+        IServiceCatalog services = guest.Session.Services;
+        WorldBuildRequest world = new(
+            loaded,
+            level,
+            guest.Resources,
+            services.TryGet(out MagicObjectRegistry? magic) ? magic : null,
+            log,
+            services.TryGet(out VehiclePhysicsRegistry? vehicles) ? vehicles : null,
+            services);
+        WorldBuildResult built = new Igi2WorldBuilder().Build(world);
+        return new Igi2Mission(guest, loaded, level, built, new TitlePlayerRequest(world, built, services, difficulty, Natives: loop.Natives));
     }
 }

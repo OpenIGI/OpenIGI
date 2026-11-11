@@ -8,7 +8,6 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Igi1.Cameras;
 
 namespace OpenIGI.Presentation.Igi1;
 

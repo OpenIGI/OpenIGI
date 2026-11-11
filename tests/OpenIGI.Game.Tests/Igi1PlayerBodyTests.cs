@@ -21,7 +21,7 @@ public sealed class Igi1PlayerBodyTests
             loop.Tasks.Root, loop.Types.Get(ConditionalContainerTask.TypeName));
         HumanPlayerTask task = (HumanPlayerTask)loop.Tasks.New(container, loop.Types.Get("HumanPlayer"));
         MissionWorld mission = new() { Player = new PlayerCamera(), PlayerTask = task };
-        task.Body = new Igi1PlayerBody(mission);
+        task.Body = new Igi1PlayerBody(() => mission.Player, task);
 
         container.IsActive = false;
         Assert.False(task.DetectionInfo().IsActive);

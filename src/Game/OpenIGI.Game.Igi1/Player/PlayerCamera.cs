@@ -353,7 +353,7 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     /// <summary>Puts a set of cheats in force on the body and the weapons.</summary>
     /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
     /// <remarks>
-    /// <see cref="Tick"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
+    /// <see cref="Tick(InputState, IGroundHeightField)"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
     /// every tick, so a change from Extras or the console lands on the next one without a restart.
     /// </remarks>
     public void ApplyCheats(PlayerCheatOptions cheats)
@@ -823,9 +823,16 @@ public sealed partial class PlayerCamera : IHostedPlayer, IPlayerInteractionHost
     public void Look(InputState input, float seconds)
     {
         ArgumentNullException.ThrowIfNull(input);
+        Look(input.Mouse.DeltaX, input.Mouse.DeltaY);
+    }
 
+    /// <summary>Takes the look from mouse motion, in counts: the window's this frame, or a title path's this tick.</summary>
+    /// <param name="deltaX">The motion across.</param>
+    /// <param name="deltaY">The motion up and down.</param>
+    public void Look(float deltaX, float deltaY)
+    {
         // A mod has the body (ControlTaken): the mouse does not turn it. The mouse stays captured and the view in step.
-        if (!ControlTaken && _firstPerson.Turn(input.Mouse, MountedStationaryGun) is { } steered)
+        if (!ControlTaken && _firstPerson.Turn(deltaX, deltaY, MountedStationaryGun) is { } steered)
         {
             _interaction.FaceAlongGun(steered);
             SyncView();

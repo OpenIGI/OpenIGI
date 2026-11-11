@@ -45,7 +45,7 @@ public sealed partial class Igi1ReplicatedWorld
             .Select(p => (p.Key, p.Value.Player, p.Value.Health));
         if (IncludesHost && _game.World.Player is { } own)
         {
-            players = players.Append((ServerSession.HostSlot, own, _game.World.PlayerHealth));
+            players = players.Append((ServerSession.HostSlot, own, _game.World.PlayerLife.Health));
         }
 
         foreach ((int slot, Player.PlayerCamera rig, Game.Player.HumanHealth health) in players)

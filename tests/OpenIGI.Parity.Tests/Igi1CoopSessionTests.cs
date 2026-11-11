@@ -114,7 +114,7 @@ public sealed class Igi1CoopSessionTests
             revivedAt - besideFrom >= Igi1ReplicatedWorld.ReviveTicks - 2,
             $"revived {revivedAt - besideFrom} frames after the partner arrived; a revival takes {Igi1ReplicatedWorld.ReviveTicks}");
         Assert.False(capture.Game.World.IsPlayerDead, "the host's player was not brought back");
-        Assert.False(capture.Game.World.PlayerHealth.IsDead);
+        Assert.False(capture.Game.World.PlayerLife.Health.IsDead);
     }
 
     /// <summary>

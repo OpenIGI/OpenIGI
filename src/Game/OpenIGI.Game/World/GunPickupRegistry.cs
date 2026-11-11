@@ -299,6 +299,18 @@ public sealed class GunPickupRegistry : ILevelReset
 
     private GunPickupRegistry(AmmoTypeRegistry ammunition) => _ammunition = ammunition;
 
+    /// <summary>
+    /// A registry with no pickup of a level's own: another game's level, whose guns lie where it lays them (<see cref="Lay"/>) and
+    /// fall where its humans drop them (<see cref="Spawn"/>).
+    /// </summary>
+    /// <param name="ammunition">The ammunition table, which names what each weapon is loaded with.</param>
+    /// <returns>The registry.</returns>
+    public static GunPickupRegistry Empty(AmmoTypeRegistry ammunition)
+    {
+        ArgumentNullException.ThrowIfNull(ammunition);
+        return new GunPickupRegistry(ammunition);
+    }
+
     /// <summary>Gets every resolved pickup, including consumed ones for diagnostics.</summary>
     public IReadOnlyList<GunPickup> Items => _items;
 
@@ -582,6 +594,20 @@ public sealed class GunPickupRegistry : ILevelReset
                 }
             }
         });
+    }
+
+    /// <summary>Lays a gun where another game's level laid one of its own: lying still, as a level's authored pickup lies.</summary>
+    /// <param name="position">Where it lies, in world units.</param>
+    /// <param name="orientation">How it lies.</param>
+    /// <param name="weapon">The weapon.</param>
+    /// <returns>The pickup.</returns>
+    public GunPickup Lay(Vector3d position, Matrix3f orientation, WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
+        GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
+        _items.Add(pickup);
+        return pickup;
     }
 
     /// <summary>Raised as a human drops a gun (<see cref="Spawn"/>), once the pickup lies in the list.</summary>

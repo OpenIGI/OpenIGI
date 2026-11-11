@@ -24,12 +24,12 @@ internal sealed class LocalPlayerSenses(MissionWorld mission, Igi1HumanSounds so
     /// </remarks>
     public void Grunt()
     {
-        if (host.Game.Clock.TickCount < mission.PlayerHitQuietUntil)
+        if (host.Game.Clock.TickCount < mission.PlayerLife.HitQuietUntil)
         {
             return;
         }
 
-        mission.PlayerHitQuietUntil = host.Game.Clock.TickCount + HumanVariantSound.HitCooldownTicks(mission.SoundRandom);
+        mission.PlayerLife.HitQuietUntil = host.Game.Clock.TickCount + HumanVariantSound.HitCooldownTicks(mission.SoundRandom);
         sounds.PlayHit(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
     }
 
@@ -63,20 +63,20 @@ internal sealed class LocalPlayerSenses(MissionWorld mission, Igi1HumanSounds so
     {
         if (mission.Player is { } player)
         {
-            mission.DamageFlash.Hit(player.Camera.Orientation.Transposed().Transform(travel), mission.SoundRandom.NextSingle());
+            mission.PlayerLife.DamageFlash.Hit(player.Camera.Orientation.Transposed().Transform(travel), mission.SoundRandom.NextSingle());
         }
     }
 
     /// <inheritdoc/>
     public void FlashCorners() =>
-        mission.DamageFlash.HitEveryCorner(
+        mission.PlayerLife.DamageFlash.HitEveryCorner(
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle(),
             mission.SoundRandom.NextSingle());
 
     /// <inheritdoc/>
-    public void FlashCentre() => mission.DamageFlash.Hit(Vector3f.Zero, mission.SoundRandom.NextSingle());
+    public void FlashCentre() => mission.PlayerLife.DamageFlash.Hit(Vector3f.Zero, mission.SoundRandom.NextSingle());
 
     /// <inheritdoc/>
     public void Sound(string definition) => host.PlayDefinition(definition, positionInUnits: null, priority: 250);
@@ -107,7 +107,7 @@ internal sealed class LocalPlayerSenses(MissionWorld mission, Igi1HumanSounds so
     /// <inheritdoc/>
     public void Revived()
     {
-        mission.DamageFlash = new();
+        mission.PlayerLife.ClearDamageFlash();
         mission.SoldierPresenter?.RevivePlayerBody();
         host.EndDeathCamera();
     }

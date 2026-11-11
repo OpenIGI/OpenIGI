@@ -145,7 +145,7 @@ public sealed partial class Igi1PlayerSetup(
             if (mission.PlayerTask is { } task)
             {
                 task.Events = mission.PlayerEvents;
-                task.Body = new Igi1PlayerBody(mission);
+                task.Body = new Igi1PlayerBody(() => mission.Player, task);
             }
         }
 
@@ -187,7 +187,11 @@ public sealed partial class Igi1PlayerSetup(
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(solids);
         ArgumentNullException.ThrowIfNull(missionText);
-        PlayerCamera candidate = new(host.Logger);
+        // 000.iff, kept so the player's third-person body can be built from the same set it walks on (HumanPlayerBody: the body
+        // is skeleton 0, and this is skeleton 0's set). Read once for the session rather than per mission: it lives under common/,
+        // so it is the same 1.5 MB of IFF for all fourteen. The walls are the index built for the soldiers' ground probe.
+        PlayerCamera candidate = Igi1PlayerRig.Build(
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), host.ReadSharedAnimations(), host.Logger);
         Candidate = candidate;
         _bringUp = (loaded, levelRoot, solids, missionText);
         WirePlayer(candidate, loaded, solids, missionText);
@@ -291,37 +295,6 @@ public sealed partial class Igi1PlayerSetup(
     /// <remarks>Everything <see cref="Begin"/> does for the one rig it makes; a co-op session's other players are wired the same way.</remarks>
     private void WirePlayer(PlayerCamera candidate, LoadedMission loaded, ObjectCollisionIndex solids, MissionStringResolver missionText)
     {
-
-        // 000.iff, kept so the player's third-person body can be built from the same set it walks on
-        // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
-        // animation's own root motion, so without it the player can stand and fall but not walk.
-        //
-        // Read once for the session rather than per mission: it lives under common/, so it is the
-        // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
-        // a mission started was most of that step's cost.
-        BoneAnimationSet? playerBodySet = host.ReadSharedAnimations();
-        if (playerBodySet is not null)
-        {
-            candidate.UseAnimations(playerBodySet);
-        }
-
-        // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
-        // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
-        // The index is the one built above for the soldiers' ground probe.
-        candidate.UseWalls(solids);
-        host.Logger.Information(
-            "Player",
-            $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
-
-        // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
-        // ground query, but a grenade has no such query and would fall through the world.
-        candidate.GrenadeWalls = host.Terrain is { } grenadeGround
-            ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
-            : solids.Caster();
-        candidate.GrenadeTrace = host.Terrain is { } grenadeTraceGround
-            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
-            : solids.Tracer();
-
         // The mine weapon lays nothing on a pane, a door or a vehicle (0x4755A0); its model's bound and magic vertex 0 are
         // what a blast is measured against and where its own starts.
         candidate.MineSurfaceRefused = hit => RefusesMine(hit);
@@ -352,20 +325,6 @@ public sealed partial class Igi1PlayerSetup(
                     velocity)
                 : null;
 
-        // The view model's forward sweep, which wants a ray through the terrain rather than the
-        // height under a point. Null for a title whose ground nothing can trace yet, and the
-        // pullback then meets placed objects only.
-        candidate.TerrainTrace = host.Terrain is { } viewModelGround
-            ? TerrainRayTrace.Caster(viewModelGround)
-            : null;
-
-        // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
-        // W/S up and down, E held to slide).
-        if (host.Scene is not null)
-        {
-            candidate.UseLadders(host.Scene.Ladders);
-            host.Logger.Information("Player", $"{host.Scene.Ladders.Count} ladder(s) to climb.");
-        }
         if (mission.Interactions is { } interactions)
         {
             candidate.UseInteractions(interactions);
@@ -443,24 +402,14 @@ public sealed partial class Igi1PlayerSetup(
     {
         ArgumentNullException.ThrowIfNull(loaded);
         ArgumentNullException.ThrowIfNull(levelRoot);
-        PlayerCamera extra = new(host.Logger);
+        PlayerCamera extra = Igi1PlayerRig.Build(
+            Igi1PlayerWorld.Of(solids, host.Terrain, host.Scene?.Ladders ?? []), host.ReadSharedAnimations(), host.Logger);
         WirePlayer(extra, loaded, solids, missionText);
         WirePickups(extra, missionText);
         // Tuned, rigged and then armed, in the order the mission's own player is.
         if (_config is { } config)
         {
-            if (config.Parameters is { } tuning)
-            {
-                extra.UseParameters(tuning);
-            }
-
-            extra.UseWeaponCycle(config.WeaponCycle);
-            foreach ((int ammoId, int limit) in config.AmmoLimits)
-            {
-                extra.Weapons?.Ammunition.SetLimit(ammoId, limit);
-            }
-
-            extra.Weapons?.UseCategories(config.Categories);
+            Igi1PlayerRig.Tune(extra, config, host.Logger);
         }
 
         if (_viewRig is { } viewRig)
@@ -473,7 +422,7 @@ public sealed partial class Igi1PlayerSetup(
             Carry(extra, loadout, Weapons, Ammunition);
         }
 
-        HumanHealth health = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
+        HumanHealth health = new(HumanHitZoneTable.Player, mission.PlayerLife.MaximumHealth)
         {
             DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
         };
@@ -494,63 +443,17 @@ public sealed partial class Igi1PlayerSetup(
     public void Configure(PlayerCamera candidate)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
-        // is what says how high a jump goes and how far a step travels.
         try
         {
-            HumanPlayerConfig config = new();
-            config.Register(host.Game.Natives);
-            config.Load(host.Resources, host.Game.Natives);
+            // Read once for the level: a co-op session's other players are tuned by the same reading (BeginExtra).
+            HumanPlayerConfig config = Igi1PlayerRig.ReadTuning(host.Game, host.Resources, host.Logger);
             _config = config;
 
-            if (config.PlaceholderIds.Count > 0)
+            // Its delta translation scale, its full health and a powered fence's dose are the player's life's (Igi1PlayerLife.Tune).
+            if (Igi1PlayerRig.Tune(candidate, config, host.Logger) is { } tuning)
             {
-                host.Logger.Warning(
-                    "Player",
-                    $"humanplayer.qvm left {config.PlaceholderIds.Count} id(s) unresolved; the weapon "
-                        + "cycle may name weapons that do not exist.");
+                mission.PlayerLife.Tune(tuning, mission.PlayerDifficulty);
             }
-
-            if (config.Parameters is { } tuning)
-            {
-                candidate.UseParameters(tuning);
-
-                // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
-                mission.PlayerDeltaTranslationScale = tuning.DeltaTranslationScale;
-
-                // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
-                // 3.0 in retail, and the single number that sets the player's time-to-kill.
-                mission.PlayerMaximumHealth = tuning.MaximumHealth;
-
-                // Argument 8 is the dose one powered fence contact adds (0x412F80's fmul against
-                // the human's damage scale) -- 0.5 in retail. Read it for the same reason argument
-                // 7 is read: a retuned humanplayer.qvm owns its own shock, not the shipped number.
-                mission.ElectricFenceDose = tuning.ElectricFenceDose;
-                mission.PlayerHealth = new(HumanHitZoneTable.Player, mission.PlayerMaximumHealth)
-                {
-                    DamageScale = HumanHealth.DifficultyDamageScale(mission.PlayerDifficulty),
-                };
-            }
-            else
-            {
-                host.Logger.Warning("Player", "humanplayer.qvm published no parameters; using the retail defaults.");
-            }
-
-            // The same script says which weapon starts in hand, and it is not a guess any more:
-            // 0x40F760's cycle index begins at -1, so the first update lands on entry 0 of
-            // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
-            // list starts with the knife.
-            candidate.UseWeaponCycle(config.WeaponCycle);
-
-            // 0x410370 caps the new player's ammunition at DefineHumanPlayerAmmoLimit's figures before anything is put in
-            // its pockets, so every pickup after is held to them.
-            foreach ((int ammoId, int limit) in config.AmmoLimits)
-            {
-                candidate.Weapons?.Ammunition.SetLimit(ammoId, limit);
-            }
-
-            // And the nine categories the number keys select — 0x411000 reads exactly this table.
-            candidate.Weapons?.UseCategories(config.Categories);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
         {
@@ -563,7 +466,7 @@ public sealed partial class Igi1PlayerSetup(
         // default health exists for standalone physics use; the desktop must give it the exact
         // accumulator the HUD, guard hits and death state already share. The sink crosses the
         // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
-        candidate.UseHealth(mission.PlayerHealth);
+        candidate.UseHealth(mission.PlayerLife.Health);
         candidate.Body.SetFallImpactSink(impact => harm.ResolvePlayerFallImpact(candidate, impact));
     }
 
@@ -647,7 +550,7 @@ public sealed partial class Igi1PlayerSetup(
         // about a metre over the feet standing and half that crouched -- not the eye.
         // The rig, or another game's player standing in its stead: where its feet are and whether it keeps low.
         (Vector3d Feet, bool Low)? Target() =>
-            mission.IsPlayerDead || mission.PlayerHealth.IsDead ? null
+            mission.IsPlayerDead || mission.PlayerLife.Health.IsDead ? null
             : mission.PlayerStandIn is { } standIn ? (standIn.Feet, standIn.IsKeepingLow)
             : (player.Body.Position, player.Body.IsCrouched);
         runtime.Vehicles.VehicleCombatTarget = () => Target() is { } aim
@@ -845,7 +748,7 @@ public sealed partial class Igi1PlayerSetup(
         candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
         {
             bool found = soldierProximity(center, radiusUnits, out target);
-            if (!mission.PlayerHealth.IsDead)
+            if (!mission.PlayerLife.Health.IsDead)
             {
                 double distance = Vector3d.Distance(center, candidate.Body.Position);
                 if (distance <= radiusUnits && (!found || distance < target.Distance))
@@ -857,14 +760,7 @@ public sealed partial class Igi1PlayerSetup(
 
             return found;
         };
-        // A round's impact, which another game's humans tell from a landing by its flight from the eye.
-        candidate.GroundImpact = impact => guards.Simulation.NotifyGroundImpact(
-            impact,
-            candidate.Body.Position,
-            flight: new Vector3f(
-                (float)(impact.X - candidate.Body.Eye.X), (float)(impact.Y - candidate.Body.Eye.Y), (float)(impact.Z - candidate.Body.Eye.Z)));
-        candidate.AiNoise = noise => guards.Simulation.NotifyHumanNoise(
-            noise, candidate.Body.Position, candidate.Body.Position);
+        Igi1PlayerHearing.Attach(candidate, guards.Simulation);
 
         // A glancing round whizzes where it turned, on the ricochet sound's own limit --
         // 0x47BD7B sounds it there directly rather than through the material's window.

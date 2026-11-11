@@ -41,7 +41,8 @@ internal static class Igi2WorldSystems
             }
             else if (ReferenceEquals(node, b.PlayerTask))
             {
-                detection.Detectables.Add(player.Human);
+                // Another game's player standing for the level's own is seen in its stead.
+                detection.Detectables.Add(player.StoodFor is null ? player.Human : player.StandIn as Game.Ai.IAiDetectable ?? player.Human);
             }
             else if (node is Ai.Igi2HumanSoldierTask { Body: { } soldier })
             {
@@ -197,7 +198,11 @@ internal static class Igi2WorldSystems
             {
                 smoke.Particles = particles;
                 smoke.Stream = smokeRandom;
-                smoke.Players.Set(player.Human);
+                if (player.StoodFor is null)
+                {
+                    smoke.Players.Set(player.Human);
+                }
+
                 player.SmokeRosters.Add(smoke.Players);
                 smoke.Prepare();
             }

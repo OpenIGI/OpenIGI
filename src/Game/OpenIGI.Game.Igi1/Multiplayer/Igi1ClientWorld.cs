@@ -306,7 +306,7 @@ public sealed class Igi1ClientWorld : IReplicatedClientWorld
             _offLadderThere = 0;
         }
 
-        HumanHealth health = _game.World.PlayerHealth;
+        HumanHealth health = _game.World.PlayerLife.Health;
         float server = self.Health / 255f;
         float local = health.RemainingFraction;
         if (server >= 0.999f && local < 0.999f)

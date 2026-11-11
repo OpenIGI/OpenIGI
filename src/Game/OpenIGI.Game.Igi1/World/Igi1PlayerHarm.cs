@@ -210,9 +210,9 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
         host.Logger.Information(
             "Player",
             $"Fall impact {impact.SpeedMetresPerSecond:F2} m/s dealt {impact.Damage:F3} "
-                + $"({mission.PlayerHealth.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
+                + $"({mission.PlayerLife.Health.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
 
-        if (mission.PlayerHealth.IsDead)
+        if (mission.PlayerLife.Health.IsDead)
         {
             // Zone 13 is the retail fall bucket. With no external attacker the source is the feet,
             // leaving the death fall aligned to the player's current facing.
@@ -227,26 +227,26 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
     /// <summary>Applies one native electric-fence shock after the player's 45-tick guard permits it.</summary>
     public void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence)
     {
-        if (mission.PlayerHealth.IsDead)
+        if (mission.PlayerLife.Health.IsDead)
         {
             return;
         }
 
-        float healthBefore = mission.PlayerHealth.RemainingFraction;
+        float healthBefore = mission.PlayerLife.Health.RemainingFraction;
         host.Logger.Information(
             "Player.Fence",
             $"contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
                 + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
                 + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
 
-        ElectricFenceShock shock = ElectricFenceContact.Shock(mission.PlayerHealth, mission.ElectricFenceDose);
+        ElectricFenceShock shock = ElectricFenceContact.Shock(mission.PlayerLife.Health, mission.PlayerLife.ElectricFenceDose);
         float dealt = shock.Damage;
         if (dealt <= 0f)
         {
             host.Logger.Warning(
                 "Player.Fence",
                 $"contact produced no damage task={fence.Task.Id} "
-                    + $"health={mission.PlayerHealth.RemainingFraction:P0} hits={mission.PlayerHealth.Hits}.");
+                    + $"health={mission.PlayerLife.Health.RemainingFraction:P0} hits={mission.PlayerLife.Health.Hits}.");
             return;
         }
 
@@ -261,7 +261,7 @@ public sealed class Igi1PlayerHarm(MissionWorld mission, Igi1HumanSounds sounds,
 
         host.Logger.Information(
             "Player",
-            $"Electric fence shock dealt {dealt:F3} ({mission.PlayerHealth.RemainingFraction:P0} left).");
+            $"Electric fence shock dealt {dealt:F3} ({mission.PlayerLife.Health.RemainingFraction:P0} left).");
 
         if (shock.IsLethal)
         {

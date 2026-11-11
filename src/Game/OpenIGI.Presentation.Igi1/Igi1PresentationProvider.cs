@@ -37,7 +37,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
             .Add<MissionPresentationRequest, IMissionHudOverlay>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1HudOverlay(request.Device, gameplay) : null)
             .Add<MissionPresentationRequest, IMissionFirstPersonView>(static (in MissionPresentationRequest request) =>
-                request.Gameplay is Igi1Gameplay gameplay ? new Igi1FirstPersonView(request.Device, gameplay, request.Logger) : null)
+                request.Gameplay is Igi1Gameplay gameplay ? new Igi1FirstPersonView(request.Device, () => gameplay.World.Player, () => gameplay.World.Solids, request.Logger) : null)
             .Add<MissionPresentationRequest, IMissionWorldView>(static (in MissionPresentationRequest request) =>
                 request.Gameplay is Igi1Gameplay gameplay ? new Igi1WorldView(gameplay) : null)
             .Add<MissionPresentationRequest, IMissionViewpoint>(static (in MissionPresentationRequest request) =>

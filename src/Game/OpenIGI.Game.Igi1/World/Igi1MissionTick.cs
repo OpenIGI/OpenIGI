@@ -16,7 +16,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// the soldiers, in the order the port runs them each tick.
 /// </summary>
 /// <param name="mission">The mission's world.</param>
-/// <param name="harm">What a vehicle that runs the player down does to them.</param>
+/// <param name="harm">What hurts a player of the mission and how it dies.</param>
 /// <param name="blasts">What resolves the blasts the player's update set off.</param>
 /// <param name="audio">The mission heard, whose steps run at their points in the tick.</param>
 /// <param name="host">What shows and plays it.</param>
@@ -290,8 +290,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
         // fixed tick, for the same determinism reason the bodies are.
-        mission.DamageFlash.Tick();
-        mission.FlashbangFlash.Tick();
+        mission.PlayerLife.DamageFlash.Tick();
+        mission.PlayerLife.FlashbangFlash.Tick();
         host.StepScreen();
 
         // The player's eye is what the guards' view cones are tested against -- and in the
@@ -797,20 +797,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         {
             audio.SoundPlayerUpdate();
 
-            // Hearing is emitted once per round, not once per projectile intersection. The weapon
-            // row carries the exact retail radius (for example 4096 for suppressed fire and
-            // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
-            // silenced weapons no longer wake the whole 30-metre neighbourhood.
-            if (player.FiredThisTick && player.HeldWeaponType is { } audibleWeapon)
-            {
-                // Along the view, as far as the gun reaches: the line another game's humans see the shot by.
-                Matrix3f view = player.Camera.Orientation;
-                float reach = audibleWeapon.EffectiveRange * (float)WorldScene.UnitsPerMetre;
-                mission.Soldiers?.NotifyGunshot(
-                    player.Body.Eye,
-                    audibleWeapon.AiDetectionRange,
-                    line: new Vector3f(view.M31 * reach, view.M32 * reach, view.M33 * reach));
-            }
+            Igi1PlayerHearing.Gunshot(player, mission.Soldiers);
 
             audio.SoundPlayerWeaponAndBody();
 
@@ -820,16 +807,8 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             {
                 audio.PlayFootstep(step);
 
-                // The step is also a NOISE the AI hears: 0x463920's tail posts AIEVENT_WALK
-                // (type 10, filter 0x46) with the ground material's own radius, unless the
-                // walker is crouching -- sneaking really is silent to the AI. guard.qvm's WALK
-                // branch is AIAction_SetCombat, so a guard that hears footsteps it cannot see
-                // starts hunting.
-                if (!player.IsCrouched)
-                {
-                    mission.Soldiers?.NotifyWalk(
-                        step.PositionInUnits, player.Body.Position, step.HearingRadiusInUnits);
-                }
+                // The step is also a NOISE the AI hears (Igi1PlayerHearing.Step).
+                Igi1PlayerHearing.Step(player, step, mission.Soldiers);
             }
 
             host.PresentPlayerImpacts();

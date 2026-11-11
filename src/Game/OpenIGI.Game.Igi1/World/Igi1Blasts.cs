@@ -21,7 +21,7 @@ namespace OpenIGI.Game.Igi1.World;
 /// message to everything in its reach (<c>0x47F200</c>).
 /// </summary>
 /// <param name="mission">The mission's world.</param>
-/// <param name="harm">What a blast does to the player when it kills.</param>
+/// <param name="harm">What hurts a player of the mission and how it dies.</param>
 /// <param name="audio">The sirens and cameras a blast silences.</param>
 /// <param name="impacts">The scorch a rocket or a launcher round burns.</param>
 /// <param name="host">What shows and plays them.</param>
@@ -44,7 +44,6 @@ public sealed partial class Igi1Blasts(
 
     // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
     private const int ExplosionShakeTicks = 90;
-
 
     // Where each task stands in the order the level made them, for the explosion list.
     private readonly Dictionary<GameTask, long> _joinOrder = [];

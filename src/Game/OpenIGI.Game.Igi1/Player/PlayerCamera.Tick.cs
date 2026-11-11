@@ -34,10 +34,15 @@ public sealed partial class PlayerCamera
         TickFrame(PlayerInputSampler.SampleFrame(input, InputProfile), terrain);
     }
 
+    /// <summary>Advances the body by one simulation tick, with the actions held as a title path reads them.</summary>
+    /// <param name="held">The actions held this tick.</param>
+    /// <param name="terrain">The level's terrain.</param>
+    public void Tick(PlayerAction held, IGroundHeightField? terrain) => TickFrame(PlayerInputSampler.FromActions(held), terrain);
+
     /// <summary>Advances the body by one simulation tick on a frame of input already sampled.</summary>
     /// <param name="frame">The tick's input frame: the host's own controls, or a client's command on a server.</param>
     /// <param name="terrain">The level's terrain.</param>
-    /// <remarks>The rest of <see cref="Tick"/>: everything after the controls are read is the same for a player at the keyboard and one across the network.</remarks>
+    /// <remarks>The rest of <see cref="Tick(InputState, IGroundHeightField?)"/>: everything after the controls are read is the same for a player at the keyboard and one across the network.</remarks>
     public void TickFrame(in PlayerInputFrame frame, IGroundHeightField? terrain)
     {
         ApplyCheats(PlayerCheatOptions.Current);

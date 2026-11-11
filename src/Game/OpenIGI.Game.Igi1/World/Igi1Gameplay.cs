@@ -18,10 +18,11 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     public Igi1Gameplay(IMissionHostServices host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
-        Sounds = new Igi1HumanSounds(World, host);
+        Sounds = new Igi1HumanSounds(new Igi1MissionSoundStage(World, host));
         Audio = new Igi1MissionAudio(World, host);
         Impacts = new Igi1ImpactEffects(World, host);
         Impacts.Explosions.Sound = (sound, at, priority) => host.PlayDefinition(sound, at, priority);
+        PlayerSurroundings = new Igi1MissionPlayerSurroundings(World, Sounds, Audio, host);
         Harm = new Igi1PlayerHarm(World, Sounds, Audio, host);
         Blasts = new Igi1Blasts(World, Harm, Audio, Impacts, host);
         World.TouchGlass = Blasts.TouchGlass;
@@ -35,6 +36,9 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
 
     /// <summary>Gets the played mission's world.</summary>
     public MissionWorld World { get; } = new();
+
+    /// <summary>Gets what hurts a player of the mission -- its own or a co-op partner -- and how it dies.</summary>
+    public Igi1PlayerHarm Harm { get; }
 
     /// <summary>Gets what is kept of the save games across a restart: the slot a load asked for.</summary>
     public OpenIGI.Game.Saves.SaveSession SaveSession { get; } = new();
@@ -66,8 +70,8 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <inheritdoc/>
     public ShotTally? PlayerShots => World.Player?.Shots;
 
-    /// <summary>Gets what hurts the player and how it dies.</summary>
-    public Igi1PlayerHarm Harm { get; }
+    /// <summary>Gets what the mission's player is hurt and dies in.</summary>
+    public Igi1MissionPlayerSurroundings PlayerSurroundings { get; }
 
     /// <summary>Gets the humans' cries and the sounds of rounds landing.</summary>
     public Igi1HumanSounds Sounds { get; }
@@ -154,7 +158,7 @@ public sealed class Igi1Gameplay : IHostedMission, IShotTallySource, OpenIGI.Gam
     /// <remarks>Not retail: Project I.G.I. kept no save games.</remarks>
     public void MakeReadyForSave()
     {
-        if (World.Player is { } rig && (World.IsPlayerDead || World.PlayerHealth.IsDead))
+        if (World.Player is { } rig && (World.IsPlayerDead || World.PlayerLife.Health.IsDead))
         {
             Harm.RevivePlayer(at: null, rig.Body.Yaw);
         }

@@ -40,8 +40,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
     private readonly Dictionary<HumanTask, Igi2HumanSoldier> _standIns = [];
     private readonly Dictionary<HumanTask, bool> _inWorld = [];
     private readonly HashSet<Igi2AiSquadTask> _squadsRun = [];
-    private readonly List<Action> _eachTick = [];
-    private readonly List<Action> _onLeave = [];
+    private readonly HostedLevelHooks _hooks = new();
 
     // The host's player task and mission, once the level joined them, which I.G.I. 2's player's death is latched onto.
     private HumanTask? _hostPlayer;
@@ -187,11 +186,11 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
 
     /// <summary>Has something done at the end of each of the level's ticks, before the soldiers follow the world.</summary>
     /// <param name="action">What is done.</param>
-    public void EachTick(Action action) => _eachTick.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    public void EachTick(Action action) => _hooks.EachTick(action);
 
     /// <summary>Has something done as the level is left, before its tasks are deleted.</summary>
     /// <param name="action">What is done.</param>
-    public void OnLeave(Action action) => _onLeave.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    public void OnLeave(Action action) => _hooks.OnLeave(action);
 
     /// <summary>Puts each soldier in the world as its host human is, as the level begins.</summary>
     public void Begin() => FollowWorld(initial: true);
@@ -351,10 +350,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
     /// <summary>Takes the level down as its mission is left: the guest's tasks are deleted, and the ids they kept are free.</summary>
     public void Leave()
     {
-        foreach (Action action in _onLeave)
-        {
-            action();
-        }
+        _hooks.RunLeave();
 
         Visibility?.Reset();
         if (Root.Parent is not null)
@@ -399,10 +395,7 @@ public sealed class Igi2HostedLevel : OpenIGI.Game.Level.ITaskRun<HumanTask>
             _run.Run(gun);
         }
 
-        foreach (Action action in _eachTick)
-        {
-            action();
-        }
+        _hooks.RunTick();
 
         FollowWorld(initial: false);
 

@@ -126,12 +126,12 @@ public sealed class Igi1SaveGameTests : IDisposable
 
         // And the player stood in front of a guard, to be seen, shot at and hunted: minds in a fight, an alarm perhaps raised,
         // the player perhaps dead.
-        float before = world.PlayerHealth.RemainingFraction;
+        float before = world.PlayerLife.Health.RemainingFraction;
         foreach (OpenIGI.Game.Igi1.Player.SoldierView guard in host.Soldiers()!.Simulation.SoldierViews.Where(static v => !v.IsDead).ToArray())
         {
             host.Player()!.StandAt(new OpenIGI.Core.Numerics.Vector3d(guard.Position.X + 12288.0, guard.Position.Y, guard.Position.Z), 0f);
             Steps(150);
-            if (world.IsPlayerDead || world.PlayerHealth.RemainingFraction < before)
+            if (world.IsPlayerDead || world.PlayerLife.Health.RemainingFraction < before)
             {
                 break;
             }
@@ -142,7 +142,7 @@ public sealed class Igi1SaveGameTests : IDisposable
         {
             File.WriteAllLines(
                 fight + ".fight",
-                [$"dead={world.IsPlayerDead} health={world.PlayerHealth.RemainingFraction}", .. host.Soldiers()!.Simulation.BrainPairsForTesting.Select(static p => $"{p.Key.Soldier.Id} {p.Value.DescribeTick()}")]);
+                [$"dead={world.IsPlayerDead} health={world.PlayerLife.Health.RemainingFraction}", .. host.Soldiers()!.Simulation.BrainPairsForTesting.Select(static p => $"{p.Key.Soldier.Id} {p.Value.DescribeTick()}")]);
         }
 
         Wreck(kills: 1);
@@ -155,7 +155,7 @@ public sealed class Igi1SaveGameTests : IDisposable
         Assert.Same(world, host.Mission());
         if (Environment.GetEnvironmentVariable("SAVE_DUMP") is { Length: > 0 } afterLoad)
         {
-            File.WriteAllText(afterLoad + ".afterload", $"dead {world.IsPlayerDead} task {world.PlayerTask?.IsDead} failed {world.Objectives?.IsFailed} health {world.PlayerHealth.Damage}");
+            File.WriteAllText(afterLoad + ".afterload", $"dead {world.IsPlayerDead} task {world.PlayerTask?.IsDead} failed {world.Objectives?.IsFailed} health {world.PlayerLife.Health.Damage}");
         }
         Assert.False(world.IsPlayerDead);
         Assert.True(gun is null || !gun.IsCollected, "The gun taken after the save does not lie there again.");
@@ -185,12 +185,12 @@ public sealed class Igi1SaveGameTests : IDisposable
             for (int i = 0; i < 300; i++)
             {
                 Assert.True(host.Step());
-                if (world.PlayerHealth.Damage != damage || i % 50 == 0)
+                if (world.PlayerLife.Health.Damage != damage || i % 50 == 0)
                 {
-                    damage = world.PlayerHealth.Damage;
+                    damage = world.PlayerLife.Health.Damage;
                     OpenIGI.Core.Numerics.Vector3d at = host.Player()!.PositionUnits;
                     double nearest = host.Soldiers()!.Simulation.SoldierViews.Where(static v => !v.IsDead).Min(v => OpenIGI.Core.Numerics.Vector3d.Distance(v.Position, at));
-                    lines.Add($"step {i} tick {world.PlayerTicks} damage {damage} hits {world.PlayerHealth.Hits} dead {world.IsPlayerDead} task {world.PlayerTask?.IsDead} failed {world.Objectives?.IsFailed} mines {host.Player()!.Grenades.Mines.Count} grenades {host.Player()!.Grenades.Grenades.Count} nearest {nearest:F0} guardRounds {host.GuardRoundsFired()} hitsOnPlayer {host.GuardHitsOnPlayer()}");
+                    lines.Add($"step {i} tick {world.PlayerTicks} damage {damage} hits {world.PlayerLife.Health.Hits} dead {world.IsPlayerDead} task {world.PlayerTask?.IsDead} failed {world.Objectives?.IsFailed} mines {host.Player()!.Grenades.Mines.Count} grenades {host.Player()!.Grenades.Grenades.Count} nearest {nearest:F0} guardRounds {host.GuardRoundsFired()} hitsOnPlayer {host.GuardHitsOnPlayer()}");
                 }
             }
 
@@ -234,7 +234,7 @@ public sealed class Igi1SaveGameTests : IDisposable
 
             OpenIGI.Game.Igi1.Player.PlayerCamera rig = host.Player()!;
             rig.StandAt(new OpenIGI.Core.Numerics.Vector3d(rig.PositionUnits.X + 4096.0, rig.PositionUnits.Y, rig.PositionUnits.Z), rig.Yaw + 1f, 0.25f);
-            world.PlayerHealth.ApplyDirect(0, 0.2f);
+            world.PlayerLife.Health.ApplyDirect(0, 0.2f);
             if (rig.Weapons is { Carried.Count: > 0 } weapons)
             {
                 weapons.Carried[0].Gun.State.RoundsInClip = Math.Max(0, weapons.Carried[0].Gun.State.RoundsInClip - 2);
@@ -404,7 +404,7 @@ public sealed class Igi1SaveGameTests : IDisposable
             // And the player somewhere else, looking another way, hurt, a round short.
             OpenIGI.Game.Igi1.Player.PlayerCamera rig = host.Player()!;
             rig.StandAt(new OpenIGI.Core.Numerics.Vector3d(rig.PositionUnits.X + 4096.0, rig.PositionUnits.Y, rig.PositionUnits.Z), rig.Yaw + 1f, 0.25f);
-            world.PlayerHealth.ApplyDirect(0, 0.5f);
+            world.PlayerLife.Health.ApplyDirect(0, 0.5f);
             if (rig.Weapons is { Carried.Count: > 0 } weapons)
             {
                 weapons.Carried[0].Gun.State.RoundsInClip = 3;

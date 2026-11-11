@@ -73,14 +73,12 @@ public sealed class LevelResetCoverageTests
         [nameof(MissionWorld.SoldierPresenter)] = "an arena has no soldiers to show",
 
         // The players: the match puts each back at a spawn, restocked.
-        [nameof(MissionState.PlayerHealth)] = "the match's respawn",
+        [nameof(MissionWorld.PlayerLife)] = "the match's respawn; its washes are the local screen's, over in a moment",
         [nameof(MissionWorld.Player)] = "the match's respawn; its grenades, rockets and marks cleared by the title",
         [nameof(MissionWorld.PlayerTask)] = "the match's respawn",
         [nameof(MissionWorld.PlayerEvents)] = "wiring",
         [nameof(MissionWorld.NetworkPlayers)] = "the match's respawn; their projectiles and marks cleared by the title",
         [nameof(MissionWorld.ShownPartners)] = "the snapshots' to show",
-        [nameof(MissionState.DamageFlash)] = "the local screen's, over in a moment",
-        [nameof(MissionWorld.FlashbangFlash)] = "the local screen's, over in a moment",
 
         // Running on whatever the round is: sounds and effects that follow the level's state, the streams of chance.
         [nameof(MissionWorld.Ambience)] = "follows where the listener stands",

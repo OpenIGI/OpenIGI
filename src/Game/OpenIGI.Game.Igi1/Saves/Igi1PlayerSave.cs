@@ -25,7 +25,7 @@ internal static class Igi1PlayerSave
         float yaw = exchange.Real(rig?.Yaw ?? 0f);
         float pitch = exchange.Real(rig?.Pitch ?? 0f);
 
-        if (world.PlayerHealth is IExchangedState health)
+        if (world.PlayerLife.Health is IExchangedState health)
         {
             health.Exchange(exchange);
         }
@@ -36,7 +36,7 @@ internal static class Igi1PlayerSave
         }
 
         world.IsPlayerDead = exchange.Bool(world.IsPlayerDead);
-        world.PlayerHitQuietUntil = exchange.Int(world.PlayerHitQuietUntil);
+        world.PlayerLife.HitQuietUntil = exchange.Int(world.PlayerLife.HitQuietUntil);
         world.PlayerTicks = exchange.Int((int)world.PlayerTicks);
         world.SavesUsed = exchange.Int(world.SavesUsed);
         world.GameLoads = exchange.Int(world.GameLoads);

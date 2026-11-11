@@ -7,15 +7,16 @@ using OpenIGI.Game.World;
 namespace OpenIGI.Game.Igi1.Player;
 
 /// <summary>The player's live body, as any game's AI perceives the player's task.</summary>
-/// <param name="mission">The mission whose player it is.</param>
+/// <param name="rig">The rig standing for the task, or <see langword="null"/> while none stands.</param>
+/// <param name="task">The player's task, whose container holds it in the world or out of it.</param>
 /// <remarks>
 /// Its eyes are its detection mark, where Project I.G.I.'s own detection looks for it: its origin above its feet and
 /// <c>sub_465820</c>'s raise, by whether it crouches. It does not lie flat, so it keeps low only in a settled crouch.
 /// </remarks>
-public sealed class Igi1PlayerBody(MissionWorld mission) : IHumanBodyState
+public sealed class Igi1PlayerBody(Func<PlayerCamera?> rig, HumanTask task) : IHumanBodyState
 {
     /// <inheritdoc/>
-    public Vector3d Feet => mission.Player?.Body.Position ?? default;
+    public Vector3d Feet => rig()?.Body.Position ?? default;
 
     /// <inheritdoc/>
     public Vector3d Eyes
@@ -23,13 +24,13 @@ public sealed class Igi1PlayerBody(MissionWorld mission) : IHumanBodyState
         get
         {
             Vector3d feet = Feet;
-            bool crouched = mission.Player?.Body.IsCrouched == true;
+            bool crouched = rig()?.Body.IsCrouched == true;
             return new Vector3d(feet.X, feet.Y, feet.Z + Igi1HumanAi.DetectionMarkAboveFeet(crouched));
         }
     }
 
     /// <inheritdoc/>
-    public bool IsKeepingLow => mission.Player?.Body.IsCrouched == true;
+    public bool IsKeepingLow => rig()?.Body.IsCrouched == true;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -37,7 +38,7 @@ public sealed class Igi1PlayerBody(MissionWorld mission) : IHumanBodyState
     /// <c>0x4609A0</c>, and the player's own <c>0x410900</c>), as its conditional containers start and stop: a player whose
     /// container holds it out of the world, as an intro's does, is nobody's target.
     /// </remarks>
-    public bool IsActive => mission.Player is not null && ConditionalContainerGate.IsTaskActive(mission.PlayerTask);
+    public bool IsActive => rig() is not null && ConditionalContainerGate.IsTaskActive(task);
 }
 
 /// <summary>A soldier's live body, as any game's AI perceives the soldier's task.</summary>

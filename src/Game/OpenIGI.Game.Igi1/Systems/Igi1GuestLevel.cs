@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
@@ -5,6 +6,7 @@ using OpenIGI.Game.Igi1.Ai;
 using OpenIGI.Game.Igi1.Player;
 using OpenIGI.Game.Igi1.Weapons;
 using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.Level;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
@@ -30,21 +32,30 @@ public sealed class Igi1GuestLevel
     /// <summary>The type the game's levels arm a human with, a child of it naming the weapon.</summary>
     public const string GunType = "Gun";
 
-    private const int TopId = 4095;
-
     private readonly Igi1GuestContent _content;
     private readonly GameLoop _loop;
-    private int _spare = TopId;
+    private readonly GuestTaskIds _ids;
+
+    // The player standing in the host's level, once one does: its rig and what it is hurt and heard in.
+    private (PlayerCamera Rig, IIgi1PlayerSurroundings Surroundings)? _player;
 
     private Igi1GuestLevel(Igi1GuestContent content, LevelTask root)
     {
         _content = content;
         _loop = content.Guest.Loop;
+        _ids = new GuestTaskIds(_loop.Tasks);
         Root = root;
+        GunPickups = GunPickupRegistry.Empty(content.Arsenal.Ammunition);
     }
 
     /// <summary>Gets the level's root, in the guest's task tree.</summary>
     public LevelTask Root { get; }
+
+    /// <summary>
+    /// Gets the game's guns lying in the host's level: those the host lays in its own's stead (<see cref="AddGunPickup"/>), and those
+    /// the soldiers drop. The player takes them as the game's own; the soldiers' simulation drops and settles them.
+    /// </summary>
+    public GunPickupRegistry GunPickups { get; }
 
     /// <summary>Opens a level in the guest session of the game, empty, its soldiers' scripts forgotten.</summary>
     /// <param name="content">What the level's soldiers are made of, in the guest session it was read in.</param>
@@ -92,6 +103,101 @@ public sealed class Igi1GuestLevel
         }
 
         return body;
+    }
+
+    /// <summary>
+    /// Stands Project I.G.I.'s player in the host's level in its own player's stead, as the game's own mission stands it
+    /// (<see cref="Igi1PlayerSetup"/>): the rig moving through the host's world and tuned by <c>humanplayer.qvm</c>, its view rig and
+    /// what it carries, its life, and the host's player task standing for it -- the level's AI, detectors and scripts find it
+    /// there, and the host's rounds and blasts strike it there.
+    /// </summary>
+    /// <param name="world">The host's world, which the player's grenades and view model meet, and which it stands in.</param>
+    /// <param name="start">Who the player is.</param>
+    /// <returns>The player, which the host ticks as its title player.</returns>
+    public Igi1TitlePlayer AddPlayer(IHostCollisionWorld world, Igi1GuestPlayerStart start)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(start);
+        IOpenIgiLogger log = start.Surroundings.Logger;
+        PlayerSpawnPoint spawn = PlayerSpawn.Of(start.Task);
+
+        // Its grenades and view model meet the host's world; its view model's forward sweep meets the ground alone.
+        WorldTraceCast trace = world.Trace;
+        WorldTraceCast ground = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+            world.Trace(request with { Mask = WorldTraceMask.Terrain }, out hit);
+        Igi1PlayerAnimations animations = _content.PlayerAnimations;
+        PlayerCamera rig = Igi1PlayerRig.Build(
+            new Igi1PlayerWorld(start.Solids, world.Cast, trace, ground, start.Ladders), animations.Body, log);
+        rig.UseMaterials(_content.Arsenal.Materials);
+
+        Igi1PlayerLife life = new();
+        int difficulty = (int)start.Difficulty;
+        life.Reset(difficulty);
+        try
+        {
+            if (Igi1PlayerRig.Tune(rig, _loop, _content.Guest.Resources, log) is { } tuning)
+            {
+                life.Tune(tuning, difficulty);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
+        {
+            log.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
+        }
+
+        Igi1HumanPlayer human = new(rig, life, start.Surroundings);
+        rig.UseHealth(life.Health);
+        rig.Body.SetFallImpactSink(human.Land);
+        if (animations.ViewRig is { } viewRig)
+        {
+            rig.UseViewRig(viewRig);
+        }
+
+        Igi1PlayerRig.Carry(rig, start.Loadout, _content.Arsenal.Weapons, _content.Arsenal.Ammunition, log);
+        rig.Humans = Igi1PlayerRig.Rounds(rig, start.Bodies, () => start.Task);
+
+        if (start.Surroundings is Igi1GuestPlayerSurroundings heard)
+        {
+            heard.Stage.Player = rig;
+        }
+
+        _player = (rig, start.Surroundings);
+
+        // It takes the game's guns lying in the level as it reaches them, with the game's cue.
+        rig.UseGunPickups(GunPickups);
+        rig.GunPickedUp += _ => start.Surroundings.PlayDefinition(Igi1MissionAudio.GunPickupSound, Igi1MissionAudio.GunPickupSoundPriority);
+        rig.PlaceAt(world.Ground, spawn, start.Solids.PlayerRegistrationCaster());
+
+        // The host's player task stands for it: its body is the rig, its events the player's, and it is the human the host's
+        // world, AI and scripts meet.
+        HumanPlayerTask task = start.Task;
+        task.Driver = Core.Titles.GameTitle.Igi1;
+        task.Body = new Igi1PlayerBody(() => rig, task);
+        task.Events = human;
+        task.StandIn = task;
+        world.AddCollider(new Igi1HumanLineCollider(task, start.HumanGroup, start.HumanMaterial));
+        Igi1TitlePlayer player = new(human, world.Ground);
+
+        // As it dies, the camera pulls back from where it falls, kept off the host's walls.
+        if (start.Surroundings is Igi1GuestPlayerSurroundings surroundings)
+        {
+            surroundings.DeathCamera = (feet, facing) => player.BeginDeathView(feet, facing, world.Cast);
+        }
+
+        return player;
+    }
+
+    /// <summary>Lays one of the game's guns where the host laid one of its own, for the player to take.</summary>
+    /// <param name="weaponId">The weapon, a <c>WEAPON_ID_*</c> name of the game's.</param>
+    /// <param name="position">Where it lies, in world units.</param>
+    /// <param name="orientation">How it lies.</param>
+    /// <returns>The pickup; <see langword="null"/> where the game has no such weapon.</returns>
+    public GunPickup? AddGunPickup(string weaponId, Core.Numerics.Vector3d position, Core.Numerics.Matrix3f orientation)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(weaponId);
+        return _content.Arsenal.Weapons.TryGetByScriptId(weaponId, out Game.Weapons.WeaponType weapon)
+            ? GunPickups.Lay(position, orientation, weapon)
+            : null;
     }
 
     /// <summary>
@@ -164,6 +270,16 @@ public sealed class Igi1GuestLevel
             _loop.Variables);
         soldiers.Arm(_content.Mission, arsenal.Weapons);
 
+        // Their steps sound through the host's audio, on the ground they walk.
+        Igi1HostedLevel? hosted = null;
+        Igi1GuestSoundStage steps = new(start.Audio, arsenal.Materials, start.Random, () => hosted?.Ticks ?? 0, static () => default);
+        soldiers.SetFootstepSound(step => Igi1HumanSounds.PlayFootstep(steps, step, raining: false));
+
+        // A gun a soldier drops falls through the host's world into the level's pickups, for the player to take.
+        soldiers.UseDroppedWeaponPickups(GunPickups);
+        soldiers.SetWeaponDropSink((weapon, position, orientation, velocity) => GunPickups.Spawn(position, orientation, weapon, velocity));
+        soldiers.SetDroppedWeaponWorld(null, world.Cast);
+
         // Each soldier stands in the host's world as a human the host's rounds and sight meet, and takes their hits as its stand-in.
         HashSet<object> own = new(ReferenceEqualityComparer.Instance);
         Dictionary<HumanSoldierTask, Igi1StandIn> standIns = new(ReferenceEqualityComparer.Instance);
@@ -193,7 +309,35 @@ public sealed class Igi1GuestLevel
 
         LevelUpdateWalker walker = new(Root);
         soldiers.AttachTo(walker);
-        return new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player);
+        hosted = new Igi1HostedLevel(_loop.Tasks, Root, soldiers, walker, groups, standIns, colliders, world, start.Player, GunPickups);
+        if (_player is { } player)
+        {
+            HearPlayer(hosted, player.Rig, player.Surroundings, steps);
+        }
+
+        return hosted;
+    }
+
+    // The soldiers hear the player standing in the host's level as the game's own hear theirs: its rounds landing, the noises its
+    // doings make, its gunfire and its steps, each tick as the level's closes, and its landings; and its steps and its rounds'
+    // impacts are heard by the player.
+    private static void HearPlayer(Igi1HostedLevel hosted, PlayerCamera rig, IIgi1PlayerSurroundings surroundings, Igi1GuestSoundStage steps)
+    {
+        SoldierSimulation soldiers = hosted.Soldiers;
+        Igi1PlayerHearing.Attach(rig, soldiers);
+        Igi1GuestPlayerSurroundings? heard = surroundings as Igi1GuestPlayerSurroundings;
+        heard?.Heard = (feet, radius) => soldiers.NotifyGroundImpact(feet, feet, radius);
+        hosted.EachTick(() =>
+        {
+            Igi1PlayerHearing.Gunshot(rig, soldiers);
+            if (rig.TakeFootstep() is { } step)
+            {
+                Igi1HumanSounds.PlayFootstep(steps, step, raining: false);
+                Igi1PlayerHearing.Step(rig, step, soldiers);
+            }
+
+            heard?.Sounds.PlayPlayerImpacts();
+        });
     }
 
     // The type a soldier's guns are made as: the game's levels declare it, and a guest session of it, which reads no level, has
@@ -205,19 +349,5 @@ public sealed class Igi1GuestLevel
 
     private GameTask New(GameTask parent, string typeName) => _loop.Tasks.New(parent, _loop.Types.Get(typeName));
 
-    private void Bind(GameTask task, int preferred)
-    {
-        TaskTree tasks = _loop.Tasks;
-        if (preferred >= 0 && tasks.FromId(preferred) is null && tasks.TryBindId(preferred, task))
-        {
-            return;
-        }
-
-        while (tasks.FromId(_spare) is not null)
-        {
-            _spare--;
-        }
-
-        tasks.TryBindId(_spare--, task);
-    }
+    private void Bind(GameTask task, int preferred) => _ids.Bind(task, preferred);
 }

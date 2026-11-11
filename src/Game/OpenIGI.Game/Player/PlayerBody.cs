@@ -146,9 +146,6 @@ public sealed partial class PlayerBody
         Health.Invulnerable = Cheats.InfiniteHealth;
     }
 
-    /// <summary>Gets the red full-screen damage wash raised by a damaging landing.</summary>
-    public HumanDamageFlash DamageFlash { get; } = new();
-
     /// <summary>Gets the most recently processed landing, or <see langword="null"/> before the first.</summary>
     public HumanFallImpact? LastFallImpact { get; private set; }
 
@@ -630,7 +627,6 @@ public sealed partial class PlayerBody
         _previousRootHeight = _rootHeight;
 
         Position = next;
-        DamageFlash.Tick();
     }
 
     /// <summary>Advances the player by one tick, taking its movement from its own animation.</summary>
@@ -927,12 +923,6 @@ public sealed partial class PlayerBody
             Health.MaximumHealth);
 
         Health.ApplyDirect(HumanDamage.FrontZone, impact.Damage);
-        if (impact.Damage > 0f)
-        {
-            // A fall has no incoming shot direction. Keep the full, even flash while using the
-            // directional API; the zero vector is the explicit explosion/fall route.
-            DamageFlash.Hit(Vector3f.Zero, 1f);
-        }
 
         LastFallImpact = impact;
         _fallImpactSink?.Invoke(impact);

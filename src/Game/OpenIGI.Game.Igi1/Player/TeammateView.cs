@@ -2,14 +2,14 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Presentation.Igi1.Cameras;
+namespace OpenIGI.Game.Igi1.Player;
 
 /// <summary>
 /// What a downed co-op player sees while a teammate fights on: the teammate's own view, from just behind and above its head
 /// so the head is not in the way, looking exactly where it looks. Walls pull the camera in rather than letting it through.
 /// </summary>
 /// <remarks>The teammate moves and turns on the tick; the view is presented between its last two, as the walking eye is.</remarks>
-internal sealed class TeammateView
+public sealed class TeammateView
 {
     // Behind the eye along the look, over it, and to the right of it: an over-the-shoulder view of the teammate's own aim.
     // Metres; a wall in the way brings the camera this far short of it.

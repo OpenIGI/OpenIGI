@@ -106,7 +106,14 @@ public sealed class GraphFile
     /// no table at all rather than a one-entry one. Every retail file declares far more than one slot and
     /// carries a table.
     /// </remarks>
-    public GraphRouteTable? RouteTable { get; }
+    public GraphRouteTable? RouteTable { get; private set; }
+
+    /// <summary>
+    /// Gives a graph that ships no route table one worked out from its links (<see cref="GraphRouteTable.FromLinks"/>): another
+    /// game's graph, which that game searches as it walks, for a walker that looks its routes up.
+    /// </summary>
+    /// <remarks>A graph that ships its table keeps it. Its nodes should stand where they will be walked first.</remarks>
+    public void RouteFromLinks() => RouteTable ??= GraphRouteTable.FromLinks(MaxNodes, Nodes, Links);
 
     /// <summary>Gets the per-node data only the positional variant carries, in node order.</summary>
     /// <remarks>Empty for a named file, which has no equivalent.</remarks>

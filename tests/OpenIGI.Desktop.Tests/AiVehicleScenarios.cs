@@ -122,7 +122,7 @@ public sealed class AiVehicleScenarios : IDisposable
         List<OpenIGI.Engine.Tasks.DeclaredTask> vehicles = [.. Walk(loop.Tasks.Root)
             .OfType<OpenIGI.Engine.Tasks.DeclaredTask>()
             .Where(static task => task.Type.Name is "Car" or "Heli" or "Plane")];
-        HumanHealth health = MissionOf(host).PlayerHealth;
+        HumanHealth health = MissionOf(host).PlayerLife.Health;
         bool[] triggers = new bool[guns.Count];
         bool god = false;
         int last = -1;

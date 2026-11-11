@@ -159,21 +159,8 @@ internal sealed class SoldierMeshBuilder(
         return held;
     }
 
-    public static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)
-    {
-        foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
-        {
-            foreach (MtpInstance instance in pack.Instances)
-            {
-                if (string.Equals(instance.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return (pack, instance);
-                }
-            }
-        }
-
-        return (null, null);
-    }
+    public static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name) =>
+        mission.TryFindInstance(name, out LoadedPack? pack, out MtpInstance instance) ? (pack, instance) : (null, null);
 
     /// <summary>Frees every weapon built, and its presentation.</summary>
     public void ReleaseWeapons()

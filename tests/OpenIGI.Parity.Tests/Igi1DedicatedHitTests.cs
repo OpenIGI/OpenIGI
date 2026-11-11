@@ -468,7 +468,7 @@ public sealed class Igi1DedicatedHitTests(Xunit.Abstractions.ITestOutputHelper o
         string shown2 = shooter.Level!.World.ShownPartners.FirstOrDefault(p => p.Name == target.Name) is { } drawn
             ? $"drawn {Vector3d.Distance(drawn.Player.Body.Position, targetThere.Player.Body.Position) / 4096:F2} m off"
             : "target not drawn";
-        return (fired, landed, $"(damage {startDamage:F2}->{targetThere.Health.Damage:F2}, target own hp {target.Level!.World.PlayerHealth.RemainingFraction:P0}, {shown2}, teams {Team(trio, shooter)}/{Team(trio, target)})");
+        return (fired, landed, $"(damage {startDamage:F2}->{targetThere.Health.Damage:F2}, target own hp {target.Level!.World.PlayerLife.Health.RemainingFraction:P0}, {shown2}, teams {Team(trio, shooter)}/{Team(trio, target)})");
     }
 
     private static int Team(Igi1DedicatedTrio trio, Igi1DedicatedTrio.Player player) =>
