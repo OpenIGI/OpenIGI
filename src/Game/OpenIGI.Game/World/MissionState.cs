@@ -89,14 +89,11 @@ public class MissionState
     /// <summary>Gets or sets a value indicating whether the player has died.</summary>
     public virtual bool IsPlayerDead { get; set; }
 
-    /// <summary>Gets or sets a value indicating whether the soldiers update inside the level walk.</summary>
-    public bool SoldiersInWalk { get; set; }
-
-    /// <summary>Gets or sets a value indicating whether the lifts update inside the level walk.</summary>
-    public bool ElevatorsInWalk { get; set; }
-
-    /// <summary>Gets or sets a value indicating whether the security cameras and their controls update inside the level walk.</summary>
-    public bool CamerasInWalk { get; set; }
+    /// <summary>
+    /// Gets or sets a value indicating whether the level's objects -- its lifts, its cameras and their controls, its soldiers --
+    /// update where the level's walk reaches them. <see langword="false"/> only for a level stepped without its walk.
+    /// </summary>
+    public bool ObjectsInWalk { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the player updates inside the level walk.</summary>
     public bool PlayerInWalk { get; set; }
@@ -213,10 +210,8 @@ public class MissionState
     public virtual void ReleaseRuntimes()
     {
         IntroSkipPending = false;
-        SoldiersInWalk = false;
+        ObjectsInWalk = false;
         PlayerInWalk = false;
-        ElevatorsInWalk = false;
-        CamerasInWalk = false;
     }
 
     /// <summary>Takes the tables the running title publishes.</summary>

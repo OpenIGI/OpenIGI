@@ -231,7 +231,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             elevators.SetPlayerPositionProvider(mission.Player is not null || mission.PlayerStandIn is not null ? () => PlayerFeet : null);
 
             // A level the walk does not reach steps its lifts here, ahead of everything else.
-            if (!mission.ElevatorsInWalk)
+            if (!mission.ObjectsInWalk)
             {
                 foreach (PlacedElevator elevator in elevators.Elevators)
                 {
@@ -254,7 +254,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
             playerAlive: !mission.IsPlayerDead || mission.CoopClient || mission.NetworkPlayers.Any(static p => !p.IsDead));
         mission.PlayerTicked = false;
         mission.InteractionsTickedByPlayer = false;
-        if (mission.SoldiersInWalk)
+        if (mission.ObjectsInWalk)
         {
             mission.Soldiers?.BeginTick(mission.CurrentEnemy ??= SoldierEnemyNow);
         }
@@ -329,7 +329,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         // is a counter, and the renderer turns the transform from it when it draws.
         mission.Spins?.Advance();
         // A level the walk does not reach updates its cameras here, after everything else.
-        if (!mission.CamerasInWalk && mission.SecurityCameras is { } cameras)
+        if (!mission.ObjectsInWalk && mission.SecurityCameras is { } cameras)
         {
             cameras.Tick(CameraScanNow());
             foreach (SecurityCamera camera in cameras.Cameras)
@@ -348,7 +348,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         }
 
         ISoldierPresenter? soldiers = mission.SoldierPresenter;
-        if (mission.SoldiersInWalk)
+        if (mission.ObjectsInWalk && mission.Soldiers is not null)
         {
             // The soldiers updated inside the level walk; this closes their tick (corpses, skinning).
             soldiers?.EndTick();
@@ -677,16 +677,15 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
     /// <param name="levelRoot">The level's task tree.</param>
     public void AttachToLevelWalk(GameTask levelRoot)
     {
-        mission.SoldiersInWalk = false;
+        mission.ObjectsInWalk = false;
         mission.PlayerInWalk = false;
-        mission.ElevatorsInWalk = false;
-        mission.CamerasInWalk = false;
         if (mission.Cutscenes is not { } cutscenes)
         {
             return;
         }
 
         LevelUpdateWalker walker = cutscenes.Walker;
+        mission.ObjectsInWalk = true;
 
         // A lift updates where the walk reaches it (Elevator's UPDATE, 0x43D280): its children first -- the
         // doors, switches and indicators that ride it -- then its own floor expressions and its move, after
@@ -702,8 +701,6 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                     lift.Elevator = elevator;
                 }
             }
-
-            mission.ElevatorsInWalk = true;
         }
 
         // The switches, terminals, cabinets, fences, wires, GenericTBAs, stationary guns and generators update where the
@@ -729,7 +726,6 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         if (mission.SecurityCameras is { } cameras)
         {
             cameras.AttachTo(walker, CameraScanNow, CarryCameraHead);
-            mission.CamerasInWalk = true;
         }
 
         // A RotatingObject updates where the walk reaches it (0x439090), reading its On expression then.
@@ -746,7 +742,6 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
         if (mission.Soldiers is { } soldiers)
         {
             soldiers.AttachTo(walker);
-            mission.SoldiersInWalk = true;
         }
 
         if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)

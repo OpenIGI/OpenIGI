@@ -374,7 +374,7 @@ public sealed partial class GameHost
         _arms = null;
         _soldiers = null;
         _mission.AdoptSoldiers(null);
-        _mission.SoldiersInWalk = false;
+        _mission.ObjectsInWalk = false;
         _mission.PlayerInWalk = false;
         _mission.Terrain = null;
         _mission.Ground = null;
