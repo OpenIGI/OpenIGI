@@ -12,12 +12,11 @@ public static class LevelTaskClass
     /// <param name="level">The run the task is being attached to.</param>
     /// <param name="typed">Receives the task as its class.</param>
     /// <returns>
-    /// <see langword="true"/> when the task is of the class; <see langword="false"/> for a task of a level the run only
-    /// passes over, which another title's classes make and run.
+    /// <see langword="true"/>: the task is of the class, or the call throws.
     /// </returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The level is the run's own and the task was made without its class: its loader did not register the level task types.
+    /// The task was made without its class: its level's loader did not register the level task types.
     /// </exception>
     public static bool TryAs<T>(GameTask task, LevelRun level, [NotNullWhen(true)] out T? typed)
         where T : class
@@ -28,11 +27,6 @@ public static class LevelTaskClass
         if (typed is not null)
         {
             return true;
-        }
-
-        if (!level.OwnsLevel)
-        {
-            return false;
         }
 
         throw new InvalidOperationException(

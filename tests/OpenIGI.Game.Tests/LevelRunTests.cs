@@ -23,20 +23,6 @@ public sealed class LevelRunTests
     }
 
     [Fact]
-    public void A_run_that_only_passes_over_a_level_runs_no_typed_tasks_handler_but_walks_beneath_it()
-    {
-        (TaskTree tree, TaskType _, TaskType ticked) = Build();
-        var parent = (Ticking)tree.New(tree.Root, ticked);
-        var child = (Ticking)tree.New(parent, ticked);
-        RecordingRun run = new(tree.Root) { OwnsLevel = false };
-
-        run.RunChildren(tree.Root);
-
-        Assert.Equal((0, 0), (parent.Runs, child.Runs));
-        Assert.Empty(run.Log);
-    }
-
-    [Fact]
     public void A_run_passes_over_the_children_its_title_skips()
     {
         (TaskTree tree, TaskType _, TaskType ticked) = Build();

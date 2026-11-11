@@ -703,8 +703,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
                 }
             }
 
-            // Lifts of a level this walk only passes over are stepped ahead of it, as for a level the walk does not reach.
-            mission.ElevatorsInWalk = walker.OwnsLevel;
+            mission.ElevatorsInWalk = true;
         }
 
         // The switches, terminals, cabinets, fences, wires, GenericTBAs, stationary guns and generators update where the
@@ -718,7 +717,6 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         // An ExplodeObject, and the types built on one, read their explosion where the walk reaches them (0x481970);
         // an alarm light turns where it is reached (0x43A270).
-        if (walker.OwnsLevel)
         {
             mission.Destructibles?.AttachToWalk();
             mission.AlarmSpeakers?.AttachTo(walker);
@@ -753,9 +751,7 @@ public sealed partial class Igi1MissionTick(MissionWorld mission, Igi1PlayerHarm
 
         if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
         {
-            // A level this walk only passes over is its own title's to run, and so is its player's task: the mission's own
-            // per-tick player work is then done after the walk, as for a level with no player task in it.
-            if (walker.OwnsLevel && OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
+            if (OpenIGI.Game.Level.LevelTaskClass.TryAs(playerTask, walker, out HumanTask? human))
             {
                 human.Runner = this;
                 mission.PlayerInWalk = true;

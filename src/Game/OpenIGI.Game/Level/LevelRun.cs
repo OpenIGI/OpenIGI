@@ -51,16 +51,6 @@ public abstract class LevelRun
     public long TimeMilliseconds { get; private set; }
 
     /// <summary>
-    /// Gets a value indicating whether this run is the level's own. One that is not only passes over the tree: it reaches no
-    /// typed task's run handler and walks such a task's children as it would a plain container's.
-    /// </summary>
-    /// <remarks>
-    /// Not retail. The host still walks the level of a title that runs itself with the first game's walk, which finds nothing
-    /// of its own there; a task of either title's must not be run twice a tick, nor by the other title's rules.
-    /// </remarks>
-    public bool OwnsLevel { get; init; } = true;
-
-    /// <summary>
     /// Gets or sets a value indicating whether this level's running state is another machine's: a co-op client's counters,
     /// verdicts and messages are its server's, so the tasks that work them out leave them as they were sent.
     /// </summary>
@@ -120,15 +110,7 @@ public abstract class LevelRun
         ArgumentNullException.ThrowIfNull(task);
         if (task is ILevelTicked typed)
         {
-            if (OwnsLevel)
-            {
-                typed.Run(this);
-            }
-            else
-            {
-                RunChildren(task);
-            }
-
+            typed.Run(this);
             return;
         }
 

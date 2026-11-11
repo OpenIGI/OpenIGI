@@ -210,8 +210,8 @@ public sealed partial class GameHost
             _logger.Information("Session", $"An arena: {scripted} of the level's scripted vehicles, timers, sounds and messages taken out.");
         }
 
-        // A title that runs its own level (ITitleGameplay) is only passed over by this walk.
-        LevelUpdateWalker walker = new(levelRoot) { OwnsLevel = _hosted.OwnsLevel };
+        // The walk the mission ticks its level with; a game whose level runs itself behind its player leaves it unused.
+        LevelUpdateWalker walker = new(levelRoot);
         MissionBuild build = new(walker, _title.Services, loaded, levelRoot, id, promoted, _mission);
         LevelSystems<MissionLevelBuild> systems = MissionSystems();
         if (_title.Services.TryGet(out LevelSystemEdits? edits))
