@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// <c>0x4C7770</c>); the higher of the two is the surface. The airframe notes and the <c>Airframe.Path</c> samples are
 /// written from here because they report the same support query.
 /// </remarks>
-internal sealed class VehicleGroundSupport(CutsceneContext context)
+internal sealed class VehicleGroundSupport(LevelMotionContext context)
 {
     /// <summary>The narrow vertical band in which an airframe has touched supporting geometry.</summary>
     /// <remarks>
@@ -21,7 +21,7 @@ internal sealed class VehicleGroundSupport(CutsceneContext context)
     /// </remarks>
     private const double GroundContactToleranceUnits = 64.0;
 
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
 
     /// <summary>Measures a parked helicopter's rest height above the ground under its authored pose.</summary>
     /// <remarks>
@@ -216,7 +216,7 @@ internal sealed class VehicleGroundSupport(CutsceneContext context)
     /// </remarks>
     internal void RestCollisionHelisOnSupport()
     {
-        foreach ((GameTask task, CutsceneTransformState state) in _context.TaskTransforms)
+        foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
             if (state.CollisionEnabled && string.Equals(task.Type?.Name, "Heli", StringComparison.Ordinal))
             {
@@ -225,7 +225,7 @@ internal sealed class VehicleGroundSupport(CutsceneContext context)
         }
     }
 
-    private void RestHeliOnSupport(GameTask task, CutsceneTransformState state)
+    private void RestHeliOnSupport(GameTask task, TaskTransformState state)
     {
         double measuredRest = MeasureGroundRestOffset(state.OriginPosition, task);
         if (state.HelicopterPhysics is { } physics)
@@ -264,7 +264,7 @@ internal sealed class VehicleGroundSupport(CutsceneContext context)
     }
 
     /// <summary>Holds a collision-enabled helicopter on the surface it has reached, and notes its contact and landing.</summary>
-    internal void KeepHelicopterAboveGround(GameTask? ignoredOwner, CutsceneTransformState transform)
+    internal void KeepHelicopterAboveGround(GameTask? ignoredOwner, TaskTransformState transform)
     {
         Vector3d position = transform.Position;
 
@@ -414,7 +414,7 @@ internal sealed class VehicleGroundSupport(CutsceneContext context)
     /// Samples the live Heli/Plane tick every fifteenth physics tick, at Trace in the <c>Airframe.Path</c>
     /// log category (<c>OPENIGI_LOG=Airframe.Path=trace</c>).
     /// </summary>
-    internal void LogAirframePath(int id, string type, GameTask? target, CutsceneTransformState transform)
+    internal void LogAirframePath(int id, string type, GameTask? target, TaskTransformState transform)
     {
         if ((transform.PhysicsTicks > 0 && transform.PhysicsTicks % 15 != 0)
             || !_context.Logger.IsEnabled(LogLevel.Trace, CutsceneRuntime.AirframePathLogCategory))

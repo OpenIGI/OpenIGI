@@ -240,7 +240,7 @@ public sealed class AiVehicleScenarios : IDisposable
                     OpenIGI.Engine.Tasks.GameTask heli = loop.Tasks.FromId(heliId)!;
                     Vector3d at = runtime.TryGetDrawTransform(heli, out Vector3d metres, out _) ? metres * Metre : default;
                     string extra = string.Empty;
-                    if (runtime.TransformsForTesting.TryGetValue(heliId, out CutsceneTransformState? state))
+                    if (runtime.TransformsForTesting.TryGetValue(heliId, out TaskTransformState? state))
                     {
                         Matrix3f m = state.Orientation;
                         Vector3d v = state.Velocity;
@@ -256,7 +256,7 @@ public sealed class AiVehicleScenarios : IDisposable
             // OPENIGI_VEH_SCENARIO_BODY=<id>: that car's retail rigid body every tick, bit-exact, for lining the
             // port's drive up against a probe carstep capture.
             if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
-                && runtime.TransformsForTesting.TryGetValue(bodyId, out CutsceneTransformState? bodyState))
+                && runtime.TransformsForTesting.TryGetValue(bodyId, out TaskTransformState? bodyState))
             {
                 if (bodyState.RetailBody is RetailCarBody body)
                 {

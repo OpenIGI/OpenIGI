@@ -101,7 +101,7 @@ public sealed partial class CutsceneRuntime : ISavedStateSource
             }));
         }
 
-        foreach ((GameTask task, CutsceneTransformState transform) in _context.TaskTransforms)
+        foreach ((GameTask task, TaskTransformState transform) in _context.TaskTransforms)
         {
             yield return new(task, transform);
         }

@@ -25,7 +25,7 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public sealed class LevelVehicles
 {
-    private readonly CutsceneContext _context;
+    private readonly LevelMotionContext _context;
     private readonly LevelRun _walker;
     private readonly List<CarAiState> _carAis = [];
     private readonly Dictionary<GameTask, int> _lastCarTick = [];
@@ -38,7 +38,7 @@ public sealed class LevelVehicles
     /// <param name="obstacleHit">What a driven car's sweep strikes, or <see langword="null"/> for nothing.</param>
     /// <param name="obstacleReleased">Whether an obstacle a car waits behind has gone, or <see langword="null"/> for never.</param>
     internal LevelVehicles(
-        CutsceneContext context,
+        LevelMotionContext context,
         CutsceneAttachments attachments,
         List<CutsceneAnimationState> animations,
         LevelRun walker,

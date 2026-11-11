@@ -8,7 +8,7 @@ namespace OpenIGI.Game.World;
 /// </summary>
 internal static class CutscenePoses
 {
-    internal static void UpdateDerivedPose(CutsceneTransformState state)
+    internal static void UpdateDerivedPose(TaskTransformState state)
     {
         if (state.TrainRoot is null || ReferenceEquals(state.TrainRoot, state))
         {
@@ -20,7 +20,7 @@ internal static class CutscenePoses
         state.Orientation = orientation;
     }
 
-    internal static void SnapshotDynamicPose(CutsceneTransformState state, int simulationOrder)
+    internal static void SnapshotDynamicPose(TaskTransformState state, int simulationOrder)
     {
         state.PreviousPosition = state.Position;
         state.PreviousOrientation = state.Orientation;
@@ -29,11 +29,11 @@ internal static class CutscenePoses
         state.LastSimulationOrder = simulationOrder;
     }
 
-    internal static int DynamicRevision(CutsceneTransformState state) =>
+    internal static int DynamicRevision(TaskTransformState state) =>
         state.TrainRoot?.DynamicRevision ?? state.DynamicRevision;
 
     internal static void EvaluateDynamicPose(
-        CutsceneTransformState state,
+        TaskTransformState state,
         bool previous,
         out Vector3d position,
         out Matrix3f orientation)

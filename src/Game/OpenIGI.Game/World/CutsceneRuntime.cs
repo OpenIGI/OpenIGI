@@ -26,7 +26,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// <summary>The category the airframe path samples are logged under, at Trace.</summary>
     public const string AirframePathLogCategory = "Airframe.Path";
 
-    private readonly CutsceneContext _context;
+    private readonly LevelMotionContext _context;
     private readonly ScriptVarRegistry _variables;
     private readonly List<ConditionalContainerTask> _containers = [];
     private readonly List<CutsceneSceneState> _scenes = [];
@@ -111,7 +111,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         _variables = variables;
         _hostNative = native;
         _soundChanged = soundChanged;
-        _context = new CutsceneContext(
+        _context = new LevelMotionContext(
             levelRoot,
             new LevelExpressionRuntime(variables, InvokeNative),
             vehiclePhysics,
@@ -323,7 +323,7 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// </remarks>
     public void EnableTerminalTerrainLanding(GameTask task)
     {
-        CutsceneTransformState state = TerminalLandingState(task);
+        TaskTransformState state = TerminalLandingState(task);
         state.TerminalLandingOnTerrain = true;
     }
 
@@ -332,9 +332,9 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     /// <param name="authoredTouchdown">The retail task whose authored position is the landing target.</param>
     public void EnableTerminalTerrainLanding(GameTask task, GameTask authoredTouchdown)
     {
-        CutsceneTransformState state = TerminalLandingState(task);
+        TaskTransformState state = TerminalLandingState(task);
         ArgumentNullException.ThrowIfNull(authoredTouchdown);
-        if (!_context.TaskTransforms.TryGetValue(authoredTouchdown, out CutsceneTransformState? touchdown))
+        if (!_context.TaskTransforms.TryGetValue(authoredTouchdown, out TaskTransformState? touchdown))
         {
             throw new ArgumentException(
                 "Terminal terrain landing requires a captured touchdown task.",
@@ -345,10 +345,10 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
         state.TerminalLandingTarget = touchdown.OriginPosition;
     }
 
-    private CutsceneTransformState TerminalLandingState(GameTask task)
+    private TaskTransformState TerminalLandingState(GameTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        if (!_context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? state)
+        if (!_context.TaskTransforms.TryGetValue(task, out TaskTransformState? state)
             || !string.Equals(task.Type?.Name, "Heli", StringComparison.Ordinal))
         {
             throw new ArgumentException("Terminal terrain landing requires a captured Heli task.", nameof(task));
@@ -911,10 +911,10 @@ public sealed partial class CutsceneRuntime : Hosting.IMissionCutscenes
     internal IReadOnlyList<CutsceneAnimationState> AnimationsForTesting => _animations;
 
     /// <summary>Gets each driven object's transform state, by task id, for the suites that read them.</summary>
-    internal IReadOnlyDictionary<int, CutsceneTransformState> TransformsForTesting => _context.Transforms;
+    internal IReadOnlyDictionary<int, TaskTransformState> TransformsForTesting => _context.Transforms;
 
     /// <summary>Gets each driven object's transform state, by task, for the suites that read them.</summary>
-    internal IReadOnlyDictionary<GameTask, CutsceneTransformState> TaskTransformsForTesting => _context.TaskTransforms;
+    internal IReadOnlyDictionary<GameTask, TaskTransformState> TaskTransformsForTesting => _context.TaskTransforms;
 
     /// <summary>Gets what each attached task rides, by task, for the suites that read them.</summary>
     internal IReadOnlyDictionary<GameTask, CutsceneAttachmentState> AttachmentsForTesting => _attachments.All;

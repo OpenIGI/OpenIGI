@@ -10,14 +10,14 @@ namespace OpenIGI.Game.World;
 /// never steps anything. A rotor's blur samples follow <c>RotorPrimitive::Draw</c> (<c>0x42C630</c>).
 /// </remarks>
 internal sealed class VehicleDraw(
-    CutsceneContext context,
+    LevelMotionContext context,
     CutsceneAttachments attachments,
     VehicleBodies bodies,
     VehicleArmaments armament,
     VehicleParts parts)
 {
     private readonly VehicleParts _parts = parts;
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly CutsceneAttachments _attachments = attachments;
     private readonly VehicleBodies _bodies = bodies;
     private readonly VehicleArmaments _armament = armament;
@@ -31,7 +31,7 @@ internal sealed class VehicleDraw(
             return true;
         }
 
-        if (_context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? state))
+        if (_context.TaskTransforms.TryGetValue(task, out TaskTransformState? state))
         {
             UpdateDerivedPose(state);
 
@@ -52,7 +52,7 @@ internal sealed class VehicleDraw(
     /// <summary>Reads the latest integrated velocity of a dynamic cutscene vehicle.</summary>
     public bool TryGetDynamicVelocity(GameTask task, out Vector3d velocity)
     {
-        if (_context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? state) && state.IsDynamic)
+        if (_context.TaskTransforms.TryGetValue(task, out TaskTransformState? state) && state.IsDynamic)
         {
             velocity = state.Velocity / WorldScene.UnitsPerMetre;
             return true;
@@ -92,7 +92,7 @@ internal sealed class VehicleDraw(
             originPosition = attachment.Position;
             originOrientation = attachment.Orientation;
         }
-        else if (_context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? state))
+        else if (_context.TaskTransforms.TryGetValue(task, out TaskTransformState? state))
         {
             UpdateDerivedPose(state);
             if (!state.IsDynamic && state.TrainRoot is null && !state.CollisionEnabled)
@@ -163,7 +163,7 @@ internal sealed class VehicleDraw(
             // Wheel_Move (0x430640): the wheel stands on its spring, its body point's compression up from its attach point less
             // the wheel drop, along the car's up axis.
             if (_bodies.CarWheelIndices.TryGetValue(placement, out int lifted)
-                && _context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? carried)
+                && _context.TaskTransforms.TryGetValue(placement.Owner, out TaskTransformState? carried)
                 && carried.CarMotion.HasWheelStates
                 && lifted < carried.CarMotion.WheelLifts.Length)
             {
@@ -174,7 +174,7 @@ internal sealed class VehicleDraw(
 
         // A sliding door (0x4274E0) sits at its attachment moved along the helicopter's axis by how far it has slid.
         if (_parts.TryGetDoorSlide(placement, out Vector3d slide)
-            && _context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? state))
+            && _context.TaskTransforms.TryGetValue(placement.Owner, out TaskTransformState? state))
         {
             position += state.Orientation.Transposed().Transform(slide) / WorldScene.UnitsPerMetre;
         }
@@ -199,7 +199,7 @@ internal sealed class VehicleDraw(
         rotation = Matrix3f.Identity;
         if (!string.Equals(placement.MagicTaskTypeName, VehicleBodies.WheelTaskTypeName, StringComparison.Ordinal)
             || !_bodies.CarWheels.TryGetValue(placement.Owner, out CarWheel[]? wheels)
-            || !_context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? state))
+            || !_context.TaskTransforms.TryGetValue(placement.Owner, out TaskTransformState? state))
         {
             return false;
         }
@@ -231,7 +231,7 @@ internal sealed class VehicleDraw(
     {
         if (!placement.IsRotor
             || _context.VehiclePhysics?.TryGetRotor(placement.Instance.Name, out RotorPhysicsDefinition rotor) != true
-            || !_context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? state)
+            || !_context.TaskTransforms.TryGetValue(placement.Owner, out TaskTransformState? state)
             || !TryGetPlacementDrawTransform(
                 placement.Owner,
                 placement.Position,

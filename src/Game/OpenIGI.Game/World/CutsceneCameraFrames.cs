@@ -14,9 +14,9 @@ namespace OpenIGI.Game.World;
 /// <c>0x4F55D0</c>; a shot's Link and Target are resolved through the live poses at the moment the frame is built,
 /// and latched by the shot's update flags.
 /// </remarks>
-internal sealed class CutsceneCameraFrames(CutsceneContext context, CutsceneAttachments attachments)
+internal sealed class CutsceneCameraFrames(LevelMotionContext context, CutsceneAttachments attachments)
 {
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly CutsceneAttachments _attachments = attachments;
 
     /// <summary>Gets or sets what supplies live poses for targets owned by another simulation, such as animated humans.</summary>
@@ -73,7 +73,7 @@ internal sealed class CutsceneCameraFrames(CutsceneContext context, CutsceneAtta
 
         EditCameraShot active = timed[current].Shot;
         bool shotChanged = state.LastShotIndex != current;
-        if (active.LinkTaskId >= 0 && TryPose(active.LinkTaskId, out CutsceneTransformState? link))
+        if (active.LinkTaskId >= 0 && TryPose(active.LinkTaskId, out TaskTransformState? link))
         {
             if (shotChanged || active.UpdateLink || state.LinkedPosition is null)
             {
@@ -93,7 +93,7 @@ internal sealed class CutsceneCameraFrames(CutsceneContext context, CutsceneAtta
                 orientation = state.LinkedOrientation ?? orientation;
             }
         }
-        if (active.TargetTaskId >= 0 && TryPose(active.TargetTaskId, out CutsceneTransformState? target))
+        if (active.TargetTaskId >= 0 && TryPose(active.TargetTaskId, out TaskTransformState? target))
         {
             if (shotChanged || active.UpdateTarget || state.TargetOrientation is null)
             {
@@ -150,13 +150,13 @@ internal sealed class CutsceneCameraFrames(CutsceneContext context, CutsceneAtta
             current);
     }
 
-    private bool TryPose(int id, out CutsceneTransformState? state)
+    private bool TryPose(int id, out TaskTransformState? state)
     {
         if (TargetPoseResolver?.Invoke(id) is { } live)
         {
             if (!_context.Transforms.TryGetValue(id, out state))
             {
-                state = new CutsceneTransformState(live.Position, live.Orientation);
+                state = new TaskTransformState(live.Position, live.Orientation);
                 _context.Transforms[id] = state;
             }
             else
@@ -219,7 +219,7 @@ internal sealed class CutsceneCameraFrames(CutsceneContext context, CutsceneAtta
 
     private (Vector3d Position, Matrix3f Orientation) InitialPose(GameTask? task)
     {
-        if (task is not null && _context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? transform))
+        if (task is not null && _context.TaskTransforms.TryGetValue(task, out TaskTransformState? transform))
         {
             return (transform.Position, transform.Orientation);
         }

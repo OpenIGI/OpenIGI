@@ -14,13 +14,13 @@ namespace OpenIGI.Game.World;
 /// turns to it (<c>0x46F390</c>) and lets <c>Gun_Fire</c> (<c>0x478BA0</c>) take the trigger.
 /// </remarks>
 internal sealed class VehicleArmaments(
-    CutsceneContext context,
+    LevelMotionContext context,
     List<CarAiState> carAis,
     List<CutsceneAnimationState> animations)
 {
     private const string GunMountTaskTypeName = "TASKTYPE_AISTATIONARYGUN";
 
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly List<CarAiState> _carAis = carAis;
     private readonly List<CutsceneAnimationState> _animations = animations;
     private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
@@ -103,7 +103,7 @@ internal sealed class VehicleArmaments(
         {
             if (!ConditionalContainerGate.IsTaskActive(vehicle)
                 || _context.Destructibles?.IsDestroyed(vehicle) == true
-                || !_context.TaskTransforms.TryGetValue(vehicle, out CutsceneTransformState? transform))
+                || !_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? transform))
             {
                 continue;
             }
@@ -158,7 +158,7 @@ internal sealed class VehicleArmaments(
             if (state.SpeedUnitsPerTick < VehicleDeathZone.LethalSpeedUnitsPerTick
                 || !ConditionalContainerGate.IsTaskActive(candidate)
                 || _context.Destructibles?.IsDestroyed(candidate) == true
-                || !_context.TaskTransforms.TryGetValue(candidate, out CutsceneTransformState? transform))
+                || !_context.TaskTransforms.TryGetValue(candidate, out TaskTransformState? transform))
             {
                 continue;
             }
@@ -194,7 +194,7 @@ internal sealed class VehicleArmaments(
         }
 
         {
-            if (!_context.TaskTransforms.TryGetValue(vehicle, out CutsceneTransformState? transform)
+            if (!_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? transform)
                 || vehicle is not DeclaredTask declared)
             {
                 return;
@@ -290,7 +290,7 @@ internal sealed class VehicleArmaments(
     public void TickGunHolderGuns(GameTask holder, Vector3d? aim)
     {
         if (!_armaments.TryGetValue(holder, out VehicleArmament? armament)
-            || !_context.TaskTransforms.TryGetValue(holder, out CutsceneTransformState? transform))
+            || !_context.TaskTransforms.TryGetValue(holder, out TaskTransformState? transform))
         {
             return;
         }
@@ -349,7 +349,7 @@ internal sealed class VehicleArmaments(
             return;
         }
 
-        if (!_context.TaskTransforms.TryGetValue(vehicle, out CutsceneTransformState? transform))
+        if (!_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? transform))
         {
             state.SpeedUnitsPerTick = 0d;
             return;
@@ -442,7 +442,7 @@ internal sealed class VehicleArmaments(
     /// <summary>The Level 6 capture's single fixed gun: fire the row's cadence at whatever is retained.</summary>
     private void TickLegacyVehicleGun(
         DeclaredTask vehicle,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         VehicleArmament armament,
         WeaponType weapon,
         Vector3d? target,
@@ -496,7 +496,7 @@ internal sealed class VehicleArmaments(
     {
         if (!_visions.TryGetValue(vehicle, out VehicleVision? vision)
             || vehicle is not DeclaredTask declared
-            || !_context.TaskTransforms.TryGetValue(vehicle, out CutsceneTransformState? transform)
+            || !_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? transform)
             || _context.Destructibles?.IsDestroyed(vehicle) == true)
         {
             return;
@@ -636,7 +636,7 @@ internal sealed class VehicleArmaments(
                 return false;
             }
         }
-        else if (_context.TaskTransforms.TryGetValue(vehicle, out CutsceneTransformState? state))
+        else if (_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? state))
         {
             UpdateDerivedPose(state);
             parentPosition = state.Position;
@@ -655,7 +655,7 @@ internal sealed class VehicleArmaments(
 
     /// <summary>Re-seats every gun of a vehicle where it stands now (<c>0x46FBA0</c>, then <c>0x470050</c>).</summary>
     /// <remarks>A gun's parent comes before it in the list, so each gun is seated on its parent's new pose.</remarks>
-    private static void SeatVehicleGuns(VehicleArmament armament, CutsceneTransformState transform)
+    private static void SeatVehicleGuns(VehicleArmament armament, TaskTransformState transform)
     {
         for (int index = 0; index < armament.Guns.Count; index++)
         {
@@ -716,7 +716,7 @@ internal sealed class VehicleArmaments(
         out Matrix3f orientation)
     {
         if (!TryGetVehicleGunMount(vehicle, armament, index, out Vector3d mountPosition, out Matrix3f mountOrientation)
-            || !_context.TaskTransforms.TryGetValue(vehicle, out CutsceneTransformState? state))
+            || !_context.TaskTransforms.TryGetValue(vehicle, out TaskTransformState? state))
         {
             position = default;
             orientation = Matrix3f.Identity;

@@ -538,7 +538,7 @@ public sealed class DiagMission4Plane
                     sb.Append(CultureInfo.InvariantCulture, $" ch0={channels[0]:R} ch1={channels[1]:R} ch2={channels[2]:R} ch3={channels[3]:R} ch4={channels[4]:R}");
                 }
 
-                foreach ((GameTask task, CutsceneTransformState state) in runtime.TaskTransformsForTesting)
+                foreach ((GameTask task, TaskTransformState state) in runtime.TaskTransformsForTesting)
                 {
                     if (task.Id != 356)
                     {

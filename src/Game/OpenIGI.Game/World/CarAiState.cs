@@ -8,13 +8,13 @@ namespace OpenIGI.Game.World;
 internal sealed class CarAiState(
     DeclaredTask task,
     DeclaredTask car,
-    CutsceneTransformState transform,
+    TaskTransformState transform,
     GraphFile graph,
     AiPatrolRoute? route)
 {
     public DeclaredTask Task { get; } = task;
     public DeclaredTask Car { get; } = car;
-    public CutsceneTransformState Transform { get; } = transform;
+    public TaskTransformState Transform { get; } = transform;
     public GraphFile Graph { get; } = graph;
     public AiPatrolRoute? Route { get; } = route;
     public bool Stopped { get; set; }

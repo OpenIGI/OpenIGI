@@ -12,9 +12,9 @@ namespace OpenIGI.Game.World;
 /// it: the parent's frame at the moment of parenting is kept, and every read rebuilds the rider from the parent's
 /// pose at the rider's own slot in the level walk.
 /// </remarks>
-internal sealed class CutsceneAttachments(CutsceneContext context)
+internal sealed class CutsceneAttachments(LevelMotionContext context)
 {
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly Dictionary<GameTask, CutsceneAttachmentState> _attachments = [];
 
     /// <summary>Gets what each attached task rides, by task.</summary>
@@ -62,7 +62,7 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
         ArgumentNullException.ThrowIfNull(parent);
 
         if (!(IsVehicle(parent) || CinematicActor.IsMovingPlatform(parent))
-            || !_context.TaskTransforms.TryGetValue(parent, out CutsceneTransformState? parentTransform))
+            || !_context.TaskTransforms.TryGetValue(parent, out TaskTransformState? parentTransform))
         {
             return false;
         }
@@ -73,9 +73,9 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
             return true;
         }
 
-        if (!_context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? state))
+        if (!_context.TaskTransforms.TryGetValue(task, out TaskTransformState? state))
         {
-            state = new CutsceneTransformState(position, orientation);
+            state = new TaskTransformState(position, orientation);
             _context.Remember(task, state);
         }
         else
@@ -108,9 +108,9 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
     {
         ArgumentNullException.ThrowIfNull(platform);
         int order = _context.TaskOrder.TryGetValue(platform, out int placed) ? placed : int.MaxValue;
-        if (!_context.TaskTransforms.TryGetValue(platform, out CutsceneTransformState? state))
+        if (!_context.TaskTransforms.TryGetValue(platform, out TaskTransformState? state))
         {
-            _context.Remember(platform, new CutsceneTransformState(position, orientation) { LastSimulationOrder = order });
+            _context.Remember(platform, new TaskTransformState(position, orientation) { LastSimulationOrder = order });
             return;
         }
 
@@ -219,7 +219,7 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
         orientation = parentOrientation
             * attachment.Orientation
             * attachment.ParentOriginOrientation.Transposed();
-        if (_context.TaskTransforms.TryGetValue(task, out CutsceneTransformState? state))
+        if (_context.TaskTransforms.TryGetValue(task, out TaskTransformState? state))
         {
             state.Position = position;
             state.Orientation = orientation;
@@ -238,7 +238,7 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
         // controlling AnimTask sees the saved pre-update pose, while one following it sees current.
         // Mission 1 contains both source-of-truth cases: wagon Human 2021 precedes train-1999's AnimTask;
         // helicopter Human 1505 follows heli-1502's AnimTask.
-        CutsceneTransformState dynamicParent = attachment.Parent.TrainRoot ?? attachment.Parent;
+        TaskTransformState dynamicParent = attachment.Parent.TrainRoot ?? attachment.Parent;
         bool usePreviousPose = task is HumanSoldierTask
             && DynamicRevision(attachment.Parent) > attachment.ParentRevisionAtCapture
             && _context.TaskOrder.TryGetValue(task, out int humanOrder)
@@ -247,12 +247,12 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
     }
 
     /// <summary>Parents a task to the nearest vehicle among its ancestors, when one has a transform.</summary>
-    internal bool CaptureAttachment(GameTask task, CutsceneTransformState state)
+    internal bool CaptureAttachment(GameTask task, TaskTransformState state)
     {
         for (GameTask? parent = task.Parent; parent is not null; parent = parent.Parent)
         {
             if (IsVehicle(parent)
-                && _context.TaskTransforms.TryGetValue(parent, out CutsceneTransformState? parentTransform))
+                && _context.TaskTransforms.TryGetValue(parent, out TaskTransformState? parentTransform))
             {
                 return CaptureAttachment(task, state, parent, parentTransform);
             }
@@ -263,9 +263,9 @@ internal sealed class CutsceneAttachments(CutsceneContext context)
     /// <summary>Parents a task to a given parent in the frame the parent stands in now, or stood in before its step.</summary>
     internal bool CaptureAttachment(
         GameTask task,
-        CutsceneTransformState state,
+        TaskTransformState state,
         GameTask parent,
-        CutsceneTransformState parentTransform,
+        TaskTransformState parentTransform,
         bool beforeParentStep = false)
     {
         UpdateDerivedPose(parentTransform);

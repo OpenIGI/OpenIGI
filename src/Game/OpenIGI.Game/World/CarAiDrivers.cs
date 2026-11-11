@@ -12,7 +12,7 @@ namespace OpenIGI.Game.World;
 /// receiver an AnimTask's does (<see cref="VehicleBodies.DriveCar"/>).
 /// </remarks>
 internal sealed class CarAiDrivers(
-    CutsceneContext context,
+    LevelMotionContext context,
     VehicleBodies bodies,
     VehicleArmaments armament,
     List<CarAiState> carAis)
@@ -26,7 +26,7 @@ internal sealed class CarAiDrivers(
     /// <summary>The chase looks ahead within fourteen metres (<c>0x425900</c>).</summary>
     private const double CarAiChaseLookAheadSquared = 3_288_334_336d;
 
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly VehicleBodies _bodies = bodies;
     private readonly VehicleArmaments _armament = armament;
     private readonly List<CarAiState> _carAis = carAis;
@@ -56,7 +56,7 @@ internal sealed class CarAiDrivers(
                 || graphId < 0
                 || routeId < 0
                 || _context.Root.Tree.FromId(carId) is not DeclaredTask car
-                || !_context.TaskTransforms.TryGetValue(car, out CutsceneTransformState? transform)
+                || !_context.TaskTransforms.TryGetValue(car, out TaskTransformState? transform)
                 || !graphs.TryGetValue(graphId, out GraphFile? graph)
                 || paths.Find(routeId) is not { } path)
             {

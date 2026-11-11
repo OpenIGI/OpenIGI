@@ -12,12 +12,12 @@ namespace OpenIGI.Game.World;
 /// thrust its receiver restores on its first packet.
 /// </remarks>
 internal sealed class CutsceneTransformCapture(
-    CutsceneContext context,
+    LevelMotionContext context,
     CutsceneAttachments attachments,
     Func<string, float>? modelLength,
     Func<string, float>? modelPivot)
 {
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly CutsceneAttachments _attachments = attachments;
     private readonly Func<string, float>? _modelLength = modelLength;
     private readonly Func<string, float>? _modelPivot = modelPivot;
@@ -31,7 +31,7 @@ internal sealed class CutsceneTransformCapture(
             // id is on the child HumanAI. Skipping NoId left them unparented so they froze
             // while the airframe left. Remember by task reference and attach via QVM parent.
             Matrix3f orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, soldier.Gamma);
-            CutsceneTransformState humanState = new(soldier.Position, orientation);
+            TaskTransformState humanState = new(soldier.Position, orientation);
             _context.Remember(task, humanState);
             _attachments.CaptureAttachment(task, humanState);
             return;
@@ -53,12 +53,12 @@ internal sealed class CutsceneTransformCapture(
             // lead already has, and carries no rail position of its own.
             if (task.Parent is DeclaredTask parent
                 && string.Equals(parent.Type.Name, "Train", StringComparison.Ordinal)
-                && _context.TaskTransforms.TryGetValue(parent, out CutsceneTransformState? parentTrain)
+                && _context.TaskTransforms.TryGetValue(parent, out TaskTransformState? parentTrain)
                 && parentTrain.TrainRoot is { Consist: { } consist } root)
             {
                 int index = consist.Add(declared, length, pivot);
                 consist.TryPlace(root.TrackPosition, index, out Vector3d childPosition, out Matrix3f childOrientation);
-                CutsceneTransformState childState = new(childPosition, childOrientation)
+                TaskTransformState childState = new(childPosition, childOrientation)
                 {
                     Consist = consist,
                     TrainRoot = root,
@@ -73,7 +73,7 @@ internal sealed class CutsceneTransformCapture(
                 RailroadConsist cars = new(railroad);
                 int lead = cars.Add(declared, length, pivot);
                 cars.TryPlace(railroad.InitialPosition, lead, out Vector3d railPosition, out Matrix3f railOrientation);
-                CutsceneTransformState trainState = new(railPosition, railOrientation)
+                TaskTransformState trainState = new(railPosition, railOrientation)
                 {
                     Consist = cars,
                     ConsistIndex = lead,
@@ -93,7 +93,7 @@ internal sealed class CutsceneTransformCapture(
 
         Vector3d position = Vector(declared, "Position");
         Vector3f angles = Vector32(declared, "Orientation");
-        CutsceneTransformState state = new(position, Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z))
+        TaskTransformState state = new(position, Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z))
         {
             // Vehicle AnimTask channels are deltas/controls. Preserve the authored starting attitude
             // when the first wait entry advances; beginning this accumulator at zero snapped linked

@@ -4,14 +4,16 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// What every part of a level's cutscene runtime shares: the level, its expressions, the live transforms of the tasks
-/// it moves, the world it queries and the tick count.
+/// What everything that moves a level's tasks shares: the level, its expressions, the live transforms of the tasks an
+/// animation, a vehicle or a cut-scene moves, the world they query and the tick count.
 /// </summary>
 /// <remarks>
-/// <see cref="CutsceneRuntime"/> builds one and hands it to each collaborator it splits its work across, so that all of
-/// them read and write the same transforms in the order the level walk runs them. Main thread only.
+/// In the original a moved object's position and matrix are its own; here they are kept beside the task
+/// (<see cref="TaskTransformState"/>) and found through this. <see cref="CutsceneRuntime"/> builds one and hands it to the
+/// level's vehicles and to each part of its own work, so that all of them read and write the same transforms in the order
+/// the level walk runs them. Main thread only.
 /// </remarks>
-internal sealed class CutsceneContext(
+internal sealed class LevelMotionContext(
     GameTask root,
     LevelExpressionRuntime expressions,
     VehiclePhysicsRegistry? vehiclePhysics,
@@ -36,10 +38,10 @@ internal sealed class CutsceneContext(
     public IOpenIgiLogger Logger { get; } = logger;
 
     /// <summary>Gets each driven task's transform, by task id.</summary>
-    public Dictionary<int, CutsceneTransformState> Transforms { get; } = [];
+    public Dictionary<int, TaskTransformState> Transforms { get; } = [];
 
     /// <summary>Gets each driven task's transform, by task, including the tasks that carry no id.</summary>
-    public Dictionary<GameTask, CutsceneTransformState> TaskTransforms { get; } = [];
+    public Dictionary<GameTask, TaskTransformState> TaskTransforms { get; } = [];
 
     /// <summary>Gets each task's place in the level's depth-first order.</summary>
     public Dictionary<GameTask, int> TaskOrder { get; } = [];
@@ -57,7 +59,7 @@ internal sealed class CutsceneContext(
     public IReadOnlyList<string> Diagnostics => _diagnostics;
 
     /// <summary>Records a task's transform under the task and, when it has one, under its id.</summary>
-    public void Remember(GameTask task, CutsceneTransformState state)
+    public void Remember(GameTask task, TaskTransformState state)
     {
         if (!TaskTransforms.ContainsKey(task))
         {

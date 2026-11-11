@@ -4,7 +4,7 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>The live pose and vehicle state of one task a cutscene moves, attaches to or targets.</summary>
-internal sealed class CutsceneTransformState(Vector3d position, Matrix3f orientation) : Saves.IExchangedState
+internal sealed class TaskTransformState(Vector3d position, Matrix3f orientation) : Saves.IExchangedState
 {
     // Not retail: Project I.G.I. kept no save games. Where it is and how it is turned, how it is moving and what drives it; a
     // vehicle's physics body is set down again from these on its next tick.
@@ -136,7 +136,7 @@ internal sealed class CutsceneTransformState(Vector3d position, Matrix3f orienta
     public float OriginalThrust { get; set; }
     public float ThrustStep { get; set; }
     public float MaxSpeed { get; set; }
-    public CutsceneTransformState? TrainRoot { get; set; }
+    public TaskTransformState? TrainRoot { get; set; }
     public int ConsistIndex { get; set; }
     public Vector3f Control { get; set; }
     public float Steering { get; set; }

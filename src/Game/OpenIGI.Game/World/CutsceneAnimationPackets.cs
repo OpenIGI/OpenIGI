@@ -12,13 +12,13 @@ namespace OpenIGI.Game.World;
 /// packet as one physics step. The steps below are those receivers, in the order the original runs them.
 /// </remarks>
 internal sealed class CutsceneAnimationPackets(
-    CutsceneContext context,
+    LevelMotionContext context,
     VehicleBodies bodies,
     VehicleGroundSupport ground,
     VehicleParts parts)
 {
     private readonly VehicleParts _parts = parts;
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly VehicleBodies _bodies = bodies;
     private readonly VehicleGroundSupport _ground = ground;
 
@@ -28,7 +28,7 @@ internal sealed class CutsceneAnimationPackets(
     /// <param name="program">The programme, positioned at the packet to deliver.</param>
     public void Apply(int targetId, int simulationOrder, AnimDataProgram program)
     {
-        if (targetId < 0 || !_context.Transforms.TryGetValue(targetId, out CutsceneTransformState? transform))
+        if (targetId < 0 || !_context.Transforms.TryGetValue(targetId, out TaskTransformState? transform))
         {
             return;
         }
@@ -79,7 +79,7 @@ internal sealed class CutsceneAnimationPackets(
 
     /// <summary><c>Train::ReadChannels</c> (<c>0x42B040</c>): the set-up packet, or one step along the rail.</summary>
     private static void ApplyTrain(
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         RailroadConsist trainConsist,
         int simulationOrder,
         AnimDataProgram program,
@@ -129,7 +129,7 @@ internal sealed class CutsceneAnimationPackets(
     /// <summary><c>Car::ReadChannels</c> (<c>0x42EA10</c>): the set-up packet's reset, or one drive step.</summary>
     private void ApplyCar(
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         AnimDataProgram program,
         ReadOnlySpan<float> channels)
@@ -176,7 +176,7 @@ internal sealed class CutsceneAnimationPackets(
     private void ApplyHeli(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         AnimDataProgram program)
     {
@@ -240,7 +240,7 @@ internal sealed class CutsceneAnimationPackets(
     private void ApplyRetailHeli(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         AnimDataProgram program,
         IRetailCarWorld retailWorld,
@@ -293,7 +293,7 @@ internal sealed class CutsceneAnimationPackets(
     private void ResetHeli(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         AnimDataProgram program,
         HelicopterPhysicsDefinition physics)
     {
@@ -357,7 +357,7 @@ internal sealed class CutsceneAnimationPackets(
     }
 
     /// <summary>Keeps a helicopter whose terminal landing has latched parked where it touched down.</summary>
-    private void HoldTerminalLanding(int targetId, GameTask? target, CutsceneTransformState transform)
+    private void HoldTerminalLanding(int targetId, GameTask? target, TaskTransformState transform)
     {
         transform.Position = transform.TerminalLandingPosition;
         transform.PreviousPosition = transform.Position;
@@ -378,7 +378,7 @@ internal sealed class CutsceneAnimationPackets(
     private void FlyHeli(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         AnimDataProgram program,
         HelicopterPhysicsDefinition physics)
@@ -430,7 +430,7 @@ internal sealed class CutsceneAnimationPackets(
     private void ApplyPlane(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         AnimDataProgram program,
         ReadOnlySpan<float> channels)
@@ -457,7 +457,7 @@ internal sealed class CutsceneAnimationPackets(
     private void ApplyRetailPlane(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         AnimDataProgram program,
         IRetailCarWorld planeWorld,
@@ -497,7 +497,7 @@ internal sealed class CutsceneAnimationPackets(
     }
 
     /// <summary>The Plane set-up packet: the authored rigid-body pose back and no movement published.</summary>
-    private static void ResetPlane(CutsceneTransformState transform)
+    private static void ResetPlane(TaskTransformState transform)
     {
         // The receiver's two tick-zero packets restore the authored rigid-body pose and
         // publish no movement. Its positive-tick collision/body integration is Plane-owned:
@@ -521,7 +521,7 @@ internal sealed class CutsceneAnimationPackets(
     private void FlyPlane(
         int targetId,
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         ReadOnlySpan<float> channels)
     {

@@ -68,7 +68,7 @@ public sealed class RetailPlaneCutsceneTests
             }
         }
 
-        IReadOnlyDictionary<int, CutsceneTransformState> transforms = runtime.TransformsForTesting;
+        IReadOnlyDictionary<int, TaskTransformState> transforms = runtime.TransformsForTesting;
 
         // Pass 1: right after construction (before any Tick), every plane must sit exactly at its
         // authored pose with zeroed motion and control. Retail's tick-zero reset restores the body
@@ -85,7 +85,7 @@ public sealed class RetailPlaneCutsceneTests
                 continue;
             }
 
-            if (!seenPlanes.Add(target) || !transforms.TryGetValue(target, out CutsceneTransformState? transform))
+            if (!seenPlanes.Add(target) || !transforms.TryGetValue(target, out TaskTransformState? transform))
             {
                 continue;
             }
@@ -104,7 +104,7 @@ public sealed class RetailPlaneCutsceneTests
                 continue;
             }
 
-            if (!seenPlanes.Contains(target) || !transforms.TryGetValue(target, out CutsceneTransformState? transform))
+            if (!seenPlanes.Contains(target) || !transforms.TryGetValue(target, out TaskTransformState? transform))
             {
                 continue;
             }
@@ -159,7 +159,7 @@ public sealed class RetailPlaneCutsceneTests
         Assert.True(planesChecked >= 2, $"mission 3 must drive at least two planes, checked {planesChecked}");
     }
 
-    private static void AssertPlanePose(CutsceneTransformState transform, Vector3d authoredPosition, Matrix3f authoredOrientation)
+    private static void AssertPlanePose(TaskTransformState transform, Vector3d authoredPosition, Matrix3f authoredOrientation)
     {
         Vector3d position = transform.Position;
         Matrix3f orientation = transform.Orientation;

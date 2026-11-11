@@ -22,14 +22,14 @@ namespace OpenIGI.Game.World;
 /// them is hacked (team <c>!Terminal_301.isHacked</c>): from then on their enemies are the guards.
 /// </para>
 /// </remarks>
-internal sealed class StationaryGunHolders(CutsceneContext context, VehicleArmaments armament)
+internal sealed class StationaryGunHolders(LevelMotionContext context, VehicleArmaments armament)
 {
     /// <summary>The holder's script type name.</summary>
     public const string TypeName = "AIStationaryGunHolder";
 
     private const double DegreesToRadians = 0.017453292;
 
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly VehicleArmaments _armament = armament;
     private readonly Dictionary<GameTask, HolderState> _holders = new(ReferenceEqualityComparer.Instance);
 
@@ -78,7 +78,7 @@ internal sealed class StationaryGunHolders(CutsceneContext context, VehicleArmam
         }
 
         IReadOnlyList<AiDetectable> offered = Subjects?.Invoke() ?? [];
-        if (state.On && _context.TaskTransforms.TryGetValue(holder, out CutsceneTransformState? transform))
+        if (state.On && _context.TaskTransforms.TryGetValue(holder, out TaskTransformState? transform))
         {
             AiEyeSnapshot eye = new(
                 transform.Position,

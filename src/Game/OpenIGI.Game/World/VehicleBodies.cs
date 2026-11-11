@@ -13,7 +13,7 @@ namespace OpenIGI.Game.World;
 /// helicopters get theirs here the first time their AnimTask speaks.
 /// </remarks>
 internal sealed class VehicleBodies(
-    CutsceneContext context,
+    LevelMotionContext context,
     VehicleGroundSupport ground,
     Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit,
     Func<GameTask, bool>? vehicleObstacleReleased)
@@ -44,7 +44,7 @@ internal sealed class VehicleBodies(
         string.Empty,
         []);
 
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly VehicleGroundSupport _ground = ground;
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit = vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased = vehicleObstacleReleased;
@@ -84,7 +84,7 @@ internal sealed class VehicleBodies(
     /// </remarks>
     public IEnumerable<VehicleSoundSource> VehicleSoundSources()
     {
-        foreach ((GameTask task, CutsceneTransformState state) in _context.TaskTransforms)
+        foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
             if (task is not DeclaredTask vehicle
                 || vehicle.Type.Name is not ("Car" or "Heli" or "Plane" or "Train")
@@ -128,7 +128,7 @@ internal sealed class VehicleBodies(
         }
     }
 
-    private VehicleSoundSource TrainSound(DeclaredTask car, CutsceneTransformState state)
+    private VehicleSoundSource TrainSound(DeclaredTask car, TaskTransformState state)
     {
         bool pullsWagons = car.Children.Any(child => child.Type.Name == "Train");
         string gate = TextOrEmpty(car, "Play Sound");
@@ -162,7 +162,7 @@ internal sealed class VehicleBodies(
     public IReadOnlyList<VehicleOccupant> VehicleOccupants()
     {
         List<VehicleOccupant> occupants = [];
-        foreach ((GameTask task, CutsceneTransformState state) in _context.TaskTransforms)
+        foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
             if (task.Type.Name is "Car" or "Heli")
             {
@@ -194,7 +194,7 @@ internal sealed class VehicleBodies(
 
         // Mission 8's intro truck is reset by its AnimTask while the runtime is constructed; without this
         // it never gets a body and drives the planar model through the whole scene.
-        foreach ((GameTask task, CutsceneTransformState state) in _context.TaskTransforms)
+        foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
             if (state.RetailResetPending)
             {
@@ -242,7 +242,7 @@ internal sealed class VehicleBodies(
 
         foreach ((GameTask owner, List<WorldPlacement> placements) in byOwner)
         {
-            if (!_context.TaskTransforms.TryGetValue(owner, out CutsceneTransformState? state)
+            if (!_context.TaskTransforms.TryGetValue(owner, out TaskTransformState? state)
                 || state.CarPhysics is not { } physics)
             {
                 continue;
@@ -392,7 +392,7 @@ internal sealed class VehicleBodies(
     }
 
     /// <summary>Creates or resets a car's retail body at its placement -- the set-up packet's reset (<c>0x42EA10</c> mode 0).</summary>
-    internal void ResetRetailBody(GameTask? task, CutsceneTransformState state)
+    internal void ResetRetailBody(GameTask? task, TaskTransformState state)
     {
         if (_retailCarWorld is null)
         {
@@ -440,7 +440,7 @@ internal sealed class VehicleBodies(
     /// <summary>One physics packet on the retail body: the channels as <c>0x42EA10</c> latches them, then <c>Car_Tick</c>.</summary>
     private void DriveRetailCar(
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         RetailCarBody body,
         IRetailCarWorld world,
         float channel0,
@@ -481,7 +481,7 @@ internal sealed class VehicleBodies(
     public IReadOnlyList<RetailRayModel> RetailVehicleModels()
     {
         _retailVehicleModels.Clear();
-        foreach ((GameTask task, CutsceneTransformState state) in _context.TaskTransforms)
+        foreach ((GameTask task, TaskTransformState state) in _context.TaskTransforms)
         {
             if (state.CarPhysics is null || !ConditionalContainerGate.IsTaskActive(task))
             {
@@ -532,7 +532,7 @@ internal sealed class VehicleBodies(
     }
 
     /// <summary>A plane's retail body, created from its type and model the first time its AnimTask speaks.</summary>
-    internal RetailPlaneBody? RetailPlaneFor(DeclaredTask task, CutsceneTransformState state, in PlanePhysicsDefinition physics)
+    internal RetailPlaneBody? RetailPlaneFor(DeclaredTask task, TaskTransformState state, in PlanePhysicsDefinition physics)
     {
         if (state.RetailPlane is { } existing)
         {
@@ -558,7 +558,7 @@ internal sealed class VehicleBodies(
     }
 
     /// <summary>A helicopter's retail body, created from its type and model the first time its AnimTask speaks.</summary>
-    internal RetailHeliBody? RetailHeliFor(DeclaredTask task, CutsceneTransformState state, in HelicopterPhysicsDefinition physics)
+    internal RetailHeliBody? RetailHeliFor(DeclaredTask task, TaskTransformState state, in HelicopterPhysicsDefinition physics)
     {
         if (state.RetailHeli is { } existing)
         {
@@ -582,7 +582,7 @@ internal sealed class VehicleBodies(
         return heli;
     }
 
-    internal static void CopyRetailPose(CutsceneTransformState state, RetailRigidBody body)
+    internal static void CopyRetailPose(TaskTransformState state, RetailRigidBody body)
     {
         float[] m = body.M;
         state.Position = new Vector3d(body.Position[0], body.Position[1], body.Position[2]);
@@ -600,7 +600,7 @@ internal sealed class VehicleBodies(
     /// <remarks>An AnimTask's packet and CarAI's own (<c>0x426510</c>) arrive through the same receiver.</remarks>
     internal void DriveCar(
         GameTask? target,
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         int simulationOrder,
         float channel0,
         float channel1,

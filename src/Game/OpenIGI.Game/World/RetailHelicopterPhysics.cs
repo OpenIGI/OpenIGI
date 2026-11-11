@@ -13,7 +13,7 @@ namespace OpenIGI.Game.World;
 internal static class RetailHelicopterPhysics
 {
     internal static void Apply(
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         HelicopterPhysicsDefinition physics)
     {
         const float Gravity = 44.600887f;
@@ -140,7 +140,7 @@ internal static class RetailHelicopterPhysics
     }
 
     internal static void QueueRotorForces(
-        CutsceneTransformState transform,
+        TaskTransformState transform,
         Matrix3f attitude,
         HelicopterPhysicsDefinition physics)
     {

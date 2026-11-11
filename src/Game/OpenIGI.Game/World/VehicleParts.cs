@@ -17,7 +17,7 @@ namespace OpenIGI.Game.World;
 /// Only the Hind (<c>700_01_1</c>) carries either: four pods and one door.
 /// </para>
 /// </remarks>
-internal sealed class VehicleParts(CutsceneContext context, VehicleArmaments armament)
+internal sealed class VehicleParts(LevelMotionContext context, VehicleArmaments armament)
 {
     /// <summary>The rocket a pod fires, <c>0x427A70</c>'s model.</summary>
     public const string RocketModel = "700_10_1";
@@ -25,7 +25,7 @@ internal sealed class VehicleParts(CutsceneContext context, VehicleArmaments arm
     private const string RocketPodTaskTypeName = "TASKTYPE_ROCKETPOD";
     private const string HeliDoorTaskTypeName = "TASKTYPE_HELIDOOR";
 
-    private readonly CutsceneContext _context = context;
+    private readonly LevelMotionContext _context = context;
     private readonly VehicleArmaments _armament = armament;
     private readonly Dictionary<GameTask, HeliParts> _byVehicle = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<WorldPlacement, RocketPod> _pods = new(ReferenceEqualityComparer.Instance);
@@ -93,7 +93,7 @@ internal sealed class VehicleParts(CutsceneContext context, VehicleArmaments arm
 
             if (placement.MagicTaskTypeName is not (RocketPodTaskTypeName or HeliDoorTaskTypeName)
                 || !string.Equals(placement.Owner.Type.Name, "Heli", StringComparison.Ordinal)
-                || !_context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? transform)
+                || !_context.TaskTransforms.TryGetValue(placement.Owner, out TaskTransformState? transform)
                 || magic(placement.Instance.Name) is not { } definition)
             {
                 continue;
@@ -177,7 +177,7 @@ internal sealed class VehicleParts(CutsceneContext context, VehicleArmaments arm
     /// <summary>Runs a helicopter's parts, as a flight packet does before its step.</summary>
     /// <param name="heli">The Heli task.</param>
     /// <param name="transform">Its pose as its last step left it.</param>
-    public void Run(GameTask heli, CutsceneTransformState transform)
+    public void Run(GameTask heli, TaskTransformState transform)
     {
         if (!_byVehicle.TryGetValue(heli, out HeliParts? parts))
         {
@@ -246,7 +246,7 @@ internal sealed class VehicleParts(CutsceneContext context, VehicleArmaments arm
     {
         RetailPlanePart? part = null;
         if (_planeParts.TryGetValue(placement, out (PlanePartKind Kind, int Index) entry)
-            && _context.TaskTransforms.TryGetValue(placement.Owner, out CutsceneTransformState? state)
+            && _context.TaskTransforms.TryGetValue(placement.Owner, out TaskTransformState? state)
             && state.RetailPlane is { } plane)
         {
             part = entry.Kind switch
