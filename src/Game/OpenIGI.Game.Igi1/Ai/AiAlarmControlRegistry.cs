@@ -145,24 +145,19 @@ public sealed class AiAlarmControlRegistry
 
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
-        if (task is DeclaredTask declared
-            && task.Id != GameTask.NoId
-            && task.Type.Name == "AlarmControl")
+        if (task is Igi1AlarmControlTask declared && task.Id != GameTask.NoId)
         {
             AiAlarmControlState state = new();
             string explodedSymbol = $"{declared.Name}.isExploded";
             Entry entry = new(
                 declared,
                 state,
-                ReadString(declared, "Trigger Expression"),
-                ReadString(declared, "Alarm Expression"),
-                ReadString(declared, "On Expression"),
+                declared.TriggerExpression,
+                declared.AlarmExpression,
+                declared.OnExpression,
                 () => variables.TryRead(explodedSymbol, out QvmValue blown) && blown.ToInt32() != 0);
             _controls[task.Id] = entry;
-            if (declared is Igi1AlarmControlTask control)
-            {
-                control.Alarms = this;
-            }
+            declared.Alarms = this;
 
             // AlarmControl_RegisterScriptSymbolsHandler exports exactly these three names. They are
             // live aliases and the expressions may refer back to the control's previous isAlarm value.
@@ -177,6 +172,4 @@ public sealed class AiAlarmControlRegistry
         }
     }
 
-    private static string ReadString(DeclaredTask task, string name) =>
-        task.TryGetValue(name, out object? raw) && raw is string value ? value : string.Empty;
 }

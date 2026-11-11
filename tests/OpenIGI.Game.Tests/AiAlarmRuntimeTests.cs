@@ -20,6 +20,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -64,6 +65,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -106,6 +108,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -167,6 +170,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -212,6 +216,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -244,6 +249,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -306,6 +312,7 @@ public sealed class AiAlarmRuntimeTests
     {
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -326,6 +333,7 @@ public sealed class AiAlarmRuntimeTests
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         TaskTree tree = new(types);
         ScriptVarRegistry variables = new(natives);
         TaskScriptCommands commands = new(tree, variables);
@@ -362,6 +370,7 @@ public sealed class AiAlarmRuntimeTests
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
         TaskTypeRegistry types = new();
+        OpenIGI.Game.Igi1.Igi1TaskTypes.Register(types);
         EngineTaskTypes.Register(types);
         OpenIGI.Game.Flow.LevelTaskTypes.RegisterFlow(types);
         TaskTree tree = new(types);

@@ -16,6 +16,15 @@ public sealed class Igi1AlarmControlTask : DeclaredLevelTask
     /// <summary>Gets or sets the mission's alarm controls, which step this one; none until they are built.</summary>
     internal AiAlarmControlRegistry? Alarms { get; set; }
 
+    /// <summary>Gets the expression that triggers the alarm ("Trigger Expression").</summary>
+    public string TriggerExpression => Declared("Trigger Expression", string.Empty);
+
+    /// <summary>Gets the expression that says whether the alarm sounds ("Alarm Expression").</summary>
+    public string AlarmExpression => Declared("Alarm Expression", string.Empty);
+
+    /// <summary>Gets the expression that says whether the control is on ("On Expression").</summary>
+    public string OnExpression => Declared("On Expression", string.Empty);
+
     /// <inheritdoc/>
     public override void Run(LevelRun level)
     {
